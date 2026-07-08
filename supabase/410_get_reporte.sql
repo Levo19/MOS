@@ -36,7 +36,7 @@ begin
     v_pre := null;
     if coalesce(v_g.id_preingreso,'') <> '' then
       select jsonb_build_object('idPreingreso', pi.id_preingreso, 'estado', coalesce(pi.estado,''),
-             'monto', coalesce(pi.monto,''), 'nFotos',
+             'monto', coalesce(pi.monto::text,''), 'nFotos',
              (case when coalesce(pi.fotos,'')='' then 0 else array_length(string_to_array(pi.fotos,','),1) end))
         into v_pre from wh.preingresos pi where pi.id_preingreso = v_g.id_preingreso;
     end if;
@@ -63,7 +63,7 @@ begin
     return jsonb_build_object('ok',true,'data', jsonb_build_object(
       'tipo','preingreso', 'idPreingreso',v_pi.id_preingreso, 'fecha',coalesce(v_pi.fecha::text,''),
       'estado',coalesce(v_pi.estado,''), 'idProveedor',coalesce(v_pi.id_proveedor,''), 'proveedor',coalesce(v_prov,''),
-      'monto',coalesce(v_pi.monto,''), 'comentario',coalesce(v_pi.comentario,''),
+      'monto',coalesce(v_pi.monto::text,''), 'comentario',coalesce(v_pi.comentario,''),
       'fotos', case when coalesce(v_pi.fotos,'')='' then '[]'::jsonb else to_jsonb(string_to_array(v_pi.fotos,',')) end,
       'cargadores', v_carg, 'usuario',coalesce(v_pi.usuario,''), 'idGuia',coalesce(v_pi.id_guia,''), 'guia', v_guia,
       'generado', to_char(now() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')));

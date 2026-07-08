@@ -1216,6 +1216,42 @@ const API = (() => {
     return { ok: true, data: { items } };
   }
 
+  // [CERO-GAS F3] OCR de correcciones manuscritas de la jefa (ticket lleno a mano) → Edge `ia`. La foto ya viene en
+  //   base64 del front + contextoItems (SKU/costo/venta/margen). Antes: bridge GAS→WH extraerCorreccionesJefa.
+  async function _ocrTicketJefaDirecto(fotoBase64, contextoItems) {
+    if (!fotoBase64) return { ok: false, error: 'fotoBase64 requerida' };
+    if (!Array.isArray(contextoItems) || !contextoItems.length) return { ok: false, error: 'contextoItems[] requerido' };
+    let b64 = String(fotoBase64), mime = 'image/jpeg';
+    const mm = b64.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+    if (mm) { mime = mm[1]; b64 = mm[2]; }
+    const ctxList = contextoItems.map((it, i) =>
+      (i + 1) + '. SKU:' + it.skuBase + ' · ' + String(it.descripcion || '').substring(0, 50) +
+      ' · COSTO:' + (parseFloat(it.costo) || 0).toFixed(2) + ' · VENTA-ACT:' + (parseFloat(it.ventaActual) || 0).toFixed(2) +
+      ' · MARGEN-OBJ:' + ((parseFloat(it.margenActualPct) || 0) * 100).toFixed(0) + '%').join('\n');
+    const system = [
+      'Eres un asistente que lee correcciones manuscritas en un ticket impreso.',
+      'La jefa recibió un ticket con cuadros por producto, lo llenó a mano (nuevos precios o márgenes) y lo devolvió.',
+      'Tienes la foto del ticket lleno. Por cada producto del CONTEXTO, identifica si la jefa escribió algo y extrae los valores.',
+      'CONTEXTO (productos del ticket impreso):', ctxList, '',
+      'Por cada producto con escritura de la jefa devuelve: skuBase (del contexto), ventaNueva (número o null),',
+      'margenNuevoPct (0..1, ej 60%→0.60, o null), tachado (true si tachó → ignorar), confidence (0-100), notas (corto).',
+      'REGLAS: si no escribió nada, OMÍTELO. "100" solo = precio venta. "60%" = margen. Si ambos, retorna ambos.',
+      'Letra ambigua → baja confidence. ≥95 muy seguro, 80-94 probable, <80 dudoso.',
+      'RESPONDE EXCLUSIVAMENTE con JSON: {"correcciones":[{"skuBase":"...","ventaNueva":N|null,"margenNuevoPct":N|null,"tachado":false,"confidence":N,"notas":""}],"confidenceGlobal":N,"notas":""}'
+    ].join('\n');
+    const d = await _zonaIA({ system, max_tokens: 4096, messages: [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
+      { type: 'text', text: 'Lee el ticket lleno por la jefa y devuelve las correcciones detectadas.' }
+    ] }] });
+    const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) return { ok: true, data: { correcciones: [], confidenceGlobal: 0, notas: 'sin lectura' } };
+    try { const j = JSON.parse(m[0]); return { ok: true, data: {
+      correcciones: Array.isArray(j.correcciones) ? j.correcciones : [],
+      confidenceGlobal: j.confidenceGlobal || 0, notas: j.notas || '' } }; }
+    catch (_) { return { ok: true, data: { correcciones: [], confidenceGlobal: 0, notas: 'parse falló' } }; }
+  }
+
   // ════════════════════════════════════════════════════════════════════
   // [IMPRESORAS · LISTAR/VERIFICAR vía Edge `printers`] Reemplaza el salto a GAS de
   // listarImpresorasPN / verificarImpresoraAhora (que tardaban ~9s por la latencia de UrlFetchApp).
@@ -3287,6 +3323,10 @@ const API = (() => {
       // [cero-GAS F3] OCR del comprobante de guía → Edge `ia` (antes bridge GAS→WH extraerCostosFactura).
       if (action === 'ocrComprobanteGuia') {
         return _ocrComprobanteGuiaDirecto(p && p.idGuia);
+      }
+      // [cero-GAS F3] OCR de correcciones de la jefa → Edge `ia` (antes bridge GAS→WH extraerCorreccionesJefa).
+      if (action === 'ocrTicketJefa') {
+        return _ocrTicketJefaDirecto(p && p.fotoBase64, p && p.contextoItems);
       }
       // [DUAL-WRITE · HORARIO] getHorariosApps es una LECTURA enviada por POST (el front la llama con API.post).
       // Read-path directo (RPC horarios_apps, 98) gated por el gate de LECTURA _mosHorarioLectura (maestro OR
