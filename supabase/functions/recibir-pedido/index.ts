@@ -115,7 +115,7 @@ Deno.serve(async (req: Request) => {
         const path = `pedidos/${token}/${Date.now()}_${nombre}`.replace(/[^\w./-]/g, '_');
         const up = await fetch(`${SB_URL}/storage/v1/object/wh-fotos/${path}`, {
           method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + SB_SR, 'Content-Type': mime, 'x-upsert': 'true' },
+          headers: { 'apikey': SB_SR, 'Authorization': 'Bearer ' + SB_SR, 'Content-Type': mime, 'x-upsert': 'true' },
           body: bin,
         });
         if (up.ok) url = `${SB_URL}/storage/v1/object/public/wh-fotos/${path}`;
