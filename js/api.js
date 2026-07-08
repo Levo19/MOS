@@ -1171,6 +1171,51 @@ const API = (() => {
     return d;   // {content:[{text}], ...} crudo de Claude
   }
 
+  // [CERO-GAS F3] OCR del comprobante de una guía WH → items {descripcion,cantidad,precioUnitario,subtotal,confidence}.
+  //   Antes: bridge GAS ocrComprobanteGuia → WH extraerCostosFactura (Drive + Claude Vision). Ahora: leemos la foto
+  //   de la guía (wh.get_reporte), la bajamos a base64 y la mandamos a la Edge `ia` con el MISMO prompt de Vision.
+  const _OCR_COMPROBANTE_SYSTEM = [
+    'Eres un experto en lectura de documentos comerciales peruanos.',
+    'Recibes una imagen de un comprobante (factura, boleta, ticket impreso, o incluso una hoja manuscrita)',
+    'y debes extraer la LISTA DE PRODUCTOS con sus precios unitarios.',
+    'POR CADA LÍNEA DE PRODUCTO devuelve: descripcion (MAYÚSCULAS, limpio), cantidad (decimal),',
+    'precioUnitario (soles, por unidad, NO el subtotal), subtotal (cantidad×precio o el valor de la línea),',
+    'confidence (0-100 de los 3 valores juntos: 95-100 impreso claro, 80-94 borroso/manuscrito legible,',
+    '60-79 letra difícil, <60 inseguro).',
+    'REGLAS: si solo ves total sin desglose → items:[]. Ignora encabezados/totales/IGV. Si una línea no tiene',
+    'precio claro, OMÍTELA (no inventes). Si no se ve la cantidad, asume 1.',
+    'RESPONDE EXCLUSIVAMENTE con JSON válido (sin markdown): {"items":[{"descripcion":"...","cantidad":N,"precioUnitario":N,"subtotal":N,"confidence":N}]}'
+  ].join('\n');
+  async function _ocrComprobanteGuiaDirecto(idGuia) {
+    // 1) foto de la guía
+    const rep = await _sbRpcMOS('get_reporte', { p: { tipo: 'guia', id: String(idGuia) } }, 'wh');
+    const foto = rep && rep.ok && rep.data && String(rep.data.foto || '').trim();
+    if (!foto) return { ok: false, error: 'La guía no tiene foto del comprobante' };
+    // 2) bajar imagen → base64
+    let b64 = '', mime = 'image/jpeg';
+    try {
+      const ir = await _sbFetchTimeout(foto, {}, 15000);
+      if (!ir.ok) return { ok: false, error: 'No se pudo descargar la foto (' + ir.status + ')' };
+      mime = ir.headers.get('Content-Type') || 'image/jpeg';
+      const buf = new Uint8Array(await ir.arrayBuffer());
+      let bin = ''; for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+      b64 = (typeof btoa === 'function') ? btoa(bin) : '';
+    } catch (e) { return { ok: false, error: 'Descarga foto: ' + (e && e.message || e) }; }
+    // 3) Vision vía Edge ia
+    const d = await _zonaIA({
+      system: _OCR_COMPROBANTE_SYSTEM, max_tokens: 4096,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
+        { type: 'text', text: 'Extrae los productos de este comprobante en el JSON indicado.' }
+      ] }]
+    });
+    const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
+    const m = txt.match(/\{[\s\S]*\}/);
+    let items = [];
+    if (m) { try { const j = JSON.parse(m[0]); items = Array.isArray(j.items) ? j.items : []; } catch (_) {} }
+    return { ok: true, data: { items } };
+  }
+
   // ════════════════════════════════════════════════════════════════════
   // [IMPRESORAS · LISTAR/VERIFICAR vía Edge `printers`] Reemplaza el salto a GAS de
   // listarImpresorasPN / verificarImpresoraAhora (que tardaban ~9s por la latencia de UrlFetchApp).
@@ -3238,6 +3283,10 @@ const API = (() => {
           const r = await _imprimirTicketEdge(printerId, 'Liquidacion de pago', txt);
           return { ok: true, printJobId: r && r.printJobId, data: { ok: true } };
         })();
+      }
+      // [cero-GAS F3] OCR del comprobante de guía → Edge `ia` (antes bridge GAS→WH extraerCostosFactura).
+      if (action === 'ocrComprobanteGuia') {
+        return _ocrComprobanteGuiaDirecto(p && p.idGuia);
       }
       // [DUAL-WRITE · HORARIO] getHorariosApps es una LECTURA enviada por POST (el front la llama con API.post).
       // Read-path directo (RPC horarios_apps, 98) gated por el gate de LECTURA _mosHorarioLectura (maestro OR
