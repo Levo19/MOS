@@ -38,8 +38,8 @@
 ## ORDEN SEGURO DEL CORTE (punto 2 y 3) — estado 2026-07-09
 1. ✅ Fixes cola offline WH+ME + flush ICE — DESPLEGADOS (WH 2.13.416 / ME 2.8.190).
 2. ✅ Dual-write verificado OFF (nada que apagar; el registry es dead code → se borra en el paso 5).
-3. ⏳ Estrés + webcheck ME (`! node supabase/_stress.js 15 4` · `! node browsercheck/check.js browsercheck/gaskill_me.json`). Smoke recomendado: 1 venta NV offline→replay, 1 escritura WH offline→replay (validan los fixes de cola EN REAL).
-4. ⏳ **PUNTO 2 = `! node supabase/_sync_off_final.js`** (apaga las 8 restantes; Hoja pasa a archivo histórico). Observación 24-48h.
+3. ✅ Estrés OK (0 errores en endpoints válidos bajo 15 concurrentes; p50 130-170ms, p95 ~270ms, Edge mint ~600ms — los "err" de catalogo_version/stock_enriquecido eran nombres mal llamados en el script, no fallos del sistema). Webcheck ME 2.8.190 ✅ cero-GAS + auto-update funcionando. Smoke offline (1 venta NV + 1 escritura WH sin señal → replay) queda para la ventana de observación.
+4. ✅ **PUNTO 2 EJECUTADO 2026-07-09:** `MOS_SYNC_OFF_TABLAS` 19→27 (TODAS las tablas de _MOS_SPECS+_CAT_SPECS). La Hoja es archivo histórico de solo lectura. **Ventana de observación 24-48h EN CURSO desde 2026-07-09** (vigilar: lecturas frescas en las 3 apps, replay de colas offline, alertas/seguridad).
 5. ⏳ **PUNTO 3 (F8-final) — SESIÓN DEDICADA tras la observación del paso 4** (money-safety: no arrancar los brazos GAS la misma noche que se deployaron los fixes de cola, sin haber visto un replay real). Alcance exacto:
    - ME: borrar `_enviarVentaConReintentos`+path GAS venta, pre-reserva correlativo (muerta), fallbacks apertura/cierre/cobro GAS, espejo GAS apertura (migrar push admins → Edge `push`), API_URL/MOS_GAS_URL.
    - WH: borrar brazo GAS de `post()`, rama legacy de `sincronizar()` (offline.js:628), `precargar()` legacy (offline.js:439), `eliminarFotoDrive` GAS, GAS_URL/gasUrl config.
