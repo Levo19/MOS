@@ -27,19 +27,23 @@
 - MOS 2.43.478 ✅ boot cero-GAS, auto-update, sin pageerror. WH 2.13.415 ✅ red 100% SB-REST.
 - ME: **pendiente 1 corrida** (`! node browsercheck/check.js browsercheck/gaskill_me.json`).
 
-## 5) DB/sync
-- Sync Hoja→Supabase LATIENDO (heartbeats 2026-07-08 23:40 · TTL mos=30min, catálogo=180min). `MOS_SYNC_OFF_TABLAS` ya cubre: proveedores, proveedores_productos, config_horarios_apps, gastos, pagos_proveedor, pedidos_proveedor, evaluaciones, jornadas, et… (lista completa + flags dualwrite = pendiente lectura, clasificador bloqueó).
-- **Regla del corte de sync:** una tabla se saca del sync SOLO si su escritura ya es directa-Supabase (si no, la Hoja avanza y la sombra se congela = lecturas viejas). Con los inventarios de arriba: todas las escrituras de dinero/stock son directas → el sync es redundante SALVO para las acciones dual-write de MOS (si sus flags están ON).
+## 5) DB/sync — CERRADO 2026-07-09
+- **Flags `mos_*_dualwrite`: NINGUNO seteado → todos OFF → el registry dual-write de MOS es código muerto en prod. GAS no es la verdad de NADA.** ✅
+- Sync cubre: `_MOS_SPECS` (17 tablas, MigracionMOS.gs:139) + `_CAT_SPECS` (10, MigracionCatalogo.gs:67). OFF ya tenía 19. **Restaban 8:** categorias, impresoras (admin RPC directo) · historial_precios (publicar_precio server-side) · bloqueos_usuario (SQL 377) · seguridad_alertas (RPCs seguridad) · alertas_log (escritores legacy; avisos nuevos = Edge push→notificaciones_log) · conexiones (registro de URLs GAS) · notificaciones_config (admin RPC). Todas con escritura directa verificada → **script `supabase/_sync_off_final.js` las apaga (idempotente)**.
+- **Regla aplicada:** una tabla sale del sync SOLO si su escritura ya es directa-Supabase — se verificó tabla por tabla.
 
 ## 6) Estrés de uso (lecturas, prod-safe)
 - Script `supabase/_stress.js` (N conc × rondas: get_flags, catalogo_version, stock_enriquecido, resumen_cargadores, catalogo_wh_delta, Edge mint) — **pendiente correr** (clasificador): `! node supabase/_stress.js 15 4` y para ecosistema `! node supabase/_stress.js 30 5`.
 
-## ORDEN SEGURO DEL CORTE (punto 2 y 3)
-1. ✅ Fixes cola offline WH+ME + flush ICE (aplicados → deploy WH 2.13.416 / ME 2.8.190).
-2. Verificar flags `mos_*_dualwrite` en prod; si alguno ON → apagarlo (la escritura directa+shadow-críticas ya cubren) → esas 10 acciones quedan directo-puro.
-3. Correr estrés + webcheck ME (arriba). Smoke: 1 venta NV offline→replay, 1 escritura WH offline→replay.
-4. Apagar sync restante tabla por tabla (agregar a MOS_SYNC_OFF_TABLAS) empezando por las ya-directas; 48h de observación con Hoja viva de solo-lectura.
-5. F8-final: borrar brazos GAS (ME `_enviarVentaConReintentos`+path GAS, WH `post()` brazo+`sincronizar()` rama legacy+`precargar()` legacy, MOS `_fetch`/GAS_URL/dual-write registry) + decidir GAS-only menores (trib OCR→Edge ia; diagnóstico WH→Edge/retirar; espía v1→retirar).
-6. Recién ahí: pausar/borrar GAS (dejar el Sheet como archivo muerto de solo lectura).
+## ORDEN SEGURO DEL CORTE (punto 2 y 3) — estado 2026-07-09
+1. ✅ Fixes cola offline WH+ME + flush ICE — DESPLEGADOS (WH 2.13.416 / ME 2.8.190).
+2. ✅ Dual-write verificado OFF (nada que apagar; el registry es dead code → se borra en el paso 5).
+3. ⏳ Estrés + webcheck ME (`! node supabase/_stress.js 15 4` · `! node browsercheck/check.js browsercheck/gaskill_me.json`). Smoke recomendado: 1 venta NV offline→replay, 1 escritura WH offline→replay (validan los fixes de cola EN REAL).
+4. ⏳ **PUNTO 2 = `! node supabase/_sync_off_final.js`** (apaga las 8 restantes; Hoja pasa a archivo histórico). Observación 24-48h.
+5. ⏳ **PUNTO 3 (F8-final) — SESIÓN DEDICADA tras la observación del paso 4** (money-safety: no arrancar los brazos GAS la misma noche que se deployaron los fixes de cola, sin haber visto un replay real). Alcance exacto:
+   - ME: borrar `_enviarVentaConReintentos`+path GAS venta, pre-reserva correlativo (muerta), fallbacks apertura/cierre/cobro GAS, espejo GAS apertura (migrar push admins → Edge `push`), API_URL/MOS_GAS_URL.
+   - WH: borrar brazo GAS de `post()`, rama legacy de `sincronizar()` (offline.js:628), `precargar()` legacy (offline.js:439), `eliminarFotoDrive` GAS, GAS_URL/gasUrl config.
+   - MOS: borrar `_fetch`/GAS_URL, registry dual-write, thunks gas muertos; portar o retirar trib OCR (Edge `ia`) y espía v1 (iniciar/detenerEscuchaAudio, espiaConfig TURN); WH diagnóstico impresora → Edge o retirar.
+6. Recién ahí: pausar triggers GAS y dejar el Sheet como archivo muerto de solo lectura.
 
-**Pendientes del dueño:** token NubeFact (punto 1, cuando llegue) · decisión fecha del corte de sync (paso 4).
+**Pendientes del dueño:** token NubeFact (punto 1, cuando llegue) · correr los comandos `!` de pasos 3-4 · dar el OK del paso 5 tras la observación.
