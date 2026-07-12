@@ -83,6 +83,11 @@ begin
     insert into wh.guias (id_guia,tipo,fecha,usuario,comentario,monto_total,estado,id_proveedor,id_zona,numero_documento,id_preingreso,foto)
     values (v_gsal,'SALIDA_ENVASADO',now(),v_usuario,'Envasados '||to_char(v_hoy,'YYYY-MM-DD'),0,'CERRADA','','','','','');
   end if;
+  -- [418 · hallazgo del ESTRÉS, bug pre-existente del 60] max(linea)+1 sin lock era una
+  -- CARRERA: dos envasados registrándose el mismo segundo leían el mismo max → misma
+  -- línea → violación de guia_detalle_pkey → uno de los dos FALLABA. Advisory lock por
+  -- guía (tx-scoped) serializa la asignación de línea; se libera solo al commit.
+  perform pg_advisory_xact_lock(hashtext('wh.guia_detalle:'||v_gsal));
   select coalesce(max(linea),0)+1 into v_linea from wh.guia_detalle where id_guia=v_gsal;
   insert into wh.guia_detalle (id_guia,linea,cod_producto,cant_esperada,cant_recibida,precio_unitario,id_lote,observacion,id_producto_nuevo,id_detalle,fecha_vencimiento)
   values (v_gsal,v_linea,v_codbase,v_cantbase,v_cantbase,0,'','Envasado','','ENVDET_S'||v_idenv,null);
@@ -106,6 +111,8 @@ begin
     insert into wh.guias (id_guia,tipo,fecha,usuario,comentario,monto_total,estado,id_proveedor,id_zona,numero_documento,id_preingreso,foto)
     values (v_ging,'INGRESO_ENVASADO',now(),v_usuario,'Envasados '||to_char(v_hoy,'YYYY-MM-DD'),0,'CERRADA','','','','','');
   end if;
+  -- [418 · estrés] misma serialización para la guía de INGRESO del día
+  perform pg_advisory_xact_lock(hashtext('wh.guia_detalle:'||v_ging));
   select coalesce(max(linea),0)+1 into v_linea from wh.guia_detalle where id_guia=v_ging;
   insert into wh.guia_detalle (id_guia,linea,cod_producto,cant_esperada,cant_recibida,precio_unitario,id_lote,observacion,id_producto_nuevo,id_detalle,fecha_vencimiento)
   values (v_ging,v_linea,v_codder,v_unidades,v_unidades,0,case when v_fvenc is not null then 'LOTE'||v_idenv else '' end,'Envasado','','ENVDET_I'||v_idenv,case when v_fvenc is not null then v_fvenc::date else null end);
