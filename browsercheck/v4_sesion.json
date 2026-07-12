@@ -1,0 +1,11 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 12000,
+  "viewport": { "width": 480, "height": 1000 },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906474",
+    "MOS_SESSION": "{\"idPersonal\":\"TEST-CLAUDE\",\"nombre\":\"PRUEBA CLAUDE\",\"rol\":\"MASTER\",\"idSesion\":\"testclaude1\"}"
+  },
+  "evalAfter": "(async () => { const r = {}; r.bloqueado = !!document.querySelector('.da-block, #daBlockOverlay, [id*=block i]'); r.loginVisible = !document.getElementById('loginOverlay')?.classList.contains('hidden'); try { document.querySelector('[onclick*=\"nav(\\'catalogo\\')\"], [data-nav=catalogo], #navCatalogo')?.click(); } catch(e){ r.navErr = e.message; } if (window.MOS && MOS.nav) { try { MOS.nav('catalogo'); } catch(e){ r.navErr2 = e.message; } } await new Promise(res => setTimeout(res, 6000)); r.cards = document.querySelectorAll('.cat-card').length; r.btnNuevoProducto = !!document.querySelector('[onclick*=abrirModalProducto]'); r.chipsRot = document.querySelectorAll('.rot-chip').length; r.nombresEdit = document.querySelectorAll('.cat-nombre-edit').length; r.botonesPlus = document.querySelectorAll('.cat-btn-plusctx').length; r.trash = document.querySelectorAll('.cat-btn-trash').length; return r; })()",
+  "screenshot": "C:/Users/ISO/ProyectoMOS/browsercheck/shot_s1_catalogo.png"
+}

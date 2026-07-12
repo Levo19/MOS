@@ -2834,6 +2834,46 @@ const MOS = (() => {
       return { ...g, score: bestInfo.score, __matchInfo: bestInfo };
     }).filter(Boolean);
 
+    // ── [catálogo v4 · RONDA 2 · dibujo §05] ANIDAR DERIVADOS bajo su granel ──
+    // Un derivado es canónico de SU PROPIO grupo (factor=1, cadena intacta para
+    // búsqueda/índice), pero VISUALMENTE vive como hijo del granel padre — como
+    // las sub-carpetas del dibujo. Post-proceso puro de render: no toca datos.
+    {
+      const U = s => String(s || '').trim().toUpperCase();
+      // índice de grupos por clave del padre (sku e idProducto del base)
+      const porClave = {};
+      allGroups.forEach(g => {
+        if (!g.base) return;
+        porClave[U(g.base.skuBase || g.base.idProducto)] = g;
+        porClave[U(g.base.idProducto)] = g;
+      });
+      const enResult = new Map(result.map(r => [r.base.idProducto, r]));
+      const anidados = new Set();
+      // 1) cada grupo-derivado se cuelga de su granel; si el granel no pasó el
+      //    filtro pero el derivado sí (ej. buscas "ajonjoli 250"), se FUERZA la
+      //    entrada del granel con el score del derivado (el match sube al padre).
+      allGroups.forEach(g => {
+        const cpb = g.base && U(g.base.codigoProductoBase);
+        if (!cpb) return;
+        const padre = porClave[cpb];
+        if (!padre || !padre.base || padre.base.idProducto === g.base.idProducto) return;
+        const enRes = enResult.get(g.base.idProducto);
+        let padreRes = enResult.get(padre.base.idProducto);
+        if (!padreRes && enRes) {
+          padreRes = { ...padre, score: enRes.score, __matchInfo: enRes.__matchInfo };
+          result.push(padreRes);
+          enResult.set(padre.base.idProducto, padreRes);
+        }
+        if (!padreRes) return;                    // ni padre ni derivado matchean → nada
+        (padreRes.__derivados = padreRes.__derivados || []).push(enRes || g);
+        anidados.add(g.base.idProducto);
+      });
+      // 2) los grupos-derivado ya anidados salen del nivel raíz
+      result = result.filter(r => !anidados.has(r.base.idProducto));
+      result.forEach(r => (r.__derivados || []).sort((a, b) =>
+        (parseFloat(a.base.factorConversionBase) || 0) - (parseFloat(b.base.factorConversionBase) || 0)));
+    }
+
     // [v2.43.23] SFX + ayuda visual al primer resultado.
     // Solo si hubo query nueva — comparamos con la última para no spammar.
     if (qn && result.length > 0) {
@@ -3044,6 +3084,56 @@ const MOS = (() => {
           </div>
         </div>` : '';
 
+      // [catálogo v4 · RONDA 2 · dibujo §05] DERIVADOS ANIDADOS bajo el granel —
+      // las "sub-carpetas": cada derivado es hijo visual con su porción, precio,
+      // chip de rotación, toggle, 🖨 y ＋; sus packs van indentados debajo (↳🧱).
+      // Su edición/precio: tocar el nombre (el 💰 del derivado vive en SU cascada).
+      const derivGroups = g.__derivados || [];
+      const derivHtml = derivGroups.length ? `
+        <div class="px-4 pb-4 pt-3 space-y-2" style="border-top:1px solid rgba(148,163,184,.12)">
+          <div class="text-xs font-medium mb-2" style="color:#b79bff">🥄 Derivados (${derivGroups.length})</div>
+          <div class="space-y-2" style="margin-left:10px;padding-left:12px;border-left:2px dashed rgba(183,155,255,.25)">
+          ${derivGroups.map(dg => {
+            const d = dg.base;
+            const dAct = _isProdActivo(d);
+            const porcion = parseFloat(d.factorConversionBase) || 0;
+            const hlD = _highlight(d.descripcion || d.idProducto, words);
+            const packs = (dg.pres || []).map(pp => {
+              const pf = parseFloat(pp.factorConversion) || 1;
+              return `<div class="flex items-center gap-2 mt-1" style="margin-left:22px;font-size:11px;color:#94a3b8">
+                <span>↳ 🧱 ×${pf}</span>
+                <span class="cat-nombre-edit" onclick="event.stopPropagation();MOS.abrirModalProducto('${pp.idProducto}')"
+                      title="Tocar para editar">${_highlight(pp.descripcion || pp.idProducto, words)}</span>
+                <span style="margin-left:auto;color:#34d399;font-weight:700">${fmtMoney(pp.precioVenta)}</span>
+              </div>`;
+            }).join('');
+            return `<div class="rounded-lg p-2.5${dAct ? '' : ' opacity-60'}" style="background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.14)">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span style="font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;background:rgba(183,155,255,.15);color:#b79bff">🥄 DERIVADO</span>
+                <span class="cat-nombre-edit text-xs font-semibold text-slate-200"
+                      onclick="event.stopPropagation();MOS.abrirModalProducto('${d.idProducto}')"
+                      title="Tocar para editar (ahí vive su precio)">${hlD}</span>
+                <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
+                  <span style="color:#34d399;font-weight:800;font-size:12px">${fmtMoney(d.precioVenta)}</span>
+                  ${_renderRotChip(d, true)}
+                </span>
+                <button type="button" class="toggle-sw sm ${dAct ? 'on' : ''}" data-pid="${d.idProducto}"
+                        onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
+                        title="${dAct ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
+                <button class="cat-btn cat-btn-money sm" onclick="event.stopPropagation();MOS.abrirModalPrecioRapido('${d.idProducto}')" title="Precio del derivado (cascada a sus packs)">${_svgIcon('money')}</button>
+                <button class="cat-btn cat-btn-printx sm" onclick="event.stopPropagation();MOS.abrirMembreteCard('${d.idProducto}')" title="Imprimir (membrete / adhesivo envasado)">${_svgIcon('printer')}</button>
+                <button class="cat-btn cat-btn-plusctx sm" onclick="event.stopPropagation();MOS.abrirPlusContextual('${d.idProducto}', event)" title="Agregar satélite">＋</button>
+              </div>
+              <div class="flex items-center gap-2 mt-1" style="font-size:10px;color:#64748b">
+                <span>1 u = ${porcion} kg del granel</span>
+                ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
+              </div>
+              ${packs}
+            </div>`;
+          }).join('')}
+          </div>
+        </div>` : '';
+
       return `<div class="cat-card mb-3${activo ? '' : ' cat-inactive'}${hasAnyAlert ? ' cat-card-has-alert' : ''}${matchExactoCls}" id="fc-${eid}" data-cat-id="${base.idProducto}" style="--i:${staggerIdx}">
         <!-- Header -->
         <div class="p-4 cursor-pointer select-none" onclick="MOS._catCardClick(event,'${base.idProducto}')">
@@ -3096,6 +3186,7 @@ const MOS = (() => {
         </div>
         ${_renderSegmentosMini(base)}
         ${presHtml}
+        ${derivHtml}
       </div>`;
     }).join('');
   }
@@ -3206,18 +3297,9 @@ const MOS = (() => {
     const idProdEsc = String(producto.idProducto).replace(/'/g, '&#39;');
     const pcKg = parseFloat(producto.precioVenta) || 0;   // precio canónico (por kg) = base donde NO hay tramo
 
-    // Estado vacío: CTA llamativo
-    if (!Array.isArray(segs) || !segs.length) {
-      return `<div class="cat-seg-mini cat-seg-empty"
-                   onclick="event.stopPropagation();MOS.abrirModalProducto('${idProdEsc}')">
-        <span class="cat-seg-empty-ico">🎚</span>
-        <span class="cat-seg-empty-txt">
-          <strong>Agregar pricing por tramos</strong>
-          <small>Define rangos con ajuste % al canónico</small>
-        </span>
-        <span class="cat-seg-empty-arrow">→</span>
-      </div>`;
-    }
+    // [catálogo v4 · RONDA 2] Sin tramos → SIN CTA: los tramos se agregan desde el ＋
+    // contextual del card (dibujo §02/§04). La escalera mini solo aparece cuando existen.
+    if (!Array.isArray(segs) || !segs.length) return '';
 
     // [Escalera de tramos] celdas de igual ancho (visual, no a escala).
     const cmap = _segColorMap(segs);
@@ -4809,7 +4891,9 @@ const MOS = (() => {
           <div class="qp-pres-nom">${p.descripcion || p.idProducto}</div>
           <div class="qp-pres-meta">
             ${badge}
-            <span class="qp-pres-antes">antes ${fmtMoney(actual)}</span>
+            <span class="qp-pres-antes" style="text-decoration:line-through;opacity:.75">${fmtMoney(actual)}</span>
+            <span style="color:#64748b;font-size:10px">→</span>
+            <span id="qpMode${i}" class="qp-mode-chip">AUTO</span>
           </div>
         </div>
         <div class="qp-pres-controls">
@@ -4829,6 +4913,13 @@ const MOS = (() => {
         <div class="qp-pres-warn" id="qpWarn${i}">⚠ Bajo precio costo (S/ ${costo.toFixed(2)})</div>
       </div>`;
     }).join('');
+
+    // [RONDA 2 · dibujo §06] botón honesto: "Publicar raíz + N satélites (+ tramos)"
+    const lblBtn = $('qpBtnLabel');
+    if (lblBtn) {
+      const hayTramos = !$('qpTramosBanner')?.classList.contains('hidden');
+      lblBtn.textContent = `✓ Publicar raíz + ${rows.length} satélite${rows.length !== 1 ? 's' : ''}${hayTramos ? ' + tramos' : ''}`;
+    }
   }
 
   // Llamado cuando user EDITA un input de satélite → marca como "tocada manual"
@@ -4839,6 +4930,9 @@ const MOS = (() => {
     const card = $('qpCard' + i);
     if (wrap) wrap.classList.add('qp-tocada');
     if (card) card.classList.add('qp-modificada');
+    // [RONDA 2 · dibujo §06] chip de modo: tocado a mano = MANUAL ámbar
+    const chip = $('qpMode' + i);
+    if (chip) { chip.textContent = 'MANUAL'; chip.classList.add('man'); }
     _qpCheckBajoCosto(i);
     // [catálogo v4] si tocaste un DERIVADO, sus packs (nivel 2) recalculan en vivo
     // sobre TU precio (el sync respeta las filas tocadas/excluidas)
@@ -4863,6 +4957,9 @@ const MOS = (() => {
         inp.value = sugerido.toFixed(2);
       }
       _qpCheckBajoCosto(i);
+      // [RONDA 2] re-incluida sin tocar → vuelve a AUTO verde
+      const chip = $('qpMode' + i);
+      if (chip && !(S._qpTocadas && S._qpTocadas[i])) { chip.textContent = 'AUTO'; chip.classList.remove('man'); }
       _qpBeep('unlock');
     } else {
       // Excluida: restaurar al precio anterior + deshabilitar input
@@ -16793,16 +16890,11 @@ const MOS = (() => {
   // Mostrar u ocultar la sección de segmentos según unidad del producto.
   // Llamado desde el modal de producto al cargar/cambiar unidad.
   function segActualizarVisibilidad() {
-    const unidad = ($('prodUnidad')?.value || '').toUpperCase();
-    const factorConv = parseFloat($('prodFactorConversion')?.value || 1);
-    const sec = $('modalSegmentosSection');
-    if (!sec) return;
-    // Solo visible si es KGM y es el canónico (factor=1)
-    if (unidad === 'KGM' && factorConv === 1) {
-      sec.classList.remove('hidden');
-    } else {
-      sec.classList.add('hidden');
-    }
+    // [catálogo v4 · RONDA 2] la sección de tramos SALIÓ del modal producto:
+    // agregar/gestionar tramos vive en el ＋ contextual → modal 📊 Tramo
+    // (dibujo §02/§04 + pedido del dueño). Siempre oculta; el editor _seg*
+    // queda inerte aquí (segPersistirSiCambio no corre si nunca se carga).
+    $('modalSegmentosSection')?.classList.add('hidden');
   }
 
   // Cargar segmentos del producto activo en el modal
@@ -18565,10 +18657,13 @@ const MOS = (() => {
           <input id="satAjuste" class="inp w-full" type="number" step="0.5" placeholder="+10" oninput="MOS._satTramoPreview()">
           <div id="satTramoHint" class="text-[11px] mt-1 text-slate-500">Ej: +10 → cobras S/ ${(pc*1.10).toFixed(2)}/kg en ese rango</div></div>
         <div><label class="lbl">Vista de la escalera</label>
-          <div id="satEscalera" class="flex gap-1 mt-1"></div></div>`;
+          <div id="satEscalera" class="flex gap-1 mt-1"></div></div>
+        <div><label class="lbl">Tramos existentes del grupo</label>
+          <div id="satTramosLista" class="space-y-1.5 mt-1"></div></div>`;
       btn.textContent = 'Guardar tramo';
       openModal('modalSatelite');
       _satTramoPreview();
+      _satTramosListaRender();
       return;
     }
 
@@ -18642,6 +18737,49 @@ const MOS = (() => {
         ${s._nuevo ? 'background:rgba(52,211,153,.15);border:1px solid #34d399;color:#34d399' : 'background:#0e1626;border:1px solid #28344c;color:#93a4c2'}">
         ${lbl}<br><b>S/${precio.toFixed(2)}</b>${s._nuevo ? ' ←' : ''}</div>`;
     }).join('');
+  }
+
+  // [catálogo v4 · RONDA 2] gestión de tramos EN el modal ＋tramo (la sección del
+  // modal producto se eliminó): lista con borrar por tramo, persistencia inmediata.
+  function _satTramosListaRender() {
+    const cont = $('satTramosLista');
+    const st = _satState;
+    if (!cont || !st || st.tipo !== 'tramo') return;
+    const pc = parseFloat(st.padre.precioVenta) || 0;
+    const segs = (st.segs || []).slice().sort((a, b) => (a.min || 0) - (b.min || 0));
+    if (!segs.length) { cont.innerHTML = '<div class="text-[11px] text-slate-600">⬚ sin tramos aún — todo al precio canónico</div>'; return; }
+    cont.innerHTML = segs.map(s => {
+      const aj = parseFloat(s.ajustePct) || 0;
+      const lbl = ((s.min || 0) >= 1000 ? (s.min/1000)+'kg' : (s.min || 0)+'g') + ' – ' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g'));
+      return `<div class="flex items-center gap-2 rounded-lg px-3 py-2" style="background:#0e1626;border:1px solid #28344c">
+        <span class="text-[11px] font-mono text-slate-300">${lbl}</span>
+        <span class="text-[11px] font-bold" style="color:${aj >= 0 ? '#34d399' : '#fbbf24'}">${aj >= 0 ? '+' : ''}${aj}% → S/ ${(pc*(1+aj/100)).toFixed(2)}/kg</span>
+        <button class="cat-btn cat-btn-trash sm" style="margin-left:auto" title="Eliminar tramo"
+                onclick="MOS._satTramoEliminar('${String(s.id || '').replace(/'/g,'')}')">${_svgIcon('trash')}</button>
+      </div>`;
+    }).join('');
+  }
+  async function _satTramoEliminar(idSeg) {
+    const st = _satState;
+    if (!st || st.tipo !== 'tramo' || !idSeg) return;
+    if (!await _modalConfirm('¿Eliminar este tramo? El rango volverá al precio canónico.', { warning: true, titulo: 'Eliminar tramo' })) return;
+    const nuevos = (st.segs || []).filter(s => String(s.id) !== String(idSeg));
+    try {
+      await API.post('actualizarSegmentosPrecio', {
+        _source: 'MOS_MODAL_SATELITE',
+        skuBase: st.padre.skuBase || st.padre.idProducto,
+        idProducto: st.padre.idProducto, segmentos: nuevos
+      });
+      st.segs = nuevos;
+      // reflejar en memoria local para que el card pinte la escalera actualizada
+      const raw = JSON.stringify(nuevos);
+      (S.productos || []).forEach(p => {
+        if ((p.skuBase || p.idProducto) === (st.padre.skuBase || st.padre.idProducto)) p.segmentos_precio = raw;
+      });
+      toast('📊 Tramo eliminado ✓', 'ok');
+      _satTramosListaRender(); _satTramoPreview();
+      renderCatalogo();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
   // Validación en vivo del código del satélite (local + server, ambas tablas)
@@ -44607,7 +44745,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     scanCodigo, genCodigoUnico,   // [catálogo v4] escáner generalizado + generador con prefijo
     scanBuscarCatalogo, abrirPlusContextual, _cerrarPlusCtx,           // [catálogo v4] buscador cámara + ＋ contextual
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
-    _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo,
+    _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
     _agTab,                                                            // [catálogo v4] pestañas analítica fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,

@@ -11797,6 +11797,13 @@
     }
     @keyframes poptsheen { 0% { left: -60px; } 60%,100% { left: 110%; } }
 
+    /* [RONDA 2 · dibujo §06] chip de modo de la cascada: AUTO verde / MANUAL ámbar */
+    .qp-mode-chip {
+      font-size: 8.5px; font-weight: 800; letter-spacing: .04em; padding: 2px 6px;
+      border-radius: 5px; background: rgba(52,211,153,.13); color: #34d399; flex: none;
+    }
+    .qp-mode-chip.man { background: rgba(251,191,36,.13); color: #fbbf24; }
+
     @media (prefers-reduced-motion: reduce) {
       .rot-chip svg, .rot-chip.rot-skel::after, .cat-hit-exacto, .popt-hero .popt-sheen { animation: none !important; }
     }
@@ -19539,7 +19546,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.487"></script>
+<script src="js/api.js?v=2.43.488"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19554,7 +19561,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.487"></script>
+<script src="js/app.js?v=2.43.488"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

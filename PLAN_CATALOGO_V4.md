@@ -99,6 +99,14 @@
 - Verificar cero rastro GAS en rutas tocadas (grep script.google + ramas gas huérfanas en lo editado).
 - `node -c` app.js/api.js; bump sw.js + version.json + ?v=; commit descriptivo + push + `git log origin/main..HEAD` vacío. **Revisión senior global de la parte 2.**
 
+## RONDA 2 · FEEDBACK DEL DUEÑO (7 puntos) — EN CURSO
+**Harness sesión real FUNCIONANDO** (autorizado por el dueño):
+- Device prueba: `mos.dispositivos` id `7e57c1a0-de1c-4a7e-b0de-c47a10906474` estado ACTIVO ("PRUEBA CLAUDE catalogo v4 (borrar al terminar)") — **BORRAR AL TERMINAR**.
+- Escenarios: `browsercheck/v4_sesion.json` + `v4_s2.json` (localStorage: mos_device_id + MOS_SESSION rol MASTER "PRUEBA CLAUDE"; atravesar wizard permisos con botón "Entrar a MOS"; MOS.nav('catalogo'); filtrar 'ajonjoli').
+- verificar_dispositivo exige param `id_dispositivo` + id UUID válido.
+Estado de los 7: #4 crash analítica ✅ RESUELTO (SQL 428: sku_base es código de grupo, no id del padre — climb anulaba v_prod, 2373 productos). #7 botón nuevo producto ✅ EXISTE (screenshot). Chips/botonera/cámara ✅ en vivo.
+PENDIENTES R2: #1 anidar DERIVADOS bajo el granel (hoy cards sueltos — gap real, screenshot shot_s2_ajonjoli.png). #2 quitar CTA "Agregar pricing por tramos" del card y sección del modal (gestión → modal ＋tramo con lista+borrar). #3 probar click-nombre→editar en harness. #5 modal imprimir deformado+NaN (probar MOS.abrirMembreteCard de un derivado en harness + screenshot). #6 cascada: números OK, restylear al dibujo (chips AUTO/MANUAL, antes→nuevo, botón "Publicar raíz+N"). Probar TODOS los botones/modales (orden del dueño). GAS ajeno detectado en runtime: ping + getProductosNuevosWH (módulo PN, fuera del alcance catálogo — anotar en reporte).
+
 ## PARTE 3 · INSPECCIÓN INTEGRAL ⬜
 1. Browsercheck: catálogo real en Chromium (deviceId de prueba) — cero fetch GAS, consola limpia, screenshot card/buscador/modales/cascada/analítica.
 2. Estrés SQL: refresh cache × lecturas concurrentes; analitica_grupo ×50; publicar lote 10 filas × 2 concurrentes (advisory/atómico); codigo_unico carreras.
