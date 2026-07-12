@@ -1,0 +1,7 @@
+{
+ "url": "http://127.0.0.1:8172/manual-movimientos.html",
+ "viewport": { "width": 390, "height": 844 },
+ "waitMs": 2000,
+ "screenshot": "manual-cobrar-note.png",
+ "evalAfter": "(async()=>{try{\n  // Forzar modo admin para que la nota + RPC admin se vean\n  if(typeof adminMode!=='undefined'){}\n  document.body.classList.add('admin');\n  if(typeof path!=='undefined'){}\n  renderPanel('cobrar');\n  await new Promise(function(r){setTimeout(r,500);});\n  var body=document.getElementById('pbody');\n  var noteP=body.querySelector('.psec p');\n  var noteTxt=noteP?noteP.textContent.trim():'';\n  var okCobrar=/ORIGEN/.test(noteTxt)&&/monto \\+ adicionales/.test(noteTxt)&&/trueque|TRUEQUE|aliado/i.test(noteTxt)&&/_cargo_origen|pase_desde_reserva/.test(noteTxt);\n  var docEl=document.documentElement;\n  return {nodo:'cobrar', notaLen:noteTxt.length, okCobrar:okCobrar, nota:noteTxt.slice(0,400), overflowX:docEl.scrollWidth>window.innerWidth};\n}catch(e){return{crash:e.message}}})()"
+}

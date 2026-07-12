@@ -1,0 +1,7 @@
+{
+  "url": "http://localhost:8179/index.html",
+  "waitMs": 3000,
+  "viewport": { "width": 390, "height": 844 },
+  "screenshot": "muelle-rt.png",
+  "evalAfter": "(async()=>{try{if(typeof _muelleRTSubscribe!=='function')return{err:'no fn'};if(!window.SupaAPI||!window.SupaAPI.sb)return{err:'no SupaAPI.sb'};_muelleRTSubscribe();await new Promise(function(r){setTimeout(r,800);});var chans=window.SupaAPI.sb.getChannels?window.SupaAPI.sb.getChannels().map(function(c){return c.topic;}):[];return{fnExiste:true,canales:chans,tieneMuelleRT:chans.some(function(t){return String(t).indexOf('ops-muelle-rt')>=0;}),guardOK:(_muelleRTSubscribe(),window.SupaAPI.sb.getChannels().length===chans.length)};}catch(e){return{crash:e.message};}})()"
+}

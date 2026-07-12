@@ -1,0 +1,7 @@
+{
+  "url": "http://localhost:8178/index.html",
+  "waitMs": 2500,
+  "viewport": { "width": 1440, "height": 900 },
+  "screenshot": "lanchas-rt.png",
+  "evalAfter": "(async()=>{try{var app=document.getElementById('app');var root=(app.__vnode||app._vnode).component;var sess={id:'P-1',nombre:'Admin',rol:'Administrador',loginAt:Date.now()};localStorage.setItem('ps_session',JSON.stringify(sess));root.setupState.session=sess;await new Promise(r=>setTimeout(r,1200));root.setupState.goModule('lanchas');await new Promise(r=>setTimeout(r,2500));var chans=(typeof sbClient!=='undefined'&&sbClient.getChannels)?sbClient.getChannels().map(function(c){return c.topic;}):[];return{modulo:root.setupState.currentModule&&root.setupState.currentModule.value?root.setupState.currentModule.value:root.setupState.currentModule,canales:chans,tieneLanchasRT:chans.some(function(t){return String(t).indexOf('ps-lanchas-rt')>=0;})};}catch(e){return{crash:e.message};}})()"
+}

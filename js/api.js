@@ -1785,7 +1785,10 @@ const API = (() => {
         idProducto: p.idProducto != null ? String(p.idProducto) : undefined,
         codigoBarra: p.codigoBarra != null ? String(p.codigoBarra) : undefined,
         skuBase: p.skuBase != null ? String(p.skuBase) : undefined,
-        motivo: p.motivo, usuario: _mosUsuario(p)
+        motivo: p.motivo, usuario: _mosUsuario(p),
+        // [catálogo v4 · fix rev] ANTES se descartaba → el toggle 🖨 del modal era no-op.
+        // El hook 427 lo lee (default true si ausente = paridad con los demás callers).
+        imprimirMembretes: (p.imprimirMembretes === true || p.imprimirMembretes === 'true')
       } });
       if (out == null) return null;
       const data = _desempacarCatalogo(out);
@@ -2432,11 +2435,39 @@ const API = (() => {
       return d || { ok: true };   // caller ignora la respuesta (solo await)
     }
     if (action === 'wh_getRotacionSemanal') {
-      // [cero-GAS · read cross-app] rotación semanal WH → mos.wh_rotacion_semanal (gatea mos._claim_ok, delega
-      // en wh.rotacion_semanal). Solo lectura. Caller lee r.data.productos. null → GAS (sin token).
+      // [cero-GAS · read cross-app] rotación semanal WH → mos.wh_rotacion_semanal. Desde catálogo v4
+      // (SQL 424) sirve DESDE wh.rotacion_cache (precalculada pg_cron horario): serie trae
+      // {semana, unidades, kg} y flag data.cache:true. Solo lectura. Caller lee r.data.productos.
       const r = await _sbRpcMOS('wh_rotacion_semanal', { p: { semanas: p.semanas, codigos: p.codigos } }, 'mos');
       if (r == null) return null;
       return r;   // {ok:true, data:{etiquetas, productos}}
+    }
+
+    // ── [catálogo v4 · CERO GAS, CERO FALLBACK] ─────────────────────────────
+    // Unicidad cruzada de código de barras (productos + equivalencias, SQL 426).
+    // Directa PURA: si falla la red devuelve null y el caller decide (el guard
+    // final vive en los triggers de BD — la UI solo anticipa el error).
+    if (action === 'codigoBarraDisponible') {
+      const r = await _sbRpcMOS('codigo_barra_disponible', { p: {
+        codigoBarra: p.codigoBarra,
+        ignorarIdProducto: p.ignorarIdProducto || undefined,
+        ignorarIdEquiv: p.ignorarIdEquiv || undefined
+      } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, disponible, conflicto?}
+    }
+    // Analítica FUSIONADA del grupo canónico (almacén WH por guías + ventas ME por zona,
+    // kg-equivalentes; SQL 425). Directa PURA — sin GAS ni fallback.
+    if (action === 'getAnaliticaGrupo') {
+      const r = await _sbRpcMOS('analitica_grupo', { p: {
+        idProducto: p.idProducto || undefined,
+        skuBase: p.skuBase || undefined,
+        codigoBarra: p.codigoBarra || undefined,
+        semanas: p.semanas || undefined,
+        codigos: p.codigos || undefined
+      } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:{etiquetas, grupo, almacen, zonasReales, insight}}
     }
 
     // [cero-GAS · WH-inventario] wrappers cross-app money-safe (reusan wh.auditar_cuadre_stock corte+delta +
@@ -2657,7 +2688,9 @@ const API = (() => {
     wh_estadoImpresoraAdhesivo:  () => true,   // Edge print-adhesivo mode=estado
     wh_calibrarImpresoraAdhesivo:() => true,   // Edge print-adhesivo mode=calibrar
     wh_cancelarLoteAdhesivo:     () => true,   // Edge print-adhesivo mode=cancelar
-    wh_getRotacionSemanal:       () => true,   // mos.wh_rotacion_semanal (380)
+    wh_getRotacionSemanal:       () => true,   // mos.wh_rotacion_semanal (380; v4: cache SQL 424)
+    codigoBarraDisponible:       () => true,   // mos.codigo_barra_disponible (426) · directa PURA sin GAS
+    getAnaliticaGrupo:           () => true,   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
     wh_auditarStockGlobal:       () => true,   // mos.wh_auditar_cuadre (381)
     wh_getAlertasStock:          () => true,   // mos.wh_get_alertas_stock (381)
     wh_reconciliarStockProducto: () => true,   // ⚠️stock · mos.wh_reconciliar_stock_producto (381)
@@ -2725,7 +2758,10 @@ const API = (() => {
   // no commitea (sin token), FALLAN (reintentar) en vez de caer a GAS — porque liquidaciones_dia
   // está en SYNC_OFF, así que un write GAS NO propaga a la tabla que lee la mega tabla → desync
   // silencioso (peor que fallar). Con la identidad MEX:NOMBRE|ZONA, además, el GAS mis-llavearía.
-  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1 };
+  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1,
+    // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
+    // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1 };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe

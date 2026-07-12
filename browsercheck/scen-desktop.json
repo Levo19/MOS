@@ -1,0 +1,5 @@
+{ "url":"http://localhost:8160/manual-movimientos.html",
+  "viewport":{"width":1440,"height":900},
+  "waitMs":2500,
+  "evalAfter":"(async()=>{document.getElementById('n_comprar').dispatchEvent(new MouseEvent('click',{bubbles:true}));await new Promise(r=>setTimeout(r,900));return {sel:!!document.querySelector('.node.sel'),hot:document.querySelectorAll('.edge.hot').length,ox:document.documentElement.scrollWidth>window.innerWidth};})()",
+  "screenshot":"manual-desktop.png" }

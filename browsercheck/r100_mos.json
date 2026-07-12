@@ -1,0 +1,1 @@
+{"url":"https://levo19.github.io/MOS/","waitMs":25000,"evalAfter":"(async()=>({ver:(await (await fetch('version.json?b='+Date.now())).json()).version, title:document.title, body:document.body.innerText.slice(0,120)}))()","screenshot":"r100_mos.png"}

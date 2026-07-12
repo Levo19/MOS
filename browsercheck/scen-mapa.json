@@ -1,0 +1,5 @@
+{ "url":"http://localhost:8160/manual-movimientos.html",
+  "viewport":{"width":390,"height":844},
+  "waitMs":2500,
+  "evalAfter":"({ver:!!document.getElementById('svgbox').querySelector('svg'), nodes:document.querySelectorAll('.node').length, ox:document.documentElement.scrollWidth>window.innerWidth})",
+  "screenshot":"manual-mapa.png" }

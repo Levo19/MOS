@@ -1349,6 +1349,28 @@
     var scaleWrapCss = 'transform:scale(.55);transform-origin:top center;width:600px;height:300px;margin-bottom:-135px';  // -135 compensa scale(.55)
     var btnsCss = 'display:grid;grid-template-columns:1fr 1fr;gap:14px';
 
+    // [catálogo v4] 3ra opción SOLO DERIVADOS: adhesivo envasado (el de Almacén/Envasados,
+    // TSC 50×25) con stepper de cantidad — Edge print-adhesivo mode:'crear', cero-GAS,
+    // reserve-first (over-print imposible). Ícono: rollo de etiquetas despegándose.
+    var esDerivado = !!(String(producto.codigoProductoBase || producto.codigo_producto_base || '').trim());
+    var svgRollo = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#34d399" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="12" r="4.2"/><circle cx="7" cy="12" r="1.1" fill="#34d399" stroke="none"/><path d="M7 7.8h9.5a1.5 1.5 0 0 1 1.5 1.5v5.4a1.5 1.5 0 0 1-1.5 1.5H7"/><path d="M18 12.4l3-1.6v5l-3-1.6" opacity=".65"/></svg>';
+    var heroHtml = !esDerivado ? '' : ''
+      + '<div class="popt-hero" style="margin-top:14px;display:flex;align-items:center;gap:12px;border-radius:12px;padding:12px 14px;background:#0e1626">'
+      +   '<span class="popt-sheen"></span>'
+      +   '<span style="width:42px;height:42px;border-radius:11px;flex:none;display:flex;align-items:center;justify-content:center;background:linear-gradient(150deg,rgba(52,211,153,.22),rgba(14,165,233,.12));border:1px solid rgba(52,211,153,.4)">' + svgRollo + '</span>'
+      +   '<span style="flex:1;min-width:0;text-align:left">'
+      +     '<span style="display:block;font-size:13.5px;font-weight:800;color:#e2e8f0">Adhesivo envasado '
+      +       '<span style="font-size:9px;font-weight:800;color:#34d399;background:rgba(52,211,153,.15);border-radius:4px;padding:1px 5px;vertical-align:middle">SOLO DERIVADOS</span></span>'
+      +     '<span style="display:block;font-size:10.5px;color:#94a3b8">El mismo de Almacén/Envasados (TSC 50×25) — único con cantidad</span>'
+      +   '</span>'
+      +   '<span style="display:inline-flex;align-items:center;border:1px solid #28344c;border-radius:8px;overflow:hidden;flex:none">'
+      +     '<button onclick="MembreteSystem._adhQtyStep(-6)" style="padding:6px 11px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">−</button>'
+      +     '<input id="msAdhQty" type="number" min="1" max="200" value="24" style="width:52px;text-align:center;padding:6px 2px;font-size:14px;font-weight:800;background:#0e1626;color:#e2e8f0;border:none;-moz-appearance:textfield">'
+      +     '<button onclick="MembreteSystem._adhQtyStep(6)" style="padding:6px 11px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">+</button>'
+      +   '</span>'
+      +   '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;padding:10px 14px" onclick="MembreteSystem._menuImprimirEnvasado()">🖨 Imprimir</button>'
+      + '</div>';
+
     document.body.insertAdjacentHTML('beforeend', ''
       + '<div class="ms-overlay" id="msMenuOverlay" onclick="if(event.target===this)MembreteSystem._menuCerrar()">'
       +   '<div class="ms-modal" style="max-width:760px">'
@@ -1381,6 +1403,7 @@
       +           '</button>'
       +         '</div>'
       +       '</div>'
+      +       heroHtml
       +       '<button class="ms-btn ms-btn-warn" style="margin-top:14px" onclick="MembreteSystem._menuCerrar()">Cancelar</button>'
       +     '</div>'
       +   '</div>'
@@ -1403,6 +1426,40 @@
       }, 50);
     }
   }
+  // [catálogo v4] stepper de cantidad del adhesivo envasado (pasos de 6 = media docena)
+  function _adhQtyStep(delta) {
+    var el = document.getElementById('msAdhQty'); if (!el) return;
+    var v = (parseInt(el.value, 10) || 24) + delta;
+    el.value = Math.max(1, Math.min(200, v));
+    sonidos.click();
+  }
+
+  // [catálogo v4] imprimir adhesivo envasado desde el menú del card (SOLO derivados).
+  // MOS: Edge print-adhesivo mode:'crear' (RPC atómica reserve-first, imprime server-side,
+  // CERO GAS — inyectado como _config.adhesivoEnvasadoCall). WH: camino nativo con progreso.
+  function _menuImprimirEnvasado() {
+    var p = window._msMenuProd; if (!p) return;
+    var qty = parseInt(document.getElementById('msAdhQty') && document.getElementById('msAdhQty').value, 10) || 24;
+    qty = Math.max(1, Math.min(200, qty));
+    _menuCerrar();
+    sonidos.click();
+    if (_config.adhesivoEnvasadoCall) {
+      _toast('🖨 Imprimiendo ' + qty + ' adhesivos de "' + (p.descripcion || p.codigoBarra || '') + '"…');
+      _config.adhesivoEnvasadoCall({
+        codigoBarra:    p.codigoBarra || p.codigo_barra || '',
+        descripcion:    p.descripcion || '',
+        total:          qty,
+        usuario:        _config.usuario(),
+        idempotencyKey: 'moscat_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
+      }).then(function(d) {
+        if (d && d.ok !== false) { _toast('✓ ' + qty + ' adhesivos envasados impresos'); }
+        else { sonidos.error(); _toast('⚠ ' + ((d && d.error) || 'No se pudo imprimir el lote')); }
+      }).catch(function(e) { sonidos.error(); _toast('⚠ ' + (e && e.message || 'error')); });
+      return;
+    }
+    imprimirAdhesivoEnvasado({ codigoBarra: p.codigoBarra, descripcion: p.descripcion, total: qty });
+  }
+
   function _menuImprimir(tipo, productoDirecto) {
     // [v1.3 FIX] Aceptar producto directo (auto-mode) o usar global (modal MOS)
     var p = productoDirecto || window._msMenuProd;
@@ -1940,6 +1997,8 @@
     _colaImprimir:        _colaImprimir,
     _colaCerrar:          _colaCerrar,
     _menuImprimir:        _menuImprimir,
+    _menuImprimirEnvasado: _menuImprimirEnvasado,   // [catálogo v4] 3ra opción · solo derivados
+    _adhQtyStep:          _adhQtyStep,              // [catálogo v4] stepper cantidad
     _menuCerrar:          _menuCerrar,
     _alertToggleAll:      _alertToggleAll,
     _alertUpdBtns:        _alertUpdBtns,

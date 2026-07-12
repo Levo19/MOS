@@ -11711,9 +11711,95 @@
       transition: transform .15s ease, border-color .15s ease, background .15s ease;
     }
     .cat-btn:active { transform: scale(.9); }
+    .cat-btn:hover { transform: translateY(-2px); }
     .cat-btn-edit:hover  { border-color: #6366f1; background: rgba(99,102,241,.12); }
     .cat-btn-price:hover { border-color: #f59e0b; background: rgba(245,158,11,.1); }
     .cat-btn.sm { width: 26px; height: 26px; border-radius: 7px; font-size: .75rem; }
+
+    /* ── [catálogo v4] botonera SVG + chip rotación + animaciones (dibujo 3812eb03) ── */
+    .cat-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; display: block; }
+    .cat-btn.sm svg { width: 12px; height: 12px; }
+    .cat-btn-money  { color: #34d399; border-color: rgba(52,211,153,.35); }
+    .cat-btn-money:hover  { background: rgba(52,211,153,.1); }
+    .cat-btn-chart  { color: #8b9cf5; border-color: rgba(99,102,241,.35); }
+    .cat-btn-chart:hover  { background: rgba(99,102,241,.1); }
+    .cat-btn-printx { color: #fbbf24; border-color: rgba(251,191,36,.35); }
+    .cat-btn-printx:hover { background: rgba(251,191,36,.08); }
+    .cat-btn-trash  { color: #fb7185; border-color: rgba(248,113,113,.3); }
+    .cat-btn-trash:hover  { background: rgba(248,113,113,.08); }
+    .cat-btn-plusctx {
+      background: linear-gradient(180deg,#34d399,#059669); color: #04140d;
+      border-color: transparent; font-weight: 800; font-size: 1rem;
+    }
+    .cat-btn-plusctx:hover { filter: brightness(1.12); }
+    .btn-cam-scan {
+      width: 34px; height: 34px; border-radius: 9px; flex: none; cursor: pointer;
+      border: 1px solid #28344c; background: #0e1626; color: #93a4c2;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: transform .15s ease, border-color .15s ease;
+    }
+    .btn-cam-scan:hover { transform: translateY(-2px); border-color: #34d399; color: #34d399; }
+    .btn-cam-scan svg { width: 16px; height: 16px; stroke: currentColor; fill: none;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* Nombre tocable = editar (subrayado punteado como pista) */
+    .cat-nombre-edit {
+      border-bottom: 1px dashed rgba(147,164,194,.45); cursor: pointer;
+      transition: border-color .15s ease, color .15s ease;
+    }
+    .cat-nombre-edit:hover { border-bottom-color: #34d399; color: #6ee7b9; }
+
+    /* Chip rotación semanal (junto al precio) */
+    .rot-chip {
+      display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+      padding: 2px 8px; border-radius: 999px; font-size: .66rem; font-weight: 800;
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+      background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.32); color: #34d399;
+      transition: transform .15s ease;
+    }
+    .rot-chip:hover { transform: scale(1.06); }
+    .rot-chip svg { width: 10px; height: 10px; stroke: currentColor; fill: none;
+      stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+      animation: rotspin 6s linear infinite; }
+    .rot-chip.rot-cero { background: rgba(100,116,139,.12); border-color: #28344c; color: #64748b; }
+    .rot-chip.rot-cero svg { animation: none; }
+    .rot-chip.rot-skel {
+      background: #0e1626; border-color: #28344c; color: transparent;
+      position: relative; overflow: hidden; min-width: 66px; min-height: 18px;
+    }
+    .rot-chip.rot-skel::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(147,164,194,.18), transparent);
+      animation: rotshimmer 1.4s infinite;
+    }
+    @keyframes rotspin    { to { transform: rotate(360deg); } }
+    @keyframes rotshimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+    /* Match exacto de código en el buscador → card "encontrado" con pulso */
+    @keyframes cathitpulse {
+      0%,100% { box-shadow: 0 0 0 1px rgba(52,211,153,.35), 0 0 14px -6px rgba(52,211,153,.5); }
+      50%     { box-shadow: 0 0 0 2px rgba(52,211,153,.55), 0 0 26px -4px rgba(52,211,153,.8); }
+    }
+    .cat-hit-exacto { border-color: #34d399 !important; animation: cathitpulse 1.6s ease-in-out 3; }
+
+    /* Opción hero del modal imprimir (adhesivo envasado): borde degradado + brillo */
+    .popt-hero {
+      border: 1px solid transparent !important;
+      background: linear-gradient(#0e1626,#0e1626) padding-box,
+                  linear-gradient(120deg,#34d399,#0ea5e9) border-box !important;
+      position: relative; overflow: hidden;
+    }
+    .popt-hero .popt-sheen {
+      position: absolute; top: 0; bottom: 0; width: 46px; pointer-events: none;
+      background: linear-gradient(100deg, transparent, rgba(52,211,153,.13), transparent);
+      animation: poptsheen 2.8s ease-in-out infinite;
+    }
+    @keyframes poptsheen { 0% { left: -60px; } 60%,100% { left: 110%; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .rot-chip svg, .rot-chip.rot-skel::after, .cat-hit-exacto, .popt-hero .popt-sheen { animation: none !important; }
+    }
 
     /* Price display */
     .cat-price { font-size: 1.05rem; font-weight: 700; color: #818cf8; letter-spacing: -.02em; }
@@ -13652,10 +13738,15 @@
       <!-- Toolbar -->
       <div class="cat-toolbar">
         <div class="cat-search-wrap">
-          <input id="searchCatalogo" type="search" class="inp w-full pl-9"
+          <input id="searchCatalogo" type="search" class="inp w-full pl-9 pr-11"
                  placeholder="Buscar por nombre, código, SKU..."
                  oninput="MOS.filterCatalogo()" autocomplete="off">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">🔍</span>
+          <!-- [catálogo v4] escanear con la cámara del celular → busca el código y resuelve al canónico -->
+          <button type="button" class="btn-cam-scan absolute right-1.5 top-1/2 -translate-y-1/2" style="width:30px;height:30px"
+                  onclick="MOS.scanBuscarCatalogo()" title="Escanear código con la cámara">
+            <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          </button>
         </div>
         <!-- Botón Alertas (solo visible si hay productos con alertas) -->
         <button id="btnAlertasCat" onclick="MOS.toggleFiltroAlertas()" class="alert-btn hidden cat-tool-btn" title="Productos con alertas — click para filtrar">
@@ -16708,13 +16799,29 @@
       </div>
     </div>
 
-    <!-- Presentaciones inline (solo si es producto base con presentaciones) -->
+    <!-- [catálogo v4] Tramos: el modelo guarda ajuste % sobre el canónico → la escalera
+         se mueve SOLA con el precio raíz. Este banner solo lo hace visible (dibujo §06). -->
+    <div id="qpTramosBanner" class="hidden" style="margin:0 16px 10px;border:1px dashed rgba(52,211,153,.4);border-radius:10px;padding:8px 12px;background:rgba(52,211,153,.06)">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-bold" style="color:#34d399">📊 Tramos — automáticos por %</span>
+        <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded" style="background:rgba(52,211,153,.15);color:#34d399">AUTO</span>
+      </div>
+      <div id="qpTramosDetalle" class="text-[10px] mt-1" style="color:#93a4c2;font-family:monospace"></div>
+    </div>
+
+    <!-- [catálogo v4] Satélites en cascada: presentaciones + derivados + packs de derivados -->
     <div id="qpPresSection" class="hidden">
       <div class="qp-pres-header">
-        <span id="qpPresCount">📦 Presentaciones</span>
-        <span class="qp-tip">💡 Si no tocás el precio, sigue al base</span>
+        <span id="qpPresCount">📦 Satélites</span>
+        <span class="qp-tip">💡 Si no tocas el precio, sigue la sugerencia</span>
       </div>
       <div id="qpPresList" class="qp-pres-list"></div>
+    </div>
+
+    <!-- [catálogo v4] imprimir membretes de los que cambien (hook publicar_precio 339b) -->
+    <div class="flex items-center justify-between" style="margin:2px 16px 10px;padding:8px 12px;border:1px solid #28344c;border-radius:10px;background:#0e1626">
+      <span class="text-[11px] font-bold text-slate-300">🖨 Imprimir membretes de los que cambien</span>
+      <button type="button" id="qpMembretesSw" class="toggle-sw" onclick="this.classList.toggle('on');MOS._qpBeep('tick')"><span class="toggle-sw-knob"></span></button>
     </div>
 
     <!-- Footer con acciones -->
@@ -17596,13 +17703,26 @@
     <input type="hidden" id="prodId">
     <input type="hidden" id="prodEstado" value="1">
 
-    <!-- [424] Tipo de producto: selector segmentado (una sola decision) -->
-    <div class="prod-tipo-bar px-3">
+    <!-- [424] Tipo de producto: selector segmentado (una sola decision).
+         [catálogo v4] En CREACIÓN la barra se oculta: +producto solo crea canónicos
+         (normal/granel vía toggle); derivado/presentación nacen del ＋ contextual del card.
+         En EDICIÓN la barra completa sigue (productos existentes de cualquier tipo). -->
+    <div class="prod-tipo-bar px-3" id="prodTipoBar">
       <button type="button" data-tipo="normal" onclick="MOS.setProdTipo('normal', true)" class="prod-tipo-btn">Normal</button>
       <button type="button" data-tipo="presentacion" onclick="MOS.setProdTipo('presentacion', true)" class="prod-tipo-btn">Presentacion</button>
       <button type="button" data-tipo="derivado" onclick="MOS.setProdTipo('derivado', true)" class="prod-tipo-btn">Derivado</button>
       <button type="button" data-tipo="envasable" onclick="MOS.setProdTipo('envasable', true)" class="prod-tipo-btn">Granel</button>
       <span class="hidden"><input type="checkbox" id="cbEsPresentacion"><input type="checkbox" id="cbEsDerivado"><input type="checkbox" id="cbEsEnvasable"></span>
+    </div>
+    <!-- [catálogo v4] toggle envasable — solo visible al CREAR (dibujo §04) -->
+    <div id="prodEnvasableRow" class="hidden px-5 pt-3">
+      <button type="button" id="prodEnvasableToggle" onclick="MOS.prodToggleEnvasable()"
+              class="w-full flex items-center justify-between rounded-xl px-4 py-3"
+              style="background:#0e1626;border:1px solid #28344c">
+        <span class="text-sm font-bold text-slate-200">⚗️ Es granel envasable
+          <span class="text-[10px] text-slate-500 font-normal ml-1">(se venderá por kilo y podrá derivarse 🥄)</span></span>
+        <span class="toggle-sw" id="prodEnvasableSw"><span class="toggle-sw-knob"></span></span>
+      </button>
     </div>
 
     <!-- Contenido scrollable -->
@@ -17620,7 +17740,11 @@
             <label class="lbl">Código de barras <span class="text-rose-400">*</span></label>
             <div class="flex gap-2">
               <input id="prodCodigoBarra" class="inp flex-1" placeholder="Escanea o escribe..." onblur="MOS.prodValidarCodigoBarra()" oninput="MOS.prodValidarCodigoBarra()" required>
-              <button onclick="MOS.prodAutogenBarcode()" class="btn-ghost text-xs px-3 whitespace-nowrap" title="Generar código interno NMLEV">⚡ Auto</button>
+              <button onclick="MOS.prodAutogenBarcode()" class="btn-ghost text-xs px-3 whitespace-nowrap" title="Generar código interno con prefijo (N-/WH-/P-) — alfanumérico, jamás choca con un EAN de fábrica">⚡ Auto</button>
+              <!-- [catálogo v4] cámara del celular como escáner -->
+              <button type="button" class="btn-cam-scan" onclick="MOS.scanCodigo({inputId:'prodCodigoBarra'})" title="Escanear con la cámara">
+                <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              </button>
             </div>
             <div id="prodCodigoBarraFeedback" class="hidden text-xs mt-1"></div>
           </div>
@@ -17778,22 +17902,25 @@
       </div>
 
       <!-- ── SUNAT compacto con resumen ── -->
+      <!-- [catálogo v4] SUNAT = UN solo selector (dibujo §04): el Tipo de comprobante
+           determina solo el Cod. Tributo y el IGV% (lo único que NubeFact necesita elegir).
+           Los campos derivados quedan en "avanzado" para casos borde. -->
       <div>
-        <button onclick="MOS.prodToggleSunat()" class="prod-section-toggle">
-          <span>🧾 Tributario · <span id="sunatResumen" class="text-emerald-400 font-normal">Gravado 18%</span></span>
-          <span class="text-[10px] text-slate-500" id="sunatChevron">⚙️ ajustar</span>
-        </button>
+        <div class="prod-section-title">🧾 Tipo de comprobante tributario</div>
+        <div class="rounded-xl px-3 py-3" style="background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.25)">
+          <select id="prodTipoIGV" class="inp w-full" onchange="MOS.prodOnTipoIGVChange()">
+            <option value="1">Gravado — IGV 18%</option>
+            <option value="2">Exonerado — sin IGV</option>
+            <option value="3">Inafecto — sin IGV</option>
+          </select>
+          <div class="flex items-center justify-between mt-2">
+            <div class="text-[11px] text-slate-400">Auto: <span id="sunatResumen" class="text-emerald-400 font-bold">Tributo 1000 · IGV 18%</span> — lo demás se determina solo</div>
+            <button onclick="MOS.prodToggleSunat()" class="text-[10px] text-slate-500" id="sunatChevron">⚙️ avanzado</button>
+          </div>
+        </div>
         <div id="prodSecSunat" class="hidden pt-3 grid grid-cols-2 gap-3">
           <div>
-            <label class="lbl">Tipo IGV</label>
-            <select id="prodTipoIGV" class="inp" onchange="MOS.prodOnTipoIGVChange()">
-              <option value="1">1 — Gravado (18%)</option>
-              <option value="2">2 — Exonerado</option>
-              <option value="3">3 — Inafecto</option>
-            </select>
-          </div>
-          <div>
-            <label class="lbl">Cod. Tributo</label>
+            <label class="lbl">Cod. Tributo <span class="text-[9px] text-slate-500">(auto)</span></label>
             <select id="prodCodTributo" class="inp">
               <option value="1000">1000 — IGV</option>
               <option value="9997">9997 — Exonerado</option>
@@ -17801,7 +17928,7 @@
             </select>
           </div>
           <div>
-            <label class="lbl">IGV %</label>
+            <label class="lbl">IGV % <span class="text-[9px] text-slate-500">(auto)</span></label>
             <input id="prodIGV" class="inp" type="number" placeholder="18">
           </div>
           <!-- Campo Unidad_Medida unificado con prodUnidad — se mantiene como hidden para retro-compat -->
@@ -17900,38 +18027,28 @@
 </div>
 
 <!-- Precio Modal -->
-<div class="modal-backdrop hidden" id="modalPrecio">
-  <div class="modal-box p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 class="font-bold text-lg text-white">💰 Publicar Precio</h2>
-      <button onclick="MOS.closeModal('modalPrecio')" class="modal-close-x">×</button>
+<!-- ═══ [catálogo v4] MODAL SATÉLITE — derivado 🥄 · presentación 🧱 · tramo 📊 · equivalente 🏷️ ═══
+     Un solo shell; el body se arma por tipo en app.js (abrirModalSatelite). Cero GAS. -->
+<div class="modal-backdrop hidden" id="modalSatelite" onclick="if(event.target===this)MOS.cerrarModalSatelite()">
+  <div class="modal-box p-0 flex flex-col" style="max-height:92vh;max-width:430px;width:100%">
+    <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid #1e293b">
+      <div class="min-w-0">
+        <h2 id="satTitulo" class="font-bold text-base text-white">Nuevo satélite</h2>
+        <div id="satContexto" class="text-[11px] mt-0.5 truncate" style="color:#34d399"></div>
+      </div>
+      <button onclick="MOS.cerrarModalSatelite()" class="modal-close-x">×</button>
     </div>
-    <input type="hidden" id="precioIdProducto">
-    <div class="space-y-3">
-      <div id="precioInfoProd" class="card-sm p-3 text-sm text-slate-300">—</div>
-      <div>
-        <label class="lbl">Precio actual</label>
-        <div id="precioActual" class="text-xl font-bold text-slate-200 mb-1">S/. —</div>
-      </div>
-      <div>
-        <label class="lbl">Nuevo Precio (S/.) *</label>
-        <input id="precioNuevo" class="inp text-lg" type="number" step="0.01" placeholder="0.00">
-      </div>
-      <div>
-        <label class="lbl">Motivo</label>
-        <input id="precioMotivo" class="inp" placeholder="Ajuste de precio, oferta, etc.">
-      </div>
-      <div class="flex items-center gap-2">
-        <input id="precioMembretes" type="checkbox" class="w-4 h-4 accent-indigo-500">
-        <label for="precioMembretes" class="text-sm text-slate-300">Generar alerta para imprimir membretes en almacén</label>
-      </div>
-      <div class="flex gap-2 pt-2">
-        <button onclick="MOS.closeModal('modalPrecio')" class="btn-ghost flex-1">Cancelar</button>
-        <button onclick="MOS.publicarPrecio()" class="btn-primary flex-1">Publicar</button>
-      </div>
+    <div id="satHerencia" class="hidden px-5 py-2 text-[11px]" style="background:rgba(124,179,240,.08);border-bottom:1px solid #1e293b;color:#9fc3ef"></div>
+    <div id="satBody" class="overflow-y-auto flex-1 px-5 py-4 space-y-4"></div>
+    <div class="px-5 py-4" style="border-top:1px solid #1e293b">
+      <button id="satGuardarBtn" onclick="MOS.guardarSatelite()" class="w-full rounded-xl py-3 font-extrabold text-sm"
+              style="background:linear-gradient(180deg,#34d399,#059669);color:#04140d">Crear</button>
     </div>
   </div>
 </div>
+
+<!-- [catálogo v4 · limpieza] #modalPrecio ELIMINADO: era código muerto (cero callers desde
+     que modalPrecioRapido lo reemplazó) — la cascada vive en modalPrecioRapido. -->
 
 <!-- Proveedor Modal -->
 <div class="modal-backdrop hidden" id="modalProveedor">
@@ -18579,6 +18696,12 @@
 
     <!-- Contenido (oculto hasta que cargue) -->
     <div id="anContent" class="hidden flex flex-col gap-4">
+
+      <!-- [catálogo v4] ANALÍTICA FUSIONADA DEL GRUPO (dibujo §07): almacén (guías WH)
+           + ventas ME por zona, todo en kg-equivalentes del canónico. Render 100% JS. -->
+      <div id="anGrupoSec" class="hidden"></div>
+
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-600" id="anSoloProdDivider" style="display:none">— solo este producto —</div>
 
       <!-- ── 5 KPIs ── -->
       <div class="an-kpis" id="anKpis"></div>
@@ -19416,13 +19539,13 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.486"></script>
+<script src="js/api.js?v=2.43.487"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
-<script src="./assets/membrete/membrete-modal.js?v=2.43.460"></script>
+<script src="./assets/membrete/membrete-modal.js?v=2.43.487"></script>
 <script src="./assets/seguridad/seguridad-modal.js?v=2.43.477"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
@@ -19431,7 +19554,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.486"></script>
+<script src="js/app.js?v=2.43.487"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

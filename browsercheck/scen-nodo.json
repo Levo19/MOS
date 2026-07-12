@@ -1,0 +1,5 @@
+{ "url":"http://localhost:8160/manual-movimientos.html",
+  "viewport":{"width":390,"height":844},
+  "waitMs":2500,
+  "evalAfter":"(async()=>{document.getElementById('n_pasein').dispatchEvent(new MouseEvent('click',{bubbles:true}));await new Promise(r=>setTimeout(r,900));return {sel:!!document.querySelector('.node.sel'),hot:document.querySelectorAll('.edge.hot').length,running:document.querySelectorAll('.spark.run').length,panel:document.getElementById('pbody').style.display,ox:document.documentElement.scrollWidth>window.innerWidth};})()",
+  "screenshot":"manual-nodo.png" }

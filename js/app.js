@@ -285,7 +285,10 @@ const MOS = (() => {
           unwrapData:     true,
           endpointPrefix: 'wh_',
           // [Membretes 100% Supabase] el modal imprime vía Edge print-adhesivo (mode:'crear-membrete').
-          edgeCall:       function(body) { return API.printAdhesivoEdge(body); }
+          edgeCall:       function(body) { return API.printAdhesivoEdge(body); },
+          // [catálogo v4] 3ra opción del menú (solo derivados): adhesivo envasado vía
+          // Edge print-adhesivo mode:'crear' — atómico reserve-first, CERO GAS.
+          adhesivoEnvasadoCall: function(p) { return API.adhesivoImprimirEdge(p); }
         });
       }
     } catch(_) {}
@@ -1304,6 +1307,23 @@ const MOS = (() => {
   // [v2.43.37] Render helpers de catálogo: logo + sparkline rotación
   // ─────────────────────────────────────────────────────────────────
 
+  // [catálogo v4] Set de íconos SVG de trazo (dibujo 3812eb03): reemplazan
+  // emojis en la botonera del card y el modal imprimir. Trazo 2, currentColor.
+  const _SVG_ICONS = {
+    money:   '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/>',
+    chart:   '<line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="10"/>',
+    printer: '<path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7" rx="1"/>',
+    trash:   '<polyline points="3 6 5 6 21 6"/><path d="M19 6v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+    rotate:  '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/>',
+    camera:  '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+    gondola: '<path d="M3 9l9-6 9 6"/><path d="M4 10v10h16V10"/><path d="M9 20v-6h6v6"/>',
+    andamio: '<path d="M3 21V7l4-4h10l4 4v14"/><path d="M3 11h18M8 11v10M16 11v10"/>',
+    rollo:   '<circle cx="7" cy="12" r="4.2"/><circle cx="7" cy="12" r="1.1" fill="currentColor" stroke="none"/><path d="M7 7.8h9.5a1.5 1.5 0 0 1 1.5 1.5v5.4a1.5 1.5 0 0 1-1.5 1.5H7"/><path d="M18 12.4l3-1.6v5l-3-1.6" opacity=".65"/>'
+  };
+  function _svgIcon(nombre, attrs) {
+    return `<svg viewBox="0 0 24 24" ${attrs || ''}>${_SVG_ICONS[nombre] || ''}</svg>`;
+  }
+
   // [v2.43.38] Foto del producto 64x64 — halo de categoría + shimmer al hover.
   // Si no hay fotoUrl → SVG paquete con respiración suave + tinte de categoría.
   // Click → modal de zoom + subir nueva foto.
@@ -1422,79 +1442,71 @@ const MOS = (() => {
     return (S._rotacionAgregadoPorSku || {})[sku] || null;
   }
 
-  // Sparkline de 8 barras (semanas) + comparativo vs semana anterior.
-  // Click → modal con insight detallado.
-  // Si no hay rotación nunca → "─ sin movimiento" gris.
-  function _renderRotacionSparkline(p) {
+  // ── [catálogo v4] Chip de rotación semanal junto al precio (dibujo §05) ──
+  // POR NIVEL (no agregado): canónico granel en kg/sem, derivado en u/sem,
+  // presentación en packs/sem. La serie viene de wh.rotacion_cache (SQL 424,
+  // instantánea) con campo kg por punto. Click → analítica fusionada.
+  // El sparkline agregado NO muere: vive en el modal de rotación/analítica.
+  const _UMS_PESO = { KGM:1, KG:1, LTR:1, L:1, MTR:1, M:1, GR:1, GMS:1, G:1 };
+  function _renderRotChip(p, esChild) {
     try {
+      const cls = esChild ? ' rot-child' : '';
       const cache = S._rotacionSemanalCache || {};
-      // [v2.43.42] Usar agregación grupal (canónico + presentaciones + equivalentes)
-      let serie = _serieRotacionAgregada(p);
-      const productos = cache.productos || {};
-      // [v2.43.55] "Cargando…" solo durante los primeros 25s de un cargado activo.
-      // Después de 25s sin resolver, asumimos timeout y mostramos "sin rotación".
+      const prods = cache.productos || {};
+      const hayData = Object.keys(prods).length > 0;
       const tsInicio = S._rotacionSemanalLoadingStart || 0;
-      const segundosTranscurridos = tsInicio ? (Date.now() - tsInicio) / 1000 : 999;
-      const enVueloReal = !!S._rotacionSemanalLoading
-                         && cache._loading === true
-                         && segundosTranscurridos < 25;
-      const hayData = cache.productos && Object.keys(cache.productos).length > 0;
-      const huboError = !!cache._error;
-      if (enVueloReal && !hayData && !huboError) {
-        return `<div class="cat-spark-wrap" style="font-size:9px;color:#475569;opacity:.6">📦 cargando…</div>`;
+      const cargando = !!S._rotacionSemanalLoading && !hayData
+                       && (tsInicio ? (Date.now() - tsInicio) / 1000 < 25 : false);
+      if (cargando) return `<span class="rot-chip rot-skel${cls}">&nbsp;</span>`;
+      if (!hayData) return '';   // sin cache ni carga: no ensuciar el card
+
+      const cb = String(p.codigoBarra || '').trim().toUpperCase();
+      // las guías registran el código REAL escaneado: el chip del producto suma su cb
+      // + sus códigos EQUIVALENTES (mismo producto físico) — pero SOLO si es el
+      // canónico de su grupo (factor=1): una presentación comparte skuBase con el
+      // canónico y heredaría equivalentes ajenos (contaminaría su chip de packs).
+      const cbs = [cb];
+      const esCanonDeSuGrupo = (parseFloat(p.factorConversion) || 1) === 1;
+      if (esCanonDeSuGrupo) {
+        (S.equivMap?.[p.skuBase || p.idProducto] || []).forEach(e => {
+          const eU = String(e || '').trim().toUpperCase();
+          if (eU && eU !== cb) cbs.push(eU);
+        });
       }
-      // Sin rotación nunca
-      if (!serie || !serie.length) {
-        return `<div class="cat-spark cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
-                     title="Producto sin movimiento en últimas 8 semanas · click para detalle">
-          <span class="cat-spark-empty-ico">🌙</span><span>sin rotación</span>
-        </div>`;
+      let serie = prods[cb] || [];
+      let nSem = (serie.length || 8);
+      let totU = 0, totKg = 0, hayAlgunaSerie = false;
+      cbs.forEach(k => {
+        const s0 = prods[k];
+        if (!s0 || !s0.length) return;
+        hayAlgunaSerie = true;
+        nSem = s0.length;
+        s0.forEach(s => { totU += parseFloat(s.unidades) || 0; totKg += parseFloat(s.kg) || 0; });
+      });
+      if (!serie.length && hayAlgunaSerie) serie = [1]; // hubo movimiento vía equivalente
+
+      const esPeso = !!_UMS_PESO[String(p.unidad || p.Unidad_Medida || '').trim().toUpperCase()];
+      const esDerivado = !!(p.codigoProductoBase && String(p.codigoProductoBase).trim());
+      const esPres = !esDerivado && parseFloat(p.factorConversion) > 1;
+
+      if (!serie.length || (totU === 0 && totKg === 0)) {
+        return `<span class="rot-chip rot-cero${cls}" onclick="event.stopPropagation();MOS.abrirAnalitica('${p.idProducto}')"
+                      title="Sin salidas de almacén en 8 semanas · toca para la analítica">${_svgIcon('rotate')}sin mov.</span>`;
       }
-      const unidades = serie.map(s => parseFloat(s.unidades) || 0);
-      const total    = unidades.reduce((a, b) => a + b, 0);
-      if (total === 0) {
-        return `<div class="cat-spark cat-spark-empty" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
-                     title="Producto sin movimiento en últimas 8 semanas · click para detalle">
-          <span class="cat-spark-empty-ico">🌙</span><span>sin rotación</span>
-        </div>`;
-      }
-      const max = Math.max(...unidades, 1);
-      // 8 barras con altura proporcional, color según rotación promedio
-      const promedio = total / unidades.length;
-      const color = promedio >= 10 ? '#10b981'   // verde alta
-                  : promedio >= 3  ? '#f59e0b'   // ámbar media
-                  :                  '#ef4444';  // rojo baja
-      const barras = unidades.map(u => {
-        const h = Math.max(2, Math.round((u / max) * 18));
-        const op = u === 0 ? 0.25 : 1;
-        return `<span style="display:inline-block;width:3px;height:${h}px;background:${color};opacity:${op};margin-right:1px;border-radius:1px"></span>`;
-      }).join('');
-      // Comparativo última vs penúltima
-      const ultima = unidades[unidades.length - 1];
-      const penult = unidades[unidades.length - 2] || 0;
-      let cmpHtml = '';
-      if (penult > 0) {
-        const delta = ((ultima - penult) / penult) * 100;
-        const arrow = delta > 5 ? '↑' : delta < -5 ? '↓' : '→';
-        const cmpColor = delta > 5 ? '#10b981' : delta < -5 ? '#ef4444' : '#94a3b8';
-        cmpHtml = `<span style="color:${cmpColor};font-size:10px;font-weight:700;margin-left:4px">${arrow}${Math.abs(Math.round(delta))}%</span>`;
-      } else if (ultima > 0) {
-        cmpHtml = `<span style="color:#10b981;font-size:10px;font-weight:700;margin-left:4px">↑ nuevo</span>`;
-      }
-      const promedioStr = promedio >= 10 ? promedio.toFixed(0) : promedio.toFixed(1);
-      // [v2.43.47 PERF] Hover via CSS class (NO inline JS) → ~10x más rápido
-      // con 2000+ cards. Nivel decide colores hover ya pre-definidos en CSS.
-      const nivel = promedio >= 10 ? 'alta' : promedio >= 3 ? 'media' : 'baja';
-      return `<div class="cat-spark cat-spark-${nivel}" onclick="event.stopPropagation();MOS.abrirModalRotacion('${p.idProducto}')"
-                   title="Rotación últimas 8 semanas · click para ver detalle">
-        <span class="cat-spark-ico">📦</span>
-        <span class="cat-spark-num">${promedioStr}/sem</span>
-        <span class="cat-spark-bars">${barras}</span>
-        ${cmpHtml}
-        <span class="cat-spark-arrow">→</span>
-      </div>`;
-    } catch(_) { return ''; }
+      // valor + unidad según el nivel (siempre POR SEMANA — compras semanales)
+      let val, um;
+      if (esPeso && totKg > 0)      { val = totKg / nSem; um = 'kg/sem'; }
+      else if (esPres)              { val = totU / nSem;  um = 'packs/sem'; }
+      else                          { val = totU / nSem;  um = 'u/sem'; }
+      const valTxt = val >= 10 ? Math.round(val) : (Math.round(val * 10) / 10);
+      return `<span class="rot-chip${cls}" onclick="event.stopPropagation();MOS.abrirAnalitica('${p.idProducto}')"
+                    title="Rotación de almacén (salidas por guías a zonas) · toca para la analítica fusionada">
+                ${_svgIcon('rotate')}${valTxt} ${um}</span>`;
+    } catch (_) { return ''; }
   }
+
+  // [catálogo v4 · limpieza] _renderRotacionSparkline ELIMINADO: el chip de rotación
+  // (_renderRotChip) lo reemplazó en el card; el detalle vive en la analítica fusionada.
 
   // Render seguro del badge de margen (cualquier error aquí no debe romper el catálogo)
   function _renderMargenBadge(producto) {
@@ -2553,7 +2565,24 @@ const MOS = (() => {
     _catTimer = setTimeout(() => renderCatalogo(), 160);
   }
 
-  function setCatTab(tab) { S.catTab = tab; renderCatalogo(); } // kept for compat
+  // [catálogo v4] Escanear con la cámara → busca el código (productos + equivalentes,
+  // _catScoreInfo ya resuelve satélite→canónico) y hace scroll al card "encontrado".
+  function scanBuscarCatalogo() {
+    scanCodigo({ onHit: (codigo) => {
+      const inp = $('searchCatalogo');
+      if (!inp) return;
+      inp.value = String(codigo || '').trim();
+      renderCatalogo();
+      // scroll al primer match exacto tras el render
+      setTimeout(() => {
+        const hit = document.querySelector('.cat-hit-exacto');
+        if (hit) hit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        else toast('Código ' + codigo + ' no encontrado en el catálogo', 'error');
+      }, 220);
+    } });
+  }
+
+  // [catálogo v4 · limpieza] setCatTab ELIMINADO: "kept for compat" sin ningún caller real.
 
   // ── Search scoring ──────────────────────────────────────────
   function _norm(s) {
@@ -2885,7 +2914,8 @@ const MOS = (() => {
       let hlDesc = _highlight(base.descripcion || '—', words);
       if (mInfo.field === 'desc' && rawQ) hlDesc = _highlightExact(hlDesc.replace(/<\/?mark[^>]*>/g, ''), rawQ);
       // Clase extra cuando la card ganó por match exacto al 100% — gana glow
-      const matchExactoCls = (mInfo.score >= 95) ? ' cat-card-match-exacto' : '';
+      // [catálogo v4] + cat-hit-exacto: pulso animado de "encontrado" (dibujo §03)
+      const matchExactoCls = (mInfo.score >= 95) ? ' cat-card-match-exacto cat-hit-exacto' : '';
       // [v2.43.62] Stagger consistente: solo primeras 12 cards animan en cascada,
       // el resto aparece con --i:0 (sin delay). Antes idx>20 quedaban TODAS apiladas
       // en el mismo frame (=20*40ms=800ms) lo que se veía como "pop colectivo" raro.
@@ -2988,7 +3018,10 @@ const MOS = (() => {
                   : 'background:rgba(167,139,250,.12);color:#a78bfa';
                 return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}${presActivo ? '' : ' pres-inactive'}" data-pres-id="${d.idProducto}">
                   <div class="min-w-0 flex-1">
-                    <div class="text-xs font-semibold text-slate-200 truncate">${hlD}</div>
+                    <!-- [catálogo v4] nombre tocable = editar; el precio del satélite vive en su modal editar -->
+                    <div class="text-xs font-semibold text-slate-200 truncate"><span class="cat-nombre-edit"
+                         onclick="event.stopPropagation();MOS.abrirModalProducto('${d.idProducto}')"
+                         title="Tocar para editar (ahí vive su precio)">${hlD}</span></div>
                     <div class="flex items-center gap-2 mt-0.5">
                       ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
                       <span class="pres-factor">×${factor}</span>
@@ -2998,11 +3031,12 @@ const MOS = (() => {
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
                     <div class="${precioClass}">${fmtMoney(precioActual)}</div>
+                    ${_renderRotChip(d, true)}
                     <button type="button" class="toggle-sw sm ${presActivo ? 'on' : ''}" data-pid="${d.idProducto}"
                             onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
                             title="${presActivo ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
-                    <button class="cat-btn cat-btn-edit sm" onclick="event.stopPropagation();MOS.abrirModalProducto('${d.idProducto}')" title="Editar">✏️</button>
-                    <button class="cat-btn cat-btn-price sm" onclick="event.stopPropagation();MOS.abrirModalPrecioRapido('${d.idProducto}')" title="Precio">💰</button>
+                    <button class="cat-btn cat-btn-printx sm" onclick="event.stopPropagation();MOS.abrirMembreteCard('${d.idProducto}')" title="Imprimir">${_svgIcon('printer')}</button>
+                    <button class="cat-btn cat-btn-plusctx sm" onclick="event.stopPropagation();MOS.abrirPlusContextual('${d.idProducto}', event)" title="Agregar satélite">＋</button>
                   </div>
                 </div>`;
               }).join('')}
@@ -3017,7 +3051,10 @@ const MOS = (() => {
             ${_renderFotoMini(base)}
             <div class="flex-1 min-w-0">
               <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeInac}</div>
-              <div class="font-semibold text-slate-100 text-sm leading-snug mb-2">${hlDesc}</div>
+              <!-- [catálogo v4] nombre tocable = editar (el lápiz desaparece de la botonera) -->
+              <div class="font-semibold text-slate-100 text-sm leading-snug mb-2"><span class="cat-nombre-edit"
+                   onclick="event.stopPropagation();MOS.abrirModalProducto('${base.idProducto}')"
+                   title="Tocar para editar el producto">${hlDesc}</span></div>
               ${equivMatchBanner}
               <div class="flex flex-wrap items-center gap-1.5">
                 ${barcodeTag}${equivTags}${brandTag}${unidadTag}
@@ -3030,29 +3067,29 @@ const MOS = (() => {
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
               ${_renderMargenBadge(base)}
-              ${_renderRotacionSparkline(base)}
+              ${_renderRotChip(base)}
+              <!-- [catálogo v4] botonera SVG (dibujo §05): toggle · 💰cascada · 📈grupo · 🖨 · 🗑master · ＋ -->
               <div class="flex gap-1.5 mt-1 items-center">
                 <button type="button" class="toggle-sw ${activo ? 'on' : ''}" data-pid="${base.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${base.idProducto}', true)"
                         title="${activo ? 'Apagar producto' : 'Prender producto'}">
                   <span class="toggle-sw-knob"></span>
                 </button>
-                <button class="cat-btn cat-btn-edit"
-                        onclick="event.stopPropagation();MOS.abrirModalProducto('${base.idProducto}')"
-                        title="Editar producto">✏️</button>
-                <button class="cat-btn cat-btn-price"
+                <button class="cat-btn cat-btn-money"
                         onclick="event.stopPropagation();MOS.abrirModalPrecioRapido('${base.idProducto}')"
-                        title="Cambiar precio">💰</button>
-                <button class="cat-btn" style="font-size:.8rem"
+                        title="Cambiar precio — cascada a satélites">${_svgIcon('money')}</button>
+                <button class="cat-btn cat-btn-chart"
                         onclick="event.stopPropagation();MOS.abrirAnalitica('${base.idProducto}')"
-                        title="Ver analítica" style="border-color:rgba(99,102,241,.3)">📊</button>
-                <button class="cat-btn" style="font-size:.85rem;border-color:rgba(251,191,36,.35);color:#fbbf24;display:inline-flex;align-items:center;justify-content:center"
+                        title="Analítica del grupo (almacén + zonas)">${_svgIcon('chart')}</button>
+                <button class="cat-btn cat-btn-printx"
                         onclick="event.stopPropagation();MOS.abrirMembreteCard('${base.idProducto}')"
-                        title="Imprimir membrete (ME góndola o WH andamio)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.3" fill="currentColor" stroke="none"/></svg></button>
-                ${_esMasterSession() ? `<button class="cat-btn cat-btn-kebab"
-                        onclick="event.stopPropagation();MOS.abrirMenuPurgaGrupo('${base.idProducto}', event)"
-                        title="Más acciones · Master"
-                        style="font-size:1.05rem;border-color:rgba(248,113,113,.25);color:#94a3b8">⋮</button>` : ''}
+                        title="Imprimir membrete / adhesivo">${_svgIcon('printer')}</button>
+                ${_esMasterSession() ? `<button class="cat-btn cat-btn-trash"
+                        onclick="event.stopPropagation();MOS.abrirCestaPurga('${base.idProducto}',{idProductoFiltro:'${base.idProducto}'})"
+                        title="Eliminar — solo master, pide clave">${_svgIcon('trash')}</button>` : ''}
+                <button class="cat-btn cat-btn-plusctx"
+                        onclick="event.stopPropagation();MOS.abrirPlusContextual('${base.idProducto}', event)"
+                        title="Agregar satélite (derivado · presentación · tramo · equivalente)">＋</button>
               </div>
             </div>
           </div>
@@ -3801,10 +3838,21 @@ const MOS = (() => {
     }
   }
 
-  // ── Scanner cámara para crear PN manual ──────────────────────────────
+  // ── Scanner cámara (PN manual + GENERALIZADO catálogo v4) ─────────────
   // Usa BarcodeDetector nativo cuando existe (Chrome/Android, Safari 16.4+);
   // si no, carga ZXing on-demand desde CDN como fallback. Permite linterna
   // si la cámara la soporta.
+  // [catálogo v4] scanCodigo({inputId?|onHit?}) reusa TODO el overlay/motor:
+  // setea _scanTarget y abre; _cpnScanHit lo atiende primero y limpia al cerrar.
+  let _scanTarget = null;
+  function scanCodigo(opts) {
+    opts = opts || {};
+    _scanTarget = {
+      inputId: opts.inputId || null,
+      onHit:   typeof opts.onHit === 'function' ? opts.onHit : null
+    };
+    cpnAbrirScanner();
+  }
   let _cpnScanStream = null;
   let _cpnScanRAF = null;
   let _cpnScanZxingReader = null;
@@ -3818,6 +3866,7 @@ const MOS = (() => {
   async function cpnAbrirScanner() {
     const ov = $('cpnScannerOverlay');
     if (!ov) return;
+    _scanHitYa = false;   // [fix rev B2] re-armar el escáner en cada apertura
     ov.classList.add('is-open');
     _cpnScannerEstado('Pidiendo cámara…');
     const hint = $('cpnScannerHint');
@@ -3903,8 +3952,10 @@ const MOS = (() => {
     tick();
   }
 
+  let _scanHitYa = false;   // [fix rev B2] ZXing sigue decodificando durante los 350ms del cierre
   function _cpnScanHit(codigo) {
-    if (!codigo) return;
+    if (!codigo || _scanHitYa) return;
+    _scanHitYa = true;
     // Visual + haptic + sonido
     try { if (navigator.vibrate) navigator.vibrate([40, 20, 80]); } catch(_){}
     try {
@@ -3918,6 +3969,22 @@ const MOS = (() => {
     const frame = $('cpnScannerFrame'); if (frame) frame.classList.add('is-hit');
     const det = $('cpnScannerDetected');
     if (det) { det.textContent = codigo; det.classList.add('show'); }
+    // [catálogo v4] destino generalizado: input arbitrario o callback
+    if (_scanTarget) {
+      const t = _scanTarget;
+      if (t.inputId) {
+        const el = $(t.inputId);
+        if (el) {
+          el.value = codigo;
+          // dispara la validación/preview que tenga colgada el input
+          try { el.dispatchEvent(new Event('input',  { bubbles: true })); } catch(_){}
+          try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch(_){}
+        }
+      }
+      if (t.onHit) { try { t.onHit(codigo); } catch(_){} }
+      setTimeout(cpnCerrarScanner, 350);
+      return;
+    }
     // Llenar input + validar duplicado + cerrar overlay tras 350ms
     const inp = $('cpnCodigo');
     if (inp) {
@@ -3933,6 +4000,7 @@ const MOS = (() => {
   }
 
   function cpnCerrarScanner() {
+    _scanTarget = null;   // [catálogo v4] el destino generalizado muere con el overlay
     const ov = $('cpnScannerOverlay');
     if (ov) ov.classList.remove('is-open');
     if (_cpnScanRAF) { cancelAnimationFrame(_cpnScanRAF); _cpnScanRAF = null; }
@@ -4531,6 +4599,8 @@ const MOS = (() => {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     S._editingPrecioId = idProducto;
     S._qpTocadas = {};
+    S._qpRows = null;                                        // [catálogo v4] filas de la cascada
+    $('qpMembretesSw')?.classList.remove('on');              // [catálogo v4] membrete opt-in por apertura
     // [v2.43.54] Aplicar halo de categoría
     const qpSheet = document.querySelector('#modalPrecioRapido .qp-sheet, #modalPrecioRapido .modal-box');
     if (qpSheet) _aplicarHaloCategoria(qpSheet, prod);
@@ -4629,6 +4699,72 @@ const MOS = (() => {
   }
 
   // Renderiza las filas de presentaciones (al abrir el modal)
+  // ── [catálogo v4] CASCADA (dibujo §06): el modal del canónico ahora baja a
+  // TODO el grupo — presentaciones (×factor), derivados (porción × precio/kg) y
+  // packs de derivados (nivel 2: recalculan sobre el precio ACEPTADO del derivado,
+  // incluso si lo editaste a mano). Los tramos NO necesitan filas: guardan ajuste %
+  // sobre el canónico → se mueven solos (banner AUTO los hace visibles).
+  function _qpBuildRows(prod) {
+    const sku = prod.skuBase || prod.idProducto;
+    const U = s => String(s || '').trim().toUpperCase();
+    const rows = [];
+    // presentaciones directas del canónico
+    (S.productos || []).filter(p =>
+        (p.skuBase === sku || p.skuBase === prod.idProducto)
+        && p.idProducto !== prod.idProducto
+        && (parseFloat(p.factorConversion) || 1) !== 1
+        && !(p.codigoProductoBase && String(p.codigoProductoBase).trim()))
+      .forEach(p => rows.push({ p, tipo: 'pres', factor: parseFloat(p.factorConversion) || 1, parentIdx: null }));
+    // derivados del granel + sus packs (nivel 2)
+    (S.productos || []).filter(d => {
+      const b = U(d.codigoProductoBase);
+      return b && (b === U(sku) || b === U(prod.idProducto)) && (parseFloat(d.factorConversionBase) || 0) > 0;
+    }).forEach(d => {
+      const idxDer = rows.length;
+      rows.push({ p: d, tipo: 'der', factor: parseFloat(d.factorConversionBase) || 0, parentIdx: null });
+      const skuD = d.skuBase || d.idProducto;
+      (S.productos || []).filter(pp =>
+          (pp.skuBase === skuD || pp.skuBase === d.idProducto)
+          && pp.idProducto !== d.idProducto
+          && (parseFloat(pp.factorConversion) || 1) !== 1)
+        .forEach(pp => rows.push({ p: pp, tipo: 'presDer', factor: parseFloat(pp.factorConversion) || 1, parentIdx: idxDer }));
+    });
+    return rows;
+  }
+
+  function _qpSugerido(row, precioBase) {
+    if (row.tipo === 'pres')    return +(precioBase * row.factor).toFixed(2);
+    if (row.tipo === 'der')     return +(precioBase * row.factor).toFixed(2);   // porción kg × S//kg
+    if (row.tipo === 'presDer') {
+      // sobre el ACEPTADO del derivado (input) — en el render INICIAL el input del
+      // padre aún no está en el DOM: usar su sugerido calculado (misma fórmula)
+      const padreInp = $('qpPresInput' + row.parentIdx);
+      const rows = S._qpRows || [];
+      const pv = padreInp ? (parseFloat(padreInp.value) || 0)
+                          : (rows[row.parentIdx] ? _qpSugerido(rows[row.parentIdx], precioBase) : 0);
+      return +(pv * row.factor).toFixed(2);
+    }
+    return 0;
+  }
+
+  function _qpSyncTramos(prod, precioBase) {
+    const banner = $('qpTramosBanner'), det = $('qpTramosDetalle');
+    if (!banner || !det) return;
+    let segs = [];
+    try {
+      const raw = prod.segmentos_precio || prod.segmentosPrecio || '';
+      segs = typeof raw === 'string' && raw ? JSON.parse(raw) : (Array.isArray(raw) ? raw : []);
+    } catch(_) { segs = []; }
+    if (!Array.isArray(segs) || !segs.length) { banner.classList.add('hidden'); return; }
+    banner.classList.remove('hidden');
+    const antes = parseFloat(prod.precioVenta) || 0;
+    det.innerHTML = segs.slice().sort((a,b) => (a.min||0)-(b.min||0)).map(s => {
+      const aj = parseFloat(s.ajustePct) || 0;
+      const lbl = ((s.min||0) >= 1000 ? (s.min/1000)+'kg' : (s.min||0)+'g') + '–' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g'));
+      return `${lbl}: ${(antes*(1+aj/100)).toFixed(2)}→<b style="color:#34d399">${(precioBase*(1+aj/100)).toFixed(2)}</b>`;
+    }).join(' · ') + ' — la escalera sigue al canónico, no pide confirmación';
+  }
+
   function _qpRenderPresentaciones() {
     const idProducto = S._editingPrecioId;
     const section = $('qpPresSection');
@@ -4636,32 +4772,43 @@ const MOS = (() => {
     const countEl = $('qpPresCount');
     if (!section || !list) return;
 
-    const prod  = S.productos.find(p => p.idProducto === idProducto);
-    const sku   = prod ? (prod.skuBase || prod.idProducto) : idProducto;
-    const grupo = _catGroups ? _catGroups[sku] : null;
-
-    if (!grupo || !grupo.pres || !grupo.pres.length || !grupo.base || grupo.base.idProducto !== idProducto) {
-      section.classList.add('hidden');
-      list.innerHTML = '';
-      return;
-    }
-
+    const prod = S.productos.find(p => p.idProducto === idProducto);
+    if (!prod) { section.classList.add('hidden'); list.innerHTML = ''; return; }
+    // [fix rev M2] limpiar YA las filas de la apertura ANTERIOR: si quedara un
+    // qpPresInput viejo en el DOM, _qpSugerido(presDer) leería el precio de OTRO
+    // producto en el render inicial (y "guardar sin tocar" lo persistiría).
+    list.innerHTML = '';
     const precioBase = parseFloat($('qpInput')?.value || '0') || 0;
+
+    _qpSyncTramos(prod, precioBase);
+
+    const rows = _qpBuildRows(prod);
+    S._qpRows = rows;
+    if (!rows.length) { section.classList.add('hidden'); list.innerHTML = ''; return; }
+
     section.classList.remove('hidden');
-    if (countEl) countEl.textContent = `📦 ${grupo.pres.length} presentaciones`;
-    list.innerHTML = grupo.pres.map((p, i) => {
-      const factor   = parseFloat(p.factorConversion) || 1;
-      const sugerido = +(precioBase * factor).toFixed(2);
+    if (countEl) {
+      const nP = rows.filter(r => r.tipo === 'pres').length,
+            nD = rows.filter(r => r.tipo === 'der').length,
+            nPD = rows.filter(r => r.tipo === 'presDer').length;
+      countEl.textContent = '🛰 ' + [nD ? nD + ' derivado' + (nD>1?'s':'') : '', nP ? nP + ' presentacion' + (nP>1?'es':'') : '', nPD ? nPD + ' pack' + (nPD>1?'s':'') + ' de derivado' : ''].filter(Boolean).join(' · ');
+    }
+    list.innerHTML = rows.map((r, i) => {
+      const p = r.p;
+      const sugerido = _qpSugerido(r, precioBase);
       const actual   = parseFloat(p.precioVenta) || 0;
       const costo    = parseFloat(p.precioCosto) || 0;
       const bajo     = costo > 0 && sugerido < costo;
-      return `<div class="qp-pres-card${bajo ? ' qp-bajo-costo-card' : ''}" id="qpCard${i}" data-id="${p.idProducto}" data-factor="${factor}">
+      const badge    = r.tipo === 'der' ? `<span class="qp-pres-factor" style="background:rgba(183,155,255,.15);color:#b79bff">🥄 ${r.factor} kg/u</span>`
+                     : r.tipo === 'presDer' ? `<span class="qp-pres-factor">↳ 🧱 ×${r.factor}</span>`
+                     : `<span class="qp-pres-factor">🧱 ×${r.factor}</span>`;
+      return `<div class="qp-pres-card${bajo ? ' qp-bajo-costo-card' : ''}" id="qpCard${i}" data-id="${p.idProducto}" data-factor="${r.factor}"${r.tipo === 'presDer' ? ' style="margin-left:18px;border-left:2px dashed #28344c"' : ''}>
         <input type="checkbox" class="qp-pres-check" id="qpChk${i}" checked
           onchange="MOS._qpToggleExcluida(${i})">
         <div class="qp-pres-info">
           <div class="qp-pres-nom">${p.descripcion || p.idProducto}</div>
           <div class="qp-pres-meta">
-            <span class="qp-pres-factor">×${factor}</span>
+            ${badge}
             <span class="qp-pres-antes">antes ${fmtMoney(actual)}</span>
           </div>
         </div>
@@ -4684,7 +4831,7 @@ const MOS = (() => {
     }).join('');
   }
 
-  // Llamado cuando user EDITA un input de presentación → marca como "tocada manual"
+  // Llamado cuando user EDITA un input de satélite → marca como "tocada manual"
   function _qpInputTocado(i) {
     if (!S._qpTocadas) S._qpTocadas = {};
     S._qpTocadas[i] = true;
@@ -4693,6 +4840,10 @@ const MOS = (() => {
     if (wrap) wrap.classList.add('qp-tocada');
     if (card) card.classList.add('qp-modificada');
     _qpCheckBajoCosto(i);
+    // [catálogo v4] si tocaste un DERIVADO, sus packs (nivel 2) recalculan en vivo
+    // sobre TU precio (el sync respeta las filas tocadas/excluidas)
+    const row = (S._qpRows || [])[i];
+    if (row && row.tipo === 'der') _qpSyncPresentaciones();
   }
 
   function _qpToggleExcluida(i) {
@@ -4745,18 +4896,19 @@ const MOS = (() => {
     if (card) card.classList.toggle('qp-bajo-costo-card', bajo);
   }
 
-  // Actualiza precios sugeridos al cambiar el base — solo los NO tocados manualmente
+  // Actualiza precios sugeridos al cambiar el base — solo los NO tocados manualmente.
+  // [catálogo v4] recorre las filas EN ORDEN: los derivados primero, así los packs
+  // de derivado (nivel 2) leen el valor YA actualizado (o el manual) de su padre.
   function _qpSyncPresentaciones() {
     const idProducto = S._editingPrecioId;
     if (!idProducto) return;
     const precio = parseFloat($('qpInput')?.value || '0') || 0;
     const prod   = S.productos.find(p => p.idProducto === idProducto);
-    const sku    = prod ? (prod.skuBase || prod.idProducto) : idProducto;
-    const grupo  = _catGroups ? _catGroups[sku] : null;
-    if (!grupo || !grupo.pres) return;
-    grupo.pres.forEach((p, i) => {
-      const factor   = parseFloat(p.factorConversion) || 1;
-      const sugerido = +(precio * factor).toFixed(2);
+    if (!prod) return;
+    _qpSyncTramos(prod, precio);
+    const rows = S._qpRows || [];
+    rows.forEach((r, i) => {
+      const sugerido = _qpSugerido(r, precio);
       const inp = $('qpPresInput' + i);
       const chk = $('qpChk' + i);
       if (!inp) return;
@@ -4833,13 +4985,16 @@ const MOS = (() => {
     setTimeout(() => { cerrarModalPrecioRapido(); }, 450);
 
     // API en paralelo en background — solo precioVenta, no toca otros campos
+    // [catálogo v4] imprimirMembretes viaja por fila (hook publicar_precio 339b)
+    const _memb = !!$('qpMembretesSw')?.classList.contains('on');
     try {
       await Promise.all(updates.map(u =>
         API.post('publicarPrecio', {
           _source: 'MOS_MODAL_PRECIO',
           idProducto: u.idProducto,
           precioNuevo: u.precio,
-          usuario: S.session?.nombre || ''
+          usuario: S.session?.nombre || '',
+          imprimirMembretes: _memb
         })
       ));
       const n = updates.length;
@@ -4912,6 +5067,171 @@ const MOS = (() => {
 
   // ── ANALÍTICA DE PRODUCTO ───────────────────────────────────
   let _anState = { idProducto: null, dias: 30, data: null, charts: {} };
+
+  // ═══ [catálogo v4] ANALÍTICA FUSIONADA DEL GRUPO (dibujo §07) ═══
+  // Fuentes: 🏭 almacén (wh.rotacion_cache vía guías) + 🏪 ventas ME por zona,
+  // todo en kg-equivalentes del canónico (RPC mos.analitica_grupo, SQL 425 —
+  // directa PURA, cero GAS). Zonas sin ventas ME → pestaña ESTIMADA doble vía.
+  async function _cargarAnaliticaGrupo() {
+    const sec = $('anGrupoSec');
+    const divider = $('anSoloProdDivider');
+    if (!sec) return;
+    sec.classList.remove('hidden');
+    sec.innerHTML = `<div class="rot-chip rot-skel" style="width:100%;min-height:120px;border-radius:14px"></div>`;
+    const idPedido = _anState.idProducto;   // [fix rev B3] guardia anti-carrera A→B rápido
+    try {
+      const d = await API.post('getAnaliticaGrupo', { idProducto: idPedido });
+      if (_anState.idProducto !== idPedido) return;   // el usuario ya abrió OTRO producto
+      const g = d && (d.data || d);
+      if (!g || !g.etiquetas) { sec.classList.add('hidden'); if (divider) divider.style.display = 'none'; return; }
+      _anState.grupo = g;
+      if (!_anState.grupoTab) _anState.grupoTab = '__ALM__';
+      _renderAnaliticaGrupo();
+      if (divider) divider.style.display = '';
+    } catch (_) { sec.classList.add('hidden'); if (divider) divider.style.display = 'none'; }
+  }
+
+  function _agTab(tab) { _anState.grupoTab = tab; _renderAnaliticaGrupo(); try { _opsBeep && _opsBeep('tac'); } catch(_){} }
+
+  function _agZonaLabel(z) { return z === 'SIN_ZONA' ? 'Sin zona asignada' : z; }
+
+  function _renderAnaliticaGrupo() {
+    const sec = $('anGrupoSec');
+    const g = _anState.grupo;
+    if (!sec || !g) return;
+    const um = g.unidadCanon || 'u';
+    const alm = g.almacen || {};
+    // zonas reales (ME) — ZONA_MOCK_FALLBACK es basura de pruebas: fuera
+    const zonasReales = Object.keys(g.zonasReales || {}).filter(z => z !== 'ZONA_MOCK_FALLBACK').sort();
+    // zonas estimadas = despachadas por WH sin ventas ME (excluye SIN_ZONA: no es una zona, es un hueco de registro)
+    const desp = alm.porZonaDespacho || {};
+    const zonasEst = Object.keys(desp).filter(z => z !== 'SIN_ZONA' && !zonasReales.includes(z)).sort();
+    const tab = _anState.grupoTab || '__ALM__';
+    const sumReales = zonasReales.reduce((a, z) => a + (parseFloat(g.zonasReales[z]?.cantSem) || 0), 0);
+
+    const tabBtn = (id, html, est) => `<button onclick="MOS._agTab('${id}')"
+        class="px-3 py-2 rounded-t-lg text-[11.5px] font-extrabold whitespace-nowrap"
+        style="border:1px solid ${tab === id ? 'rgba(52,211,153,.4)' : '#28344c'};border-bottom:none;
+               background:${tab === id ? '#131d30' : '#0e1626'};color:${tab === id ? '#34d399' : '#93a4c2'}">${html}${est ? ' <span style="font-size:8px;font-weight:800;background:rgba(251,191,36,.15);color:#fbbf24;border-radius:4px;padding:1px 4px">ESTIMADA</span>' : ''}</button>`;
+
+    const stat = (v, l) => `<div style="background:#0e1626;border:1px solid #28344c;border-radius:9px;padding:8px 10px">
+      <div style="font-weight:800;font-size:15px;color:#34d399;font-variant-numeric:tabular-nums">${v}</div>
+      <div style="font-size:9px;color:#93a4c2;letter-spacing:.04em;text-transform:uppercase">${l}</div></div>`;
+
+    const barras = (serie) => {
+      const vals = (serie || []).map(s => parseFloat(s.cant) || 0);
+      const max = Math.max(...vals, 0.001);
+      return `<div style="display:flex;gap:4px;align-items:flex-end;height:64px;margin:6px 0 2px">` +
+        (serie || []).map((s, i) => `<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:2px" title="${s.semana}: ${s.cant} ${um}">
+          <div style="height:${Math.max(2, Math.round((vals[i]/max)*54))}px;background:linear-gradient(180deg,#34d399,#059669);border-radius:3px 3px 0 0;${i === serie.length-1 ? 'opacity:.45' : ''}"></div>
+          <div style="font-size:7.5px;text-align:center;color:#64748b;font-family:monospace">${String(s.semana||'').slice(-3)}</div></div>`).join('') + `</div>
+        <div style="font-size:9px;color:#475569">última barra = semana en curso (parcial, no cuenta en promedios)</div>`;
+    };
+
+    const formas = (arr) => !arr?.length ? '<div style="font-size:11px;color:#475569">sin movimiento en la ventana</div>' :
+      `<div style="display:grid;gap:5px">` + arr.map(f => {
+        const max = Math.max(...arr.map(x => parseFloat(x.cant) || 0), 0.001);
+        const ic = f.tipo === 'granel' ? '⚗️' : f.tipo === 'derivado' ? '🥄' : f.tipo?.startsWith('equiv') ? '🏷️' : '🧱';
+        return `<div style="display:flex;align-items:center;gap:8px;font-size:11px">
+          <span style="width:150px;flex:none;color:#93a4c2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ic} ${_escapeHtml(f.nombre || f.cb)}</span>
+          <span style="flex:1;height:13px;border-radius:4px;background:#0e1626;overflow:hidden"><i style="display:block;height:100%;width:${Math.round((parseFloat(f.cant)||0)/max*100)}%;background:linear-gradient(90deg,#059669,#34d399)"></i></span>
+          <span style="width:86px;text-align:right;font-family:monospace;font-size:10px;color:#e2e8f0">${(parseFloat(f.cant)||0).toFixed(1)} ${um}</span></div>`;
+      }).join('') + `</div>`;
+
+    // ── cuerpo por pestaña ──
+    let body = '';
+    if (tab === '__ALM__') {
+      const flujo = [
+        `<div style="display:flex;align-items:center;gap:10px;background:#0e1626;border:1px solid #28344c;border-radius:10px;padding:9px 12px">
+          <span style="font-size:15px">🏭</span><span style="flex:1;min-width:0">
+          <b style="display:block;font-size:12px;color:#e2e8f0">Almacén despacha</b>
+          <small style="font-size:9.5px;color:#93a4c2">guías WH con salida a zonas · kg-equivalentes</small></span>
+          <span style="font-weight:800;font-size:14px;color:#34d399;font-variant-numeric:tabular-nums">${alm.cantSem ?? 0} ${um}/sem</span></div>`
+      ];
+      zonasReales.forEach(z => {
+        const zz = g.zonasReales[z];
+        flujo.push(`<div style="display:flex;align-items:center;gap:10px;background:#0e1626;border:1px solid #28344c;border-radius:10px;padding:9px 12px;margin-left:14px">
+          <span style="font-size:15px">🏪</span><span style="flex:1;min-width:0">
+          <b style="display:block;font-size:12px;color:#e2e8f0">${_agZonaLabel(z)} vende <span style="font-size:9px;color:#34d399">(dato real ME)</span></b></span>
+          <span style="font-weight:800;font-size:13px;color:#34d399">${zz.cantSem} ${um}/sem</span></div>`);
+      });
+      zonasEst.forEach(z => {
+        const v1 = parseFloat(desp[z]) || 0;                                  // vía ① despachado (real WH)
+        const v2 = Math.max(0, (parseFloat(alm.cantSem) || 0) - sumReales);   // vía ② diferencia
+        const consistente = v1 > 0 && v2 > 0 ? (Math.abs(v1 - v2) / Math.max(v1, v2) < 0.25) : null;
+        flujo.push(`<div style="display:flex;align-items:center;gap:10px;background:#0e1626;border:1px dashed #28344c;border-radius:10px;padding:9px 12px;margin-left:14px">
+          <span style="font-size:15px">🏪</span><span style="flex:1;min-width:0">
+          <b style="display:block;font-size:12px;color:#e2e8f0">${_agZonaLabel(z)} — estimada por dos vías</b>
+          <small style="font-size:9.5px;color:#93a4c2">① despachado por guías: ${v1.toFixed(1)} · ② diferencia: ${v2.toFixed(1)} ${consistente === null ? '' : consistente ? '→ consistentes ✓' : '→ <span style="color:#fbbf24">divergen ⚠ revisa merma/registro</span>'}</small></span>
+          <span style="font-weight:800;font-size:13px;color:#fbbf24">≈ ${v1.toFixed(1)} ${um}/sem</span></div>`);
+      });
+      if (desp.SIN_ZONA) flujo.push(`<div style="font-size:10px;color:#93a4c2;margin-left:14px">🚚 Sin zona asignada en la guía: <b style="color:#fbbf24">${(parseFloat(desp.SIN_ZONA)||0).toFixed(1)} ${um}/sem</b> — arreglar el registro de esas guías afina la estimación</div>`);
+
+      body = `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px">
+          ${stat((alm.cantSem ?? 0) + ' ' + um + '/sem', 'salida almacén (guías)')}
+          ${stat(alm.tendenciaPct == null ? '—' : (alm.tendenciaPct > 0 ? '↗ +' : alm.tendenciaPct < 0 ? '↘ ' : '→ ') + alm.tendenciaPct + '%', 'vs 4 sem. anteriores')}
+          ${stat((g.insight?.coberturaSem ?? '—') + ' sem', 'cobertura de stock')}
+        </div>
+        <div class="lbl" style="font-size:9px;color:#93a4c2;text-transform:uppercase;letter-spacing:.05em">${um === 'kg' ? 'Kg' : 'Unidades'} despachados por semana</div>
+        ${barras(alm.porSemana)}
+        <div class="lbl" style="font-size:9px;color:#93a4c2;text-transform:uppercase;letter-spacing:.05em;margin-top:12px">La conciliación — de dónde sale cada número</div>
+        <div style="display:grid;gap:7px;margin-top:5px">${flujo.join('')}</div>
+        <div class="lbl" style="font-size:9px;color:#93a4c2;text-transform:uppercase;letter-spacing:.05em;margin-top:12px">¿En qué forma sale del almacén?</div>
+        <div style="margin-top:5px">${formas(alm.porForma)}</div>`;
+    } else if (zonasReales.includes(tab)) {
+      const z = g.zonasReales[tab];
+      body = `
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px">
+          ${stat(z.cantSem + ' ' + um + '/sem', 'venta ' + _agZonaLabel(tab))}
+          ${stat('S/ ' + (z.solesSem ?? 0), 'soles por semana')}
+          ${stat((alm.cantSem ? Math.round((parseFloat(z.cantSem)/parseFloat(alm.cantSem))*100) : 0) + '%', 'del despacho total')}
+        </div>
+        <div class="lbl" style="font-size:9px;color:#93a4c2;text-transform:uppercase;letter-spacing:.05em">${um === 'kg' ? 'Kg' : 'Unidades'} vendidos por semana (ME)</div>
+        ${barras(z.porSemana)}
+        <div class="lbl" style="font-size:9px;color:#93a4c2;text-transform:uppercase;letter-spacing:.05em;margin-top:12px">¿En qué forma se vende? (todo a ${um}-equivalentes)</div>
+        <div style="margin-top:5px">${formas(z.porForma)}</div>`;
+    } else {
+      const v1 = parseFloat(desp[tab]) || 0;
+      const v2 = Math.max(0, (parseFloat(alm.cantSem) || 0) - sumReales);
+      body = `
+        <div style="border:1px dashed rgba(251,191,36,.4);border-radius:12px;padding:14px;background:rgba(251,191,36,.05)">
+          <div style="font-size:12px;font-weight:800;color:#fbbf24">🏪 ${_agZonaLabel(tab)} aún no registra ventas en ME</div>
+          <div style="font-size:11px;color:#93a4c2;margin-top:6px">Mientras tanto se estima por dos vías que se validan entre sí:</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px">
+            ${stat(v1.toFixed(1) + ' ' + um + '/sem', '① despachado a esta zona (dato WH real)')}
+            ${stat(v2.toFixed(1) + ' ' + um + '/sem', '② diferencia almacén − zonas con data')}
+          </div>
+          <div style="font-size:11px;margin-top:8px;color:${v1 && v2 && Math.abs(v1-v2)/Math.max(v1,v2) < 0.25 ? '#34d399' : '#fbbf24'}">
+            ${v1 && v2 ? (Math.abs(v1-v2)/Math.max(v1,v2) < 0.25 ? '✓ Las dos vías son consistentes' : '⚠ Divergen — puede haber merma o registro pendiente') : 'ℹ Falta data para validar'}
+          </div>
+          <div style="font-size:10px;color:#64748b;margin-top:8px">Cuando esta zona empiece a registrar en ME, la pestaña pasa sola a dato real.</div>
+        </div>`;
+    }
+
+    sec.innerHTML = `
+      <div style="background:#0a1120;border:1px solid #28344c;border-radius:16px;overflow:hidden">
+        <div style="padding:11px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:15px">${um === 'kg' ? '⚗️' : '📦'}</span>
+          <b style="font-size:13px;color:#e2e8f0">Grupo completo · ${um}-equivalentes</b>
+          <span style="font-size:10px;color:#93a4c2">${(g.grupo || []).length} miembros</span>
+          <span style="margin-left:auto;font-size:10px;color:#64748b">8 semanas</span>
+        </div>
+        <div style="display:flex;gap:5px;padding:9px 14px 0;flex-wrap:wrap">
+          ${tabBtn('__ALM__', '🏭 Almacén (WH)')}
+          ${zonasReales.map(z => tabBtn(z, '🏪 ' + _agZonaLabel(z))).join('')}
+          ${zonasEst.map(z => tabBtn(z, '🏪 ' + _agZonaLabel(z), true)).join('')}
+        </div>
+        <div style="background:#131d30;border-top:1px solid rgba(52,211,153,.25);padding:13px 14px">${body}</div>
+        <div style="padding:9px 14px;border-top:1px solid #1e293b;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;color:#93a4c2">
+          💡 <b style="color:#e2e8f0">Para tu pedido semanal:</b>
+          stock ${g.insight?.stockCanon ?? '—'} ${um} = ${g.insight?.coberturaSem ?? '—'} semanas
+          ${(g.insight?.sugerenciaPedido || 0) > 0
+            ? `· <b style="color:#34d399">pedir ~${g.insight.sugerenciaPedido} ${um}</b>`
+            : '· <span style="color:#34d399">stock suficiente, no pidas aún</span>'}
+        </div>
+      </div>`;
+  }
 
   function _anCurrentId() { return _anState.idProducto; }
 
@@ -5918,6 +6238,10 @@ const MOS = (() => {
   }
 
   async function _cargarAnalitica() {
+    // [catálogo v4] el bloque GRUPO (fusionada WH+zonas) carga EN PARALELO al
+    // detalle del producto — cada uno pinta apenas llega, ninguno bloquea al otro.
+    _anState.grupoTab = null;
+    _cargarAnaliticaGrupo();
     try {
       const d = await API.get('getAnaliticaProducto', {
         idProducto: _anState.idProducto,
@@ -16132,28 +16456,8 @@ const MOS = (() => {
     }
   }
 
-  // Handler de los checkboxes mutex (presentación/derivado)
-  function onTipoCheck(tipo, checked) {
-    if (!checked) { setProdTipo('normal'); return; }
-    // Mutex: si marca presentacion, desmarca derivado y viceversa
-    setProdTipo(tipo);
-  }
-  // Handler del checkbox independiente "es envasable"
-  function onEnvasableCheck(checked) {
-    // envasable es independiente de presentacion/derivado
-    if (checked) {
-      // Si tenía presentación o derivado activo, lo desmarca (envasable es base)
-      const cbPres = $('cbEsPresentacion');
-      const cbDer  = $('cbEsDerivado');
-      if (cbPres) cbPres.checked = false;
-      if (cbDer)  cbDer.checked  = false;
-      _prodTipo = 'envasable';
-      $('prodSecDerivado')?.classList.add('hidden');
-      $('prodSecPresentacion')?.classList.add('hidden');
-    } else {
-      _prodTipo = 'normal';
-    }
-  }
+  // [catálogo v4 · limpieza] onTipoCheck/onEnvasableCheck ELIMINADOS: código muerto —
+  // los checkboxes legacy están ocultos y todo lo maneja setProdTipo desde v2.43.486.
 
   function _esEnvasable(p) {
     const v = p.esEnvasable;
@@ -16250,6 +16554,52 @@ const MOS = (() => {
     toast('🧬 Datos tributarios heredados de "' + (padre.descripcion || padre.idProducto) + '" — editables si requiere', 'info');
   }
 
+  // ── [catálogo v4] códigos autogenerados con PREFIJO por tipo ──────────
+  // N- canónico · WH- derivado · P- presentación. Alfanuméricos base36 →
+  // JAMÁS compiten con un EAN numérico de fábrica futuro.
+  function _genCodigoPrefijo(pref) {
+    const ts   = Date.now().toString(36).toUpperCase().slice(-5);
+    const rand = Math.floor(Math.random() * 1296).toString(36).toUpperCase().padStart(2, '0');
+    return pref + ts + rand;
+  }
+
+  // ¿El código está libre LOCALMENTE? (productos cargados + equivalencias en equivMap)
+  // Cierra el gap histórico: la validación vieja NO miraba equivalencias.
+  function _cbConflictoLocal(val, ignorarIdProducto) {
+    const v = String(val || '').trim().toUpperCase();
+    if (!v) return null;
+    const dupProd = (S.productos || []).find(p =>
+      p.codigoBarra && String(p.codigoBarra).trim().toUpperCase() === v
+      && String(p.idProducto) !== String(ignorarIdProducto || ''));
+    if (dupProd) return { tipo: 'producto', descripcion: dupProd.descripcion, id: dupProd.idProducto };
+    const em = S.equivMap || {};
+    for (const sku of Object.keys(em)) {
+      const lista = em[sku] || [];
+      for (const cb of lista) {
+        if (String(cb).trim().toUpperCase() === v) {
+          const dueño = (S.productos || []).find(p => (p.skuBase || p.idProducto) === sku);
+          return { tipo: 'equivalencia', descripcion: (dueño?.descripcion || sku), id: sku };
+        }
+      }
+    }
+    return null;
+  }
+
+  // Genera un código con prefijo GARANTIZADO libre: local instantáneo +
+  // confirmación server (RPC codigo_barra_disponible, SQL 426 — productos Y equivalencias).
+  async function genCodigoUnico(pref) {
+    for (let i = 0; i < 4; i++) {
+      const cb = _genCodigoPrefijo(pref);
+      if (_cbConflictoLocal(cb)) continue;
+      try {
+        const r = await API.post('codigoBarraDisponible', { codigoBarra: cb });
+        if (r && r.disponible === false) continue;
+      } catch (_) { /* server no disponible → el guard de BD (426) es la red final */ }
+      return cb;
+    }
+    return _genCodigoPrefijo(pref);   // 4 colisiones seguidas ≈ imposible; el trigger BD respalda
+  }
+
   // Si silencioso=true: solo regenera (uso interno, ej. al guardar con campo vacío).
   // Si silencioso=false (click del botón): confirma antes de sobrescribir si hay contenido.
   async function prodAutogenBarcode(silencioso) {
@@ -16261,12 +16611,15 @@ const MOS = (() => {
         return;
       }
     }
-    const ts   = Date.now().toString().slice(-6);
-    const rand = Math.floor(Math.random() * 900 + 100);
-    cb.value = 'NMLEV' + ts + rand;
+    // Prefijo según el tipo elegido en el modal (N- canónico/granel · WH- derivado · P- presentación)
+    const pref = _prodTipo === 'derivado' ? 'WH-' : _prodTipo === 'presentacion' ? 'P-' : 'N-';
+    cb.value = await genCodigoUnico(pref);
     prodValidarCodigoBarra();
   }
 
+  // Validación en vivo: local (productos + equivalencias) al instante,
+  // + confirmación server debounced 450ms (cruza AMBAS tablas completas).
+  let _cbValidTimer = null;
   function prodValidarCodigoBarra() {
     const inp = $('prodCodigoBarra');
     const fb  = $('prodCodigoBarraFeedback');
@@ -16278,11 +16631,11 @@ const MOS = (() => {
       inp.classList.remove('!border-red-500');
       return true;
     }
-    const dup = (S.productos || []).find(p =>
-      p.codigoBarra && p.codigoBarra === val && String(p.idProducto) !== curId
-    );
-    if (dup) {
-      fb.textContent = `⚠ Ya existe en: ${dup.descripcion} (${dup.idProducto})`;
+    const conf = _cbConflictoLocal(val, curId);
+    if (conf) {
+      fb.textContent = conf.tipo === 'equivalencia'
+        ? `⚠ Ya es código EQUIVALENTE de: ${conf.descripcion}`
+        : `⚠ Ya existe en: ${conf.descripcion} (${conf.id})`;
       fb.className   = 'text-xs mt-1 text-red-400';
       inp.classList.add('!border-red-500');
       return false;
@@ -16290,6 +16643,21 @@ const MOS = (() => {
     fb.textContent = '✓ Disponible';
     fb.className   = 'text-xs mt-1 text-green-400';
     inp.classList.remove('!border-red-500');
+    // Confirmación server silenciosa (equivalencias fuera del snapshot local, otros equipos, etc.)
+    clearTimeout(_cbValidTimer);
+    _cbValidTimer = setTimeout(async () => {
+      try {
+        const r = await API.post('codigoBarraDisponible', { codigoBarra: val, ignorarIdProducto: curId });
+        if (r && r.disponible === false && $('prodCodigoBarra')?.value.trim() === val) {
+          const c = r.conflicto || {};
+          fb.textContent = c.tipo === 'equivalencia'
+            ? `⚠ Ya es código EQUIVALENTE de: ${c.descripcion || c.id}`
+            : `⚠ Ya existe en: ${c.descripcion || c.id}`;
+          fb.className = 'text-xs mt-1 text-red-400';
+          inp.classList.add('!border-red-500');
+        }
+      } catch (_) {}
+    }, 450);
     return true;
   }
 
@@ -17576,7 +17944,14 @@ const MOS = (() => {
     $('equivList') && ($('equivList').innerHTML = '');
     $('equivAddForm')?.classList.add('hidden');
     $('prodSecSunat')?.classList.add('hidden');
-    const sch = $('sunatChevron'); if (sch) sch.textContent = '▶';
+    const sch = $('sunatChevron'); if (sch) sch.textContent = '⚙️ avanzado';
+
+    // [catálogo v4] CREAR = solo canónico (toggle envasable); EDITAR = barra completa
+    // de tipos (los satélites existentes se siguen editando aquí). Derivado/presentación
+    // NUEVOS nacen del ＋ contextual del card, no de este modal.
+    $('prodTipoBar')?.classList.toggle('hidden', !id);
+    $('prodEnvasableRow')?.classList.toggle('hidden', !!id);
+    $('prodEnvasableSw')?.classList.remove('on');
 
     if (id) {
       const p = S.productos.find(x => x.idProducto === id);
@@ -18037,6 +18412,385 @@ const MOS = (() => {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // [catálogo v4] ＋ CONTEXTUAL + MODALES SATÉLITE (dibujo 3812eb03 §02/§04)
+  // Un modal enfocado por satélite; el ＋ ofrece solo lo que aplica al tipo.
+  // Cero GAS: crearProducto / crearEquivalencia / actualizarSegmentosPrecio
+  // ya son RPCs directas puras.
+  // ═══════════════════════════════════════════════════════════════════
+  let _satState = null;   // { tipo, padre } del modal satélite abierto
+
+  function _prodTipoDe(p) {
+    if (!p) return 'normal';
+    if (p.codigoProductoBase && String(p.codigoProductoBase).trim()) return 'derivado';
+    const f = parseFloat(p.factorConversion);
+    if (f && f !== 1) return 'presentacion';
+    if (_esEnvasable(p)) return 'envasable';
+    return 'normal';
+  }
+
+  // Matriz del ＋ (los porqués del dibujo van como subtítulo de cada opción)
+  function abrirPlusContextual(idProducto, ev) {
+    try { ev && ev.stopPropagation(); } catch(_){}
+    _cerrarPlusCtx();
+    const p = S.productos.find(x => x.idProducto === idProducto);
+    if (!p) return;
+    const tipo = _prodTipoDe(p);
+    const ops = [];
+    if (tipo === 'envasable') {
+      ops.push({ k:'derivado',     ic:'🥄', t:'Derivado',     d:'fracción envasada del granel (250gr, 500gr…)' });
+      ops.push({ k:'presentacion', ic:'🧱', t:'Presentación', d:'pack de N unidades' });
+      ops.push({ k:'tramo',        ic:'📊', t:'Tramo',        d:'precio por rango de peso' });
+      ops.push({ k:'equivalente',  ic:'🏷️', t:'Equivalente',  d:'otro código de barra del mismo producto' });
+    } else if (tipo === 'presentacion') {
+      // [fix rev M3 · money-safe] el modelo de equivalencias cuelga del sku_base del GRUPO:
+      // un "equivalente del pack" resolvería al CANÓNICO → se cobraría 1 unidad en vez del
+      // pack (12x menos). Hasta que exista equivalencia-por-producto, un pack NO admite satélites.
+      toast('🧱 Un pack no admite satélites: su 2do código NO puede ser equivalente (apuntaría al canónico y se cobraría como 1 unidad). Agrégalo desde el canónico si corresponde.', 'error');
+      return;
+    } else { // canónico normal o derivado
+      ops.push({ k:'presentacion', ic:'🧱', t:'Presentación', d:'pack de N unidades' });
+      ops.push({ k:'equivalente',  ic:'🏷️', t:'Equivalente',  d:'otro código de barra' });
+    }
+    const html = `<div id="plusCtxMenu" class="fixed z-[95] rounded-xl shadow-2xl overflow-hidden"
+        style="background:#131d30;border:1px solid #28344c;min-width:250px">
+      <div class="px-3 py-2 text-[10px] font-bold uppercase tracking-wider" style="color:#93a4c2;border-bottom:1px solid #1e293b">
+        ＋ agregar a · <span style="color:#34d399">${_escapeHtml((p.descripcion||'').slice(0,28))}</span></div>
+      ${ops.map(o => `<button onclick="MOS._cerrarPlusCtx();MOS.abrirModalSatelite('${o.k}','${_escapeHtml(idProducto)}')"
+          class="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-slate-800/60" style="border-bottom:1px solid #0e1626">
+        <span class="text-lg leading-none mt-0.5">${o.ic}</span>
+        <span class="min-w-0"><span class="block text-[13px] font-bold text-slate-100">${o.t}</span>
+        <span class="block text-[10.5px] text-slate-500">${o.d}</span></span></button>`).join('')}
+    </div>`;
+    document.body.insertAdjacentHTML('beforeend', html);
+    const menu = document.getElementById('plusCtxMenu');
+    const r = ev?.target?.closest('button')?.getBoundingClientRect();
+    if (r && menu) {
+      const mw = 260, mh = menu.offsetHeight || 200;
+      let x = Math.min(r.left, window.innerWidth - mw - 8);
+      let y = (r.bottom + mh + 8 > window.innerHeight) ? (r.top - mh - 6) : (r.bottom + 6);
+      menu.style.left = Math.max(8, x) + 'px';
+      menu.style.top  = Math.max(8, y) + 'px';
+    }
+    setTimeout(() => document.addEventListener('click', _cerrarPlusCtx, { once: true }), 30);
+  }
+  function _cerrarPlusCtx() { document.getElementById('plusCtxMenu')?.remove(); }
+
+  // ── Modal satélite: un body enfocado por tipo ──────────────────────
+  const _SAT_CAM = (inputId) => `<button type="button" class="btn-cam-scan" onclick="MOS.scanCodigo({inputId:'${inputId}'})" title="Escanear con la cámara">
+    <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>`;
+
+  async function abrirModalSatelite(tipo, idPadre) {
+    const padre = S.productos.find(x => x.idProducto === idPadre);
+    if (!padre) { toast('Producto padre no encontrado', 'error'); return; }
+    _satState = { tipo, padre };
+    const tit = $('satTitulo'), ctx = $('satContexto'), her = $('satHerencia'), body = $('satBody'), btn = $('satGuardarBtn');
+    const tipoPadre = _prodTipoDe(padre);
+    const igvTxt = (padre.Tipo_IGV || padre.tipoIGV) === '2' ? 'Exonerado' : (padre.Tipo_IGV || padre.tipoIGV) === '3' ? 'Inafecto' : 'IGV 18%';
+    ctx.textContent = 'desde · ' + (padre.descripcion || idPadre) + (tipoPadre === 'envasable' ? ' (granel)' : '');
+    her.classList.add('hidden');
+
+    if (tipo === 'derivado') {
+      tit.textContent = '🥄 Nuevo derivado';
+      her.classList.remove('hidden');
+      her.textContent = `Hereda del granel: ${igvTxt} · categoría ${padre.idCategoria || '—'} — no se vuelve a pedir`;
+      body.innerHTML = `
+        <div><label class="lbl">Nombre <span class="text-rose-400">*</span></label>
+          <input id="satNombre" class="inp w-full" placeholder="Ej: ${_escapeHtml((padre.descripcion||'').replace(/GRANEL/i,'').trim())} 250GR" oninput="MOS._satDerivadoPreview()"></div>
+        <div><label class="lbl">Porción del granel por unidad (kg) <span class="text-rose-400">*</span></label>
+          <input id="satPorcion" class="inp w-full" type="number" step="0.001" min="0.001" max="0.999" placeholder="0.250" oninput="MOS._satDerivadoPreview()">
+          <div id="satPorcionHint" class="text-[11px] mt-1 text-slate-500">Ej: bolsa de 250gr = 0.250</div></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="lbl">Precio venta <span class="text-rose-400">*</span></label>
+            <input id="satPrecio" class="inp w-full" type="number" step="0.10" min="0.10" placeholder="0.00"></div>
+          <div><label class="lbl">Código <span class="text-[9px]" style="color:#34d399">auto WH-</span></label>
+            <div class="flex gap-1.5"><input id="satCodigo" class="inp flex-1 font-mono text-xs" oninput="MOS._satValidarCodigo()">
+            ${_SAT_CAM('satCodigo')}</div><div id="satCodigoFb" class="text-[10px] mt-1"></div></div>
+        </div>`;
+      btn.textContent = 'Crear derivado';
+      openModal('modalSatelite');
+      // [fix rev B1] guardia anti-carrera: si cerraron/cambiaron el modal durante el
+      // roundtrip del generador, NO pisar el input del modal nuevo
+      { const st = _satState; const cb = await genCodigoUnico('WH-');
+        if (_satState === st && $('satCodigo')) $('satCodigo').value = cb; }
+      return;
+    }
+
+    if (tipo === 'presentacion') {
+      const precioPadre = parseFloat(padre.precioVenta) || 0;
+      tit.textContent = '🧱 Nueva presentación';
+      her.classList.remove('hidden');
+      her.textContent = `Hereda ${igvTxt} · categoría ${padre.idCategoria || '—'} del producto padre`;
+      body.innerHTML = `
+        <div><label class="lbl">Nombre <span class="text-rose-400">*</span></label>
+          <input id="satNombre" class="inp w-full" placeholder="Ej: ${_escapeHtml((padre.descripcion||'').slice(0,24))} · Pack x12"></div>
+        <div><label class="lbl">¿Cuántas unidades base agrupa? <span class="text-rose-400">*</span></label>
+          <input id="satAgrupa" class="inp w-full" type="number" step="1" min="2" placeholder="12" oninput="MOS._satSugerirPrecioPack(${precioPadre})"></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="lbl">Precio del pack <span class="text-rose-400">*</span></label>
+            <input id="satPrecio" class="inp w-full" type="number" step="0.10" min="0.10" placeholder="0.00">
+            <div id="satPrecioHint" class="text-[10px] mt-1 text-slate-500"></div></div>
+          <div><label class="lbl">Código <span class="text-[9px]" style="color:#34d399">auto P-</span></label>
+            <div class="flex gap-1.5"><input id="satCodigo" class="inp flex-1 font-mono text-xs" oninput="MOS._satValidarCodigo()">
+            ${_SAT_CAM('satCodigo')}</div><div id="satCodigoFb" class="text-[10px] mt-1"></div></div>
+        </div>`;
+      btn.textContent = 'Crear presentación';
+      openModal('modalSatelite');
+      // [fix rev B1] misma guardia anti-carrera del generador
+      { const st = _satState; const cb = await genCodigoUnico('P-');
+        if (_satState === st && $('satCodigo')) $('satCodigo').value = cb; }
+      return;
+    }
+
+    if (tipo === 'tramo') {
+      // tramos = segmentos_precio del grupo: {min,max (gramos), ajustePct} sobre el precio canónico
+      let segs = [];
+      try {
+        const raw = padre.segmentos_precio || padre.segmentosPrecio || '';
+        segs = typeof raw === 'string' && raw ? JSON.parse(raw) : (Array.isArray(raw) ? raw : []);
+      } catch(_) { segs = []; }
+      _satState.segs = Array.isArray(segs) ? segs : [];
+      const pc = parseFloat(padre.precioVenta) || 0;
+      tit.textContent = '📊 Nuevo tramo de precio';
+      her.classList.remove('hidden');
+      her.textContent = `Los tramos viven por grupo (sku_base) · precio canónico S/ ${pc.toFixed(2)}/kg`;
+      body.innerHTML = `
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="lbl">Desde (gramos) <span class="text-rose-400">*</span></label>
+            <input id="satDesde" class="inp w-full" type="number" step="1" min="0" placeholder="0" oninput="MOS._satTramoPreview()"></div>
+          <div><label class="lbl">Hasta (gramos) <span class="text-rose-400">*</span></label>
+            <input id="satHasta" class="inp w-full" type="number" step="1" min="1" placeholder="100" oninput="MOS._satTramoPreview()"></div>
+        </div>
+        <div><label class="lbl">Ajuste sobre el canónico (%) <span class="text-rose-400">*</span></label>
+          <input id="satAjuste" class="inp w-full" type="number" step="0.5" placeholder="+10" oninput="MOS._satTramoPreview()">
+          <div id="satTramoHint" class="text-[11px] mt-1 text-slate-500">Ej: +10 → cobras S/ ${(pc*1.10).toFixed(2)}/kg en ese rango</div></div>
+        <div><label class="lbl">Vista de la escalera</label>
+          <div id="satEscalera" class="flex gap-1 mt-1"></div></div>`;
+      btn.textContent = 'Guardar tramo';
+      openModal('modalSatelite');
+      _satTramoPreview();
+      return;
+    }
+
+    if (tipo === 'equivalente') {
+      tit.textContent = '🏷️ Nuevo equivalente';
+      her.classList.remove('hidden');
+      her.textContent = 'Solo agrega OTRO código que apunta al mismo producto — sin precio ni IGV propios';
+      body.innerHTML = `
+        <div><label class="lbl">Código de barras equivalente <span class="text-rose-400">*</span></label>
+          <div class="text-[10.5px] text-slate-500 mb-1.5">El del proveedor/caja — se escanea o escribe, NUNCA se genera</div>
+          <div class="flex gap-1.5"><input id="satCodigo" class="inp flex-1 font-mono" placeholder="escanear o escribir…" oninput="MOS._satValidarCodigo()">
+          ${_SAT_CAM('satCodigo')}</div><div id="satCodigoFb" class="text-[10px] mt-1"></div></div>
+        <div><label class="lbl">Nota (opcional)</label>
+          <input id="satNota" class="inp w-full" placeholder="Ej: código del proveedor nuevo"></div>`;
+      btn.textContent = 'Agregar equivalente';
+      openModal('modalSatelite');
+      setTimeout(() => $('satCodigo')?.focus(), 250);
+      return;
+    }
+  }
+
+  function cerrarModalSatelite() { _satState = null; closeModal('modalSatelite'); }
+
+  // Guardián porción-vs-nombre del derivado (reusa _pesoDesdeNombre: avisa, no bloquea)
+  function _satDerivadoPreview() {
+    const hint = $('satPorcionHint');
+    if (!hint) return;
+    const nombre  = $('satNombre')?.value || '';
+    const porcion = parseFloat($('satPorcion')?.value) || 0;
+    const pesoNom = (typeof _pesoDesdeNombre === 'function') ? _pesoDesdeNombre(nombre) : null;
+    if (porcion > 0 && pesoNom && Math.abs(pesoNom - porcion) > 0.001) {
+      hint.innerHTML = `<span style="color:#fbbf24">⚠ El nombre sugiere ${pesoNom} kg pero la porción es ${porcion} kg — verifica (el nombre suele decir la verdad)</span>`;
+    } else if (porcion > 0 && pesoNom) {
+      hint.innerHTML = `<span style="color:#34d399">✓ Coincide con el nombre (${pesoNom} kg)</span>`;
+    } else {
+      hint.textContent = 'Ej: bolsa de 250gr = 0.250';
+    }
+  }
+
+  function _satSugerirPrecioPack(precioPadre) {
+    const n = parseInt($('satAgrupa')?.value) || 0;
+    const hint = $('satPrecioHint');
+    if (!hint) return;
+    if (n >= 2 && precioPadre > 0) {
+      const sug = n * precioPadre;
+      hint.innerHTML = `Sugerencia: ${n} × S/${precioPadre.toFixed(2)} = <b style="color:#34d399">S/ ${sug.toFixed(2)}</b> · pones el tuyo`;
+      const pi = $('satPrecio');
+      if (pi && !pi.value) pi.value = sug.toFixed(2);
+    } else hint.textContent = '';
+  }
+
+  function _satTramoPreview() {
+    const st = _satState; if (!st || st.tipo !== 'tramo') return;
+    const pc = parseFloat(st.padre.precioVenta) || 0;
+    const desde = parseFloat($('satDesde')?.value);
+    const hasta = parseFloat($('satHasta')?.value);
+    const aj    = parseFloat($('satAjuste')?.value);
+    const hint = $('satTramoHint');
+    if (hint && !isNaN(aj)) hint.innerHTML = `${aj >= 0 ? '+' : ''}${aj}% → cobras <b style="color:#34d399">S/ ${(pc * (1 + aj/100)).toFixed(2)}/kg</b> en ese rango`;
+    // escalera: tramos existentes + el nuevo (resaltado)
+    const esc = $('satEscalera'); if (!esc) return;
+    const todos = (st.segs || []).slice();
+    const nuevoValido = !isNaN(desde) && !isNaN(hasta) && hasta > desde && !isNaN(aj);
+    if (nuevoValido) todos.push({ min: desde, max: hasta, ajustePct: aj, _nuevo: true });
+    todos.sort((a,b) => (a.min||0) - (b.min||0));
+    if (!todos.length) { esc.innerHTML = '<div class="text-[11px] text-slate-600">⬚ sin tramos aún — todo al canónico</div>'; return; }
+    esc.innerHTML = todos.map(s => {
+      const precio = pc * (1 + (parseFloat(s.ajustePct)||0)/100);
+      const lbl = (s.min >= 1000 ? (s.min/1000)+'kg' : (s.min||0)+'g') + '–' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g'));
+      return `<div class="flex-1 text-center rounded-md py-1.5 px-0.5" style="font-size:9.5px;font-family:monospace;
+        ${s._nuevo ? 'background:rgba(52,211,153,.15);border:1px solid #34d399;color:#34d399' : 'background:#0e1626;border:1px solid #28344c;color:#93a4c2'}">
+        ${lbl}<br><b>S/${precio.toFixed(2)}</b>${s._nuevo ? ' ←' : ''}</div>`;
+    }).join('');
+  }
+
+  // Validación en vivo del código del satélite (local + server, ambas tablas)
+  let _satValidTimer = null;
+  function _satValidarCodigo() {
+    const inp = $('satCodigo'), fb = $('satCodigoFb');
+    if (!inp || !fb) return true;
+    const val = inp.value.trim();
+    if (!val) { fb.textContent = ''; return false; }
+    const conf = _cbConflictoLocal(val);
+    if (conf) {
+      fb.innerHTML = `<span class="text-red-400">⚠ Ya ${conf.tipo === 'equivalencia' ? 'es equivalente de' : 'existe en'}: ${_escapeHtml(conf.descripcion || '')}</span>`;
+      return false;
+    }
+    fb.innerHTML = '<span class="text-green-400">✓ Disponible</span>';
+    clearTimeout(_satValidTimer);
+    _satValidTimer = setTimeout(async () => {
+      try {
+        const r = await API.post('codigoBarraDisponible', { codigoBarra: val });
+        if (r && r.disponible === false && $('satCodigo')?.value.trim() === val) {
+          const c = r.conflicto || {};
+          fb.innerHTML = `<span class="text-red-400">⚠ Ya ${c.tipo === 'equivalencia' ? 'es equivalente de' : 'existe en'}: ${_escapeHtml(c.descripcion || c.id || '')}</span>`;
+        }
+      } catch(_){}
+    }, 450);
+    return true;
+  }
+
+  // Guardar según el tipo — optimista, cero GAS
+  let _satGuardando = false;
+  async function guardarSatelite() {
+    if (_satGuardando || !_satState) return;
+    const { tipo, padre } = _satState;
+    const skuPadre = padre.skuBase || padre.idProducto;
+
+    // herencia tributaria del padre (regla del dibujo: no se vuelve a pedir)
+    const her = {
+      Tipo_IGV:       padre.Tipo_IGV || padre.tipoIGV || '1',
+      Cod_Tributo:    padre.Cod_Tributo || padre.codTributo || '1000',
+      IGV_Porcentaje: (padre.IGV_Porcentaje ?? padre.igvPorcentaje ?? 18),
+      Cod_SUNAT:      padre.Cod_SUNAT || padre.codSUNAT || '',
+      idCategoria:    padre.idCategoria || ''
+    };
+
+    if (tipo === 'derivado' || tipo === 'presentacion') {
+      const nombre  = ($('satNombre')?.value || '').trim();
+      const precio  = parseFloat($('satPrecio')?.value) || 0;
+      const codigo  = ($('satCodigo')?.value || '').trim();
+      if (!nombre)      { toast('⚠ El nombre es requerido', 'error'); return; }
+      if (precio <= 0)  { toast('⚠ El precio es requerido (> 0)', 'error'); return; }
+      if (!codigo)      { toast('⚠ El código es requerido', 'error'); return; }
+      if (_cbConflictoLocal(codigo)) { toast('⚠ Ese código ya existe (producto o equivalente)', 'error'); return; }
+
+      const params = {
+        _source: 'MOS_MODAL_SATELITE', descripcion: nombre, codigoBarra: codigo,
+        precioVenta: precio, marca: padre.marca || '', estado: '1',
+        stockMinimo: 0, stockMaximo: 0, precioCosto: '', unidad: 'NIU', Unidad_Medida: 'NIU',
+        modoVenta: '', margenPct: '', precioTope: '', ...her
+      };
+      if (tipo === 'derivado') {
+        const porcion = parseFloat($('satPorcion')?.value) || 0;
+        if (porcion <= 0 || porcion >= 1) { toast('⚠ La porción debe ser mayor a 0 y menor a 1 kg', 'error'); return; }
+        params.esEnvasable = '0';
+        params.codigoProductoBase   = skuPadre;
+        params.factorConversionBase = porcion;
+        params.factorConversion = ''; params.mermaEsperadaPct = '';
+      } else {
+        const n = parseInt($('satAgrupa')?.value) || 0;
+        if (n < 2) { toast('⚠ Un pack agrupa 2 o más unidades', 'error'); return; }
+        params.esEnvasable = '0';
+        params.skuBase = skuPadre;
+        params.factorConversion = n;
+        params.codigoProductoBase = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
+      }
+      _satGuardando = true;
+      cerrarModalSatelite();
+      toast(tipo === 'derivado' ? 'Creando derivado…' : 'Creando presentación…', 'info');
+      try {
+        const r = await API.post('crearProducto', params);
+        toast((tipo === 'derivado' ? '🥄 Derivado' : '🧱 Presentación') + ' creado ✓', 'ok');
+        S.loaded['catalogo'] = false;
+        await loadCatalogo(true);
+        const tid = (r && r.idProducto) || '';
+        if (tid) _pulseCatalogoCard(tipo === 'presentacion' ? padre.idProducto : tid);
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+      finally { _satGuardando = false; }
+      return;
+    }
+
+    if (tipo === 'tramo') {
+      const desde = parseFloat($('satDesde')?.value);
+      const hasta = parseFloat($('satHasta')?.value);
+      const aj    = parseFloat($('satAjuste')?.value);
+      if (isNaN(desde) || desde < 0)        { toast('⚠ Desde (gramos) es requerido', 'error'); return; }
+      if (isNaN(hasta) || hasta <= desde)   { toast('⚠ Hasta debe ser mayor que Desde', 'error'); return; }
+      if (isNaN(aj))                        { toast('⚠ El ajuste % es requerido', 'error'); return; }
+      const solapa = (_satState.segs || []).some(s => desde < (s.max ?? Infinity) && hasta > (s.min || 0));
+      if (solapa) { toast('⚠ El tramo se solapa con uno existente — edítalo desde el producto', 'error'); return; }
+      const nuevo = { id: 'SEG' + Date.now(), min: desde, max: hasta, minIncl: true, maxIncl: false, ajustePct: aj };
+      const segs = (_satState.segs || []).concat([nuevo]);
+      _satGuardando = true;
+      cerrarModalSatelite();
+      toast('Guardando tramo…', 'info');
+      try {
+        await API.post('actualizarSegmentosPrecio', {
+          _source: 'MOS_MODAL_SATELITE',
+          skuBase: skuPadre, idProducto: padre.idProducto, segmentos: segs
+        });
+        toast('📊 Tramo guardado ✓', 'ok');
+        S.loaded['catalogo'] = false;
+        await loadCatalogo(true);
+        _pulseCatalogoCard(padre.idProducto);
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+      finally { _satGuardando = false; }
+      return;
+    }
+
+    if (tipo === 'equivalente') {
+      const codigo = ($('satCodigo')?.value || '').trim();
+      const nota   = ($('satNota')?.value || '').trim();
+      if (!codigo) { toast('⚠ Escanea o escribe el código', 'error'); return; }
+      const conf = _cbConflictoLocal(codigo);
+      if (conf) { toast(`⚠ Ese código ya ${conf.tipo === 'equivalencia' ? 'es equivalente de' : 'existe en'}: ${conf.descripcion}`, 'error'); return; }
+      _satGuardando = true;
+      cerrarModalSatelite();
+      toast('Agregando equivalente…', 'info');
+      try {
+        await API.post('crearEquivalencia', {
+          _source: 'MOS_MODAL_SATELITE',
+          skuBase: skuPadre, codigoBarra: codigo, descripcion: nota || ('Equivalente de ' + (padre.descripcion || skuPadre))
+        });
+        toast('🏷️ Equivalente agregado ✓', 'ok');
+        await _loadEquivModal(skuPadre);
+        renderCatalogo();
+        _pulseCatalogoCard(padre.idProducto);
+      } catch(e) { toast('Error: ' + e.message, 'error'); }
+      finally { _satGuardando = false; }
+      return;
+    }
+  }
+
+  // Toggle "es granel envasable" del modal +producto EN CREACIÓN (dibujo §04)
+  function prodToggleEnvasable() {
+    const sw = $('prodEnvasableSw');
+    const on = !sw?.classList.contains('on');
+    sw?.classList.toggle('on', on);
+    setProdTipo(on ? 'envasable' : 'normal', true);
+  }
+
   async function guardarProducto() {
     const desc = ($('prodDescripcion')?.value || '').trim();
     // Validaciones de campos OBLIGATORIOS
@@ -18046,9 +18800,11 @@ const MOS = (() => {
       return;
     }
     let codigoBarra = ($('prodCodigoBarra')?.value || '').trim();
-    // Si no hay codigoBarra, autogenerar uno NMLEV en el momento (no permitir vacío)
+    // Si no hay codigoBarra, autogenerar uno con prefijo en el momento (no permitir vacío)
     if (!codigoBarra) {
-      prodAutogenBarcode(true); // silencioso: el campo está vacío, no hay que confirmar
+      // [catálogo v4] prodAutogenBarcode ahora es async (valida contra productos +
+      // equivalencias en el server) → AWAIT obligatorio o el value se lee vacío
+      await prodAutogenBarcode(true); // silencioso: el campo está vacío, no hay que confirmar
       codigoBarra = ($('prodCodigoBarra')?.value || '').trim();
       if (!codigoBarra) {
         toast('⚠ El código de barras es requerido', 'error');
@@ -18166,47 +18922,8 @@ const MOS = (() => {
     }, 200);
   }
 
-  // Price modal
-  function abrirModalPrecio(id) {
-    const p = S.productos.find(x => x.idProducto === id);
-    if (!p) { toast('Producto no encontrado', 'error'); return; }
-    $('precioIdProducto').value = id;
-    $('precioInfoProd').textContent = p.descripcion + (p.codigoBarra ? ' — ' + p.codigoBarra : '');
-    $('precioActual').textContent = fmtMoney(p.precioVenta);
-    $('precioNuevo').value = p.precioVenta || '';
-    $('precioMotivo').value = '';
-    $('precioMembretes').checked = false;
-    openModal('modalPrecio');
-  }
-
-  async function publicarPrecio() {
-    const id     = $('precioIdProducto')?.value;
-    const nuevo  = parseFloat($('precioNuevo')?.value || 0);
-    const motivo = $('precioMotivo')?.value || '';
-    const memb   = $('precioMembretes')?.checked;
-
-    if (!nuevo || nuevo <= 0) { toast('Ingresa un precio válido', 'error'); return; }
-
-    const p = S.productos.find(x => x.idProducto === id);
-    const prevPrecio = p?.precioVenta;
-    // Optimistic update
-    if (p) { p.precioVenta = nuevo; _catSaveCache({ productos: S.productos, equivMap: S.equivMap }); renderCatalogo(); }
-    closeModal('modalPrecio');
-    try {
-      await API.post('publicarPrecio', {
-        _source: 'MOS_MODAL_PRECIO',
-        idProducto: id, skuBase: p?.skuBase, codigoBarra: p?.codigoBarra,
-        descripcion: p?.descripcion, precioNuevo: nuevo,
-        motivo, imprimirMembretes: memb
-      });
-      toast('Precio publicado: ' + fmtMoney(nuevo), 'ok');
-      S.loaded['catalogo'] = false;
-      loadCatalogo(true); // background refresh
-    } catch (e) {
-      if (p && prevPrecio !== undefined) { p.precioVenta = prevPrecio; renderCatalogo(); }
-      toast('Error: ' + e.message, 'error');
-    }
-  }
+  // [catálogo v4 · limpieza] abrirModalPrecio + publicarPrecio ELIMINADOS: código muerto
+  // (cero callers desde que modalPrecioRapido los reemplazó). La cascada usa guardarPrecioRapido.
 
   // Proveedor modal
   function abrirModalProveedor(id) {
@@ -21051,6 +21768,24 @@ const MOS = (() => {
   // el sparkline muestre "sin rotación" en vez de quedarse "cargando…" eterno.
   async function _cargarRotacionSemanal(force) {
     const TTL = 15 * 60 * 1000;
+    // [catálogo v4] STALE-WHILE-REVALIDATE: hidratar del localStorage ANTES del
+    // primer fetch — el chip de rotación pinta AL INSTANTE con el último valor
+    // conocido y se refresca por detrás (el skeleton solo se ve la 1ª vez en la
+    // vida del equipo). El server ya es cache precalculada (SQL 424, ~120ms).
+    if (!S._rotacionSemanalCache || !S._rotacionSemanalCache.productos
+        || !Object.keys(S._rotacionSemanalCache.productos).length) {
+      try {
+        const raw = localStorage.getItem('mos_rotacion_cache_v1');
+        if (raw) {
+          const st = JSON.parse(raw);
+          if (st && st.data && st.data.productos && Object.keys(st.data.productos).length) {
+            S._rotacionSemanalCache = st.data;
+            // ts=0 → se considera VENCIDO: pinta ya, pero el fetch de fondo corre igual
+            S._rotacionSemanalCacheTs = 0;
+          }
+        }
+      } catch (_) {}
+    }
     // [v2.43.55] Si el cache es bueno y reciente → retornar directo
     if (!force && S._rotacionSemanalCache && S._rotacionSemanalCache.productos
         && Object.keys(S._rotacionSemanalCache.productos).length > 0
@@ -21081,6 +21816,12 @@ const MOS = (() => {
       S._rotacionSemanalCacheTs = Date.now();
       S._rotacionSemanalLoading = null;
       S._rotacionSemanalLoadingStart = 0;
+      // [catálogo v4] persistir para el arranque instantáneo de la próxima sesión
+      try {
+        if (limpio.productos && Object.keys(limpio.productos).length) {
+          localStorage.setItem('mos_rotacion_cache_v1', JSON.stringify({ ts: Date.now(), data: limpio }));
+        }
+      } catch (_) {}
       console.log('[rotacion] setear ok. productos:',
                   Object.keys(limpio.productos || {}).length,
                   limpio._error ? 'error:' + limpio._error : '');
@@ -43831,7 +44572,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.85] Proyección — roadmap estratégico
     abrirProyeccion, _proyToggle, _proyResetEstado, _proyExportar,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
-    filterCatalogo, setCatTab, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
+    filterCatalogo, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
     _catCardClick, _catSfx, _catRipple,
     verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
@@ -43862,7 +44603,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _logProdAbrirFiltro, _logProdSetFiltro,
     _logProdAbrirCalendario, _logProdCalNavMes, _logProdElegirFecha,
     prodTogglePolitica, _prodOnPoliticaOverride, _prodOnModoChange, _prodActualizarPoliticaEfectiva,
-    setProdTipo, onTipoCheck, onEnvasableCheck, _prodDerivadoPreview, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
+    setProdTipo, _prodDerivadoPreview, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
+    scanCodigo, genCodigoUnico,   // [catálogo v4] escáner generalizado + generador con prefijo
+    scanBuscarCatalogo, abrirPlusContextual, _cerrarPlusCtx,           // [catálogo v4] buscador cámara + ＋ contextual
+    abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
+    _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo,
+    prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
+    _agTab,                                                            // [catálogo v4] pestañas analítica fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,
     toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
@@ -43884,7 +44631,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     updateRateSlider, abrirConfigEval, guardarConfigEval,
     renderConfigEvalPanel, guardarConfigEvalPanel,
     abrirLiquidacion,
-    abrirModalPrecio, publicarPrecio,
+
     setAlmTab,
     // [v2.43.29] Panel salud stock
     saludLoadIfNeeded, saludRefresh, saludReconciliarUno, saludReconciliarMasivo,
@@ -44123,6 +44870,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         descripcion: p.descripcion || p.nombre || '',
         precio:      parseFloat(p.precio || p.precioVenta) || 0,
         skuBase:     p.skuBase || '',
+        // [catálogo v4 · fix rev] sin este campo el menú NUNCA detectaba derivado
+        // → la 3ra opción "Adhesivo envasado" no aparecía desde el card MOS
+        codigoProductoBase: p.codigoProductoBase || '',
         codigos:     p.codigos || null
       });
     },

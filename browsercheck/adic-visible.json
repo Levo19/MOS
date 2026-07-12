@@ -1,0 +1,7 @@
+{
+  "url": "http://localhost:8177/index.html",
+  "waitMs": 2500,
+  "viewport": { "width": 390, "height": 844 },
+  "screenshot": "adic-visible.png",
+  "evalAfter": "(async()=>{try{if(typeof _itemManifiestoHTML!=='function')return{err:'no fn'};window._gestionOpEstado='Abierta';window.editandoMovId=null;window.pagosData=window.pagosData||[];var m={id:'M1',tipo:'Agencia',contacto:'CON-09',nombreContacto:'Ht Backpacker',pax:5,monto:115,adicionales:''};var html='';try{html=_itemManifiestoHTML(m);}catch(e){return{crash_render:e.message};}var wrap=document.createElement('div');wrap.style.cssText='position:fixed;inset:0;z-index:99999;background:#f3f4f6;padding:16px';wrap.innerHTML='<div style=\"max-width:360px;margin:0 auto\">'+html+'</div>';document.body.appendChild(wrap);await new Promise(function(r){setTimeout(r,400);});return{sinSeleccionar:window.editandoMovId===null,tieneCobrar:html.indexOf('Cobrar')>=0,tieneAdicionales:html.indexOf('Adicionales')>=0,tienePasar:html.indexOf('Pasar')>=0};}catch(e){return{crash:e.message};}})()"
+}
