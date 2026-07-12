@@ -2234,7 +2234,10 @@ const API = (() => {
         idPersonal: p.idPersonal != null ? String(p.idPersonal) : undefined,
         localId: _mosLocalId(p, 'LIQ'),
         fechas: p.fechas, nombre: p.nombre, rol: p.rol, appOrigen: p.appOrigen,
-        pagadoPor: p.pagadoPor != null ? p.pagadoPor : _mosUsuario(p), comentario: p.comentario
+        pagadoPor: p.pagadoPor != null ? p.pagadoPor : _mosUsuario(p), comentario: p.comentario,
+        // [419] 🧾 notas de crédito a descontar por planilla (ids de me.ventas elegidos por el
+        // admin). La RPC valida doc+estado y descuenta EN LA MISMA TX del pago (todo o nada).
+        creditos: Array.isArray(p.creditos) && p.creditos.length ? p.creditos : undefined
       } });
       if (out == null) return null;            // sin token → GAS
       return _desempacarCatalogo(out);         // {idPago, idGasto, dias, total} — el front lee .total
@@ -3267,6 +3270,12 @@ const API = (() => {
       // [cero-GAS G2] GPS tracking — gate _mosLecturaDirecta (ON prod) + el RPC checa GPS_DIRECTO (OFF→null→GAS).
       if (action === 'getUltimaUbicacionDispositivo') { return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getUbicacionesDispositivo')     { return _conFallbackMOS(() => _getUbicacionesDispositivoDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      // [419] 🧾 créditos pendientes de una persona (tickets ME a CRÉDITO con su documento).
+      // Acción NUEVA cero-GAS (sin fallback: si falla, el modal simplemente no muestra créditos).
+      if (action === 'getCreditosPersonal') {
+        return _sbRpcMOS('creditos_personal', { p: p || {} })
+          .then(r => (r && r.ok) ? r : { ok: false, error: (r && r.error) || 'sin token' });
+      }
       if (action === 'getLiquidacionesPendientes') { return _conFallbackMOS(() => _getLiqPendientesDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getLiquidacionesPagadas' || action === 'getLiquidacionesEmitidas') { return _conFallbackMOS(() => _getLiqPagadasDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
       if (action === 'getLiquidacionesVetadas') { return _conFallbackMOS(() => _getLiqVetadasDirecto(p),        () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }

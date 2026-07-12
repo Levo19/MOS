@@ -1,1 +1,1 @@
-{"version":"2.43.478","build":"2.43.478 (revision 500x): fix timeline espia (player nativo Storage, antes iframe Drive roto) + fix version.json que decia 2.8.189 (version de ME, error del deploy F4)."}
+{"version":"2.43.479","build":"2.43.479 envasado colaborativo + linea de credito personal: Personal editor con documento (ID texto exacto), chips del dia (colab + credito vivo), modal de pago con notas de credito (check por ticket, neto puede ser negativo, descuento atomico via marcar_pagos SQL 419) + ticket con desglose propio/colab y DESCUENTOS/NETO."}
