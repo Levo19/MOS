@@ -18126,7 +18126,10 @@ const MOS = (() => {
       }
 
       // Equivalencias
-      $('modalEquivSection')?.classList.remove('hidden');
+      // [RONDA 5] la sección de equivalencias SALIÓ del modal producto (redundante con
+      // el ＋ del card, dibujo §02/§04): agregar Y gestionar (activar/desactivar) viven
+      // en el modal 🏷️ Equivalente del ＋ contextual.
+      $('modalEquivSection')?.classList.add('hidden');
       _loadEquivModal(p.skuBase || p.idProducto);
 
       // Política de precios (override del producto si tiene)
@@ -18740,9 +18743,12 @@ const MOS = (() => {
           <div class="flex gap-1.5"><input id="satCodigo" class="inp flex-1 font-mono" placeholder="escanear o escribir…" oninput="MOS._satValidarCodigo()">
           ${_SAT_CAM('satCodigo')}</div><div id="satCodigoFb" class="text-[10px] mt-1"></div></div>
         <div><label class="lbl">Nota (opcional)</label>
-          <input id="satNota" class="inp w-full" placeholder="Ej: código del proveedor nuevo"></div>`;
+          <input id="satNota" class="inp w-full" placeholder="Ej: código del proveedor nuevo"></div>
+        <div><label class="lbl">Equivalentes existentes del grupo</label>
+          <div id="satEquivLista" class="space-y-1.5 mt-1"><div class="rot-chip rot-skel" style="width:100%;min-height:34px;border-radius:10px"></div></div></div>`;
       btn.textContent = 'Agregar equivalente';
       openModal('modalSatelite');
+      _satEquivListaRender();
       setTimeout(() => $('satCodigo')?.focus(), 250);
       return;
     }
@@ -18841,6 +18847,42 @@ const MOS = (() => {
       });
       toast('📊 Tramo eliminado ✓', 'ok');
       _satTramosListaRender(); _satTramoPreview();
+      renderCatalogo();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  // [RONDA 5] gestión de equivalentes EN el modal ＋equivalente (la sección embebida
+  // del modal producto se ocultó — redundante con el ＋ del dibujo): lista + toggle activo.
+  async function _satEquivListaRender() {
+    const cont = $('satEquivLista');
+    const st = _satState;
+    if (!cont || !st || st.tipo !== 'equivalente') return;
+    const sku = st.padre.skuBase || st.padre.idProducto;
+    try {
+      const lista = await API.get('getEquivalencias', { skuBase: sku });
+      if (_satState !== st || !$('satEquivLista')) return;   // modal cambió durante el fetch
+      const arr = Array.isArray(lista) ? lista : (lista?.equivalencias || []);
+      if (!arr.length) { cont.innerHTML = '<div class="text-[11px] text-slate-600">⬚ sin equivalentes aún</div>'; return; }
+      cont.innerHTML = arr.map(e => `
+        <div class="flex items-center gap-2 rounded-lg px-3 py-2" style="background:#0e1626;border:1px solid #28344c${e.activo === false || e.activo === '0' ? ';opacity:.55' : ''}">
+          <span class="text-[11px] font-mono text-slate-300">▌${_escapeHtml(e.codigoBarra || '')}</span>
+          <span class="text-[10px] text-slate-500 truncate">${_escapeHtml(e.descripcion || '')}</span>
+          <button type="button" class="toggle-sw sm ${e.activo === false || e.activo === '0' ? '' : 'on'}" style="margin-left:auto"
+                  title="${e.activo === false || e.activo === '0' ? 'Reactivar' : 'Desactivar'}"
+                  onclick="MOS._satEquivToggle('${_escapeHtml(e.idEquiv || '')}', ${e.activo === false || e.activo === '0' ? 'true' : 'false'})">
+            <span class="toggle-sw-knob"></span></button>
+        </div>`).join('');
+    } catch (_) { cont.innerHTML = '<div class="text-[11px] text-red-400">No se pudo cargar la lista</div>'; }
+  }
+  async function _satEquivToggle(idEquiv, nuevoActivo) {
+    const st = _satState;
+    if (!st || !idEquiv) return;
+    const sku = st.padre.skuBase || st.padre.idProducto;
+    try {
+      await API.post('actualizarEquivalencia', { _source: 'MOS_MODAL_SATELITE', idEquiv, activo: nuevoActivo ? '1' : '0' });
+      toast(nuevoActivo ? '🏷️ Equivalente reactivado' : '🏷️ Equivalente desactivado', 'ok');
+      await _loadEquivModal(sku);        // refresca chips del card
+      _satEquivListaRender();
       renderCatalogo();
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -44836,7 +44878,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     scanCodigo, genCodigoUnico,   // [catálogo v4] escáner generalizado + generador con prefijo
     scanBuscarCatalogo, abrirPlusContextual, _cerrarPlusCtx, abrirEditarProducto,           // [catálogo v4] buscador cámara + ＋ contextual
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
-    _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar,
+    _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
     _agTab,                                                            // [catálogo v4] pestañas analítica fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,

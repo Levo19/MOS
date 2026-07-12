@@ -1,1 +1,1 @@
-{"version":"2.43.490","build":"2.43.490 RONDA 4: FIX analitica fusionada (SQL 430: temp table + pool PostgREST = HTTP 400 -> grupo como CTE, tabs Almacen/Zonas VIVOS); stepper adhesivo recuerda ultima cantidad por producto (default 12); escalera de tramos del card abre el modal nuevo de tramos; edicion sin barra de tipos (titulo con icono del tipo)."}
+{"version":"2.43.491","build":"2.43.491 RONDA 5: equivalencias fuera del modal producto (gestion lista+toggle en modal +equivalente); skeleton analitica NEUTRO (el viejo imitaba el layout anterior = codigo muerto visual)."}
