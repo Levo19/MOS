@@ -3304,10 +3304,12 @@ const MOS = (() => {
     // [Escalera de tramos] celdas de igual ancho (visual, no a escala).
     const cmap = _segColorMap(segs);
     const regiones = _segRegiones(segs);
+    // [RONDA 4] TODO clic de tramos en el card abre el modal NUEVO 📊 Tramo
+    // (＋ contextual, con escalera viva + lista + eliminar) — no el modal producto viejo
     const cells = _segLadderCells(
       regiones, pcKg, cmap,
-      sidEsc => `event.stopPropagation();MOS.segEditarDesdeCard('${idProdEsc}','${sidEsc}')`,
-      `event.stopPropagation();MOS.segNuevoDesdeCard('${idProdEsc}')`
+      sidEsc => `event.stopPropagation();MOS.abrirModalSatelite('tramo','${idProdEsc}')`,
+      `event.stopPropagation();MOS.abrirModalSatelite('tramo','${idProdEsc}')`
     );
     const axis = _segLadderAxis(regiones);
 
@@ -3316,11 +3318,11 @@ const MOS = (() => {
         🎚 <strong>Tramos de precio</strong>
         <span class="cat-seg-count">${segs.length} tramo${segs.length !== 1 ? 's' : ''} · ${regiones.length} zona${regiones.length !== 1 ? 's' : ''}</span>
         <button type="button" class="cat-seg-add-btn"
-                onclick="event.stopPropagation();MOS.segNuevoDesdeCard('${idProdEsc}')"
+                onclick="event.stopPropagation();MOS.abrirModalSatelite('tramo','${idProdEsc}')"
                 title="Crear un tramo nuevo">+ tramo</button>
         <button type="button" class="cat-seg-edit-btn"
-                onclick="event.stopPropagation();MOS.abrirModalProducto('${idProdEsc}')"
-                title="Abrir editor (ver lista / borrar)">✏</button>
+                onclick="event.stopPropagation();MOS.abrirModalSatelite('tramo','${idProdEsc}')"
+                title="Ver lista / borrar tramos">✏</button>
       </div>
       <div class="seg-lad-track seg-lad-compact">${cells}</div>
       <div class="seg-lad-axis">${axis}</div>
@@ -18105,6 +18107,13 @@ const MOS = (() => {
       }
       // else: factor=1 o vacío + sin codigoProductoBase = base/normal/canónico
       setProdTipo(tipo);
+      // [RONDA 4] la barra de tipos NO se muestra ni en edición (el tipo NO se cambia
+      // tocando botones — dibujo §04): el título dice QUÉ estás editando, con su ícono.
+      $('prodTipoBar')?.classList.add('hidden');
+      $('modalProdTitle').textContent = 'Editar · ' + (
+        tipo === 'envasable'    ? '⚗️ Granel envasable' :
+        tipo === 'derivado'     ? '🥄 Derivado' :
+        tipo === 'presentacion' ? '🧱 Presentación' : '🔵 Canónico');
 
       if (tipo === 'derivado') {
         $('prodCodigoProductoBase').value = p.codigoProductoBase || '';
