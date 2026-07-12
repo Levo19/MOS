@@ -33467,6 +33467,11 @@ const MOS = (() => {
     const selDias = sel.size || 0;
     const todoSelec = selDias === p.dias.length && selDias > 0;
     const subtotalSel = p.dias.filter(d => sel.has(d.fecha)).reduce((s,d) => s + d.totalDia, 0);
+    // [422] consumo a crédito de los días SELECCIONADOS (o de todos si no hay selección)
+    // → el admin ve el neto que realmente saldrá de caja antes de confirmar.
+    const _consSel = (selDias > 0 ? p.dias.filter(d => sel.has(d.fecha)) : p.dias)
+      .reduce((s, d) => s + (parseFloat(d.consumoDia && d.consumoDia.total) || 0), 0);
+    const _consR = Math.round(_consSel * 100) / 100;
     const ico = _liqRolIco(p.rol);
     const cardCls = selDias > 0 ? ' has-selection' : '';
     // [500x · chip 🔗 en Liquidaciones] el mismo nombre en >1 fila (mismo movido de zona / dos
@@ -33495,9 +33500,10 @@ const MOS = (() => {
             ${selDias > 0
               ? `<div class="text-[10px] uppercase text-emerald-400 font-bold tracking-wider">Seleccionado</div>
                  <div class="text-base font-bold" style="color:#34d399">${_liqMoney(subtotalSel)}</div>
-                 <div class="text-[10px] text-slate-500">de ${_liqMoney(p.total)}</div>`
+                 ${_consR > 0 ? `<div class="text-[9px] font-bold" style="color:#fbbf24" title="Consumo a crédito de los días seleccionados">−${_liqMoney(_consR)} → neto ${_liqMoney(Math.round((subtotalSel - _consR) * 100) / 100)}</div>` : `<div class="text-[10px] text-slate-500">de ${_liqMoney(p.total)}</div>`}`
               : `<div class="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Total</div>
-                 <div class="text-base font-bold" style="color:#fbbf24">${_liqMoney(p.total)}</div>`
+                 <div class="text-base font-bold" style="color:#fbbf24">${_liqMoney(p.total)}</div>
+                 ${_consR > 0 ? `<div class="text-[9px] font-bold" style="color:#fbbf24" title="Consumo a crédito del período (se descuenta al pagar)">−${_liqMoney(_consR)} → neto ${_liqMoney(Math.round((p.total - _consR) * 100) / 100)}</div>` : ''}`
             }
           </div>
           <span style="color:#64748b;font-size:14px;transition:transform .25s">${expandido ? '▾' : '▸'}</span>
@@ -33525,6 +33531,10 @@ const MOS = (() => {
     if (d.pagoEnvasado > 0) partes.push(`env ${d.pagoEnvasado.toFixed(2)}`);
     if (d.bonoMeta     > 0) partes.push(`<span style="color:#34d399">+meta ${d.bonoMeta.toFixed(2)}</span>`);
     if (d.sancion      > 0) partes.push(`<span style="color:#f87171">−san ${d.sancion.toFixed(2)}</span>`);
+    // [422] consumo a crédito de ESE día → el admin ve el neto real ANTES de pagar
+    // (al confirmar, estos tickets van marcados por defecto y el gasto sale por el neto)
+    const _cons = parseFloat(d.consumoDia && d.consumoDia.total) || 0;
+    if (_cons > 0) partes.push(`<span style="color:#fbbf24">🧾 consumo −${_cons.toFixed(2)}</span>`);
     return `
       <div class="liq-dia-row ${audCls}${sel}" data-row-key="${idPersonal}|${d.fecha}">
         <input type="checkbox" class="liq-check" ${isSelected ? 'checked' : ''}
@@ -33537,6 +33547,7 @@ const MOS = (() => {
         </div>
         <div class="text-right shrink-0">
           <div class="text-sm font-bold text-amber-400">${_liqMoney(d.totalDia)}</div>
+          ${_cons > 0 ? `<div class="text-[9px]" style="color:#fbbf24" title="Jornal − consumo a crédito de este día (se descuenta al pagar)">neto ${_liqMoney(Math.round((d.totalDia - _cons) * 100) / 100)}</div>` : ''}
         </div>
         <button onclick="event.stopPropagation();MOS._liqEditarDia('${idPersonal}', '${d.fecha}')"
                 class="text-xs px-2 py-1 rounded transition-all hover:scale-110 liq-btn-edit-tip"
@@ -36104,7 +36115,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const subtotal = arr.reduce((s, p) => {
         if (p.vetada) return s;
         const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
-        const real = (ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0);
+        // [422] NETO de consumo a crédito del día: es lo que REALMENTE se le paga en
+        // efectivo (el consumo se descuenta al liquidar → marcar_pagos registra el
+        // gasto por el neto). Así el header cuadra con la caja y con el pago real.
+        const _cons = (ev && ev.creditosDia && parseFloat(ev.creditosDia.total)) || 0;
+        const real = ((ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0)) - _cons;
         return s + real;
       }, 0);
       return `
@@ -36176,13 +36191,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       // Neta, Margen Neto y Punto de Equilibrio TODOS se reconectan al
       // valor en vivo. Sin esto el break-even quedaba "frío".
       if (arr.length > 0) {
-        let totalReal = 0;
+        let totalReal = 0, totalConsumo = 0;
         ['POS','ALMACEN','OTRO'].forEach(area => {
           (grupos[area] || []).forEach(p => {
             if (p.vetada) return; // vetados no cuentan
             const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
-            const real = (ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0);
+            // [422] NETO: gasto de personal REAL = lo pagado − lo consumido a crédito
+            // ese día. Propaga a Gasto Personal / Costos Fijos / Punto de Equilibrio,
+            // que así reflejan la caja real (el gasto de marcar_pagos ya es el neto).
+            const _cons = (ev && ev.creditosDia && parseFloat(ev.creditosDia.total)) || 0;
+            const real = ((ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0)) - _cons;
             totalReal += real;
+            totalConsumo += _cons;
           });
         });
         if (tot) _animateCount(tot, totalReal, { prefix: 'S/ ' });
@@ -38427,7 +38447,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       t += '\x1b\x45\x01' + pe('Sanción / descuento (-)', W - 12) + amtN(-sanc, 12) + '\x1b\x45\x00\n';
       t += wrapInd('Motivo: ' + (sanMot || 'sin especificar'), '   ');
     }
-    t += SEPd + '\x1b\x21\x30' + pe('TOTAL A PAGAR', W / 2) + amtP(r.totalDia, W / 2 - 4) + '\n\x1b\x21\x00' + SEPd;
+    // [422] consumo a crédito del día (se descuenta del pago) + NETO real
+    const _consT = (r.creditosDia && parseFloat(r.creditosDia.total)) || 0;
+    const _consNT = (r.creditosDia && parseInt(r.creditosDia.n, 10)) || 0;
+    if (_consT > 0) {
+      t += pe('Consumió a crédito (-)', W - 12) + amtN(-_consT, 12) + '\n';
+      t += wrapInd(_consNT + ' ticket(s) del día — se descuenta del pago', '   ');
+    }
+    const _netoDia = Math.round(((parseFloat(r.totalDia) || 0) - _consT) * 100) / 100;
+    t += SEPd + '\x1b\x21\x30' + pe(_consT > 0 ? 'NETO A PAGAR' : 'TOTAL A PAGAR', W / 2) + amtP(_netoDia, W / 2 - 4) + '\n\x1b\x21\x00' + SEPd;
     // 4) AUDITORÍAS (cuota del día)
     const aud = parseFloat(r.auditoriasHechas ?? k.auditoriasHechas) || 0;
     const mAud = parseFloat(r.metaAuditorias ?? k.metaAuditorias) || 30;
@@ -38567,6 +38595,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     if (bonificacion > 0) items.push(['🎁 Bonificación', bonificacion, false]);
     if (sancion > 0) items.push(['⚠ Sanción del día', sancion, true]);
+    // [422] consumo a crédito de ESTE día → se descuenta (el usuario lo pidió: "en la
+    // liquidación del día no estás tomando el ticket por consumo"). Es un renglón (−).
+    const _consDia = (r.creditosDia && parseFloat(r.creditosDia.total)) || 0;
+    if (_consDia > 0) items.push(['🧾 Consumió a crédito', _consDia, true]);
 
     lines.innerHTML = items.map(([lbl, val, neg, note]) => {
       const signo = neg ? '−' : '';
@@ -38580,13 +38612,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>`;
     }).join('');
 
-    const total = Math.max(0, base + metaEf + (esAlm ? pagoEnv : 0) + bonificacion - sancion);
+    // [422] el consumo a crédito SÍ puede dejar el neto negativo (regla del dueño:
+    // sin tope). No usar Math.max acá — reflejar el neto real que verá el admin.
+    const totalBruto = Math.max(0, base + metaEf + (esAlm ? pagoEnv : 0) + bonificacion - sancion);
+    const total = Math.round((totalBruto - _consDia) * 100) / 100;
     const totalStr = `S/${total.toFixed(2)}`;
     const cambio = totEl.textContent !== totalStr;
     totEl.textContent = totalStr;
-    if (sancion > 0 && (base + metaEf + (esAlm ? pagoEnv : 0) + bonificacion - sancion) < 0) {
+    if (total < 0) {
       totEl.style.color = '#f87171';
-      totEl.title = 'Sanción excede el total, se trunca a S/0.00';
+      totEl.title = 'Neto negativo: el consumo/sanción supera lo ganado el día';
     } else {
       totEl.style.color = '#fbbf24';
       totEl.title = '';
