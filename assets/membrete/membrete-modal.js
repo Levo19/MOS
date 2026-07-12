@@ -1399,7 +1399,9 @@
       +             '📦 IMPRIMIR WH · Andamio'
       +             '<div style="font-size:11px;font-weight:600;margin-top:2px;opacity:.85">'
       +               (totalWh > 1 ? ('Imprime ' + totalWh + ' adhesivos (cabecera + ' + (totalWh - 1) + ' códigos)') : 'Imprime 1 adhesivo')
-      +             + '</div>'
+      // [RONDA 2 FIX] había un '+ +' (unario) → imprimía 'NaN' y dejaba el div SIN CERRAR:
+      // el hero del adhesivo caía DENTRO de la columna WH (modal descuadrado del reporte del dueño)
+      +             '</div>'
       +           '</button>'
       +         '</div>'
       +       '</div>'

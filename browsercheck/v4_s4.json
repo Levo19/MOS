@@ -1,0 +1,11 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 10000,
+  "viewport": { "width": 780, "height": 1300 },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906474",
+    "MOS_SESSION": "{\"idPersonal\":\"TEST-CLAUDE\",\"nombre\":\"PRUEBA CLAUDE\",\"rol\":\"MASTER\",\"idSesion\":\"testclaude1\"}"
+  },
+  "evalAfter": "(async () => { const r={}; const btn=[...document.querySelectorAll('button,a')].find(el=>/Entrar a MOS/i.test(el.textContent||'')); if(btn)btn.click(); await new Promise(res=>setTimeout(res,2500)); try{MOS.nav('catalogo');}catch(e){} await new Promise(res=>setTimeout(res,5000)); const der=(S=>{try{return null}catch(_){return null}})(); const p=[...document.querySelectorAll('[title*=\"adhesivo\"]')]; MOS.abrirMembreteCard('IDPRO0000059'); await new Promise(res=>setTimeout(res,2200)); r.modalAbierto=!!document.getElementById('msMenuOverlay'); r.heroPresente=!!document.querySelector('.popt-hero'); r.stepper=!!document.getElementById('msAdhQty'); r.textoNaN=(document.getElementById('msMenuOverlay')?.textContent||'').includes('NaN'); return r; })()",
+  "screenshot": "C:/Users/ISO/ProyectoMOS/browsercheck/shot_s4_membrete.png"
+}

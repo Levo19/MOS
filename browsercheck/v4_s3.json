@@ -1,0 +1,11 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 10000,
+  "viewport": { "width": 480, "height": 1500 },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906474",
+    "MOS_SESSION": "{\"idPersonal\":\"TEST-CLAUDE\",\"nombre\":\"PRUEBA CLAUDE\",\"rol\":\"MASTER\",\"idSesion\":\"testclaude1\"}"
+  },
+  "evalAfter": "(async () => { const r={}; const vj=await fetch('https://levo19.github.io/MOS/version.json?b='+Date.now()).then(x=>x.json()).catch(()=>null); r.versionServida=vj&&vj.version; const btn=[...document.querySelectorAll('button,a')].find(el=>/Entrar a MOS/i.test(el.textContent||'')); if(btn)btn.click(); await new Promise(res=>setTimeout(res,2500)); try{MOS.nav('catalogo');}catch(e){} await new Promise(res=>setTimeout(res,5000)); const inp=document.getElementById('searchCatalogo'); if(inp){inp.value='ajonjoli granel';MOS.filterCatalogo();} await new Promise(res=>setTimeout(res,1600)); window.scrollTo(0,0); r.cards=document.querySelectorAll('.cat-card').length; r.derivadosAnidados=document.querySelectorAll('.cat-card [title*=\"Tocar para editar (ahí vive su precio)\"]').length; r.badgesDerivado=[...document.querySelectorAll('.cat-card span')].filter(s=>/DERIVADO/.test(s.textContent)).length; r.ctaTramosEliminado=![...document.querySelectorAll('.cat-seg-empty')].length; const nombre=document.querySelector('.cat-nombre-edit'); if(nombre){nombre.click(); await new Promise(res=>setTimeout(res,900)); r.modalEditarAbre=!document.getElementById('modalProducto')?.classList.contains('hidden'); r.tipoBarVisibleEnEdicion=!document.getElementById('prodTipoBar')?.classList.contains('hidden'); MOS.closeModal&&MOS.closeModal('modalProducto');} return r; })()",
+  "screenshot": "C:/Users/ISO/ProyectoMOS/browsercheck/shot_s3_anidado.png"
+}
