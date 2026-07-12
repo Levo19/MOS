@@ -1,6 +1,12 @@
 # PLAN CATÁLOGO V4 — canónico + satélites (dibujo aprobado 3812eb03 v4)
 
-> **Estado**: EN EJECUCIÓN · iniciado 2026-07-12
+> **Estado**: ✅ COMPLETADO Y EN VIVO · v2.43.487 · 2026-07-12
+> Parte 3 ✅: browsercheck prod (CERO GAS runtime, 21/21 marcadores v4, versión servida OK),
+> smoke 427 (toggle membretes OFF=0/ON=1/ausente=1), SQL smoke 25/25 + estrés 7/7, cron horario vivo.
+> DESVIACIÓN CONSCIENTE vs dibujo (money-safe, hallazgo senior M3): un PACK ya NO ofrece
+> "+equivalente" — el modelo cuelga equivalencias del sku del GRUPO, un "equivalente de pack"
+> resolvería al canónico y se cobraría 1 unidad en vez de 12. El ＋ del pack lo explica con toast.
+> Pendiente de uso real: prueba física de cámara/impresión en el equipo del dueño.
 > **Dibujo aprobado**: https://claude.ai/code/artifact/3812eb03-f9e2-4d6a-a8f8-c7d30f176aac (v4)
 > **Punto de retoma**: cada fase marca ✅ al cerrarse con su revisión senior. Si se corta la sesión, retomar en la primera fase sin ✅.
 
@@ -88,7 +94,7 @@
 - Analítica fusionada: en `viewAnalitica`, bloque superior nuevo "GRUPO" con tabs [🏭 Almacén | 🏪 Zona 02 | 🏪 Zona 01 ESTIMADA] (zonas dinámicas de la data), stats (kg/sem, valor, tendencia), barras semanales ×8, conciliación (flujo almacén→zonas→estimada con doble vía + badge consistente ✓/⚠), breakdown por forma (kg-equiv), insight pedido semanal. Data: `API.get('getAnaliticaGrupo')` → RPC 425 directa PURA (sin `_conFallbackMOS`). Chips de alcance [Grupo completo | canónico | por satélite] filtran (param codigos). Lo existente (KPIs producto, charts) queda debajo como "SOLO ESTE PRODUCTO".
 - Eliminar: tacho SVG master en card (F3) → cesta purga existente (clave intacta). **Revisión senior.**
 
-### F7 — Limpieza + deploy ⬜
+### F7 — Limpieza + deploy ✅ (borrados: #modalPrecio HTML + abrirModalPrecio/publicarPrecio(front) + onTipoCheck/onEnvasableCheck + setCatTab + _renderRotacionSparkline, cero referencias; revisión senior frontend DOBLE → 11 fixes: imprimirMembretes real (api+SQL 427), codigoProductoBase a membrete, DOM viejo cascada, equivalente-de-pack bloqueado money-safe, carreras B1/B2/B3, DIRECT_REQUIRED cero-fallback; bump 2.43.487 + pins + push verificado)
 - BORRAR: `#modalPrecio` HTML (index.html:17903-17930) + `abrirModalPrecio` + `publicarPrecio` de app.js (18170-18209) + export; `onTipoCheck`/`onEnvasableCheck` + export (verificar turno.html/liquidacion.html antes); `setCatTab` si sin callers; `_renderRotacionSparkline` del card si quedó huérfano tras F3 (verificar modal rotación).
 - Verificar cero rastro GAS en rutas tocadas (grep script.google + ramas gas huérfanas en lo editado).
 - `node -c` app.js/api.js; bump sw.js + version.json + ?v=; commit descriptivo + push + `git log origin/main..HEAD` vacío. **Revisión senior global de la parte 2.**
