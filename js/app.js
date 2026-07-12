@@ -36460,15 +36460,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               return partes.length ? `<div class="text-[11px] text-slate-500 mt-0.5" title="Ingreso · tiempo activo · app · reconexiones">${partes.join(' · ')}</div>` : '';
             })()}
             ${(() => {
-              // [418/419] 🤝 envasado colaborativo del día + 🧾 línea de crédito viva (tickets ME a CRÉDITO con su documento)
+              // [418/421] 🤝 envasado colaborativo DEL DÍA + 🧾 tickets a crédito DEL DÍA
+              // (detallados: lo que consumió ESE día) + deuda total como referencia muted.
               const colabU = parseFloat(p.envasadosColab || (ev && ev.envasadosColab) || 0);
               const colabS = parseFloat(p.pagoEnvasadoColab || (ev && ev.pagoEnvasadoColab) || 0);
+              const cdia   = p.creditosDia || (ev && ev.creditosDia) || {};
+              const cdT    = parseFloat(cdia.total || 0), cdN = parseInt(cdia.n || 0, 10);
               const cred   = p.creditosPend || (ev && ev.creditosPend) || {};
               const credT  = parseFloat(cred.total || 0), credN = parseInt(cred.n || 0, 10);
               const partes = [];
               if (colabU > 0) partes.push(`<span style="color:#a5b4fc;font-weight:700" title="Envasado colaborativo: el pago se divide 50/50">🤝 ${colabU} u colab · S/${colabS.toFixed(2)}</span>`);
-              if (credN > 0)  partes.push(`<span style="color:#fbbf24;font-weight:700" title="Notas de crédito pendientes — se descuentan al liquidar">🧾 crédito S/${credT.toFixed(2)} (${credN} ticket${credN !== 1 ? 's' : ''})</span>`);
-              return partes.length ? `<div class="text-[11px] mt-0.5">${partes.join(' · ')}</div>` : '';
+              if (cdN > 0) {
+                const dets = (cdia.tickets || []).map(t => `${_escapeHtml(t.correlativo || '')} S/${(parseFloat(t.total) || 0).toFixed(2)}`).join(' · ');
+                partes.push(`<span style="color:#fbbf24;font-weight:700" title="${_escapeHtml(dets)}">🧾 consumió este día S/${cdT.toFixed(2)} (${cdN} ticket${cdN !== 1 ? 's' : ''}${dets ? ': ' + _escapeHtml(dets) : ''})</span>`);
+              }
+              if (credN > 0) partes.push(`<span style="color:#94a3b8" title="Todas las fechas — se descuenta al liquidar">deuda total S/${credT.toFixed(2)} (${credN})</span>`);
+              return partes.length ? `<div class="text-[11px] mt-0.5" style="line-height:1.5">${partes.join(' · ')}</div>` : '';
             })()}
             ${(() => {
               // [v2.41.66] Mostrar motivos de bonificación/sanción debajo del pago
@@ -37979,20 +37986,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _renderAuditChecklist(r.rol);
     _renderAuditLiquidacion();
     openModal('modalAuditar');
-    // [419] Refresco EN TIEMPO REAL de las notas de crédito del empleado (la deuda
-    // pudo cambiar desde el snapshot de Personal del día: una venta a crédito recién
-    // emitida, o un cobro que la quitó). Guard por idPersonal+fecha (desacoplado del
-    // token de bon/san, que se incrementa más abajo en este mismo abrirAuditar).
+    // [421] Refresco EN TIEMPO REAL de los tickets a crédito DEL DÍA del modal (una
+    // venta a crédito recién emitida ese día aparece al toque; getCreditosPersonal
+    // trae fecha por ticket → se filtra al día auditado). Guard por idPersonal+fecha.
     (async () => {
       try {
         if (!r.idPersonal) return;
-        const _idP = r.idPersonal, _fx = _evalState.fecha;
+        const _idP = r.idPersonal, _fx = _evalState.fecha, _dia = String(r.fecha || _fx);
         const cr = await API.get('getCreditosPersonal', { idPersonal: _idP });
         if (!_evalState.auditR || _evalState.auditR.idPersonal !== _idP) return;   // otro modal
         if (_evalState.fecha !== _fx) return;                                       // cambió la fecha
-        if (cr && cr.ok === true) {
+        if (cr && cr.ok === true && Array.isArray(cr.tickets)) {
+          const delDia = cr.tickets.filter(t => String(t.fecha || '') === _dia);
+          _evalState.auditR.creditosDia = {
+            total: Math.round(delDia.reduce((s, t) => s + (parseFloat(t.total) || 0), 0) * 100) / 100,
+            n: delDia.length,
+            tickets: delDia.map(t => ({ idVenta: t.idVenta, correlativo: t.correlativo || '', total: t.total }))
+          };
           _evalState.auditR.creditosPend = { total: parseFloat(cr.total) || 0, n: parseInt(cr.n, 10) || 0 };
-          _renderAuditKpis(_evalState.auditR);                                      // repinta con la deuda fresca
+          _renderAuditKpis(_evalState.auditR);                                      // repinta fresco
         }
       } catch (_) { /* deja el snapshot */ }
     })();
@@ -38111,22 +38123,27 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       rows.push(_kpiRow('Actividad del día', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
     }
 
-    // [419] 🧾 Notas de crédito EN TIEMPO REAL (para TODOS los roles): tickets ME a
-    // CRÉDITO con el documento del empleado. Se descuentan al liquidar (retroactivo:
-    // si se anula la liquidación vuelven a crédito). Informativo acá; el descuento real
-    // se marca en el modal de pago de la liquidación.
-    const cred = r.creditosPend || {};
-    const credT = parseFloat(cred.total) || 0, credN = parseInt(cred.n, 10) || 0;
-    if (credN > 0) {
-      rows.push(_kpiRow('🧾 Notas de crédito (se descuentan al liquidar)',
-        `−S/${credT.toFixed(2)} · ${credN} ticket${credN !== 1 ? 's' : ''}`, 100));
+    // [421] 🧾 Tickets a crédito DEL DÍA (el modal Auditar es DEL DÍA — feedback del
+    // dueño: el acumulado de otras fechas NO se mezcla acá; ese vive en la card como
+    // "deuda total" y se descuenta al liquidar, detallado ticket por ticket).
+    const cdia = r.creditosDia || {};
+    const cdT = parseFloat(cdia.total) || 0, cdN = parseInt(cdia.n, 10) || 0;
+    if (cdN > 0) {
+      rows.push(_kpiRow('🧾 Consumió este día (a crédito)',
+        `−S/${cdT.toFixed(2)} · ${cdN} ticket${cdN !== 1 ? 's' : ''}`, 100));
+      (cdia.tickets || []).forEach(t => {
+        rows.push(`<div class="flex items-center justify-between" style="padding:2px 8px 2px 22px">
+          <span class="text-[11px] text-slate-400 font-mono">${_escapeHtml(t.correlativo || t.idVenta || '')}</span>
+          <span class="text-[11px] font-bold" style="color:#fca5a5">−S/${(parseFloat(t.total) || 0).toFixed(2)}</span>
+        </div>`);
+      });
     }
 
-    // Pago del día (info) + score
+    // Pago del día (info): ganó − consumió ESE día + score
     const pagoDia = parseFloat(r.totalDia) || 0;
-    if (pagoDia > 0) {
-      const netoTxt = credN > 0
-        ? `S/${pagoDia.toFixed(2)} − S/${credT.toFixed(2)} crédito = S/${(Math.round((pagoDia - credT) * 100) / 100).toFixed(2)}`
+    if (pagoDia > 0 || cdN > 0) {
+      const netoTxt = cdN > 0
+        ? `S/${pagoDia.toFixed(2)} − S/${cdT.toFixed(2)} consumo = S/${(Math.round((pagoDia - cdT) * 100) / 100).toFixed(2)}`
         : `S/${pagoDia.toFixed(2)}`;
       rows.push(_kpiRow('💵 Pago del día', netoTxt, 100));
     }

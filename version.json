@@ -1,1 +1,1 @@
-{"version":"2.43.481","build":"2.43.481 modal Auditar en TIEMPO REAL: envasado propio vs colaborativo 50% + notas de credito (fetch fresco getCreditosPersonal) + pago del dia con neto tras credito. Personal del dia ya tenia los chips."}
+{"version":"2.43.482","build":"2.43.482 creditos DEL DIA (feedback dueno): Personal del dia muestra lo que consumio ESE dia (tickets detallados) + deuda total muted; modal Auditar SOLO del dia (lista de tickets + pago del dia = gano - consumio ese dia); SQL 421 personal_dia_lista con creditosDia."}
