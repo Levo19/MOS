@@ -1,1 +1,1 @@
-{"version":"2.43.480","build":"2.43.480 revision 100x: HIGH3 finanzas no cuenta PLANILLA como venta + HIGH4 guard dia sellado envasado colab + MED5/6 credito modal (epoch+boton bloqueado mientras carga) + MED7 no cae a GAS con creditos + LOW10 documento anti-wipe."}
+{"version":"2.43.481","build":"2.43.481 modal Auditar en TIEMPO REAL: envasado propio vs colaborativo 50% + notas de credito (fetch fresco getCreditosPersonal) + pago del dia con neto tras credito. Personal del dia ya tenia los chips."}

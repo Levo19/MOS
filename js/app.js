@@ -37979,6 +37979,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _renderAuditChecklist(r.rol);
     _renderAuditLiquidacion();
     openModal('modalAuditar');
+    // [419] Refresco EN TIEMPO REAL de las notas de crédito del empleado (la deuda
+    // pudo cambiar desde el snapshot de Personal del día: una venta a crédito recién
+    // emitida, o un cobro que la quitó). Guard por idPersonal+fecha (desacoplado del
+    // token de bon/san, que se incrementa más abajo en este mismo abrirAuditar).
+    (async () => {
+      try {
+        if (!r.idPersonal) return;
+        const _idP = r.idPersonal, _fx = _evalState.fecha;
+        const cr = await API.get('getCreditosPersonal', { idPersonal: _idP });
+        if (!_evalState.auditR || _evalState.auditR.idPersonal !== _idP) return;   // otro modal
+        if (_evalState.fecha !== _fx) return;                                       // cambió la fecha
+        if (cr && cr.ok === true) {
+          _evalState.auditR.creditosPend = { total: parseFloat(cr.total) || 0, n: parseInt(cr.n, 10) || 0 };
+          _renderAuditKpis(_evalState.auditR);                                      // repinta con la deuda fresca
+        }
+      } catch (_) { /* deja el snapshot */ }
+    })();
     // [v2.41.64] BUG FIX race condition: si abrías audit OP002, cerrabas,
     // y antes que llegara el fetch abrías OP001, el fetch viejo de OP002
     // escribía "44" sobre el modal de OP001 (que tenía bon=0 → no entraba
@@ -38073,19 +38090,46 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } else if (rol === 'ALMACENERO' || rol === 'ENVASADOR') {
       // Almacén — punto 1: auditorías
       rows.push(_kpiRow('📋 Auditorías diarias', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
-      // Almacén — punto 2: unidades envasadas + pago calculado (línea única)
-      const envasados = parseFloat(k.envasados) || 0;
+      // Almacén — punto 2: envasado del día, desglosado PROPIO vs 🤝 COLABORATIVO
+      // en tiempo real (personal_dia_lista trae envasadosColab/pagoEnvasadoColab).
+      // pagoEnvasado (r) = TOTAL (propios + mitades); el propio = total − colab.
       const tarifa = parseFloat(r.tarifaEnvasado) || 0;
-      const pagoEnvasado = parseFloat(r.pagoEnvasado) || (envasados * tarifa);
-      const tipoEnv = envasados > 0
-        ? `${envasados} uds × S/${tarifa.toFixed(2)} = S/${pagoEnvasado.toFixed(2)}`
-        : `${envasados} uds`;
-      rows.push(_kpiRow('🏷 Envasado del día', tipoEnv, Math.min(100, envasados / 5)));
+      const udsPropio = parseFloat(k.envasados) || 0;                    // productos_envasados = propios
+      const udsColab  = parseFloat(r.envasadosColab) || 0;
+      const pagoColab = parseFloat(r.pagoEnvasadoColab) || 0;
+      const pagoTot   = parseFloat(r.pagoEnvasado) || (udsPropio * tarifa);
+      const pagoPropio = Math.round((pagoTot - pagoColab) * 100) / 100;
+      const tipoEnv = udsPropio > 0
+        ? `${udsPropio} uds × S/${tarifa.toFixed(2)} = S/${pagoPropio.toFixed(2)}`
+        : `${udsPropio} uds`;
+      rows.push(_kpiRow('🏷 Envasado propio', tipoEnv, Math.min(100, udsPropio / 5)));
+      if (udsColab > 0 || pagoColab > 0) {
+        rows.push(_kpiRow('🤝 Envasado colaborativo (50%)',
+          `${udsColab} uds = S/${pagoColab.toFixed(2)}`, Math.min(100, udsColab / 5)));
+      }
     } else {
       rows.push(_kpiRow('Actividad del día', `${k.auditoriasHechas || 0}/${auditMeta}`, k.auditPct || 0));
     }
 
-    // Score final y total estimado del día (info)
+    // [419] 🧾 Notas de crédito EN TIEMPO REAL (para TODOS los roles): tickets ME a
+    // CRÉDITO con el documento del empleado. Se descuentan al liquidar (retroactivo:
+    // si se anula la liquidación vuelven a crédito). Informativo acá; el descuento real
+    // se marca en el modal de pago de la liquidación.
+    const cred = r.creditosPend || {};
+    const credT = parseFloat(cred.total) || 0, credN = parseInt(cred.n, 10) || 0;
+    if (credN > 0) {
+      rows.push(_kpiRow('🧾 Notas de crédito (se descuentan al liquidar)',
+        `−S/${credT.toFixed(2)} · ${credN} ticket${credN !== 1 ? 's' : ''}`, 100));
+    }
+
+    // Pago del día (info) + score
+    const pagoDia = parseFloat(r.totalDia) || 0;
+    if (pagoDia > 0) {
+      const netoTxt = credN > 0
+        ? `S/${pagoDia.toFixed(2)} − S/${credT.toFixed(2)} crédito = S/${(Math.round((pagoDia - credT) * 100) / 100).toFixed(2)}`
+        : `S/${pagoDia.toFixed(2)}`;
+      rows.push(_kpiRow('💵 Pago del día', netoTxt, 100));
+    }
     rows.push(_kpiRow('🎯 Score acumulado', `${r.scoreFinal || 0}%`, r.scoreFinal || 0));
     cont.innerHTML = rows.join('');
   }
