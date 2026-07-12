@@ -3060,7 +3060,7 @@ const MOS = (() => {
                   <div class="min-w-0 flex-1">
                     <!-- [catálogo v4] nombre tocable = editar; el precio del satélite vive en su modal editar -->
                     <div class="text-xs font-semibold text-slate-200 truncate"><span class="cat-nombre-edit"
-                         onclick="event.stopPropagation();MOS.abrirModalProducto('${d.idProducto}')"
+                         onclick="event.stopPropagation();MOS.abrirEditarProducto('${d.idProducto}')"
                          title="Tocar para editar (ahí vive su precio)">${hlD}</span></div>
                     <div class="flex items-center gap-2 mt-0.5">
                       ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
@@ -3102,7 +3102,7 @@ const MOS = (() => {
               const pf = parseFloat(pp.factorConversion) || 1;
               return `<div class="flex items-center gap-2 mt-1" style="margin-left:22px;font-size:11px;color:#94a3b8">
                 <span>↳ 🧱 ×${pf}</span>
-                <span class="cat-nombre-edit" onclick="event.stopPropagation();MOS.abrirModalProducto('${pp.idProducto}')"
+                <span class="cat-nombre-edit" onclick="event.stopPropagation();MOS.abrirEditarProducto('${pp.idProducto}')"
                       title="Tocar para editar">${_highlight(pp.descripcion || pp.idProducto, words)}</span>
                 <span style="margin-left:auto;color:#34d399;font-weight:700">${fmtMoney(pp.precioVenta)}</span>
               </div>`;
@@ -3111,7 +3111,7 @@ const MOS = (() => {
               <div class="flex items-center gap-2 flex-wrap">
                 <span style="font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;background:rgba(183,155,255,.15);color:#b79bff">🥄 DERIVADO</span>
                 <span class="cat-nombre-edit text-xs font-semibold text-slate-200"
-                      onclick="event.stopPropagation();MOS.abrirModalProducto('${d.idProducto}')"
+                      onclick="event.stopPropagation();MOS.abrirEditarProducto('${d.idProducto}')"
                       title="Tocar para editar (ahí vive su precio)">${hlD}</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
                   <span style="color:#34d399;font-weight:800;font-size:12px">${fmtMoney(d.precioVenta)}</span>
@@ -18568,14 +18568,41 @@ const MOS = (() => {
   }
   function _cerrarPlusCtx() { document.getElementById('plusCtxMenu')?.remove(); }
 
+  // [RONDA 3] EDITAR POR TIPO (lógica del dueño): tocar un derivado abre el modal
+  // de derivado (prellenado), una presentación el suyo; el canónico/granel abre el
+  // modal completo. "Edición avanzada" (stock/costo/política) → modal completo.
+  function abrirEditarProducto(id) {
+    const p = S.productos.find(x => x.idProducto === id);
+    if (!p) { toast('Producto no encontrado', 'error'); return; }
+    const tipo = _prodTipoDe(p);
+    const U = s => String(s || '').trim().toUpperCase();
+    let padre = null;
+    if (tipo === 'derivado') {
+      padre = S.productos.find(x =>
+        (U(x.skuBase || x.idProducto) === U(p.codigoProductoBase) || U(x.idProducto) === U(p.codigoProductoBase))
+        && x.idProducto !== p.idProducto);
+    } else if (tipo === 'presentacion') {
+      padre = S.productos.find(x =>
+        (x.skuBase || x.idProducto) === (p.skuBase || '')
+        && x.idProducto !== p.idProducto
+        && (parseFloat(x.factorConversion) || 1) === 1
+        && !(x.codigoProductoBase && String(x.codigoProductoBase).trim()));
+    }
+    if ((tipo === 'derivado' || tipo === 'presentacion') && padre) {
+      abrirModalSatelite(tipo, padre.idProducto, p);
+      return;
+    }
+    abrirModalProducto(id);   // canónico/granel (o satélite sin padre resoluble)
+  }
+
   // ── Modal satélite: un body enfocado por tipo ──────────────────────
   const _SAT_CAM = (inputId) => `<button type="button" class="btn-cam-scan" onclick="MOS.scanCodigo({inputId:'${inputId}'})" title="Escanear con la cámara">
     <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>`;
 
-  async function abrirModalSatelite(tipo, idPadre) {
+  async function abrirModalSatelite(tipo, idPadre, editarProd) {
     const padre = S.productos.find(x => x.idProducto === idPadre);
     if (!padre) { toast('Producto padre no encontrado', 'error'); return; }
-    _satState = { tipo, padre };
+    _satState = { tipo, padre, editar: editarProd || null };
     const tit = $('satTitulo'), ctx = $('satContexto'), her = $('satHerencia'), body = $('satBody'), btn = $('satGuardarBtn');
     const tipoPadre = _prodTipoDe(padre);
     const igvTxt = (padre.Tipo_IGV || padre.tipoIGV) === '2' ? 'Exonerado' : (padre.Tipo_IGV || padre.tipoIGV) === '3' ? 'Inafecto' : 'IGV 18%';
@@ -18599,6 +18626,20 @@ const MOS = (() => {
             <div class="flex gap-1.5"><input id="satCodigo" class="inp flex-1 font-mono text-xs" oninput="MOS._satValidarCodigo()">
             ${_SAT_CAM('satCodigo')}</div><div id="satCodigoFb" class="text-[10px] mt-1"></div></div>
         </div>`;
+      // [RONDA 3] modo EDICIÓN: prellenar + guardar cambios (sin autogenerar código)
+      if (editarProd) {
+        tit.textContent = '🥄 Editar derivado';
+        btn.textContent = 'Guardar cambios';
+        body.insertAdjacentHTML('beforeend', `<button type="button" class="w-full text-[11px] text-slate-500 hover:text-slate-300 py-1"
+          onclick="MOS.cerrarModalSatelite();MOS.abrirModalProducto('${editarProd.idProducto}')">⚙️ Edición avanzada (stock, costo, política…)</button>`);
+        openModal('modalSatelite');
+        $('satNombre').value  = editarProd.descripcion || '';
+        $('satPorcion').value = parseFloat(editarProd.factorConversionBase) || '';
+        $('satPrecio').value  = parseFloat(editarProd.precioVenta) || '';
+        $('satCodigo').value  = editarProd.codigoBarra || '';
+        _satDerivadoPreview();
+        return;
+      }
       btn.textContent = 'Crear derivado';
       openModal('modalSatelite');
       // [fix rev B1] guardia anti-carrera: si cerraron/cambiaron el modal durante el
@@ -18626,6 +18667,19 @@ const MOS = (() => {
             <div class="flex gap-1.5"><input id="satCodigo" class="inp flex-1 font-mono text-xs" oninput="MOS._satValidarCodigo()">
             ${_SAT_CAM('satCodigo')}</div><div id="satCodigoFb" class="text-[10px] mt-1"></div></div>
         </div>`;
+      // [RONDA 3] modo EDICIÓN
+      if (editarProd) {
+        tit.textContent = '🧱 Editar presentación';
+        btn.textContent = 'Guardar cambios';
+        body.insertAdjacentHTML('beforeend', `<button type="button" class="w-full text-[11px] text-slate-500 hover:text-slate-300 py-1"
+          onclick="MOS.cerrarModalSatelite();MOS.abrirModalProducto('${editarProd.idProducto}')">⚙️ Edición avanzada (stock, costo, política…)</button>`);
+        openModal('modalSatelite');
+        $('satNombre').value = editarProd.descripcion || '';
+        $('satAgrupa').value = parseFloat(editarProd.factorConversion) || '';
+        $('satPrecio').value = parseFloat(editarProd.precioVenta) || '';
+        $('satCodigo').value = editarProd.codigoBarra || '';
+        return;
+      }
       btn.textContent = 'Crear presentación';
       openModal('modalSatelite');
       // [fix rev B1] misma guardia anti-carrera del generador
@@ -18789,7 +18843,7 @@ const MOS = (() => {
     if (!inp || !fb) return true;
     const val = inp.value.trim();
     if (!val) { fb.textContent = ''; return false; }
-    const conf = _cbConflictoLocal(val);
+    const conf = _cbConflictoLocal(val, _satState?.editar?.idProducto);
     if (conf) {
       fb.innerHTML = `<span class="text-red-400">⚠ Ya ${conf.tipo === 'equivalencia' ? 'es equivalente de' : 'existe en'}: ${_escapeHtml(conf.descripcion || '')}</span>`;
       return false;
@@ -18825,13 +18879,41 @@ const MOS = (() => {
     };
 
     if (tipo === 'derivado' || tipo === 'presentacion') {
+      const editar  = _satState.editar;
       const nombre  = ($('satNombre')?.value || '').trim();
       const precio  = parseFloat($('satPrecio')?.value) || 0;
       const codigo  = ($('satCodigo')?.value || '').trim();
       if (!nombre)      { toast('⚠ El nombre es requerido', 'error'); return; }
       if (precio <= 0)  { toast('⚠ El precio es requerido (> 0)', 'error'); return; }
       if (!codigo)      { toast('⚠ El código es requerido', 'error'); return; }
-      if (_cbConflictoLocal(codigo)) { toast('⚠ Ese código ya existe (producto o equivalente)', 'error'); return; }
+      if (_cbConflictoLocal(codigo, editar?.idProducto)) { toast('⚠ Ese código ya existe (producto o equivalente)', 'error'); return; }
+
+      // [RONDA 3] EDICIÓN: patch parcial vía actualizarProducto (atómico + historial)
+      if (editar) {
+        const patch = { _source: 'MOS_MODAL_SATELITE_EDIT', idProducto: editar.idProducto,
+                        descripcion: nombre, precioVenta: precio, codigoBarra: codigo };
+        if (tipo === 'derivado') {
+          const porcion = parseFloat($('satPorcion')?.value) || 0;
+          if (porcion <= 0 || porcion >= 1) { toast('⚠ La porción debe ser mayor a 0 y menor a 1 kg', 'error'); return; }
+          patch.factorConversionBase = porcion;
+        } else {
+          const n = parseInt($('satAgrupa')?.value) || 0;
+          if (n < 2) { toast('⚠ Un pack agrupa 2 o más unidades', 'error'); return; }
+          patch.factorConversion = n;
+        }
+        _satGuardando = true;
+        cerrarModalSatelite();
+        toast('Guardando cambios…', 'info');
+        try {
+          await API.post('actualizarProducto', patch);
+          toast((tipo === 'derivado' ? '🥄 Derivado' : '🧱 Presentación') + ' actualizado ✓', 'ok');
+          S.loaded['catalogo'] = false;
+          await loadCatalogo(true);
+          _pulseCatalogoCard(padre.idProducto);
+        } catch (e) { toast('Error: ' + e.message, 'error'); }
+        finally { _satGuardando = false; }
+        return;
+      }
 
       const params = {
         _source: 'MOS_MODAL_SATELITE', descripcion: nombre, codigoBarra: codigo,
@@ -44743,7 +44825,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     prodTogglePolitica, _prodOnPoliticaOverride, _prodOnModoChange, _prodActualizarPoliticaEfectiva,
     setProdTipo, _prodDerivadoPreview, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
     scanCodigo, genCodigoUnico,   // [catálogo v4] escáner generalizado + generador con prefijo
-    scanBuscarCatalogo, abrirPlusContextual, _cerrarPlusCtx,           // [catálogo v4] buscador cámara + ＋ contextual
+    scanBuscarCatalogo, abrirPlusContextual, _cerrarPlusCtx, abrirEditarProducto,           // [catálogo v4] buscador cámara + ＋ contextual
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
     _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
