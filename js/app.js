@@ -33959,6 +33959,10 @@ const MOS = (() => {
     _liqState.creditosSel  = {};
     _liqState.creditosData = {};
     _liqState.confirmTotal = total;
+    // [421b] fechas seleccionadas por persona → los créditos se filtran POR DÍA:
+    // por defecto solo se descuenta lo consumido en los días que se están liquidando.
+    _liqState.creditosFechas = {};
+    items.forEach(it => { _liqState.creditosFechas[it.idPersonal] = new Set((it.dias || []).map(d => d.fecha)); });
     _liqCargarCreditos(items.map(it => it.idPersonal));
     openModal('modalLiqConfirmar');
     _liqSfx('open');
@@ -33985,7 +33989,13 @@ const MOS = (() => {
       const { idP, r } = x.value;
       if (!r || r.ok !== true || !Array.isArray(r.tickets) || !r.tickets.length) return;
       _liqState.creditosData[idP] = r.tickets;
-      _liqState.creditosSel[idP]  = new Set(r.tickets.map(t => t.idVenta));   // default: todos
+      // [421b · regla del dueño] default MARCADOS solo los tickets cuya fecha está
+      // en los DÍAS SELECCIONADOS de esta liquidación ("si liquido solo el jueves,
+      // solo jala lo del jueves"). La deuda de otras fechas se lista aparte,
+      // DESMARCADA (opcional) — sin ella, los tickets de días ya liquidados antes
+      // quedarían huérfanos para siempre (nunca descontables por planilla).
+      const fechasSel = _liqState.creditosFechas?.[idP] || new Set();
+      _liqState.creditosSel[idP] = new Set(r.tickets.filter(t => fechasSel.has(String(t.fecha || ''))).map(t => t.idVenta));
     });
     if (btn) { btn.disabled = false; delete btn.dataset.credLoading; }
     _liqRenderCreditos();
@@ -34000,7 +34010,8 @@ const MOS = (() => {
     const bloques = ids.map(idP => {
       const per = _liqState.pendientes.find(x => x.idPersonal === idP);
       const sel = _liqState.creditosSel[idP] || new Set();
-      const filas = data[idP].map(t => {
+      const fechasSel = _liqState.creditosFechas?.[idP] || new Set();
+      const fila = (t) => {
         const on = sel.has(t.idVenta);
         if (on) desc += parseFloat(t.total) || 0;
         return `<label class="flex items-center gap-2 text-[11px] py-0.5 cursor-pointer">
@@ -34009,10 +34020,17 @@ const MOS = (() => {
           <span class="text-slate-300 flex-1 truncate">${_escapeHtml(t.correlativo || t.idVenta)}</span>
           <span class="font-bold text-rose-300">−S/ ${(parseFloat(t.total) || 0).toFixed(2)}</span>
         </label>`;
-      }).join('');
+      };
+      // [421b] dos grupos: consumo de LOS DÍAS que se liquidan (marcado) vs deuda de
+      // otras fechas (desmarcado, opcional — días ya liquidados antes u otros períodos).
+      const delPeriodo = data[idP].filter(t => fechasSel.has(String(t.fecha || '')));
+      const anteriores = data[idP].filter(t => !fechasSel.has(String(t.fecha || '')));
+      const fDel = delPeriodo.map(fila).join('');
+      const fAnt = anteriores.map(fila).join('');
       return `<div class="rounded-lg p-2 mt-2" style="background:rgba(120,53,15,.18);border:1px solid rgba(245,158,11,.3)">
-        <div class="text-[11px] font-bold text-amber-300 mb-1">🧾 Notas de crédito · ${_escapeHtml((per && per.nombre) || idP)} — se descuentan del pago</div>
-        ${filas}
+        <div class="text-[11px] font-bold text-amber-300 mb-1">🧾 Créditos de los días a liquidar · ${_escapeHtml((per && per.nombre) || idP)}</div>
+        ${fDel || '<p class="text-[10px] text-slate-500">Sin consumo a crédito en los días seleccionados</p>'}
+        ${fAnt ? `<div class="text-[10px] font-bold text-slate-500 mt-2 mb-0.5" title="Tickets de fechas fuera de esta liquidación (p.ej. días ya pagados antes). Márcalos solo si quieres cobrarlos en este pago.">⏳ Deuda de otras fechas (opcional, desmarcada)</div>${fAnt}` : ''}
       </div>`;
     }).join('');
     desc = Math.round(desc * 100) / 100;
