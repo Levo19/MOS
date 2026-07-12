@@ -1368,7 +1368,7 @@
       +     '<input id="msAdhQty" type="number" min="1" max="200" value="24" style="width:52px;text-align:center;padding:6px 2px;font-size:14px;font-weight:800;background:#0e1626;color:#e2e8f0;border:none;-moz-appearance:textfield">'
       +     '<button onclick="MembreteSystem._adhQtyStep(6)" style="padding:6px 11px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">+</button>'
       +   '</span>'
-      +   '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;padding:10px 14px" onclick="MembreteSystem._menuImprimirEnvasado()">🖨 Imprimir</button>'
+      +   '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;min-width:0;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimirEnvasado()">🖨 Imprimir</button>'
       + '</div>';
 
     document.body.insertAdjacentHTML('beforeend', ''
