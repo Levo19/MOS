@@ -1,1 +1,1 @@
-{"version":"2.43.483","build":"2.43.483 creditos POR DIA en la liquidacion (regla dueno): default solo se descuentan los tickets de los DIAS seleccionados; deuda de otras fechas aparece aparte DESMARCADA (opcional, evita deuda huerfana de dias ya pagados). Anular ya era per-pago (revierte solo sus tickets)."}
+{"version":"2.43.484","build":"2.43.484 card Personal del dia LIMPIA (feedback dueno): solo consumo DEL DIA sin numeros de ticket y sin deuda total; el detalle ticket+monto queda en el modal Auditar."}

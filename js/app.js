@@ -36478,21 +36478,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               return partes.length ? `<div class="text-[11px] text-slate-500 mt-0.5" title="Ingreso · tiempo activo · app · reconexiones">${partes.join(' · ')}</div>` : '';
             })()}
             ${(() => {
-              // [418/421] 🤝 envasado colaborativo DEL DÍA + 🧾 tickets a crédito DEL DÍA
-              // (detallados: lo que consumió ESE día) + deuda total como referencia muted.
+              // [418/421] Card LIMPIA (feedback dueño): solo lo DEL DÍA, sin números de
+              // ticket y SIN deuda total (el detalle ticket×monto vive en el modal Auditar).
               const colabU = parseFloat(p.envasadosColab || (ev && ev.envasadosColab) || 0);
               const colabS = parseFloat(p.pagoEnvasadoColab || (ev && ev.pagoEnvasadoColab) || 0);
               const cdia   = p.creditosDia || (ev && ev.creditosDia) || {};
               const cdT    = parseFloat(cdia.total || 0), cdN = parseInt(cdia.n || 0, 10);
-              const cred   = p.creditosPend || (ev && ev.creditosPend) || {};
-              const credT  = parseFloat(cred.total || 0), credN = parseInt(cred.n || 0, 10);
               const partes = [];
               if (colabU > 0) partes.push(`<span style="color:#a5b4fc;font-weight:700" title="Envasado colaborativo: el pago se divide 50/50">🤝 ${colabU} u colab · S/${colabS.toFixed(2)}</span>`);
-              if (cdN > 0) {
-                const dets = (cdia.tickets || []).map(t => `${_escapeHtml(t.correlativo || '')} S/${(parseFloat(t.total) || 0).toFixed(2)}`).join(' · ');
-                partes.push(`<span style="color:#fbbf24;font-weight:700" title="${_escapeHtml(dets)}">🧾 consumió este día S/${cdT.toFixed(2)} (${cdN} ticket${cdN !== 1 ? 's' : ''}${dets ? ': ' + _escapeHtml(dets) : ''})</span>`);
-              }
-              if (credN > 0) partes.push(`<span style="color:#94a3b8" title="Todas las fechas — se descuenta al liquidar">deuda total S/${credT.toFixed(2)} (${credN})</span>`);
+              if (cdN > 0) partes.push(`<span style="color:#fbbf24;font-weight:700" title="Consumo a crédito de este día — detalle en Auditar">🧾 consumió este día S/${cdT.toFixed(2)}</span>`);
               return partes.length ? `<div class="text-[11px] mt-0.5" style="line-height:1.5">${partes.join(' · ')}</div>` : '';
             })()}
             ${(() => {
