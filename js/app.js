@@ -16051,10 +16051,16 @@ const MOS = (() => {
   // ── Product modal — helpers ────────────────────────────────
   let _prodTipo = 'normal';
 
-  function setProdTipo(tipo) {
+  function setProdTipo(tipo, fromUser) {
     // tipo: 'normal' | 'envasable' | 'derivado' | 'presentacion'
     _prodTipo = tipo;
-    // Sincronizar checkboxes
+    // [424] pintar el botón activo del selector segmentado
+    try {
+      document.querySelectorAll('#modalProducto .prod-tipo-btn[data-tipo]').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-tipo') === tipo);
+      });
+    } catch (_) {}
+    // Sincronizar checkboxes ocultos (compat con código que aún los lee)
     const cbPres = $('cbEsPresentacion');
     const cbDer  = $('cbEsDerivado');
     const cbEnv  = $('cbEsEnvasable');
@@ -16064,8 +16070,66 @@ const MOS = (() => {
     // Mostrar / ocultar secciones
     $('prodSecDerivado')?.classList.toggle('hidden', tipo !== 'derivado');
     $('prodSecPresentacion')?.classList.toggle('hidden', tipo !== 'presentacion');
-    if (tipo === 'derivado')     _poblarEnvasablesSelect();
+    if (tipo === 'derivado')     { _poblarEnvasablesSelect(); _prodDerivadoPreview(); }
     if (tipo === 'presentacion') _poblarBasesSelect();
+    // [424] un GRANEL se compra por kilo → sugerir KGM (solo si el usuario lo eligió
+    // y la unidad está en el default NIU; no pisa una elección deliberada previa).
+    if (tipo === 'envasable' && fromUser) {
+      const u = $('prodUnidad');
+      if (u && (!u.value || u.value === 'NIU')) {
+        u.value = 'KGM';
+        const um = $('prodUnidadMedida'); if (um) um.value = 'KGM';
+        try { toast('Granel: unidad puesta en KGM (kilo) — cámbiala si vendes por unidad', 'info'); } catch (_) {}
+      }
+    }
+  }
+
+  // [424] Extrae el peso implícito del nombre (500GR→0.5, 1KG→1, 250 GR→0.25).
+  // Devuelve kilos o null. Sirve para el guardián: comparar contra la porción tecleada.
+  function _pesoDesdeNombre(nombre) {
+    const s = String(nombre || '').toUpperCase();
+    let m = s.match(/([0-9]+(?:[.,][0-9]+)?)\s*KG/);
+    if (m) return parseFloat(m[1].replace(',', '.'));
+    m = s.match(/([0-9]+(?:[.,][0-9]+)?)\s*GR?\b/);
+    if (m) return parseFloat(m[1].replace(',', '.')) / 1000;
+    return null;
+  }
+
+  // [424] Preview del derivado + GUARDIÁN contra el nombre. NUNCA bloquea (el nombre
+  // también puede estar mal tipeado, decisión del dueño) — solo avisa en ámbar/rojo.
+  function _prodDerivadoPreview() {
+    if (_prodTipo !== 'derivado') return;
+    const porcion = parseFloat($('prodFactorConvBase')?.value) || 0;
+    const baseVal = $('prodCodigoProductoBase')?.value || '';
+    const hint = $('prodPorcionHint');
+    const prevWrap = $('prodDerivadoPreview');
+    const prevTxt  = $('prodDerivadoPreviewTxt');
+    const padre = (S.productos || []).find(p => (p.skuBase || p.idProducto) === baseVal);
+    const unidadBase = padre ? _normalizarUnidad(padre.unidad || padre.Unidad || 'KGM') : 'kg';
+    const uLbl = unidadBase === 'KGM' ? 'kg' : unidadBase;
+
+    // Preview del efecto
+    if (prevWrap && prevTxt) {
+      if (porcion > 0 && padre) {
+        prevTxt.innerHTML = `1 unidad consumirá <b class="text-emerald-300">${porcion} ${uLbl}</b> de <b>${_escapeHtml(padre.descripcion || baseVal)}</b>`;
+        prevWrap.classList.remove('hidden');
+      } else { prevWrap.classList.add('hidden'); }
+    }
+    // Guardián: porción vs peso del nombre (solo aviso)
+    if (hint) {
+      const peso = _pesoDesdeNombre($('prodDescripcion')?.value);
+      if (porcion > 0 && peso != null && peso > 0) {
+        const dif = Math.abs(porcion - peso) / peso;
+        if (dif <= 0.02) {
+          hint.textContent = `✓ Coincide con el nombre (≈${peso} ${uLbl})`;
+          hint.style.color = '#34d399'; hint.classList.remove('hidden');
+        } else {
+          const factorX = porcion > peso ? (porcion / peso) : (peso / porcion);
+          hint.textContent = `⚠ El nombre sugiere ≈${peso} ${uLbl}, pero pusiste ${porcion}. ${factorX >= 9 && factorX <= 11 ? '¿Te faltó/sobró un 0?' : 'Revisa que no sea un error de dedo.'} (puedes guardar igual)`;
+          hint.style.color = '#fca5a5'; hint.classList.remove('hidden');
+        }
+      } else { hint.classList.add('hidden'); }
+    }
   }
 
   // Handler de los checkboxes mutex (presentación/derivado)
@@ -16144,7 +16208,8 @@ const MOS = (() => {
     sel.innerHTML = '<option value="">— seleccionar envasable —</option>'
       + items.map(p => { const val = p.skuBase || p.idProducto; return `<option value="${val}"${cur===val?' selected':''}>${p.descripcion||p.idProducto}</option>`; }).join('');
     if (cur) sel.value = cur;
-    sel.onchange = () => _heredarTributariosDeBase(sel.value);
+    // [424] al elegir el granel: hereda tributarios Y refresca el preview
+    sel.onchange = () => { _heredarTributariosDeBase(sel.value); try { _prodDerivadoPreview(); } catch(_){} };
   }
 
   function _poblarBasesSelect() {
@@ -17492,7 +17557,7 @@ const MOS = (() => {
     }
     // Reset
     ['prodDescripcion','prodCodigoBarra','prodMarca','prodPrecioVenta','prodPrecioCosto',
-     'prodFactorConvBase','prodMerma','prodFactor','prodIGV','prodCodSUNAT'].forEach(i => { const el=$(i); if(el) el.value=''; });
+     'prodFactorConvBase','prodFactor','prodIGV','prodCodSUNAT'].forEach(i => { const el=$(i); if(el) el.value=''; });
     $('prodId').value = '';
     $('prodEstado').value = '1';
     const toggle = $('prodEstadoToggle');
@@ -17577,7 +17642,7 @@ const MOS = (() => {
       if (tipo === 'derivado') {
         $('prodCodigoProductoBase').value = p.codigoProductoBase || '';
         $('prodFactorConvBase').value     = p.factorConversionBase || '';
-        $('prodMerma').value              = p.mermaEsperadaPct || '';
+        try { _prodDerivadoPreview(); } catch(_){}   // [424]
       }
       if (tipo === 'presentacion') {
         $('prodSkuBase').value = p.skuBase || '';
@@ -18030,7 +18095,7 @@ const MOS = (() => {
       params.esEnvasable = '0';
       params.codigoProductoBase  = $('prodCodigoProductoBase')?.value || '';
       params.factorConversionBase= $('prodFactorConvBase')?.value ? parseFloat($('prodFactorConvBase').value) : '';
-      params.mermaEsperadaPct    = $('prodMerma')?.value           ? parseFloat($('prodMerma').value)          : '';
+      params.mermaEsperadaPct    = '';   // [424] merma eliminada del modal (nunca se usa)
       params.factorConversion = '';
     } else if (_prodTipo === 'presentacion') {
       params.esEnvasable = '0';
@@ -43797,7 +43862,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _logProdAbrirFiltro, _logProdSetFiltro,
     _logProdAbrirCalendario, _logProdCalNavMes, _logProdElegirFecha,
     prodTogglePolitica, _prodOnPoliticaOverride, _prodOnModoChange, _prodActualizarPoliticaEfectiva,
-    setProdTipo, onTipoCheck, onEnvasableCheck, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
+    setProdTipo, onTipoCheck, onEnvasableCheck, _prodDerivadoPreview, prodAutogenBarcode, prodValidarCodigoBarra, prodToggleEstado, prodToggleCosto,
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,
     toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,

@@ -17596,21 +17596,13 @@
     <input type="hidden" id="prodId">
     <input type="hidden" id="prodEstado" value="1">
 
-    <!-- Tipo de producto: 3 checkboxes (presentación y derivado son mutex) -->
-    <div class="px-5 py-3 flex flex-wrap gap-x-5 gap-y-2 text-xs" style="background:#070f1a;border-bottom:1px solid #1e293b">
-      <label class="flex items-center gap-2 cursor-pointer hover:text-slate-200" style="color:#94a3b8">
-        <input type="checkbox" id="cbEsPresentacion" onchange="MOS.onTipoCheck('presentacion', this.checked)" style="cursor:pointer">
-        <span>📦 Es presentación de otro producto</span>
-      </label>
-      <label class="flex items-center gap-2 cursor-pointer hover:text-slate-200" style="color:#94a3b8">
-        <input type="checkbox" id="cbEsDerivado" onchange="MOS.onTipoCheck('derivado', this.checked)" style="cursor:pointer">
-        <span>🔗 Es derivado de un envasable</span>
-      </label>
-      <label class="flex items-center gap-2 cursor-pointer hover:text-slate-200" style="color:#94a3b8">
-        <input type="checkbox" id="cbEsEnvasable" onchange="MOS.onEnvasableCheck(this.checked)" style="cursor:pointer">
-        <span>⚗️ Es envasable (granel)</span>
-      </label>
-      <span class="text-[10px] text-slate-600 italic ml-auto self-center">Sin marcar = producto normal/base</span>
+    <!-- [424] Tipo de producto: selector segmentado (una sola decision) -->
+    <div class="prod-tipo-bar px-3">
+      <button type="button" data-tipo="normal" onclick="MOS.setProdTipo('normal', true)" class="prod-tipo-btn">Normal</button>
+      <button type="button" data-tipo="presentacion" onclick="MOS.setProdTipo('presentacion', true)" class="prod-tipo-btn">Presentacion</button>
+      <button type="button" data-tipo="derivado" onclick="MOS.setProdTipo('derivado', true)" class="prod-tipo-btn">Derivado</button>
+      <button type="button" data-tipo="envasable" onclick="MOS.setProdTipo('envasable', true)" class="prod-tipo-btn">Granel</button>
+      <span class="hidden"><input type="checkbox" id="cbEsPresentacion"><input type="checkbox" id="cbEsDerivado"><input type="checkbox" id="cbEsEnvasable"></span>
     </div>
 
     <!-- Contenido scrollable -->
@@ -17622,7 +17614,7 @@
         <div class="grid grid-cols-2 gap-3">
           <div class="col-span-2">
             <label class="lbl">Descripción <span class="text-rose-400">*</span></label>
-            <input id="prodDescripcion" class="inp" placeholder="Ej: Arroz Extra 1kg" required>
+            <input id="prodDescripcion" class="inp" placeholder="Ej: Arroz Extra 1kg" required oninput="MOS._prodDerivadoPreview && MOS._prodDerivadoPreview()">
           </div>
           <div class="col-span-2">
             <label class="lbl">Código de barras <span class="text-rose-400">*</span></label>
@@ -17748,21 +17740,22 @@
 
       <!-- ── Sección Derivado ── -->
       <div id="prodSecDerivado" class="hidden prod-sec-box">
-        <div class="prod-section-title" style="margin-bottom:12px">🔗 Relación con envasable</div>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="col-span-2">
-            <label class="lbl">¿De qué envasable proviene?</label>
-            <select id="prodCodigoProductoBase" class="inp">
-              <option value="">— seleccionar envasable —</option>
+        <div class="prod-section-title" style="margin-bottom:12px">Sale de un granel</div>
+        <div class="space-y-3">
+          <div>
+            <label class="lbl">Del granel envasable</label>
+            <select id="prodCodigoProductoBase" class="inp" onchange="MOS._prodDerivadoPreview()">
+              <option value="">-- seleccionar granel --</option>
             </select>
           </div>
           <div>
-            <label class="lbl">Factor conv. WH <span class="text-amber-400 text-xs font-normal">uds por granel</span></label>
-            <input id="prodFactorConvBase" class="inp" type="number" step="0.001" placeholder="Ej: 80">
+            <label class="lbl">Porcion del granel por unidad <span class="text-emerald-400 text-xs font-normal">cuanto consume 1 unidad (unidad del granel, normalmente kg)</span></label>
+            <input id="prodFactorConvBase" class="inp" type="number" step="0.001" placeholder="Ej: 0.500 para bolsa de 500gr" oninput="MOS._prodDerivadoPreview()">
+            <p id="prodPorcionHint" class="hidden text-[11px] font-bold mt-1"></p>
           </div>
-          <div>
-            <label class="lbl">Merma esperada (%)</label>
-            <input id="prodMerma" class="inp" type="number" step="0.1" placeholder="2">
+          <div id="prodDerivadoPreview" class="hidden rounded-lg px-3 py-2" style="background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.35)">
+            <p class="text-[10px] font-bold uppercase tracking-wide text-emerald-400">Vista previa - efecto en almacen</p>
+            <p id="prodDerivadoPreviewTxt" class="text-xs text-slate-200 mt-0.5"></p>
           </div>
         </div>
       </div>
@@ -19423,7 +19416,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.485"></script>
+<script src="js/api.js?v=2.43.486"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19438,7 +19431,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.485"></script>
+<script src="js/app.js?v=2.43.486"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
