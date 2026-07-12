@@ -1,6 +1,17 @@
 # DISEÑO · Envasado colaborativo + Línea de crédito del personal
 
-> Estado: **DIBUJO — pendiente OK del dueño. NO implementado.**
+> Estado: **✅ IMPLEMENTADO Y EN VIVO (2026-07-12)** — SQL 418/419/420 aplicados ·
+> WH v2.13.419 · MOS v2.43.481 · ME v2.8.192. Revisión 100x (2 revisores
+> adversariales por capa: 4 HIGH + 6 MED/LOW corregidos) + smoke 33/33
+> (tx-rollback) + estrés concurrente 10/10 (destapó y corrigió carrera
+> pre-existente de línea de guía, SQL 60) + browsercheck 3 PWAs.
+> TIEMPO REAL confirmado: Personal del día (chips 🤝/🧾) y modal Auditar
+> (envasado propio vs colab 50%, notas de crédito con fetch fresco, pago del
+> día con neto) leen de personal_dia_lista + creditos_personal en vivo.
+> RETROACTIVO confirmado: anular_pago revierte PLANILLA→CREDITO (smoke D/D2).
+> Follow-ups menores restantes: clave admin al cambiar documento (editor ya es
+> master-only) · paridad de mitades si cambia tarifa_envasado con un lado
+> sellado (documentado) · endurecer gate extension_cerrar_cascada (402).
 > Fecha: 2026-07-11 · Datos verificados en producción (Jorgenis OP001 como caso real).
 > Directrices: cero-GAS, revisión adversarial antes de declarar listo, money-safe.
 
