@@ -214,7 +214,20 @@ begin
       jsonb_build_object('idPago',v_id_pago,'idGasto',v_existe_gasto.id_gasto,'dias',v_n,'total',mos._r2(v_existe_gasto.monto)));
   end if;
 
-  for d in select * from jsonb_array_elements(v_dias) loop
+  -- [419 · review HIGH2] localId REUSADO tras anulación: anular_pago BORRA el gasto,
+  -- así que el dedup por mos.gastos ya no lo atrapa. Pero las filas de
+  -- liquidaciones_pagos sobreviven (quedan ANULADA). Si existe CUALQUIER fila con
+  -- este id_pago, este localId ya se consumió → NO re-ejecutar (evita re-pagar sin
+  -- clave admin y re-descontar créditos ya revertidos). Un pago legítimo nuevo trae
+  -- un localId nuevo → id_pago nuevo → no colisiona.
+  if exists (select 1 from mos.liquidaciones_pagos where id_pago = v_id_pago) then
+    return jsonb_build_object('ok',true,'dedup',true,'data',
+      jsonb_build_object('idPago',v_id_pago,'reusado',true,'total',0,'dias',0));
+  end if;
+
+  -- [419 · review LOW11] orden DETERMINISTA de locks (fechas y créditos ordenados)
+  -- → dos admins con conjuntos solapados no se cruzan en deadlock (40P01).
+  for d in select * from jsonb_array_elements(v_dias) e order by e->>'fecha' loop
     v_fecha_s := nullif(btrim(coalesce(d->>'fecha','')), '');
     if v_fecha_s is null then return jsonb_build_object('ok',false,'error','Día sin fecha'); end if;
     v_id_dia := mos._liqdia_key(v_idp, v_fecha_s);
@@ -237,9 +250,14 @@ begin
     if coalesce(v_docp,'') = '' then
       return jsonb_build_object('ok',false,'error','La persona no tiene documento registrado (Personal → documento) — no se pueden descontar créditos');
     end if;
-    for v_vid in select distinct jsonb_array_elements_text(v_creds) loop
+    -- [419 · review LOW11] créditos ordenados (mismo motivo que las fechas)
+    for v_vid in select distinct v from unnest(array(select jsonb_array_elements_text(v_creds))) v order by v loop
       v_vid := nullif(btrim(v_vid),'');
       if v_vid is null then continue; end if;
+      -- [419 · review HIGH1] MISMO advisory lock que me.cobrar_venta ('cobro:'||idVenta):
+      -- serializa contra el cobro en caja del mismo ticket → imposible que se compense
+      -- por planilla Y entre como efectivo a la vez (doble cobro). Se libera al commit.
+      perform pg_advisory_xact_lock(hashtext('cobro:'||v_vid));
       select id_venta, upper(coalesce(forma_pago,'')) as fp, btrim(coalesce(cliente_doc,'')) as doc,
              coalesce(total,0) as total, coalesce(correlativo,'') as correlativo, fecha, historial_cambios
         into v_vrow from me.ventas where id_venta = v_vid for update;

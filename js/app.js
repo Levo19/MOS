@@ -23532,9 +23532,11 @@ const MOS = (() => {
   }
 
   function abrirModalPersonal(id, appOrigen = 'warehouseMos') {
-    ['Nombre','Apellido','Pin','Tarifa','Monto'].forEach(f => {
+    ['Nombre','Apellido','Pin','Tarifa','Monto','Documento'].forEach(f => {
       const el = $('pers' + f); if (el && el.tagName !== 'SELECT') el.value = '';
     });
+    // [419 · LOW10] al CREAR, prev='' → mandar documento solo si el admin escribe algo.
+    if ($('persDocumento')) $('persDocumento').dataset.prev = '';
     $('persId').value = '';
     $('persAppOrigen').value = appOrigen;
     const isMOS = appOrigen === 'MOS';
@@ -23561,7 +23563,7 @@ const MOS = (() => {
       $('persId').value       = p.idPersonal;
       $('persNombre').value   = p.nombre || '';
       $('persApellido').value = p.apellido || '';
-      if ($('persDocumento')) $('persDocumento').value = p.documento || '';   // [419] línea de crédito
+      if ($('persDocumento')) { const _d = p.documento || ''; $('persDocumento').value = _d; $('persDocumento').dataset.prev = _d; }   // [419] línea de crédito (prev = anti-wipe LOW10)
       // Match rol case-insensitive (la DB puede tener "MASTER" / "master" / "Admin"/etc.)
       if (rolSel && !_selectOptionCI(rolSel, p.rol)) {
         rolSel.value = isMOS ? 'ADMIN' : 'ALMACENERO';
@@ -23602,11 +23604,17 @@ const MOS = (() => {
       rol:         $('persRol')?.value || (isMOS ? 'ADMIN' : 'ALMACENERO'),
       color:       $('persColor')?.value || '#6366f1',
       tipo:        'OPERADOR',
-      appOrigen:   appOrigen,
-      // [419] documento = ID de TEXTO exacto (ceros a la izquierda cuentan). Activa
-      // la línea de crédito (tickets ME a CRÉDITO con este doc → descuento en liquidación).
-      documento:   ($('persDocumento')?.value || '').trim()
+      appOrigen:   appOrigen
     };
+    // [419 · review LOW10] documento = ID de TEXTO exacto (ceros a la izquierda cuentan).
+    // Solo se manda si el input EXISTE y su valor CAMBIÓ respecto al prefill — así una
+    // lista vieja en cache (sin documento) editada por otro campo NO borra la línea de
+    // crédito con un '' silencioso (la RPC preserva cuando la clave está ausente).
+    if ($('persDocumento')) {
+      const _docNuevo = ($('persDocumento').value || '').trim();
+      const _docPrev  = String($('persDocumento').dataset.prev ?? '');
+      if (_docNuevo !== _docPrev) params.documento = _docNuevo;
+    }
     if (!isMOS) {
       params.montoBase  = $('persMonto')?.value  || 0;
     }
@@ -33957,14 +33965,21 @@ const MOS = (() => {
   }
 
   // ── [419] Créditos del personal en el modal de pago ────────────────────────
+  let _liqCredGen = 0;   // [review MED6] epoch: descarta respuestas de un modal anterior
   async function _liqCargarCreditos(idPersonales) {
     const cont = $('liqConfirmDetalle');
     if (!cont) return;
+    const gen = ++_liqCredGen;
     let sec = document.getElementById('liqCredSection');
     if (!sec) { sec = document.createElement('div'); sec.id = 'liqCredSection'; cont.appendChild(sec); }
-    sec.innerHTML = '';
+    // [review MED5] mientras cargan los créditos, BLOQUEAR el botón + aviso: sin esto
+    // un admin rápido confirmaba con creditos:[] → pagaba bruto sin descontar la deuda.
+    sec.innerHTML = '<p class="text-[11px] text-slate-400 py-2">🧾 Buscando notas de crédito…</p>';
+    const btn = $('liqConfirmBtn');
+    if (btn) { btn.disabled = true; btn.dataset.credLoading = '1'; }
     const res = await Promise.allSettled(idPersonales.map(idP =>
       API.get('getCreditosPersonal', { idPersonal: idP }).then(r => ({ idP, r }))));
+    if (gen !== _liqCredGen) return;   // [MED6] otro modal se abrió: descartar
     res.forEach(x => {
       if (x.status !== 'fulfilled') return;
       const { idP, r } = x.value;
@@ -33972,6 +33987,7 @@ const MOS = (() => {
       _liqState.creditosData[idP] = r.tickets;
       _liqState.creditosSel[idP]  = new Set(r.tickets.map(t => t.idVenta));   // default: todos
     });
+    if (btn) { btn.disabled = false; delete btn.dataset.credLoading; }
     _liqRenderCreditos();
   }
   function _liqRenderCreditos() {

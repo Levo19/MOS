@@ -68,6 +68,22 @@ begin
   if v_unidades <= 0 or v_cantbase < 0 then return jsonb_build_object('ok',false,'error','CANTIDAD_INVALIDA'); end if;
   if v_fvenc is not null then v_fvenc := left(v_fvenc,10); end if;
   if v_colab <> '' and mos._norm_nom(v_colab) = mos._norm_nom(v_usuario) then v_colab := ''; end if;
+  -- [418 · review MED5/MED6] El colaborador debe resolver a EXACTAMENTE UN personal
+  -- ACTIVO envasador/almacenero. Sin esto: un typo → nadie cobra la mitad (pérdida
+  -- silenciosa) y un HOMÓNIMO → dos personas cobran la mitad (el negocio paga 1.5×).
+  -- El recompute matchea por nombre normalizado; acá cerramos la puerta en el origen.
+  if v_colab <> '' then
+    declare v_ncolab int;
+    begin
+      select count(*) into v_ncolab
+        from mos.personal
+       where coalesce(estado,false) = true
+         and upper(coalesce(rol,'')) in ('ENVASADOR','ALMACENERO')
+         and mos._norm_nom(btrim(nombre||' '||coalesce(apellido,''))) = mos._norm_nom(v_colab);
+      if v_ncolab = 0 then return jsonb_build_object('ok',false,'error','COLABORADOR_NO_ENCONTRADO','colaborador',v_colab); end if;
+      if v_ncolab > 1 then return jsonb_build_object('ok',false,'error','COLABORADOR_AMBIGUO','colaborador',v_colab); end if;
+    end;
+  end if;
 
   -- idempotencia ATÓMICA por id_envasado (dedup vía sync_directo: insert-on-conflict toma el lock de la PK y serializa
   -- reintentos concurrentes — evita doble-consumo de base / doble-producción de derivado). HALLAZGO 40x #1.

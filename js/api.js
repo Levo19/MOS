@@ -2239,7 +2239,16 @@ const API = (() => {
         // admin). La RPC valida doc+estado y descuenta EN LA MISMA TX del pago (todo o nada).
         creditos: Array.isArray(p.creditos) && p.creditos.length ? p.creditos : undefined
       } });
-      if (out == null) return null;            // sin token → GAS
+      if (out == null) {
+        // [419 · review MED7] Si hay créditos que descontar, NO caer a GAS: el GAS no
+        // conoce el parámetro → pagaría SIN descontar y el ticket impreso ya dice
+        // "NETO A PAGAR" con descuento → comprobante que miente el monto entregado.
+        // Mejor fallar visible para que el admin reintente cuando haya token/directo.
+        if (Array.isArray(p.creditos) && p.creditos.length) {
+          throw new Error('No se pudo aplicar el descuento de créditos (sin conexión directa) — reintenta en un momento.');
+        }
+        return null;                           // sin créditos y sin token → GAS (comportamiento normal)
+      }
       return _desempacarCatalogo(out);         // {idPago, idGasto, dias, total} — el front lee .total
     }
 
