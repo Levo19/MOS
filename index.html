@@ -19235,90 +19235,6 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <!-- [v41.19] modalImpactoCostos eliminado — la sección de sugerencias ahora
      vive embebida dentro del overlay unificado de costos (cguSugerenciasSection). -->
 
-<!-- [v41.22] Selector de impresora para imprimir reporte de costos de guía.
-     Modal chico que se abre encima del overlay del voucher. Reusa listarImpresorasPN. -->
-<div id="modalSelPrinterCostos" class="modal-backdrop hidden" style="z-index:9400"
-     onclick="if(event.target.id==='modalSelPrinterCostos') MOS.cerrarSelPrinterCostos()">
-  <div class="modal-box p-0" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column"
-       onclick="event.stopPropagation()">
-    <div class="px-5 pt-5 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
-      <div class="min-w-0 flex-1">
-        <h3 class="font-semibold text-cyan-400 text-base">🖨 Elegir impresora</h3>
-        <p id="selPrCostosSub" class="text-xs text-slate-500 mt-0.5 font-mono truncate">—</p>
-      </div>
-      <button onclick="MOS.cerrarSelPrinterCostos()" class="modal-close-x">×</button>
-    </div>
-    <div id="selPrCostosList" class="overflow-y-auto px-4 py-3 space-y-2" style="flex:1">
-      <div class="text-center text-xs text-slate-500 py-8">
-        <div class="inline-block animate-spin">⏳</div> Cargando impresoras...
-      </div>
-    </div>
-    <div class="px-4 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
-      <button onclick="MOS._opsRecargarPrinters()" class="btn-ghost text-xs w-full">↺ Recargar lista</button>
-    </div>
-  </div>
-</div>
-
-<!-- [v41.19] Overlay UNIFICADO costos + sugerencias precios + foto fija
-     Split horizontal: foto a la izquierda (siempre visible) + costos
-     editables a la derecha. Reemplaza modalCostosGuia + modalImpactoCostos.
-     IDs internos preservados (costosGuiaBody, costosGuiaInfo, etc.) para
-     que toda la lógica JS existente siga funcionando sin cambios. -->
-<div id="modalCostosGuia" class="alm-cu-overlay hidden" onclick="if(event.target.id==='modalCostosGuia') MOS.cerrarCostosGuia()">
-  <div class="alm-cu-card" onclick="event.stopPropagation()">
-    <button onclick="MOS.cerrarCostosGuia()" class="alm-cu-close" title="Cerrar">✕</button>
-    <div class="alm-cu-split">
-      <!-- ═══ LADO IZQUIERDO: Foto fija con zoom ═══ -->
-      <aside class="alm-cu-foto-pane">
-        <div class="alm-cu-foto-wrap">
-          <img id="cguFotoImg" class="alm-cu-foto-img" src="" alt="Factura del proveedor"
-               onerror="this.style.display='none';document.getElementById('cguFotoEmpty').style.display='flex'">
-          <div id="cguFotoEmpty" class="alm-cu-foto-empty" style="display:none">
-            <span style="font-size:48px;opacity:.5">📄</span>
-            <p style="margin-top:8px;color:#94a3b8;font-size:12px">Sin foto de factura</p>
-          </div>
-        </div>
-        <button id="cguFotoFullBtn" class="alm-cu-foto-btn">
-          🔍 Ver en pantalla completa
-        </button>
-      </aside>
-
-      <!-- ═══ LADO DERECHO: Header + costos + sugerencias ═══ -->
-      <section class="alm-cu-content">
-        <header class="alm-cu-header">
-          <div class="alm-cu-tipo">💰 Llenar costos</div>
-          <p id="costosGuiaInfo" class="alm-cu-meta"></p>
-        </header>
-        <!-- Form de costos: IDs originales preservados -->
-        <div class="alm-cu-section">
-          <div id="costosGuiaBody" class="alm-cu-body">
-            <div class="text-xs text-slate-500 italic py-3">Cargando líneas...</div>
-          </div>
-          <div class="alm-cu-controls">
-            <label class="alm-cu-check">
-              <input type="checkbox" id="costosGuiaUpdMaster" checked>
-              <span>Actualizar precio costo en catálogo MOS</span>
-            </label>
-            <div class="alm-cu-actions">
-              <button onclick="MOS.cerrarCostosGuia()" class="btn-ghost">Cancelar</button>
-              <button onclick="MOS.guardarCostosGuia()" class="btn-primary">💾 Guardar costos</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- [v41.20] Sugerencias ahora aparecen INLINE bajo cada producto
-             cuando se llena su costo. Sección separada eliminada.
-             Mantengo IDs ocultos para que el JS legacy de impactoCostos
-             no rompa si se llama desde otro flow (fallback silencioso). -->
-        <div id="cguSugerenciasSection" class="hidden">
-          <p id="impactoCostosInfo" class="hidden"></p>
-          <div id="impactoCostosBody" class="hidden"></div>
-          <div id="impactoCostosResumen" class="hidden"></div>
-        </div>
-      </section>
-    </div>
-  </div>
-</div>
 
 <!-- Modal: Stock unificado (WH + zonas) -->
 <div id="modalStockDetalle" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarStockDetalle()">
@@ -19393,7 +19309,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.514';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.515';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19443,7 +19359,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.514"></script>
+<script src="js/api.js?v=2.43.515"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19458,7 +19374,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.514"></script>
+<script src="js/app.js?v=2.43.515"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
