@@ -3071,7 +3071,7 @@ const MOS = (() => {
                     ${alertHtml ? `<div class="flex flex-wrap items-center gap-1 mt-1">${alertHtml}</div>` : ''}
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
-                    <div class="${precioClass}">${fmtMoney(precioActual)}</div>
+                    <div class="${precioClass}" style="cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${d.idProducto}')">${fmtMoney(precioActual)}</div>
                     ${_renderRotChip(d, true)}
                     <button type="button" class="toggle-sw sm ${presActivo ? 'on' : ''}" data-pid="${d.idProducto}"
                             onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
@@ -3106,7 +3106,7 @@ const MOS = (() => {
                 <span>↳ 🧱 ×${pf}</span>
                 <span class="cat-nombre-edit" onclick="event.stopPropagation();MOS.abrirEditarProducto('${pp.idProducto}')"
                       title="Tocar para editar">${_highlight(pp.descripcion || pp.idProducto, words)}</span>
-                <span style="margin-left:auto;color:#34d399;font-weight:700">${fmtMoney(pp.precioVenta)}</span>
+                <span style="margin-left:auto;color:#34d399;font-weight:700;cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${pp.idProducto}')">${fmtMoney(pp.precioVenta)}</span>
                 <button type="button" class="toggle-sw sm ${ppAct ? 'on' : ''}" data-pid="${pp.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${pp.idProducto}', false)"
                         title="${ppAct ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
@@ -3120,7 +3120,7 @@ const MOS = (() => {
                       onclick="event.stopPropagation();MOS.abrirEditarProducto('${d.idProducto}')"
                       title="Tocar para editar (ahí vive su precio)">${hlD}</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
-                  <span style="color:#34d399;font-weight:800;font-size:12px">${fmtMoney(d.precioVenta)}</span>
+                  <span style="color:#34d399;font-weight:800;font-size:12px;cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${d.idProducto}')">${fmtMoney(d.precioVenta)}</span>
                   ${_renderRotChip(d, true)}
                 </span>
                 <button type="button" class="toggle-sw sm ${dAct ? 'on' : ''}" data-pid="${d.idProducto}"
