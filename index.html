@@ -11810,6 +11810,35 @@
     .cat-price { font-size: 1.05rem; font-weight: 700; color: #818cf8; letter-spacing: -.02em; }
     .cat-cost  { font-size: .7rem; color: #475569; }
 
+    /* ═══ [RONDA 9 · dibujo §05] PALETA del artifact en el card (scopeado a catálogo) ═══
+       toggle ESMERALDA (no dorado) · badges esmeralda/violeta/azul · precio esmeralda ═══ */
+    .cat-card .toggle-sw.on {
+      background: linear-gradient(135deg,#059669,#34d399) !important;
+      border-color: #34d399 !important;
+      box-shadow: 0 0 10px rgba(52,211,153,.35) !important;
+    }
+    .cat-card .toggle-sw.on .toggle-sw-knob { background: #04140d !important; }
+    .cat-card .cat-price { color: #34d399 !important; }
+    /* Badge GRANEL/envasable → esmeralda (era amarillo) */
+    .cat-card .badge-yellow {
+      background: rgba(52,211,153,.16) !important;
+      color: #34d399 !important;
+    }
+    /* Presentaciones → azul suave del artifact */
+    .cat-card .badge-blue {
+      background: rgba(124,179,240,.16) !important;
+      color: #7cb3f0 !important;
+    }
+    /* Categoría gris más suave + borde sutil como el dibujo */
+    .cat-card .badge-gray {
+      background: rgba(148,163,194,.10) !important;
+      color: #93a4c2 !important;
+      border: 1px solid rgba(148,163,194,.18);
+    }
+    /* Unidad: granel (KGM) esmeralda como el dibujo (era ámbar), empacado azul suave */
+    .cat-card .cat-unidad.cat-unidad-granel { background: rgba(52,211,153,.15) !important; color: #34d399 !important; border-color: rgba(52,211,153,.3) !important; }
+    .cat-card .cat-unidad:not(.cat-unidad-granel) { background: rgba(124,179,240,.13) !important; color: #7cb3f0 !important; }
+
     /* Barcode tag */
     .cat-barcode {
       display: inline-flex; align-items: center; gap: .25rem;
@@ -19364,7 +19393,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.510';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.511';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19414,14 +19443,14 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.510"></script>
+<script src="js/api.js?v=2.43.511"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
-<script src="./assets/membrete/membrete-modal.js?v=2.43.510"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.510"></script>
+<script src="./assets/membrete/membrete-modal.js?v=2.43.511"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.511"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -19429,7 +19458,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.510"></script>
+<script src="js/app.js?v=2.43.511"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
