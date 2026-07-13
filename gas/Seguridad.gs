@@ -25,41 +25,8 @@ var AUDITORIA_ADMIN_HEADERS = [
   'cliente_meta'     // JSON con ip/userAgent/etc opcional
 ];
 
-var ROTACION_DIAS = 30;
-
-// ────────────────────────────────────────────────────────────
-// HELPERS
-// ────────────────────────────────────────────────────────────
-function _generar4Digitos() {
-  // Random 4 dígitos, evita patrones obvios (0000, 1234, 1111, etc.)
-  var malos = ['0000','1111','2222','3333','4444','5555','6666','7777','8888','9999','1234','4321','0123','9876'];
-  for (var intento = 0; intento < 50; intento++) {
-    var n = Math.floor(1000 + Math.random() * 9000); // 1000-9999
-    var s = String(n);
-    if (malos.indexOf(s) === -1) return s;
-  }
-  return String(Math.floor(1000 + Math.random() * 9000));
-}
-
-function _garantizarClaveGlobal() {
-  var sheet = getSheet('CONFIG_MOS');
-  var data = sheet.getDataRange().getValues();
-  var pinExiste = false, fechaExiste = false;
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][0] === 'ADMIN_GLOBAL_PIN')       pinExiste = true;
-    if (data[i][0] === 'ADMIN_GLOBAL_PIN_FECHA') fechaExiste = true;
-  }
-  if (!pinExiste) {
-    sheet.appendRow(['ADMIN_GLOBAL_PIN', _generar4Digitos(), 'Clave admin global (4 dig). Se concatena con PIN del admin (4 dig) para validar acciones protegidas en ME/WH.']);
-  }
-  if (!fechaExiste) {
-    sheet.appendRow(['ADMIN_GLOBAL_PIN_FECHA', new Date().toISOString(), 'Fecha de la última rotación de la clave admin global.']);
-  }
-  // Forzar formato texto en col 2 para preservar ceros a la izquierda
-  try {
-    sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).setNumberFormat('@');
-  } catch(e) {}
-}
+// [CERO-GAS · 2026-07-13] ELIMINADOS por huérfanos tras centralizar la clave en Supabase:
+//   ROTACION_DIAS, _generar4Digitos, _garantizarClaveGlobal (la rotación/seed vive en pg_cron + SQL 432).
 
 function _garantizarHojaAuditoria() {
   var ss = getSpreadsheet();
@@ -166,21 +133,8 @@ function _inferirTierAccion(accion) {
   return x ? x.tier : 2; // default conservador
 }
 
-function _buscarAdminPorPin(pin4digitos) {
-  var personas = _sheetToObjects(getSheet('PERSONAL_MASTER'));
-  return personas.find(function(p) {
-    return _esRolAdmin(p.rol) &&
-           String(p.estado) === '1' &&
-           String(p.pin || '').padStart(4, '0') === String(pin4digitos);
-  });
-}
-
-function _diasDesde(fechaISO) {
-  if (!fechaISO) return 999;
-  var d = new Date(fechaISO);
-  if (isNaN(d.getTime())) return 999;
-  return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-}
+// [CERO-GAS · 2026-07-13] _buscarAdminPorPin + _diasDesde ELIMINADOS (huérfanos: la validación
+// de PIN y el cálculo de días viven en Supabase — _validar_clave_admin_core + get_clave_admin_global).
 
 // ────────────────────────────────────────────────────────────
 // VERIFICAR CLAVE ADMIN — clave de 8 dígitos
@@ -204,7 +158,8 @@ function verificarClaveAdmin(params) {
   // (jamás cae a validación local con datos viejos).
   var r;
   try {
-    r = _sbRpc('mos', 'verificar_clave_admin_p', {
+    // mos.verificar_clave_admin_p(p jsonb) → los args van ENVUELTOS en {p:{...}} (no sueltos).
+    r = _sbRpc('mos', 'verificar_clave_admin_p', { p: {
       clave: clave,
       accion: params.accion || 'GENERICA',
       ref: params.refDocumento || '',
@@ -212,7 +167,7 @@ function verificarClaveAdmin(params) {
       detalle: params.detalle || '',
       device: String(params.deviceId || ''),
       tier: (parseInt(params.tier, 10) || '')
-    });
+    } });
   } catch(e) {
     return { ok: false, error: 'Verificación online no disponible (sin caída a GAS): ' + (e && e.message || e) };
   }

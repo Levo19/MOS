@@ -13978,10 +13978,10 @@
             </div>
           </div>
           <div class="alm-ops-rango" id="almOpsRangoChips">
-            <!-- [v2.41.99] Chip filtro Solo ingresos (proveedor + entrada libre) -->
-            <button id="almOpsFiltroIngreso" class="alm-rango-chip alm-rango-chip-ingreso" onclick="MOS.almToggleFiltroIngreso()" title="Mostrar solo ingresos de proveedor + entradas libres">
-              <span class="alm-ingreso-ico">📦</span>
-              <span class="alm-ingreso-lbl">Solo ingresos</span>
+            <!-- [v5 §11] Chip filtro Solo compras (guías de proveedor + entrada libre) -->
+            <button id="almOpsFiltroIngreso" class="alm-rango-chip alm-rango-chip-ingreso" onclick="MOS.almToggleFiltroIngreso()" title="Mostrar solo COMPRAS (guías de proveedor + entradas libres) para costear/preciar">
+              <span class="alm-ingreso-ico">🧾</span>
+              <span class="alm-ingreso-lbl">Solo compras</span>
               <span class="alm-ingreso-count" id="almOpsFiltroIngresoCount" style="display:none">0</span>
             </button>
             <span class="alm-ops-sep">│</span>
@@ -19393,7 +19393,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.513';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.514';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19443,7 +19443,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.513"></script>
+<script src="js/api.js?v=2.43.514"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19458,7 +19458,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.513"></script>
+<script src="js/app.js?v=2.43.514"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
