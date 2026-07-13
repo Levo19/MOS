@@ -5857,7 +5857,15 @@ const MOS = (() => {
         const id = typeof e === 'object' ? (e.idEquiv || '') : '';
         return { id, codigoBarra: cb, descripcion: desc };
       });
-      return { sku, canonico: g.base, presentaciones: g.pres || [], equivalentes: equivObjs };
+      // [RONDA 6 · reporte dueño] HIJOS JERÁRQUICOS: los derivados son GRUPOS APARTE
+      // (sku propio) colgados por codigo_producto_base — antes NO aparecían en la cesta
+      // del granel y el guard 429 bloqueaba el borrado sin que pudieras marcar los hijos.
+      const U = s => String(s || '').trim().toUpperCase();
+      const derivados = Object.values(groupsObj)
+        .filter(dg => dg.base && U(dg.base.codigoProductoBase)
+          && (U(dg.base.codigoProductoBase) === U(sku) || U(dg.base.codigoProductoBase) === U(g.base.idProducto)))
+        .map(dg => ({ prod: dg.base, packs: dg.pres || [] }));
+      return { sku, canonico: g.base, presentaciones: g.pres || [], equivalentes: equivObjs, derivados };
     });
     // [v2.43.53] Modo grupo único (kebab card): filtrar a SOLO ese grupo
     if (st.idProductoFiltro) {
@@ -5879,6 +5887,7 @@ const MOS = (() => {
       let total = _ventasUlt8sem(g.canonico.codigoBarra);
       g.presentaciones.forEach(p => total += _ventasUlt8sem(p.codigoBarra));
       g.equivalentes.forEach(e => total += _ventasUlt8sem(e.codigoBarra));
+      (g.derivados||[]).forEach(dv => { total += _ventasUlt8sem(dv.prod.codigoBarra); dv.packs.forEach(pk => total += _ventasUlt8sem(pk.codigoBarra)); });
       g.ventasTotal = total;
     });
     if (st.soloSinVentas) gruposArr = gruposArr.filter(g => g.ventasTotal === 0);
@@ -5902,7 +5911,7 @@ const MOS = (() => {
       const grupoSel = st.sel.has('CAN|' + idGrupo);
       const canVentas = _ventasUlt8sem(g.canonico.codigoBarra);
 
-      const hijosHtml = (g.presentaciones.length || g.equivalentes.length) && expanded ? `
+      const hijosHtml = (g.presentaciones.length || g.equivalentes.length || (g.derivados||[]).length) && expanded ? `
         <div style="padding:4px 0 4px 30px">
           ${g.presentaciones.map(p => {
             const k = 'PRE|' + p.idProducto;
@@ -5917,6 +5926,22 @@ const MOS = (() => {
               <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escapeHtml(p.descripcion || p.idProducto)}</span>
               ${stat(v)}
             </div>`;
+          }).join('')}
+          ${(g.derivados || []).map(dv => {
+            const filas = [{ p: dv.prod, lbl: '🥄 derivado (hijo)', ind: 0 }]
+              .concat(dv.packs.map(pk => ({ p: pk, lbl: '↳ 🧱 pack del derivado', ind: 14 })));
+            return filas.map(f => {
+              const k = 'PRE|' + f.p.idProducto;
+              const sel = st.sel.has(k);
+              const v = _ventasUlt8sem(f.p.codigoBarra);
+              return `<div onclick="event.stopPropagation();MOS._purgaToggle('${k}')"
+                         style="display:flex;align-items:center;gap:8px;padding:5px 8px;margin-left:${f.ind}px;border-radius:6px;cursor:pointer;font-size:11px;color:#cbd5e1;background:${sel ? 'rgba(183,155,255,.16)' : 'transparent'}">
+                <span style="width:14px;height:14px;border-radius:3px;border:1.5px solid ${sel ? '#b79bff' : '#475569'};background:${sel ? '#b79bff' : 'transparent'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:900;flex-shrink:0">${sel ? '✓' : ''}</span>
+                <span style="color:#b79bff;font-size:10px">${f.lbl}</span>
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escapeHtml(f.p.descripcion || f.p.idProducto)}</span>
+                ${stat(v)}
+              </div>`;
+            }).join('');
           }).join('')}
           ${g.equivalentes.map(e => {
             const k = 'EQU|' + (e.id || e.codigoBarra);
@@ -5945,7 +5970,7 @@ const MOS = (() => {
           <span style="color:#fcd34d;font-size:11px">👑</span>
           <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#e2e8f0;font-weight:600">${_escapeHtml(g.canonico.descripcion || g.canonico.idProducto)}</span>
           ${stat(canVentas, ' (canónico)')}
-          ${g.presentaciones.length || g.equivalentes.length ? `<span style="font-size:9px;color:#64748b">${g.presentaciones.length}p · ${g.equivalentes.length}e</span>` : ''}
+          ${g.presentaciones.length || g.equivalentes.length || (g.derivados||[]).length ? `<span style="font-size:9px;color:#64748b">${g.presentaciones.length}p · ${(g.derivados||[]).length}🥄 · ${g.equivalentes.length}e</span>` : ''}
         </div>
         ${hijosHtml}
       </div>`;
@@ -6042,15 +6067,28 @@ const MOS = (() => {
           const id = typeof e === 'object' ? (e.idEquiv || e.codigoBarra || '') : e;
           return 'EQU|' + id;
         });
+        // [RONDA 6] + HIJOS JERÁRQUICOS: derivados (grupos aparte por codigo_producto_base)
+        // y sus packs — el guard BD 429 exige que el padre no se vaya sin ellos
+        const U = s => String(s || '').trim().toUpperCase();
+        const derivKeys = [];
+        Object.values(groups).forEach(dg => {
+          if (dg.base && U(dg.base.codigoProductoBase)
+              && (U(dg.base.codigoProductoBase) === U(sku) || U(dg.base.codigoProductoBase) === U(canId))) {
+            derivKeys.push('PRE|' + dg.base.idProducto);
+            (dg.pres || []).forEach(pk => derivKeys.push('PRE|' + pk.idProducto));
+          }
+        });
         if (!yaSel) {
           // Marcamos el canónico → marcamos todo
           presIds.forEach(k => st.sel.add(k));
           equivKeys.forEach(k => st.sel.add(k));
-          toast(`✓ Grupo completo seleccionado (${1 + presIds.length + equivKeys.length} items)`, 'info', 2000);
+          derivKeys.forEach(k => st.sel.add(k));
+          toast(`✓ Grupo completo seleccionado (${1 + presIds.length + equivKeys.length + derivKeys.length} items${derivKeys.length ? ' · incluye ' + derivKeys.length + ' hijo(s) 🥄' : ''})`, 'info', 2500);
         } else {
           // Des-marcamos el canónico → des-marcamos todo
           presIds.forEach(k => st.sel.delete(k));
           equivKeys.forEach(k => st.sel.delete(k));
+          derivKeys.forEach(k => st.sel.delete(k));
         }
       }
     }
@@ -18183,11 +18221,26 @@ const MOS = (() => {
       her.classList.remove('hidden');
       her.textContent = `Los tramos viven por grupo (sku_base) · precio canónico S/ ${pc.toFixed(2)}/kg`;
       body.innerHTML = `
+        <div class="flex items-center gap-2 mb-1">
+          <label class="lbl" style="margin:0">Unidad del rango</label>
+          <select id="satTramoUm" class="inp" style="width:auto;padding:4px 8px;font-size:12px" onchange="MOS._satTramoPreview()">
+            <option value="g">gramos</option><option value="kg">kilos</option>
+          </select>
+          <span class="text-[10px] text-slate-500">· los límites <b>[</b> incluyen y <b>(</b> excluyen — toca para alternar</span>
+        </div>
         <div class="grid grid-cols-2 gap-3">
-          <div><label class="lbl">Desde (gramos) <span class="text-rose-400">*</span></label>
-            <input id="satDesde" class="inp w-full" type="number" step="1" min="0" placeholder="0" oninput="MOS._satTramoPreview()"></div>
-          <div><label class="lbl">Hasta (gramos) <span class="text-rose-400">*</span></label>
-            <input id="satHasta" class="inp w-full" type="number" step="1" min="1" placeholder="100" oninput="MOS._satTramoPreview()"></div>
+          <div><label class="lbl">Desde <span class="text-rose-400">*</span></label>
+            <div class="flex gap-1.5 items-center">
+              <button type="button" id="satMinIncl" data-incl="1" class="inp" style="width:34px;padding:8px 0;text-align:center;font-weight:800;color:#34d399"
+                      title="[ incluye este peso · ( lo excluye" onclick="MOS._satBracket(this)">[</button>
+              <input id="satDesde" class="inp flex-1" type="number" step="any" min="0" placeholder="0" oninput="MOS._satTramoPreview()">
+            </div></div>
+          <div><label class="lbl">Hasta <span class="text-rose-400">*</span></label>
+            <div class="flex gap-1.5 items-center">
+              <input id="satHasta" class="inp flex-1" type="number" step="any" min="0" placeholder="100" oninput="MOS._satTramoPreview()">
+              <button type="button" id="satMaxIncl" data-incl="0" class="inp" style="width:34px;padding:8px 0;text-align:center;font-weight:800;color:#fbbf24"
+                      title="] incluye este peso · ) lo excluye" onclick="MOS._satBracket(this)">)</button>
+            </div></div>
         </div>
         <div><label class="lbl">Ajuste sobre el canónico (%) <span class="text-rose-400">*</span></label>
           <input id="satAjuste" class="inp w-full" type="number" step="0.5" placeholder="+10" oninput="MOS._satTramoPreview()">
@@ -18254,11 +18307,25 @@ const MOS = (() => {
     } else hint.textContent = '';
   }
 
+  // [RONDA 6] alternar bracket abierto/cerrado ([ incluye · ( excluye)
+  function _satBracket(btn) {
+    const esMin = btn.id === 'satMinIncl';
+    const incl = btn.dataset.incl !== '1';
+    btn.dataset.incl = incl ? '1' : '0';
+    btn.textContent = esMin ? (incl ? '[' : '(') : (incl ? ']' : ')');
+    _satTramoPreview();
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
+  function _satTramoG(v) {   // valor del input → gramos según la unidad elegida
+    const kg = ($('satTramoUm')?.value === 'kg');
+    return isNaN(v) ? v : (kg ? v * 1000 : v);
+  }
+
   function _satTramoPreview() {
     const st = _satState; if (!st || st.tipo !== 'tramo') return;
     const pc = parseFloat(st.padre.precioVenta) || 0;
-    const desde = parseFloat($('satDesde')?.value);
-    const hasta = parseFloat($('satHasta')?.value);
+    const desde = _satTramoG(parseFloat($('satDesde')?.value));
+    const hasta = _satTramoG(parseFloat($('satHasta')?.value));
     const aj    = parseFloat($('satAjuste')?.value);
     const hint = $('satTramoHint');
     if (hint && !isNaN(aj)) hint.innerHTML = `${aj >= 0 ? '+' : ''}${aj}% → cobras <b style="color:#34d399">S/ ${(pc * (1 + aj/100)).toFixed(2)}/kg</b> en ese rango`;
@@ -18271,7 +18338,7 @@ const MOS = (() => {
     if (!todos.length) { esc.innerHTML = '<div class="text-[11px] text-slate-600">⬚ sin tramos aún — todo al canónico</div>'; return; }
     esc.innerHTML = todos.map(s => {
       const precio = pc * (1 + (parseFloat(s.ajustePct)||0)/100);
-      const lbl = (s.min >= 1000 ? (s.min/1000)+'kg' : (s.min||0)+'g') + '–' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g'));
+      const lbl = (s.minIncl !== false ? '[' : '(') + (s.min >= 1000 ? (s.min/1000)+'kg' : (s.min||0)+'g') + '–' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g')) + (s.maxIncl ? ']' : ')');
       return `<div class="flex-1 text-center rounded-md py-1.5 px-0.5" style="font-size:9.5px;font-family:monospace;
         ${s._nuevo ? 'background:rgba(52,211,153,.15);border:1px solid #34d399;color:#34d399' : 'background:#0e1626;border:1px solid #28344c;color:#93a4c2'}">
         ${lbl}<br><b>S/${precio.toFixed(2)}</b>${s._nuevo ? ' ←' : ''}</div>`;
@@ -18289,7 +18356,7 @@ const MOS = (() => {
     if (!segs.length) { cont.innerHTML = '<div class="text-[11px] text-slate-600">⬚ sin tramos aún — todo al precio canónico</div>'; return; }
     cont.innerHTML = segs.map(s => {
       const aj = parseFloat(s.ajustePct) || 0;
-      const lbl = ((s.min || 0) >= 1000 ? (s.min/1000)+'kg' : (s.min || 0)+'g') + ' – ' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g'));
+      const lbl = (s.minIncl !== false ? '[' : '(') + ((s.min || 0) >= 1000 ? (s.min/1000)+'kg' : (s.min || 0)+'g') + ' – ' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g')) + (s.maxIncl ? ']' : ')');
       return `<div class="flex items-center gap-2 rounded-lg px-3 py-2" style="background:#0e1626;border:1px solid #28344c">
         <span class="text-[11px] font-mono text-slate-300">${lbl}</span>
         <span class="text-[11px] font-bold" style="color:${aj >= 0 ? '#34d399' : '#fbbf24'}">${aj >= 0 ? '+' : ''}${aj}% → S/ ${(pc*(1+aj/100)).toFixed(2)}/kg</span>
@@ -18473,15 +18540,18 @@ const MOS = (() => {
     }
 
     if (tipo === 'tramo') {
-      const desde = parseFloat($('satDesde')?.value);
-      const hasta = parseFloat($('satHasta')?.value);
+      // [RONDA 6] unidad g/kg + brackets abierto/cerrado elegidos por el usuario
+      const desde = _satTramoG(parseFloat($('satDesde')?.value));
+      const hasta = _satTramoG(parseFloat($('satHasta')?.value));
       const aj    = parseFloat($('satAjuste')?.value);
-      if (isNaN(desde) || desde < 0)        { toast('⚠ Desde (gramos) es requerido', 'error'); return; }
+      const minIncl = $('satMinIncl')?.dataset.incl === '1';
+      const maxIncl = $('satMaxIncl')?.dataset.incl === '1';
+      if (isNaN(desde) || desde < 0)        { toast('⚠ Desde es requerido', 'error'); return; }
       if (isNaN(hasta) || hasta <= desde)   { toast('⚠ Hasta debe ser mayor que Desde', 'error'); return; }
       if (isNaN(aj))                        { toast('⚠ El ajuste % es requerido', 'error'); return; }
       const solapa = (_satState.segs || []).some(s => desde < (s.max ?? Infinity) && hasta > (s.min || 0));
       if (solapa) { toast('⚠ El tramo se solapa con uno existente — elimínalo de la lista de abajo y créalo de nuevo', 'error'); return; }
-      const nuevo = { id: 'SEG' + Date.now(), min: desde, max: hasta, minIncl: true, maxIncl: false, ajustePct: aj };
+      const nuevo = { id: 'SEG' + Date.now(), min: desde, max: hasta, minIncl, maxIncl, ajustePct: aj };
       const segs = (_satState.segs || []).concat([nuevo]);
       _satGuardando = true;
       cerrarModalSatelite();
@@ -44348,7 +44418,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     scanCodigo, genCodigoUnico,   // [catálogo v4] escáner generalizado + generador con prefijo
     scanBuscarCatalogo, abrirPlusContextual, _cerrarPlusCtx, abrirEditarProducto,           // [catálogo v4] buscador cámara + ＋ contextual
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
-    _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle,
+    _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
     _agTab, _agAlcance,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
@@ -44614,6 +44684,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         // [catálogo v4 · fix rev] sin este campo el menú NUNCA detectaba derivado
         // → la 3ra opción "Adhesivo envasado" no aparecía desde el card MOS
         codigoProductoBase: p.codigoProductoBase || '',
+        // [RONDA 6] sugerencia del stepper = SU rotación semanal (salidas de almacén)
+        adhSugerido: (function(){ try { const serie=(S._rotacionSemanalCache?.productos||{})[String(p.codigoBarra||'').toUpperCase()]||[]; const tot=serie.reduce((a,x)=>a+(parseFloat(x.unidades)||0),0); return serie.length?tot/serie.length:0; } catch(_) { return 0; } })(),
         codigos:     p.codigos || null
       });
     },

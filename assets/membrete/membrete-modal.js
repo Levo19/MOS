@@ -125,7 +125,7 @@
       mensaje = 'Drift fuera de rango (' + (d.offsetSinClamp || 0) + ' dots) · resetá y re-medí';
     } else if (!calibrado) {
       nivel = 'warn';  icono = '⚠';
-      mensaje = 'Sin calibrar — clickeá "Calibrar rollo nuevo" cuando lo pongas';
+      mensaje = 'ROLLO físico de la impresora: etiquetas usadas desde la última calibración / capacidad. Sin calibrar — toca "Calibrar rollo nuevo" al poner rollo.';
     } else if (pct >= 95) {
       nivel = 'error'; icono = '🔴';
       mensaje = 'CAMBIAR ROLLO YA · quedan ~' + restantes + ' etiquetas';
@@ -1361,13 +1361,13 @@
       +   '<span style="flex:1;min-width:0;text-align:left">'
       +     '<span style="display:block;font-size:13.5px;font-weight:800;color:#e2e8f0">Adhesivo envasado '
       +       '<span style="font-size:9px;font-weight:800;color:#34d399;background:rgba(52,211,153,.15);border-radius:4px;padding:1px 5px;vertical-align:middle">SOLO DERIVADOS</span></span>'
-      +     '<span style="display:block;font-size:10.5px;color:#94a3b8">El mismo de Almacén/Envasados (TSC 50×25) — único con cantidad</span>'
+      +     '<span style="display:block;font-size:10.5px;color:#94a3b8">El de Almacén/Envasados (TSC 50×25)' + (parseFloat(producto.adhSugerido)>0 ? ' · sugerido: ~' + Math.round(producto.adhSugerido) + '/sem (su rotación)' : '') + '</span>'
       +   '</span>'
       +   '<span style="display:inline-flex;align-items:center;border:1px solid #28344c;border-radius:8px;overflow:hidden;flex:none">'
       +     '<button onclick="MembreteSystem._adhQtyStep(-6)" style="padding:6px 11px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">−</button>'
       // [RONDA 5 FIX auditoría] la IIFE estaba DENTRO del string (texto literal, no JS):
       // default recuerda la última cantidad impresa de ESTE producto; 12 la primera vez
-      +     '<input id="msAdhQty" type="number" min="1" max="200" value="' + (function(){ try { return parseInt(localStorage.getItem('mos_adh_qty_' + (producto.codigoBarra || '')), 10) || 12; } catch(_) { return 12; } })() + '" style="width:52px;text-align:center;padding:6px 2px;font-size:14px;font-weight:800;background:#0e1626;color:#e2e8f0;border:none;-moz-appearance:textfield">'
+      +     '<input id="msAdhQty" type="number" min="1" max="200" value="' + (function(){ try { return parseInt(localStorage.getItem('mos_adh_qty_' + (producto.codigoBarra || '')), 10) || Math.max(1, Math.round(parseFloat(producto.adhSugerido) || 0)) || 12; } catch(_) { return 12; } })() + '" style="width:52px;text-align:center;padding:6px 2px;font-size:14px;font-weight:800;background:#0e1626;color:#e2e8f0;border:none;-moz-appearance:textfield">'
       +     '<button onclick="MembreteSystem._adhQtyStep(6)" style="padding:6px 11px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">+</button>'
       +   '</span>'
       +   '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;min-width:0;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimirEnvasado()">🖨 Imprimir</button>'

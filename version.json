@@ -1,1 +1,1 @@
-{"version":"2.43.493","build":"2.43.493 fix div sin cerrar del skeleton (anContent quedaba anidado en anLoading, hallazgo auditoria UI)."}
+{"version":"2.43.494","build":"2.43.494 RONDA 6: cesta purga muestra HIJOS jerarquicos (derivados+packs, marcar padre auto-marca hijos — coherente con guard 429); modal tramo con unidad g/kg + brackets abierto/cerrado [ ( ) ] visibles en escalera y lista; stepper adhesivo sugiere por ROTACION semanal del derivado (ya no numero magico); copy claro del contador de rollo."}
