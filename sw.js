@@ -37,7 +37,7 @@ try {
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.43.517';
+const VERSION = '2.43.518';
 const CACHE   = 'mos-v' + VERSION;
 // ⚠️ Los assets propios versionados (app.js/api.js) DEBEN cachearse con EL MISMO
 // `?v=` que index.html usa en su <script src>, o el match offline falla por

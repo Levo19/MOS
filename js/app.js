@@ -9760,6 +9760,28 @@ const MOS = (() => {
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
+  // [v5 §11] Satélites (presentaciones/derivados) de un canónico afectados por el costo nuevo.
+  // Reusa _qpBuildRows; el costo de cada satélite = costo del padre × factor (cadena).
+  function _paso2Satelites(x, p, margenC) {
+    if (!p || !p.idProducto) return [];
+    let rows; try { rows = _qpBuildRows(p) || []; } catch(_) { rows = []; }
+    const costoBase = parseFloat(x.costoNuevo) || 0;
+    const costByIdx = {};
+    return rows.map((r, i) => {
+      const sp = r.p || {};
+      const costo = (r.tipo === 'presDer' && r.parentIdx != null && costByIdx[r.parentIdx] != null)
+        ? costByIdx[r.parentIdx] * r.factor
+        : costoBase * r.factor;
+      costByIdx[i] = costo;
+      let margen = (sp.margenPct != null && sp.margenPct !== '') ? parseFloat(sp.margenPct) : margenC;
+      if (margen == null) { try { const mi = _calcularMargenInfo(sp); margen = mi ? parseFloat(mi.objetivo) : null; } catch(_){} }
+      const sugerido = (margen != null && margen < 100 && costo > 0) ? _r1(costo / (1 - margen / 100)) : null;
+      const ico = r.tipo === 'der' ? '🥄' : (r.tipo === 'presDer' ? '🧱' : (String(sp.unidad || '').toUpperCase() === 'KGM' ? '🥄' : '🧱'));
+      return { p: sp, tipo: r.tipo, factor: r.factor, costo: _r1(costo), margen, sugerido, ico,
+               precioActual: parseFloat(sp.precioVenta) || 0 };
+    }).filter(s => s.p && s.p.idProducto);
+  }
+
   function _paso2Abrir(items, idGuia) {
     document.getElementById('paso2Modal')?.remove();
     const filas = items.map(x => {
@@ -9769,7 +9791,8 @@ const MOS = (() => {
       const tieneCostoPrevio = (parseFloat(x.costoAnterior) || 0) > 0;
       const sugerido = (margenC != null && margenC < 100 && x.costoNuevo > 0)
         ? _r1(x.costoNuevo / (1 - margenC / 100)) : null;
-      return { x, p, margenC, sugerido, tieneCostoPrevio };
+      const satelites = _paso2Satelites(x, p, margenC);   // [v5 §11] presentaciones/derivados afectados
+      return { x, p, margenC, sugerido, tieneCostoPrevio, satelites };
     });
     document.body.insertAdjacentHTML('beforeend', `
     <div id="paso2Modal" class="modal-backdrop open" style="z-index:9600;display:flex" onclick="if(event.target===this)this.remove()">
@@ -9799,11 +9822,23 @@ const MOS = (() => {
                       class="text-[10.5px] font-extrabold px-3 py-1.5 rounded-lg" style="margin-left:auto;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">
                 ${f.tieneCostoPrevio && f.sugerido != null ? 'Revisar / ajustar' : 'Definir precio'}</button>
             </div>
+            ${(f.satelites && f.satelites.length) ? `
+            <div style="margin-top:9px;padding-top:9px;border-top:1px dashed #28344c;display:flex;flex-direction:column;gap:6px">
+              <div style="font-size:8.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#5f7192">${f.satelites.length} satélite(s) afectado(s) por el costo · precio auto por su margen</div>
+              ${f.satelites.map(s => `
+              <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 8px;background:#0b1425;border:1px solid #1e293b;border-left:2px solid ${s.tipo === 'der' ? '#a855f7' : '#34d399'};border-radius:8px">
+                <span style="font-size:10.5px;font-weight:700;flex:1;min-width:66px;color:#dbe4f3">${s.ico} ${_escapeHtml(s.p.descripcion || s.p.idProducto)}</span>
+                <span style="font-size:8.5px;color:#8ea3c4;font-family:ui-monospace,monospace">×${s.factor} · costo ${s.costo}</span>
+                ${s.sugerido != null
+                  ? `<span style="font-size:8px;color:#8ea3c4">S/${s.precioActual || '—'}→</span><span style="font-size:12px;font-weight:800;color:#34d399;font-family:ui-monospace,monospace">S/ ${s.sugerido}</span><span class="qp-mode-chip" style="font-size:7.5px;padding:1px 5px">AUTO ${s.margen != null ? (+s.margen).toFixed(0) + '%' : ''}</span>`
+                  : `<span style="font-size:9px;color:#fbbf24;font-weight:700">⚠ define su precio</span>`}
+              </div>`).join('')}
+            </div>` : ''}
           </div>`).join('')}
         </div>
         <div class="px-5 py-4 flex gap-2" style="border-top:1px solid #1e293b">
           <button onclick="document.getElementById('paso2Modal').remove()" class="flex-1 rounded-xl py-2.5 text-xs font-bold" style="background:#131d30;border:1px solid #28344c;color:#93a4c2">← Volver a montos</button>
-          <button onclick="MOS._paso2AplicarAutos()" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">✓ Aplicar sugeridos AUTO y finalizar</button>
+          <button onclick="MOS._paso2AplicarAutos()" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">✓ Aplicar precios (padres + satélites) y finalizar</button>
         </div>
       </div>
     </div>`);
@@ -9811,16 +9846,24 @@ const MOS = (() => {
   }
 
   async function _paso2AplicarAutos() {
-    const filas = (window._paso2Filas || []).filter(f => f.tieneCostoPrevio && f.sugerido != null && f.sugerido > 0);
+    // [v5 §11] Publica AUTO los precios de canónicos + satélites (respetando su margen).
+    const jobs = [];
+    (window._paso2Filas || []).forEach(f => {
+      if (f.tieneCostoPrevio && f.sugerido != null && f.sugerido > 0) jobs.push({ id: f.x.idCanonico, precio: f.sugerido });
+      (f.satelites || []).forEach(s => {
+        if (s.sugerido != null && s.sugerido > 0 && s.p && s.p.idProducto) jobs.push({ id: s.p.idProducto, precio: s.sugerido });
+      });
+    });
     document.getElementById('paso2Modal')?.remove();
-    if (!filas.length) { toast('Nada en AUTO — define los precios uno a uno', 'info'); return; }
-    toast(`Aplicando ${filas.length} precio(s) con margen respetado…`, 'info');
+    if (!jobs.length) { toast('Nada en AUTO — define los precios uno a uno', 'info'); return; }
+    toast(`Aplicando ${jobs.length} precio(s) con margen respetado…`, 'info');
     try {
-      await Promise.all(filas.map(f =>
-        API.post('publicarPrecio', { _source: 'MOS_PASO2', idProducto: f.x.idCanonico, precioNuevo: f.sugerido, usuario: S.session?.nombre || '' })
-          .then(() => { const p = S.productos.find(y => y.idProducto === f.x.idCanonico); if (p) p.precioVenta = f.sugerido; })));
-      toast(`✓ ${filas.length} precio(s) actualizados respetando su margen`, 'ok');
-      renderCatalogo();
+      await Promise.all(jobs.map(j =>
+        API.post('publicarPrecio', { _source: 'MOS_PASO2', idProducto: j.id, precioNuevo: j.precio, usuario: S.session?.nombre || '' })
+          .then(() => { const p = S.productos.find(y => y.idProducto === j.id); if (p) p.precioVenta = j.precio; })));
+      toast(`✓ ${jobs.length} precio(s) actualizados (padres + satélites) respetando su margen`, 'ok');
+      try { renderCatalogo(); } catch(_){}
+      try { _mesaComprasSyncBadge(); } catch(_){}
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
