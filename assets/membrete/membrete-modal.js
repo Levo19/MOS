@@ -1365,7 +1365,9 @@
       +   '</span>'
       +   '<span style="display:inline-flex;align-items:center;border:1px solid #28344c;border-radius:8px;overflow:hidden;flex:none">'
       +     '<button onclick="MembreteSystem._adhQtyStep(-6)" style="padding:6px 11px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">−</button>'
-      +     '<input id="msAdhQty" type="number" min="1" max="200" value="" + (function(){try{return localStorage.getItem("mos_adh_qty_"+(producto.codigoBarra||""))||12}catch(_){return 12}})() + "" style="width:52px;text-align:center;padding:6px 2px;font-size:14px;font-weight:800;background:#0e1626;color:#e2e8f0;border:none;-moz-appearance:textfield">'
+      // [RONDA 5 FIX auditoría] la IIFE estaba DENTRO del string (texto literal, no JS):
+      // default recuerda la última cantidad impresa de ESTE producto; 12 la primera vez
+      +     '<input id="msAdhQty" type="number" min="1" max="200" value="' + (function(){ try { return parseInt(localStorage.getItem('mos_adh_qty_' + (producto.codigoBarra || '')), 10) || 12; } catch(_) { return 12; } })() + '" style="width:52px;text-align:center;padding:6px 2px;font-size:14px;font-weight:800;background:#0e1626;color:#e2e8f0;border:none;-moz-appearance:textfield">'
       +     '<button onclick="MembreteSystem._adhQtyStep(6)" style="padding:6px 11px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">+</button>'
       +   '</span>'
       +   '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;min-width:0;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimirEnvasado()">🖨 Imprimir</button>'
@@ -1431,7 +1433,7 @@
   // [catálogo v4] stepper de cantidad del adhesivo envasado (pasos de 6 = media docena)
   function _adhQtyStep(delta) {
     var el = document.getElementById('msAdhQty'); if (!el) return;
-    var v = (parseInt(el.value, 10) || 24) + delta;
+    var v = (parseInt(el.value, 10) || 12) + delta;
     el.value = Math.max(1, Math.min(200, v));
     sonidos.click();
   }
@@ -1441,7 +1443,7 @@
   // CERO GAS — inyectado como _config.adhesivoEnvasadoCall). WH: camino nativo con progreso.
   function _menuImprimirEnvasado() {
     var p = window._msMenuProd; if (!p) return;
-    var qty = parseInt(document.getElementById('msAdhQty') && document.getElementById('msAdhQty').value, 10) || 24;
+    var qty = parseInt(document.getElementById('msAdhQty') && document.getElementById('msAdhQty').value, 10) || 12;
     qty = Math.max(1, Math.min(200, qty));
     try{localStorage.setItem("mos_adh_qty_"+(p.codigoBarra||""), String(qty));}catch(_){}
     _menuCerrar();

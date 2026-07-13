@@ -1316,9 +1316,7 @@ const MOS = (() => {
     trash:   '<polyline points="3 6 5 6 21 6"/><path d="M19 6v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     rotate:  '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/>',
     camera:  '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
-    gondola: '<path d="M3 9l9-6 9 6"/><path d="M4 10v10h16V10"/><path d="M9 20v-6h6v6"/>',
-    andamio: '<path d="M3 21V7l4-4h10l4 4v14"/><path d="M3 11h18M8 11v10M16 11v10"/>',
-    rollo:   '<circle cx="7" cy="12" r="4.2"/><circle cx="7" cy="12" r="1.1" fill="currentColor" stroke="none"/><path d="M7 7.8h9.5a1.5 1.5 0 0 1 1.5 1.5v5.4a1.5 1.5 0 0 1-1.5 1.5H7"/><path d="M18 12.4l3-1.6v5l-3-1.6" opacity=".65"/>'
+    // [RONDA 5 · purga] gondola/andamio/rollo sin uso (el rollo vive inline en membrete-modal)
   };
   function _svgIcon(nombre, attrs) {
     return `<svg viewBox="0 0 24 24" ${attrs || ''}>${_SVG_ICONS[nombre] || ''}</svg>`;
@@ -1857,7 +1855,7 @@ const MOS = (() => {
   // el modal de producto/precio/segmentos abierto, mejor esperar a que lo cierre.
   function _catEdicionAbierta() {
     try {
-      const ids = ['modalProducto','modalAjustePrecios','modalSegmento','modalApagarBase',
+      const ids = ['modalProducto','modalAjustePrecios','modalApagarBase',
                    'modalCostosGuia','modalImpactoCostos'];
       for (const id of ids) { const el = $(id); if (el && el.classList.contains('open')) return true; }
     } catch (_) {}
@@ -2966,6 +2964,9 @@ const MOS = (() => {
       const badgeEnv  = base.esEnvasable == '1' ? `<span class="badge badge-yellow text-xs">⚗️ Envasable</span>` : '';
       const badgePres = pres.length ? `<span class="badge badge-blue text-xs cursor-pointer" onclick="event.stopPropagation();MOS.togglePresentaciones('${base.idProducto}')">📦 ${pres.length} presentacion${pres.length !== 1 ? 'es' : ''}</span>` : '';
       const badgeInac = activo ? '' : `<span class="badge badge-gray text-xs">Inactivo</span>`;
+      // [RONDA 5 · gap] badge de derivados en la fila de badges (como el de presentaciones)
+      const nDeriv = (g.__derivados || []).length;
+      const badgeDeriv = nDeriv ? `<span class="badge text-xs" style="background:rgba(183,155,255,.15);color:#b79bff">🥄 ${nDeriv} derivado${nDeriv !== 1 ? 's' : ''}</span>` : '';
 
       // Equivalencias para el skuBase
       const equivList = S.equivMap[base.skuBase || base.idProducto] || [];
@@ -3100,11 +3101,16 @@ const MOS = (() => {
             const hlD = _highlight(d.descripcion || d.idProducto, words);
             const packs = (dg.pres || []).map(pp => {
               const pf = parseFloat(pp.factorConversion) || 1;
-              return `<div class="flex items-center gap-2 mt-1" style="margin-left:22px;font-size:11px;color:#94a3b8">
+              const ppAct = _isProdActivo(pp);
+              return `<div class="flex items-center gap-2 mt-1${ppAct ? '' : ' opacity-60'}" style="margin-left:22px;font-size:11px;color:#94a3b8">
                 <span>↳ 🧱 ×${pf}</span>
                 <span class="cat-nombre-edit" onclick="event.stopPropagation();MOS.abrirEditarProducto('${pp.idProducto}')"
                       title="Tocar para editar">${_highlight(pp.descripcion || pp.idProducto, words)}</span>
                 <span style="margin-left:auto;color:#34d399;font-weight:700">${fmtMoney(pp.precioVenta)}</span>
+                <button type="button" class="toggle-sw sm ${ppAct ? 'on' : ''}" data-pid="${pp.idProducto}"
+                        onclick="event.stopPropagation();MOS.toggleProductoActivo('${pp.idProducto}', false)"
+                        title="${ppAct ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
+                <button class="cat-btn cat-btn-printx sm" onclick="event.stopPropagation();MOS.abrirMembreteCard('${pp.idProducto}')" title="Imprimir">${_svgIcon('printer')}</button>
               </div>`;
             }).join('');
             return `<div class="rounded-lg p-2.5${dAct ? '' : ' opacity-60'}" style="background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.14)">
@@ -3140,7 +3146,7 @@ const MOS = (() => {
           <div class="flex items-start gap-3">
             ${_renderFotoMini(base)}
             <div class="flex-1 min-w-0">
-              <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeInac}</div>
+              <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeDeriv}${badgeInac}</div>
               <!-- [catálogo v4] nombre tocable = editar (el lápiz desaparece de la botonera) -->
               <div class="font-semibold text-slate-100 text-sm leading-snug mb-2"><span class="cat-nombre-edit"
                    onclick="event.stopPropagation();MOS.abrirModalProducto('${base.idProducto}')"
@@ -3330,45 +3336,7 @@ const MOS = (() => {
     </div>`;
   }
 
-  // [1 modal] Carga el editor de tramos desde el producto del catálogo (cache) SIN abrir el modal
-  // de producto completo → al click en un tramo se abre UN SOLO modal (el del tramo). Devuelve
-  // true si pudo (producto con precio canónico). Marca _desdeCard para refrescar la card al guardar.
-  function _segCargarDesdeCard(idProducto) {
-    // [fix tramos · BUG REAL] Antes chequeaba `window.S`, pero S es un `const` a nivel de módulo
-    // (NO está en window, igual que `const MOS`) → `window.S` era SIEMPRE undefined → la búsqueda
-    // nunca corría → _segCargarDesdeCard SIEMPRE devolvía false → SIEMPRE caía al fallback (doble
-    // modal, sin botón eliminar, sin pintado del canónico). Diagnóstico en vivo: `hallado=false ·
-    // S.productos=?`. Fix: usar `S` directo (está en el closure del módulo). El granel se identifica
-    // por estar en el catálogo (KGM), NO por precio — sin traba de precioVenta.
-    const p = (typeof S !== 'undefined' && Array.isArray(S.productos))
-      ? S.productos.find(x => String(x.idProducto) === String(idProducto)) : null;
-    if (!p) return false;
-    segCargarParaProducto(p);
-    _segState._desdeCard = String(idProducto);   // sin modal de producto → al guardar repintamos la card
-    return true;
-  }
-  // Fallback (producto no está en cache): abre el modal de producto completo y espera (flujo viejo).
-  function _segDesdeCardFallback(idProducto, accion) {
-    abrirModalProducto(idProducto);
-    setTimeout(() => {
-      const sec = document.getElementById('segmentosContent');
-      const ch = document.getElementById('segChevron');
-      if (sec && sec.classList.contains('hidden')) { sec.classList.remove('hidden'); if (ch) ch.textContent = '▼'; }
-      try { accion(); } catch(_) {}
-    }, 250);
-  }
-  // Click en un tramo de la card → editar ESE tramo (un solo modal).
-  function segEditarDesdeCard(idProducto, idSegmento) {
-    if (_segCargarDesdeCard(idProducto)) segEditar(idSegmento);
-    else _segDesdeCardFallback(idProducto, () => segEditar(idSegmento));
-  }
-  // Botón "+ tramo" de la card → crear un tramo nuevo (un solo modal).
-  function segNuevoDesdeCard(idProducto) {
-    if (_segCargarDesdeCard(idProducto)) segNuevo();
-    else _segDesdeCardFallback(idProducto, () => segNuevo());
-  }
-
-  function toggleDerivs(id) { togglePresentaciones(id); } // backward compat
+  // [RONDA 5 · purga] _segCargarDesdeCard/segEditarDesdeCard/segNuevoDesdeCard/toggleDerivs eliminados (card → modal ＋Tramo).
 
   // ── Productos Nuevos (aprobación desde WH) ──────────────────
 
@@ -5192,6 +5160,30 @@ const MOS = (() => {
 
   function _agTab(tab) { _anState.grupoTab = tab; _renderAnaliticaGrupo(); try { _opsBeep && _opsBeep('tac'); } catch(_){} }
 
+  // [RONDA 5 · gap F6] CHIPS DE ALCANCE (dibujo §07): Grupo completo / solo canónico /
+  // cada derivado / packs — refiltra la fusionada vía `codigos` (SQL 430 ya lo soporta).
+  async function _agAlcance(key) {
+    const full = _anState.grupoFull || _anState.grupo;
+    if (!full) return;
+    if (!_anState.grupoFull) _anState.grupoFull = full;
+    _anState.grupoAlcanceKey = key;
+    let codigos = null;
+    const mem = full.grupo || [];
+    if (key === 'CANON')      codigos = mem.filter(m => m.tipo === 'granel' || m.tipo === 'equivalente').map(m => m.cb);
+    else if (key === 'PACKS') codigos = mem.filter(m => /presentacion|pres_derivado/.test(m.tipo)).map(m => m.cb);
+    else if (key !== 'ALL')   codigos = [key];   // cb de un derivado puntual
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    try {
+      const d = await API.post('getAnaliticaGrupo', { idProducto: _anState.idProducto, codigos: codigos || undefined });
+      const g = d && (d.data || d);
+      if (g && g.etiquetas && _anState.grupoAlcanceKey === key) {
+        _anState.grupo = g;
+        if (key === 'ALL') _anState.grupoFull = g;
+        _renderAnaliticaGrupo();
+      }
+    } catch(_){}
+  }
+
   function _agZonaLabel(z) { return z === 'SIN_ZONA' ? 'Sin zona asignada' : z; }
 
   function _renderAnaliticaGrupo() {
@@ -5266,9 +5258,12 @@ const MOS = (() => {
       });
       if (desp.SIN_ZONA) flujo.push(`<div style="font-size:10px;color:#93a4c2;margin-left:14px">🚚 Sin zona asignada en la guía: <b style="color:#fbbf24">${(parseFloat(desp.SIN_ZONA)||0).toFixed(1)} ${um}/sem</b> — arreglar el registro de esas guías afina la estimación</div>`);
 
+      // [RONDA 5 · gap dibujo] valor despachado ≈ (precio canónico × cant/sem)
+      const _pvCanon = parseFloat((S.productos.find(x => x.idProducto === g.idCanonico) || {}).precioVenta) || 0;
       body = `
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:7px;margin-bottom:10px">
           ${stat((alm.cantSem ?? 0) + ' ' + um + '/sem', 'salida almacén (guías)')}
+          ${_pvCanon > 0 ? stat('S/ ' + Math.round((parseFloat(alm.cantSem) || 0) * _pvCanon) + '/sem', 'valor despachado ≈') : ''}
           ${stat(alm.tendenciaPct == null ? '—' : (alm.tendenciaPct > 0 ? '↗ +' : alm.tendenciaPct < 0 ? '↘ ' : '→ ') + alm.tendenciaPct + '%', 'vs 4 sem. anteriores')}
           ${stat((g.insight?.coberturaSem ?? '—') + ' sem', 'cobertura de stock')}
         </div>
@@ -5308,14 +5303,30 @@ const MOS = (() => {
         </div>`;
     }
 
+    // [RONDA 5 · gap F6] chips de alcance construidos sobre el grupo COMPLETO (estable)
+    const full = _anState.grupoFull || g;
+    const memFull = full.grupo || [];
+    const kAct = _anState.grupoAlcanceKey || 'ALL';
+    const chip = (key, txt) => `<button onclick="MOS._agAlcance('${key}')"
+        style="font-size:10px;font-weight:800;padding:4px 9px;border-radius:99px;white-space:nowrap;
+               border:1px solid ${kAct === key ? 'rgba(52,211,153,.45)' : '#28344c'};
+               background:${kAct === key ? 'rgba(52,211,153,.14)' : '#0e1626'};
+               color:${kAct === key ? '#34d399' : '#93a4c2'}">${txt}</button>`;
+    const chipsAlcance = [chip('ALL', '🌿 Grupo completo'), chip('CANON', 'Solo canónico')]
+      .concat(memFull.filter(m => m.tipo === 'derivado').slice(0, 4).map(m =>
+        chip(m.cb, '🥄 ' + _escapeHtml(String(m.nombre || m.cb).replace(/AJONJOLI |GRANEL /gi, '').slice(0, 14)))))
+      .concat(memFull.some(m => /presentacion|pres_derivado/.test(m.tipo)) ? [chip('PACKS', '🧱 Packs')] : [])
+      .join('');
+
     sec.innerHTML = `
       <div style="background:#0a1120;border:1px solid #28344c;border-radius:16px;overflow:hidden">
         <div style="padding:11px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-size:15px">${um === 'kg' ? '⚗️' : '📦'}</span>
-          <b style="font-size:13px;color:#e2e8f0">Grupo completo · ${um}-equivalentes</b>
+          <b style="font-size:13px;color:#e2e8f0">${um}-equivalentes</b>
           <span style="font-size:10px;color:#93a4c2">${(g.grupo || []).length} miembros</span>
           <span style="margin-left:auto;font-size:10px;color:#64748b">8 semanas</span>
         </div>
+        <div style="display:flex;gap:5px;padding:9px 14px 0;flex-wrap:wrap">${chipsAlcance}</div>
         <div style="display:flex;gap:5px;padding:9px 14px 0;flex-wrap:wrap">
           ${tabBtn('__ALM__', '🏭 Almacén (WH)')}
           ${zonasReales.map(z => tabBtn(z, '🏪 ' + _agZonaLabel(z))).join('')}
@@ -16859,481 +16870,9 @@ const MOS = (() => {
     r.className = (tipo === '1') ? 'text-emerald-400 font-normal' : 'text-amber-400 font-normal';
   }
 
-  function prodToggleEquiv() {
-    const sec = $('equivContent');
-    const ch  = $('equivChevron');
-    if (!sec) return;
-    const h = sec.classList.toggle('hidden');
-    if (ch) ch.textContent = h ? '▶' : '▼';
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // [v2.41.97] PRICING POR SEGMENTOS — Editor de tramos para graneles
-  // ═══════════════════════════════════════════════════════════════
-  let _segState = {
-    idProducto: null,
-    skuBase: null,          // [tramos por sku_base] los tramos viven por GRUPO (canónico+presentaciones+equivalentes)
-    precioCanonico: 0,
-    segmentos: [],
-    editandoId: null,    // si null, modal es "nuevo"
-    modalUnidad: 'g',    // 'g' | 'kg' para el modal CRUD
-    modalMinIncl: true,
-    modalMaxIncl: false
-  };
-
-  function prodToggleSegmentos() {
-    const sec = $('segmentosContent');
-    const ch  = $('segChevron');
-    if (!sec) return;
-    const h = sec.classList.toggle('hidden');
-    if (ch) ch.textContent = h ? '▶' : '▼';
-  }
-
-  // Mostrar u ocultar la sección de segmentos según unidad del producto.
-  // Llamado desde el modal de producto al cargar/cambiar unidad.
-  function segActualizarVisibilidad() {
-    // [catálogo v4 · RONDA 2] la sección de tramos SALIÓ del modal producto:
-    // agregar/gestionar tramos vive en el ＋ contextual → modal 📊 Tramo
-    // (dibujo §02/§04 + pedido del dueño). Siempre oculta; el editor _seg*
-    // queda inerte aquí (segPersistirSiCambio no corre si nunca se carga).
-    $('modalSegmentosSection')?.classList.add('hidden');
-  }
-
-  // Cargar segmentos del producto activo en el modal
-  function segCargarParaProducto(producto) {
-    if (!producto) return;
-    _segState.idProducto = producto.idProducto;
-    _segState.skuBase = producto.skuBase || producto.sku_base || null;
-    _segState.precioCanonico = parseFloat(producto.precioVenta) || 0;
-    let segs = [];
-    try {
-      const raw = producto.segmentos_precio || producto.segmentosPrecio || '';
-      if (raw && typeof raw === 'string') segs = JSON.parse(raw);
-      else if (Array.isArray(raw)) segs = raw;
-    } catch(_) { segs = []; }
-    _segState.segmentos = segs;
-    segRenderEditor();
-  }
-
-  // Render del editor principal (línea visual + cards)
-  function segRenderEditor() {
-    segRenderLineaVisual();
-    segRenderLista();
-    segCalcular();
-  }
-
-  function _segFmtRango(s) {
-    const lo = s.minIncl ? '[' : '(';
-    const hi = s.maxIncl ? ']' : ')';
-    const maxLbl = s.max === null ? '∞' : (s.max >= 1000 ? (s.max/1000) + 'kg' : s.max + 'g');
-    const minLbl = s.min >= 1000 ? (s.min/1000) + 'kg' : s.min + 'g';
-    return lo + minLbl + ' — ' + maxLbl + hi;
-  }
-
-  function segRenderLineaVisual() {
-    const cont = $('segLineaVisual');
-    if (!cont) return;
-    const pc = _segState.precioCanonico || 0;
-    const segs = _segState.segmentos || [];
-    if (!segs.length) {
-      cont.innerHTML = `<div class="seg-lad-vacio">⬚ Sin tramos · se cobra el canónico <strong>S/ ${pc.toFixed(2)}/kg</strong> en todo peso</div>`;
-      return;
-    }
-    // [Escalera de tramos] misma visual que la card: celdas de igual ancho, click → editar ese tramo.
-    const cmap = _segColorMap(segs);
-    const regiones = _segRegiones(segs);
-    const cells = _segLadderCells(
-      regiones, pc, cmap,
-      sidEsc => `MOS.segEditar('${sidEsc}')`,
-      `MOS.segNuevo()`
-    );
-    const axis = _segLadderAxis(regiones);
-    cont.innerHTML = `<div class="seg-lad-track">${cells}</div><div class="seg-lad-axis">${axis}</div>`;
-  }
-
-  function segRenderLista() {
-    const cont = $('segListaSegmentos');
-    if (!cont) return;
-    if (!_segState.segmentos.length) { cont.innerHTML = ''; return; }
-    const pc = _segState.precioCanonico;
-    const cmap = _segColorMap(_segState.segmentos);
-    cont.innerHTML = _segState.segmentos.map(s => {
-      const aj = parseFloat(s.ajustePct) || 0;
-      const cls = aj > 0 ? 'positivo' : (aj < 0 ? 'negativo' : 'neutro');
-      const sign = aj > 0 ? '+' : '';
-      const precioAjustado = pc * (1 + aj / 100);
-      const dir = aj > 0 ? '▲ más caro' : (aj < 0 ? '▼ más barato' : '= se mantiene');
-      return `<div class="seg-card">
-        <div class="seg-card-color" style="background:${cmap[s.id] || '#6366f1'}"></div>
-        <div class="seg-card-info">
-          <div class="seg-card-nombre">${_escapeHtml(s.nombre || 'Sin nombre')}</div>
-          <div class="seg-card-rango">${_escapeHtml(_segFmtRango(s))}</div>
-          <div class="seg-card-resultado"><span class="seg-card-dir ${cls}">${dir}</span> · S/ ${precioAjustado.toFixed(2)}/kg</div>
-        </div>
-        <div class="seg-card-pct ${cls}">${sign}${aj}%</div>
-        <div class="seg-card-acciones">
-          <button onclick="MOS.segEditar('${s.id}')" class="seg-card-btn" title="Editar">✏</button>
-          <button onclick="MOS.segEliminar('${s.id}')" class="seg-card-btn danger" title="Eliminar">🗑</button>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  function segCalcular() {
-    const inp = $('segCalcInput');
-    const sel = $('segCalcUnidad');
-    const res = $('segCalcResultado');
-    const sug = $('segCalcSugerencias');
-    if (!inp || !res) return;
-    const valor = parseFloat(inp.value);
-    const unidad = sel?.value || 'g';
-    if (!valor || valor <= 0) {
-      res.classList.remove('activo');
-      res.textContent = 'Ingresa una cantidad para ver el precio';
-      sug.innerHTML = '';
-      return;
-    }
-    const gramos = unidad === 'kg' ? valor * 1000 : valor;
-    const calc = _segCalcularPrecio(gramos);
-    res.classList.add('activo');
-    const segTxt = calc.segmento
-      ? '🎯 Cae en <strong>' + _escapeHtml(calc.segmento.nombre || 'segmento') + '</strong> (' + (calc.ajustePct > 0 ? '+' : '') + calc.ajustePct + '%)'
-      : '⚪ Sin segmento · usa <strong>canónico</strong>';
-    res.innerHTML = '💰 <strong>S/ ' + calc.precio.toFixed(2) + '</strong> · ' + segTxt;
-    // Sugerencias en otros gramajes
-    const sugs = [50, 100, 250, 500, 1000, 2500, 5000].filter(g => g !== gramos);
-    sug.innerHTML = sugs.map(g => {
-      const c = _segCalcularPrecio(g);
-      const lbl = g >= 1000 ? (g/1000) + 'kg' : g + 'g';
-      return `<span class="seg-calc-sug-btn" onclick="document.getElementById('segCalcInput').value=${g};document.getElementById('segCalcUnidad').value='g';MOS.segCalcular()">${lbl} → S/${c.precio.toFixed(2)}</span>`;
-    }).join('');
-  }
-
-  function _segCalcularPrecio(gramos) {
-    const pc = _segState.precioCanonico;
-    let aplicado = null;
-    for (const s of _segState.segmentos) {
-      const cumpleMin = s.minIncl ? gramos >= s.min : gramos > s.min;
-      if (!cumpleMin) continue;
-      const cumpleMax = s.max === null ? true : (s.maxIncl ? gramos <= s.max : gramos < s.max);
-      if (cumpleMax) { aplicado = s; break; }
-    }
-    const ajuste = aplicado ? aplicado.ajustePct : 0;
-    const precioKg = pc * (1 + ajuste / 100);
-    const precio = Math.round(precioKg * (gramos / 1000) * 100) / 100;
-    return { precio, precioKg, ajustePct: ajuste, segmento: aplicado };
-  }
-
-  // ── Modal CRUD ──
-  function segNuevo() {
-    _segState.editandoId = null;
-    _segState.modalUnidad = 'g';
-    _segState.modalMinIncl = true;
-    _segState.modalMaxIncl = false;
-    $('segModalTitulo').textContent = '➕ Nuevo segmento';
-    $('segInputNombre').value = '';
-    $('segInputMin').value = '';
-    $('segInputMax').value = '';
-    $('segInputAjuste').value = 10;
-    segOnSliderAjuste(10);
-    segToggleUnidad('g');
-    _segActualizarBracketsUI();
-    { const be = $('segBtnEliminar'); if (be) be.style.display = 'none'; }   // nuevo → sin eliminar
-    openModal('modalSegmento');
-    setTimeout(() => $('segInputMin')?.focus(), 100);
-  }
-
-  function segEditar(idSeg) {
-    const s = _segState.segmentos.find(x => x.id === idSeg);
-    if (!s) return;
-    _segState.editandoId = idSeg;
-    _segState.modalMinIncl = s.minIncl;
-    _segState.modalMaxIncl = s.maxIncl;
-    // Detectar unidad razonable: si min y max son múltiplos de 1000 grandes, usar kg
-    const usarKg = (s.min >= 1000 || (s.max && s.max >= 1000));
-    _segState.modalUnidad = usarKg ? 'kg' : 'g';
-    $('segModalTitulo').textContent = '✏ Editar segmento';
-    $('segInputNombre').value = s.nombre || '';
-    $('segInputMin').value = usarKg ? s.min / 1000 : s.min;
-    $('segInputMax').value = s.max === null ? '' : (usarKg ? s.max / 1000 : s.max);
-    $('segInputAjuste').value = s.ajustePct;
-    segOnSliderAjuste(s.ajustePct);
-    segToggleUnidad(_segState.modalUnidad);
-    _segActualizarBracketsUI();
-    { const be = $('segBtnEliminar'); if (be) be.style.display = ''; }   // editar → mostrar eliminar
-    openModal('modalSegmento');
-  }
-
-  // Eliminar el tramo que se está editando, desde el botón dentro del modal.
-  function segEliminarDesdeModal() {
-    const id = _segState.editandoId;
-    if (!id) return;
-    segCerrarModal();        // cerrar el modal del tramo primero
-    segEliminar(id);         // confirma + elimina (optimista)
-  }
-
-  function segCerrarModal() { closeModal('modalSegmento'); }
-
-  function segToggleUnidad(u) {
-    _segState.modalUnidad = u;
-    $('segUnidadG').classList.toggle('active', u === 'g');
-    $('segUnidadKg').classList.toggle('active', u === 'kg');
-    const lbl = u === 'g' ? 'g' : 'kg';
-    $('segUnidadMinLbl').textContent = lbl;
-    $('segUnidadMaxLbl').textContent = lbl;
-    $('segInputMin').step = u === 'g' ? '1' : '0.01';
-    $('segInputMax').step = u === 'g' ? '1' : '0.01';
-    segValidarLive();
-  }
-
-  function segToggleBracket(lado, incl) {
-    if (lado === 'min') {
-      _segState.modalMinIncl = incl;
-    } else {
-      _segState.modalMaxIncl = incl;
-    }
-    _segActualizarBracketsUI();
-    segValidarLive();
-  }
-
-  function _segActualizarBracketsUI() {
-    $('segMinIncl').classList.toggle('active', _segState.modalMinIncl);
-    $('segMinExcl').classList.toggle('active', !_segState.modalMinIncl);
-    $('segMaxIncl').classList.toggle('active', _segState.modalMaxIncl);
-    $('segMaxExcl').classList.toggle('active', !_segState.modalMaxIncl);
-    $('segMinHelp').textContent = _segState.modalMinIncl ? 'cerrado · incluye' : 'abierto · no incluye';
-    $('segMaxHelp').textContent = _segState.modalMaxIncl ? 'cerrado · incluye' : 'abierto · no incluye';
-  }
-
-  function segAtajo(minG, maxG) {
-    const u = _segState.modalUnidad;
-    $('segInputMin').value = u === 'kg' ? minG/1000 : minG;
-    $('segInputMax').value = maxG === null ? '' : (u === 'kg' ? maxG/1000 : maxG);
-    // Brackets típicos: min cerrado, max abierto
-    _segState.modalMinIncl = true;
-    _segState.modalMaxIncl = false;
-    _segActualizarBracketsUI();
-    segValidarLive();
-  }
-
-  function _segPintarPct(n) {
-    const color = n > 0 ? '#fbbf24' : (n < 0 ? '#34d399' : '#94a3b8');
-    const inp = $('segPctInput'); if (inp) inp.style.color = color;
-    const suf = $('segPctDisplay')?.querySelector('.seg-pct-sufijo'); if (suf) suf.style.color = color;
-  }
-  // Slider movido → sincroniza el input editable (salvo que el user lo esté tipeando) y repinta.
-  function segOnSliderAjuste(v) {
-    const n = parseFloat(v) || 0;
-    const inp = $('segPctInput');
-    if (inp && document.activeElement !== inp) inp.value = n;
-    _segPintarPct(n);
-    segValidarLive();
-  }
-  // Input editable → acepta decimales (10.5); sincroniza el slider (clamp a su rango) y repinta.
-  function segOnPctInput(v) {
-    let n = parseFloat(v); if (isNaN(n)) n = 0;
-    const sl = $('segInputAjuste');
-    if (sl) sl.value = Math.max(-50, Math.min(50, n));
-    _segPintarPct(n);
-    segValidarLive();
-  }
-
-  function _segValoresModalEnGramos() {
-    const u = _segState.modalUnidad;
-    const minRaw = parseFloat($('segInputMin').value);
-    const maxRaw = $('segInputMax').value.trim();
-    const min = u === 'kg' ? minRaw * 1000 : minRaw;
-    const max = maxRaw === '' ? null : (u === 'kg' ? parseFloat(maxRaw) * 1000 : parseFloat(maxRaw));
-    // [%] el valor preciso (con decimales) vive en el input editable; el slider es solo para arrastrar
-    const ajuste = parseFloat(($('segPctInput') || {}).value);
-    return { min, max, minIncl: _segState.modalMinIncl, maxIncl: _segState.modalMaxIncl, ajustePct: isNaN(ajuste) ? 0 : ajuste };
-  }
-
-  function segValidarLive() {
-    const v = _segValoresModalEnGramos();
-    const msg = $('segValidacionMsg');
-    const btn = $('segBtnGuardar');
-    const pc = _segState.precioCanonico;
-
-    // Preview
-    $('segPreviewCanonico').textContent = 'S/ ' + pc.toFixed(2) + ' / kg';
-    const ajustado = pc * (1 + (v.ajustePct || 0) / 100);
-    $('segPreviewAjustado').textContent = 'S/ ' + ajustado.toFixed(2) + ' / kg';
-
-    // [v2.41.98] Ejemplos auto-calculados según los breakpoints actuales:
-    //   - El min y max del segmento que se está editando (frontera)
-    //   - 1g antes y después de cada borde (transición)
-    //   - 1 punto central del rango (medio típico)
-    //   - Los breakpoints de OTROS segmentos del producto (para ver el efecto cruzado)
-    let puntos = new Set();
-    // bordes propios
-    if (!isNaN(v.min)) {
-      puntos.add(Math.max(0, v.min));
-      if (v.min > 0) puntos.add(v.min - 1);
-      puntos.add(v.min + 1);
-    }
-    if (v.max !== null && !isNaN(v.max)) {
-      if (v.max > 0) puntos.add(v.max - 1);
-      puntos.add(v.max);
-      puntos.add(v.max + 1);
-    }
-    // centro del rango si es finito
-    if (v.max !== null && !isNaN(v.min) && !isNaN(v.max)) {
-      puntos.add(Math.round((v.min + v.max) / 2));
-    } else if (v.max === null && !isNaN(v.min)) {
-      puntos.add(v.min * 2 || 500); // un valor "típico" más allá del min abierto
-    }
-    // breakpoints de otros segmentos
-    _segState.segmentos.filter(s => s.id !== _segState.editandoId).forEach(s => {
-      puntos.add(s.min);
-      if (s.max !== null) puntos.add(s.max);
-    });
-    // ordenar ascendente, descartar negativos y duplicados
-    const puntosArr = Array.from(puntos)
-      .filter(p => p >= 0 && p <= 100000)
-      .sort((a, b) => a - b)
-      .slice(0, 8); // top 8 ejemplos
-    let ejemplos = '';
-    puntosArr.forEach(g => {
-      const enRango = (v.minIncl ? g >= v.min : g > v.min) &&
-                      (v.max === null ? true : (v.maxIncl ? g <= v.max : g < v.max));
-      const lbl = g >= 1000 ? (g/1000) + 'kg' : g + 'g';
-      const precio = enRango
-        ? (ajustado * (g/1000)).toFixed(2)
-        : (pc * (g/1000)).toFixed(2);
-      const tag = enRango ? '🎯' : '⚪';
-      const cls = enRango ? 'seg-preview-ej-row enRango' : 'seg-preview-ej-row';
-      ejemplos += `<div class="${cls}"><span>${tag} ${lbl}</span><span>S/ ${precio}</span></div>`;
-    });
-    $('segPreviewEjemplos').innerHTML = ejemplos;
-
-    // Validar
-    let err = null;
-    if (isNaN(v.min) || v.min < 0) err = 'Indica el mínimo';
-    else if (v.max !== null && (isNaN(v.max) || v.max <= v.min)) err = 'El máximo debe ser mayor que el mínimo';
-    else if (isNaN(v.ajustePct)) err = 'Indica el ajuste';
-    else if (v.ajustePct === 0) err = 'El ajuste no puede ser 0% (sin sentido)';
-    else if (v.ajustePct < -50 || v.ajustePct > 50) err = 'Ajuste fuera de rango (-50% a +50%)';
-    else {
-      // Check solapamiento con otros segmentos (excluyendo el que se está editando)
-      const otros = _segState.segmentos.filter(s => s.id !== _segState.editandoId);
-      const conflicto = otros.find(s => _segDosSegmentosSolapan(v, s));
-      if (conflicto) err = 'Solapa con "' + (conflicto.nombre || 'otro segmento') + '"';
-    }
-
-    if (err) {
-      msg.className = 'seg-validacion err';
-      msg.textContent = '⚠ ' + err;
-      if (btn) btn.disabled = true;
-    } else {
-      msg.className = 'seg-validacion ok';
-      msg.textContent = '✓ Listo para guardar';
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  function _segDosSegmentosSolapan(a, b) {
-    const aMax = a.max === null ? Infinity : a.max;
-    const bMax = b.max === null ? Infinity : b.max;
-    if (aMax < b.min) return false;
-    if (aMax === b.min) { if (!a.maxIncl || !b.minIncl) return false; }
-    if (bMax < a.min) return false;
-    if (bMax === a.min) { if (!b.maxIncl || !a.minIncl) return false; }
-    return true;
-  }
-
-  async function segGuardar() {
-    const v = _segValoresModalEnGramos();
-    const nombre = $('segInputNombre').value.trim();
-    const id = _segState.editandoId || ('seg-' + Date.now());
-    const nuevo = {
-      id,
-      nombre,
-      min: Math.round(v.min),
-      max: v.max === null ? null : Math.round(v.max),
-      minIncl: v.minIncl,
-      maxIncl: v.maxIncl,
-      ajustePct: v.ajustePct,           // [%] acepta decimales (10.5, etc.) — parseFloat
-      creadoEn: new Date().toISOString()
-    };
-    const prev = _segState.segmentos.slice();   // snapshot para rollback optimista
-    if (_segState.editandoId) {
-      const idx = _segState.segmentos.findIndex(s => s.id === id);
-      if (idx >= 0) _segState.segmentos[idx] = nuevo;
-    } else {
-      _segState.segmentos.push(nuevo);
-    }
-    segCerrarModal();
-    segRenderEditor();
-    _segReflejarEnCatalogo();      // [optimista] card + cache local YA, sin esperar la API
-    _finBeep && _finBeep('success');
-    const ok = await segPersistirSiCambio();   // persiste en background
-    if (ok) toast('💾 Tramo guardado', 'success');
-    else { _segState.segmentos = prev; segRenderEditor(); _segReflejarEnCatalogo(); }   // rollback
-  }
-
-  async function segEliminar(idSeg) {
-    if (!await _modalConfirm('¿Eliminar este segmento?', { danger: true, titulo: 'Eliminar segmento', okText: 'Eliminar' })) return;
-    const prev = _segState.segmentos.slice();
-    _segState.segmentos = _segState.segmentos.filter(s => s.id !== idSeg);
-    segRenderEditor();
-    _segReflejarEnCatalogo();      // [optimista] YA
-    _finBeep && _finBeep('tap');
-    const ok = await segPersistirSiCambio();   // persiste en background
-    if (ok) toast('🗑 Tramo eliminado', 'info');
-    else { _segState.segmentos = prev; segRenderEditor(); _segReflejarEnCatalogo(); }   // rollback
-  }
-
-  // [optimista] Refleja los tramos actuales en el catálogo local (S.productos) + repinta la card
-  // si se editó desde ahí. Se llama ANTES de esperar la API → el cambio se ve al instante.
-  function _segReflejarEnCatalogo() {
-    try {
-      const p0 = S.productos.find(x => x.idProducto === _segState.idProducto);
-      const sku = _segState.skuBase || p0?.skuBase || p0?.sku_base || null;
-      const json = JSON.stringify(_segState.segmentos);
-      S.productos.forEach(x => {
-        if (sku && (x.skuBase === sku || x.sku_base === sku)) x.segmentos_precio = json;
-        else if (!sku && x.idProducto === _segState.idProducto) x.segmentos_precio = json;
-      });
-      if (_segState._desdeCard) renderCatalogo();
-    } catch(_) {}
-  }
-
-  // Helper: persistir segmentos al guardar producto. Llamado desde el flujo
-  // de guardar producto del modal (después del save normal).
-  async function segPersistirSiCambio() {
-    if (!_segState.idProducto) return false;
-    try {
-      const audit = (typeof _auditCtx === 'function') ? _auditCtx() : {};
-      const res = await API.post('actualizarSegmentosPrecio', {
-        _source: 'MOS_SEGMENTOS_PRECIO',
-        _audit: audit,
-        skuBase: _segState.skuBase,        // [tramos por sku_base] el grupo entero, no la fila
-        idProducto: _segState.idProducto,  // compat: la RPC resuelve el sku_base si no vino skuBase
-        segmentos: _segState.segmentos
-      });
-      if (res?.ok) {
-        // Reflejar en TODO el grupo (canónico + presentaciones comparten sku_base) → se ve al instante,
-        // sin esperar el re-pull del catálogo.
-        const p0 = S.productos.find(x => x.idProducto === _segState.idProducto);
-        const sku = _segState.skuBase || p0?.skuBase || p0?.sku_base || null;
-        const json = JSON.stringify(_segState.segmentos);
-        S.productos.forEach(x => {
-          if (sku && (x.skuBase === sku || x.sku_base === sku)) x.segmentos_precio = json;
-          else if (!sku && x.idProducto === _segState.idProducto) x.segmentos_precio = json;
-        });
-        // (el repintado de la card ya se hizo optimista en _segReflejarEnCatalogo, antes de la API)
-        return true;
-      } else {
-        toast('⚠ Segmentos no guardados: ' + (res?.error || 'error'), 'warn');
-        return false;
-      }
-    } catch(e) {
-      toast('Error guardando segmentos: ' + (e.message || e), 'error');
-      return false;
-    }
-  }
-
+  // [RONDA 5 · directriz código limpio] PURGADO: editor embebido de tramos (seg*, _segState,
+  // modal #modalSegmento) y toggles equiv del modal producto — reemplazados por los modales
+  // del ＋ contextual (Tramo con lista/borrar · Equivalente con lista/toggle). ~470 líneas.
   // ── LOG de cambios de productos (master) ──────────────────
   // Estado del log (UI compacta)
   let _logProdState = {
@@ -18032,11 +17571,11 @@ const MOS = (() => {
     $('prodMargenBar')?.classList.add('hidden');
     _setStockSlider(0, 0);
     setProdTipo('normal');
-    $('modalEquivSection')?.classList.add('hidden');
-    $('equivContent')?.classList.add('hidden');
-    const ech = $('equivChevron'); if (ech) ech.textContent = '▶';
-    $('equivList') && ($('equivList').innerHTML = '');
-    $('equivAddForm')?.classList.add('hidden');
+    // [RONDA 5 · purga] reset de sección equiv embebida eliminado
+    // [RONDA 5 · purga] reset de sección equiv embebida eliminado
+    // [RONDA 5 · purga] reset de sección equiv embebida eliminado
+    // [RONDA 5 · purga] reset de sección equiv embebida eliminado
+    // [RONDA 5 · purga] reset de sección equiv embebida eliminado
     $('prodSecSunat')?.classList.add('hidden');
     const sch = $('sunatChevron'); if (sch) sch.textContent = '⚙️ avanzado';
 
@@ -18148,6 +17687,9 @@ const MOS = (() => {
       _prodActualizarPoliticaEfectiva();
     } else {
       $('modalProdTitle').textContent = 'Nuevo Producto';
+      // [RONDA 5 · gap dibujo §04] el código nace PRE-GENERADO (N- validado contra
+      // productos+equivalencias); el botón queda como "Regenerar" y 📷 lo reemplaza
+      prodAutogenBarcode(true);
       // Defaults autorrelleno (típico abarrote: gravado 18%)
       $('prodUnidad').value       = 'NIU';
       $('prodUnidadMedida').value = 'NIU';
@@ -18168,13 +17710,13 @@ const MOS = (() => {
     try {
       const prodCargar = id ? S.productos.find(x => x.idProducto === id) : null;
       if (prodCargar) {
-        segCargarParaProducto(prodCargar);
+        // [RONDA 5 · purga] segCargarParaProducto eliminado (tramos viven en el modal ＋Tramo)
       } else {
         _segState.idProducto = null;
         _segState.precioCanonico = 0;
         _segState.segmentos = [];
       }
-      segActualizarVisibilidad();
+      // [RONDA 5 · purga] segActualizarVisibilidad eliminado
     } catch(_) {}
     openModal('modalProducto');
   }
@@ -18231,68 +17773,13 @@ const MOS = (() => {
       const rows = (await API.get('getEquivalencias', { skuBase })) || [];
       // Actualizar equivMap también
       S.equivMap[skuBase] = rows.filter(r => String(r.activo) === '1').map(r => r.codigoBarra).filter(Boolean);
-      _renderEquivList(rows, skuBase);
+      // [RONDA 5 · purga] _renderEquivList eliminado — _loadEquivModal solo refresca S.equivMap
     } catch(e) {
       list.innerHTML = `<div class="text-xs text-red-400 py-1 px-1">Error: ${e.message}</div>`;
     }
   }
 
-  function _renderEquivList(rows, skuBase) {
-    const list = $('equivList');
-    if (!list) return;
-    if (!rows.length) {
-      list.innerHTML = '<div class="text-xs text-slate-600 italic py-1 px-1">Sin equivalencias registradas</div>';
-      return;
-    }
-    list.innerHTML = rows.map(r => {
-      const on = String(r.activo) === '1';
-      return `<div class="equiv-row${on ? '' : ' inactive'}" data-id="${r.idEquiv}">
-        <span class="equiv-code">▌${r.codigoBarra}</span>
-        <span class="equiv-desc truncate">${r.descripcion || ''}</span>
-        <button class="equiv-toggle ${on ? 'on' : 'off'}"
-                onclick="MOS.toggleEquivActivo('${r.idEquiv}','${skuBase}','${on ? '0' : '1'}')"
-                title="${on ? 'Desactivar' : 'Activar'}">
-          ${on ? '✓ Activo' : '✗ Inactivo'}
-        </button>
-      </div>`;
-    }).join('');
-  }
-
-  function toggleAddEquiv() {
-    const form = $('equivAddForm');
-    if (!form) return;
-    const opening = form.classList.toggle('hidden');
-    if (!opening) { // se acaba de mostrar
-      const inp = $('equivCodigo');
-      if (inp) { inp.value = ''; inp.focus(); }
-      const d = $('equivDesc'); if (d) d.value = '';
-    }
-  }
-
-  async function crearEquivalenciaModal() {
-    const skuBase  = S.productos.find(p => p.idProducto === $('prodId')?.value);
-    const sku      = skuBase ? (skuBase.skuBase || skuBase.idProducto) : '';
-    const codigo   = ($('equivCodigo')?.value || '').trim();
-    const desc     = ($('equivDesc')?.value   || '').trim();
-    if (!sku)    { toast('Abre un producto primero', 'error'); return; }
-    if (!codigo) { toast('Ingresa el código de barras', 'error'); return; }
-
-    const btn = $('equivAddForm')?.querySelector('button');
-    if (btn) btn.disabled = true;
-    try {
-      await API.post('crearEquivalencia', { _source: 'MOS_EQUIV_MODAL', skuBase: sku, codigoBarra: codigo, descripcion: desc });
-      toast('Equivalencia guardada', 'ok');
-      const f = $('equivAddForm'); if (f) f.classList.add('hidden');
-      await _loadEquivModal(sku);
-      renderCatalogo(); // actualiza badges en tarjetas
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  // ── Update visual surgical (sin re-renderizar) ────────────────
+  // [RONDA 5 · purga] equivalencias embebidas (render/add/crear) eliminado.
   function _actualizarVisualProducto(idProducto, activo) {
     // Toggle button
     const toggle = document.querySelector(`.toggle-sw[data-pid="${idProducto}"]`);
@@ -18506,24 +17993,7 @@ const MOS = (() => {
     closeModal('modalApagarBase');
   }
 
-  async function toggleEquivActivo(idEquiv, skuBase, nuevoActivo) {
-    try {
-      await API.post('actualizarEquivalencia', { _source: 'MOS_EQUIV_MODAL', idEquiv, activo: nuevoActivo });
-      await _loadEquivModal(skuBase);
-      renderCatalogo();
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════
-  // [catálogo v4] ＋ CONTEXTUAL + MODALES SATÉLITE (dibujo 3812eb03 §02/§04)
-  // Un modal enfocado por satélite; el ＋ ofrece solo lo que aplica al tipo.
-  // Cero GAS: crearProducto / crearEquivalencia / actualizarSegmentosPrecio
-  // ya son RPCs directas puras.
-  // ═══════════════════════════════════════════════════════════════════
-  let _satState = null;   // { tipo, padre } del modal satélite abierto
-
+  // [RONDA 5 · purga] toggleEquivActivo eliminado.
   function _prodTipoDe(p) {
     if (!p) return 'normal';
     if (p.codigoProductoBase && String(p.codigoProductoBase).trim()) return 'derivado';
@@ -19010,7 +18480,7 @@ const MOS = (() => {
       if (isNaN(hasta) || hasta <= desde)   { toast('⚠ Hasta debe ser mayor que Desde', 'error'); return; }
       if (isNaN(aj))                        { toast('⚠ El ajuste % es requerido', 'error'); return; }
       const solapa = (_satState.segs || []).some(s => desde < (s.max ?? Infinity) && hasta > (s.min || 0));
-      if (solapa) { toast('⚠ El tramo se solapa con uno existente — edítalo desde el producto', 'error'); return; }
+      if (solapa) { toast('⚠ El tramo se solapa con uno existente — elimínalo de la lista de abajo y créalo de nuevo', 'error'); return; }
       const nuevo = { id: 'SEG' + Date.now(), min: desde, max: hasta, minIncl: true, maxIncl: false, ajustePct: aj };
       const segs = (_satState.segs || []).concat([nuevo]);
       _satGuardando = true;
@@ -19160,7 +18630,7 @@ const MOS = (() => {
         const um = String(params.Unidad_Medida || params.unidad || '').toUpperCase();
         const fc = parseFloat(params.factorConversion || 1);
         if (um === 'KGM' && fc === 1) {
-          segPersistirSiCambio().catch(() => {});
+          // [RONDA 5 · purga] segPersistirSiCambio eliminado (tramos: modal ＋Tramo persiste directo)
         }
       }
       // Refresh catálogo
@@ -44843,7 +44313,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.85] Proyección — roadmap estratégico
     abrirProyeccion, _proyToggle, _proyResetEstado, _proyExportar,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
-    filterCatalogo, toggleDerivs, togglePresentaciones, guardarPrecioRapido,
+    filterCatalogo, togglePresentaciones, guardarPrecioRapido,
     _catCardClick, _catSfx, _catRipple,
     verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
@@ -44880,9 +44350,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
     _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
-    _agTab,                                                            // [catálogo v4] pestañas analítica fusionada
-    prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange, prodToggleEquiv,
-    toggleAddEquiv, crearEquivalenciaModal, toggleEquivActivo,
+    _agTab, _agAlcance,                                                // [catálogo v4] pestañas + chips de alcance fusionada
+    prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
+    // [RONDA 5 · purga] exports equiv embebidas eliminados
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
     // Evaluación de personal
     loadEvaluacion, refreshEvaluacion, evalSetApp,
@@ -45063,11 +44533,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     tribOCRMasivo, _tribSetIGVFiltro, tribAbrirFotoComprobante,
     tribExportarExcel,
     // [v2.41.97] Pricing por segmentos (graneles)
-    prodToggleSegmentos, segActualizarVisibilidad, segNuevo, segEditar, segEliminar,
-    segCalcular, segToggleUnidad, segToggleBracket, segAtajo, segOnSliderAjuste, segOnPctInput,
-    segValidarLive, segGuardar, segCerrarModal, segEliminarDesdeModal,
+    // [RONDA 5 · purga] exports seg* del editor embebido eliminados
+
+
     // [v2.41.98] Atajo desde card
-    segEditarDesdeCard, segNuevoDesdeCard,
+    
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,

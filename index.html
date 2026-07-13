@@ -728,10 +728,8 @@
     .seg-pct-input:focus { border-bottom-color: #fbbf24; }
     .seg-pct-input::-webkit-outer-spin-button, .seg-pct-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     .seg-pct-sufijo { color: #fbbf24; font-weight: 900; }
-    /* modalSegmento se abre DESDE el modal de producto (ambos modal-backdrop z-index 9400);
-       como va después en el DOM modalProducto quedaba encima → el de segmento aparecía detrás.
-       Le damos z-index mayor para que el modal anidado quede arriba. */
-    #modalSegmento { z-index: 9520; }
+    /* [RONDA 5 · purga] regla modalSegmento eliminada */
+    
     .seg-inp {
       width: 100%; padding: 8px 10px;
       background: #0f172a; border: 1px solid #334155;
@@ -16949,7 +16947,7 @@
             <label class="lbl">Código de barras *</label>
             <div class="flex gap-2">
               <input id="pnCodigoFinal" class="inp flex-1" placeholder="Editable" autocomplete="off" oninput="MOS._pnCheckDuplicadoCodigo()">
-              <button onclick="MOS.pnAutogenBarcode()" class="btn-ghost text-xs px-3 whitespace-nowrap" title="Generar código interno NMLEV">⚡ Auto</button>
+              <button onclick="MOS.pnAutogenBarcode()" class="btn-ghost text-xs px-3 whitespace-nowrap" title="Generar código interno NMLEV">⚡ Regenerar</button>
             </div>
             <div id="pnCodigoFeedback" class="hidden text-xs mt-1"></div>
           </div>
@@ -17601,104 +17599,7 @@
 </div>
 
 <!-- [v2.41.97] Modal CRUD segmento de pricing granel -->
-<div class="modal-backdrop hidden" id="modalSegmento" onclick="if(event.target===this)MOS.segCerrarModal()">
-  <div class="modal-card seg-modal-card">
-    <div class="seg-modal-head">
-      <h3 id="segModalTitulo">➕ Nuevo segmento</h3>
-      <button onclick="MOS.segCerrarModal()" class="seg-modal-close">✕</button>
-    </div>
-    <div class="seg-modal-body">
-      <!-- Nombre opcional -->
-      <label class="seg-lbl">Nombre <span class="text-slate-500">(opcional)</span></label>
-      <input id="segInputNombre" class="seg-inp" type="text" maxlength="40"
-             placeholder="Ej: Pequeño, Mayorista, Promoción..."/>
-
-      <!-- Toggle unidad -->
-      <div class="seg-toggle-unidad">
-        <button id="segUnidadG" onclick="MOS.segToggleUnidad('g')" class="seg-toggle-btn active">gramos</button>
-        <button id="segUnidadKg" onclick="MOS.segToggleUnidad('kg')" class="seg-toggle-btn">kilos</button>
-      </div>
-
-      <!-- Rango -->
-      <div class="seg-rango">
-        <div class="seg-rango-col">
-          <label class="seg-lbl">Desde</label>
-          <div class="seg-input-row">
-            <input id="segInputMin" type="number" min="0" step="1" class="seg-inp"
-                   oninput="MOS.segValidarLive()" placeholder="0"/>
-            <span id="segUnidadMinLbl" class="seg-unidad-lbl">g</span>
-          </div>
-          <div class="seg-bracket-toggle">
-            <button id="segMinIncl" onclick="MOS.segToggleBracket('min', true)" class="seg-bracket-btn active" title="Cerrado: incluye este valor">[</button>
-            <button id="segMinExcl" onclick="MOS.segToggleBracket('min', false)" class="seg-bracket-btn">(</button>
-            <span class="seg-bracket-help" id="segMinHelp">cerrado · incluye</span>
-          </div>
-        </div>
-        <span class="seg-rango-sep">→</span>
-        <div class="seg-rango-col">
-          <label class="seg-lbl">Hasta</label>
-          <div class="seg-input-row">
-            <input id="segInputMax" type="number" min="0" step="1" class="seg-inp"
-                   oninput="MOS.segValidarLive()" placeholder="∞ (vacío = infinito)"/>
-            <span id="segUnidadMaxLbl" class="seg-unidad-lbl">g</span>
-          </div>
-          <div class="seg-bracket-toggle">
-            <button id="segMaxIncl" onclick="MOS.segToggleBracket('max', true)" class="seg-bracket-btn">]</button>
-            <button id="segMaxExcl" onclick="MOS.segToggleBracket('max', false)" class="seg-bracket-btn active">)</button>
-            <span class="seg-bracket-help" id="segMaxHelp">abierto · no incluye</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Atajos rangos comunes -->
-      <div class="seg-atajos">
-        <span class="text-[10px] text-slate-500 mr-1">Atajos:</span>
-        <button onclick="MOS.segAtajo(0, 100)" class="seg-atajo-btn">&lt; 100g</button>
-        <button onclick="MOS.segAtajo(100, 1000)" class="seg-atajo-btn">100g – 1kg</button>
-        <button onclick="MOS.segAtajo(1000, 5000)" class="seg-atajo-btn">1 – 5kg</button>
-        <button onclick="MOS.segAtajo(5000, null)" class="seg-atajo-btn">&gt; 5kg</button>
-      </div>
-
-      <!-- Ajuste % -->
-      <label class="seg-lbl seg-lbl-ajuste">
-        Ajuste sobre el canónico
-        <span class="seg-pct-display" id="segPctDisplay">
-          <input id="segPctInput" type="number" step="any" min="-99" value="10"
-                 inputmode="decimal" onfocus="this.select()" oninput="MOS.segOnPctInput(this.value)"
-                 class="seg-pct-input" title="Escribe el % (acepta decimales, ej. 10.5)"/><span class="seg-pct-sufijo">%</span>
-        </span>
-      </label>
-      <input id="segInputAjuste" type="range" min="-50" max="50" step="0.5" value="10"
-             oninput="MOS.segOnSliderAjuste(this.value)" class="seg-slider"/>
-      <div class="seg-slider-marks">
-        <span>-50%</span><span>-25%</span><span>0%</span><span>+25%</span><span>+50%</span>
-      </div>
-
-      <!-- Resultado preview -->
-      <div class="seg-preview">
-        <div class="seg-preview-titulo">Resultado</div>
-        <div class="seg-preview-row">
-          <span>Canónico:</span>
-          <strong id="segPreviewCanonico">S/ 0.00 / kg</strong>
-        </div>
-        <div class="seg-preview-row seg-preview-ajustado">
-          <span>Ajustado:</span>
-          <strong id="segPreviewAjustado">S/ 0.00 / kg</strong>
-        </div>
-        <div class="seg-preview-ejemplos" id="segPreviewEjemplos"></div>
-      </div>
-
-      <!-- Validaciones live -->
-      <div id="segValidacionMsg" class="seg-validacion"></div>
-    </div>
-
-    <div class="seg-modal-footer">
-      <button id="segBtnEliminar" onclick="MOS.segEliminarDesdeModal()" class="seg-btn-eliminar" style="display:none">🗑 Eliminar tramo</button>
-      <button onclick="MOS.segCerrarModal()" class="seg-btn-cancelar">Cancelar</button>
-      <button id="segBtnGuardar" onclick="MOS.segGuardar()" class="seg-btn-guardar">💾 Guardar</button>
-    </div>
-  </div>
-</div>
+<!-- [RONDA 5 · purga] #modalSegmento CRUD viejo eliminado: vive en el modal del ＋ contextual -->
 
 <div class="modal-backdrop hidden" id="modalProducto">
   <div class="modal-box" style="padding:0;display:flex;flex-direction:column;max-height:92vh;overflow:hidden">
@@ -17765,7 +17666,7 @@
           </div>
           <div>
             <label class="lbl">Unidad de medida (SUNAT)</label>
-            <select id="prodUnidad" class="inp" onchange="document.getElementById('prodUnidadMedida').value=this.value; MOS.segActualizarVisibilidad && MOS.segActualizarVisibilidad();">
+            <select id="prodUnidad" class="inp" onchange="document.getElementById('prodUnidadMedida').value=this.value;">
               <option value="NIU">NIU — Unidad</option>
               <option value="KGM">KGM — Kilogramo</option>
               <option value="LTR">LTR — Litro</option>
@@ -17948,80 +17849,10 @@
       </div>
 
       <!-- [v2.41.97] Pricing por segmentos — SOLO si el producto es KGM (granel) -->
-      <div id="modalSegmentosSection" class="hidden">
-        <button onclick="MOS.prodToggleSegmentos()" class="prod-section-toggle">
-          <span>🎚 Pricing por segmentos <span class="text-emerald-400 text-[10px]">(graneles)</span></span>
-          <span id="segChevron" style="font-size:10px">▶</span>
-        </button>
-        <div id="segmentosContent" class="hidden pt-3">
-          <div class="seg-explica">
-            <p class="text-[11px] text-slate-400 leading-relaxed">
-              💡 Define <strong>tramos sobre la cantidad</strong> con un ajuste % al precio canónico.
-              Ej: <code>[0g, 100g)</code> con +10% → cobras 10% más cuando venden menos de 100g.
-              Lo que NO cae en ningún segmento usa el precio canónico tal cual.
-            </p>
-          </div>
-
-          <!-- Línea numérica visual -->
-          <div id="segLineaVisual" class="seg-linea-visual"></div>
-
-          <!-- Lista de segmentos configurados -->
-          <div id="segListaSegmentos" class="seg-lista"></div>
-
-          <!-- Botón nuevo segmento -->
-          <button id="btnNuevoSegmento" onclick="MOS.segNuevo()" class="seg-btn-nuevo">
-            <span>➕</span> Nuevo segmento
-          </button>
-
-          <!-- Calculadora live -->
-          <div class="seg-calc">
-            <div class="seg-calc-titulo">🧮 Calculadora en vivo</div>
-            <div class="seg-calc-inputs">
-              <input id="segCalcInput" type="number" min="0" step="1" placeholder="Cantidad..."
-                     oninput="MOS.segCalcular()" class="seg-calc-num"/>
-              <select id="segCalcUnidad" onchange="MOS.segCalcular()" class="seg-calc-unidad">
-                <option value="g">gramos</option>
-                <option value="kg">kilos</option>
-              </select>
-            </div>
-            <div id="segCalcResultado" class="seg-calc-resultado">Ingresa una cantidad para ver el precio</div>
-            <div id="segCalcSugerencias" class="seg-calc-sugerencias"></div>
-          </div>
-        </div>
-      </div>
+      <!-- [RONDA 5 · purga] editor tramos embebido eliminado: vive en el modal del ＋ contextual -->
 
       <!-- ── Equivalencias (solo edición, colapsable) ── -->
-      <div id="modalEquivSection" class="hidden">
-        <button onclick="MOS.prodToggleEquiv()" class="prod-section-toggle">
-          <span>🔀 Equivalencias / Códigos alternativos</span>
-          <span id="equivChevron" style="font-size:10px">▶</span>
-        </button>
-        <div id="equivContent" class="hidden pt-3">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs text-slate-500">Códigos de barras adicionales que apuntan a este producto</span>
-            <button onclick="MOS.toggleAddEquiv()" class="text-xs text-indigo-400 hover:text-white font-medium">+ Agregar</button>
-          </div>
-          <div id="equivList" class="space-y-1.5 mb-2"></div>
-          <div id="equivAddForm" class="hidden rounded-xl border border-slate-700 bg-slate-900/80 p-3 space-y-2">
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="lbl">Código de barras *</label>
-                <input id="equivCodigo" class="inp text-sm" placeholder="1234567890123"
-                       onkeydown="if(event.key==='Enter')MOS.crearEquivalenciaModal()">
-              </div>
-              <div>
-                <label class="lbl">Descripción (opcional)</label>
-                <input id="equivDesc" class="inp text-sm" placeholder="Ej: bolsa proveedor B"
-                       onkeydown="if(event.key==='Enter')MOS.crearEquivalenciaModal()">
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <button onclick="MOS.crearEquivalenciaModal()" class="btn-primary text-xs flex-1">💾 Guardar</button>
-              <button onclick="MOS.toggleAddEquiv()" class="btn-ghost text-xs px-4">Cancelar</button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- [RONDA 5 · purga] equivalencias embebidas eliminado: vive en el modal del ＋ contextual -->
 
     </div><!-- fin scroll -->
 
@@ -19536,13 +19367,13 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.491"></script>
+<script src="js/api.js?v=2.43.492"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
-<script src="./assets/membrete/membrete-modal.js?v=2.43.491"></script>
+<script src="./assets/membrete/membrete-modal.js?v=2.43.492"></script>
 <script src="./assets/seguridad/seguridad-modal.js?v=2.43.477"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
@@ -19551,7 +19382,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.491"></script>
+<script src="js/app.js?v=2.43.492"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

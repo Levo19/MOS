@@ -1,0 +1,106 @@
+
+=== NAVEGANDO: https://levo19.github.io/MOS/ ===
+(observando 26000ms — dejando disparar ping/pollers/auth)
+
+=== RED por categoría ===
+  SB-REST        386
+  APP            21
+  CDN            13
+  SB-EDGE        7
+  FIREBASE/CDN   6
+  GAS            2
+
+🚨🚨 GAS HITS (2):
+  🚨 GET [ping] MOS_GAS
+  🚨 GET [ping] MOS_GAS
+
+=== Respuestas SB/GAS relevantes (status) ===
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/get_flags
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/registrar_dispositivo
+  200 [SB-EDGE] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/functions/v1/mint-mos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/verificar_dispositivo
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/horarios_apps
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/estado_bloqueo_usuario
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/wh_productos_nuevos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/equivalencias_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/personal_master_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/liquidaciones_pagadas
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/notificaciones_config
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/categorias_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/zonas_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/estaciones_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/evaluaciones_dia
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/impresoras_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/personal_dia_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/liquidaciones_pendientes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/promociones_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/auditoria_integridad_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/proveedores_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/mermas_warehouse
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/alertas_warehouse
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/trib_resumen_mes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/finanzas_dia
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/listar_dispositivos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/finanzas_rango
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/cierres_caja
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/resumen_todos_dia
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/adhesivo_calibracion_estado
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/membretes_me_pendientes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/igv_favor_mes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/adhesivo_lotes_historial
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/adhesivo_lotes_diag
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/vendedores_me_bloqueados
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/operaciones_unificadas
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/ranking_zonas
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/series_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/guias_y_preingresos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/catalogo_version
+
+=== CONSOLA de la página (últimas 40) ===
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [error] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.
+  [log] [Realtime] canal catalogo_meta: SUBSCRIBED
+  [log] [Realtime] canal me.ops_meta: SUBSCRIBED
+  [log] [Realtime] canal wh.ops_meta: SUBSCRIBED
+  [log] [CatRefresh] {added: Array(2373), removed: Array(0), changed: 0}
+  [log] [prefetch] 5/5 OK · 3249ms · módulos calientes
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [error] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.
+  [warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+  [log] [DeviceAuth] v1.0.26 en MOS
+  [log] %c MOS cargado · v2.43.477  background:#6366f1;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c ⚠ Versión nueva v2.43.491 (tienes v2.43.477) → actualizando solo…  background:#f59e0b;color:#000;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c (ya intenté auto-actualizar a v2.43.491; si persiste, borra datos del sitio en Ajustes del navegador)  background:#ef4444;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] [EditorAdhesivos] ✓ MOS.abrirEditorAdhesivos atado · v2.43.196
+  [log] [Push] init — firebase: true | Notification: denied | ask: false
+  [log] [Push] permission: denied
+  [log] [Realtime] canal catalogo_meta: SUBSCRIBED
+  [log] [Realtime] canal me.ops_meta: SUBSCRIBED
+  [log] [Realtime] canal wh.ops_meta: SUBSCRIBED
+  [log] [prefetch] 4/4 OK · 1991ms · módulos calientes
+  [log] [rotacion] iniciando carga, force= true
+  [log] [rotacion] setear ok. productos: 809 
+
+=== EVAL result ===
+  {"version":"2.43.491","abierto":true,"titulo":"🥄 Nuevo derivado","contexto":"desde · AJONJOLI BLANCO PREMIUM GRANEL EXO (granel)","herencia":"Hereda del granel: IGV 18% · categoría GRANEL — no se vuelve a pedir","campos":["Nombre *","Porción del granel por unidad (kg) *","Precio venta *","Código auto WH-"],"codigoAuto":"WH-BX58B7Z","codigoEsWH":true,"camaras":1,"btnGuardar":"Crear derivado"}
+
+=== SCREENSHOT ===
+  C:\Users\ISO\ProyectoMOS\browsercheck\shot_audit_2b_derivado.png
+

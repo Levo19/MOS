@@ -1,0 +1,100 @@
+
+=== NAVEGANDO: https://levo19.github.io/MOS/ ===
+(observando 26000ms — dejando disparar ping/pollers/auth)
+
+=== RED por categoría ===
+  SB-REST        214
+  APP            23
+  CDN            12
+  FIREBASE/CDN   6
+  SB-EDGE        5
+  GAS            5
+
+🚨🚨 GAS HITS (5):
+  🚨 GET [ping] MOS_GAS
+  🚨 GET [getProductosNuevosWH] MOS_GAS
+  🚨 GET [getProductosNuevosWH] MOS_GAS
+  🚨 POST [tribResumenMes] MOS_GAS body={"_audit":{"app":"MOS","idDispositivo":"7e57c1a0-de1c-4a7e-b0de-c47a10906474","idSesion":"testclaude1","usuario":"PRUEBA
+  🚨 GET [ping] MOS_GAS
+
+=== Respuestas SB/GAS relevantes (status) ===
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/get_flags
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/registrar_dispositivo
+  200 [SB-EDGE] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/functions/v1/mint-mos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/verificar_dispositivo
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/estado_bloqueo_usuario
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/horarios_apps
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/equivalencias_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/liquidaciones_pagadas
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/personal_master_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/liquidaciones_pendientes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/personal_dia_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/categorias_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/notificaciones_config
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/wh_productos_nuevos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/impresoras_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/zonas_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/estaciones_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/evaluaciones_dia
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/auditoria_integridad_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/finanzas_dia
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/mermas_warehouse
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/promociones_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/finanzas_rango
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/listar_dispositivos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/cierres_caja
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/productos_master_rls
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/proveedores_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/trib_resumen_mes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/alertas_warehouse
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/catalogo_version
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/adhesivo_calibracion_estado
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/adhesivo_lotes_historial
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/membretes_me_pendientes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/adhesivo_lotes_diag
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/resumen_todos_dia
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/guias_y_preingresos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/ranking_zonas
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/operaciones_unificadas
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/igv_favor_mes
+  302 [GAS] GET https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec?action=ping
+
+=== CONSOLA de la página (últimas 40) ===
+  [warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+  [log] [DeviceAuth] v1.0.26 en MOS
+  [log] %c MOS cargado · v2.43.477  background:#6366f1;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c ⚠ Versión nueva v2.43.491 (tienes v2.43.477) → actualizando solo…  background:#f59e0b;color:#000;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] [EditorAdhesivos] ✓ MOS.abrirEditorAdhesivos atado · v2.43.196
+  [warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+  [log] [DeviceAuth] v1.0.26 en MOS
+  [log] %c MOS cargado · v2.43.477  background:#6366f1;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c ⚠ Versión nueva v2.43.491 (tienes v2.43.477) → actualizando solo…  background:#f59e0b;color:#000;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c (ya intenté auto-actualizar a v2.43.491; si persiste, borra datos del sitio en Ajustes del navegador)  background:#ef4444;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] [EditorAdhesivos] ✓ MOS.abrirEditorAdhesivos atado · v2.43.196
+  [log] [Push] init — firebase: true | Notification: denied | ask: false
+  [log] [Push] permission: denied
+  [warning] [DeviceAuth] auth directo falló → fail-closed (sin GAS): Failed to fetch
+  [warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+  [log] [DeviceAuth] v1.0.26 en MOS
+  [log] %c MOS cargado · v2.43.477  background:#6366f1;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] [EditorAdhesivos] ✓ MOS.abrirEditorAdhesivos atado · v2.43.196
+  [log] %c ⚠ Versión nueva v2.43.491 (tienes v2.43.477) → actualizando solo…  background:#f59e0b;color:#000;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c (ya intenté auto-actualizar a v2.43.491; si persiste, borra datos del sitio en Ajustes del navegador)  background:#ef4444;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] [Push] init — firebase: true | Notification: denied | ask: false
+  [log] [Push] permission: denied
+  [log] [Realtime] canal catalogo_meta: SUBSCRIBED
+  [log] [Realtime] canal me.ops_meta: SUBSCRIBED
+  [log] [Realtime] canal wh.ops_meta: SUBSCRIBED
+  [log] [CatRefresh] {added: Array(2373), removed: Array(0), changed: 0}
+  [log] [prefetch] 5/5 OK · 2724ms · módulos calientes
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [log] [rotacion] iniciando carga, force= true
+  [log] [rotacion] setear ok. productos: 809 
+
+=== EVAL result ===
+  {"version":"2.43.491","precioActual":"10.00","activo":true,"presSectionVisible":true,"presCount":"🛰 3 derivados · 1 presentacion","chipsAuto":5,"chipsManual":0,"tachados":4,"btnPublicar":"✓ Publicar raíz + 4 satélites","filasCascada":["BOLSA 50GR 🧱 ×0.05 S/. 1.00 → AUTO S/ ✏️ 🔒 ⚠ Bajo precio costo (S/ 0.00)","AJONJOLI BLANCO PREMIUM 100GR 🥄 0.1 kg/u S/. 1.80 → AUTO S/ ✏️ 🔒 ⚠ Bajo precio costo (S/","AJONJOLI BLANCO PREMIUM 250GR 🥄 0.25 kg/u S/. 2.50 → AUTO S/ ✏️ 🔒 ⚠ Bajo precio costo (S","AJONJOLI BLANCO PREMIUM 500GR 🥄 0.5 kg/u S/. 5.00 → AUTO S/ ✏️ 🔒 ⚠ Bajo precio costo (S/"],"toggleMembretes":true,"textoTramos":true}
+
+=== SCREENSHOT ===
+  C:\Users\ISO\ProyectoMOS\browsercheck\shot_audit_4_precio.png
+

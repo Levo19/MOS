@@ -1,0 +1,103 @@
+
+=== NAVEGANDO: https://levo19.github.io/MOS/ ===
+(observando 26000ms — dejando disparar ping/pollers/auth)
+
+=== RED por categoría ===
+  SB-REST        287
+  APP            26
+  CDN            15
+  SB-EDGE        9
+  FIREBASE/CDN   6
+  GAS            3
+
+🚨🚨 GAS HITS (3):
+  🚨 GET [ping] MOS_GAS
+  🚨 GET [ping] MOS_GAS
+  🚨 GET [ping] MOS_GAS
+
+=== Respuestas SB/GAS relevantes (status) ===
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/registrar_dispositivo
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/get_flags
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/verificar_dispositivo
+  200 [SB-EDGE] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/functions/v1/mint-mos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/horarios_apps
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/estado_bloqueo_usuario
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/equivalencias_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/wh_productos_nuevos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/liquidaciones_pagadas
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/zonas_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/notificaciones_config
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/estaciones_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/alertas_warehouse
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/personal_master_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/impresoras_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/auditoria_integridad_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/categorias_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/liquidaciones_pendientes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/personal_dia_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/promociones_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/proveedores_lista
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/evaluaciones_dia
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/mermas_warehouse
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/trib_resumen_mes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/listar_dispositivos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/finanzas_dia
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/finanzas_rango
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/igv_favor_mes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/catalogo_version
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/cierres_caja
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/productos_master_rls
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/productos_proveedor_stock
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/membretes_me_pendientes
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/adhesivo_calibracion_estado
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/adhesivo_lotes_historial
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/adhesivo_lotes_diag
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/vendedores_me_bloqueados
+  200 [SB-EDGE] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/functions/v1/printers
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/guias_y_preingresos
+  200 [SB-REST] POST https://rzbzdeipbtqkzjqdchqk.supabase.co/rest/v1/rpc/ranking_zonas
+
+=== CONSOLA de la página (últimas 40) ===
+  [warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+  [log] [DeviceAuth] v1.0.26 en MOS
+  [log] %c MOS cargado · v2.43.477  background:#6366f1;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] [EditorAdhesivos] ✓ MOS.abrirEditorAdhesivos atado · v2.43.196
+  [log] %c ⚠ Versión nueva v2.43.491 (tienes v2.43.477) → actualizando solo…  background:#f59e0b;color:#000;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] [Push] init — firebase: true | Notification: denied | ask: false
+  [log] [Push] permission: denied
+  [warning] WebSocket connection to 'wss://rzbzdeipbtqkzjqdchqk.supabase.co/realtime/v1/websocket?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k&vsn=2.0.0' failed: WebSocket is closed before the connection is established.
+  [warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+  [log] [DeviceAuth] v1.0.26 en MOS
+  [log] %c MOS cargado · v2.43.477  background:#6366f1;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c ⚠ Versión nueva v2.43.491 (tienes v2.43.477) → actualizando solo…  background:#f59e0b;color:#000;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c (ya intenté auto-actualizar a v2.43.491; si persiste, borra datos del sitio en Ajustes del navegador)  background:#ef4444;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] [EditorAdhesivos] ✓ MOS.abrirEditorAdhesivos atado · v2.43.196
+  [log] [Push] init — firebase: true | Notification: denied | ask: false
+  [log] [Push] permission: denied
+  [log] [Realtime] canal catalogo_meta: SUBSCRIBED
+  [log] [Realtime] canal me.ops_meta: SUBSCRIBED
+  [log] [Realtime] canal wh.ops_meta: SUBSCRIBED
+  [warning] cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation
+  [log] [DeviceAuth] v1.0.26 en MOS
+  [log] %c MOS cargado · v2.43.477  background:#6366f1;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c ⚠ Versión nueva v2.43.491 (tienes v2.43.477) → actualizando solo…  background:#f59e0b;color:#000;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] %c (ya intenté auto-actualizar a v2.43.491; si persiste, borra datos del sitio en Ajustes del navegador)  background:#ef4444;color:#fff;font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;
+  [log] [EditorAdhesivos] ✓ MOS.abrirEditorAdhesivos atado · v2.43.196
+  [log] [Push] init — firebase: true | Notification: denied | ask: false
+  [log] [Push] permission: denied
+  [log] [Realtime] canal catalogo_meta: SUBSCRIBED
+  [log] [Realtime] canal me.ops_meta: SUBSCRIBED
+  [log] [Realtime] canal wh.ops_meta: SUBSCRIBED
+  [log] [CatRefresh] {added: Array(2373), removed: Array(0), changed: 0}
+  [log] [prefetch] 4/4 OK · 2298ms · módulos calientes
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio
+  [log] [rotacion] iniciando carga, force= true
+  [log] [rotacion] setear ok. productos: 809 
+
+=== EVAL result ===
+  {"version":"2.43.491","skelGrupoInmediato":true,"skelLoadingClases":["an-skeleton-chart skel","an-skeleton-sm skel","an-skeleton-sm skel"],"skelSinKpisViejos":false,"anContentDentroDeLoading":true,"loadingOculto":true,"contentClaseHidden":false,"contentVisibleReal":false,"grupoVisible":true,"tabs":["🏭 Almacén (WH)","🏪 ZONA-02","🏪 ZONA-01 ESTIMADA"],"estimadaEnTabs":true,"cuerpo":" ⚗️ Grupo completo · kg-equivalentes 5 miembros 8 semanas 🏭 Almacén (WH) 🏪 ZONA-02 🏪 ZONA-01 ESTIMADA 48.06 kg/sem salida almacén (guías) ↘ -5% vs 4 sem. anteriores 2.1 sem cobertura de stock Kg despachados por semana W21 W22 W23 W24 W25 W26 W27 W28 última barra = semana en curso (parcial, no cuenta en promedios) La conciliación — de dónde sale cada número 🏭 Almacén despacha guías WH con salid"}
+
+=== SCREENSHOT ===
+  C:\Users\ISO\ProyectoMOS\browsercheck\shot_audit_5a_analitica_alm.png
+
