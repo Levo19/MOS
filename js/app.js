@@ -3159,7 +3159,7 @@ const MOS = (() => {
             <div class="flex flex-col items-end gap-1.5 shrink-0 ml-2">
               <div class="flex items-center gap-1.5">
                 ${hasAnyAlert ? `<button type="button" class="cat-alert-icon" onclick="event.stopPropagation();MOS.toggleAlertPop('${eid}', event)" aria-label="Ver detalle de alertas">⚠</button>` : ''}
-                <div class="cat-price" data-cat-precio="${base.idProducto}">${fmtMoney(base.precioVenta)}</div>
+                <div class="cat-price" data-cat-precio="${base.idProducto}" style="cursor:pointer" title="Curvas precio·costo + margen (contrato)" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas(&#39;${base.idProducto}&#39;)">${fmtMoney(base.precioVenta)}</div>
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
               ${_renderMargenBadge(base)}
@@ -18087,6 +18087,134 @@ const MOS = (() => {
     setTimeout(() => document.addEventListener('click', _cerrarPlusCtx, { once: true }), 30);
   }
   function _cerrarPlusCtx() { document.getElementById('plusCtxMenu')?.remove(); }
+
+  // ═══ [v5 §10] MODAL CURVAS · click al PRECIO → precio·costo·margen bidireccional ═══
+  // Costo del satélite = SIEMPRE derivado del canónico × factor (fcb derivado, factor pack).
+  function _costoDerivado(p) {
+    const propio = parseFloat(p.precioCosto) || 0;
+    const fcb = parseFloat(p.factorConversionBase) || 0;
+    const fc  = parseFloat(p.factorConversion) || 1;
+    if (!p.codigoProductoBase && fc === 1) return propio;          // canónico: su costo
+    // padre canónico del grupo (derivado → codigoProductoBase; pack → skuBase)
+    const U = s => String(s || '').trim().toUpperCase();
+    const ref = p.codigoProductoBase ? U(p.codigoProductoBase) : U(p.skuBase || '');
+    const padre = (S.productos || []).find(x =>
+      (U(x.skuBase || x.idProducto) === ref || U(x.idProducto) === ref)
+      && (parseFloat(x.factorConversion) || 1) === 1
+      && !(x.codigoProductoBase && String(x.codigoProductoBase).trim()));
+    const costoPadre = parseFloat(padre?.precioCosto) || 0;
+    if (costoPadre <= 0) return propio;                            // sin costo del padre → el propio (o 0)
+    return +(costoPadre * (p.codigoProductoBase ? fcb : fc)).toFixed(4);
+  }
+
+  const _r1 = v => Math.round((parseFloat(v) || 0) * 10) / 10;     // redondeo 1 decimal (regla del dueño)
+
+  async function abrirModalPrecioCurvas(idProducto) {
+    const p = S.productos.find(x => x.idProducto === idProducto);
+    if (!p) return;
+    document.getElementById('pcCurvasModal')?.remove();
+    const costo = _costoDerivado(p);
+    const precio = parseFloat(p.precioVenta) || 0;
+    const margen = (costo > 0 && precio > 0) ? Math.round((1 - costo / precio) * 1000) / 10 : null;
+    const esSat = !!(p.codigoProductoBase || (parseFloat(p.factorConversion) || 1) !== 1);
+    document.body.insertAdjacentHTML('beforeend', `
+    <div id="pcCurvasModal" class="modal-backdrop" style="z-index:9600" onclick="if(event.target===this)this.remove()">
+      <div class="modal-box p-0" style="max-width:480px;width:100%;animation:catFotoSheetIn .35s cubic-bezier(.34,1.56,.64,1)">
+        <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid #1e293b">
+          <div class="min-w-0"><h2 class="font-bold text-sm text-white truncate">📈 ${_escapeHtml(p.descripcion || idProducto)}</h2>
+          <div class="text-[10px] mt-0.5" style="color:#34d399">${esSat ? 'costo derivado del canónico × factor' : 'canónico · su costo viene de compras'}</div></div>
+          <button onclick="document.getElementById('pcCurvasModal').remove()" class="modal-close-x">×</button>
+        </div>
+        <div class="px-5 py-4 space-y-3">
+          <div id="pcCurvasChart" style="position:relative;height:110px;background:#0e1626;border:1px solid #28344c;border-radius:10px;overflow:hidden">
+            <div class="rot-chip rot-skel" style="position:absolute;inset:8px;border-radius:8px"></div>
+          </div>
+          <div id="pcCurvasLeyenda" class="text-[10px]" style="color:#93a4c2">— precio venta &nbsp; ┄ costo (compras) · cargando historia…</div>
+          <div class="grid grid-cols-3 gap-2">
+            <div><div class="lbl" style="font-size:9px">Costo ${esSat ? '(derivado)' : '(operaciones)'}</div>
+              <div class="inp" style="margin:0;opacity:.85"><span class="mono grow">${costo > 0 ? 'S/ ' + (+costo.toFixed(2)) : '—'}</span></div></div>
+            <div><div class="lbl" style="font-size:9px">Precio venta ✎</div>
+              <input id="pcPrecio" class="inp w-full mono" style="margin:0;border-color:rgba(52,211,153,.5);font-weight:800" type="number" step="0.1" value="${precio || ''}"
+                     oninput="MOS._pcSync('precio')"></div>
+            <div><div class="lbl" style="font-size:9px">Margen % ✎</div>
+              <input id="pcMargen" class="inp w-full mono" style="margin:0;border-color:rgba(251,191,36,.45);font-weight:800;color:#fbbf24" type="number" step="0.1"
+                     value="${margen != null ? margen : ''}" ${costo > 0 ? '' : 'disabled placeholder="sin costo"'}
+                     oninput="MOS._pcSync('margen')"></div>
+          </div>
+          <div id="pcAviso" class="text-[10.5px]" style="color:#93a4c2">${costo > 0
+            ? '↔ bidireccional: tocas uno, el otro se recalcula (precio = costo ÷ (1−margen), redondeo .1). Al guardar, ESE margen queda como contrato del producto.'
+            : '⚠ Sin costo registrado: el margen no aplica (regla anti-error). Registra una compra en Almacén/Operaciones para activar el contrato.'}</div>
+          <button onclick="MOS._pcGuardar('${idProducto}')" class="w-full rounded-xl py-3 font-extrabold text-sm"
+                  style="background:linear-gradient(180deg,#34d399,#059669);color:#04140d">Guardar precio${costo > 0 ? ' y margen' : ''}</button>
+        </div>
+      </div>
+    </div>`);
+    // curvas
+    try {
+      const r = await API.post('historialPrecioCosto', { idProducto });
+      const d = r && (r.data || r);
+      const ch = document.getElementById('pcCurvasChart');
+      if (!ch) return;
+      const P = (d?.precios || []).map(x => ({ t: x.ts, v: parseFloat(x.valor) })).filter(x => x.v > 0);
+      const C = (d?.costos || []).map(x => ({ t: x.ts, v: parseFloat(x.valor) })).filter(x => x.v > 0);
+      if (precio > 0) P.push({ t: 'hoy', v: precio });
+      if (costo > 0 && !esSat) C.push({ t: 'hoy', v: costo });
+      if (P.length < 2 && C.length < 2) {
+        ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#64748b">⬚ aún sin historia suficiente — desde hoy cada cambio de precio y cada compra dibujan estas curvas</div>';
+        return;
+      }
+      const all = P.concat(C).map(x => x.v);
+      const mn = Math.min(...all) * 0.9, mx = Math.max(...all) * 1.05 || 1;
+      const nx = arr => arr.map((x, i) => (arr.length > 1 ? i / (arr.length - 1) : 0) * 300 + ',' +
+        (100 - ((x.v - mn) / (mx - mn || 1)) * 90 - 5)).join(' ');
+      ch.innerHTML = `<svg viewBox="0 0 300 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+        ${C.length > 1 ? `<polyline points="${nx(C)}" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 3" style="stroke-dashoffset:600;animation:pcdraw 1.2s ease-out forwards"/>` : ''}
+        ${P.length > 1 ? `<polyline points="${nx(P)}" fill="none" stroke="#34d399" stroke-width="2" stroke-dasharray="600" style="stroke-dashoffset:600;animation:pcdraw 1.2s .15s ease-out forwards"/>` : ''}
+      </svg>
+      <style>@keyframes pcdraw{to{stroke-dashoffset:0}}</style>`;
+      const ley = document.getElementById('pcCurvasLeyenda');
+      if (ley) ley.innerHTML = `<span style="color:#34d399">—</span> precio (${P.length} puntos) &nbsp; <span style="color:#fbbf24">┄</span> costo (${C.length} compras${esSat ? ' del canónico' : ''})`;
+    } catch (_) {}
+  }
+
+  function _pcSync(origen) {
+    const pI = $('pcPrecio'), mI = $('pcMargen');
+    if (!pI || !mI || mI.disabled) return;
+    const costoTxt = document.querySelector('#pcCurvasModal .mono.grow')?.textContent || '';
+    const costo = parseFloat(costoTxt.replace(/[^\d.]/g, '')) || 0;
+    if (costo <= 0) return;
+    if (origen === 'precio') {
+      const pv = parseFloat(pI.value) || 0;
+      mI.value = pv > 0 ? Math.round((1 - costo / pv) * 1000) / 10 : '';
+    } else {
+      const m = parseFloat(mI.value) || 0;
+      if (m < 100) pI.value = _r1(costo / (1 - m / 100));
+    }
+  }
+
+  let _pcGuardando = false;
+  async function _pcGuardar(idProducto) {
+    if (_pcGuardando) return;
+    const pv = _r1($('pcPrecio')?.value);
+    if (!pv || pv <= 0) { toast('⚠ Precio inválido', 'error'); return; }
+    const mI = $('pcMargen');
+    const margen = (mI && !mI.disabled) ? (parseFloat(mI.value) || null) : null;
+    _pcGuardando = true;
+    document.getElementById('pcCurvasModal')?.remove();
+    toast('Guardando precio…', 'info');
+    try {
+      await API.post('publicarPrecio', { _source: 'MOS_MODAL_CURVAS', idProducto, precioNuevo: pv, usuario: S.session?.nombre || '' });
+      // el margen resultante queda como CONTRATO del producto (override de política)
+      if (margen != null && margen > -100 && margen < 100) {
+        await API.post('actualizarProducto', { idProducto, margenPct: margen, modoVenta: 'MARGEN' }).catch(() => {});
+      }
+      const p = S.productos.find(x => x.idProducto === idProducto);
+      if (p) { p.precioVenta = pv; if (margen != null) p.margenPct = margen; }
+      toast(`✓ S/ ${pv}${margen != null ? ' · margen contrato ' + margen + '%' : ''}`, 'ok');
+      renderCatalogo();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+    finally { _pcGuardando = false; }
+  }
 
   // [RONDA 3] EDITAR POR TIPO (lógica del dueño): tocar un derivado abre el modal
   // de derivado (prellenado), una presentación el suyo; el canónico/granel abre el
@@ -44420,7 +44548,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
     _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
-    _agTab, _agAlcance,                                                // [catálogo v4] pestañas + chips de alcance fusionada
+    _agTab, _agAlcance, abrirModalPrecioCurvas, _pcSync, _pcGuardar,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
     // [RONDA 5 · purga] exports equiv embebidas eliminados
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
