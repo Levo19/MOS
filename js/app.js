@@ -10922,7 +10922,7 @@ const MOS = (() => {
       return { x, p, margenC, sugerido, tieneCostoPrevio };
     });
     document.body.insertAdjacentHTML('beforeend', `
-    <div id="paso2Modal" class="modal-backdrop" style="z-index:9600" onclick="if(event.target===this)this.remove()">
+    <div id="paso2Modal" class="modal-backdrop open" style="z-index:9600;display:flex" onclick="if(event.target===this)this.remove()">
       <div class="modal-box p-0" style="max-width:520px;width:100%;animation:catFotoSheetIn .35s cubic-bezier(.34,1.56,.64,1)">
         <div class="px-5 py-4" style="border-bottom:1px solid #1e293b">
           <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800">
@@ -18091,7 +18091,7 @@ const MOS = (() => {
     const margen = (costo > 0 && precio > 0) ? Math.round((1 - costo / precio) * 1000) / 10 : null;
     const esSat = !!(p.codigoProductoBase || (parseFloat(p.factorConversion) || 1) !== 1);
     document.body.insertAdjacentHTML('beforeend', `
-    <div id="pcCurvasModal" class="modal-backdrop" style="z-index:9600" onclick="if(event.target===this)this.remove()">
+    <div id="pcCurvasModal" class="modal-backdrop open" style="z-index:9600;display:flex" onclick="if(event.target===this)this.remove()">
       <div class="modal-box p-0" style="max-width:480px;width:100%;animation:catFotoSheetIn .35s cubic-bezier(.34,1.56,.64,1)">
         <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid #1e293b">
           <div class="min-w-0"><h2 class="font-bold text-sm text-white truncate">📈 ${_escapeHtml(p.descripcion || idProducto)}</h2>

@@ -1,1 +1,1 @@
-{"version":"2.43.506","build":"2.43.506 el MARGEN del card ahora abre las CURVAS precio·costo (bidireccional), no el modal editar — igual que el precio."}
+{"version":"2.43.507","build":"2.43.507 FIX CRITICO: modales curvas y paso2 se creaban con class modal-backdrop SIN open -> display:none -> INVISIBLES (por eso el click al precio/margen no mostraba nada). Ahora abren."}
