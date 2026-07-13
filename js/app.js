@@ -7705,36 +7705,6 @@ const MOS = (() => {
   // Prefetch en background del detalle de las guías de ingreso WH con foto
   // (las únicas que muestran el botón 💰). Limita concurrencia para no
   // saturar el backend. Falla silencioso — el modal igual puede fetchear.
-  function _prefetchCostosGuias() {
-    try {
-      const data = S._opsData || {};
-      const candidatas = [];
-      (data.porDia || []).forEach(d => (d.operaciones || []).forEach(op => {
-        const tipo = String(op.tipo || '').toUpperCase();
-        const esIngreso = op.fuente === 'WH' && tipo.indexOf('INGRESO') >= 0 && !op.esPreingreso;
-        const tieneFoto = !!(op.foto && String(op.foto).trim());
-        if (esIngreso && tieneFoto) {
-          const key = op.fuente + '_' + op.idGuia;
-          if (!S._costosGuiaPrefetch[key]) candidatas.push({ idGuia: op.idGuia, fuente: op.fuente, key });
-        }
-      }));
-      if (!candidatas.length) return;
-      // Concurrencia limitada: 2 a la vez
-      let idx = 0;
-      const worker = async () => {
-        while (idx < candidatas.length) {
-          const c = candidatas[idx++];
-          try {
-            const r = await API.get('getOperacionDetalle', { fuente: c.fuente, idGuia: c.idGuia });
-            if (r && r.lineas) {
-              S._costosGuiaPrefetch[c.key] = { lineas: r.lineas, ts: Date.now() };
-            }
-          } catch(_) { /* silent */ }
-        }
-      };
-      worker(); worker(); // 2 workers paralelos
-    } catch(_) { /* tolerar */ }
-  }
 
   async function almRefreshOps() {
     toast('Refrescando operaciones…', 'info');
@@ -8529,63 +8499,6 @@ const MOS = (() => {
       </div>`;
   }
 
-  function _renderOpCard(op) {
-    const tipo = String(op.tipo || '').toUpperCase();
-    let tipoLabel, tipoColor, borderCls = '', extraStyle = '';
-    if (op.esPreingreso) {
-      tipoLabel = '⏳ PREINGRESO';
-      tipoColor = 'text-amber-400';
-      borderCls = 'border-l-2 border-amber-500/50';
-    } else if (tipo === 'INGRESO_PROVEEDOR') {
-      // Resaltado: guías de proveedor son críticas (compromiso de pago / costos)
-      tipoLabel = '🟢 INGRESO PROVEEDOR';
-      tipoColor = 'text-emerald-300';
-      borderCls = 'border-l-4 border-emerald-400';
-      extraStyle = 'background:linear-gradient(90deg,rgba(16,185,129,.10) 0%,rgba(16,185,129,.02) 100%);box-shadow:0 0 0 1px rgba(16,185,129,.18) inset';
-    } else if (tipo.indexOf('INGRESO') >= 0) { tipoLabel = '🟢 INGRESO'; tipoColor = 'text-emerald-400'; }
-    else if (tipo.indexOf('SALIDA_VENTAS') >= 0 || tipo === 'SALIDA_VENTAS') { tipoLabel = '🛒 VENTAS'; tipoColor = 'text-purple-400'; }
-    else if (tipo.indexOf('SALIDA_ZONA') >= 0 || tipo.indexOf('DESPACHO') >= 0) { tipoLabel = '📦 DESPACHO'; tipoColor = 'text-blue-400'; }
-    else if (tipo.indexOf('ENVASADO') >= 0) { tipoLabel = '🏷️ ENVASADO'; tipoColor = 'text-purple-400'; }
-    else if (tipo.indexOf('TRASLADO') >= 0) { tipoLabel = '🔄 TRASLADO'; tipoColor = 'text-amber-400'; }
-    else { tipoLabel = '📋 ' + tipo; tipoColor = 'text-slate-400'; }
-    const estadoCls = op.estado === 'CERRADA' || op.estado === 'CONFIRMADO' || op.estado === 'PROCESADO' ? 'text-slate-500'
-                    : op.estado === 'ABIERTA' || op.estado === 'PENDIENTE' ? 'text-amber-400'
-                    : 'text-slate-500';
-    const expandKey = op.fuente + '_' + op.idGuia + (op.esPreingreso ? '_PRE' : '');
-    const expanded = !!S._opsExpanded[expandKey];
-    const monto = op.montoTotal > 0 ? `<span class="text-amber-400 ml-2">S/ ${op.montoTotal.toLocaleString('es-PE', { maximumFractionDigits: 0 })}</span>` : '';
-    const usuarioStr = op.usuario ? ` · ${op.usuario}` : '';
-    const provNombre = op.nombreProveedor || op.idProveedor;
-    const provStr = provNombre ? ` · ${provNombre}` : '';
-    const horaStr = (function(){ try { var d = new Date(op.fecha); return d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }); } catch(_){ return ''; }})();
-    // Preingresos no tienen líneas en GUIA_DETALLE — solo mostrar info de cabecera al expandir
-    const onclickAttr = op.esPreingreso
-      ? `onclick="MOS.almToggleOpExpand('${op.fuente}','${op.idGuia}', true)"`
-      : `onclick="MOS.almToggleOpExpand('${op.fuente}','${op.idGuia}')"`;
-    // Botón "💰 Llenar costos" para guías INGRESO_PROVEEDOR con foto
-    const esIngreso = op.fuente === 'WH' && tipo.indexOf('INGRESO') >= 0 && !op.esPreingreso;
-    const tieneFoto = !!(op.foto && String(op.foto).trim());
-    const llenarCostosBtn = (esIngreso && tieneFoto)
-      ? `<button onclick="event.stopPropagation();MOS.abrirCostosGuia('${op.idGuia}', '${op.fuente}')" class="text-amber-400 hover:text-amber-300 text-base shrink-0 px-1" title="Llenar costos basándose en foto de factura">💰</button>`
-      : '';
-
-    return `<div class="card-sm p-2.5 ${borderCls}" ${extraStyle ? `style="${extraStyle}"` : ''}>
-      <div class="flex items-center justify-between gap-2 cursor-pointer" ${onclickAttr}>
-        <div class="min-w-0 flex-1">
-          <div class="text-xs font-semibold ${tipoColor} truncate">${tipoLabel} · <span class="text-slate-300 font-mono">${op.idGuia}</span> ${monto}</div>
-          <div class="text-[10px] text-slate-500 truncate">${horaStr}${usuarioStr}${provStr}${op.comentario ? ' · ' + op.comentario : ''}</div>
-        </div>
-        <div class="flex items-center gap-2 shrink-0">
-          ${llenarCostosBtn}
-          <span class="text-[10px] ${estadoCls}">${op.estado || ''}</span>
-          <span class="text-slate-500">${expanded ? '▴' : '▾'}</span>
-        </div>
-      </div>
-      <div id="opExp_${expandKey}" class="${expanded ? '' : 'hidden'} mt-2 pt-2 border-t border-slate-800/50">
-        ${expanded ? (op.esPreingreso ? _renderPreingresoDetalle(op) : _renderOpDetalle(op.fuente, op.idGuia)) : ''}
-      </div>
-    </div>`;
-  }
 
   function _renderPreingresoDetalle(op) {
     // Preingreso: no hay líneas, mostrar info de cabecera + foto si existe
@@ -9651,82 +9564,10 @@ const MOS = (() => {
   // 'procesando' = anillo girando con shimmer · 'listo' = check verde con pulse
   // · 'error' = X roja · todos se auto-ocultan tras 3s salvo 'procesando' que
   // dura hasta que termine el fetch.
-  function _opsMostrarBadgeOcrAuto(estado) {
-    try {
-      let badge = document.getElementById('opsBadgeOcrAuto');
-      if (!badge) {
-        badge = document.createElement('div');
-        badge.id = 'opsBadgeOcrAuto';
-        badge.style.cssText = 'position:fixed;top:18px;right:18px;z-index:9999;padding:10px 14px;border-radius:14px;font-size:13px;font-weight:700;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;gap:8px;box-shadow:0 10px 30px -8px rgba(0,0,0,.4);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);animation:opsBadgeIn .3s cubic-bezier(.34,1.56,.64,1) both;';
-        document.body.appendChild(badge);
-      }
-      if (estado === 'procesando') {
-        badge.style.background = 'linear-gradient(135deg,rgba(34,211,238,.95),rgba(8,145,178,.95))';
-        badge.style.color = '#fff';
-        badge.innerHTML = '<span style="display:inline-block;animation:opsSpin 1s linear infinite">🤖</span> Leyendo factura...';
-      } else if (estado === 'listo') {
-        badge.style.background = 'linear-gradient(135deg,rgba(16,185,129,.95),rgba(5,150,105,.95))';
-        badge.style.color = '#fff';
-        badge.innerHTML = '<span style="display:inline-block;animation:opsBadgeCheck .5s cubic-bezier(.34,1.56,.64,1)">✓</span> OCR procesado';
-        setTimeout(() => _opsOcultarBadgeOcrAuto(), 3000);
-      } else if (estado === 'error') {
-        badge.style.background = 'linear-gradient(135deg,rgba(239,68,68,.95),rgba(220,38,38,.95))';
-        badge.style.color = '#fff';
-        badge.innerHTML = '⚠ OCR falló — ajusta manual';
-        setTimeout(() => _opsOcultarBadgeOcrAuto(), 4000);
-      }
-    } catch(_){}
-  }
-  function _opsOcultarBadgeOcrAuto() {
-    try {
-      const badge = document.getElementById('opsBadgeOcrAuto');
-      if (badge) {
-        badge.style.animation = 'opsBadgeOut .25s ease forwards';
-        setTimeout(() => { try { badge.remove(); } catch(_){} }, 280);
-      }
-    } catch(_){}
-  }
 
   // [v2.43.8] Handlers de las 2 cards de origen del overlay de costos.
   // El admin elige explícitamente si quiere usar OCR de foto o llenar manual.
   // Sigue el mismo patrón visual/UX que el modal jefa (📷 foto · ✏️ manual).
-  function costosUsarOrigenFoto(fuente, idGuia) {
-    try { _opsBeep('tac'); } catch(_){}
-    const st = S._costosGuiaState;
-    if (!st) return;
-    if (!st.foto || !String(st.foto).trim()) {
-      try { _opsBeep('warn'); } catch(_){}
-      try { _toast?.('warn', '📷 Esta guía no tiene foto. Sube una desde WH primero.'); } catch(_){}
-      return;
-    }
-    S._costosModoOrigen = 'foto';
-    // [v5 §11] OCR retirado: mostrar la guía en grande para copiar los montos a mano
-    if (st.foto && String(st.foto).trim()) abrirFotoOverlay(String(st.foto).trim());
-  }
-  async function costosUsarOrigenManual() {
-    try { _opsBeep('tac'); } catch(_){}
-    const st = S._costosGuiaState;
-    if (!st) return;
-    // Confirmar si hay costos ya tipeados — no perder data por accidente
-    const algunoConDato = (st.lineas || []).some(l => l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0);
-    if (algunoConDato) {
-      // [Lote4 · M3-MOS] _modalConfirm en vez de confirm() nativo
-      if (!await _modalConfirm('Hay costos ya escritos. ¿Vaciar todo para empezar manual?', { warning: true, titulo: 'Vaciar costos' })) return;
-    }
-    // Vaciar todos los inputValue y limpiar sugerencias
-    (st.lineas || []).forEach(l => { l.inputValue = ''; l._sugerencia = null; });
-    S._costosModoOrigen = 'manual';
-    try { _opsBeep('ok'); } catch(_){}
-    try { _toast?.('info', '✏️ Modo manual · escribe cada costo abajo'); } catch(_){}
-    // Re-render del voucher actual
-    try {
-      const op = S._costosGuiaState && _findOpByKey(S._costosGuiaState.fuente + '_' + S._costosGuiaState.idGuia);
-      if (op) {
-        const cont = $('almOpsDetalleContent');
-        if (cont) cont.innerHTML = _renderVoucher(op, 0);
-      }
-    } catch(e) { console.warn('[costosUsarOrigenManual] re-render falló:', e); }
-  }
 
   // [v2.43.0+2] CTA combinado: guardar costos + abrir picker de impresora +
   // imprimir ticket para jefa, todo en una sola acción.
@@ -10237,96 +10078,9 @@ const MOS = (() => {
 
   // [v41.21] Redirigir abrirCostosGuia al overlay del voucher en modo costos.
   // Mantengo la firma por compat con el botón 💰 viejo si lo llama otro lugar.
-  async function abrirCostosGuia(idGuia, fuente) {
-    if (!idGuia || !fuente) return;
-    opsEntrarModoCostos(fuente, idGuia);
-  }
 
   // Función vieja (modal split) — mantenida como _legacy por si algún code path
   // antiguo la llama. NO se invoca desde el flow nuevo.
-  async function abrirCostosGuiaLegacy(idGuia, fuente) {
-    if (!idGuia) return;
-    let foto = '', idProveedor = '', nombreProveedor = '';
-    const data = S._opsData || {};
-    (data.porDia || []).forEach(d => d.operaciones.forEach(op => {
-      if (op.idGuia === idGuia && op.fuente === fuente) {
-        foto = op.foto || '';
-        idProveedor = op.idProveedor || '';
-        nombreProveedor = op.nombreProveedor || op.idProveedor || '';
-      }
-    }));
-    // Mantener defaults TOTAL + INCLUIDO en cada apertura
-    S._costosGuiaState = {
-      idGuia, fuente, lineas: [], foto, idProveedor, nombreProveedor,
-      inputMode: 'TOTAL', igvMode: 'INCLUIDO'
-    };
-    $('costosGuiaInfo').textContent = idGuia + (nombreProveedor ? ' · ' + nombreProveedor : '');
-    // [v41.20] Poblar foto en el lado izquierdo del overlay split
-    const fImg = $('cguFotoImg');
-    const fEmp = $('cguFotoEmpty');
-    if (fImg && fEmp) {
-      if (foto) {
-        fImg.style.display = 'block';
-        fImg.src = foto;
-        fEmp.style.display = 'none';
-        S._cguFotoUrl = foto;
-        fImg.onclick = () => abrirFotoOverlay(foto);
-      } else {
-        fImg.style.display = 'none';
-        fEmp.style.display = 'flex';
-        S._cguFotoUrl = '';
-      }
-    }
-    // El botón Pantalla completa lee de S._cguFotoUrl
-    const fBtn = $('cguFotoFullBtn');
-    if (fBtn) fBtn.onclick = () => abrirFotoOverlay(S._cguFotoUrl || '');
-    // Ocultar sección sugerencias al abrir (queda inline por producto)
-    _ocultarSeccionSugerencias && _ocultarSeccionSugerencias();
-    const body = $('costosGuiaBody');
-    openModal('modalCostosGuia');
-
-    // Helper: inicializa inputValue y pinta. Reusado por prefetch y fetch.
-    const _hidratarLineas = (lineas) => {
-      lineas.forEach(l => {
-        const bruto = parseFloat(l.precioUnitario) || 0;
-        l.inputValue = bruto > 0 ? +(bruto * (parseFloat(l.cantidad) || 1)).toFixed(2) : '';
-      });
-      S._costosGuiaState.lineas = lineas;
-      _renderCostosGuiaBody();
-    };
-
-    // 🚀 Si hay prefetch fresco (<5 min) → pintar INSTANTÁNEO sin esperar red.
-    const pfKey = fuente + '_' + idGuia;
-    const pf = S._costosGuiaPrefetch && S._costosGuiaPrefetch[pfKey];
-    const pfFresco = pf && pf.lineas && (Date.now() - (pf.ts || 0) < 5 * 60 * 1000);
-    if (pfFresco) {
-      _hidratarLineas(pf.lineas.map(l => ({ ...l })));
-    } else {
-      body.innerHTML = `
-        <div class="liq-skel-stage">
-          <div class="liq-skel-row"></div>
-          <div class="liq-skel-row" style="animation-delay:.12s"></div>
-          <div class="liq-skel-row" style="animation-delay:.24s"></div>
-          <div class="liq-skel-stage-hint">
-            <span class="liq-skel-hint-dot"></span> Cargando líneas de la guía...
-          </div>
-        </div>`;
-    }
-
-    // Fetch fresco siempre (actualiza prefetch + corrige si cambió algo).
-    // Si ya pintamos desde prefetch, esto es refresh silencioso en background.
-    try {
-      const r = await API.get('getOperacionDetalle', { fuente, idGuia });
-      const lineas = (r && r.lineas) || [];
-      if (S._costosGuiaPrefetch) S._costosGuiaPrefetch[pfKey] = { lineas, ts: Date.now() };
-      // Solo re-pintar si el modal sigue en esta guía (user no cerró/cambió)
-      if (S._costosGuiaState && S._costosGuiaState.idGuia === idGuia) {
-        _hidratarLineas(lineas.map(l => ({ ...l })));
-      }
-    } catch(e) {
-      if (!pfFresco) body.innerHTML = `<div class="text-xs text-rose-400 py-4">Error: ${e.message}</div>`;
-    }
-  }
 
   function _costosGuiaSetMode(modo) {
     const st = S._costosGuiaState;
@@ -10354,132 +10108,19 @@ const MOS = (() => {
     _costosGuiaReRender();
   }
 
-  // [v2.43.21] Re-render según contexto: modo costos usa el modal unificado
-  // nuevo; modal viejo (legacy) re-pinta el body del modal antiguo.
+  // [v5 §11] Re-render del Paso 1 (modal unificado). El modal-split viejo fue eliminado.
   function _costosGuiaReRender() {
-    if (S._opsModoCostos) {
-      const st = S._costosGuiaState;
-      const op = st && _findOpByKey(st.fuente + '_' + st.idGuia);
-      if (op && document.getElementById('modalCostosGuiaUnif')) {
-        _renderModalCostosCompleto(op);
-        return;
-      }
-      // Fallback al overlay viejo (compat)
-      const cont = $('almOpsDetalleContent');
-      if (op && cont) cont.innerHTML = _renderVoucher(op, 0);
-    } else {
-      _renderCostosGuiaBody();
-    }
-  }
-
-  function _renderCostosGuiaBody() {
-    const body = $('costosGuiaBody');
-    if (!body) return;
     const st = S._costosGuiaState;
-    const { lineas, foto, inputMode, igvMode } = st;
-    if (!lineas.length) {
-      body.innerHTML = '<div class="text-xs text-slate-500 italic py-4">Esta guía no tiene líneas registradas.</div>';
+    const op = st && _findOpByKey(st.fuente + '_' + st.idGuia);
+    if (op && document.getElementById('modalCostosGuiaUnif')) {
+      _renderModalCostosCompleto(op);
       return;
     }
-    // [v41.20] Nuevo layout: cada línea es una card individual con su propio
-    // slot para sugerencia inline (slide-down al detectar costo llenado).
-    // La foto ya no va embebida acá (vive en el lado izquierdo del overlay
-    // split). En mobile (<820px) el overlay hace stack vertical y la foto
-    // va arriba — igualmente cubierto sin duplicar.
-    const togglesHtml = `
-      <div class="alm-cu-toggles">
-        <div class="alm-cu-toggle-group">
-          <span>Ingreso:</span>
-          <button onclick="MOS._costosGuiaSetMode('TOTAL')"
-                  class="alm-cu-seg-btn ${inputMode === 'TOTAL' ? 'active' : ''}">Total línea</button>
-          <button onclick="MOS._costosGuiaSetMode('UNITARIO')"
-                  class="alm-cu-seg-btn ${inputMode === 'UNITARIO' ? 'active' : ''}">Por unidad</button>
-        </div>
-        <div class="alm-cu-toggle-group">
-          <span>IGV:</span>
-          <button onclick="MOS._costosGuiaSetIgv('INCLUIDO')"
-                  class="alm-cu-seg-btn ${igvMode === 'INCLUIDO' ? 'active' : ''}">Incluido (18%)</button>
-          <button onclick="MOS._costosGuiaSetIgv('SIN_IGV')"
-                  class="alm-cu-seg-btn ${igvMode === 'SIN_IGV' ? 'active' : ''}">Sin IGV</button>
-        </div>
-      </div>`;
-
-    let totalBruto = 0, totalNeto = 0;
-    const placeholderIn = inputMode === 'TOTAL' ? 'Total' : 'P. unit.';
-
-    const filasHtml = lineas.map((l, i) => {
-      const cant = parseFloat(l.cantidad) || 0;
-      const brutoUnit = _costosGuiaCalcularBruto(l, st);
-      const netoUnit  = brutoUnit / (1 + _IGV_RATE);
-      const subBruto  = brutoUnit * cant;
-      totalBruto += subBruto;
-      totalNeto  += netoUnit * cant;
-      const equivBadge = l.esEquivalencia ? ' <span style="font-size:9px;color:#a855f7;background:rgba(168,85,247,.1);padding:1px 5px;border-radius:999px">EQUIV</span>' : '';
-      const helperTxt = brutoUnit > 0
-        ? `<div><span class="alm-cu-line-helper-bruto">S/ ${brutoUnit.toFixed(4)}</span>/u</div>
-           <div style="opacity:.65">neto S/ ${netoUnit.toFixed(4)}</div>`
-        : '<span style="opacity:.4">—</span>';
-      // Slot vacío para sugerencia — se rellena al cambiar el costo.
-      // Estado preservado entre renders en S._costosGuiaState.lineas[i]._sugerencia
-      const sugCache = l._sugerencia;
-      const sugHtml = sugCache
-        ? _renderSugerenciaInline(i, sugCache)
-        : '';
-      const sugOpen = sugCache ? ' is-open' : '';
-      const marcaIni = brutoUnit > 0
-        ? '<span title="Costo registrado" style="color:#34d399;font-weight:700">✓</span>'
-        : '<span title="Falta costo" style="color:#f87171;font-weight:700;animation:pulse 1.6s infinite">⚠</span>';
-      const faltaCls = brutoUnit > 0 ? '' : ' alm-cu-line--falta';
-      return `<div class="alm-cu-line${faltaCls}">
-        <div class="alm-cu-line-row">
-          <div>
-            <div class="alm-cu-line-desc">
-              <span id="costoGuiaMarca_${i}" style="margin-right:6px;display:inline-block;min-width:14px">${marcaIni}</span>
-              ${l.descripcion}${equivBadge}
-            </div>
-            <div class="alm-cu-line-cod">▌ ${l.codigoProducto || '—'}</div>
-          </div>
-          <div class="alm-cu-line-cant">${cant}u</div>
-          <div>
-            <input type="number" step="0.01" min="0" class="alm-cu-input"
-                   value="${l.inputValue || ''}"
-                   oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
-                   onblur="MOS._costosGuiaSugerirDebounce(${i})"
-                   placeholder="${placeholderIn}">
-          </div>
-          <div class="alm-cu-line-helper" id="costoGuiaSubtot_${i}">${helperTxt}</div>
-        </div>
-        <div class="alm-cu-sug${sugOpen}" id="sugSlot_${i}">${sugHtml}</div>
-      </div>`;
-    }).join('');
-
-    // [v2.41.54] Header con progreso "X de Y con costo" + autoguardado hint
-    const totalLin = lineas.length;
-    let conCostoIni = 0;
-    lineas.forEach(l => { if (_costosGuiaCalcularBruto(l, st) > 0) conCostoIni++; });
-    const progresoIni = totalLin > 0 ? Math.round((conCostoIni / totalLin) * 100) : 0;
-    const completoIni = conCostoIni === totalLin;
-    const progresoHtml = `
-      <div id="costosGuiaProgreso" style="font-size:11px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-        <span style="color:${completoIni ? '#34d399' : (conCostoIni > 0 ? '#fbbf24' : '#94a3b8')};font-weight:800">
-          ${completoIni ? '✓ ' : ''}${conCostoIni}/${totalLin} producto${totalLin === 1 ? '' : 's'} con costo
-        </span>
-        <span style="color:#64748b;margin-left:6px">· ${progresoIni}%</span>
-        ${!completoIni ? '<span style="color:#f87171;margin-left:6px;font-size:10px">⚠ faltan ' + (totalLin - conCostoIni) + '</span>' : ''}
-      </div>
-      <div style="font-size:9px;color:#64748b;font-style:italic;margin-top:2px">
-        💾 Autoguardado activo · los costos se persisten al instante
-      </div>`;
-
-    body.innerHTML = `${togglesHtml}
-      ${progresoHtml}
-      ${filasHtml}
-      <div class="alm-cu-totales">
-        <div><span style="color:#94a3b8">Neto:</span> <b id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</b></div>
-        <div><span style="color:#94a3b8">IGV:</span>  <b id="costosGuiaTotalIgv">S/ ${(totalBruto - totalNeto).toFixed(2)}</b></div>
-        <div><span style="color:#fbbf24">Total:</span> <b id="costosGuiaTotalBruto">S/ ${totalBruto.toFixed(2)}</b></div>
-      </div>`;
+    // Fallback: re-pinta el voucher si el overlay está abierto (compat)
+    const cont = $('almOpsDetalleContent');
+    if (op && cont) cont.innerHTML = _renderVoucher(op, 0);
   }
+
 
   // [v41.20] Render de la sugerencia inline debajo de una línea de costo
   function _renderSugerenciaInline(idx, sug) {
@@ -10718,7 +10359,6 @@ const MOS = (() => {
     }
   }
 
-  function cerrarCostosGuia() { closeModal('modalCostosGuia'); }
 
   async function guardarCostosGuia() {
     const st = S._costosGuiaState;
@@ -10770,28 +10410,10 @@ const MOS = (() => {
       try { localStorage.setItem('mos_costos_aplicada_' + idGuia, String(Date.now())); } catch(_){}
       await almLoadOps(true);
 
-      // [v41.20] Las sugerencias ya se aplicaron inline; no abrir modal viejo.
-      // Mantengo la lógica de getter por compat (algunos endpoints siguen devolviéndolas).
-      const sugerencias = (resp && resp.sugerenciasPrecioVenta) || (resp && resp.data && resp.data.sugerenciasPrecioVenta) || [];
-      const relevantes = sugerencias.filter(s => {
-        // Mostrar solo si hay sugerencia activa Y precio sugerido difiere significativamente del actual
-        if (s.precioVentaSugerido === null || s.precioVentaSugerido === undefined) return false;
-        const actual = parseFloat(s.precioVentaActual) || 0;
-        const sug = parseFloat(s.precioVentaSugerido) || 0;
-        if (sug <= 0) return false;
-        if (actual <= 0) return true; // sin precio antes → sugerir
-        const deltaPct = Math.abs((sug - actual) / actual) * 100;
-        return deltaPct >= 1; // ≥ 1% de diferencia
-      });
-      if (relevantes.length) {
-        _mostrarPanelImpacto(relevantes, idGuia);
-      } else {
-        // No hay cambios relevantes → ocultar sección sugerencias
-        _ocultarSeccionSugerencias();
-        toast('✓ Costos guardados · sin cambios de precio sugeridos', 'ok');
-      }
+      // [v5 §11] Sugerencias/impacto viejo ELIMINADO: el Paso 2 del secuencial es donde
+      // se deciden los precios (padres + satélites). Aquí solo se guardan los costos.
+      try { _mesaComprasSyncBadge(); } catch(_){}
     } catch(e) {
-      _ocultarSeccionSugerencias();
       toast('Error: ' + e.message, 'error');
     }
   }
@@ -10805,10 +10427,6 @@ const MOS = (() => {
       setTimeout(() => { try { sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(_){} }, 100);
     }
   }
-  function _ocultarSeccionSugerencias() {
-    const sec = $('cguSugerenciasSection');
-    if (sec) sec.classList.add('hidden');
-  }
 
   // ── Panel: Impacto de costos en precios de venta ─────────
   S._impactoState = S._impactoState || { sugerencias: [], idGuia: null };
@@ -10816,171 +10434,12 @@ const MOS = (() => {
   // Abre el modal de impacto INMEDIATAMENTE con skeleton shimmer, antes de
   // que el backend termine de calcular las sugerencias FIFO. Se reemplaza
   // por _renderImpactoBody cuando llegan los datos reales.
-  function _mostrarPanelImpactoSkeleton(idGuia) {
-    const info = $('impactoCostosInfo');
-    if (info) info.textContent = `Guía ${idGuia} · calculando impacto en precios...`;
-    const body = $('impactoCostosBody');
-    if (body) {
-      body.innerHTML = `
-        <div class="liq-skel-stage">
-          <div class="liq-skel-card"></div>
-          <div class="liq-skel-card" style="animation-delay:.14s"></div>
-          <div class="liq-skel-card" style="animation-delay:.28s"></div>
-          <div class="liq-skel-stage-hint">
-            <span class="liq-skel-hint-dot"></span>
-            Analizando costos y lotización FIFO...
-          </div>
-        </div>`;
-    }
-    const resEl = $('impactoCostosResumen');
-    if (resEl) resEl.textContent = '';
-    openModal('modalImpactoCostos');
-  }
 
-  function _mostrarPanelImpacto(sugerencias, idGuia) {
-    // Inicializar cada una con seleccionado=true por default (excepto FIJO/LIBRE sin sugerencia)
-    sugerencias.forEach(s => {
-      s._seleccionado = (s.precioVentaSugerido !== null && s.precioVentaSugerido > 0);
-      s._precioCustom = s.precioVentaSugerido; // editable
-    });
-    S._impactoState = { sugerencias, idGuia };
-    const info = $('impactoCostosInfo');
-    if (info) info.textContent = `Guía ${idGuia} · ${sugerencias.length} producto${sugerencias.length === 1 ? '' : 's'} con cambio relevante`;
-    _renderImpactoBody();
-    openModal('modalImpactoCostos');
-  }
 
-  function _renderImpactoBody() {
-    const body = $('impactoCostosBody');
-    if (!body) return;
-    const { sugerencias } = S._impactoState;
-    if (!sugerencias.length) {
-      body.innerHTML = '<div class="text-xs text-slate-500 italic">Sin sugerencias relevantes.</div>';
-      return;
-    }
-    body.innerHTML = sugerencias.map((s, i) => {
-      const costoAnt = parseFloat(s.costoAnterior) || 0;
-      const costoNue = parseFloat(s.costoNuevo) || 0;
-      const deltaCosto = costoAnt > 0 ? ((costoNue - costoAnt) / costoAnt) * 100 : null;
-      const deltaCostoStr = deltaCosto === null ? 'nuevo' : (deltaCosto >= 0 ? '+' : '') + deltaCosto.toFixed(1) + '%';
-      const deltaCls = deltaCosto === null ? 'text-slate-500' : (deltaCosto > 0 ? 'text-rose-400' : 'text-emerald-400');
 
-      const ventaAct = parseFloat(s.precioVentaActual) || 0;
-      const ventaSug = parseFloat(s.precioVentaSugerido) || 0;
-      const margenSug = s.margenSugerido !== null && s.margenSugerido !== undefined ? s.margenSugerido : null;
-      const margenAct = s.margenActual !== null && s.margenActual !== undefined ? s.margenActual : null;
 
-      // Lotización
-      const lot = s.lotizacion || {};
-      const desglose = lot.desglose || [];
-      const lotHtml = (lot.hayLoteAnterior && desglose.length > 0)
-        ? `<div class="mt-2 p-2 rounded text-[10px] text-amber-300" style="background:rgba(251,191,36,.07);border:1px dashed rgba(251,191,36,.3)">
-             <div class="font-semibold mb-1">⚠️ Hay stock del lote anterior</div>
-             <table class="w-full text-[10px]">
-               <thead class="text-amber-500 opacity-70">
-                 <tr><th class="text-left">Lote</th><th class="text-right">Cant</th><th class="text-right">Costo c/IGV</th></tr>
-               </thead>
-               <tbody>
-                 ${desglose.map(d => `<tr ${d.esActual ? 'class="font-semibold"' : ''}>
-                   <td class="py-0.5">${d.esActual ? 'Nuevo (esta guía)' : new Date(d.fecha).toLocaleDateString('es-PE', { month: 'short', day: 'numeric' })}</td>
-                   <td class="text-right py-0.5">${d.cantidad}u</td>
-                   <td class="text-right py-0.5 font-mono">S/ ${parseFloat(d.costo).toFixed(2)}</td>
-                 </tr>`).join('')}
-               </tbody>
-             </table>
-             <div class="mt-1 text-amber-400">Costo ponderado real: <span class="font-mono font-semibold">S/ ${(parseFloat(lot.costoPonderado) || 0).toFixed(4)}</span> · stock total ${lot.stockTotal || 0}u</div>
-           </div>`
-        : '';
 
-      const sinSugerencia = (s.modoEfectivo === 'FIJO' || s.modoEfectivo === 'LIBRE' || ventaSug <= 0);
-      const checked = s._seleccionado ? 'checked' : '';
-      const disabledCheck = sinSugerencia ? 'disabled' : '';
 
-      return `<div class="card-sm p-3 mb-2" style="border-left:3px solid ${sinSugerencia ? '#475569' : (deltaCosto && deltaCosto > 0 ? '#f43f5e' : '#10b981')}">
-        <div class="flex items-start gap-3">
-          <input type="checkbox" ${checked} ${disabledCheck} onchange="MOS._impactoTogglesel(${i}, this.checked)" class="mt-1">
-          <div class="flex-1 min-w-0">
-            <div class="text-sm font-semibold text-slate-200 truncate">${s.descripcion}</div>
-            <div class="text-[10px] text-slate-500 font-mono">▌ ${s.codigoProducto}</div>
-            <div class="grid grid-cols-2 gap-2 mt-2 text-[11px]">
-              <div>
-                <span class="text-slate-500">Costo:</span>
-                <span class="font-mono">${costoAnt > 0 ? 'S/ ' + costoAnt.toFixed(2) : '—'} → <span class="text-amber-400 font-semibold">S/ ${costoNue.toFixed(2)}</span></span>
-                <span class="${deltaCls}">(${deltaCostoStr})</span>
-              </div>
-              <div>
-                <span class="text-slate-500">Margen:</span>
-                <span>${margenAct !== null ? margenAct.toFixed(1) + '%' : '—'} → <span class="${margenSug !== null ? 'text-emerald-400 font-semibold' : 'text-slate-500'}">${margenSug !== null ? margenSug.toFixed(1) + '%' : '—'}</span></span>
-              </div>
-            </div>
-            <div class="mt-2 flex items-center gap-2 text-[11px]">
-              <span class="text-slate-500">Precio venta:</span>
-              <span class="font-mono">${ventaAct > 0 ? 'S/ ' + ventaAct.toFixed(2) : '—'}</span>
-              <span class="text-slate-600">→</span>
-              ${sinSugerencia
-                ? `<span class="text-slate-500 italic text-[10px]">${s.modoEfectivo} — sin sugerencia automática</span>`
-                : `<input type="number" step="0.01" min="0" value="${(s._precioCustom || ventaSug).toFixed(2)}"
-                   oninput="MOS._impactoSetPrecio(${i}, this.value)"
-                   class="inp text-xs text-right" style="width:90px">
-                   <span class="text-[9px] text-slate-600">obj. ${(parseFloat(s.margenObjetivo) || 0).toFixed(0)}% (${s.origenPolitica})</span>`}
-            </div>
-            ${lotHtml}
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-
-    // Resumen del footer
-    const seleccionadas = sugerencias.filter(s => s._seleccionado).length;
-    const resEl = $('impactoCostosResumen');
-    if (resEl) resEl.textContent = `${seleccionadas} de ${sugerencias.length} seleccionados`;
-  }
-
-  function _impactoTogglesel(idx, checked) {
-    if (S._impactoState.sugerencias[idx]) {
-      S._impactoState.sugerencias[idx]._seleccionado = !!checked;
-      _renderImpactoBody();
-    }
-  }
-
-  function _impactoSetPrecio(idx, valor) {
-    if (S._impactoState.sugerencias[idx]) {
-      S._impactoState.sugerencias[idx]._precioCustom = parseFloat(valor) || 0;
-    }
-  }
-
-  function cerrarImpactoCostos() { closeModal('modalImpactoCostos'); }
-
-  async function aplicarSugerenciasSeleccionadas() {
-    const { sugerencias, idGuia } = S._impactoState;
-    const items = sugerencias
-      .filter(s => s._seleccionado && s._precioCustom > 0)
-      .map(s => ({
-        idProducto: s.idProducto,
-        precioNuevo: s._precioCustom,
-        motivo: 'Ajuste por costo guía ' + (idGuia || '')
-      }));
-    if (!items.length) {
-      toast('No hay sugerencias seleccionadas', 'error');
-      return;
-    }
-    closeModal('modalImpactoCostos');
-    toast('Aplicando precios…', 'info');
-    try {
-      const r = await API.post('aplicarPreciosVentaSugeridos', { items, usuario: S.session?.nombre || '' });
-      const aplicados = (r && r.aplicados) || (r && r.data && r.data.aplicados) || 0;
-      const propagadas = (r && r.presentacionesPropagadas) || (r && r.data && r.data.presentacionesPropagadas) || 0;
-      const errores = (r && r.errores) || (r && r.data && r.data.errores) || [];
-      const propTxt = propagadas > 0 ? ` (+${propagadas} presentaciones propagadas)` : '';
-      toast(`✓ ${aplicados} precios actualizados${propTxt}${errores.length ? ' · ' + errores.length + ' errores' : ''}`, errores.length ? 'error' : 'ok');
-      // Refrescar catálogo si está cargado
-      if (S.productos && S.productos.length) {
-        await loadCatalogo(true);
-      }
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    }
-  }
 
   function _formatFechaCorta(yyyymmdd) {
     if (!yyyymmdd) return '';
@@ -44002,20 +43461,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.99] Filtro solo ingresos
     almToggleFiltroIngreso,
     abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay, abrirFotoOverlay,
-    abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
+    _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, guardarCostosGuia,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, _mesaComprasEntrar, _mesaComprasSyncBadge,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
-    costosUsarOrigenFoto, costosUsarOrigenManual,
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
     // [v2.43.21] Modal costos unificado (Paso 1)
     _abrirModalCostosUnificado, _renderModalCostosCompleto,
     // [v2.43.5] Exponer _opsBeep para callers inline desde template
     _opsBeep,
-    _impactoTogglesel, _impactoSetPrecio, cerrarImpactoCostos, aplicarSugerenciasSeleccionadas,
     almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
