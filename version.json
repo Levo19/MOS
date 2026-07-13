@@ -1,1 +1,1 @@
-{"version":"2.43.505","build":"2.43.505 modal imprimir: preview COMPLETO abajo de cada opcion (600x300 scale .5 = cabe entero, ya no cortado) + responsive PC/tablet/mobile (media queries) + hover."}
+{"version":"2.43.506","build":"2.43.506 el MARGEN del card ahora abre las CURVAS precio·costo (bidireccional), no el modal editar — igual que el precio."}

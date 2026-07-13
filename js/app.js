@@ -1533,8 +1533,10 @@ const MOS = (() => {
       // sección "Política de precios" abierta. Antes eran 4 taps (✏️ → expandir
       // → activar override → editar), ahora es 1.
       const idProd = producto.idProducto || producto.SKU_Base || '';
-      return `<div class="cat-margen-chip cat-margen-${nivel} cat-margen-chip-tap" title="${tip} · tap para ajustar"
-                   onclick="event.stopPropagation();MOS.abrirModalProducto('${_escapeHtml(String(idProd))}',{focusPolitica:true})"
+      // [RONDA 7] el MARGEN abre las CURVAS precio·costo (bidireccional precio↔margen),
+      // no el modal de editar — es donde de verdad se ajusta el margen (pedido del dueño).
+      return `<div class="cat-margen-chip cat-margen-${nivel} cat-margen-chip-tap" title="${tip} · tap: curvas precio·costo + margen"
+                   onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${_escapeHtml(String(idProd))}')"
                    style="cursor:pointer;transition:transform .15s cubic-bezier(.34,1.56,.64,1)"
                    onmousedown="this.style.transform='scale(.94)'"
                    onmouseup="this.style.transform='scale(1)'"
