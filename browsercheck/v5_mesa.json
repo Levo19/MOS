@@ -1,0 +1,11 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 30000,
+  "viewport": { "width": 820, "height": 1180 },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906474",
+    "MOS_SESSION": "{\"idPersonal\":\"TEST-CLAUDE\",\"nombre\":\"PRUEBA CLAUDE\",\"rol\":\"MASTER\",\"idSesion\":\"testclaude1\"}"
+  },
+  "evalAfter": "(async()=>{const r={};const w=ms=>new Promise(s=>setTimeout(s,ms));const btn=[...document.querySelectorAll('button,a')].find(el=>/Entrar a MOS/i.test(el.textContent||''));if(btn)btn.click();await w(2500);try{const vj=await fetch('https://levo19.github.io/MOS/version.json?b='+Date.now()).then(x=>x.json());r.version=vj.version;}catch(_){}try{MOS.nav('almacen')}catch(e){r.navErr=String(e)}await w(9000);r.botonCompras=!!document.querySelector('.btn-mesa-compras');try{MOS.abrirMesaCompras()}catch(e){r.abrirErr=String(e)}await w(1600);const m=document.getElementById('mesaComprasModal');r.mesaAbierta=!!m&&m.classList.contains('open');if(m){r.tabs=[...m.querySelectorAll('.mesa-tab')].map(t=>t.textContent.replace(/\\s+/g,' ').trim());r.tarjetas=m.querySelectorAll('.mesa-card').length;r.estados=[...m.querySelectorAll('.mesa-state')].map(s=>s.textContent.replace(/\\s+/g,' ').trim()).slice(0,6);r.fases=[...m.querySelectorAll('.mesa-ph b')].map(b=>b.textContent.trim()).slice(0,8);r.titulo=(m.querySelector('.mesa-h2')||{}).textContent;}return r;})()",
+  "screenshot": "C:/Users/ISO/ProyectoMOS/browsercheck/v5_mesa_shot.png"
+}

@@ -9222,17 +9222,22 @@ const MOS = (() => {
   function _renderCostosSubheader(op) {
     const st = S._costosGuiaState;
     const tieneFoto = !!(st.foto && String(st.foto).trim());
-    const enVuelo = !!(S._opsOcrEnVueloMap && S._opsOcrEnVueloMap[st.idGuia]);
-    const yaCorrio = !!(S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia]);
     const totLin = (st.lineas || []).length;
     const conCosto = (st.lineas || []).filter(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
     const pct = totLin > 0 ? Math.round((conCosto / totLin) * 100) : 0;
-    // Chip OCR
-    let chipOcr = '';
-    // [v5 §11] OCR eliminado — chip informativo simple del progreso de montos
-    chipOcr = tieneFoto
-      ? `<div id="opsChipOcrStatus" class="ops-chip-ok">📄 ${conCosto}/${totLin} con monto · toca la foto arriba para ver la guía</div>`
-      : `<div id="opsChipOcrStatus" class="ops-chip-info">✍ ${conCosto}/${totLin} con monto · escribe mirando la factura</div>`;
+    // [v5 §11] FOTO de la factura DENTRO del Paso 1 (preview + zoom a pantalla completa).
+    const fotoUrl = tieneFoto ? _escapeHtml(String(st.foto).trim()) : '';
+    const fotoHtml = tieneFoto ? `
+      <div class="ops-p1-foto" onclick="MOS.abrirFotoOverlay('${fotoUrl}')" title="Ampliar la factura (zoom)">
+        <img src="${fotoUrl}" alt="Factura del proveedor" loading="lazy" onerror="this.closest('.ops-p1-foto').classList.add('is-err')">
+        <span class="ops-p1-foto-empty">📄 Sin vista previa · toca para abrir</span>
+        <span class="ops-p1-foto-pill">📄 Factura de la guía</span>
+        <span class="ops-p1-foto-zoom">🔍 Ampliar / zoom</span>
+      </div>` : '';
+    // Chip de progreso de montos (sin OCR)
+    const chipOcr = tieneFoto
+      ? `<div id="opsChipOcrStatus" class="ops-chip-ok">📸 ${conCosto}/${totLin} con monto · mira la factura arriba y escribe</div>`
+      : `<div id="opsChipOcrStatus" class="ops-chip-info">✍ ${conCosto}/${totLin} con monto · sin foto — escribe mirando la factura física</div>`;
     // Progreso visual
     const progCls = pct === 100 ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
     const progreso = `<div id="costosGuiaProgreso" class="ops-prog-bar">
@@ -9259,7 +9264,7 @@ const MOS = (() => {
         <span>Actualizar catálogo</span>
       </label>
     </div>`;
-    return `<div class="flex flex-col gap-2">${chipOcr}${progreso}${toggles}</div>`;
+    return `<div class="flex flex-col gap-2">${fotoHtml}${chipOcr}${progreso}${toggles}</div>`;
   }
 
   function _renderCostosBody(op) {
@@ -9421,6 +9426,19 @@ const MOS = (() => {
     const style = document.createElement('style');
     style.id = 'opsCSSModalCostosUnif';
     style.textContent = `
+      /* ───── [v5 §11] Foto de la factura dentro del Paso 1 (preview + zoom) ───── */
+      .ops-p1-foto{position:relative;width:100%;aspect-ratio:16/9;max-height:190px;border-radius:12px;overflow:hidden;
+        border:1px solid #28344c;cursor:zoom-in;background:#0a1120 repeating-linear-gradient(135deg,#0f1b31 0 14px,#0c1628 14px 28px);
+        transition:border-color .2s,transform .12s}
+      .ops-p1-foto:hover{border-color:#34d399} .ops-p1-foto:active{transform:scale(.99)}
+      .ops-p1-foto img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+      .ops-p1-foto.is-err img{display:none}
+      .ops-p1-foto-empty{display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:#7b8aa6;font-size:12px}
+      .ops-p1-foto.is-err .ops-p1-foto-empty{display:flex}
+      .ops-p1-foto-pill{position:absolute;left:8px;top:8px;background:rgba(7,13,24,.82);backdrop-filter:blur(3px);
+        border:1px solid #28344c;color:#93a4c2;font-size:9.5px;font-weight:700;padding:3px 8px;border-radius:999px}
+      .ops-p1-foto-zoom{position:absolute;right:8px;bottom:8px;background:rgba(7,13,24,.85);backdrop-filter:blur(4px);
+        border:1px solid #34d39955;color:#d7f5e8;font-size:10.5px;font-weight:800;padding:5px 10px;border-radius:9px;display:flex;gap:5px;align-items:center}
       /* ───── Modal costos unificado — paridad visual con modal jefa ───── */
 
       /* Scrollbar custom emerald sutil — ambos modales */
