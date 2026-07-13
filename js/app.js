@@ -4668,6 +4668,10 @@ const MOS = (() => {
       subt.textContent = `${prod.skuBase || ''} · ${tipo} · ${prod.unidad || prod.Unidad_Medida || ''}`;
     }
     if (inp) inp.value = parseFloat(prod.precioVenta || 0).toFixed(2);
+    // [RONDA 7 · §06] precio anterior tachado + chip de %
+    const antesEl = $('qpBaseAntes');
+    if (antesEl) antesEl.textContent = 'S/ ' + S._qpPrecioAnterior.toFixed(2);
+    _qpActualizarPctBase();
     _qpRenderPresentaciones();
     const overlay = $('modalPrecioRapido');
     if (overlay) overlay.classList.add('active');
@@ -4966,12 +4970,26 @@ const MOS = (() => {
   // Actualiza precios sugeridos al cambiar el base — solo los NO tocados manualmente.
   // [catálogo v4] recorre las filas EN ORDEN: los derivados primero, así los packs
   // de derivado (nivel 2) leen el valor YA actualizado (o el manual) de su padre.
+  // [RONDA 7 · §06] chip +/-% del precio raíz vs el anterior
+  function _qpActualizarPctBase() {
+    const chip = $('qpBasePct');
+    if (!chip) return;
+    const antes = parseFloat(S._qpPrecioAnterior) || 0;
+    const ahora = parseFloat($('qpInput')?.value) || 0;
+    if (antes <= 0 || ahora <= 0 || Math.abs(ahora - antes) < 0.005) { chip.style.display = 'none'; return; }
+    const pct = Math.round((ahora / antes - 1) * 1000) / 10;
+    chip.style.display = '';
+    chip.textContent = (pct >= 0 ? '+' : '') + pct + '%';
+    chip.classList.toggle('man', pct < 0);   // ámbar si baja, verde si sube
+  }
+
   function _qpSyncPresentaciones() {
     const idProducto = S._editingPrecioId;
     if (!idProducto) return;
     const precio = parseFloat($('qpInput')?.value || '0') || 0;
     const prod   = S.productos.find(p => p.idProducto === idProducto);
     if (!prod) return;
+    _qpActualizarPctBase();
     _qpSyncTramos(prod, precio);
     const rows = S._qpRows || [];
     rows.forEach((r, i) => {
