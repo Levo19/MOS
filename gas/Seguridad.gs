@@ -190,81 +190,59 @@ function verificarClaveAdmin(params) {
   if (!params || !params.clave) {
     return { ok: false, error: 'Requiere clave' };
   }
-  _garantizarClaveGlobal();
   var clave = String(params.clave).trim();
   if (clave.length !== 8 || !/^\d{8}$/.test(clave)) {
     return { ok: true, data: { autorizado: false, error: 'La clave debe ser de 8 dígitos numéricos' } };
   }
 
-  var globalPart = clave.substring(0, 4);
-  var userPart   = clave.substring(4, 8);
-
-  var globalPin = String(_leerConfigMos('ADMIN_GLOBAL_PIN') || '').padStart(4, '0');
-  if (!globalPin || globalPin.length !== 4) {
-    return { ok: false, error: 'ADMIN_GLOBAL_PIN no configurado en MOS' };
-  }
-  if (globalPart !== globalPin) {
-    return { ok: true, data: { autorizado: false, error: 'Clave incorrecta' } };
-  }
-
-  var admin = _buscarAdminPorPin(userPart);
-  if (!admin) {
-    return { ok: true, data: { autorizado: false, error: 'Clave incorrecta' } };
-  }
-
-  // Auditoría — registro en hoja AUDITORIA_ADMIN
-  var nombreCompleto = (admin.nombre + ' ' + (admin.apellido || '')).trim();
+  // [CERO-GAS · CERO-CAÍDA · SQL 432/388] Fuente ÚNICA de verdad = Supabase bcrypt.
+  // Antes comparaba el global contra el Sheet plano (ADMIN_GLOBAL_PIN) y el PIN personal
+  // contra PERSONAL_MASTER (Sheet) → ambos quedaban STALE tras la rotación pg_cron y
+  // desincronizaban (incidente 2026-07-13: Sheet 2715 vs hash verdadero). Ahora DELEGA a
+  // mos.verificar_clave_admin_p: mismo hash sincronizado que MOS/ME/WH + cascada de rol +
+  // lockout + auditoría server-side. FAIL-CLOSED: si Supabase no responde, NO autoriza
+  // (jamás cae a validación local con datos viejos).
+  var r;
   try {
-    var sheet = _garantizarHojaAuditoria();
-    // [v2.41.83] Determinar tier por defecto si no viene del cliente
-    var tier = parseInt(params.tier, 10);
-    if (!tier || tier < 1 || tier > 3) {
-      tier = _inferirTierAccion(String(params.accion || ''));
-    }
-    var clienteMeta = '';
-    try {
-      if (params.cliente_meta) {
-        clienteMeta = typeof params.cliente_meta === 'string'
-          ? params.cliente_meta
-          : JSON.stringify(params.cliente_meta);
-      }
-    } catch(_){}
-    sheet.appendRow([
-      _generateId('AUD'),
-      new Date(),
-      params.accion || 'GENERICA',
-      params.refDocumento || '',
-      admin.idPersonal,
-      nombreCompleto,
-      params.appOrigen || '',
-      params.dispositivo || '',
-      params.detalle || '',
-      tier,
-      params.cache_hit ? 1 : 0,
-      parseInt(params.tiempo_verify_ms, 10) || 0,
-      String(params.deviceId || ''),
-      clienteMeta
-    ]);
-  } catch(e) { /* no bloquear validación si auditoría falla */ }
+    r = _sbRpc('mos', 'verificar_clave_admin_p', {
+      clave: clave,
+      accion: params.accion || 'GENERICA',
+      ref: params.refDocumento || '',
+      app: params.appOrigen || 'MOS',
+      detalle: params.detalle || '',
+      device: String(params.deviceId || ''),
+      tier: (parseInt(params.tier, 10) || '')
+    });
+  } catch(e) {
+    return { ok: false, error: 'Verificación online no disponible (sin caída a GAS): ' + (e && e.message || e) };
+  }
+  if (!r || !r.ok || !r.data) {
+    return { ok: false, error: (r && r.error) || 'Verificación online no disponible (sin caída a GAS)' };
+  }
+  var d = r.data;                       // { ok, autorizado, rol, nombre, id_personal, error? }
+  if (d.ok === false) {
+    return { ok: false, error: d.error || 'APP_NO_AUTORIZADA' };
+  }
+  if (!d.autorizado) {
+    return { ok: true, data: { autorizado: false, error: d.error || 'Clave incorrecta' } };
+  }
 
-  // [v2.41.59] Push a admin/master cuando se autoriza acción con clave.
-  // Usa idNotif='MOS_ADMIN_AUTH' del catálogo → respeta config (silencio,
-  // audiencia, prioridad) + queda en NOTIFICACIONES_LOG con su idLog único.
-  // Cubre TODO lo que pasa por verificarClaveAdmin: anular pago/venta,
-  // desbloquear dispositivo, cierre forzado, etc.
+  var nombreCompleto = String(d.nombre || '').trim();
+  var idPersonal     = d.id_personal || d.idPersonal || '';
+  var rol            = String(d.rol || '').toUpperCase();
+
+  // [v2.41.59] Push a admin/master cuando se autoriza (best-effort; la auditoría YA la
+  // hizo Supabase en mos.auditoria_admin — no se duplica en el Sheet).
   try {
     if (typeof _enviarPushTodos === 'function') {
       var accionTxt = String(params.accion || 'ACCIÓN ADMIN').replace(/_/g, ' ');
-      var titulo = '🔐 ' + accionTxt;
-      var partes = [];
-      partes.push('por ' + nombreCompleto);
+      var partes = ['por ' + (nombreCompleto || 'admin')];
       if (params.refDocumento) partes.push(String(params.refDocumento));
       if (params.detalle)      partes.push(String(params.detalle));
       if (params.appOrigen)    partes.push('desde ' + params.appOrigen);
-      var cuerpo = partes.join(' · ');
-      _enviarPushTodos(titulo, cuerpo, {
+      _enviarPushTodos('🔐 ' + accionTxt, partes.join(' · '), {
         idNotif: 'MOS_ADMIN_AUTH',
-        excluirUsuario: nombreCompleto  // el mismo admin que ejecutó no se auto-notifica
+        excluirUsuario: nombreCompleto
       });
     }
   } catch(eN) { /* push best-effort */ }
@@ -273,11 +251,10 @@ function verificarClaveAdmin(params) {
     ok: true,
     data: {
       autorizado: true,
-      validadoPor: 'admin:' + nombreCompleto,
-      idPersonal: admin.idPersonal,
+      validadoPor: nombreCompleto ? ('admin:' + nombreCompleto) : 'admin',
+      idPersonal: idPersonal,
       nombre: nombreCompleto,
-      rol: String(admin.rol || '').toUpperCase()  // expuesto para que callers
-                                                   // puedan validar admin vs master
+      rol: rol   // expuesto para que callers validen admin vs master
     }
   };
 }
@@ -287,115 +264,36 @@ function verificarClaveAdmin(params) {
 // Acceso: cualquier MASTER/ADMIN activo (autentica por su pin4)
 // ────────────────────────────────────────────────────────────
 function getClaveAdminGlobal(params) {
-  _garantizarClaveGlobal();
-  // Autenticación: requiere pinAdmin (4 dígitos del solicitante)
+  // [CERO-GAS · SQL 432] PROXY puro a Supabase mos.get_clave_admin_global. Antes leía el
+  // PIN plano del Sheet (ADMIN_GLOBAL_PIN) → tras la rotación pg_cron quedaba STALE y servía
+  // un PIN incorrecto. Ahora delega a la fuente única de verdad (misma que verifica el bcrypt).
+  // FAIL-CLOSED: sin Supabase no devuelve PIN.
   var pinSol = String((params && params.pinAdmin) || '').trim();
-  if (!pinSol) {
-    return { ok: false, error: 'Requiere pinAdmin (PIN del solicitante)' };
+  if (!pinSol) return { ok: false, error: 'Requiere pinAdmin (PIN del solicitante)' };
+  try {
+    var r = _sbRpc('mos', 'get_clave_admin_global', { p: { pinAdmin: pinSol } });
+    if (!r || !r.ok || !r.data) return { ok: false, error: (r && r.error) || 'No disponible (sin caída a GAS)' };
+    var d = r.data;                                  // { ok, data:{autorizado, pin, dias...} } ó jsonb directo
+    var data = (d.data && typeof d.data === 'object') ? d.data : d;
+    if (data.ok === false) return { ok: false, error: data.error || 'No autorizado' };
+    return { ok: true, data: data };
+  } catch (e) {
+    return { ok: false, error: 'No disponible (sin caída a GAS): ' + (e && e.message || e) };
   }
-  var admin = _buscarAdminPorPin(pinSol);
-  if (!admin) {
-    return { ok: true, data: { autorizado: false, error: 'PIN no reconocido' } };
-  }
-
-  var pin = String(_leerConfigMos('ADMIN_GLOBAL_PIN') || '').padStart(4, '0');
-  var fechaUlt = _leerConfigMos('ADMIN_GLOBAL_PIN_FECHA');
-  var dias = _diasDesde(fechaUlt);
-  var diasParaRotar = Math.max(0, ROTACION_DIAS - dias);
-  var fechaProxima = new Date(Date.now() + diasParaRotar * 86400000).toISOString();
-
-  return {
-    ok: true,
-    data: {
-      autorizado: true,
-      pin: pin,
-      fechaUltimaRotacion: fechaUlt,
-      fechaProximaRotacion: fechaProxima,
-      diasDesdeRotacion: dias,
-      diasParaProximaRotacion: diasParaRotar,
-      vencida: dias > ROTACION_DIAS,
-      consultadoPor: admin.nombre
-    }
-  };
 }
 
 // ────────────────────────────────────────────────────────────
 // ROTAR CLAVE ADMIN GLOBAL — manual o auto (trigger)
 // ────────────────────────────────────────────────────────────
 function rotarClaveAdminGlobal(params) {
-  _garantizarClaveGlobal();
-  var manual = params && params.manual;
-  var consultadoPor = '';
-
-  if (manual) {
-    var pinSol = String((params && params.pinAdmin) || '').trim();
-    var admin = _buscarAdminPorPin(pinSol);
-    if (!admin) {
-      return { ok: true, data: { autorizado: false, error: 'PIN no reconocido' } };
-    }
-    consultadoPor = admin.nombre;
-  } else {
-    consultadoPor = 'AUTO_TRIGGER';
-  }
-
-  var lock = LockService.getScriptLock();
-  try { lock.tryLock(15000); } catch(e) {}
-  try {
-    var nuevoPin = _generar4Digitos();
-    // Asegurar que el nuevo es distinto al actual
-    var actual = String(_leerConfigMos('ADMIN_GLOBAL_PIN') || '');
-    var seguridad = 0;
-    while (nuevoPin === actual && seguridad < 10) {
-      nuevoPin = _generar4Digitos();
-      seguridad++;
-    }
-    _escribirConfigMos('ADMIN_GLOBAL_PIN', nuevoPin);
-    _escribirConfigMos('ADMIN_GLOBAL_PIN_FECHA', new Date().toISOString());
-
-    // Auditar la rotación
-    try {
-      var sheet = _garantizarHojaAuditoria();
-      sheet.appendRow([
-        _generateId('AUD'),
-        new Date(),
-        'ROTACION_PIN_GLOBAL',
-        '',
-        '',
-        consultadoPor,
-        'MOS',
-        '',
-        manual ? 'Rotación manual' : 'Rotación automática (>30 días)'
-      ]);
-    } catch(e) {}
-
-    // [v2.43.200 FIX] Notificar la rotación para que admins/master NO queden
-    // bloqueados sin saber el nuevo PIN global (antes rotaba en silencio → toda
-    // clave de 8 dígitos fallaba "Clave incorrecta" hasta que alguien lo
-    // consultaba en el panel). NO incluimos el PIN en el push (sería visible en
-    // la pantalla de bloqueo): se consulta autenticado en MOS → panel admin.
-    try {
-      if (typeof _enviarPushTodos === 'function') {
-        _enviarPushTodos(
-          '🔐 Clave admin global actualizada',
-          (manual ? 'Rotada manualmente' : 'Rotación automática de seguridad') +
-          ' · consulta el nuevo PIN global en MOS → panel admin (tu clave = PIN global + tu PIN personal)',
-          { idNotif: 'MOS_ADMIN_AUTH' }
-        );
-      }
-    } catch(eP) { /* push best-effort */ }
-
-    return {
-      ok: true,
-      data: {
-        autorizado: true,
-        pin: nuevoPin,
-        fechaUltimaRotacion: new Date().toISOString(),
-        fechaProximaRotacion: new Date(Date.now() + ROTACION_DIAS * 86400000).toISOString()
-      }
-    };
-  } finally {
-    try { lock.releaseLock(); } catch(e) {}
-  }
+  // [CERO-GAS · SQL 432] DEPRECADO. Rotar la clave global ahora es EXCLUSIVO de
+  // Supabase mos.rotar_clave_admin (escribe plano + bcrypt + fecha atómicamente y
+  // setea el GUC que el guard mos._guard_global_pin exige). El frontend ya rutea
+  // 'rotarClaveAdminGlobal' → RPC Supabase (api.js _MOS_ADMIN_RPC). Esta versión GAS
+  // escribía el plano SIN el hash → causaba el desync del incidente 2026-07-13.
+  // No escribe ni notifica; solo devuelve deprecación para no romper llamadores viejos.
+  return { ok: false, error: 'DEPRECADO_USAR_SUPABASE', data: { autorizado: false,
+    motivo: 'rotar_clave_admin (Supabase) es el único escritor autorizado — SQL 432' } };
 }
 
 // ────────────────────────────────────────────────────────────
@@ -451,13 +349,14 @@ function getAuthCatalogo() {
 // Configurar en Apps Script: triggers > nuevo > verificarRotacionAuto > diario
 // ────────────────────────────────────────────────────────────
 function verificarRotacionAuto() {
-  _garantizarClaveGlobal();
-  var fechaUlt = _leerConfigMos('ADMIN_GLOBAL_PIN_FECHA');
-  var dias = _diasDesde(fechaUlt);
-  if (dias >= ROTACION_DIAS) {
-    rotarClaveAdminGlobal({ manual: false });
-    Logger.log('Clave admin global rotada automáticamente (días desde rotación: ' + dias + ')');
-  } else {
-    Logger.log('Rotación auto: aún no toca (' + dias + '/' + ROTACION_DIAS + ' días)');
-  }
+  // [CERO-GAS · SQL 432] DEPRECADO. La rotación automática de la clave admin global
+  // ahora vive 100% en Supabase (pg_cron job 'mos-rotacion-clave-global' →
+  // mos.rotar_clave_admin_si_vence, que re-hashea las 3 llaves atómicamente).
+  // Esta función GAS escribía SOLO el texto plano + fecha (NUNCA el hash) → desincronizaba
+  // el verificador y dejaba el PIN viejo válido para siempre (incidente 2026-07-13).
+  // Se neutraliza. Un guard a nivel tabla (mos._guard_global_pin) ya ignora en silencio
+  // cualquier escritura GAS a ADMIN_GLOBAL_PIN*, pero mejor no dispararla.
+  // ACCIÓN PENDIENTE: borrar el time-trigger de Apps Script que apunta a esta función.
+  Logger.log('verificarRotacionAuto DEPRECADO — rotación en pg_cron (SQL 432). No-op.');
+  return { ok: true, data: { deprecado: true, motivo: 'rotacion en pg_cron SQL 432' } };
 }

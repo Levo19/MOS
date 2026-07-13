@@ -1607,7 +1607,8 @@ const API = (() => {
     if (action === 'meEditarFormaPago') {
       const out = await _sbRpcMEWrite('editar_forma_pago', { p: {
         idVenta: String(p.idVenta || ''), formaPagoNueva: p.formaPagoNueva, motivo: p.motivo,
-        usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
+        usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null,
+        claveAdmin: p.claveAdmin || ''
       } });
       return _desempacarME(out);
     }
@@ -1619,14 +1620,16 @@ const API = (() => {
         clienteNombre: p.clienteNombre != null ? p.clienteNombre : (p.clienteNom != null ? p.clienteNom : ''),
         clienteDireccion: p.clienteDireccion != null ? p.clienteDireccion : (p.direccion || ''),
         tipoDocCliente: p.tipoDocCliente != null ? String(p.tipoDocCliente) : '',   // C.E.=4 / Pasaporte=7 (explícito)
-        motivo: p.motivo || '', usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
+        motivo: p.motivo || '', usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null,
+        claveAdmin: p.claveAdmin || ''
       } });
       return _desempacarME(out);
     }
     if (action === 'anularTicketME') {
       const out = await _sbRpcMEWrite('anular_venta', { p: {
         idVenta: String(p.idVenta || ''), motivo: p.motivo || '',
-        usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
+        usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null,
+        claveAdmin: p.claveAdmin || ''
       } });
       return _desempacarME(out);
     }
@@ -3555,7 +3558,7 @@ const API = (() => {
             const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/emitir-cpe`, {
               method: 'POST',
               headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ operacion: 'baja', idVenta: p.idVenta, motivo: p.motivo })
+              body: JSON.stringify({ operacion: 'baja', idVenta: p.idVenta, motivo: p.motivo, claveAdmin: p.claveAdmin || '' })
             }, 20000);
             const j = await res.json().catch(() => null);
             if (!j || j.status !== 'success') throw new Error((j && (j.error || j.mensaje)) || 'Error baja CPE');
@@ -3563,8 +3566,8 @@ const API = (() => {
           }
           const rpc  = action === 'cambiarMetodoME' ? 'cobrar_venta_directo' : 'creditar_venta_directo';
           const args = action === 'cambiarMetodoME'
-            ? { idVenta: p.idVenta, metodo: p.metodo, usuario: 'MOS-admin' }
-            : { idVenta: p.idVenta, obs: p.motivo || '', usuario: 'MOS-admin' };
+            ? { idVenta: p.idVenta, metodo: p.metodo, usuario: 'MOS-admin', claveAdmin: p.claveAdmin || '' }
+            : { idVenta: p.idVenta, obs: p.motivo || '', usuario: 'MOS-admin', claveAdmin: p.claveAdmin || '' };
           const r = await _sbRpcMOS(rpc, { p: args }, 'me');
           if (r == null) throw new Error('Sin conexión con el servidor');
           if (r.ok === false) throw new Error(r.error || 'Error del servidor');

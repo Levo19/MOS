@@ -123,6 +123,19 @@ Deno.serve(async (req: Request) => {
       if (!idVenta) return json({ status: 'error', error: 'idVenta requerido' }, 400);
       if (motivo.length < 3) return json({ status: 'error', error: 'motivo es obligatorio para SUNAT' }, 400);
       const sbUrl = Deno.env.get('SUPABASE_URL'); const sbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      // [audit 2026-07-13 · cero-caída] BAJA_CPE es MASTER-only e irreversible ante SUNAT: se re-verifica
+      // la clave admin server-side (mismo bcrypt sincronizado + cascada de nivel). Reusa el helper SQL
+      // mos.reverificar_clave_admin (flag MOS_STRICT_ADMIN_REVERIFY gobierna la transición). FAIL-CLOSED.
+      {
+        const rvResp = await fetch(`${sbUrl}/rest/v1/rpc/reverificar_clave_admin`, {
+          method: 'POST',
+          headers: { 'apikey': sbKey!, 'Authorization': 'Bearer ' + sbKey!, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_clave: String(inp.claveAdmin || ''), p_accion: 'BAJA_CPE', p_ref: idVenta, p_app: String(appClaim || 'MOS') }),
+        });
+        const rvj = rvResp.ok ? await rvResp.json().catch(() => ({ error: 'reverify parse' })) : { error: 'reverify HTTP ' + rvResp.status };
+        // null = autorizado (o transición con clave ausente). No-null = rechazo.
+        if (rvj !== null && rvj) return json({ status: 'error', autorizado: false, error: String(rvj.error || 'Clave admin (MASTER) requerida para baja CPE') }, 403);
+      }
       const vr = await fetch(`${sbUrl}/rest/v1/ventas?select=tipo_doc,nf_estado,correlativo&id_venta=eq.${encodeURIComponent(idVenta)}&limit=1`, {
         headers: { 'apikey': sbKey!, 'Authorization': 'Bearer ' + sbKey!, 'Accept-Profile': 'me' } });
       const vrows = await vr.json().catch(() => []);

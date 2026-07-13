@@ -23692,12 +23692,17 @@ const MOS = (() => {
       if (ev?.target) ev.target.checked = !checked;
       return;
     }
+    // [cero-caída · SQL 434/435] clave admin re-verificada server-side (bloquear_vendedor_me)
+    const auth = await pedirAuth({ accion: 'BLOQUEAR_VENDEDOR', refDocumento: nombre,
+      contexto: (checked ? 'Activar' : 'Bloquear') + ' vendedor ' + nombre });
+    if (!auth) { if (ev?.target) ev.target.checked = !checked; return; }
     try {
       await API.post('bloquearVendedorME', {
         nombre: nombre,
         appOrigen: 'mosExpress',
         bloquear: !checked,
-        bloqueadoPor: S.session?.nombre || 'admin'
+        bloqueadoPor: S.session?.nombre || 'admin',
+        claveAdmin: auth.clave
       });
       toast(`${nombre} ${checked ? 'activado' : 'bloqueado'} ✓`, 'ok');
       // Refrescar lista de bloqueos
@@ -28122,9 +28127,12 @@ const MOS = (() => {
     if (!nueva) { toast('Selecciona la nueva forma de pago', 'error'); return; }
     const motivo = ($('tkCambiarFPMotivo').value || '').trim();
     if (motivo.length < 3) { toast('Motivo obligatorio (mín. 3 caracteres)', 'error'); return; }
+    const auth = await pedirAuth({ accion: 'EDITAR_CLIENTE_VENTA', refDocumento: t.correlativo || t.idVenta,
+      contexto: 'Cambiar forma de pago a ' + nueva });
+    if (!auth) return;
     try {
       await API.post('meEditarFormaPago', {
-        idVenta: t.idVenta, formaPagoNueva: nueva, motivo
+        idVenta: t.idVenta, formaPagoNueva: nueva, motivo, claveAdmin: auth.clave
       });
       toast('✓ Forma de pago actualizada', 'success');
       closeModal('modalTkCambiarFP');
@@ -28148,8 +28156,11 @@ const MOS = (() => {
     const t = _tkAcc.ticket;
     const obs = ($('tkAprobarCredObs').value || '').trim();
     if (obs.length < 3) { toast('Motivo obligatorio (mín. 3 caracteres)', 'error'); return; }
+    const auth = await pedirAuth({ accion: 'CREDITAR_VENTA', refDocumento: t.correlativo || t.idVenta,
+      contexto: 'Aprobar como crédito ' + (t.correlativo || t.idVenta) });
+    if (!auth) return;
     try {
-      await API.post('meAprobarComoCredito', { idVenta: t.idVenta, motivo: obs });
+      await API.post('meAprobarComoCredito', { idVenta: t.idVenta, motivo: obs, claveAdmin: auth.clave });
       toast('✓ Aprobado como crédito', 'success');
       closeModal('modalTkAprobarCred');
       await _cajasRefreshSilencioso?.();
@@ -28257,12 +28268,15 @@ const MOS = (() => {
 
     if (!await _modalConfirm(`¿Emitir ${tipo} en SUNAT para ${nom}?\n\nLa NV original quedará anulada.`, { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' })) return;
 
+    const auth = await pedirAuth({ accion: 'CONVERTIR_NV_A_CPE', refDocumento: t.correlativo || t.idVenta,
+      contexto: 'Convertir NV → ' + tipo + ' ' + (t.correlativo || t.idVenta) });
+    if (!auth) return;
     const btn = $('tkConvBtnOK');
     if (btn) { btn.disabled = true; btn.textContent = 'Emitiendo...'; }
     try {
       const r = await API.post('meConvertirNVaCPE', {
         idVenta: t.idVenta, tipoDocNuevo: tipo, serie: ser,
-        clienteDoc: doc, clienteNom: nom, direccion: dir
+        clienteDoc: doc, clienteNom: nom, direccion: dir, claveAdmin: auth.clave
       });
       toast('✓ CPE emitido', 'success');
       closeModal('modalTkConvertirCPE');
@@ -28306,10 +28320,14 @@ const MOS = (() => {
     const motivo = _tkAcc.baja.motivoFinal || _tkAcc.baja.motivo || ($('tkBajaMotivoTxt').value || '').trim();
     if (!motivo || motivo.length < 3) { toast('Motivo obligatorio', 'error'); return; }
     if (!await _modalConfirm(`¿Comunicar baja del ${t.tipoDoc} ${t.correlativo} a SUNAT?\n\nEsta acción es irreversible.`, { danger: true, titulo: 'Baja CPE SUNAT', okText: 'Enviar baja' })) return;
+    // [cero-caída] BAJA_CPE es MASTER-only — re-verificada server-side en el Edge emitir-cpe
+    const auth = await pedirAuth({ accion: 'BAJA_CPE', refDocumento: t.correlativo || t.idVenta,
+      contexto: 'Baja CPE SUNAT ' + (t.tipoDoc || '') + ' ' + (t.correlativo || t.idVenta) });
+    if (!auth) return;
     const btn = $('tkBajaBtnOK');
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
     try {
-      const r = await API.post('meBajaCPE', { idVenta: t.idVenta, motivo });
+      const r = await API.post('meBajaCPE', { idVenta: t.idVenta, motivo, claveAdmin: auth.clave });
       toast('✓ Baja enviada · ' + (r?.nuevoEstado || 'aceptada'), 'success');
       closeModal('modalTkBajaCPE');
       await _cajasRefreshSilencioso?.();
@@ -28483,6 +28501,9 @@ const MOS = (() => {
   async function _tkEditarClienteOpen(t) {
     const r = await _modalEditarCliente(t);
     if (!r) return;
+    const auth = await pedirAuth({ accion: 'EDITAR_CLIENTE_VENTA', refDocumento: t.correlativo || t.idVenta,
+      contexto: 'Editar cliente del comprobante ' + (t.correlativo || t.idVenta) });
+    if (!auth) return;
     try {
       await API.post('meEditarCliente', {
         idVenta: t.idVenta,
@@ -28490,7 +28511,8 @@ const MOS = (() => {
         clienteNom: r.nombre,
         direccion: r.direccion,
         motivo: r.motivo,
-        tipoDocCliente: r.tipoDoc   // explícito → soporta C.E. (4) / Pasaporte (7)
+        tipoDocCliente: r.tipoDoc,   // explícito → soporta C.E. (4) / Pasaporte (7)
+        claveAdmin: auth.clave
       });
       toast('✓ Cliente actualizado', 'success');
       await _cajasRefreshSilencioso?.();
@@ -28505,8 +28527,11 @@ const MOS = (() => {
   // ──────────────────────────────────────────────────────────
   async function _tkAnularSimple(t) {
     if (!await _modalConfirm(`¿Anular ${t.tipoDoc || 'ticket'} ${t.correlativo || t.idVenta}?\n\nMonto: S/ ${t.total.toFixed(2)}\n\nSi tiene CPE emitido, también debes solicitar la baja en SUNAT.`, { danger: true, titulo: 'Anular ticket', okText: 'Anular' })) return;
+    const auth = await pedirAuth({ accion: 'ANULACION', refDocumento: t.correlativo || t.idVenta,
+      contexto: 'Anular ticket ' + (t.correlativo || t.idVenta) });
+    if (!auth) return;
     try {
-      await API.post('anularTicketME', { idVenta: t.idVenta });
+      await API.post('anularTicketME', { idVenta: t.idVenta, claveAdmin: auth.clave });
       toast('✓ Ticket anulado', 'success');
       await _cajasRefreshSilencioso?.();
       if (S.view === 'finanzas') finCargar?.();
@@ -29427,10 +29452,12 @@ const MOS = (() => {
   async function confirmarAnularTicket(idVenta, label, desdeModal) {
     if (!idVenta) { toast('ID de ticket inválido', 'error'); return; }
     if (!await _modalConfirm(`¿Anular el ticket ${label}?\n\nEsta acción no se puede deshacer.`, { danger: true, titulo: 'Anular ticket', okText: 'Anular' })) return;
+    const auth = await pedirAuth({ accion: 'ANULACION', refDocumento: label || idVenta, contexto: 'Anular ticket ' + (label || idVenta) });
+    if (!auth) return;
     if (desdeModal) cerrarModalMetodo();
     const id = String(idVenta).trim();
     try {
-      await API.post('anularTicketME', { idVenta: id });
+      await API.post('anularTicketME', { idVenta: id, claveAdmin: auth.clave });
       toast('Ticket anulado', 'ok');
       // Actualizar local inmediatamente
       if (S._todosTickets) {
@@ -29580,9 +29607,11 @@ const MOS = (() => {
   async function aplicarCambioMetodo(metodo) {
     if (!_modalTicketId) return;
     const id = _modalTicketId;
+    const auth = await pedirAuth({ accion: 'COBRAR_VENTA', refDocumento: id, contexto: 'Cambiar método de pago a ' + metodo });
+    if (!auth) return;
     cerrarModalMetodo();
     try {
-      await API.post('cambiarMetodoME', { idVenta: id, metodo });
+      await API.post('cambiarMetodoME', { idVenta: id, metodo, claveAdmin: auth.clave });
       toast('Método actualizado: ' + metodo, 'ok');
       if (S._todosTickets) {
         S._todosTickets.forEach(t => {
