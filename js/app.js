@@ -2690,14 +2690,12 @@ const MOS = (() => {
       setTimeout(() => { try { r.remove(); } catch(_){} }, 700);
     } catch(_){}
   }
-  // Click en el header del card del catálogo: ripple + sonido + expand
+  // Click en el header del card del catálogo: solo ripple + sonido.
+  // [RONDA 9] las presentaciones y derivados ya se ven SIEMPRE como subcarpetas
+  // (dibujo §05) — el click ya no expande/colapsa nada.
   function _catCardClick(ev, idProducto) {
     _catRipple(ev);
-    // Decidir tono según vaya a expandir o colapsar
-    const wrap = $('pres-' + CSS.escape(idProducto));
-    const yaAbierto = wrap && wrap.classList.contains('pres-open');
-    _catSfx(yaAbierto ? 'collapse' : 'expand');
-    if (typeof togglePresentaciones === 'function') togglePresentaciones(idProducto);
+    _catSfx('expand');
   }
 
   // ── Código de barra digital — overlay desde los chips del catálogo ──
@@ -2964,7 +2962,7 @@ const MOS = (() => {
       // Badges
       const badgeCat  = base.idCategoria ? `<span class="badge badge-gray text-xs">${base.idCategoria}</span>` : '';
       const badgeEnv  = base.esEnvasable == '1' ? `<span class="badge badge-yellow text-xs">⚗️ Envasable</span>` : '';
-      const badgePres = pres.length ? `<span class="badge badge-blue text-xs cursor-pointer" onclick="event.stopPropagation();MOS.togglePresentaciones('${base.idProducto}')">📦 ${pres.length} presentacion${pres.length !== 1 ? 'es' : ''}</span>` : '';
+      const badgePres = pres.length ? `<span class="badge badge-blue text-xs">🧱 ${pres.length} presentacion${pres.length !== 1 ? 'es' : ''}</span>` : '';
       const badgeInac = activo ? '' : `<span class="badge badge-gray text-xs">Inactivo</span>`;
       // [RONDA 5 · gap] badge de derivados en la fila de badges (como el de presentaciones)
       const nDeriv = (g.__derivados || []).length;
@@ -3042,10 +3040,12 @@ const MOS = (() => {
 
       // Presentaciones con expand animado
       const presHtml = pres.length ? `
-        <div class="pres-wrap" id="pres-${eid}">
+        <div class="pres-wrap open" id="pres-${eid}">
           <div class="pres-inner">
-            <div class="px-4 pb-4 pt-3 border-t border-slate-800/80 space-y-2">
-              <div class="text-xs text-slate-500 font-medium mb-2">📦 Presentaciones (${pres.length})</div>
+            <!-- [RONDA 9] presentaciones SIEMPRE visibles como subcarpetas (como los derivados) -->
+            <div class="px-4 pb-4 pt-3 space-y-2" style="border-top:1px solid rgba(124,179,240,.14)">
+              <div class="text-xs font-medium mb-2" style="color:#7cb3f0">🧱 Presentaciones (${pres.length})</div>
+              <div class="space-y-2" style="margin-left:10px;padding-left:12px;border-left:2px dashed rgba(124,179,240,.25)">
               ${presInfo.map(({ d, factor, precioActual, alerts }) => {
                 const hlD       = _highlight(d.descripcion || d.idProducto, words);
                 const hasAlert  = alerts.length > 0;
@@ -3057,8 +3057,8 @@ const MOS = (() => {
                 const presUnidad = _normalizarUnidad(d.unidad || d.Unidad_Medida);
                 const presUniIcon = presUnidad === 'KGM' ? '⚖️' : '';
                 const presUniBg = presUnidad === 'KGM'
-                  ? 'background:rgba(245,158,11,.15);color:#fbbf24'
-                  : 'background:rgba(167,139,250,.12);color:#a78bfa';
+                  ? 'background:rgba(52,211,153,.14);color:#34d399'
+                  : 'background:rgba(124,179,240,.13);color:#7cb3f0';
                 return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}${presActivo ? '' : ' pres-inactive'}" data-pres-id="${d.idProducto}">
                   <div class="min-w-0 flex-1">
                     <!-- [catálogo v4] nombre tocable = editar; el precio del satélite vive en su modal editar -->
@@ -3083,6 +3083,7 @@ const MOS = (() => {
                   </div>
                 </div>`;
               }).join('')}
+              </div>
             </div>
           </div>
         </div>` : '';
