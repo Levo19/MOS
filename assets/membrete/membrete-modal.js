@@ -197,7 +197,15 @@
       '.ms-emoji{font-size:36px;line-height:1}',
       '.ms-h1{font-size:14px;font-weight:900;color:#fbbf24;letter-spacing:.8px}',
       '.ms-sub{font-size:11px;color:#94a3b8;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '.ms-body{padding:20px 22px;display:flex;flex-direction:column;gap:14px}',
+      '.ms-body{padding:20px 22px;display:flex;flex-direction:column;gap:0;overflow-y:auto}',
+      // [RONDA 7] preview del membrete RESPONSIVE (PC/tablet/mobile). El render es 600×300;
+      // el box mantiene 2:1 y el contenido se escala para caber ENTERO en cualquier ancho.
+      '.ms-prev-box{width:300px;height:150px;max-width:100%;overflow:hidden;border-radius:10px;border:1px solid #1e293b;background:#0f172a;margin:10px auto 2px;position:relative}',
+      '.ms-prev-inner{position:absolute;top:0;left:0;width:600px;height:300px;transform:scale(.5);transform-origin:top left}',
+      '@media (max-width:520px){.ms-prev-box{width:270px;height:135px}.ms-prev-inner{transform:scale(.45)}}',
+      '@media (max-width:360px){.ms-prev-box{width:240px;height:120px}.ms-prev-inner{transform:scale(.40)}}',
+      '.ms-opt3{transition:transform .15s ease}',
+      '.ms-opt3:hover{transform:translateY(-1px)}',
       '.ms-cola-body{gap:8px}',
       '.ms-scroll{scrollbar-width:thin;scrollbar-color:rgba(251,191,36,.45) transparent}',
       '.ms-scroll::-webkit-scrollbar{width:8px;height:8px}',
@@ -1366,28 +1374,28 @@
     var svgAndamio = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#7cb3f0" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V7l4-4h10l4 4v14"/><path d="M3 11h18M8 11v10M16 11v10"/></svg>';
     var svgRollo   = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#34d399" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="12" r="4.2"/><circle cx="7" cy="12" r="1.1" fill="#34d399" stroke="none"/><path d="M7 7.8h9.5a1.5 1.5 0 0 1 1.5 1.5v5.4a1.5 1.5 0 0 1-1.5 1.5H7"/><path d="M18 12.4l3-1.6v5l-3-1.6" opacity=".65"/></svg>';
 
-    // helper: una FILA-opción con ícono + textos + preview escalado + acción
+    // helper: una opción VERTICAL — cabecera (ícono + textos + acción) y debajo el
+    // PREVIEW completo (los renders son 600×300; scale .5 → 300×150, cabe entero).
     function _opcionHtml(cfg) {
-      // cfg: {icon, tint, titulo, badge, sub, preview, scaleH, accion, extra, hero}
+      // cfg: {icon, titulo, badge, sub, preview, accion, hero}
       var tileBg = cfg.hero
         ? 'background:linear-gradient(150deg,rgba(52,211,153,.22),rgba(14,165,233,.12));border:1px solid rgba(52,211,153,.4)'
         : 'background:linear-gradient(150deg,#1a2740,#0e1626);border:1px solid #28344c';
       var prevBox = cfg.preview
-        ? '<div style="flex:none;width:170px;height:' + (cfg.scaleH || 94) + 'px;border-radius:10px;overflow:hidden;border:1px solid #1e293b;background:#0f172a;position:relative">'
-            + '<div style="transform:scale(.42);transform-origin:top left;position:absolute;top:6px;left:8px">' + cfg.preview + '</div>'
-          + '</div>'
+        ? '<div class="ms-prev-box"><div class="ms-prev-inner">' + cfg.preview + '</div></div>'
         : '';
       return ''
-        + '<div class="ms-opt3' + (cfg.hero ? ' popt-hero' : '') + '" style="display:flex;align-items:center;gap:12px;border-radius:14px;padding:12px 14px;margin-bottom:10px;background:#0e1626;' + (cfg.hero ? '' : 'border:1px solid #1e293b;') + 'position:relative;overflow:hidden">'
+        + '<div class="ms-opt3' + (cfg.hero ? ' popt-hero' : '') + '" style="border-radius:14px;padding:13px 14px;margin-bottom:12px;background:#0e1626;' + (cfg.hero ? '' : 'border:1px solid #1e293b;') + 'position:relative;overflow:hidden">'
         +   (cfg.hero ? '<span class="popt-sheen"></span>' : '')
-        +   '<span style="width:44px;height:44px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;' + tileBg + '">' + cfg.icon + '</span>'
-        +   '<span style="flex:1;min-width:0;text-align:left">'
-        +     '<span style="display:block;font-size:13.5px;font-weight:800;color:#e2e8f0">' + cfg.titulo + (cfg.badge || '') + '</span>'
-        +     '<span style="display:block;font-size:10.5px;color:#94a3b8;margin-top:1px">' + cfg.sub + '</span>'
-        +     (cfg.extra || '')
-        +   '</span>'
+        +   '<div style="display:flex;align-items:center;gap:12px">'
+        +     '<span style="width:44px;height:44px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;' + tileBg + '">' + cfg.icon + '</span>'
+        +     '<span style="flex:1;min-width:0;text-align:left">'
+        +       '<span style="display:block;font-size:13.5px;font-weight:800;color:#e2e8f0">' + cfg.titulo + (cfg.badge || '') + '</span>'
+        +       '<span style="display:block;font-size:10.5px;color:#94a3b8;margin-top:1px">' + cfg.sub + '</span>'
+        +     '</span>'
+        +     '<span style="flex:none;display:flex;align-items:center;gap:8px">' + cfg.accion + '</span>'
+        +   '</div>'
         +   prevBox
-        +   cfg.accion
         + '</div>';
     }
 
