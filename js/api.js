@@ -2456,6 +2456,20 @@ const API = (() => {
       if (r == null) return null;
       return r;   // {ok, disponible, conflicto?}
     }
+    // [v5 §11 · Paso 1] costos de compra → catálogo canónico + historial (SQL 431). PURA.
+    if (action === 'aplicarCostosCompra') {
+      const r = await _sbRpcMOS('aplicar_costos_compra', { p: {
+        idGuia: p.idGuia, usuario: _mosUsuario(p), items: p.items
+      } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:{items:[{ok,idCanonico,skuBase,costoAnterior,costoNuevo}...]}}
+    }
+    // [v5 §10 · curvas] series precio/costo del producto (historial_cambios). PURA.
+    if (action === 'historialPrecioCosto') {
+      const r = await _sbRpcMOS('historial_precio_costo', { p: { idProducto: p.idProducto } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:{precioActual, costoActual, precios[], costos[]}}
+    }
     // Analítica FUSIONADA del grupo canónico (almacén WH por guías + ventas ME por zona,
     // kg-equivalentes; SQL 425). Directa PURA — sin GAS ni fallback.
     if (action === 'getAnaliticaGrupo') {
@@ -2690,7 +2704,9 @@ const API = (() => {
     wh_cancelarLoteAdhesivo:     () => true,   // Edge print-adhesivo mode=cancelar
     wh_getRotacionSemanal:       () => true,   // mos.wh_rotacion_semanal (380; v4: cache SQL 424)
     codigoBarraDisponible:       () => true,   // mos.codigo_barra_disponible (426) · directa PURA sin GAS
-    getAnaliticaGrupo:           () => true,   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
+    getAnaliticaGrupo:           () => true,   // mos.analitica_grupo (425/430)
+    aplicarCostosCompra:         () => true,   // mos.aplicar_costos_compra (431) · v5 Paso1 · PURA
+    historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
     wh_auditarStockGlobal:       () => true,   // mos.wh_auditar_cuadre (381)
     wh_getAlertasStock:          () => true,   // mos.wh_get_alertas_stock (381)
     wh_reconciliarStockProducto: () => true,   // ⚠️stock · mos.wh_reconciliar_stock_producto (381)
@@ -2761,7 +2777,7 @@ const API = (() => {
   const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1 };
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, historialPrecioCosto: 1 };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe
