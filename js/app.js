@@ -5219,14 +5219,17 @@ const MOS = (() => {
         <div style="font-size:9px;color:#475569">última barra = semana en curso (parcial, no cuenta en promedios)</div>`;
     };
 
+    // [RONDA 7] nombre COMPLETO en su propia línea (sin truncar) + barra y valor debajo
     const formas = (arr) => !arr?.length ? '<div style="font-size:11px;color:#475569">sin movimiento en la ventana</div>' :
-      `<div style="display:grid;gap:5px">` + arr.map(f => {
+      `<div style="display:grid;gap:8px">` + arr.map(f => {
         const max = Math.max(...arr.map(x => parseFloat(x.cant) || 0), 0.001);
         const ic = f.tipo === 'granel' ? '⚗️' : f.tipo === 'derivado' ? '🥄' : f.tipo?.startsWith('equiv') ? '🏷️' : '🧱';
-        return `<div style="display:flex;align-items:center;gap:8px;font-size:11px">
-          <span style="width:150px;flex:none;color:#93a4c2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ic} ${_escapeHtml(f.nombre || f.cb)}</span>
-          <span style="flex:1;height:13px;border-radius:4px;background:#0e1626;overflow:hidden"><i style="display:block;height:100%;width:${Math.round((parseFloat(f.cant)||0)/max*100)}%;background:linear-gradient(90deg,#059669,#34d399)"></i></span>
-          <span style="width:86px;text-align:right;font-family:monospace;font-size:10px;color:#e2e8f0">${(parseFloat(f.cant)||0).toFixed(1)} ${um}</span></div>`;
+        return `<div>
+          <div style="font-size:11px;color:#cbd5e1;margin-bottom:2px;line-height:1.25">${ic} ${_escapeHtml(f.nombre || f.cb)}</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="flex:1;height:13px;border-radius:4px;background:#0e1626;overflow:hidden"><i style="display:block;height:100%;width:${Math.round((parseFloat(f.cant)||0)/max*100)}%;background:linear-gradient(90deg,#059669,#34d399)"></i></span>
+            <span style="width:78px;text-align:right;font-family:monospace;font-size:10px;color:#e2e8f0;flex:none">${(parseFloat(f.cant)||0).toFixed(1)} ${um}</span>
+          </div></div>`;
       }).join('') + `</div>`;
 
     // ── cuerpo por pestaña ──
@@ -5312,19 +5315,30 @@ const MOS = (() => {
                border:1px solid ${kAct === key ? 'rgba(52,211,153,.45)' : '#28344c'};
                background:${kAct === key ? 'rgba(52,211,153,.14)' : '#0e1626'};
                color:${kAct === key ? '#34d399' : '#93a4c2'}">${txt}</button>`;
+    // [RONDA 7] chip de derivado = su GRAMAJE (lo que lo distingue), sin truncar el resto
+    const _tallaDeriv = (nom) => {
+      const m = String(nom || '').toUpperCase().match(/(\d+(?:[.,]\d+)?\s*(?:GR|GRS|G|KG|KGS|ML|LT|L|KILO|KILOS)S?)\b/);
+      return m ? m[1].replace(/\s+/g, '') : String(nom || '').replace(/GRANEL/ig, '').trim();
+    };
     const chipsAlcance = [chip('ALL', '🌿 Grupo completo'), chip('CANON', 'Solo canónico')]
-      .concat(memFull.filter(m => m.tipo === 'derivado').slice(0, 4).map(m =>
-        chip(m.cb, '🥄 ' + _escapeHtml(String(m.nombre || m.cb).replace(/AJONJOLI |GRANEL /gi, '').slice(0, 14)))))
+      .concat(memFull.filter(m => m.tipo === 'derivado').slice(0, 6).map(m =>
+        chip(m.cb, '🥄 ' + _escapeHtml(_tallaDeriv(m.nombre || m.cb)))))
       .concat(memFull.some(m => /presentacion|pres_derivado/.test(m.tipo)) ? [chip('PACKS', '🧱 Packs')] : [])
       .join('');
 
+    // [RONDA 7] el NOMBRE del producto va completo en el header (antes solo decía "kg-equivalentes")
+    const _nomGrupo = _escapeHtml(g.descripcion || g.idCanonico || '');
     sec.innerHTML = `
       <div style="background:#0a1120;border:1px solid #28344c;border-radius:16px;overflow:hidden">
-        <div style="padding:11px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:15px">${um === 'kg' ? '⚗️' : '📦'}</span>
-          <b style="font-size:13px;color:#e2e8f0">${um}-equivalentes</b>
-          <span style="font-size:10px;color:#93a4c2">${(g.grupo || []).length} miembros</span>
-          <span style="margin-left:auto;font-size:10px;color:#64748b">8 semanas</span>
+        <div style="padding:11px 14px;border-bottom:1px solid #1e293b">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:15px;flex:none">${um === 'kg' ? '⚗️' : '📦'}</span>
+            <b style="font-size:13px;color:#e2e8f0;line-height:1.25">${_nomGrupo}</b>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:3px;padding-left:23px">
+            <span style="font-size:10px;color:#93a4c2">${um}-equivalentes · ${(g.grupo || []).length} miembros</span>
+            <span style="margin-left:auto;font-size:10px;color:#64748b">8 semanas</span>
+          </div>
         </div>
         <div style="display:flex;gap:5px;padding:9px 14px 0;flex-wrap:wrap">${chipsAlcance}</div>
         <div style="display:flex;gap:5px;padding:9px 14px 0;flex-wrap:wrap">
