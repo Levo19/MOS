@@ -1344,86 +1344,116 @@
       previewWhHtml = previewMeHtml;
     }
 
-    // Estilo del card de preview (wrapper + escala)
-    var cardCss = 'position:relative;background:#0f172a;border-radius:14px;padding:24px 14px 14px;border:1px solid #1e293b;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:14px';
-    var scaleWrapCss = 'transform:scale(.55);transform-origin:top center;width:600px;height:300px;margin-bottom:-135px';  // -135 compensa scale(.55)
-    var btnsCss = 'display:grid;grid-template-columns:1fr 1fr;gap:14px';
-
-    // [catálogo v4] 3ra opción SOLO DERIVADOS: adhesivo envasado (el de Almacén/Envasados,
-    // TSC 50×25) con stepper de cantidad — Edge print-adhesivo mode:'crear', cero-GAS,
-    // reserve-first (over-print imposible). Ícono: rollo de etiquetas despegándose.
+    // ═══ [RONDA 7 · dibujo §08] REDISEÑO: lista vertical, 3 íconos FAMILIA (góndola
+    // ámbar · andamio azul · rollo esmeralda), CADA opción con su PREVIEW 100% FIEL a
+    // lo que imprime (mismos renders del backend TSC), opción hero con borde degradado
+    // + sheen, stepper. El adhesivo envasado (3ra) SOLO para derivados. ═══
     var esDerivado = !!(String(producto.codigoProductoBase || producto.codigo_producto_base || '').trim());
-    var svgRollo = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#34d399" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="12" r="4.2"/><circle cx="7" cy="12" r="1.1" fill="#34d399" stroke="none"/><path d="M7 7.8h9.5a1.5 1.5 0 0 1 1.5 1.5v5.4a1.5 1.5 0 0 1-1.5 1.5H7"/><path d="M18 12.4l3-1.6v5l-3-1.6" opacity=".65"/></svg>';
-    var heroHtml = !esDerivado ? '' : ''
-      + '<div class="popt-hero" style="margin-top:14px;display:flex;align-items:center;gap:12px;border-radius:12px;padding:12px 14px;background:#0e1626">'
-      +   '<span class="popt-sheen"></span>'
-      +   '<span style="width:42px;height:42px;border-radius:11px;flex:none;display:flex;align-items:center;justify-content:center;background:linear-gradient(150deg,rgba(52,211,153,.22),rgba(14,165,233,.12));border:1px solid rgba(52,211,153,.4)">' + svgRollo + '</span>'
-      +   '<span style="flex:1;min-width:0;text-align:left">'
-      +     '<span style="display:block;font-size:13.5px;font-weight:800;color:#e2e8f0">Adhesivo envasado '
-      +       '<span style="font-size:9px;font-weight:800;color:#34d399;background:rgba(52,211,153,.15);border-radius:4px;padding:1px 5px;vertical-align:middle">SOLO DERIVADOS</span></span>'
-      +     '<span style="display:block;font-size:10.5px;color:#94a3b8">El de Almacén/Envasados (TSC 50×25)' + (parseFloat(producto.adhSugerido)>0 ? ' · sugerido: ~' + Math.round(producto.adhSugerido) + '/sem (su rotación)' : '') + '</span>'
-      +   '</span>'
-      +   '<span style="display:inline-flex;align-items:center;border:1px solid #28344c;border-radius:8px;overflow:hidden;flex:none">'
-      +     '<button onclick="MembreteSystem._adhQtyStep(-6)" style="padding:6px 11px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">−</button>'
-      // [RONDA 5 FIX auditoría] la IIFE estaba DENTRO del string (texto literal, no JS):
-      // default recuerda la última cantidad impresa de ESTE producto; 12 la primera vez
-      +     '<input id="msAdhQty" type="number" min="1" max="200" value="' + (function(){ try { return parseInt(localStorage.getItem('mos_adh_qty_' + (producto.codigoBarra || '')), 10) || Math.max(1, Math.round(parseFloat(producto.adhSugerido) || 0)) || 12; } catch(_) { return 12; } })() + '" style="width:52px;text-align:center;padding:6px 2px;font-size:14px;font-weight:800;background:#0e1626;color:#e2e8f0;border:none;-moz-appearance:textfield">'
-      +     '<button onclick="MembreteSystem._adhQtyStep(6)" style="padding:6px 11px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">+</button>'
-      +   '</span>'
-      +   '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;min-width:0;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimirEnvasado()">🖨 Imprimir</button>'
-      + '</div>';
+
+    // Preview del adhesivo ENVASADO (TSC 50×25, el real de Almacén/Envasados)
+    var envSvgId = 'msPrevEnvBc_' + Date.now() + '_e';
+    var previewEnvHtml = '';
+    var envDatos = null;
+    if (esDerivado && previewDisponible && AdhesivoPreview.procesar && AdhesivoPreview.renderHtml) {
+      try {
+        envDatos = AdhesivoPreview.procesar({ codigoBarra: item.codigoBarra, descripcion: item.descripcion });
+        if (envDatos) previewEnvHtml = AdhesivoPreview.renderHtml(envDatos, { svgId: envSvgId });
+      } catch(_) {}
+    }
+
+    // Íconos FAMILIA (trazo 1.9, cada uno con el color de su mundo — §08)
+    var svgGondola = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fbbf24" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6"/><path d="M4 10v10h16V10"/><path d="M9 20v-6h6v6"/></svg>';
+    var svgAndamio = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#7cb3f0" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V7l4-4h10l4 4v14"/><path d="M3 11h18M8 11v10M16 11v10"/></svg>';
+    var svgRollo   = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#34d399" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="12" r="4.2"/><circle cx="7" cy="12" r="1.1" fill="#34d399" stroke="none"/><path d="M7 7.8h9.5a1.5 1.5 0 0 1 1.5 1.5v5.4a1.5 1.5 0 0 1-1.5 1.5H7"/><path d="M18 12.4l3-1.6v5l-3-1.6" opacity=".65"/></svg>';
+
+    // helper: una FILA-opción con ícono + textos + preview escalado + acción
+    function _opcionHtml(cfg) {
+      // cfg: {icon, tint, titulo, badge, sub, preview, scaleH, accion, extra, hero}
+      var tileBg = cfg.hero
+        ? 'background:linear-gradient(150deg,rgba(52,211,153,.22),rgba(14,165,233,.12));border:1px solid rgba(52,211,153,.4)'
+        : 'background:linear-gradient(150deg,#1a2740,#0e1626);border:1px solid #28344c';
+      var prevBox = cfg.preview
+        ? '<div style="flex:none;width:170px;height:' + (cfg.scaleH || 94) + 'px;border-radius:10px;overflow:hidden;border:1px solid #1e293b;background:#0f172a;position:relative">'
+            + '<div style="transform:scale(.42);transform-origin:top left;position:absolute;top:6px;left:8px">' + cfg.preview + '</div>'
+          + '</div>'
+        : '';
+      return ''
+        + '<div class="ms-opt3' + (cfg.hero ? ' popt-hero' : '') + '" style="display:flex;align-items:center;gap:12px;border-radius:14px;padding:12px 14px;margin-bottom:10px;background:#0e1626;' + (cfg.hero ? '' : 'border:1px solid #1e293b;') + 'position:relative;overflow:hidden">'
+        +   (cfg.hero ? '<span class="popt-sheen"></span>' : '')
+        +   '<span style="width:44px;height:44px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;' + tileBg + '">' + cfg.icon + '</span>'
+        +   '<span style="flex:1;min-width:0;text-align:left">'
+        +     '<span style="display:block;font-size:13.5px;font-weight:800;color:#e2e8f0">' + cfg.titulo + (cfg.badge || '') + '</span>'
+        +     '<span style="display:block;font-size:10.5px;color:#94a3b8;margin-top:1px">' + cfg.sub + '</span>'
+        +     (cfg.extra || '')
+        +   '</span>'
+        +   prevBox
+        +   cfg.accion
+        + '</div>';
+    }
+
+    // ─── ME góndola ───
+    var optMe = _opcionHtml({
+      icon: svgGondola, titulo: 'Membrete góndola (ME)',
+      sub: 'El precio grande para la tienda' + (precio > 0 ? ' · S/ ' + precio.toFixed(2) : ''),
+      preview: previewMeHtml,
+      accion: '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_ME\')">🖨 Imprimir</button>'
+    });
+    // ─── WH andamio ───
+    var optWh = _opcionHtml({
+      icon: svgAndamio, titulo: 'Membrete andamio (WH)',
+      sub: (totalWh > 1 ? 'Rótulo de almacén · ' + totalWh + ' adhesivos (cabecera + ' + (totalWh - 1) + ' códigos)' : 'El rótulo del almacén · 1 adhesivo'),
+      preview: previewWhHtml,
+      accion: '<button class="ms-btn ms-btn-info" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_WH\')">🖨 Imprimir</button>'
+    });
+    // ─── Adhesivo envasado (hero · solo derivados) ───
+    var qtyIni = (function(){ try { return parseInt(localStorage.getItem('mos_adh_qty_' + (producto.codigoBarra || '')), 10) || Math.max(1, Math.round(parseFloat(producto.adhSugerido) || 0)) || 12; } catch(_) { return 12; } })();
+    var stepperHtml = ''
+      + '<span style="display:inline-flex;align-items:center;border:1px solid #28344c;border-radius:8px;overflow:hidden;flex:none;margin-right:8px">'
+      +   '<button onclick="MembreteSystem._adhQtyStep(-6)" style="padding:6px 10px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">−</button>'
+      +   '<input id="msAdhQty" type="number" min="1" max="200" value="' + qtyIni + '" style="width:46px;text-align:center;padding:6px 2px;font-size:14px;font-weight:800;background:#0f172a;color:#e2e8f0;border:none;-moz-appearance:textfield">'
+      +   '<button onclick="MembreteSystem._adhQtyStep(6)" style="padding:6px 10px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">+</button>'
+      + '</span>';
+    var optEnv = !esDerivado ? '' : _opcionHtml({
+      hero: true, icon: svgRollo,
+      titulo: 'Adhesivo envasado',
+      badge: ' <span style="font-size:9px;font-weight:800;color:#34d399;background:rgba(52,211,153,.15);border-radius:4px;padding:1px 5px;vertical-align:middle">SOLO DERIVADOS</span>',
+      sub: 'El de Almacén/Envasados (TSC 50×25) — único con cantidad' + (parseFloat(producto.adhSugerido) > 0 ? ' · sugerido ~' + Math.round(producto.adhSugerido) + '/sem' : ''),
+      preview: previewEnvHtml, scaleH: 108,
+      accion: stepperHtml + '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimirEnvasado()">🖨 Imprimir</button>'
+    });
 
     document.body.insertAdjacentHTML('beforeend', ''
       + '<div class="ms-overlay" id="msMenuOverlay" onclick="if(event.target===this)MembreteSystem._menuCerrar()">'
-      +   '<div class="ms-modal" style="max-width:760px">'
+      +   '<div class="ms-modal" style="max-width:620px">'
       +     '<div class="ms-head">'
-      +       '<div class="ms-emoji">🏷</div>'
+      +       '<div class="ms-emoji">🖨</div>'
       +       '<div style="flex:1;min-width:0">'
-      +         '<div class="ms-h1">¿QUÉ MEMBRETE IMPRIMIR?</div>'
+      +         '<div class="ms-h1">¿QUÉ IMPRIMIR?</div>'
       +         '<div class="ms-sub">' + _escapeHtml(producto.descripcion || producto.codigoBarra) + '</div>'
       +       '</div>'
       +     '</div>'
       +     _rolloBannerHtml()
       +     '<div class="ms-body">'
-      +       '<div style="' + btnsCss + '">'
-      // ─── Card ME ───
-      +         '<div style="' + cardCss + '">'
-      +           '<div style="' + scaleWrapCss + '">' + previewMeHtml + '</div>'
-      +           '<button class="ms-btn ms-btn-primary" style="margin:0;width:100%" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_ME\')">'
-      +             '🏪 IMPRIMIR ME · Góndola'
-      +             (precio > 0 ? '<div style="font-size:11px;font-weight:600;margin-top:2px;opacity:.85">Precio S/ ' + precio.toFixed(2) + '</div>' : '')
-      +           '</button>'
-      +         '</div>'
-      // ─── Card WH ───
-      +         '<div style="' + cardCss + '">'
-      +           '<div style="' + scaleWrapCss + '">' + previewWhHtml + '</div>'
-      +           '<button class="ms-btn ms-btn-info" style="margin:0;width:100%" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_WH\')">'
-      +             '📦 IMPRIMIR WH · Andamio'
-      +             '<div style="font-size:11px;font-weight:600;margin-top:2px;opacity:.85">'
-      +               (totalWh > 1 ? ('Imprime ' + totalWh + ' adhesivos (cabecera + ' + (totalWh - 1) + ' códigos)') : 'Imprime 1 adhesivo')
-      // [RONDA 2 FIX] había un '+ +' (unario) → imprimía 'NaN' y dejaba el div SIN CERRAR:
-      // el hero del adhesivo caía DENTRO de la columna WH (modal descuadrado del reporte del dueño)
-      +             '</div>'
-      +           '</button>'
-      +         '</div>'
-      +       '</div>'
-      +       heroHtml
-      +       '<button class="ms-btn ms-btn-warn" style="margin-top:14px" onclick="MembreteSystem._menuCerrar()">Cancelar</button>'
+      +       optMe
+      +       optWh
+      +       optEnv
+      +       '<button class="ms-btn ms-btn-warn" style="margin-top:6px" onclick="MembreteSystem._menuCerrar()">Cancelar</button>'
       +     '</div>'
       +   '</div>'
       + '</div>');
     window._msMenuProd = producto;
 
-    // Dibujar barcodes después de que el DOM esté pintado (next tick)
+    // Dibujar barcodes reales de los previews (next tick, DOM ya pintado)
     if (previewDisponible) {
       setTimeout(function() {
         try {
           var svgMe = document.getElementById(meSvgId);
           var svgWh = document.getElementById(whSvgId);
-          var codigoMe = item.esSkuBase ? item.skuBase : item.codigoBarra;
-          var codigoWh = item.esSkuBase ? item.skuBase : item.codigoBarra;
-          if (svgMe) AdhesivoPreview.dibujarBarcode(svgMe, codigoMe);
-          if (svgWh) AdhesivoPreview.dibujarBarcode(svgWh, codigoWh);
+          var svgEnv = document.getElementById(envSvgId);
+          var codigo = item.esSkuBase ? item.skuBase : item.codigoBarra;
+          if (svgMe)  AdhesivoPreview.dibujarBarcode(svgMe, codigo);
+          if (svgWh)  AdhesivoPreview.dibujarBarcode(svgWh, codigo);
+          if (svgEnv) AdhesivoPreview.dibujarBarcode(svgEnv, item.codigoBarra);
         } catch(e) {
           console.warn('[membrete-modal] error dibujando preview barcode:', e.message);
         }
