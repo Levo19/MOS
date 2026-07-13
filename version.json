@@ -1,1 +1,1 @@
-{"version":"2.43.508","build":"2.43.508 CASCADA repintada a la paleta del dibujo §06 (fondo #0a1120, filas #0e1626, esmeralda no indigo) + CURVAS §10 mas grandes/responsive con PUNTOS clickeables (cada punto = registro: precio/costo + fecha + guia)."}
+{"version":"2.43.509","build":"2.43.509 FUSION §10: el modal de CURVAS ahora incluye la CASCADA de satelites (costo derivado + precio + margen propio, recalculan al mover el precio raiz). El boton dinero abre el modal de curvas (fusionado con modificar precio)."}

@@ -3128,7 +3128,7 @@ const MOS = (() => {
                 <button type="button" class="toggle-sw sm ${dAct ? 'on' : ''}" data-pid="${d.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
                         title="${dAct ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
-                <button class="cat-btn cat-btn-money sm" onclick="event.stopPropagation();MOS.abrirModalPrecioRapido('${d.idProducto}')" title="Precio del derivado (cascada a sus packs)">${_svgIcon('money')}</button>
+                <button class="cat-btn cat-btn-money sm" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${d.idProducto}')" title="Precio·costo·margen del derivado (curvas + packs)">${_svgIcon('money')}</button>
                 <button class="cat-btn cat-btn-printx sm" onclick="event.stopPropagation();MOS.abrirMembreteCard('${d.idProducto}')" title="Imprimir (membrete / adhesivo envasado)">${_svgIcon('printer')}</button>
                 <button class="cat-btn cat-btn-plusctx sm" onclick="event.stopPropagation();MOS.abrirPlusContextual('${d.idProducto}', event)" title="Agregar satélite">＋</button>
               </div>
@@ -3174,8 +3174,8 @@ const MOS = (() => {
                   <span class="toggle-sw-knob"></span>
                 </button>
                 <button class="cat-btn cat-btn-money"
-                        onclick="event.stopPropagation();MOS.abrirModalPrecioRapido('${base.idProducto}')"
-                        title="Cambiar precio — cascada a satélites">${_svgIcon('money')}</button>
+                        onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${base.idProducto}')"
+                        title="Precio·costo·margen + cascada a satélites (curvas)">${_svgIcon('money')}</button>
                 <button class="cat-btn cat-btn-chart"
                         onclick="event.stopPropagation();MOS.abrirAnalitica('${base.idProducto}')"
                         title="Analítica del grupo (almacén + zonas)">${_svgIcon('chart')}</button>
@@ -18122,11 +18122,16 @@ const MOS = (() => {
           <div id="pcAviso" class="text-[10.5px]" style="color:#93a4c2">${costo > 0
             ? '↔ bidireccional: tocas el precio → el margen se recalcula · tocas el margen → el precio. Al guardar, ESE margen queda como contrato del producto (aunque no te guste el del costo, lo fijas a mano aquí).'
             : '⚠ Sin costo registrado: el margen no aplica (regla anti-error). Registra una compra en Almacén/Operaciones para activar el contrato.'}</div>
+          <!-- [RONDA 8 · §10] cascada de satélites FUSIONADA (cada uno con su costo derivado, precio y margen propio) -->
+          <div id="pcSatelites"></div>
           <button onclick="MOS._pcGuardar('${idProducto}')" class="w-full rounded-xl py-3 font-extrabold text-sm"
-                  style="background:linear-gradient(180deg,#34d399,#059669);color:#04140d">Guardar precio${costo > 0 ? ' y margen' : ''}</button>
+                  style="background:linear-gradient(180deg,#34d399,#059669);color:#04140d"><span id="pcGuardarLbl">Guardar precio${costo > 0 ? ' y margen' : ''}</span></button>
         </div>
       </div>
     </div>`);
+    // [RONDA 8 · §10] cascada de satélites fusionada (solo si es canónico con satélites)
+    S._pcSatTocados = {};
+    _pcRenderSatelites(p);
     // curvas con PUNTOS clickeables
     try {
       const r = await API.post('historialPrecioCosto', { idProducto });
@@ -18194,19 +18199,105 @@ const MOS = (() => {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
 
+  // [RONDA 8 · §10] cascada de satélites DENTRO del modal de curvas (fusión con "modificar precio").
+  // Solo se muestra en el CANÓNICO. Cada satélite: su costo DERIVADO (padre × factor, no editable),
+  // su precio y su margen propio. Al mover el precio raíz, se recalculan respetando SU margen si
+  // tienen costo; si no, ×factor del nuevo precio raíz (proporcional).
+  function _pcRenderSatelites(prod) {
+    const cont = $('pcSatelites');
+    if (!cont || !prod) return;
+    const esCanon = !prod.codigoProductoBase && (parseFloat(prod.factorConversion) || 1) === 1;
+    if (!esCanon || typeof _qpBuildRows !== 'function') { cont.innerHTML = ''; S._pcSatRows = null; return; }
+    const rows = _qpBuildRows(prod);
+    S._pcSatRows = rows;
+    if (!rows.length) { cont.innerHTML = ''; return; }
+    const precioRaiz = parseFloat($('pcPrecio')?.value) || 0;
+    cont.innerHTML = `<div class="lbl" style="font-size:10px;color:#93a4c2;margin:6px 0 4px">🛰 Satélites — al cambiar el precio raíz, se recalculan por su margen (o × factor)</div>`
+      + rows.map((r, i) => {
+        const s = r.p;
+        const cS = _costoDerivado(s);                        // costo del satélite = padre × factor
+        const ic = r.tipo === 'der' ? '🥄' : r.tipo === 'presDer' ? '↳🧱' : '🧱';
+        const sug = _pcSugSatelite(r, precioRaiz, cS);
+        const antes = parseFloat(s.precioVenta) || 0;
+        const mrg = cS > 0 && sug > 0 ? Math.round((1 - cS / sug) * 1000) / 10 : null;
+        return `<div class="rounded-lg px-2.5 py-2 mb-1.5" data-sat="${s.idProducto}" data-factor="${r.factor}" data-tipo="${r.tipo}" data-parent="${r.parentIdx == null ? '' : r.parentIdx}"
+                     style="background:#0e1626;border:1px solid #28344c${r.tipo === 'presDer' ? ';margin-left:16px' : ''}">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:11.5px;font-weight:700;color:#e8eefb;flex:1;min-width:0">${ic} ${_escapeHtml(s.descripcion || s.idProducto)}</span>
+            <span style="font-size:9.5px;color:#fbbf24">costo ${cS > 0 ? 'S/' + (+cS.toFixed(2)) : '—'}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+            <span style="font-size:10px;color:#64748b;text-decoration:line-through">S/${antes.toFixed(2)}</span>
+            <span style="color:#64748b;font-size:10px">→</span>
+            <span style="font-size:9px;color:#93a4c2">S/</span>
+            <input class="pc-sat-precio mono" data-sat="${s.idProducto}" type="number" step="0.1" value="${sug.toFixed(2)}"
+                   oninput="MOS._pcSatTocado('${s.idProducto}')"
+                   style="width:74px;background:#0a1120;border:1px solid rgba(52,211,153,.4);border-radius:7px;padding:4px 8px;font-size:13px;font-weight:800;color:#34d399">
+            <span class="pc-sat-mode qp-mode-chip" data-sat="${s.idProducto}">${mrg != null ? mrg + '%' : 'AUTO'}</span>
+          </div>
+        </div>`;
+      }).join('');
+    const lbl = $('pcGuardarLbl');
+    if (lbl) lbl.textContent = `Guardar raíz + ${rows.length} satélite${rows.length !== 1 ? 's' : ''}`;
+  }
+
+  // sugerencia de precio de un satélite: por SU margen guardado si tiene costo, si no ×factor del raíz
+  function _pcSugSatelite(r, precioRaiz, costoSat) {
+    const s = r.p;
+    const mrgGuardado = (s.margenPct != null && s.margenPct !== '') ? parseFloat(s.margenPct) : null;
+    if (costoSat > 0 && mrgGuardado != null && mrgGuardado < 100) {
+      return _r1(costoSat / (1 - mrgGuardado / 100));
+    }
+    // proporcional al raíz — para packs de derivado, sobre el precio ACEPTADO del derivado padre
+    if (r.tipo === 'presDer' && r.parentIdx != null) {
+      const padreInp = document.querySelector(`.pc-sat-precio[data-sat="${(S._pcSatRows[r.parentIdx] || {}).p?.idProducto}"]`);
+      const pv = parseFloat(padreInp?.value) || 0;
+      return _r1(pv * r.factor);
+    }
+    return _r1(precioRaiz * r.factor);
+  }
+
+  function _pcSatTocado(id) {
+    if (!S._pcSatTocados) S._pcSatTocados = {};
+    S._pcSatTocados[id] = true;
+    const chip = document.querySelector(`.pc-sat-mode[data-sat="${id}"]`);
+    if (chip) { chip.textContent = 'MANUAL'; chip.classList.add('man'); }
+    // si tocaste un derivado, sus packs recalculan sobre TU precio
+    _pcSyncSatelites();
+  }
+
+  function _pcSyncSatelites() {
+    const rows = S._pcSatRows || [];
+    const precioRaiz = parseFloat($('pcPrecio')?.value) || 0;
+    rows.forEach((r) => {
+      const id = r.p.idProducto;
+      if (S._pcSatTocados && S._pcSatTocados[id]) return;   // no pisar lo editado a mano
+      const inp = document.querySelector(`.pc-sat-precio[data-sat="${id}"]`);
+      if (!inp) return;
+      const cS = _costoDerivado(r.p);
+      const sug = _pcSugSatelite(r, precioRaiz, cS);
+      inp.value = sug.toFixed(2);
+      const mrg = cS > 0 && sug > 0 ? Math.round((1 - cS / sug) * 1000) / 10 : null;
+      const chip = document.querySelector(`.pc-sat-mode[data-sat="${id}"]`);
+      if (chip) { chip.textContent = mrg != null ? mrg + '%' : 'AUTO'; chip.classList.remove('man'); }
+    });
+  }
+
   function _pcSync(origen) {
     const pI = $('pcPrecio'), mI = $('pcMargen');
-    if (!pI || !mI || mI.disabled) return;
+    if (!pI || !mI) return;
     const costoTxt = document.querySelector('#pcCurvasModal .mono.grow')?.textContent || '';
     const costo = parseFloat(costoTxt.replace(/[^\d.]/g, '')) || 0;
-    if (costo <= 0) return;
-    if (origen === 'precio') {
-      const pv = parseFloat(pI.value) || 0;
-      mI.value = pv > 0 ? Math.round((1 - costo / pv) * 1000) / 10 : '';
-    } else {
-      const m = parseFloat(mI.value) || 0;
-      if (m < 100) pI.value = _r1(costo / (1 - m / 100));
+    if (costo > 0 && !mI.disabled) {
+      if (origen === 'precio') {
+        const pv = parseFloat(pI.value) || 0;
+        mI.value = pv > 0 ? Math.round((1 - costo / pv) * 1000) / 10 : '';
+      } else {
+        const m = parseFloat(mI.value) || 0;
+        if (m < 100) pI.value = _r1(costo / (1 - m / 100));
+      }
     }
+    _pcSyncSatelites();   // el precio raíz cambió → recalcular satélites
   }
 
   let _pcGuardando = false;
@@ -18216,9 +18307,16 @@ const MOS = (() => {
     if (!pv || pv <= 0) { toast('⚠ Precio inválido', 'error'); return; }
     const mI = $('pcMargen');
     const margen = (mI && !mI.disabled) ? (parseFloat(mI.value) || null) : null;
+    // [RONDA 8 · §10] recolectar satélites (precios editados en la cascada fusionada)
+    const sats = [];
+    document.querySelectorAll('#pcSatelites .pc-sat-precio').forEach(inp => {
+      const sid = inp.dataset.sat;
+      const sp = _r1(inp.value);
+      if (sid && sp > 0) sats.push({ idProducto: sid, precio: sp });
+    });
     _pcGuardando = true;
     document.getElementById('pcCurvasModal')?.remove();
-    toast('Guardando precio…', 'info');
+    toast(sats.length ? `Guardando raíz + ${sats.length} satélites…` : 'Guardando precio…', 'info');
     try {
       await API.post('publicarPrecio', { _source: 'MOS_MODAL_CURVAS', idProducto, precioNuevo: pv, usuario: S.session?.nombre || '' });
       // el margen resultante queda como CONTRATO del producto (override de política)
@@ -18227,7 +18325,21 @@ const MOS = (() => {
       }
       const p = S.productos.find(x => x.idProducto === idProducto);
       if (p) { p.precioVenta = pv; if (margen != null) p.margenPct = margen; }
-      toast(`✓ S/ ${pv}${margen != null ? ' · margen contrato ' + margen + '%' : ''}`, 'ok');
+      // publicar cada satélite + grabar su margen resultante como contrato
+      await Promise.all(sats.map(async s => {
+        await API.post('publicarPrecio', { _source: 'MOS_MODAL_CURVAS_SAT', idProducto: s.idProducto, precioNuevo: s.precio, usuario: S.session?.nombre || '' });
+        const sp = S.productos.find(x => x.idProducto === s.idProducto);
+        if (sp) {
+          sp.precioVenta = s.precio;
+          const cS = _costoDerivado(sp);
+          if (cS > 0 && s.precio > 0) {
+            const m = Math.round((1 - cS / s.precio) * 1000) / 10;
+            sp.margenPct = m;
+            await API.post('actualizarProducto', { idProducto: s.idProducto, margenPct: m, modoVenta: 'MARGEN' }).catch(() => {});
+          }
+        }
+      }));
+      toast(`✓ S/ ${pv}${sats.length ? ' + ' + sats.length + ' satélites' : ''}${margen != null ? ' · margen ' + margen + '%' : ''}`, 'ok');
       renderCatalogo();
     } catch (e) { toast('Error: ' + e.message, 'error'); }
     finally { _pcGuardando = false; }
@@ -44611,7 +44723,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
     _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
-    _agTab, _agAlcance, abrirModalPrecioCurvas, _pcSync, _pcGuardar, _pcPunto, guardarCostosYPaso2, _paso2AplicarAutos,                                                // [catálogo v4] pestañas + chips de alcance fusionada
+    _agTab, _agAlcance, abrirModalPrecioCurvas, _pcSync, _pcGuardar, _pcPunto, _pcRenderSatelites, _pcSatTocado, guardarCostosYPaso2, _paso2AplicarAutos,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
     // [RONDA 5 · purga] exports equiv embebidas eliminados
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
