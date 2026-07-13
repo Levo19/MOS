@@ -18099,7 +18099,9 @@ const MOS = (() => {
       if (precio > 0) P.push({ t: 'hoy', v: precio });
       if (costo > 0 && !esSat) C.push({ t: 'hoy', v: costo });
       if (P.length < 2 && C.length < 2) {
-        ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#64748b">⬚ aún sin historia suficiente — desde hoy cada cambio de precio y cada compra dibujan estas curvas</div>';
+        ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:11px;color:#64748b">⬚ aún sin historia suficiente para la curva<br>desde hoy, cada cambio de precio y cada compra la van dibujando</div>';
+        const ley0 = document.getElementById('pcCurvasLeyenda');
+        if (ley0) ley0.innerHTML = `<span style="color:#34d399">—</span> precio (${P.length}) &nbsp; <span style="color:#fbbf24">┄</span> costo (${C.length}) · empezando a acumular`;
         return;
       }
       const all = P.concat(C).map(x => x.v);
@@ -18113,7 +18115,13 @@ const MOS = (() => {
       <style>@keyframes pcdraw{to{stroke-dashoffset:0}}</style>`;
       const ley = document.getElementById('pcCurvasLeyenda');
       if (ley) ley.innerHTML = `<span style="color:#34d399">—</span> precio (${P.length} puntos) &nbsp; <span style="color:#fbbf24">┄</span> costo (${C.length} compras${esSat ? ' del canónico' : ''})`;
-    } catch (_) {}
+    } catch (_) {
+      // [RONDA 7] si la historia no cargó, no dejar "cargando…" eterno
+      const ch = document.getElementById('pcCurvasChart');
+      if (ch) ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#64748b">— historia no disponible ahora —</div>';
+      const ley = document.getElementById('pcCurvasLeyenda');
+      if (ley) ley.textContent = '— precio venta   ┄ costo (compras)';
+    }
   }
 
   function _pcSync(origen) {

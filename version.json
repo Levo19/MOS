@@ -1,1 +1,1 @@
-{"version":"2.43.499","build":"2.43.499 RONDA 7: fix fecha del bono/descuento (se congela al abrir el modal, ya no la pisa el polling) + validador de NOMBRE en modal derivado (avisa si no hereda la familia del padre). Datos corregidos: bono Jorgenis movido a domingo, veto de hoy quitado, 3 derivados NUEZ renombrados a PREMIUM."}
+{"version":"2.43.500","build":"2.43.500 modal curvas: leyenda ya no queda en cargando eterno (sin-historia y error muestran mensaje claro)."}
