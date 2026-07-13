@@ -9824,6 +9824,281 @@ const MOS = (() => {
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // [v5 §11] MESA DE COMPRAS — workbench único (entra desde Almacén Y Catálogo)
+  // 100% Supabase: se alimenta de S._opsData (operaciones_unificadas, líneas
+  // inline) + S.productos (para derivar el estado de PRECIOS). Cero-GAS.
+  // ══════════════════════════════════════════════════════════════════════
+  S._mesaFiltro = S._mesaFiltro || 'activas';
+
+  // Todas las guías de COMPRA (proveedor + entrada libre), no preingreso, no anuladas.
+  function _comprasFlat() {
+    const data = (S._opsData && (S._opsData.data || S._opsData)) || {};
+    const out = [];
+    (data.porDia || []).forEach(d => (d.operaciones || []).forEach(op => {
+      const t = String(op.tipo || '').toUpperCase();
+      const est = String(op.estado || '').toUpperCase();
+      if (op.esPreingreso) return;
+      if (t !== 'INGRESO_PROVEEDOR' && t !== 'ENTRADA_LIBRE') return;
+      if (est === 'ANULADO' || est === 'ANULADA') return;
+      out.push(op);
+    }));
+    return out;
+  }
+
+  // Estado de una compra: costos (Paso 1) + precios (Paso 2), derivado de Supabase.
+  function _comprasEstado(op) {
+    const cost = _opsClasificarCostos(op) || { estado: 'sin', conCosto: 0, total: (op.lineas || []).length };
+    const k = op.fuente + '_' + op.idGuia;
+    const lineas = ((S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || []);
+    // PRECIOS: por cada línea CON costo, ¿el precio del canónico ya refleja el nuevo costo (margen objetivo)?
+    let conPrecio = 0, totalCosteados = 0;
+    lineas.forEach(l => {
+      const costo = parseFloat(l.precioUnitario) || (parseFloat(l.subtotal) || 0) / (parseFloat(l.cantidad) || 1);
+      if (!(costo > 0)) return;
+      totalCosteados++;
+      const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
+      const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod ||
+                                              String(x.idProducto || '') === String(l.idCanonico || ''));
+      if (!p) return;
+      const venta = parseFloat(p.precioVenta) || 0;
+      let margen = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : null;
+      if (margen == null) { try { const mi = _calcularMargenInfo(p); margen = mi ? parseFloat(mi.objetivo) : null; } catch(_){} }
+      if (venta <= 0 || margen == null || margen >= 100) { conPrecio++; return; } // sin objetivo → no exigimos
+      const sug = _r1(costo / (1 - margen / 100));
+      if (Math.abs(venta - sug) <= 0.1) conPrecio++; // precio fresco respecto al costo nuevo
+    });
+    let fase, tone, label, ico;
+    if (cost.estado === 'sin') { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = 'Falta costear'; }
+    else if (cost.estado === 'parcial') { fase = 'incompleta'; tone = 'amber'; ico = '⚠'; label = 'Datos incompletos · faltan ' + (cost.total - cost.conCosto) + ' costo(s)'; }
+    else { // costos completos
+      const faltanPrecio = totalCosteados - conPrecio;
+      if (faltanPrecio <= 0) { fase = 'procesada'; tone = 'em'; ico = '✓'; label = 'Procesada'; }
+      else if (conPrecio > 0) { fase = 'incompleta'; tone = 'amber'; ico = '⚠'; label = 'Datos incompletos · faltan ' + faltanPrecio + ' precio(s)'; }
+      else { fase = 'precios'; tone = 'blue'; ico = '🏷'; label = 'Falta precios (Paso 2)'; }
+    }
+    return { fase, tone, ico, label,
+             costos: { con: cost.conCosto, total: cost.total },
+             precios: { con: conPrecio, total: totalCosteados },
+             incompleto: fase === 'incompleta',
+             pctC: cost.total ? Math.round(cost.conCosto / cost.total * 100) : 0,
+             pctP: totalCosteados ? Math.round(conPrecio / totalCosteados * 100) : 0 };
+  }
+
+  function abrirMesaCompras(filtro) {
+    _opsInyectarKeyframes();
+    _mesaComprasInyectarCSS();
+    if (filtro) S._mesaFiltro = filtro;
+    let modal = document.getElementById('mesaComprasModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'mesaComprasModal';
+      modal.className = 'mesa-backdrop';
+      modal.onclick = (e) => { if (e.target === modal) MOS.cerrarMesaCompras(); };
+      document.body.appendChild(modal);
+    }
+    modal.innerHTML = _mesaComprasHTML();
+    requestAnimationFrame(() => modal.classList.add('open'));
+    // Si no hay datos aún (ej. entré desde Catálogo sin abrir Almacén), dispara la
+    // carga cero-GAS (_prefetchAlmacen → operaciones_unificadas) y re-render al llegar.
+    if (!_comprasFlat().length) {
+      try { if (typeof _prefetchAlmacen === 'function') _prefetchAlmacen(); } catch(_){}
+      let _tries = 0;
+      const _poll = setInterval(() => {
+        const m = document.getElementById('mesaComprasModal');
+        if (!m || !m.classList.contains('open') || ++_tries > 12) { clearInterval(_poll); return; }
+        if (_comprasFlat().length) { clearInterval(_poll); m.innerHTML = _mesaComprasHTML(); }
+      }, 700);
+    }
+  }
+  function cerrarMesaCompras() {
+    const m = document.getElementById('mesaComprasModal');
+    if (!m) return;
+    m.classList.remove('open');
+    setTimeout(() => m.remove(), 260);
+  }
+  function mesaSetFiltro(f) { S._mesaFiltro = f; const m = document.getElementById('mesaComprasModal'); if (m) m.innerHTML = _mesaComprasHTML(); }
+
+  function _mesaComprasHTML() {
+    const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
+    const cont = { pendiente: 0, precios: 0, incompleta: 0, procesada: 0 };
+    compras.forEach(c => cont[c.est.fase]++);
+    const activas = cont.pendiente + cont.precios + cont.incompleta;
+    const F = S._mesaFiltro || 'activas';
+    const pasa = (fase) => F === 'todas' ? true : F === 'activas' ? fase !== 'procesada' : fase === F;
+    const vis = compras.filter(c => pasa(c.est.fase));
+    // orden: incompletas/precios primero (lo urgente), luego pendientes, luego procesadas
+    const rank = { incompleta: 0, precios: 1, pendiente: 2, procesada: 3 };
+    vis.sort((a, b) => (rank[a.est.fase] - rank[b.est.fase]));
+    const tab = (id, ico, txt, n, tone) => `<button class="mesa-tab ${F === id ? 'on' : ''} t-${tone || 'nk'}" onclick="MOS.mesaSetFiltro('${id}')">${ico} ${txt}${n != null ? ` <span class="mesa-tab-n">${n}</span>` : ''}</button>`;
+    return `
+      <div class="mesa-sheet" onclick="event.stopPropagation()">
+        <div class="mesa-head">
+          <div class="mesa-title"><span class="mesa-ic">🧾</span><div><div class="mesa-h1">Mesa de compras</div><div class="mesa-h2">${compras.length} compra(s) · <b class="mesa-em">${activas} por procesar</b></div></div></div>
+          <button class="mesa-x" onclick="MOS.cerrarMesaCompras()" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mesa-tabs">
+          ${tab('activas', '⚡', 'Por procesar', activas, 'em')}
+          ${tab('pendiente', '⏳', 'Sin costear', cont.pendiente, 'rose')}
+          ${tab('precios', '🏷', 'Falta precios', cont.precios, 'blue')}
+          ${tab('incompleta', '⚠', 'Incompletas', cont.incompleta, 'amber')}
+          ${tab('procesada', '✓', 'Procesadas', cont.procesada, 'em')}
+          ${tab('todas', '▦', 'Todas', compras.length, 'nk')}
+        </div>
+        <div class="mesa-body">
+          ${vis.length ? vis.map((c, i) => _mesaComprasCard(c.op, c.est, i)).join('')
+            : `<div class="mesa-empty"><div class="mesa-empty-ic">${F === 'procesada' ? '✓' : '🎉'}</div><p>${F === 'activas' || F === 'todas' ? 'No hay compras que procesar. Todo al día.' : 'Nada en este filtro.'}</p></div>`}
+        </div>
+      </div>`;
+  }
+
+  function _mesaComprasCard(op, est, i) {
+    const prov = _escapeHtml(String(op.nombreProveedor || op.idProveedor || 'Proveedor —').trim());
+    const lineas = op.lineas || [];
+    const nombres = lineas.map(l => String(l.descripcion || l.codigoProducto || '').trim()).filter(Boolean);
+    const resumen = nombres.length ? _escapeHtml(nombres[0].split(/\s+/).slice(0, 3).join(' ') + (nombres.length > 1 ? ' + ' + (nombres.length - 1) + ' más' : '')) : '(sin líneas)';
+    const gidCorto = _escapeHtml(String(op.idGuia || '').replace(/^G_L\d+/, 'GR·').slice(-10));
+    const foto = (op.foto && String(op.foto).trim()) ? '<span class="mesa-foto-ic" title="Tiene foto de factura">📄</span>' : '';
+    const ctaTxt = est.fase === 'pendiente' ? '💰 Ingresar compra'
+                 : est.fase === 'precios' ? '🏷 Seguir a precios →'
+                 : est.fase === 'incompleta' ? '✍ Completar datos'
+                 : '👁 Revisar';
+    // barra doble fase (costos + precios)
+    const faseBar = `
+      <div class="mesa-phases">
+        <div class="mesa-ph ${est.pctC >= 100 ? 'ok' : est.pctC > 0 ? 'mid' : ''}"><span>Paso 1 · costos</span><i style="width:${est.pctC}%"></i><b>${est.costos.con}/${est.costos.total}</b></div>
+        <div class="mesa-ph ${est.pctC < 100 ? 'lock' : est.pctP >= 100 ? 'ok' : est.pctP > 0 ? 'mid' : ''}"><span>Paso 2 · precios</span><i style="width:${est.pctC < 100 ? 0 : est.pctP}%"></i><b>${est.pctC < 100 ? '—' : est.precios.con + '/' + est.precios.total}</b></div>
+      </div>`;
+    return `
+      <button class="mesa-card tone-${est.tone}${est.incompleto ? ' is-incompleta' : ''}" style="animation-delay:${Math.min(i, 14) * 45}ms"
+              onclick="MOS._mesaComprasEntrar('${op.fuente}','${_escapeHtml(op.idGuia)}')">
+        <div class="mesa-card-top">
+          <span class="mesa-state s-${est.tone}">${est.ico} ${_escapeHtml(est.label)}</span>
+          <span class="mesa-gid">${foto}${gidCorto}</span>
+        </div>
+        <div class="mesa-card-prod">${resumen}</div>
+        <div class="mesa-card-prov">🏭 ${prov} · ${lineas.length} línea(s)</div>
+        ${faseBar}
+        <div class="mesa-cta s-${est.tone}">${ctaTxt}</div>
+      </button>`;
+  }
+
+  function _mesaComprasEntrar(fuente, idGuia) {
+    const op = _findOpByKey(fuente + '_' + idGuia);
+    if (!op) { toast('Compra no encontrada', 'error'); return; }
+    const est = _comprasEstado(op);
+    cerrarMesaCompras();
+    setTimeout(() => {
+      // Paso 1 si faltan costos; si costos completos, salta al Paso 2 (precios).
+      if (est.costos.con < est.costos.total || est.costos.total === 0) {
+        opsEntrarModoCostos(fuente, idGuia);
+      } else {
+        // costos completos → armar items para el Paso 2 directo
+        try { _paso2DesdeGuia(op); } catch(_) { opsEntrarModoCostos(fuente, idGuia); }
+      }
+    }, 200);
+  }
+
+  // Arma el Paso 2 directamente desde una guía ya costeada (sin re-aplicar costos).
+  function _paso2DesdeGuia(op) {
+    const lineas = op.lineas || [];
+    const items = lineas.map(l => {
+      const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
+      const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod) || {};
+      const costoNuevo = parseFloat(l.precioUnitario) || (parseFloat(l.subtotal) || 0) / (parseFloat(l.cantidad) || 1);
+      return { idCanonico: p.idProducto || l.idCanonico || cod, costoNuevo, costoAnterior: parseFloat(p.precioCosto) || 0 };
+    }).filter(x => x.costoNuevo > 0);
+    _paso2Abrir(items, op.idGuia);
+  }
+
+  function _mesaComprasInyectarCSS() {
+    if (S._mesaCSSInjected) return; S._mesaCSSInjected = true;
+    const st = document.createElement('style'); st.id = 'mesaComprasCSS';
+    st.textContent = `
+      .mesa-backdrop{position:fixed;inset:0;z-index:9500;display:flex;align-items:flex-end;justify-content:center;
+        background:rgba(4,8,16,0);backdrop-filter:blur(0px);transition:background .28s ease,backdrop-filter .28s ease}
+      .mesa-backdrop.open{background:rgba(4,8,16,.72);backdrop-filter:blur(7px)}
+      .mesa-sheet{width:100%;max-width:920px;max-height:92vh;display:flex;flex-direction:column;
+        background:linear-gradient(180deg,#0b1322,#080e19);border:1px solid #28344c;border-bottom:none;
+        border-radius:22px 22px 0 0;box-shadow:0 -30px 80px -20px rgba(0,0,0,.85);
+        transform:translateY(100%);transition:transform .34s cubic-bezier(.34,1.3,.5,1)}
+      .mesa-backdrop.open .mesa-sheet{transform:translateY(0)}
+      @media(min-width:720px){.mesa-backdrop{align-items:center}.mesa-sheet{border-radius:22px;border-bottom:1px solid #28344c;max-height:88vh}
+        .mesa-sheet{transform:translateY(24px) scale(.98);opacity:0;transition:transform .34s cubic-bezier(.34,1.3,.5,1),opacity .28s}
+        .mesa-backdrop.open .mesa-sheet{transform:none;opacity:1}}
+      .mesa-head{display:flex;align-items:center;gap:12px;padding:16px 18px 12px;border-bottom:1px solid #17233b}
+      .mesa-ic{font-size:24px;filter:drop-shadow(0 2px 6px rgba(52,211,153,.35))}
+      .mesa-h1{font-weight:850;font-size:17px;letter-spacing:-.01em;color:#e6edf7}
+      .mesa-h2{font-size:11.5px;color:#93a4c2;margin-top:1px} .mesa-em{color:#34d399}
+      .mesa-x{margin-left:auto;width:32px;height:32px;border-radius:50%;background:#131d30;border:1px solid #28344c;color:#93a4c2;font-size:14px;cursor:pointer;transition:.15s}
+      .mesa-x:hover{background:rgba(244,63,94,.25);color:#fda4af;transform:rotate(90deg)}
+      .mesa-tabs{display:flex;gap:7px;padding:12px 18px;overflow-x:auto;border-bottom:1px solid #17233b;scrollbar-width:none}
+      .mesa-tabs::-webkit-scrollbar{display:none}
+      .mesa-tab{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#93a4c2;
+        background:#0e1626;border:1px solid #28344c;padding:7px 12px;border-radius:999px;cursor:pointer;transition:.16s;white-space:nowrap}
+      .mesa-tab:hover{border-color:#3a4a6b;color:#cdd8ec;transform:translateY(-1px)}
+      .mesa-tab-n{font-family:ui-monospace,monospace;font-size:10.5px;font-weight:800;background:#1a2740;padding:1px 6px;border-radius:999px;color:#cdd8ec}
+      .mesa-tab.on{color:#04140d;background:linear-gradient(180deg,#34d399,#059669);border-color:transparent}
+      .mesa-tab.on .mesa-tab-n{background:rgba(4,20,13,.25);color:#04140d}
+      .mesa-tab.on.t-rose{background:linear-gradient(180deg,#fb7185,#e11d48)} .mesa-tab.on.t-amber{background:linear-gradient(180deg,#fbbf24,#d97706);color:#1a1206}
+      .mesa-tab.on.t-blue{background:linear-gradient(180deg,#7cb3f0,#3b82f6);color:#06121f}
+      .mesa-body{padding:16px 18px 26px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:12px;align-content:start}
+      .mesa-card{text-align:left;cursor:pointer;background:#0e1626;border:1px solid #28344c;border-left:3px solid #3a4a6b;border-radius:14px;
+        padding:13px 14px;display:flex;flex-direction:column;gap:9px;transition:transform .16s ease,box-shadow .2s ease,border-color .2s;
+        animation:mesaCardIn .42s cubic-bezier(.22,1,.36,1) both}
+      @keyframes mesaCardIn{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+      .mesa-card:hover{transform:translateY(-3px);box-shadow:0 16px 30px -14px rgba(0,0,0,.7)}
+      .mesa-card.tone-rose{border-left-color:#fb7185} .mesa-card.tone-amber{border-left-color:#fbbf24}
+      .mesa-card.tone-blue{border-left-color:#7cb3f0} .mesa-card.tone-em{border-left-color:#34d399}
+      .mesa-card.is-incompleta{background:linear-gradient(180deg,#0e1626,rgba(251,191,36,.05))}
+      .mesa-card-top{display:flex;align-items:center;gap:8px}
+      .mesa-state{font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;letter-spacing:.01em}
+      .s-rose{background:rgba(251,113,133,.14);color:#fb7185;border:1px solid rgba(251,113,133,.3)}
+      .s-amber{background:rgba(251,191,36,.14);color:#fbbf24;border:1px solid rgba(251,191,36,.32)}
+      .s-blue{background:rgba(124,179,240,.14);color:#7cb3f0;border:1px solid rgba(124,179,240,.3)}
+      .s-em{background:rgba(52,211,153,.14);color:#34d399;border:1px solid rgba(52,211,153,.3)}
+      .mesa-gid{margin-left:auto;font-family:ui-monospace,monospace;font-size:10px;color:#5f7192;display:inline-flex;gap:4px;align-items:center}
+      .mesa-foto-ic{font-size:11px}
+      .mesa-card-prod{font-weight:750;font-size:13.5px;color:#e6edf7;line-height:1.25}
+      .mesa-card-prov{font-size:11px;color:#93a4c2}
+      .mesa-phases{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+      .mesa-ph{position:relative;display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;color:#7b8aa6;
+        background:#0a1120;border:1px solid #1e293b;border-radius:8px;padding:5px 9px;overflow:hidden}
+      .mesa-ph>i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,rgba(52,211,153,.18),rgba(52,211,153,.28));transition:width .5s cubic-bezier(.22,1,.36,1)}
+      .mesa-ph span{position:relative;z-index:1} .mesa-ph b{position:relative;z-index:1;margin-left:auto;font-family:ui-monospace,monospace;color:#cdd8ec}
+      .mesa-ph.ok{color:#34d399;border-color:rgba(52,211,153,.35)} .mesa-ph.ok>i{background:linear-gradient(90deg,rgba(52,211,153,.28),rgba(5,150,105,.4))}
+      .mesa-ph.mid{color:#fbbf24;border-color:rgba(251,191,36,.3)} .mesa-ph.mid>i{background:linear-gradient(90deg,rgba(251,191,36,.2),rgba(217,119,6,.3))}
+      .mesa-ph.lock{opacity:.5}
+      .mesa-cta{margin-top:3px;text-align:center;font-size:12px;font-weight:800;padding:8px;border-radius:10px;transition:.16s}
+      .mesa-cta.s-em{background:linear-gradient(180deg,#34d399,#059669);color:#04140d;border:none}
+      .mesa-cta.s-rose{background:rgba(251,113,133,.16);color:#fda4af;border:1px solid rgba(251,113,133,.35)}
+      .mesa-cta.s-amber{background:rgba(251,191,36,.16);color:#fbbf24;border:1px solid rgba(251,191,36,.35)}
+      .mesa-cta.s-blue{background:rgba(124,179,240,.16);color:#7cb3f0;border:1px solid rgba(124,179,240,.35)}
+      .mesa-card:hover .mesa-cta{filter:brightness(1.12)}
+      .mesa-empty{grid-column:1/-1;text-align:center;padding:54px 20px;color:#5f7192}
+      .mesa-empty-ic{font-size:44px;opacity:.6;margin-bottom:10px} .mesa-empty p{font-size:13px}
+      /* botón de entrada (Almacén + Catálogo) */
+      .btn-mesa-compras{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;color:#04140d;
+        background:linear-gradient(180deg,#34d399,#059669);border:none;border-radius:10px;padding:8px 13px;cursor:pointer;
+        box-shadow:0 6px 16px -6px rgba(52,211,153,.55);transition:transform .15s,box-shadow .2s;position:relative}
+      .btn-mesa-compras:hover{transform:translateY(-1px);box-shadow:0 10px 20px -6px rgba(52,211,153,.7)}
+      .btn-mesa-compras .bmc-n{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:999px;
+        background:#fb7185;color:#2a0710;font-size:10px;font-weight:900;display:grid;place-items:center;box-shadow:0 2px 6px rgba(251,113,133,.6)}
+      @media (prefers-reduced-motion:reduce){.mesa-sheet,.mesa-card,.mesa-ph>i,.mesa-x,.btn-mesa-compras{transition:none;animation:none}}
+    `;
+    document.head.appendChild(st);
+  }
+
+  // Actualiza el contador del badge del botón "Compras" (activas por procesar).
+  function _mesaComprasSyncBadge() {
+    try {
+      const n = _comprasFlat().reduce((a, op) => a + (_comprasEstado(op).fase !== 'procesada' ? 1 : 0), 0);
+      document.querySelectorAll('.btn-mesa-compras .bmc-n').forEach(el => {
+        el.textContent = n; el.style.display = n > 0 ? 'grid' : 'none';
+      });
+    } catch(_){}
+  }
+
   // Inicializa S._costosGuiaState para una op + carga líneas en cache
   function _opsCostosInitState(op) {
     const k = op.fuente + '_' + op.idGuia;
@@ -43669,6 +43944,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirCostosGuia, _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, cerrarCostosGuia, guardarCostosGuia,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
+    // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
+    abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, _mesaComprasEntrar, _mesaComprasSyncBadge,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     costosUsarOrigenFoto, costosUsarOrigenManual,
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de

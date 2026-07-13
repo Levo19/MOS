@@ -1,0 +1,11 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 27000,
+  "viewport": { "width": 480, "height": 1600 },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906474",
+    "MOS_SESSION": "{\"idPersonal\":\"TEST-CLAUDE\",\"nombre\":\"PRUEBA CLAUDE\",\"rol\":\"MASTER\",\"idSesion\":\"testclaude1\"}"
+  },
+  "evalAfter": "(async()=>{const r={};const w=ms=>new Promise(s=>setTimeout(s,ms));const btn=[...document.querySelectorAll('button,a')].find(el=>/Entrar a MOS/i.test(el.textContent||''));if(btn)btn.click();await w(2500);try{MOS.nav('almacen')}catch(e){r.navErr=String(e)}await w(7000);try{const vj=await fetch('https://levo19.github.io/MOS/version.json?b='+Date.now()).then(x=>x.json());r.version=vj.version;}catch(_){}try{const f=document.getElementById('almOpsFiltroIngreso');r.filtro=f?f.textContent.replace(/\\s+/g,' ').trim():'(no)';}catch(_){}r.badgesCompra=[...document.querySelectorAll('*')].filter(e=>e.children.length===0&&/COMPRA/i.test(e.textContent||'')).length;const b=[...document.querySelectorAll('button')].find(x=>/opsEntrarModoCostos/.test(x.getAttribute('onclick')||''));r.botonCompra=b?b.textContent.replace(/\\s+/g,' ').trim():'(ninguno)';if(b){b.scrollIntoView({block:'center'});await w(500);b.click();await w(2800);const m=document.getElementById('modalCostosGuiaUnif');r.modalAbierto=!!m&&!m.classList.contains('hidden');if(m){r.titulo=(document.getElementById('opsCostosTitulo')||{}).textContent;r.subtitulo=(document.getElementById('opsCostosSubtitle')||{}).textContent;r.stepper=[...m.querySelectorAll('span')].map(s=>(s.textContent||'').trim()).filter(t=>/Paso [12]/.test(t)).slice(0,4);r.toggles=[...m.querySelectorAll('.ops-tg-lbl')].map(s=>s.textContent.trim());r.chip=((m.querySelector('#opsChipOcrStatus,.ops-chip-ok,.ops-chip-info')||{}).textContent||'').replace(/\\s+/g,' ').trim();r.filas=m.querySelectorAll('.alm-v-costo-line').length;r.nota=([...m.querySelectorAll('div')].map(d=>d.textContent||'').some(t=>/Al confirmar: costo al can/.test(t)))?'presente':'FALTA';r.cta=((m.querySelector('.ops-btn-primary')||{}).textContent||'').replace(/\\s+/g,' ').trim();r.marcasOCR=/🤖/.test(m.textContent||'')?'HAY 🤖':'sin OCR';}}return r;})()",
+  "screenshot": "C:/Users/ISO/ProyectoMOS/browsercheck/v5_p1_shot.png"
+}
