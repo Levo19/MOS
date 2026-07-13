@@ -8029,7 +8029,7 @@ const MOS = (() => {
         // de la vista principal (autocontenido también).
         btnCostos = `
           <button class="alm-v-btn-costos ops-cta-jefa" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 4px 12px -2px rgba(168,85,247,.6);font-size:13px;padding:10px 14px;font-weight:700;transition:transform .15s ease,box-shadow .2s ease"
-                  onclick="MOS.guardarCostosEImprimirJefa()" title="Guarda costos y manda el ticket a la jefa para que decida precios">💾📋 Guardar e imprimir para jefa</button>
+                  onclick="MOS.guardarCostosYPaso2()" title="Aplica los costos al catálogo (con historial) y abre el Paso 2 de precios">Calcular costos y pasar a precios →</button>
           <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 2px 6px -2px rgba(34,211,238,.5);font-size:11px;padding:7px 10px"
                   onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="Re-procesar foto con Claude OCR (sobreescribe valores actuales)">🔄 Re-OCR</button>
           <button class="alm-v-btn-costos" style="background:rgba(71,85,105,.6);box-shadow:none;font-size:11px;padding:7px 10px"
@@ -8173,33 +8173,28 @@ const MOS = (() => {
     // Quité las cards grandes (foto/manual) — esas son del overlay de PRECIOS.
     // Este overlay solo actualiza COSTOS al catálogo. El OCR ya corre auto en
     // background (TODO: idealmente disparar en WH al subir foto a la guía).
+    // [v5 §11 · SECUENCIAL] OCR ELIMINADO (decisión del dueño: el admin mira la
+    // factura y escribe). En su lugar: stepper Paso 1●─○2 + FOTO DE LA GUÍA con
+    // zoom (la que sube el operador WH al registrar el ingreso).
     const tieneFoto = !!(st.foto && String(st.foto).trim());
-    // [v2.43.20] Distinguir EN VUELO (corriendo ahora) vs YA CORRIDO (terminó).
-    // Antes solo había YA CORRIDO, lo que causaba chip 'Leyendo IA' eterno.
-    const enVueloOcr = !!(S._opsOcrEnVueloMap && S._opsOcrEnVueloMap[st.idGuia]);
-    const ocrYaCorrido = !!(S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia]);
     const totalLineas = (st.lineas || []).length;
     const lineasConCosto = (st.lineas || []).filter(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
-    const pctCoincidencia = totalLineas > 0 ? Math.round((lineasConCosto / totalLineas) * 100) : 0;
-    let chipOcrHtml = '';
-    if (!tieneFoto) {
-      chipOcrHtml = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(107,114,128,.15);border:1px solid rgba(107,114,128,.3);border-radius:999px;font-size:11px;color:#9ca3af;font-weight:600;margin-bottom:8px">
-        📷 Sin foto · escribe los costos manual abajo
-      </div>`;
-    } else if (enVueloOcr) {
-      chipOcrHtml = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(34,211,238,.15);border:1px solid rgba(34,211,238,.4);border-radius:999px;font-size:11px;color:#22d3ee;font-weight:600;margin-bottom:8px">
-        <span style="animation:opsSpin 1s linear infinite;display:inline-block">🤖</span> Leyendo foto con IA...
-      </div>`;
-    } else {
-      // OCR ya corrió — mostrar coincidencia. Colores adaptativos para dark slate.
-      const colorChip = pctCoincidencia >= 80 ? '#34d399' : pctCoincidencia >= 50 ? '#fbbf24' : '#f87171';
-      const bgChip    = pctCoincidencia >= 80 ? 'rgba(52,211,153,.15)' : pctCoincidencia >= 50 ? 'rgba(251,191,36,.15)' : 'rgba(248,113,113,.15)';
-      const bdChip    = pctCoincidencia >= 80 ? 'rgba(52,211,153,.45)' : pctCoincidencia >= 50 ? 'rgba(251,191,36,.45)' : 'rgba(248,113,113,.45)';
-      chipOcrHtml = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:${bgChip};border:1px solid ${bdChip};border-radius:999px;font-size:11px;color:${colorChip};font-weight:700;margin-bottom:8px">
-        🤖 ${ocrYaCorrido ? 'OCR procesado' : 'Sin OCR'} · ${lineasConCosto}/${totalLineas} ítems (${pctCoincidencia}% coincidencia)
-        <button onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="${ocrYaCorrido ? 'Re-procesar foto' : 'Procesar foto con OCR'}" style="background:transparent;border:0;cursor:pointer;color:${colorChip};font-size:11px;padding:0 0 0 4px;opacity:.7">🔄</button>
-      </div>`;
-    }
+    const chipOcrHtml = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <div style="display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:800">
+          <span style="color:#34d399">● Paso 1 · Montos → costos</span>
+          <span style="color:#475569">──</span>
+          <span style="color:#64748b">○ Paso 2 · Precios (con la jefa)</span>
+        </div>
+        <span style="font-size:10px;color:#93a4c2;margin-left:auto">${lineasConCosto}/${totalLineas} con monto</span>
+      </div>
+      ${tieneFoto ? `
+      <button class="alm-v-foto-thumb" style="width:100%;height:86px;border-radius:12px;overflow:hidden;border:1px solid #28344c;position:relative;cursor:zoom-in;margin-bottom:10px;background:#0e1626"
+              onclick="event.stopPropagation();MOS.abrirFotoOverlay('${_escapeHtml(String(st.foto).trim())}')" title="Ver la guía en grande (zoom)">
+        <img src="${_escapeHtml(String(st.foto).trim())}" style="width:100%;height:100%;object-fit:cover;opacity:.92" loading="lazy">
+        <span style="position:absolute;right:8px;bottom:6px;font-size:10px;font-weight:800;background:rgba(10,17,32,.85);color:#34d399;border:1px solid rgba(52,211,153,.4);border-radius:6px;padding:2px 8px">🔍 ver guía</span>
+      </button>` : `
+      <div style="font-size:11px;color:#64748b;border:1px dashed #28344c;border-radius:10px;padding:8px 12px;margin-bottom:10px">📷 Esta guía no tiene foto — el operador puede subirla desde WH al registrar el ingreso</div>`}`;
 
     const togglesHtml = `
       <div class="alm-v-costos-toggles">
@@ -11001,6 +10996,98 @@ const MOS = (() => {
   // imprimir ticket para jefa, todo en una sola acción.
   // [v2.43.2] OPTIMISTA: toast inmediato + sonido al click. Si falla, se nota
   // por el toast de error que ya emite guardarCostosGuia internamente.
+  // [v5 §11] PASO 1 → PASO 2 del secuencial de compra.
+  // Paso 1: guarda el detalle (RPC 383) + aplica costos al CANÓNICO con historial (RPC 431).
+  // Paso 2: cascada de precios con márgenes respetados (v1: lista por producto con el
+  // bidireccional del modal curvas; el toggle AUTO en lote llega en la siguiente tanda).
+  async function guardarCostosYPaso2() {
+    const st = S._costosGuiaState;
+    if (!st) return;
+    const lineas = (st.lineas || []).filter(l => {
+      const v = parseFloat(l.inputValue != null && l.inputValue !== '' ? l.inputValue : l.precioUnitario);
+      return v > 0;
+    });
+    if (!lineas.length) { toast('⚠ Escribe al menos un monto', 'error'); return; }
+    toast('Paso 1: aplicando costos…', 'info');
+    try {
+      await guardarCostosGuia();   // detalle de la guía (RPC 383, flujo existente)
+      const items = lineas.map(l => ({
+        codProducto: l.codigoProducto || l.codProducto || l.codigoBarra || '',
+        costoUnitario: (function(){ try { return _costosGuiaCalcularBruto(l, st) || parseFloat(l.inputValue) || parseFloat(l.precioUnitario) || 0; } catch(_) { return parseFloat(l.inputValue) || parseFloat(l.precioUnitario) || 0; } })()
+      })).filter(x => x.codProducto && x.costoUnitario > 0);
+      const r = await API.post('aplicarCostosCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items });
+      const res = ((r && (r.data || r)) || {}).items || [];
+      const okItems = res.filter(x => x.ok);
+      // refrescar costos en memoria para que el Paso 2 calcule con lo nuevo
+      okItems.forEach(x => { const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
+      _paso2Abrir(okItems, st.idGuia);
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  function _paso2Abrir(items, idGuia) {
+    document.getElementById('paso2Modal')?.remove();
+    const filas = items.map(x => {
+      const p = S.productos.find(y => y.idProducto === x.idCanonico) || {};
+      const mi = (function(){ try { return _calcularMargenInfo(p); } catch(_) { return null; } })();
+      const margenC = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : (mi ? parseFloat(mi.objetivo) : null);
+      const tieneCostoPrevio = (parseFloat(x.costoAnterior) || 0) > 0;
+      const sugerido = (margenC != null && margenC < 100 && x.costoNuevo > 0)
+        ? _r1(x.costoNuevo / (1 - margenC / 100)) : null;
+      return { x, p, margenC, sugerido, tieneCostoPrevio };
+    });
+    document.body.insertAdjacentHTML('beforeend', `
+    <div id="paso2Modal" class="modal-backdrop" style="z-index:9600" onclick="if(event.target===this)this.remove()">
+      <div class="modal-box p-0" style="max-width:520px;width:100%;animation:catFotoSheetIn .35s cubic-bezier(.34,1.56,.64,1)">
+        <div class="px-5 py-4" style="border-bottom:1px solid #1e293b">
+          <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800">
+            <span style="color:#34d399">✓ Paso 1</span><span style="color:#475569">──</span>
+            <span style="color:#34d399">● Paso 2 · Precios (con la jefa)</span>
+            <button onclick="document.getElementById('paso2Modal').remove()" class="modal-close-x" style="margin-left:auto">×</button>
+          </div>
+          <div class="text-[10px] mt-1" style="color:#93a4c2">Costos aplicados con historial · toca cada producto para decidir su precio (bidireccional precio↔margen)</div>
+        </div>
+        <div class="px-5 py-4 space-y-2" style="max-height:60vh;overflow-y:auto">
+          ${filas.map(f => `
+          <div class="rounded-xl px-3 py-2.5" style="background:#0e1626;border:1px ${f.tieneCostoPrevio ? 'solid #28344c' : 'dashed rgba(251,191,36,.5)'}">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-bold text-slate-200" style="flex:1;min-width:0">${_escapeHtml(f.p.descripcion || f.x.idCanonico)}</span>
+              <span class="text-[10px]" style="color:#fbbf24">costo ${f.x.costoAnterior != null && f.tieneCostoPrevio ? (+parseFloat(f.x.costoAnterior).toFixed(2)) + '→' : ''}${(+parseFloat(f.x.costoNuevo).toFixed(2))}</span>
+            </div>
+            <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+              ${f.tieneCostoPrevio && f.sugerido != null
+                ? `<span class="text-[11px]" style="color:#93a4c2">precio <s style="opacity:.7">S/${(parseFloat(f.p.precioVenta)||0)}</s> →</span>
+                   <span class="text-sm font-extrabold" style="color:#34d399">S/ ${f.sugerido}</span>
+                   <span class="qp-mode-chip">AUTO ${f.margenC}%</span>`
+                : `<span class="text-[10.5px]" style="color:#fbbf24">⚠ ${f.tieneCostoPrevio ? 'sin margen guardado' : 'primer costo registrado'} — define el precio y NACE su contrato</span>`}
+              <button onclick="MOS.abrirModalPrecioCurvas('${f.x.idCanonico}')"
+                      class="text-[10.5px] font-extrabold px-3 py-1.5 rounded-lg" style="margin-left:auto;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">
+                ${f.tieneCostoPrevio && f.sugerido != null ? 'Revisar / ajustar' : 'Definir precio'}</button>
+            </div>
+          </div>`).join('')}
+        </div>
+        <div class="px-5 py-4 flex gap-2" style="border-top:1px solid #1e293b">
+          <button onclick="document.getElementById('paso2Modal').remove()" class="flex-1 rounded-xl py-2.5 text-xs font-bold" style="background:#131d30;border:1px solid #28344c;color:#93a4c2">← Volver a montos</button>
+          <button onclick="MOS._paso2AplicarAutos()" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">✓ Aplicar sugeridos AUTO y finalizar</button>
+        </div>
+      </div>
+    </div>`);
+    window._paso2Filas = filas;
+  }
+
+  async function _paso2AplicarAutos() {
+    const filas = (window._paso2Filas || []).filter(f => f.tieneCostoPrevio && f.sugerido != null && f.sugerido > 0);
+    document.getElementById('paso2Modal')?.remove();
+    if (!filas.length) { toast('Nada en AUTO — define los precios uno a uno', 'info'); return; }
+    toast(`Aplicando ${filas.length} precio(s) con margen respetado…`, 'info');
+    try {
+      await Promise.all(filas.map(f =>
+        API.post('publicarPrecio', { _source: 'MOS_PASO2', idProducto: f.x.idCanonico, precioNuevo: f.sugerido, usuario: S.session?.nombre || '' })
+          .then(() => { const p = S.productos.find(y => y.idProducto === f.x.idCanonico); if (p) p.precioVenta = f.sugerido; })));
+      toast(`✓ ${filas.length} precio(s) actualizados respetando su margen`, 'ok');
+      renderCatalogo();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
   async function guardarCostosEImprimirJefa() {
     const st = S._costosGuiaState;
     if (!st) return;
@@ -44548,7 +44635,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
     _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
-    _agTab, _agAlcance, abrirModalPrecioCurvas, _pcSync, _pcGuardar,                                                // [catálogo v4] pestañas + chips de alcance fusionada
+    _agTab, _agAlcance, abrirModalPrecioCurvas, _pcSync, _pcGuardar, guardarCostosYPaso2, _paso2AplicarAutos,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
     // [RONDA 5 · purga] exports equiv embebidas eliminados
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
