@@ -7882,13 +7882,14 @@ const MOS = (() => {
       variantClass = 'alm-voucher-preing';
       selloTxt = 'PENDIENTE'; selloClass = 'alm-v-sello-pendiente';
     } else if (tipo === 'INGRESO_PROVEEDOR') {
-      tipoLabel = 'INGRESO PROVEEDOR'; tipoEmoji = '🟢';
-      variantClass = 'alm-voucher-ingreso';
+      // [v5 §11] es una COMPRA → badge distintivo para que el admin la ataque y actualice costos
+      tipoLabel = '🧾 COMPRA · PROVEEDOR'; tipoEmoji = '🟢';
+      variantClass = 'alm-voucher-ingreso alm-voucher-compra';
       selloTxt = 'INGRESADO'; selloClass = 'alm-v-sello-ingresado';
     } else if (tipo === 'ENTRADA_LIBRE') {
       // [v41.16] Entrada manual en zona — usualmente proveedor externo directo
-      tipoLabel = 'INGRESO EXTERNO (zona)'; tipoEmoji = '🟢';
-      variantClass = 'alm-voucher-ingreso';
+      tipoLabel = '🧾 COMPRA · EXTERNO (zona)'; tipoEmoji = '🟢';
+      variantClass = 'alm-voucher-ingreso alm-voucher-compra';
       selloTxt = 'INGRESADO'; selloClass = 'alm-v-sello-ingresado';
     } else if (tipo === 'ENTRADA_ALMACEN') {
       tipoLabel = 'INGRESO DESDE ALMACÉN'; tipoEmoji = '📥';
@@ -8028,10 +8029,8 @@ const MOS = (() => {
         // ese es flow SEPARADO accesible desde el botón 'Actualizar precios'
         // de la vista principal (autocontenido también).
         btnCostos = `
-          <button class="alm-v-btn-costos ops-cta-jefa" style="background:linear-gradient(135deg,#a855f7,#7c3aed);box-shadow:0 4px 12px -2px rgba(168,85,247,.6);font-size:13px;padding:10px 14px;font-weight:700;transition:transform .15s ease,box-shadow .2s ease"
-                  onclick="MOS.guardarCostosYPaso2()" title="Aplica los costos al catálogo (con historial) y abre el Paso 2 de precios">Calcular costos y pasar a precios →</button>
-          <button class="alm-v-btn-costos" style="background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 2px 6px -2px rgba(34,211,238,.5);font-size:11px;padding:7px 10px"
-                  onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="Re-procesar foto con Claude OCR (sobreescribe valores actuales)">🔄 Re-OCR</button>
+          <button class="alm-v-btn-costos ops-cta-jefa" style="background:linear-gradient(135deg,#34d399,#059669);box-shadow:0 4px 12px -2px rgba(52,211,153,.5);font-size:13px;padding:10px 14px;font-weight:700;transition:transform .15s ease,box-shadow .2s ease"
+                  onclick="MOS.guardarCostosYPaso2()" title="Aplica los costos al catálogo (con historial) y abre el Paso 2 de precios con la jefa">Calcular costos y pasar a precios →</button>
           <button class="alm-v-btn-costos" style="background:rgba(71,85,105,.6);box-shadow:none;font-size:11px;padding:7px 10px"
                   onclick="MOS.opsSalirModoCostos()" title="Cancelar edición">✕</button>`;
       }
@@ -8237,21 +8236,12 @@ const MOS = (() => {
       // Si la guía tiene foto Y el OCR ya corrió (flag S._opsOcrYaCorrido) Y
       // esta línea quedó sin costo → el OCR NO entendió esa línea → mostrar
       // badge ámbar 'OCR no entendió' para que admin sepa que debe escribir manual.
-      const _ocrCorrido = S._opsOcrYaCorrido && S._opsOcrYaCorrido[st.idGuia];
-      const _conFoto = st.foto && String(st.foto).trim() !== '';
-      const _ocrFalloEstaLinea = !brutoUnit && _ocrCorrido && _conFoto;
-      // [v2.43.18] Colores adaptativos vía clase — el CSS define el tono
-      // según fondo cream o slate (rojos #dc2626 ilegibles en dark slate).
+      // [v5 §11] OCR ELIMINADO — la marca es simple: ✓ con costo / ⚠ falta
       const marcaIni = brutoUnit > 0
         ? '<span title="Costo registrado" class="alm-v-marca-ok">✓</span>'
-        : (_ocrFalloEstaLinea
-            ? '<span title="OCR no pudo leer este ítem · escribe el costo a mano" class="alm-v-marca-ocr">🤖⚠</span>'
-            : '<span title="Falta costo" class="alm-v-marca-falta">⚠</span>');
+        : '<span title="Falta costo — escríbelo mirando la factura" class="alm-v-marca-falta">⚠</span>';
       const faltaCls = brutoUnit > 0 ? '' : ' alm-v-costo-line--falta';
-      // Badge informativo si OCR no entendió esta línea
-      const ocrNoEntendioBadge = _ocrFalloEstaLinea
-        ? '<div style="font-size:10px;color:#d97706;background:rgba(217,119,6,.1);border-left:3px solid #d97706;padding:3px 8px;border-radius:4px;margin-top:3px;font-weight:600">🤖 OCR no entendió este ítem — escribe el costo a mano</div>'
-        : '';
+      const ocrNoEntendioBadge = '';
 
       // [v2.43.20] Bloque IMPACTO — siempre que se pueda calcular margen actual
       // se muestra. Si no hay objetivo registrado, el margen actual SE PROPONE
@@ -9181,129 +9171,10 @@ const MOS = (() => {
     return common / union;
   }
 
-  async function opsOcrComprobantePrepoblar(idGuia) {
-    if (!S._costosGuiaState || S._costosGuiaState.idGuia !== idGuia) {
-      toast('Abre primero el modo costos de esta guía', 'warning');
-      return;
-    }
-    if (S._opsOcrEnVuelo) {
-      toast('Ya hay un OCR en proceso · esperá', 'warning');
-      return;
-    }
-    S._opsOcrEnVuelo = true;
-    // [v2.43.20] Marcar EN VUELO en map por guía (el flag global S._opsOcrEnVuelo
-    // sigue funcionando, pero el chip del render usa este map).
-    S._opsOcrEnVueloMap = S._opsOcrEnVueloMap || {};
-    S._opsOcrEnVueloMap[idGuia] = true;
-    // Forzar update del chip al estado "Leyendo IA..." (por si el render
-    // anterior fue antes de marcar el flag)
-    _opsActualizarChipOcr(idGuia);
-    _opsBeep('tac');
-    toast('🤖 Procesando OCR del comprobante... 5-15s', 'info', 15000);
-    try {
-      const r = await API.post('ocrComprobanteGuia', { idGuia });
-      const d = (r && r.data) || r || {};
-      const items = d.items || [];
-      if (!items.length) {
-        toast('⚠ OCR no detectó items en la foto del comprobante', 'warning', 6000);
-        return;
-      }
-      const lineas = S._costosGuiaState.lineas;
-      const usados = new Set();
-      let aplicados = 0, dudosos = 0, sinMatch = 0;
-      // Por cada item OCR busca la mejor línea de la guía por fuzzy
-      items.forEach(it => {
-        let bestIdx = -1, bestScore = 0;
-        lineas.forEach((l, idx) => {
-          if (usados.has(idx)) return;
-          const s = _opsFuzzyScore(it.descripcion, l.descripcion || '');
-          if (s > bestScore) { bestScore = s; bestIdx = idx; }
-        });
-        if (bestIdx < 0 || bestScore < 0.30) { sinMatch++; return; }
-        // Subtotal preferido si existe; si no, cantidad × precioUnit
-        const subt = it.subtotal > 0 ? it.subtotal : (it.precioUnitario || 0) * (it.cantidad || 1);
-        // Si la línea ya tiene un valor ingresado, NO sobrescribir
-        if (parseFloat(lineas[bestIdx].inputValue) > 0) return;
-        lineas[bestIdx].inputValue = +subt.toFixed(2);
-        lineas[bestIdx]._ocrConfidence = it.confidence;
-        usados.add(bestIdx);
-        if (it.confidence >= 80) aplicados++; else dudosos++;
-      });
-      // Re-render del panel para mostrar valores nuevos
-      try { almRenderOps(); } catch(_) {}
-      const total = items.length;
-      const msg = `🤖 OCR: ${aplicados} ✓ · ${dudosos} ⚠ · ${sinMatch} sin match (${total} items detectados)`;
-      toast(msg, aplicados > 0 ? 'success' : 'warning', 9000);
-      try { _opsBeep(aplicados > 0 ? 'cliclic' : 'tac'); } catch(_) {}
-    } catch(e) {
-      toast('⚠ Error OCR comprobante: ' + (e.message || e), 'error', 8000);
-    } finally {
-      // [v2.43.20/21] SIEMPRE limpiar flag en vuelo + actualizar chip directo +
-      // re-render del modal de costos unificado si está abierto para esta guía.
-      S._opsOcrEnVuelo = false;
-      if (S._opsOcrEnVueloMap) S._opsOcrEnVueloMap[idGuia] = false;
-      S._opsOcrYaCorrido = S._opsOcrYaCorrido || {};
-      S._opsOcrYaCorrido[idGuia] = true;
-      _opsActualizarChipOcr(idGuia);
-      // [v2.43.21] Re-render del modal unificado si activo en esta guía
-      try {
-        const modal = document.getElementById('modalCostosGuiaUnif');
-        if (modal && !modal.classList.contains('hidden')
-            && S._costosGuiaState && S._costosGuiaState.idGuia === idGuia) {
-          const op = _findOpByKey(S._costosGuiaState.fuente + '_' + idGuia);
-          if (op) _renderModalCostosCompleto(op);
-        }
-      } catch(_){}
-      // Por compat (overlay viejo si está abierto)
-      try { _opsRefreshOverlayIfMatches('WH_' + idGuia); } catch(_) {}
-    }
-  }
-
-  // [v2.43.20] Update DIRECTO del chip "Leyendo IA"/"OCR procesado" por ID
-  // estable. No depende de re-renderizar todo el voucher. Si el chip no existe
-  // (overlay cerrado o de otra guía), no-op.
-  function _opsActualizarChipOcr(idGuia) {
-    const chip = document.getElementById('opsChipOcrStatus');
-    if (!chip) return;
-    // Solo si estamos en esta guía (S._costosGuiaState)
-    if (!S._costosGuiaState || S._costosGuiaState.idGuia !== idGuia) return;
-    const st = S._costosGuiaState;
-    const tieneFoto = !!(st.foto && String(st.foto).trim());
-    const enVuelo = !!(S._opsOcrEnVueloMap && S._opsOcrEnVueloMap[idGuia]);
-    const yaCorrio = !!(S._opsOcrYaCorrido && S._opsOcrYaCorrido[idGuia]);
-    const totalLineas = (st.lineas || []).length;
-    const conCosto = (st.lineas || []).filter(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
-    const pct = totalLineas > 0 ? Math.round((conCosto / totalLineas) * 100) : 0;
-    if (!tieneFoto) {
-      chip.outerHTML = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(107,114,128,.15);border:1px solid rgba(107,114,128,.3);border-radius:999px;font-size:11px;color:#9ca3af;font-weight:600;margin-bottom:8px">📷 Sin foto · escribe los costos manual abajo</div>`;
-      return;
-    }
-    if (enVuelo) {
-      chip.outerHTML = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(34,211,238,.15);border:1px solid rgba(34,211,238,.4);border-radius:999px;font-size:11px;color:#22d3ee;font-weight:600;margin-bottom:8px"><span style="animation:opsSpin 1s linear infinite;display:inline-block">🤖</span> Leyendo foto con IA...</div>`;
-      return;
-    }
-    const color = pct >= 80 ? '#34d399' : pct >= 50 ? '#fbbf24' : '#f87171';
-    const bg    = pct >= 80 ? 'rgba(52,211,153,.15)' : pct >= 50 ? 'rgba(251,191,36,.15)' : 'rgba(248,113,113,.15)';
-    const bd    = pct >= 80 ? 'rgba(52,211,153,.45)' : pct >= 50 ? 'rgba(251,191,36,.45)' : 'rgba(248,113,113,.45)';
-    chip.outerHTML = `<div id="opsChipOcrStatus" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:${bg};border:1px solid ${bd};border-radius:999px;font-size:11px;color:${color};font-weight:700;margin-bottom:8px">
-      🤖 ${yaCorrio ? 'OCR procesado' : 'Sin OCR'} · ${conCosto}/${totalLineas} ítems (${pct}% coincidencia)
-      <button onclick="MOS.opsOcrComprobantePrepoblar('${idGuia}')" title="${yaCorrio ? 'Re-procesar foto' : 'Procesar foto'}" style="background:transparent;border:0;cursor:pointer;color:${color};font-size:11px;padding:0 0 0 4px;opacity:.7">🔄</button>
-    </div>`;
-  }
-
-  // [v2.43.18] Re-renderiza el body del overlay de detalle si está abierto
-  // para la guía indicada. Si está cerrado o es de otra guía, no-op.
-  function _opsRerenderOverlayDetalle(idGuia) {
-    const overlay = document.getElementById('almOpsDetalleOverlay');
-    if (!overlay || overlay.classList.contains('hidden')) return;
-    if (!S._opsOverlayKey || !String(S._opsOverlayKey).endsWith('_' + idGuia)) return;
-    const cont = document.getElementById('almOpsDetalleContent');
-    if (!cont) return;
-    const op = _findOpByKey(S._opsOverlayKey.replace('_PRE', ''));
-    if (!op) return;
-    cont.innerHTML = _renderVoucher(op, 0);
-  }
-
+  // [v5 §11 · OCR eliminado] stubs no-op para no romper llamadas residuales del
+  // modal unificado (el admin escribe los costos mirando la factura + foto con zoom).
+  async function opsOcrComprobantePrepoblar() { /* OCR retirado */ }
+  function _opsActualizarChipOcr() { /* OCR retirado */ }
   async function abrirSelPrinterJefa(fuente, idGuia) {
     _opsBeep('tac');
     S._opsImpCtx = { fuente, idGuia, formato: 'jefa' };
@@ -10485,16 +10356,10 @@ const MOS = (() => {
     const pct = totLin > 0 ? Math.round((conCosto / totLin) * 100) : 0;
     // Chip OCR
     let chipOcr = '';
-    if (!tieneFoto) {
-      chipOcr = `<div id="opsChipOcrStatus" class="ops-chip-info">📷 Sin foto · escribe los costos manual</div>`;
-    } else if (enVuelo) {
-      chipOcr = `<div id="opsChipOcrStatus" class="ops-chip-cyan"><span style="animation:opsSpin 1s linear infinite;display:inline-block">🤖</span> Leyendo foto con IA…</div>`;
-    } else {
-      const cls = pct >= 80 ? 'ops-chip-ok' : pct >= 50 ? 'ops-chip-warn' : 'ops-chip-err';
-      chipOcr = `<div id="opsChipOcrStatus" class="${cls}">🤖 ${yaCorrio ? 'OCR procesado' : 'Sin OCR'} · ${conCosto}/${totLin} (${pct}%)
-        <button onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" title="${yaCorrio ? 'Re-procesar foto' : 'Procesar foto'}" class="ops-chip-btn">🔄</button>
-      </div>`;
-    }
+    // [v5 §11] OCR eliminado — chip informativo simple del progreso de montos
+    chipOcr = tieneFoto
+      ? `<div id="opsChipOcrStatus" class="ops-chip-ok">📄 ${conCosto}/${totLin} con monto · toca la foto arriba para ver la guía</div>`
+      : `<div id="opsChipOcrStatus" class="ops-chip-info">✍ ${conCosto}/${totLin} con monto · escribe mirando la factura</div>`;
     // Progreso visual
     const progCls = pct === 100 ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
     const progreso = `<div id="costosGuiaProgreso" class="ops-prog-bar">
@@ -10678,10 +10543,9 @@ const MOS = (() => {
       <span class="ops-tot-lbl ops-tot-bruto">Total</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${totalBruto.toFixed(2)}</b>
     </div>
     <div class="ops-costos-actions">
-      <button onclick="MOS.guardarCostosEImprimirJefa()" class="ops-cta-jefa ops-btn-primary" title="Guarda costos y manda el ticket a la jefa para que decida precios">
-        💾📋 Guardar e imprimir comprobante jefa
+      <button onclick="MOS.guardarCostosYPaso2()" class="ops-cta-jefa ops-btn-primary" title="Aplica los costos al catálogo (con historial) y abre el Paso 2 de precios con la jefa">
+        Calcular costos y pasar a precios →
       </button>
-      <button onclick="MOS.opsOcrComprobantePrepoblar('${_escapeHtml(op.idGuia)}')" class="ops-btn-ghost" title="Re-procesar foto con OCR">🔄 Re-OCR</button>
     </div>`;
   }
 
@@ -10894,20 +10758,8 @@ const MOS = (() => {
         // [v2.43.20] NO seteamos _opsOcrYaCorrido aquí — eso ahora lo hace el
         // finally de opsOcrComprobantePrepoblar. Sí seteamos enVuelo para que
         // el chip se actualice a 'Leyendo IA...'.
-        S._opsOcrEnVueloMap = S._opsOcrEnVueloMap || {};
-        S._opsOcrEnVueloMap[idGuia] = true;
-        _opsActualizarChipOcr(idGuia);
-        // [v2.43.2] Feedback visual + sonoro elegante para que se sienta vivo
-        _opsBeep('shimmer');
-        _opsMostrarBadgeOcrAuto('procesando');
-        opsOcrComprobantePrepoblar(idGuia).then(() => {
-          _opsMostrarBadgeOcrAuto('listo');
-          _opsBeep('ok');
-        }).catch(() => {
-          _opsMostrarBadgeOcrAuto('error');
-          _opsBeep('warn');
-        });
-      } catch(e) { console.warn('[auto-OCR costos]', e); }
+        // [v5 §11] auto-OCR ELIMINADO — el admin escribe los montos con la factura a la vista.
+      } catch(e) { console.warn('[costos]', e); }
     }, 600); // delay 600ms para que el overlay termine de renderizar
   }
 
@@ -10964,8 +10816,8 @@ const MOS = (() => {
       return;
     }
     S._costosModoOrigen = 'foto';
-    // Disparar / re-disparar OCR — opsOcrComprobantePrepoblar ya maneja el feedback visual
-    opsOcrComprobantePrepoblar(idGuia);
+    // [v5 §11] OCR retirado: mostrar la guía en grande para copiar los montos a mano
+    if (st.foto && String(st.foto).trim()) abrirFotoOverlay(String(st.foto).trim());
   }
   async function costosUsarOrigenManual() {
     try { _opsBeep('tac'); } catch(_){}
