@@ -1,1 +1,1 @@
-{"version":"2.43.497","build":"2.43.496 V5 parte 2: SECUENCIAL de compra — Paso1 con FOTO de la guia (zoom) + stepper, OCR y ticket-jefa ELIMINADOS del overlay; CTA aplica costos (detalle 383 + canonico/historial 431) y abre Paso2: cascada con margen respetado (AUTO sugerido redondeo .1, primer-costo=definir contrato, revisar/ajustar por producto via modal curvas, aplicar AUTOs en lote, volver)."}
+{"version":"2.43.498","build":"2.43.498 fix boton +Nuevo producto: quitado cat-tool-btn-collapse (se ocultaba al enfocar el buscador) + flex-shrink:0. Ahora SIEMPRE visible."}
