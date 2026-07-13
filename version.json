@@ -1,1 +1,1 @@
-{"version":"2.43.507","build":"2.43.507 FIX CRITICO: modales curvas y paso2 se creaban con class modal-backdrop SIN open -> display:none -> INVISIBLES (por eso el click al precio/margen no mostraba nada). Ahora abren."}
+{"version":"2.43.508","build":"2.43.508 CASCADA repintada a la paleta del dibujo §06 (fondo #0a1120, filas #0e1626, esmeralda no indigo) + CURVAS §10 mas grandes/responsive con PUNTOS clickeables (cada punto = registro: precio/costo + fecha + guia)."}

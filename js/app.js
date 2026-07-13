@@ -18090,72 +18090,108 @@ const MOS = (() => {
     const precio = parseFloat(p.precioVenta) || 0;
     const margen = (costo > 0 && precio > 0) ? Math.round((1 - costo / precio) * 1000) / 10 : null;
     const esSat = !!(p.codigoProductoBase || (parseFloat(p.factorConversion) || 1) !== 1);
+    // [RONDA 8] margen guardado (contrato) + cuándo — para el subtítulo del dibujo §10
+    const margenGuardado = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : null;
     document.body.insertAdjacentHTML('beforeend', `
     <div id="pcCurvasModal" class="modal-backdrop open" style="z-index:9600;display:flex" onclick="if(event.target===this)this.remove()">
-      <div class="modal-box p-0" style="max-width:480px;width:100%;animation:catFotoSheetIn .35s cubic-bezier(.34,1.56,.64,1)">
+      <div class="modal-box p-0" style="max-width:560px;width:100%;max-height:92vh;overflow-y:auto;background:linear-gradient(180deg,#0a1120,#070d18);border:1px solid #28344c;animation:catFotoSheetIn .35s cubic-bezier(.34,1.56,.64,1)">
         <div class="flex items-center justify-between px-5 py-4" style="border-bottom:1px solid #1e293b">
-          <div class="min-w-0"><h2 class="font-bold text-sm text-white truncate">📈 ${_escapeHtml(p.descripcion || idProducto)}</h2>
-          <div class="text-[10px] mt-0.5" style="color:#34d399">${esSat ? 'costo derivado del canónico × factor' : 'canónico · su costo viene de compras'}</div></div>
+          <div class="min-w-0"><h2 class="font-bold text-sm text-white truncate">📈 Precio · ${_escapeHtml(p.descripcion || idProducto)}</h2>
+          <div class="text-[10px] mt-0.5" style="color:#34d399">${esSat ? '🥄 costo derivado del canónico × factor' : '🔵 canónico · su costo viene de compras'}${margenGuardado != null ? ' · margen contrato ' + margenGuardado + '%' : ''}</div></div>
           <button onclick="document.getElementById('pcCurvasModal').remove()" class="modal-close-x">×</button>
         </div>
         <div class="px-5 py-4 space-y-3">
-          <div id="pcCurvasChart" style="position:relative;height:110px;background:#0e1626;border:1px solid #28344c;border-radius:10px;overflow:hidden">
+          <div class="lbl" style="font-size:10px;color:#93a4c2">Curvas del producto · toca un punto para ver el registro</div>
+          <div id="pcCurvasChart" style="position:relative;height:170px;background:#0e1626;border:1px solid #28344c;border-radius:12px;overflow:hidden">
             <div class="rot-chip rot-skel" style="position:absolute;inset:8px;border-radius:8px"></div>
           </div>
           <div id="pcCurvasLeyenda" class="text-[10px]" style="color:#93a4c2">— precio venta &nbsp; ┄ costo (compras) · cargando historia…</div>
-          <div class="grid grid-cols-3 gap-2">
+          <!-- panel de detalle del punto clickeado -->
+          <div id="pcPuntoDetalle" style="display:none;font-size:11.5px;border-radius:10px;padding:9px 12px;border:1px solid #28344c;background:#0e1626"></div>
+          <div class="grid grid-cols-3 gap-2.5">
             <div><div class="lbl" style="font-size:9px">Costo ${esSat ? '(derivado)' : '(operaciones)'}</div>
-              <div class="inp" style="margin:0;opacity:.85"><span class="mono grow">${costo > 0 ? 'S/ ' + (+costo.toFixed(2)) : '—'}</span></div></div>
+              <div class="inp" style="margin:0;opacity:.85;border-color:rgba(251,191,36,.3)"><span class="mono grow" style="color:#fbbf24">${costo > 0 ? 'S/ ' + (+costo.toFixed(2)) : '—'}</span></div></div>
             <div><div class="lbl" style="font-size:9px">Precio venta ✎</div>
-              <input id="pcPrecio" class="inp w-full mono" style="margin:0;border-color:rgba(52,211,153,.5);font-weight:800" type="number" step="0.1" value="${precio || ''}"
+              <input id="pcPrecio" class="inp w-full mono" style="margin:0;border-color:rgba(52,211,153,.5);font-weight:800;font-size:16px;color:#34d399" type="number" step="0.1" value="${precio || ''}"
                      oninput="MOS._pcSync('precio')"></div>
             <div><div class="lbl" style="font-size:9px">Margen % ✎</div>
-              <input id="pcMargen" class="inp w-full mono" style="margin:0;border-color:rgba(251,191,36,.45);font-weight:800;color:#fbbf24" type="number" step="0.1"
+              <input id="pcMargen" class="inp w-full mono" style="margin:0;border-color:rgba(251,191,36,.45);font-weight:800;font-size:16px;color:#fbbf24" type="number" step="0.1"
                      value="${margen != null ? margen : ''}" ${costo > 0 ? '' : 'disabled placeholder="sin costo"'}
                      oninput="MOS._pcSync('margen')"></div>
           </div>
           <div id="pcAviso" class="text-[10.5px]" style="color:#93a4c2">${costo > 0
-            ? '↔ bidireccional: tocas uno, el otro se recalcula (precio = costo ÷ (1−margen), redondeo .1). Al guardar, ESE margen queda como contrato del producto.'
+            ? '↔ bidireccional: tocas el precio → el margen se recalcula · tocas el margen → el precio. Al guardar, ESE margen queda como contrato del producto (aunque no te guste el del costo, lo fijas a mano aquí).'
             : '⚠ Sin costo registrado: el margen no aplica (regla anti-error). Registra una compra en Almacén/Operaciones para activar el contrato.'}</div>
           <button onclick="MOS._pcGuardar('${idProducto}')" class="w-full rounded-xl py-3 font-extrabold text-sm"
                   style="background:linear-gradient(180deg,#34d399,#059669);color:#04140d">Guardar precio${costo > 0 ? ' y margen' : ''}</button>
         </div>
       </div>
     </div>`);
-    // curvas
+    // curvas con PUNTOS clickeables
     try {
       const r = await API.post('historialPrecioCosto', { idProducto });
       const d = r && (r.data || r);
       const ch = document.getElementById('pcCurvasChart');
       if (!ch) return;
-      const P = (d?.precios || []).map(x => ({ t: x.ts, v: parseFloat(x.valor) })).filter(x => x.v > 0);
-      const C = (d?.costos || []).map(x => ({ t: x.ts, v: parseFloat(x.valor) })).filter(x => x.v > 0);
-      if (precio > 0) P.push({ t: 'hoy', v: precio });
-      if (costo > 0 && !esSat) C.push({ t: 'hoy', v: costo });
+      const P = (d?.precios || []).map(x => ({ ts: x.ts, v: parseFloat(x.valor), usuario: x.usuario, motivo: x.motivo, tipo: 'precio' })).filter(x => x.v > 0);
+      const C = (d?.costos || []).map(x => ({ ts: x.ts, v: parseFloat(x.valor), usuario: x.usuario, idGuia: x.idGuia, tipo: 'costo' })).filter(x => x.v > 0);
+      // punto "hoy" (el valor actual, sin ts de historial)
+      if (precio > 0) P.push({ ts: 'hoy', v: precio, tipo: 'precio', hoy: true });
+      if (costo > 0 && !esSat) C.push({ ts: 'hoy', v: costo, tipo: 'costo', hoy: true });
+      S._pcPuntos = { P: P, C: C };   // para el click de cada punto
+      const ley = document.getElementById('pcCurvasLeyenda');
       if (P.length < 2 && C.length < 2) {
         ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:11px;color:#64748b">⬚ aún sin historia suficiente para la curva<br>desde hoy, cada cambio de precio y cada compra la van dibujando</div>';
-        const ley0 = document.getElementById('pcCurvasLeyenda');
-        if (ley0) ley0.innerHTML = `<span style="color:#34d399">—</span> precio (${P.length}) &nbsp; <span style="color:#fbbf24">┄</span> costo (${C.length}) · empezando a acumular`;
+        if (ley) ley.innerHTML = `<span style="color:#34d399">●</span> precio (${P.length}) &nbsp; <span style="color:#fbbf24">●</span> costo (${C.length}) · empezando a acumular`;
         return;
       }
+      const W = 320, H = 100, PAD = 6;
       const all = P.concat(C).map(x => x.v);
-      const mn = Math.min(...all) * 0.9, mx = Math.max(...all) * 1.05 || 1;
-      const nx = arr => arr.map((x, i) => (arr.length > 1 ? i / (arr.length - 1) : 0) * 300 + ',' +
-        (100 - ((x.v - mn) / (mx - mn || 1)) * 90 - 5)).join(' ');
-      ch.innerHTML = `<svg viewBox="0 0 300 100" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
-        ${C.length > 1 ? `<polyline points="${nx(C)}" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 3" style="stroke-dashoffset:600;animation:pcdraw 1.2s ease-out forwards"/>` : ''}
-        ${P.length > 1 ? `<polyline points="${nx(P)}" fill="none" stroke="#34d399" stroke-width="2" stroke-dasharray="600" style="stroke-dashoffset:600;animation:pcdraw 1.2s .15s ease-out forwards"/>` : ''}
+      const mn = Math.min(...all) * 0.92, mx = Math.max(...all) * 1.08 || 1;
+      const X = (arr, i) => (arr.length > 1 ? i / (arr.length - 1) : 0.5) * (W - 2 * PAD) + PAD;
+      const Y = v => H - PAD - ((v - mn) / (mx - mn || 1)) * (H - 2 * PAD);
+      const linePts = arr => arr.map((x, i) => X(arr, i) + ',' + Y(x.v)).join(' ');
+      const dots = (arr, serie, color) => arr.map((x, i) =>
+        `<circle cx="${X(arr, i)}" cy="${Y(x.v)}" r="4" fill="${color}" stroke="#0a1120" stroke-width="1.5" style="cursor:pointer"
+                 onclick="event.stopPropagation();MOS._pcPunto('${serie}',${i})"><title>toca para ver el registro</title></circle>`).join('');
+      ch.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+        ${[0.25,0.5,0.75].map(g => `<line x1="0" y1="${H*g}" x2="${W}" y2="${H*g}" stroke="#1e293b" stroke-width="0.5"/>`).join('')}
+        ${C.length > 1 ? `<polyline points="${linePts(C)}" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="5 3" style="stroke-dashoffset:900;animation:pcdraw 1.1s ease-out forwards"/>` : ''}
+        ${P.length > 1 ? `<polyline points="${linePts(P)}" fill="none" stroke="#34d399" stroke-width="2.2" stroke-dasharray="900" style="stroke-dashoffset:900;animation:pcdraw 1.1s .12s ease-out forwards"/>` : ''}
+        ${dots(C, 'C', '#fbbf24')}
+        ${dots(P, 'P', '#34d399')}
       </svg>
       <style>@keyframes pcdraw{to{stroke-dashoffset:0}}</style>`;
-      const ley = document.getElementById('pcCurvasLeyenda');
-      if (ley) ley.innerHTML = `<span style="color:#34d399">—</span> precio (${P.length} puntos) &nbsp; <span style="color:#fbbf24">┄</span> costo (${C.length} compras${esSat ? ' del canónico' : ''})`;
+      if (ley) ley.innerHTML = `<span style="color:#34d399">●</span> precio (${P.length} ${P.length === 1 ? 'punto' : 'puntos'}) &nbsp; <span style="color:#fbbf24">●</span> costo (${C.length} ${C.length === 1 ? 'compra' : 'compras'}${esSat ? ' del canónico' : ''})`;
     } catch (_) {
-      // [RONDA 7] si la historia no cargó, no dejar "cargando…" eterno
       const ch = document.getElementById('pcCurvasChart');
       if (ch) ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#64748b">— historia no disponible ahora —</div>';
       const ley = document.getElementById('pcCurvasLeyenda');
       if (ley) ley.textContent = '— precio venta   ┄ costo (compras)';
     }
+  }
+
+  // [RONDA 8] click a un punto de la curva → despliega el registro (valor·fecha·guía/usuario)
+  function _pcPunto(serie, i) {
+    const arr = (S._pcPuntos || {})[serie] || [];
+    const x = arr[i];
+    const box = $('pcPuntoDetalle');
+    if (!x || !box) return;
+    const fecha = x.hoy ? 'ahora (valor actual)' :
+      (function(){ try { return new Date(x.ts).toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric' }) + (x.ts.length > 10 ? ' · ' + x.ts.slice(11,16) : ''); } catch(_) { return x.ts || '—'; } })();
+    const esPrecio = serie === 'P';
+    box.style.display = '';
+    box.style.borderColor = esPrecio ? 'rgba(52,211,153,.4)' : 'rgba(251,191,36,.4)';
+    box.innerHTML =
+      `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-weight:800;color:${esPrecio ? '#34d399' : '#fbbf24'}">${esPrecio ? '💰 Precio' : '🏭 Costo'} S/ ${(+x.v).toFixed(2)}</span>
+        <span style="color:#93a4c2">· ${fecha}</span>
+      </div>
+      <div style="color:#64748b;font-size:10.5px;margin-top:3px">${
+        esPrecio ? ((x.motivo ? 'Motivo: ' + _escapeHtml(x.motivo) + ' · ' : '') + (x.usuario ? 'por ' + _escapeHtml(x.usuario) : 'cambio de precio'))
+                 : ((x.idGuia ? '🧾 Guía: ' + _escapeHtml(x.idGuia) + ' · ' : 'compra · ') + (x.usuario ? 'por ' + _escapeHtml(x.usuario) : ''))
+      }</div>`;
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
 
   function _pcSync(origen) {
@@ -44575,7 +44611,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
     _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
-    _agTab, _agAlcance, abrirModalPrecioCurvas, _pcSync, _pcGuardar, guardarCostosYPaso2, _paso2AplicarAutos,                                                // [catálogo v4] pestañas + chips de alcance fusionada
+    _agTab, _agAlcance, abrirModalPrecioCurvas, _pcSync, _pcGuardar, _pcPunto, guardarCostosYPaso2, _paso2AplicarAutos,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
     // [RONDA 5 · purga] exports equiv embebidas eliminados
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
