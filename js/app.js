@@ -43966,7 +43966,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
     _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
-    _agTab, _agAlcance, abrirModalPrecioCurvas, _pcSync, _pcGuardar, _pcPunto, _pcRenderSatelites, _pcSatTocado, _pcSatToggle, guardarCostosYPaso2, _paso2AplicarAutos,                                                // [catálogo v4] pestañas + chips de alcance fusionada
+    _agTab, _agAlcance, abrirModalPrecioCurvas, _pcSync, _pcGuardar, _pcPunto, _pcRenderSatelites, _pcSatTocado, _pcSatToggle, guardarCostosYPaso2, _paso2AplicarAutos, _paso2Abrir, _paso2Satelites,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
     // [RONDA 5 · purga] exports equiv embebidas eliminados
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
