@@ -18202,7 +18202,8 @@ const MOS = (() => {
       her.textContent = `Hereda del granel: ${igvTxt} · categoría ${padre.idCategoria || '—'} — no se vuelve a pedir`;
       body.innerHTML = `
         <div><label class="lbl">Nombre <span class="text-rose-400">*</span></label>
-          <input id="satNombre" class="inp w-full" placeholder="Ej: ${_escapeHtml((padre.descripcion||'').replace(/GRANEL/i,'').trim())} 250GR" oninput="MOS._satDerivadoPreview()"></div>
+          <input id="satNombre" class="inp w-full" placeholder="Ej: ${_escapeHtml((padre.descripcion||'').replace(/GRANEL/i,'').trim())} 250GR" oninput="MOS._satDerivadoPreview()">
+          <div id="satNombreHint" class="text-[11px] mt-1"></div></div>
         <div><label class="lbl">Porción del granel por unidad (kg) <span class="text-rose-400">*</span></label>
           <input id="satPorcion" class="inp w-full" type="number" step="0.001" min="0.001" max="0.999" placeholder="0.250" oninput="MOS._satDerivadoPreview()">
           <div id="satPorcionHint" class="text-[11px] mt-1 text-slate-500">Ej: bolsa de 250gr = 0.250</div></div>
@@ -18347,11 +18348,43 @@ const MOS = (() => {
   function cerrarModalSatelite() { _satState = null; closeModal('modalSatelite'); }
 
   // Guardián porción-vs-nombre del derivado (reusa _pesoDesdeNombre: avisa, no bloquea)
+  // [RONDA 7] Palabras clave del nombre de un producto (sin GRANEL ni el gramaje):
+  // "NUEZ PELADA PREMIUM GRANEL" → [NUEZ, PELADA, PREMIUM]. Sirve para validar que
+  // el derivado herede la FAMILIA del padre (evita el copy-paste que dejó "ECONOMICO"
+  // en derivados de "PREMIUM").
+  function _familiaNombre(desc) {
+    return String(desc || '').toUpperCase()
+      .replace(/\bGRANEL\b/g, ' ')
+      .replace(/\d+\s*(?:GR|GRS|G|KG|KGS|KILO|KILOS|ML|LT|L)\b/g, ' ')
+      .replace(/[^A-ZÑÁÉÍÓÚ ]/g, ' ')
+      .split(/\s+/).filter(w => w.length >= 3);
+  }
+  // Devuelve las palabras del padre que FALTAN en el nombre del hijo.
+  function _satNombreFaltantes() {
+    const padre = _satState?.padre;
+    const nombre = $('satNombre')?.value || '';
+    if (!padre || !nombre.trim()) return [];
+    const fam = _familiaNombre(padre.descripcion);
+    const nomU = ' ' + nombre.toUpperCase() + ' ';
+    return fam.filter(w => nomU.indexOf(w) < 0);
+  }
+
   function _satDerivadoPreview() {
     const hint = $('satPorcionHint');
-    if (!hint) return;
+    const nHint = $('satNombreHint');
     const nombre  = $('satNombre')?.value || '';
     const porcion = parseFloat($('satPorcion')?.value) || 0;
+    // ── validador de NOMBRE (familia del padre) ──
+    if (nHint) {
+      const falt = _satNombreFaltantes();
+      if (nombre.trim() && falt.length) {
+        nHint.innerHTML = `<span style="color:#fbbf24">⚠ El nombre no incluye "${falt.join(' ')}" del granel padre — ¿copiaste de otro producto? (el hijo debe heredar la familia)</span>`;
+      } else if (nombre.trim()) {
+        nHint.innerHTML = `<span style="color:#34d399">✓ Nombre coherente con el granel padre</span>`;
+      } else { nHint.textContent = ''; }
+    }
+    // ── guardián de PESO (nombre vs porción) ──
+    if (!hint) return;
     const pesoNom = (typeof _pesoDesdeNombre === 'function') ? _pesoDesdeNombre(nombre) : null;
     if (porcion > 0 && pesoNom && Math.abs(pesoNom - porcion) > 0.001) {
       hint.innerHTML = `<span style="color:#fbbf24">⚠ El nombre sugiere ${pesoNom} kg pero la porción es ${porcion} kg — verifica (el nombre suele decir la verdad)</span>`;
@@ -18542,6 +18575,14 @@ const MOS = (() => {
       if (precio <= 0)  { toast('⚠ El precio es requerido (> 0)', 'error'); return; }
       if (!codigo)      { toast('⚠ El código es requerido', 'error'); return; }
       if (_cbConflictoLocal(codigo, editar?.idProducto)) { toast('⚠ Ese código ya existe (producto o equivalente)', 'error'); return; }
+      // [RONDA 7] validador de NOMBRE: si el hijo no hereda la familia del padre
+      // (ej. copy-paste que dejó "ECONOMICO" en un "PREMIUM") → confirmar, no bloquear
+      const _faltNom = (typeof _satNombreFaltantes === 'function') ? _satNombreFaltantes() : [];
+      if (_faltNom.length && !await _modalConfirm(
+            `El nombre "${nombre}" NO incluye "${_faltNom.join(' ')}" del granel padre "${padre.descripcion}".\n\n¿Seguro? (los derivados deben heredar la familia del padre para no confundirse en el POS).`,
+            { warning: true, titulo: '⚠ Nombre no coincide con el padre' })) {
+        $('satNombre')?.focus(); return;
+      }
 
       // [RONDA 3] EDICIÓN: patch parcial vía actualizarProducto (atómico + historial)
       if (editar) {
@@ -34552,6 +34593,7 @@ const MOS = (() => {
         const r = res.find(x => x.idPersonal === idPersonal);
         if (r) {
           _evalState.auditR = r;
+          _evalState.auditFechaModal = fecha;   // [RONDA 7] re-congelar al día del lápiz (no el global)
           // Re-pintar las secciones internas del modal Auditar
           try { if (typeof _renderAuditKpis === 'function') _renderAuditKpis(r); } catch(_){}
           try { if (typeof _renderAuditChecklist === 'function') _renderAuditChecklist(r.rol); } catch(_){}
@@ -38634,8 +38676,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
     }
     if (!r) { toast('Personal no encontrado', 'error'); return; }
-    // Override del rol desde PERSONAL_MASTER (la card lo expone). Si
-    // existe, gana sobre r.rol (que puede venir de auto-detección).
+    // [RONDA 7 · FIX bono-fecha] CONGELAR la fecha del día que se está auditando,
+    // en un campo que NINGÚN proceso de fondo (polling 30s, re-render de Personal
+    // del Día que es HOY) puede pisar. El bono/descuento SIEMPRE se graba a ESTE día.
+    _evalState.auditFechaModal = r.fecha || _evalState.fecha;
     try {
       const card = document.querySelector(`.eval-card[data-id="${idPersonal}"]`);
       const badge = card?.querySelector('.badge-rol');
@@ -39677,7 +39721,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // _evalState.fecha (global mutable). Si el user navegó días o el polling
     // refrescó, _evalState.fecha podría ser hoy mientras el audit es de
     // otro día. Igual al fix de v2.41.49 para imprimir liquidación.
-    const fechaAudit = (_evalState.auditR && _evalState.auditR.fecha) || _evalState.fecha;
+    // [RONDA 7 · FIX] la fecha CONGELADA al abrir el modal manda sobre todo — así el
+    // bono/descuento se graba al día del modal aunque el polling haya movido el estado global.
+    const fechaAudit = _evalState.auditFechaModal || (_evalState.auditR && _evalState.auditR.fecha) || _evalState.fecha;
     const params = {
       idPersonal,
       rol,
