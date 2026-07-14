@@ -9606,6 +9606,7 @@ const MOS = (() => {
       okItems.forEach(x => { const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
       // [I] Paso 2 REEMPLAZA a Paso 1 en el mismo espacio: ocultamos Paso 1 al abrir Paso 2.
       document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
+      S._paso2Origen = { fuente: st.fuente, idGuia: st.idGuia }; // para "Volver a montos"
       _paso2Abrir(okItems, st.idGuia);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -10224,15 +10225,11 @@ const MOS = (() => {
     S._opsModoCostos = false;
     _mesaVolver();
   }
-  // Paso 2 → "Volver a montos": reabre Paso 1 (no la Mesa).
+  // Paso 2 → "Volver a montos": reabre Paso 1 de ESTA guía (nunca una stale), o la Mesa.
   function _paso2VolverAMontos() {
     document.getElementById('paso2Modal')?.remove();
-    const p1 = document.getElementById('modalCostosGuiaUnif');
-    if (p1 && S._costosGuiaState) { p1.classList.remove('hidden'); p1.style.zIndex = '9700'; return; }
-    if (S._costosGuiaState) {
-      const op = _findOpByKey(S._costosGuiaState.fuente + '_' + S._costosGuiaState.idGuia);
-      if (op) { _abrirModalCostosUnificado(op); return; }
-    }
+    const o = S._paso2Origen;
+    if (o && o.idGuia) { opsEntrarModoCostos(o.fuente, o.idGuia); return; } // re-init limpio del state
     _mesaVolver();
   }
 
@@ -10245,6 +10242,7 @@ const MOS = (() => {
       const costoNuevo = parseFloat(l.precioUnitario) || (parseFloat(l.subtotal) || 0) / (parseFloat(l.cantidad) || 1);
       return { idCanonico: p.idProducto || l.idCanonico || cod, costoNuevo, costoAnterior: parseFloat(p.precioCosto) || 0 };
     }).filter(x => x.costoNuevo > 0);
+    S._paso2Origen = { fuente: op.fuente, idGuia: op.idGuia }; // para "Volver a montos"
     _paso2Abrir(items, op.idGuia);
   }
 
