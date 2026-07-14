@@ -2785,7 +2785,11 @@ const API = (() => {
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS. (subirFotoProducto
     // se deja fuera: la foto a Drive por GAS es un fallback aceptable, no es dato de dinero.)
-    crearProducto: 1, actualizarProducto: 1, publicarPrecio: 1, crearEquivalencia: 1, actualizarEquivalencia: 1, actualizarSegmentosPrecio: 1 };
+    crearProducto: 1, actualizarProducto: 1, publicarPrecio: 1, crearEquivalencia: 1, actualizarEquivalencia: 1, actualizarSegmentosPrecio: 1,
+    // [dueño · fix "clave errónea" al eliminar presentaciones] La purga es un DELETE de datos del catálogo: el
+    // GAS de purga valida la clave contra el global DESINCRONIZADO (incidente clave-global) → rechazaba la clave
+    // master correcta. Fail-closed: sin token/directo → LANZA (reintentar), jamás cae al GAS con clave vieja.
+    eliminarItemsCatalogo: 1 };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe
