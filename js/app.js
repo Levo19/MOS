@@ -23015,7 +23015,7 @@ const MOS = (() => {
     const isMOS = ($('persAppOrigen')?.value === 'MOS');
     if (!nombre) { toast('Falta el nombre', 'error'); return; }
     if (!pin) { toast('Falta el PIN — genera uno con 🎲', 'error'); return; }
-    const puedeMOS = isMOS || rol === 'ADMIN' || rol === 'MASTER';
+    const puedeMOS = isMOS || rol === 'ADMIN' || rol === 'MASTER' || !!($('persAccesoMos')?.checked);
     let msg = `👋 Hola ${nombre}${apellido ? ' ' + apellido : ''}! Este es tu acceso:\n\n`;
     if (!isMOS) msg += `📦 Almacén (WH): ${_WH_URL}\n`;
     if (puedeMOS) msg += `🖥️ MOS (panel admin): ${_MOS_URL}\n`;
@@ -23063,6 +23063,9 @@ const MOS = (() => {
     $('persAppOrigen').value = appOrigen;
     const isMOS = appOrigen === 'MOS';
     const pagoWrap = $('persPagoWrap'); if (pagoWrap) pagoWrap.style.display = isMOS ? 'none' : '';
+    // [dueño] ascenso: el permiso admin a MOS solo aplica a operadores WH (los MOS ya son admin/master)
+    const ascWrap = $('persAscensoWrap'); if (ascWrap) ascWrap.style.display = isMOS ? 'none' : '';
+    if ($('persAccesoMos')) $('persAccesoMos').checked = false;
     // Set rol options based on app — todos en MAYÚSCULAS para coincidir con DB
     const rolSel = $('persRol');
     if (rolSel) {
@@ -23093,6 +23096,7 @@ const MOS = (() => {
       $('persColor').value    = p.color || '#6366f1';
       if (!isMOS) {
         $('persMonto').value  = p.montoBase  || '';
+        if ($('persAccesoMos')) $('persAccesoMos').checked = (p.accesoMos === true || p.accesoMos === '1' || p.accesoMos === 1);
       }
       // Toggle activo + botón eliminar visibles en edición
       if (estadoWrap) estadoWrap.classList.remove('hidden');
@@ -23139,6 +23143,8 @@ const MOS = (() => {
     }
     if (!isMOS) {
       params.montoBase  = $('persMonto')?.value  || 0;
+      // [dueño] ascenso dual: permiso admin a MOS (mantiene rol/pago de almacenero)
+      params.accesoMos  = !!($('persAccesoMos')?.checked);
     }
     const pin = $('persPin')?.value;
     if (pin) params.pin = pin;
