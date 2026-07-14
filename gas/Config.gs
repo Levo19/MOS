@@ -2109,74 +2109,37 @@ function instalarTriggerAlertaInactivos2a7d() {
 // ⚠️ CERO-GAS: esta función debe MIGRAR al pg_cron de Supabase
 // (mos.cron_dispositivos_inactivos) y desactivarse su trigger GAS.
 // ════════════════════════════════════════════════════════════════════════
+// [dueño 2026-07-14 · CERO-GAS] MIGRADO a Supabase. La cancelación de solicitudes
+// PENDIENTE_APROBACION >2 días ahora la hace el pg_cron `mos.cron_dispositivos_inactivos`
+// (que además marca las alertas REVISADA). Esta función quedó como NO-OP para no
+// duplicar/adelantar la lógica desde GAS. El trigger `cancelarPendientesAntiguos20h`
+// debe ELIMINARSE (ver desinstalarTriggerCancelarPendientes()).
 function cancelarPendientesAntiguos() {
-  _garantizarColumnasDispositivos();
-  var horasMax = parseInt(PropertiesService.getScriptProperties().getProperty('PENDIENTE_AUTO_CANCEL_HORAS') || '48', 10);
-  if (isNaN(horasMax) || horasMax < 1) horasMax = 48;
-  var sheet = getSheet('DISPOSITIVOS');
-  var data  = sheet.getDataRange().getValues();
-  var hdrs  = data[0];
-  var iId   = hdrs.indexOf('ID_Dispositivo');
-  var iNom  = hdrs.indexOf('Nombre_Equipo');
-  var iApp  = hdrs.indexOf('App');
-  var iEst  = hdrs.indexOf('Estado');
-  var iUC   = hdrs.indexOf('Ultima_Conexion');
-  var iCAT  = hdrs.indexOf('Cancelado_Auto_Ts');
-  var nowMs = Date.now();
-  var limMs = horasMax * 60 * 60 * 1000;
-  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
-  var canceladas = 0;
-  var detalles = [];
-  for (var i = 1; i < data.length; i++) {
-    var est = String(data[i][iEst] || '').toUpperCase();
-    if (est !== 'PENDIENTE_APROBACION') continue;
-    var uc = data[i][iUC];
-    var ucMs = 0;
-    if (uc instanceof Date) ucMs = uc.getTime();
-    else if (typeof uc === 'string' && uc.trim()) {
-      var d = new Date(uc);
-      if (!isNaN(d.getTime())) ucMs = d.getTime();
-    }
-    if (!ucMs) continue;
-    if ((nowMs - ucMs) > limMs) {
-      sheet.getRange(i + 1, iEst + 1).setValue('CANCELADO_AUTO');
-      if (iCAT >= 0) sheet.getRange(i + 1, iCAT + 1).setValue(nowStr);
-      canceladas++;
-      var idDisp = String(data[i][iId] || '');
-      // [CUTOVER auth] auto-cancelación (control) → espejar.
-      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(idDisp, { Estado: 'CANCELADO_AUTO', Cancelado_Auto_Ts: nowStr });
-      detalles.push({
-        idDispositivo: idDisp,
-        nombre:        String(data[i][iNom] || ''),
-        app:           String(data[i][iApp] || ''),
-        horasInactivo: Math.floor((nowMs - ucMs) / (60 * 60 * 1000))
-      });
-      // Marcar alerta SEGURIDAD_ALERTAS asociada como REVISADA con motivo
-      try {
-        _marcarAlertaSegRevisadaPorDispositivo(idDisp, 'AUTO_CANCEL_20H');
-      } catch(_){}
-    }
-  }
-  return { ok: true, data: { canceladas: canceladas, horas: horasMax, detalles: detalles } };
+  return { ok: true, noop: true, migrado: 'mos.cron_dispositivos_inactivos (Supabase, 48h)' };
 }
 
-// Wrapper para trigger horario (sin params)
+// Wrapper del trigger (no-op tras la migración a Supabase).
 function cancelarPendientesAntiguos20h() {
   return cancelarPendientesAntiguos();
 }
 
-// [v2.43.173] Setup-only: instala trigger 23:45. Idempotente.
-// Cambio v2.43.173: antes corría cada 1h. Ahora 1 vez al día a las 23:45
-// (ventana de mantenimiento). Razón: los admins tienen toda la jornada para
-// aprobar; si pasan 20h sin acción, esa noche se limpian de una vez.
-function instalarTriggerCancelarPendientes() {
+// [dueño 2026-07-14 · CERO-GAS] Ejecuta esto UNA vez desde el editor GAS para
+// ELIMINAR el trigger diario de auto-cancelación (ya lo hace el pg_cron de Supabase).
+// Idempotente: si no existe, devuelve {ya:true}.
+function desinstalarTriggerCancelarPendientes() {
   var TRG = 'cancelarPendientesAntiguos20h';
-  var existing = ScriptApp.getProjectTriggers().filter(function(t) {
-    return t.getHandlerFunction() === TRG;
+  var quitados = 0;
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === TRG) { ScriptApp.deleteTrigger(t); quitados++; }
   });
-  if (existing.length > 0) return { ok: true, ya: true, count: existing.length };
-  ScriptApp.newTrigger(TRG).timeBased().atHour(23).nearMinute(45).everyDays(1).create();
-  return { ok: true, instalado: true };
+  return { ok: true, quitados: quitados, ya: quitados === 0 };
+}
+
+// [CERO-GAS 2026-07-14] NO-OP tras la migración a Supabase. Ya NO se instala el
+// trigger de auto-cancelación (lo hace mos.cron_dispositivos_inactivos). Se conserva
+// el nombre para no romper llamadas existentes.
+function instalarTriggerCancelarPendientes() {
+  return { ok: true, noop: true, migrado: 'mos.cron_dispositivos_inactivos (Supabase)' };
 }
 
 // [v2.43.173] Función ÚNICA que limpia los triggers de seguridad antiguos
@@ -2188,8 +2151,9 @@ function instalarTriggerCancelarPendientes() {
 function reinstalarTriggersSeguridadNocturno() {
   var TRGS_SEG = {
     'purgarDispositivosInactivos7d':    { hora: 23, min: 15 },  // antes 02:00
-    'alertarDispositivosInactivos2a7d': { hora: 23, min: 30 },  // antes 02:30
-    'cancelarPendientesAntiguos20h':    { hora: 23, min: 45 }   // antes cada 1h
+    'alertarDispositivosInactivos2a7d': { hora: 23, min: 30 }   // antes 02:30
+    // [CERO-GAS 2026-07-14] 'cancelarPendientesAntiguos20h' RETIRADO — migrado a
+    // Supabase (mos.cron_dispositivos_inactivos). Ya no se (re)instala su trigger.
   };
   var triggers = ScriptApp.getProjectTriggers();
   var borrados = [];
