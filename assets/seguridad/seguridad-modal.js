@@ -233,6 +233,10 @@
         return r && r.data ? r.data : r;
       });
     }
+    // [cero-GAS 2026-07-14] La acción SÍ está migrada a RPC directa pero DeviceAuth no cargó (estado roto):
+    // NO caer a GAS — fail-closed con error claro. Antes esto resolvía al GAS con la clave/global potencialmente
+    // desincronizado. (Las acciones NO migradas —si hubiera— conservan apiPost abajo para no romper nada.)
+    if (_rpcFn) return Promise.reject(new Error('Auth no disponible · reintenta'));
     if (!_config.apiPost) return Promise.reject(new Error('SeguridadSystem no inicializado'));
     var fullAction = _config.endpointPrefix + action;
     var p = _config.apiPost(fullAction, params || {});

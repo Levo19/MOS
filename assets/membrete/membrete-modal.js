@@ -334,6 +334,10 @@
         return ed && ed.data ? ed.data : ed;
       });
     }
+    // [cero-GAS 2026-07-14] Si la acción SÍ está migrada (_RPC_DIRECT o _EDGE_DIRECT) pero la capacidad no cargó
+    // (DeviceAuth/edgeCall ausente = estado roto en MOS/WH), NO caer a GAS: fail-closed. Las acciones NO migradas
+    // (p.ej. crearLoteMembrete del flujo histórico de ME sin edgeCall) conservan apiPost abajo.
+    if (_rpcFn || _edgeBuild) return Promise.reject(new Error('Impresión/lectura directa no disponible · reintenta (sin GAS)'));
     if (!_config.apiPost) {
       return Promise.reject(new Error('MembreteSystem no inicializado · falta apiPost en config'));
     }
@@ -669,8 +673,13 @@
           _state.status = 'PAUSADO_ERROR'; _state.ultimoError = 'Edge: ' + (ed.error || 'error'); _state.polling = false; _render(); sonidos.error();
           return;
         }
-        // *_OFF → fallback GAS (kill-switch)
-        _imprimirMembreteGas(tipo, items, idempotencyKey);
+        // [cero-GAS 2026-07-14] Antes: *_OFF (kill-switch server) → fallback GAS. Ahora, si la app tiene Edge
+        // (MOS/WH), NO caemos a GAS: fail-closed con aviso claro. En prod el flag WH_LOTE_ADHESIVO_DIRECTO está
+        // ON; si se apagó, se reactiva el Edge — no se imprime por GAS. El lote NO se creó (OFF) → restaurar la
+        // cola vía onReject para no perder los membretes. (ME, sin edgeCall, sigue por _imprimirMembreteGas abajo.)
+        if (opts && typeof opts.onReject === 'function') { try { opts.onReject(); } catch(_){} }
+        _state.status = 'PAUSADO_ERROR'; _state.ultimoError = 'Impresión directa desactivada · reactívala (no se usa GAS)';
+        _state.polling = false; _render(); sonidos.error();
       }).catch(function(e) {
         if (!_state) return;
         _state.status = 'PAUSADO_ERROR'; _state.ultimoError = 'Sin confirmación de impresión: ' + ((e && e.message) || 'red') + ' — reintenta';
