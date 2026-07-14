@@ -9201,6 +9201,13 @@ const MOS = (() => {
     return lineas.map((l, i) => _renderCostosLineaItem(op, l, i, st)).join('');
   }
 
+  // [G] helper de costo por unidad — MISMO markup en el render inicial y al teclear.
+  function _costosGuiaHelperHTML(brutoUnit, netoUnit) {
+    if (!(brutoUnit > 0)) return '<span class="cu-empty">— falta el costo</span>';
+    return `<span class="cu-bruto">S/ ${brutoUnit.toFixed(2)}</span><span class="cu-u">/u</span>`
+         + (netoUnit > 0 ? `<span class="cu-neto">neto S/ ${netoUnit.toFixed(2)}</span>` : '');
+  }
+
   function _renderCostosLineaItem(op, l, i, st) {
     const cant = parseFloat(l.cantidad) || 0;
     const brutoUnit = _costosGuiaCalcularBruto(l, st);
@@ -9209,9 +9216,7 @@ const MOS = (() => {
     const cod  = _escapeHtml(String(l.codigoBarra || l.codigoProducto || ''));
     const equivBadge = l.esEquivalencia ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
     const placeholder = st.inputMode === 'TOTAL' ? 'Total' : 'Unit';
-    const helper = brutoUnit > 0
-      ? `<span class="alm-v-costo-helper-bruto">S/ ${brutoUnit.toFixed(4)}</span><span class="alm-v-costo-helper-u">/u</span>${netoUnit > 0 ? `<div class="alm-v-costo-helper-neto">neto S/ ${netoUnit.toFixed(4)}</div>` : ''}`
-      : '<span class="alm-v-costo-helper-empty">sin costo</span>';
+    const helper = _costosGuiaHelperHTML(brutoUnit, netoUnit);
     // [v5 §11] Sin OCR: marca simple ✓ con costo / ⚠ falta.
     const marcaIni = brutoUnit > 0
       ? '<span title="Costo registrado" class="alm-v-marca-ok">✓</span>'
@@ -9302,11 +9307,15 @@ const MOS = (() => {
         </div>
       </div>
       <div class="alm-v-costo-controls">
-        <div class="alm-v-costo-cant">${cant}u</div>
-        <input type="number" step="0.01" min="0" class="alm-v-costo-input"
-               value="${l.inputValue || ''}"
-               oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
-               placeholder="${placeholder}">
+        <span class="cq">${cant}<i>u</i></span>
+        <label class="ci">
+          <span class="ci-cur">S/</span>
+          <input type="number" step="0.01" min="0" class="alm-v-costo-input"
+                 value="${l.inputValue || ''}"
+                 oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
+                 placeholder="0.00">
+          <span class="ci-mode">${placeholder}</span>
+        </label>
         <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
       </div>
       ${margenInfoHtml}
@@ -9474,12 +9483,46 @@ const MOS = (() => {
       }
       #modalCostosGuiaUnif .alm-v-costo-helper { color: #cbd5e1; text-align: right; font-size: 11px; line-height: 1.3; font-family: ui-monospace,monospace; }
       #modalCostosGuiaUnif .alm-v-costo-helper-bruto { color: #fbbf24; font-weight: 800; }
-      /* [G] fila de monto compacta: input acotado (no estira toda la fila) + costo/u a la derecha */
-      #modalCostosGuiaUnif .alm-v-costo-controls { grid-template-columns: 42px minmax(94px,130px) 1fr; gap: 8px; min-height: 0; }
-      #modalCostosGuiaUnif .alm-v-costo-input { padding: 7px 9px; font-size: 14px; }
-      #modalCostosGuiaUnif .alm-v-costo-cant { font-size: 12.5px; padding: 5px 3px; }
-      #modalCostosGuiaUnif .alm-v-costo-helper { justify-self: end; align-self: center; }
-      #modalCostosGuiaUnif .alm-v-costo-line { padding: 10px 12px; }
+      /* [G] fila de monto ORDENADA: cantidad · input acotado (S/ prefijo + modo) · costo/u a la derecha.
+         Con sangría bajo el nombre. El input NUNCA estira toda la fila. */
+      #modalCostosGuiaUnif .alm-v-costo-line { padding: 11px 13px; }
+      #modalCostosGuiaUnif .alm-v-costo-controls {
+        display: grid; grid-template-columns: auto minmax(118px,148px) 1fr; gap: 10px; align-items: center;
+        min-height: 0; margin-top: 9px; padding-left: 30px; /* alinea con el nombre (sangría) */
+      }
+      #modalCostosGuiaUnif .cq {
+        font-size: 12px; font-weight: 800; color: #cbd5e1; font-family: ui-monospace,monospace;
+        background: rgba(15,23,42,.65); border: 1px solid rgba(148,163,184,.18); border-radius: 8px;
+        padding: 6px 9px; text-align: center; white-space: nowrap;
+      }
+      #modalCostosGuiaUnif .cq i { opacity: .55; font-style: normal; font-size: 10px; margin-left: 1px; }
+      #modalCostosGuiaUnif .ci {
+        display: flex; align-items: stretch; background: #0f172a; border: 1px solid #475569;
+        border-radius: 9px; overflow: hidden;
+      }
+      #modalCostosGuiaUnif .ci:focus-within { border-color: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,.25); }
+      #modalCostosGuiaUnif .ci-cur {
+        display: flex; align-items: center; padding: 0 5px 0 10px;
+        color: #93a4c2; font-weight: 800; font-size: 13px; font-family: ui-monospace,monospace;
+      }
+      #modalCostosGuiaUnif .alm-v-costo-input {
+        flex: 1; min-width: 0; width: auto; background: transparent; border: none; border-radius: 0;
+        padding: 8px 6px; font-size: 15px; font-weight: 800; text-align: right; color: #f8fafc;
+        font-family: ui-monospace,monospace;
+      }
+      #modalCostosGuiaUnif .alm-v-costo-input:focus { outline: none; box-shadow: none; border: none; }
+      #modalCostosGuiaUnif .ci-mode {
+        display: flex; align-items: center; padding: 0 9px; border-left: 1px solid #28344c;
+        font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #64748b;
+      }
+      #modalCostosGuiaUnif .alm-v-costo-helper {
+        justify-self: end; align-self: center; text-align: right;
+        font-size: 11px; color: #cbd5e1; font-family: ui-monospace,monospace; line-height: 1.35;
+      }
+      #modalCostosGuiaUnif .cu-bruto { color: #fbbf24; font-weight: 800; }
+      #modalCostosGuiaUnif .cu-u { opacity: .55; margin-left: 1px; }
+      #modalCostosGuiaUnif .cu-neto { display: block; opacity: .6; font-size: 10px; }
+      #modalCostosGuiaUnif .cu-empty { color: #fbbf24; opacity: .8; font-style: italic; }
       #modalCostosGuiaUnif .alm-v-marca-ok    { color: #34d399; font-weight: 700; }
       #modalCostosGuiaUnif .alm-v-marca-ocr   { color: #fbbf24; font-weight: 700; }
       #modalCostosGuiaUnif .alm-v-marca-falta { color: #f87171; font-weight: 700; animation: pulse 1.6s infinite; }
@@ -9604,10 +9647,12 @@ const MOS = (() => {
       const okItems = res.filter(x => x.ok);
       // refrescar costos en memoria para que el Paso 2 calcule con lo nuevo
       okItems.forEach(x => { const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
-      // [I] Paso 2 REEMPLAZA a Paso 1 en el mismo espacio: ocultamos Paso 1 al abrir Paso 2.
-      document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
+      // [I/H] Paso 2 entra deslizándose SOBRE el Paso 1 (se siente un progreso, no un modal nuevo);
+      // el Paso 1 se oculta con un pequeño retardo para que el deslizamiento se solape.
       S._paso2Origen = { fuente: st.fuente, idGuia: st.idGuia }; // para "Volver a montos"
       _paso2Abrir(okItems, st.idGuia);
+      const _p1 = document.getElementById('modalCostosGuiaUnif');
+      if (_p1) setTimeout(() => _p1.classList.add('hidden'), 220);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -9629,7 +9674,11 @@ const MOS = (() => {
       const sugerido = (margen != null && margen < 100 && costo > 0) ? _r1(costo / (1 - margen / 100)) : null;
       const ico = r.tipo === 'der' ? '🥄' : (r.tipo === 'presDer' ? '🧱' : (String(sp.unidad || '').toUpperCase() === 'KGM' ? '🥄' : '🧱'));
       return { p: sp, tipo: r.tipo, factor: r.factor, costo: _r1(costo), margen, sugerido, ico,
-               precioActual: parseFloat(sp.precioVenta) || 0 };
+               precioActual: parseFloat(sp.precioVenta) || 0,
+               // [H · toggle por satélite] por defecto se APLICA si hay sugerido; se puede apagar (excluir) o editar (→MANUAL)
+               incluido: (sugerido != null && sugerido > 0),
+               precioEd: (sugerido != null ? sugerido : null),
+               manual: false };
     }).filter(s => s.p && s.p.idProducto);
   }
 
@@ -9658,7 +9707,7 @@ const MOS = (() => {
     const kpi = (lbl, val, hero) => `<div class="p2-kpi${hero ? ' p2-kpi-hero' : ''}"><span class="p2-kl">${lbl}</span>${val}</div>`;
     document.body.insertAdjacentHTML('beforeend', `
     <div id="paso2Modal" class="modal-backdrop open" style="z-index:9700;display:flex" onclick="if(event.target===this)MOS._paso2CerrarAMesa()">
-      <div class="modal-box p-0" style="max-width:540px;width:100%;animation:catFotoSheetIn .35s cubic-bezier(.34,1.56,.64,1)">
+      <div class="modal-box p-0" style="max-width:540px;width:100%;animation:p2StepIn .42s cubic-bezier(.22,1,.36,1)">
         <div class="px-5 py-4" style="border-bottom:1px solid #1e293b">
           <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800">
             <span style="color:#34d399">✓ Paso 1</span><span style="color:#475569">──</span>
@@ -9699,14 +9748,20 @@ const MOS = (() => {
               <div class="p2-bidir-hint">↔ Bidireccional: cambias el precio → recalcula el margen · cambias el margen → recalcula el precio. ESE margen queda de contrato.</div>
               ${(f.satelites && f.satelites.length) ? `
               <div class="p2-sats">
-                <div class="p2-sats-lbl">${f.satelites.length} satélite(s) afectado(s) · precio auto por su margen</div>
-                ${f.satelites.map(s => `
-                <div class="p2-sat" style="border-left-color:${s.tipo === 'der' ? '#a855f7' : '#34d399'}">
-                  <span class="p2-sat-name">${s.ico} ${_escapeHtml(s.p.descripcion || s.p.idProducto)}</span>
-                  <span class="p2-sat-meta">×${s.factor} · costo ${s.costo}</span>
-                  ${s.sugerido != null
-                    ? `<span class="p2-sat-arrow">S/${s.precioActual || '—'}→</span><span class="p2-sat-sug">S/ ${s.sugerido}</span><span class="qp-mode-chip" style="font-size:7.5px;padding:1px 5px">AUTO ${s.margen != null ? (+s.margen).toFixed(0) + '%' : ''}</span>`
-                    : `<span class="p2-sat-warn">⚠ define su precio</span>`}
+                <div class="p2-sats-lbl">${f.satelites.length} satélite(s) · el margen se HEREDA del padre — enciende para aplicar, edita el precio para MANUAL, apaga para no tocarlo</div>
+                ${f.satelites.map((s, j) => `
+                <div class="p2-sat${s.incluido ? '' : ' off'}" id="p2sat_${i}_${j}" style="border-left-color:${s.tipo === 'der' ? '#a855f7' : '#34d399'}">
+                  <div class="p2-sat-l">
+                    <button type="button" class="p2-sat-sw${s.incluido ? ' on' : ''}" onclick="MOS._p2SatToggle(${i},${j})" title="Aplicar / no aplicar este satélite"><span></span></button>
+                    <span class="p2-sat-name">${s.ico} ${_escapeHtml(s.p.descripcion || s.p.idProducto)}</span>
+                  </div>
+                  <div class="p2-sat-r">
+                    <span class="p2-sat-meta">×${s.factor} · costo ${s.costo}</span>
+                    <span class="p2-sat-old">S/${s.precioActual || '—'}→</span>
+                    <span class="p2-sat-cur">S/</span>
+                    <input class="p2-sat-inp" id="p2si_${i}_${j}" type="number" step="0.1" min="0" value="${s.precioEd != null ? s.precioEd : ''}" ${s.incluido ? '' : 'disabled'} oninput="MOS._p2SatPrecio(${i},${j})" placeholder="—">
+                    <span class="p2-sat-mchip qp-mode-chip" id="p2sm_${i}_${j}">${s.margen != null ? (+s.margen).toFixed(0) + '%' : 'AUTO'}</span>
+                  </div>
                 </div>`).join('')}
               </div>` : ''}
             </div>
@@ -9753,6 +9808,32 @@ const MOS = (() => {
     // redibuja el punto "hoy" del precio en la curva
     const cv = document.getElementById('p2cv_' + i);
     if (cv && cv._setHoyPrecio) cv._setHoyPrecio(f.precioEd || 0);
+  }
+
+  // [H · toggle por satélite] encender/apagar (aplicar/excluir) un satélite de la cascada.
+  function _p2SatToggle(fi, sj) {
+    const f = (window._paso2Filas || [])[fi]; if (!f || !f.satelites) return;
+    const s = f.satelites[sj]; if (!s) return;
+    s.incluido = !s.incluido;
+    const row = document.getElementById('p2sat_' + fi + '_' + sj);
+    const tg = row && row.querySelector('.p2-sat-sw');
+    const inp = document.getElementById('p2si_' + fi + '_' + sj);
+    if (tg) tg.classList.toggle('on', s.incluido);
+    if (row) row.classList.toggle('off', !s.incluido);
+    if (inp) inp.disabled = !s.incluido;
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
+
+  // [H · toggle por satélite] editar el precio de un satélite → pasa a MANUAL (su margen se recalcula).
+  function _p2SatPrecio(fi, sj) {
+    const f = (window._paso2Filas || [])[fi]; const s = f && f.satelites && f.satelites[sj]; if (!s) return;
+    const inp = document.getElementById('p2si_' + fi + '_' + sj);
+    const pr = parseFloat(inp && inp.value) || 0;
+    s.precioEd = pr > 0 ? _r1(pr) : null;
+    s.manual = true;
+    if (pr > 0 && s.costo > 0) s.margen = (1 - s.costo / pr) * 100;
+    const chip = document.getElementById('p2sm_' + fi + '_' + sj);
+    if (chip) { chip.textContent = 'MANUAL'; chip.classList.add('man'); }
   }
 
   // [K/N] Abre/cierra el editor de una fila; al abrir por 1ª vez, carga la historia y dibuja la curva.
@@ -9900,6 +9981,7 @@ const MOS = (() => {
       .p2-chev{transition:transform .25s cubic-bezier(.4,0,.2,1);font-size:12px}
       .p2-editor{display:flex;flex-direction:column;gap:10px;animation:p2EdIn .28s ease}
       @keyframes p2EdIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+      @keyframes p2StepIn{from{opacity:0;transform:translateX(38px)}to{opacity:1;transform:none}}
       .p2-chart-wrap{background:#0a1120;border:1px solid #1e293b;border-radius:11px;padding:8px 8px 4px}
       .p2-canvas{width:100%;height:150px;display:block;touch-action:none}
       .p2-chart-legend{display:flex;align-items:center;gap:12px;font-size:9px;color:#93a4c2;padding:5px 4px 2px}
@@ -9915,14 +9997,28 @@ const MOS = (() => {
       .p2-field:nth-child(2) input{color:#fbbf24;border-color:rgba(251,191,36,.45)}
       .p2-bidir-hint{font-size:9.5px;line-height:1.45;color:#7b8aa6}
       .p2-sats{display:flex;flex-direction:column;gap:6px;border-top:1px dashed #28344c;padding-top:9px}
-      .p2-sats-lbl{font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192}
-      .p2-sat{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 8px;background:#0b1425;border:1px solid #1e293b;border-left:2px solid #34d399;border-radius:8px}
-      .p2-sat-name{font-size:10.5px;font-weight:700;flex:1;min-width:66px;color:#dbe4f3}
+      .p2-sats-lbl{font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#5f7192;line-height:1.45}
+      .p2-sat{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;background:#0b1425;border:1px solid #1e293b;border-left:2px solid #34d399;border-radius:9px;transition:opacity .18s}
+      .p2-sat.off{opacity:.42}
+      .p2-sat-l{display:flex;align-items:center;gap:7px;flex:1;min-width:120px}
+      .p2-sat-name{font-size:10.5px;font-weight:700;color:#dbe4f3;min-width:0;word-break:break-word}
+      .p2-sat-r{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
       .p2-sat-meta{font-size:8.5px;color:#8ea3c4;font-family:ui-monospace,monospace}
-      .p2-sat-arrow{font-size:8px;color:#8ea3c4}
-      .p2-sat-sug{font-size:12px;font-weight:800;color:#34d399;font-family:ui-monospace,monospace}
-      .p2-sat-warn{font-size:9px;color:#fbbf24;font-weight:700}
-      @media (prefers-reduced-motion:reduce){.p2-editor,.p2-chev{animation:none;transition:none}}
+      .p2-sat-old{font-size:8px;color:#64748b;font-family:ui-monospace,monospace}
+      .p2-sat-cur{font-size:9px;color:#93a4c2}
+      .p2-sat-inp{width:64px;background:#0a1120;border:1px solid rgba(52,211,153,.4);border-radius:7px;padding:4px 7px;
+        font-size:12.5px;font-weight:800;text-align:right;color:#34d399;font-family:ui-monospace,monospace}
+      .p2-sat-inp:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,.25)}
+      .p2-sat-inp:disabled{opacity:.5;color:#93a4c2;border-color:#28344c}
+      .p2-sat-mchip{font-size:7.5px;padding:1px 5px}
+      .p2-sat-mchip.man{background:rgba(251,191,36,.16);color:#fbbf24;border-color:rgba(251,191,36,.4)}
+      /* toggle switch del satélite */
+      .p2-sat-sw{flex:none;width:34px;height:19px;border-radius:999px;background:#28344c;border:1px solid #3a4a6b;
+        position:relative;cursor:pointer;transition:background .18s,border-color .18s;padding:0}
+      .p2-sat-sw>span{position:absolute;top:1.5px;left:1.5px;width:14px;height:14px;border-radius:50%;background:#93a4c2;transition:transform .2s cubic-bezier(.34,1.4,.5,1),background .18s}
+      .p2-sat-sw.on{background:linear-gradient(180deg,#34d399,#059669);border-color:transparent}
+      .p2-sat-sw.on>span{transform:translateX(15px);background:#04140d}
+      @media (prefers-reduced-motion:reduce){.p2-editor,.p2-chev,.p2-sat,.p2-sat-sw>span{animation:none;transition:none}}
     `;
     document.head.appendChild(st);
   }
@@ -9933,8 +10029,9 @@ const MOS = (() => {
     (window._paso2Filas || []).forEach(f => {
       // [J/K] usa el precio EDITADO (sugerido por defecto, o el que el admin ajustó en el editor).
       if (f.precioEd != null && f.precioEd > 0) jobs.push({ id: f.x.idCanonico, precio: f.precioEd });
+      // [H · toggle] solo los satélites ENCENDIDOS (incluidos) se publican, con su precio editado.
       (f.satelites || []).forEach(s => {
-        if (s.sugerido != null && s.sugerido > 0 && s.p && s.p.idProducto) jobs.push({ id: s.p.idProducto, precio: s.sugerido });
+        if (s.incluido && s.precioEd != null && s.precioEd > 0 && s.p && s.p.idProducto) jobs.push({ id: s.p.idProducto, precio: s.precioEd });
       });
     });
     document.getElementById('paso2Modal')?.remove();
@@ -10432,29 +10529,41 @@ const MOS = (() => {
     const stage = overlay.querySelector('#almFotoStage');
     const img = overlay.querySelector('#almFotoImg');
     if (!stage || !img) return;
-    const fv = { s: 1, tx: 0, ty: 0, drag: false, sx: 0, sy: 0, pinch: 0, pd: 0 };
-    const MIN = 1, MAX = 6;
+    // La imagen se posiciona en (0,0) del stage (transform-origin 0 0) y se coloca con un
+    // transform de FIT+CENTRADO calculado. Así el zoom hacia el cursor es exacto (no deriva).
+    const fv = { s: 1, min: 1, max: 8, tx: 0, ty: 0, drag: false, sx: 0, sy: 0, pd: 0, ready: false };
     const apply = () => {
       img.style.transform = `translate(${fv.tx}px,${fv.ty}px) scale(${fv.s})`;
-      stage.style.cursor = fv.s > 1 ? (fv.drag ? 'grabbing' : 'grab') : 'zoom-in';
+      stage.style.cursor = fv.s > fv.min * 1.03 ? (fv.drag ? 'grabbing' : 'grab') : 'zoom-in';
     };
-    const clamp = v => Math.max(MIN, Math.min(MAX, v));
-    // zoom hacia un punto (px,py) relativo al stage
+    const fit = () => {
+      const rw = stage.clientWidth || 1, rh = stage.clientHeight || 1;
+      const nw = img.naturalWidth || rw, nh = img.naturalHeight || rh;
+      const f = Math.min(rw / nw, rh / nh) || 1;
+      fv.min = f; fv.max = f * 8; fv.s = f;
+      fv.tx = (rw - nw * f) / 2; fv.ty = (rh - nh * f) / 2;   // centrado real
+      fv.ready = true; apply();
+    };
+    const clamp = v => Math.max(fv.min, Math.min(fv.max, v));
+    // zoom hacia un punto (px,py) de pantalla, manteniéndolo fijo bajo el cursor
     const zoomAt = (px, py, ns) => {
+      if (!fv.ready) return;
       ns = clamp(ns);
       const r = stage.getBoundingClientRect();
       const cx = px - r.left, cy = py - r.top;
       fv.tx = cx - (cx - fv.tx) * (ns / fv.s);
       fv.ty = cy - (cy - fv.ty) * (ns / fv.s);
       fv.s = ns;
-      if (fv.s <= 1.001) { fv.tx = 0; fv.ty = 0; }
-      apply();
+      if (fv.s <= fv.min * 1.002) fit(); else apply();   // al mínimo → recentrar
     };
-    stage.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, fv.s * (e.deltaY < 0 ? 1.18 : 1 / 1.18)); }, { passive: false });
-    stage.addEventListener('dblclick', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, fv.s > 1.5 ? 1 : 2.6); });
+    // fit inicial (espera la carga si aún no tiene dimensiones)
+    if (img.complete && img.naturalWidth) fit();
+    else img.addEventListener('load', fit, { once: true });
+    stage.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, fv.s * (e.deltaY < 0 ? 1.2 : 1 / 1.2)); }, { passive: false });
+    stage.addEventListener('dblclick', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, fv.s > fv.min * 1.6 ? fv.min : fv.min * 3); });
     // arrastre (mouse/touch unificado con Pointer Events)
     stage.addEventListener('pointerdown', (e) => {
-      if (fv.s <= 1) return; fv.drag = true; fv.sx = e.clientX - fv.tx; fv.sy = e.clientY - fv.ty;
+      if (fv.s <= fv.min * 1.03) return; fv.drag = true; fv.sx = e.clientX - fv.tx; fv.sy = e.clientY - fv.ty;
       try { stage.setPointerCapture(e.pointerId); } catch(_){} apply();
     });
     stage.addEventListener('pointermove', (e) => { if (!fv.drag) return; fv.tx = e.clientX - fv.sx; fv.ty = e.clientY - fv.sy; apply(); });
@@ -10470,18 +10579,18 @@ const MOS = (() => {
       fv.pd = d;
     }, { passive: false });
     stage.addEventListener('touchend', () => { fv.pd = 0; });
-    // botones
+    // botones (zoom al CENTRO del stage)
     overlay.querySelectorAll('.alm-foto-ctrls button[data-z]').forEach(b => b.onclick = (e) => {
       e.stopPropagation();
       const r = stage.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
       const z = b.dataset.z;
-      if (z === 'in') zoomAt(cx, cy, fv.s * 1.4);
-      else if (z === 'out') zoomAt(cx, cy, fv.s / 1.4);
-      else { fv.s = 1; fv.tx = 0; fv.ty = 0; apply(); }
+      if (z === 'in') zoomAt(cx, cy, fv.s * 1.5);
+      else if (z === 'out') zoomAt(cx, cy, fv.s / 1.5);
+      else fit();
     });
-    // cerrar: × · backdrop (solo si no hay zoom) · Esc
+    // cerrar: × · backdrop (solo si estás en fit) · Esc
     overlay.querySelector('.alm-foto-close').onclick = () => overlay.classList.add('hidden');
-    stage.addEventListener('click', (e) => { if (e.target === stage && fv.s <= 1) overlay.classList.add('hidden'); });
+    stage.addEventListener('click', (e) => { if (e.target === stage && fv.s <= fv.min * 1.03) overlay.classList.add('hidden'); });
     if (!S._fotoEscBound) {
       S._fotoEscBound = true;
       document.addEventListener('keydown', (e) => {
@@ -10704,13 +10813,17 @@ const MOS = (() => {
     linea.inputValue = parseFloat(valor) || 0;
     const brutoUnit = _costosGuiaCalcularBruto(linea, st);
     const netoUnit  = brutoUnit / (1 + _IGV_RATE);
+    // [H · optimista] mantener el cache de detalle en sync YA, para que la Mesa marque
+    // "Paso 1 hecho" apenas vuelves (sin esperar un reload). También refleja el costo en la op.
+    try {
+      const k = st.fuente + '_' + st.idGuia;
+      const cache = S._opsDetCache && S._opsDetCache[k];
+      if (cache && cache.lineas && cache.lineas[idx]) cache.lineas[idx].precioUnitario = brutoUnit;
+      const op = _findOpByKey(k);
+      if (op && op.lineas && op.lineas[idx]) op.lineas[idx].precioUnitario = brutoUnit;
+    } catch(_){}
     const cell = $('costoGuiaSubtot_' + idx);
-    if (cell) {
-      cell.innerHTML = brutoUnit > 0
-        ? `<div><span class="alm-cu-line-helper-bruto">S/ ${brutoUnit.toFixed(4)}</span>/u</div>
-           <div style="opacity:.65">neto S/ ${netoUnit.toFixed(4)}</div>`
-        : '<span style="opacity:.4">—</span>';
-    }
+    if (cell) cell.innerHTML = _costosGuiaHelperHTML(brutoUnit, netoUnit);
     // Recalcular totales
     let totalBruto = 0;
     st.lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
@@ -17214,31 +17327,20 @@ const MOS = (() => {
       // punto "hoy" (el valor actual, sin ts de historial)
       if (precio > 0) P.push({ ts: 'hoy', v: precio, tipo: 'precio', hoy: true });
       if (costo > 0 && !esSat) C.push({ ts: 'hoy', v: costo, tipo: 'costo', hoy: true });
-      S._pcPuntos = { P: P, C: C };   // para el click de cada punto
+      S._pcPuntos = { P: P, C: C };   // (compat)
       const ley = document.getElementById('pcCurvasLeyenda');
-      if (P.length < 2 && C.length < 2) {
-        ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:11px;color:#64748b">⬚ aún sin historia suficiente para la curva<br>desde hoy, cada cambio de precio y cada compra la van dibujando</div>';
-        if (ley) ley.innerHTML = `<span style="color:#34d399">●</span> precio (${P.length}) &nbsp; <span style="color:#fbbf24">●</span> costo (${C.length}) · empezando a acumular`;
+      // [N] gráfico CARTESIANO (X=tiempo real · Y=S/) — mismo motor que el Paso 2, con arrastre.
+      const histP = P.filter(x => !x.hoy).map(x => ({ t: Date.parse(x.ts), v: x.v })).filter(x => x.v > 0 && !isNaN(x.t));
+      const histC = C.filter(x => !x.hoy).map(x => ({ t: Date.parse(x.ts), v: x.v })).filter(x => x.v > 0 && !isNaN(x.t));
+      if (!histP.length && !histC.length && !(precio > 0) && !(costo > 0)) {
+        ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:11px;color:#64748b">⬚ aún sin historia · desde hoy, cada cambio de precio y cada compra la van dibujando</div>';
+        if (ley) ley.innerHTML = `<span style="color:#34d399">●</span> precio (${histP.length}) &nbsp; <span style="color:#fbbf24">●</span> costo (${histC.length}) · empezando a acumular`;
         return;
       }
-      const W = 320, H = 100, PAD = 6;
-      const all = P.concat(C).map(x => x.v);
-      const mn = Math.min(...all) * 0.92, mx = Math.max(...all) * 1.08 || 1;
-      const X = (arr, i) => (arr.length > 1 ? i / (arr.length - 1) : 0.5) * (W - 2 * PAD) + PAD;
-      const Y = v => H - PAD - ((v - mn) / (mx - mn || 1)) * (H - 2 * PAD);
-      const linePts = arr => arr.map((x, i) => X(arr, i) + ',' + Y(x.v)).join(' ');
-      const dots = (arr, serie, color) => arr.map((x, i) =>
-        `<circle cx="${X(arr, i)}" cy="${Y(x.v)}" r="4" fill="${color}" stroke="#0a1120" stroke-width="1.5" style="cursor:pointer"
-                 onclick="event.stopPropagation();MOS._pcPunto('${serie}',${i})"><title>toca para ver el registro</title></circle>`).join('');
-      ch.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
-        ${[0.25,0.5,0.75].map(g => `<line x1="0" y1="${H*g}" x2="${W}" y2="${H*g}" stroke="#1e293b" stroke-width="0.5"/>`).join('')}
-        ${C.length > 1 ? `<polyline points="${linePts(C)}" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="5 3" style="stroke-dashoffset:900;animation:pcdraw 1.1s ease-out forwards"/>` : ''}
-        ${P.length > 1 ? `<polyline points="${linePts(P)}" fill="none" stroke="#34d399" stroke-width="2.2" stroke-dasharray="900" style="stroke-dashoffset:900;animation:pcdraw 1.1s .12s ease-out forwards"/>` : ''}
-        ${dots(C, 'C', '#fbbf24')}
-        ${dots(P, 'P', '#34d399')}
-      </svg>
-      <style>@keyframes pcdraw{to{stroke-dashoffset:0}}</style>`;
-      if (ley) ley.innerHTML = `<span style="color:#34d399">●</span> precio (${P.length} ${P.length === 1 ? 'punto' : 'puntos'}) &nbsp; <span style="color:#fbbf24">●</span> costo (${C.length} ${C.length === 1 ? 'compra' : 'compras'}${esSat ? ' del canónico' : ''})`;
+      ch.innerHTML = '<canvas id="pcCurvasCanvas" style="width:100%;height:100%;display:block;touch-action:none"></canvas>';
+      const cv = document.getElementById('pcCurvasCanvas');
+      if (cv) _p2ChartInit(cv, { P: histP, C: histC }, precio, esSat ? 0 : costo);
+      if (ley) ley.innerHTML = `<span style="color:#34d399">●</span> precio (${histP.length} ${histP.length === 1 ? 'punto' : 'puntos'}) &nbsp; <span style="color:#fbbf24">┄</span> costo (${histC.length} ${histC.length === 1 ? 'compra' : 'compras'}${esSat ? ' del canónico' : ''}) · línea "hoy" = Δ margen · arrastra para ver el pasado`;
     } catch (_) {
       const ch = document.getElementById('pcCurvasChart');
       if (ch) ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#64748b">— historia no disponible ahora —</div>';
@@ -43910,7 +44012,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     opsEntrarModoCostos, opsSalirModoCostos,
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaCargarMas, _mesaComprasEntrar, _mesaComprasSyncBadge,
-    _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync,
+    _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
