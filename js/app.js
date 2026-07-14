@@ -16979,8 +16979,8 @@ const MOS = (() => {
           <input id="satNombre" class="inp w-full" placeholder="Ej: ${_escapeHtml((padre.descripcion||'').replace(/GRANEL/i,'').trim())} 250GR" oninput="MOS._satDerivadoPreview()">
           <div id="satNombreHint" class="text-[11px] mt-1"></div></div>
         <div><label class="lbl">Porción del granel por unidad (kg) <span class="text-rose-400">*</span></label>
-          <input id="satPorcion" class="inp w-full" type="number" step="0.001" min="0.001" max="0.999" placeholder="0.250" oninput="MOS._satDerivadoPreview()">
-          <div id="satPorcionHint" class="text-[11px] mt-1 text-slate-500">Ej: bolsa de 250gr = 0.250</div></div>
+          <input id="satPorcion" class="inp w-full" type="number" step="0.001" min="0.001" placeholder="0.250" oninput="MOS._satDerivadoPreview()">
+          <div id="satPorcionHint" class="text-[11px] mt-1 text-slate-500">Cualquier tamaño · ej: 250gr = 0.250 · 5kg = 5 · 25kg = 25</div></div>
         <div class="grid grid-cols-2 gap-3">
           <div><label class="lbl">Precio venta <span class="text-rose-400">*</span></label>
             <input id="satPrecio" class="inp w-full" type="number" step="0.10" min="0.10" placeholder="0.00"></div>
@@ -17165,8 +17165,19 @@ const MOS = (() => {
     } else if (porcion > 0 && pesoNom) {
       hint.innerHTML = `<span style="color:#34d399">✓ Coincide con el nombre (${pesoNom} kg)</span>`;
     } else {
-      hint.textContent = 'Ej: bolsa de 250gr = 0.250';
+      hint.textContent = 'Cualquier tamaño · ej: 250gr = 0.250 · 5kg = 5 · 25kg = 25';
     }
+  }
+
+  // [dueño 2026-07-14] Valida la porción del derivado SIN tope superior — se puede envasar CUALQUIER tamaño
+  // (250gr, 5kg, 25kg…). Único requisito: > 0. El mensaje va DENTRO del modal (el toast quedaba detrás y no se
+  // veía). Devuelve true si es válida; si no, pinta el hint en rojo y enfoca el campo.
+  function _satPorcionValida(porcion) {
+    if (porcion > 0) return true;
+    const hint = $('satPorcionHint');
+    if (hint) hint.innerHTML = '<span style="color:#fca5a5">⚠ Ingresa la porción del granel por unidad (kg), mayor a 0. Ej: 5kg = 5</span>';
+    try { $('satPorcion')?.focus(); } catch (_) {}
+    return false;
   }
 
   function _satSugerirPrecioPack(precioPadre) {
@@ -17364,7 +17375,7 @@ const MOS = (() => {
                         descripcion: nombre, precioVenta: precio, codigoBarra: codigo };
         if (tipo === 'derivado') {
           const porcion = parseFloat($('satPorcion')?.value) || 0;
-          if (porcion <= 0 || porcion >= 1) { toast('⚠ La porción debe ser mayor a 0 y menor a 1 kg', 'error'); return; }
+          if (!_satPorcionValida(porcion)) return;   // sin tope superior: cualquier tamaño de envasado
           patch.factorConversionBase = porcion;
         } else {
           const n = parseInt($('satAgrupa')?.value) || 0;
@@ -17393,7 +17404,7 @@ const MOS = (() => {
       };
       if (tipo === 'derivado') {
         const porcion = parseFloat($('satPorcion')?.value) || 0;
-        if (porcion <= 0 || porcion >= 1) { toast('⚠ La porción debe ser mayor a 0 y menor a 1 kg', 'error'); return; }
+        if (!_satPorcionValida(porcion)) return;   // sin tope superior: cualquier tamaño de envasado
         params.esEnvasable = '0';
         params.codigoProductoBase   = skuPadre;
         params.factorConversionBase = porcion;
