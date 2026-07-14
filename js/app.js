@@ -9333,7 +9333,7 @@ const MOS = (() => {
   }
   function _p2TramoRow(s, base, actual) {
     const aj = parseFloat(s.ajustePct) || 0;
-    const lbl = ((s.min || 0) >= 1000 ? (s.min / 1000) + 'kg' : (s.min || 0) + 'g') + '–' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max / 1000) + 'kg' : s.max + 'g'));
+    const lbl = _segFmtPeso(s.min || 0) + '–' + _segFmtPeso(s.max);   // [dedup] helper único de formato g/kg
     const antes = (base > 0) ? (base * (1 + aj / 100)).toFixed(2) : '—';
     const ahora = (actual * (1 + aj / 100)).toFixed(2);
     return `<span class="p2-tramo"><span class="p2-tramo-lbl">${lbl}</span>${base > 0 ? `<s>${antes}</s>→` : ''}<b>S/ ${ahora}</b>${aj ? `<i>${aj > 0 ? '+' : ''}${aj}%</i>` : ''}</span>`;
@@ -10633,13 +10633,9 @@ const MOS = (() => {
         precioVentaSugerido: l._sugerencia._precioEditado
       }));
 
-    // [v41.21] Cerrar el modo correcto: voucher overlay o modal legacy
-    if (S._opsModoCostos) {
-      // Cerrar overlay del voucher al guardar exitoso
-      cerrarOpsDetalleOverlay();
-    } else {
-      closeModal('modalCostosGuia');
-    }
+    // [v41.21] Cerrar el overlay del voucher si está abierto (modo costos).
+    // (Se quitó la rama else `closeModal('modalCostosGuia')`: ese modal ya no existe → era no-op.)
+    if (S._opsModoCostos) cerrarOpsDetalleOverlay();
 
     try {
       const resp = await API.post('llenarCostosGuia', {
@@ -17209,7 +17205,7 @@ const MOS = (() => {
     if (!todos.length) { esc.innerHTML = '<div class="text-[11px] text-slate-600">⬚ sin tramos aún — todo al canónico</div>'; return; }
     esc.innerHTML = todos.map(s => {
       const precio = pc * (1 + (parseFloat(s.ajustePct)||0)/100);
-      const lbl = (s.minIncl !== false ? '[' : '(') + (s.min >= 1000 ? (s.min/1000)+'kg' : (s.min||0)+'g') + '–' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g')) + (s.maxIncl ? ']' : ')');
+      const lbl = (s.minIncl !== false ? '[' : '(') + _segFmtPeso(s.min || 0) + '–' + _segFmtPeso(s.max) + (s.maxIncl ? ']' : ')');   // [dedup]
       return `<div class="flex-1 text-center rounded-md py-1.5 px-0.5" style="font-size:9.5px;font-family:monospace;
         ${s._nuevo ? 'background:rgba(52,211,153,.15);border:1px solid #34d399;color:#34d399' : 'background:#0e1626;border:1px solid #28344c;color:#93a4c2'}">
         ${lbl}<br><b>S/${precio.toFixed(2)}</b>${s._nuevo ? ' ←' : ''}</div>`;
@@ -17227,7 +17223,7 @@ const MOS = (() => {
     if (!segs.length) { cont.innerHTML = '<div class="text-[11px] text-slate-600">⬚ sin tramos aún — todo al precio canónico</div>'; return; }
     cont.innerHTML = segs.map(s => {
       const aj = parseFloat(s.ajustePct) || 0;
-      const lbl = (s.minIncl !== false ? '[' : '(') + ((s.min || 0) >= 1000 ? (s.min/1000)+'kg' : (s.min || 0)+'g') + ' – ' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g')) + (s.maxIncl ? ']' : ')');
+      const lbl = (s.minIncl !== false ? '[' : '(') + _segFmtPeso(s.min || 0) + ' – ' + _segFmtPeso(s.max) + (s.maxIncl ? ']' : ')');   // [dedup]
       return `<div class="flex items-center gap-2 rounded-lg px-3 py-2" style="background:#0e1626;border:1px solid #28344c">
         <span class="text-[11px] font-mono text-slate-300">${lbl}</span>
         <span class="text-[11px] font-bold" style="color:${aj >= 0 ? '#34d399' : '#fbbf24'}">${aj >= 0 ? '+' : ''}${aj}% → S/ ${(pc*(1+aj/100)).toFixed(2)}/kg</span>
