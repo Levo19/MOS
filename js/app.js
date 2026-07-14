@@ -20,7 +20,6 @@ const MOS = (() => {
     loaded: {},
     session: null,
     equivMap: {},
-    _editingPrecioId: null,
     _ecoData: null,
     pnPendientes: [],
     categorias: [],
@@ -4644,118 +4643,9 @@ const MOS = (() => {
     modalBoxEl.style.setProperty('--modal-hue', hue);
   }
 
-  function abrirModalPrecioRapido(idProducto) {
-    const prod = S.productos.find(p => p.idProducto === idProducto);
-    if (!prod) return;
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    S._editingPrecioId = idProducto;
-    S._qpTocadas = {};
-    S._qpRows = null;                                        // [catálogo v4] filas de la cascada
-    $('qpMembretesSw')?.classList.remove('on');              // [catálogo v4] membrete opt-in por apertura
-    // [v2.43.54] Aplicar halo de categoría
-    const qpSheet = document.querySelector('#modalPrecioRapido .qp-sheet, #modalPrecioRapido .modal-box');
-    if (qpSheet) _aplicarHaloCategoria(qpSheet, prod);
-    S._qpPrecioAnterior = parseFloat(prod.precioVenta || 0);
-    const nombre = $('qpNombre');
-    const subt   = $('qpSubtitulo');
-    const inp    = $('qpInput');
-    if (nombre) nombre.textContent = prod.descripcion || idProducto;
-    if (subt) {
-      const tipo = prod.codigoProductoBase ? '🔗 Derivado'
-                 : (parseFloat(prod.factorConversion) === 1 || !prod.factorConversion) ? '🔵 Canónico'
-                 : `📐 Presentación · ×${prod.factorConversion}`;
-      subt.textContent = `${prod.skuBase || ''} · ${tipo} · ${prod.unidad || prod.Unidad_Medida || ''}`;
-    }
-    if (inp) inp.value = parseFloat(prod.precioVenta || 0).toFixed(2);
-    // [RONDA 7 · §06] precio anterior tachado + chip de %
-    const antesEl = $('qpBaseAntes');
-    if (antesEl) antesEl.textContent = 'S/ ' + S._qpPrecioAnterior.toFixed(2);
-    _qpActualizarPctBase();
-    _qpRenderPresentaciones();
-    const overlay = $('modalPrecioRapido');
-    if (overlay) overlay.classList.add('active');
-    _qpBeep('open');
-    setTimeout(() => { if (inp) { inp.focus(); inp.select(); } }, 280);
-  }
+  // [§11 · purga] modalPrecioRapido (editor de precio viejo) ELIMINADO — reemplazado por el editor
+  // unificado (_paso2Abrir modo catalogo). Se conserva _qpBuildRows (lo usa _paso2Satelites).
 
-  function cerrarModalPrecioRapido() {
-    const overlay = $('modalPrecioRapido');
-    if (overlay) overlay.classList.remove('active');
-    // Si hay cambios pendientes (no se guardó), avisar con sonido descendente
-    if (!S._qpGuardado) {
-      _qpBeep('cancel');
-    }
-    S._editingPrecioId = null;
-    S._qpTocadas = {};
-    S._qpGuardado = false;
-  }
-
-  // Sonidos sutiles del modal (Web Audio API, sin archivos)
-  let _qpAudioCtx = null;
-  function _qpBeep(tipo) {
-    try {
-      if (!_qpAudioCtx) _qpAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const ctx = _qpAudioCtx;
-      const t = ctx.currentTime;
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      if (tipo === 'tick') {
-        o.frequency.setValueAtTime(880, t);
-        g.gain.setValueAtTime(0.04, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
-        o.start(t); o.stop(t + 0.05);
-      } else if (tipo === 'open') {
-        o.frequency.setValueAtTime(660, t);
-        o.frequency.exponentialRampToValueAtTime(990, t + 0.08);
-        g.gain.setValueAtTime(0.04, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
-        o.start(t); o.stop(t + 0.11);
-      } else if (tipo === 'tap') {
-        o.frequency.setValueAtTime(1320, t);
-        g.gain.setValueAtTime(0.025, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
-        o.start(t); o.stop(t + 0.04);
-      } else if (tipo === 'success') {
-        // ka-ching: dos notas ascendentes
-        o.frequency.setValueAtTime(880, t);
-        o.frequency.setValueAtTime(1320, t + 0.08);
-        g.gain.setValueAtTime(0.06, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.30);
-        o.start(t); o.stop(t + 0.32);
-      } else if (tipo === 'error') {
-        o.frequency.setValueAtTime(220, t);
-        g.gain.setValueAtTime(0.06, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-        o.start(t); o.stop(t + 0.20);
-      } else if (tipo === 'lock') {
-        // Tono descendente — bloqueo/excluir
-        o.frequency.setValueAtTime(880, t);
-        o.frequency.exponentialRampToValueAtTime(440, t + 0.10);
-        g.gain.setValueAtTime(0.04, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-        o.start(t); o.stop(t + 0.13);
-      } else if (tipo === 'unlock') {
-        // Tono ascendente — re-incluir
-        o.frequency.setValueAtTime(440, t);
-        o.frequency.exponentialRampToValueAtTime(880, t + 0.08);
-        g.gain.setValueAtTime(0.04, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
-        o.start(t); o.stop(t + 0.11);
-      } else if (tipo === 'cancel') {
-        // Swoosh descendente — cierre sin guardar
-        o.frequency.setValueAtTime(660, t);
-        o.frequency.exponentialRampToValueAtTime(220, t + 0.16);
-        g.gain.setValueAtTime(0.04, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-        o.start(t); o.stop(t + 0.19);
-      }
-    } catch(_) {}
-  }
-
-  // Renderiza las filas de presentaciones (al abrir el modal)
-  // ── [catálogo v4] CASCADA (dibujo §06): el modal del canónico ahora baja a
-  // TODO el grupo — presentaciones (×factor), derivados (porción × precio/kg) y
   // packs de derivados (nivel 2: recalculan sobre el precio ACEPTADO del derivado,
   // incluso si lo editaste a mano). Los tramos NO necesitan filas: guardan ajuste %
   // sobre el canónico → se mueven solos (banner AUTO los hace visibles).
@@ -4787,319 +4677,8 @@ const MOS = (() => {
     return rows;
   }
 
-  function _qpSugerido(row, precioBase) {
-    if (row.tipo === 'pres')    return +(precioBase * row.factor).toFixed(2);
-    if (row.tipo === 'der')     return +(precioBase * row.factor).toFixed(2);   // porción kg × S//kg
-    if (row.tipo === 'presDer') {
-      // sobre el ACEPTADO del derivado (input) — en el render INICIAL el input del
-      // padre aún no está en el DOM: usar su sugerido calculado (misma fórmula)
-      const padreInp = $('qpPresInput' + row.parentIdx);
-      const rows = S._qpRows || [];
-      const pv = padreInp ? (parseFloat(padreInp.value) || 0)
-                          : (rows[row.parentIdx] ? _qpSugerido(rows[row.parentIdx], precioBase) : 0);
-      return +(pv * row.factor).toFixed(2);
-    }
-    return 0;
-  }
-
-  function _qpSyncTramos(prod, precioBase) {
-    const banner = $('qpTramosBanner'), det = $('qpTramosDetalle');
-    if (!banner || !det) return;
-    let segs = [];
-    try {
-      const raw = prod.segmentos_precio || prod.segmentosPrecio || '';
-      segs = typeof raw === 'string' && raw ? JSON.parse(raw) : (Array.isArray(raw) ? raw : []);
-    } catch(_) { segs = []; }
-    if (!Array.isArray(segs) || !segs.length) { banner.classList.add('hidden'); return; }
-    banner.classList.remove('hidden');
-    const antes = parseFloat(prod.precioVenta) || 0;
-    det.innerHTML = segs.slice().sort((a,b) => (a.min||0)-(b.min||0)).map(s => {
-      const aj = parseFloat(s.ajustePct) || 0;
-      const lbl = ((s.min||0) >= 1000 ? (s.min/1000)+'kg' : (s.min||0)+'g') + '–' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max/1000)+'kg' : s.max+'g'));
-      return `${lbl}: ${(antes*(1+aj/100)).toFixed(2)}→<b style="color:#34d399">${(precioBase*(1+aj/100)).toFixed(2)}</b>`;
-    }).join(' · ') + ' — la escalera sigue al canónico, no pide confirmación';
-  }
-
-  function _qpRenderPresentaciones() {
-    const idProducto = S._editingPrecioId;
-    const section = $('qpPresSection');
-    const list    = $('qpPresList');
-    const countEl = $('qpPresCount');
-    if (!section || !list) return;
-
-    const prod = S.productos.find(p => p.idProducto === idProducto);
-    if (!prod) { section.classList.add('hidden'); list.innerHTML = ''; return; }
-    // [fix rev M2] limpiar YA las filas de la apertura ANTERIOR: si quedara un
-    // qpPresInput viejo en el DOM, _qpSugerido(presDer) leería el precio de OTRO
-    // producto en el render inicial (y "guardar sin tocar" lo persistiría).
-    list.innerHTML = '';
-    const precioBase = parseFloat($('qpInput')?.value || '0') || 0;
-
-    _qpSyncTramos(prod, precioBase);
-
-    const rows = _qpBuildRows(prod);
-    S._qpRows = rows;
-    if (!rows.length) { section.classList.add('hidden'); list.innerHTML = ''; return; }
-
-    section.classList.remove('hidden');
-    if (countEl) {
-      const nP = rows.filter(r => r.tipo === 'pres').length,
-            nD = rows.filter(r => r.tipo === 'der').length,
-            nPD = rows.filter(r => r.tipo === 'presDer').length;
-      countEl.textContent = '🛰 ' + [nD ? nD + ' derivado' + (nD>1?'s':'') : '', nP ? nP + ' presentacion' + (nP>1?'es':'') : '', nPD ? nPD + ' pack' + (nPD>1?'s':'') + ' de derivado' : ''].filter(Boolean).join(' · ');
-    }
-    list.innerHTML = rows.map((r, i) => {
-      const p = r.p;
-      const sugerido = _qpSugerido(r, precioBase);
-      const actual   = parseFloat(p.precioVenta) || 0;
-      const costo    = parseFloat(p.precioCosto) || 0;
-      const bajo     = costo > 0 && sugerido < costo;
-      const badge    = r.tipo === 'der' ? `<span class="qp-pres-factor" style="background:rgba(183,155,255,.15);color:#b79bff">🥄 ${r.factor} kg/u</span>`
-                     : r.tipo === 'presDer' ? `<span class="qp-pres-factor">↳ 🧱 ×${r.factor}</span>`
-                     : `<span class="qp-pres-factor">🧱 ×${r.factor}</span>`;
-      return `<div class="qp-pres-card${bajo ? ' qp-bajo-costo-card' : ''}" id="qpCard${i}" data-id="${p.idProducto}" data-factor="${r.factor}"${r.tipo === 'presDer' ? ' style="margin-left:18px;border-left:2px dashed #28344c"' : ''}>
-        <input type="checkbox" class="qp-pres-check" id="qpChk${i}" checked
-          onchange="MOS._qpToggleExcluida(${i})">
-        <div class="qp-pres-info">
-          <div class="qp-pres-nom">${p.descripcion || p.idProducto}</div>
-          <div class="qp-pres-meta">
-            ${badge}
-            <span class="qp-pres-antes" style="text-decoration:line-through;opacity:.75">${fmtMoney(actual)}</span>
-            <span style="color:#64748b;font-size:10px">→</span>
-            <span id="qpMode${i}" class="qp-mode-chip">AUTO</span>
-          </div>
-        </div>
-        <div class="qp-pres-controls">
-          <div class="qp-pres-input-wrap" id="qpWrap${i}">
-            <span class="qp-pres-input-prefix">S/</span>
-            <input type="number" class="qp-pres-input" id="qpPresInput${i}"
-              step="0.01" min="0" value="${sugerido.toFixed(2)}"
-              data-sugerido="${sugerido.toFixed(2)}"
-              data-anterior="${actual.toFixed(2)}"
-              data-costo="${costo}"
-              oninput="MOS._qpInputTocado(${i})"
-              onfocus="MOS._qpBeep('tap')">
-            <span class="qp-pres-pencil">✏️</span>
-            <span class="qp-pres-lock">🔒</span>
-          </div>
-        </div>
-        <div class="qp-pres-warn" id="qpWarn${i}">⚠ Bajo precio costo (S/ ${costo.toFixed(2)})</div>
-      </div>`;
-    }).join('');
-
-    // [RONDA 2 · dibujo §06] botón honesto: "Publicar raíz + N satélites (+ tramos)"
-    const lblBtn = $('qpBtnLabel');
-    if (lblBtn) {
-      const hayTramos = !$('qpTramosBanner')?.classList.contains('hidden');
-      lblBtn.textContent = `✓ Publicar raíz + ${rows.length} satélite${rows.length !== 1 ? 's' : ''}${hayTramos ? ' + tramos' : ''}`;
-    }
-  }
-
-  // Llamado cuando user EDITA un input de satélite → marca como "tocada manual"
-  function _qpInputTocado(i) {
-    if (!S._qpTocadas) S._qpTocadas = {};
-    S._qpTocadas[i] = true;
-    const wrap = $('qpWrap' + i);
-    const card = $('qpCard' + i);
-    if (wrap) wrap.classList.add('qp-tocada');
-    if (card) card.classList.add('qp-modificada');
-    // [RONDA 2 · dibujo §06] chip de modo: tocado a mano = MANUAL ámbar
-    const chip = $('qpMode' + i);
-    if (chip) { chip.textContent = 'MANUAL'; chip.classList.add('man'); }
-    _qpCheckBajoCosto(i);
-    // [catálogo v4] si tocaste un DERIVADO, sus packs (nivel 2) recalculan en vivo
-    // sobre TU precio (el sync respeta las filas tocadas/excluidas)
-    const row = (S._qpRows || [])[i];
-    if (row && row.tipo === 'der') _qpSyncPresentaciones();
-  }
-
-  function _qpToggleExcluida(i) {
-    const chk = $('qpChk' + i);
-    const card = $('qpCard' + i);
-    const inp  = $('qpPresInput' + i);
-    const wrap = $('qpWrap' + i);
-    if (!chk || !card || !inp) return;
-    if (chk.checked) {
-      // Re-incluido: vuelve al sugerido (a menos que la haya tocado manualmente)
-      card.classList.remove('qp-excluida');
-      inp.disabled = false;
-      const wasModif = S._qpTocadas && S._qpTocadas[i];
-      if (!wasModif) {
-        // Al re-incluir y no estaba tocada, sincronizar al sugerido actual del base
-        const sugerido = parseFloat(inp.dataset.sugerido) || 0;
-        inp.value = sugerido.toFixed(2);
-      }
-      _qpCheckBajoCosto(i);
-      // [RONDA 2] re-incluida sin tocar → vuelve a AUTO verde
-      const chip = $('qpMode' + i);
-      if (chip && !(S._qpTocadas && S._qpTocadas[i])) { chip.textContent = 'AUTO'; chip.classList.remove('man'); }
-      _qpBeep('unlock');
-    } else {
-      // Excluida: restaurar al precio anterior + deshabilitar input
-      const anterior = parseFloat(inp.dataset.anterior) || 0;
-      inp.value = anterior.toFixed(2);
-      inp.disabled = true;
-      card.classList.add('qp-excluida');
-      // Pulse visual + sonido lock
-      wrap?.classList.remove('qp-tocada', 'qp-bajo-costo');
-      card.classList.remove('qp-modificada', 'qp-bajo-costo-card');
-      // Pulso ámbar para llamar la atención
-      if (wrap) {
-        wrap.style.transition = 'box-shadow 0.4s, transform 0.3s';
-        wrap.style.boxShadow = '0 0 0 3px rgba(148,163,184,0.35)';
-        wrap.style.transform = 'scale(0.97)';
-        setTimeout(() => { wrap.style.boxShadow = ''; wrap.style.transform = ''; }, 350);
-      }
-      _qpBeep('lock');
-    }
-  }
-
-  function _qpCheckBajoCosto(i) {
-    const inp = $('qpPresInput' + i);
-    const wrap = $('qpWrap' + i);
-    const card = $('qpCard' + i);
-    if (!inp || !wrap) return;
-    const val = parseFloat(inp.value) || 0;
-    const costo = parseFloat(inp.dataset.costo) || 0;
-    const bajo = costo > 0 && val < costo && val > 0;
-    wrap.classList.toggle('qp-bajo-costo', bajo);
-    if (card) card.classList.toggle('qp-bajo-costo-card', bajo);
-  }
-
-  // Actualiza precios sugeridos al cambiar el base — solo los NO tocados manualmente.
-  // [catálogo v4] recorre las filas EN ORDEN: los derivados primero, así los packs
-  // de derivado (nivel 2) leen el valor YA actualizado (o el manual) de su padre.
-  // [RONDA 7 · §06] chip +/-% del precio raíz vs el anterior
-  function _qpActualizarPctBase() {
-    const chip = $('qpBasePct');
-    if (!chip) return;
-    const antes = parseFloat(S._qpPrecioAnterior) || 0;
-    const ahora = parseFloat($('qpInput')?.value) || 0;
-    if (antes <= 0 || ahora <= 0 || Math.abs(ahora - antes) < 0.005) { chip.style.display = 'none'; return; }
-    const pct = Math.round((ahora / antes - 1) * 1000) / 10;
-    chip.style.display = '';
-    chip.textContent = (pct >= 0 ? '+' : '') + pct + '%';
-    chip.classList.toggle('man', pct < 0);   // ámbar si baja, verde si sube
-  }
-
-  function _qpSyncPresentaciones() {
-    const idProducto = S._editingPrecioId;
-    if (!idProducto) return;
-    const precio = parseFloat($('qpInput')?.value || '0') || 0;
-    const prod   = S.productos.find(p => p.idProducto === idProducto);
-    if (!prod) return;
-    _qpActualizarPctBase();
-    _qpSyncTramos(prod, precio);
-    const rows = S._qpRows || [];
-    rows.forEach((r, i) => {
-      const sugerido = _qpSugerido(r, precio);
-      const inp = $('qpPresInput' + i);
-      const chk = $('qpChk' + i);
-      if (!inp) return;
-      // Actualizar el data-attr siempre (referencia, para cuando re-incluya)
-      inp.dataset.sugerido = sugerido.toFixed(2);
-      // No tocar inputs excluidos (checkbox off) — quedan en el precio anterior
-      if (chk && !chk.checked) return;
-      // Solo escribir el valor si el user NO la modificó manualmente
-      if (!S._qpTocadas || !S._qpTocadas[i]) {
-        const oldVal = parseFloat(inp.value) || 0;
-        if (Math.abs(oldVal - sugerido) > 0.001) {
-          inp.value = sugerido.toFixed(2);
-          inp.style.transition = 'background 0.3s';
-          inp.style.background = 'rgba(99,102,241,0.18)';
-          setTimeout(() => { inp.style.background = ''; }, 300);
-        }
-      }
-      _qpCheckBajoCosto(i);
-    });
-  }
-
-  async function guardarPrecioRapido() {
-    const idProducto = S._editingPrecioId;
-    if (!idProducto) return;
-    const inp    = $('qpInput');
-    const precio = parseFloat(inp ? inp.value : '');
-    if (isNaN(precio) || precio <= 0) { toast('Precio del base inválido', 'error'); _qpBeep('error'); return; }
-
-    // Recoger TODAS las presentaciones marcadas, leyendo el VALOR del input
-    // (que puede ser sugerido auto o manual editado por el user)
-    const updates = [{ idProducto, precio }];
-    const cards = document.querySelectorAll('#qpPresList .qp-pres-card');
-    cards.forEach(card => {
-      const idx = card.id.replace('qpCard', '');
-      const chk = $('qpChk' + idx);
-      if (!chk || !chk.checked) return; // excluida
-      const presInp = $('qpPresInput' + idx);
-      const presPrecio = parseFloat(presInp?.value);
-      if (isNaN(presPrecio) || presPrecio <= 0) return;
-      updates.push({ idProducto: card.dataset.id, precio: +presPrecio.toFixed(2) });
-    });
-
-    // Snapshot para rollback
-    const prev = updates.map(u => {
-      const p = S.productos.find(x => x.idProducto === u.idProducto);
-      return { idProducto: u.idProducto, precio: p ? p.precioVenta : null };
-    });
-
-    // Optimistic update — actualizar memoria local + tracking para suprimir toast del polling
-    if (!S._catCambiosLocales) S._catCambiosLocales = new Map();
-    updates.forEach(u => {
-      const p = S.productos.find(x => x.idProducto === u.idProducto);
-      if (p) p.precioVenta = u.precio;
-      // Marcar como cambio local — el polling silencioso no lo notificará
-      S._catCambiosLocales.set(u.idProducto, { precio: u.precio, ts: Date.now() });
-    });
-    _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
-
-    // Re-render INMEDIATO del catálogo (no esperar 450ms) para que el optimistic se vea ya
-    try { renderCatalogo(); } catch {}
-
-    // Animación visual de éxito en las cards DEL MODAL antes de cerrar
-    cards.forEach((card, i) => {
-      const idx = card.id.replace('qpCard', '');
-      const chk = $('qpChk' + idx);
-      if (chk && chk.checked) {
-        setTimeout(() => card.classList.add('qp-saved'), i * 60);
-      }
-    });
-    _qpBeep('success');
-    S._qpGuardado = true;
-
-    // Cerrar modal con un delay para que el pulse se vea
-    setTimeout(() => { cerrarModalPrecioRapido(); }, 450);
-
-    // API en paralelo en background — solo precioVenta, no toca otros campos
-    // [catálogo v4] imprimirMembretes viaja por fila (hook publicar_precio 339b)
-    const _memb = !!$('qpMembretesSw')?.classList.contains('on');
-    try {
-      await Promise.all(updates.map(u =>
-        API.post('publicarPrecio', {
-          _source: 'MOS_MODAL_PRECIO',
-          idProducto: u.idProducto,
-          precioNuevo: u.precio,
-          usuario: S.session?.nombre || '',
-          imprimirMembretes: _memb
-        })
-      ));
-      const n = updates.length;
-      toast(n > 1 ? `✓ ${n} precios actualizados` : '✓ Precio actualizado', 'ok');
-      // Limpiar el tracking de cambios locales tras 90s (más que el polling de 60s)
-      setTimeout(() => {
-        updates.forEach(u => S._catCambiosLocales?.delete(u.idProducto));
-      }, 90 * 1000);
-    } catch(e) {
-      prev.forEach(snap => {
-        if (snap.precio === null) return;
-        const p = S.productos.find(x => x.idProducto === snap.idProducto);
-        if (p) p.precioVenta = snap.precio;
-        S._catCambiosLocales?.delete(snap.idProducto);
-      });
-      _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
-      toast('Error al guardar: ' + e.message, 'error');
-      _qpBeep('error');
-      renderCatalogo();
-    }
-  }
+  // [§11 · purga] _qpSugerido/_qpSyncTramos/_qpRenderPresentaciones/_qpInputTocado/_qpToggleExcluida/
+  // _qpActualizarPctBase/_qpSyncPresentaciones/guardarPrecioRapido ELIMINADOS (soporte del modal viejo).
 
   function _abrirAjustePrecios(idBase, nuevoPrecioBase, presentaciones) {
     $('ajusteBasePrecio').textContent = fmtMoney(nuevoPrecioBase);
@@ -7698,13 +7277,8 @@ const MOS = (() => {
     } catch(_){}
   }
 
-  // Cache de detalle de guías precargado (key: fuente+'_'+idGuia).
-  // Lo llena _prefetchCostosGuias, lo consume abrirCostosGuia.
-  S._costosGuiaPrefetch = S._costosGuiaPrefetch || {};
-
-  // Prefetch en background del detalle de las guías de ingreso WH con foto
-  // (las únicas que muestran el botón 💰). Limita concurrencia para no
-  // saturar el backend. Falla silencioso — el modal igual puede fetchear.
+  // [RONDA/§11 · purga] S._costosGuiaPrefetch + _prefetchCostosGuias eliminados
+  // (el detalle de guías se cachea en S._opsDetCache vía _opsPopulateDetCacheFromData).
 
   async function almRefreshOps() {
     toast('Refrescando operaciones…', 'info');
@@ -9602,23 +9176,8 @@ const MOS = (() => {
     S._opsModoCostos = true;
     _opsCostosInitState(op);
     _abrirModalCostosUnificado(op);
-    // [v2.43.0+2] AUTO-OCR: si la guía tiene foto y ninguna línea tiene costo
-    // todavía, disparar OCR automático al entrar (sin botón manual).
-    // Si el admin ya tocó costos antes, NO sobreescribir.
-    setTimeout(() => {
-      try {
-        const st = S._costosGuiaState;
-        if (!st || String(st.idGuia) !== String(idGuia)) return;
-        if (!st.foto || String(st.foto).trim() === '') return;  // sin foto, nada que OCR
-        const algunoTieneCosto = (st.lineas || []).some(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue !== null));
-        if (algunoTieneCosto) return; // admin ya tocó, no auto-overrite
-        if (S._opsOcrYaCorrido && S._opsOcrYaCorrido[idGuia]) return; // ya corrió en esta sesión
-        // [v2.43.20] NO seteamos _opsOcrYaCorrido aquí — eso ahora lo hace el
-        // finally de opsOcrComprobantePrepoblar. Sí seteamos enVuelo para que
-        // el chip se actualice a 'Leyendo IA...'.
-        // [v5 §11] auto-OCR ELIMINADO — el admin escribe los montos con la factura a la vista.
-      } catch(e) { console.warn('[costos]', e); }
-    }, 600); // delay 600ms para que el overlay termine de renderizar
+    // [v5 §11] auto-OCR ELIMINADO — el admin escribe los montos con la factura a la vista.
+    // (Se quitó el setTimeout no-op de 600ms que corría en cada entrada y su guarda muerta S._opsOcrYaCorrido.)
   }
 
   // [v2.43.2] Badge flotante elegante para indicar estado del auto-OCR.
@@ -10338,11 +9897,11 @@ const MOS = (() => {
     lineas.forEach(l => {
       const costo = parseFloat(l.precioUnitario) || (parseFloat(l.subtotal) || 0) / (parseFloat(l.cantidad) || 1);
       if (!(costo > 0)) return;
-      totalCosteados++;
       const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
       const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod ||
                                               String(x.idProducto || '') === String(l.idCanonico || ''));
-      if (!p) return;
+      if (!p) return;                 // [fix] línea sin producto resoluble → no se puede preciar; no la contamos
+      totalCosteados++;               // (antes se incrementaba antes del !p → la compra quedaba "falta precios" eterna)
       const venta = parseFloat(p.precioVenta) || 0;
       let margen = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : null;
       if (margen == null) { try { const mi = _calcularMargenInfo(p); margen = mi ? parseFloat(mi.objetivo) : null; } catch(_){} }
@@ -10351,7 +9910,8 @@ const MOS = (() => {
       if (Math.abs(venta - sug) <= 0.1) conPrecio++; // precio fresco respecto al costo nuevo
     });
     let fase, tone, label, ico;
-    if (cost.estado === 'sin') { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = 'Falta costear'; }
+    // [fix] estado null o total 0 = líneas aún no cargadas → PENDIENTE (antes caía al else "completos" y se pintaba "Procesada ✓" en verde por error).
+    if (cost.estado === 'sin' || cost.estado == null || !cost.total) { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = 'Falta costear'; }
     else if (cost.estado === 'parcial') { fase = 'incompleta'; tone = 'amber'; ico = '⚠'; label = 'Datos incompletos · faltan ' + (cost.total - cost.conCosto) + ' costo(s)'; }
     else { // costos completos
       const faltanPrecio = totalCosteados - conPrecio;
@@ -17121,15 +16681,9 @@ const MOS = (() => {
     }
     // [v2.41.97] Cargar segmentos del producto + mostrar sección si KGM
     try {
-      const prodCargar = id ? S.productos.find(x => x.idProducto === id) : null;
-      if (prodCargar) {
-        // [RONDA 5 · purga] segCargarParaProducto eliminado (tramos viven en el modal ＋Tramo)
-      } else {
-        _segState.idProducto = null;
-        _segState.precioCanonico = 0;
-        _segState.segmentos = [];
-      }
-      // [RONDA 5 · purga] segActualizarVisibilidad eliminado
+      // [RONDA 5 · purga] segCargarParaProducto / segActualizarVisibilidad eliminados
+      // (los tramos viven en el modal ＋Tramo). Se quitó también el bloque residual que
+      // escribía en _segState (variable ya purgada → ReferenceError).
     } catch(_) {}
     openModal('modalProducto');
   }
@@ -18141,15 +17695,9 @@ const MOS = (() => {
       const action = isEdit ? 'actualizarProducto' : 'crearProducto';
       const r = await API.post(action, params);
       toast(isEdit ? 'Producto actualizado ✓' : 'Producto creado ✓', 'ok');
-      // [v2.41.97] Si es KGM canónico y el editor de segmentos está cargado,
-      // persistir también los segmentos. Silencioso, no bloquea el flujo.
-      if (isEdit && _segState && _segState.idProducto === params.idProducto) {
-        const um = String(params.Unidad_Medida || params.unidad || '').toUpperCase();
-        const fc = parseFloat(params.factorConversion || 1);
-        if (um === 'KGM' && fc === 1) {
-          // [RONDA 5 · purga] segPersistirSiCambio eliminado (tramos: modal ＋Tramo persiste directo)
-        }
-      }
+      // [RONDA 5 · purga] Los tramos (segmentos_precio) se persisten directo desde el modal ＋Tramo.
+      // (Se eliminó el bloque residual que leía _segState —variable ya purgada— y lanzaba ReferenceError
+      //  al editar, cayendo al catch con un toast de error espurio y saltándose el refresco.)
       // Refresh catálogo
       S.loaded['catalogo'] = false;
       await loadCatalogo(true);
@@ -43864,7 +43412,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.85] Proyección — roadmap estratégico
     abrirProyeccion, _proyToggle, _proyResetEstado, _proyExportar,
     openConfig, saveConfig, testConnection, closeModal, openEcoModal,
-    filterCatalogo, togglePresentaciones, guardarPrecioRapido,
+    filterCatalogo, togglePresentaciones,
     _catCardClick, _catSfx, _catRipple,
     verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
@@ -43884,8 +43432,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     promoGuardar, promoEliminar,
     promoComboBuscar, promoComboAgregar, promoComboCerrarRes,
     promoComboCambiarQty, promoComboQuitar, numStep,
-    abrirModalPrecioRapido, cerrarModalPrecioRapido, _qpSyncPresentaciones,
-    _qpInputTocado, _qpToggleExcluida, _qpBeep,
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
     guardarAjustePrecios, stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,

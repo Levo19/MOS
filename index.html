@@ -16902,71 +16902,7 @@
   </div>
 </div>
 
-<!-- ── Precio Rápido (bottom sheet) ─────────────────────── -->
-<div class="qp-overlay" id="modalPrecioRapido" onclick="if(MOS._validBackdropClose(event,this))MOS.cerrarModalPrecioRapido()">
-  <div class="qp-sheet qp-sheet-v2" style="overflow-y:auto">
-    <div class="qp-handle"></div>
-    <button onclick="MOS.cerrarModalPrecioRapido()" class="qp-close" aria-label="Cerrar">×</button>
-
-    <div class="qp-titulo-wrap">
-      <div class="qp-eyebrow">Cambiar precio</div>
-      <div id="qpNombre" class="qp-nombre">—</div>
-      <div id="qpSubtitulo" class="qp-subtitulo">—</div>
-    </div>
-
-    <!-- Precio canónico (dibujo §06: precio actual → nuevo + chip de % de cambio) -->
-    <div class="qp-base-card">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
-        <div class="qp-base-label">Precio base (raíz)</div>
-        <!-- [RONDA 7 · §06] precio anterior tachado + chip +/-% en vivo -->
-        <div style="font-size:11px;color:#94a3b8">antes <s id="qpBaseAntes">—</s> <span id="qpBasePct" class="qp-mode-chip" style="display:none"></span></div>
-      </div>
-      <div class="qp-base-row">
-        <button class="qp-step-btn" onclick="MOS.stepperDec('qpInput',0.50);MOS._qpSyncPresentaciones();MOS._qpBeep('tick')">−</button>
-        <div class="qp-base-input-wrap">
-          <span class="qp-currency">S/</span>
-          <input id="qpInput" type="number" step="0.01" min="0" class="qp-base-input"
-                 oninput="MOS._qpSyncPresentaciones()"
-                 onkeydown="if(event.key==='Enter')MOS.guardarPrecioRapido()">
-        </div>
-        <button class="qp-step-btn" onclick="MOS.stepperInc('qpInput',0.50);MOS._qpSyncPresentaciones();MOS._qpBeep('tick')">+</button>
-      </div>
-    </div>
-
-    <!-- [catálogo v4] Tramos: el modelo guarda ajuste % sobre el canónico → la escalera
-         se mueve SOLA con el precio raíz. Este banner solo lo hace visible (dibujo §06). -->
-    <div id="qpTramosBanner" class="hidden" style="margin:0 16px 10px;border:1px dashed rgba(52,211,153,.4);border-radius:10px;padding:8px 12px;background:rgba(52,211,153,.06)">
-      <div class="flex items-center justify-between">
-        <span class="text-[11px] font-bold" style="color:#34d399">📊 Tramos — automáticos por %</span>
-        <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded" style="background:rgba(52,211,153,.15);color:#34d399">AUTO</span>
-      </div>
-      <div id="qpTramosDetalle" class="text-[10px] mt-1" style="color:#93a4c2;font-family:monospace"></div>
-    </div>
-
-    <!-- [catálogo v4] Satélites en cascada: presentaciones + derivados + packs de derivados -->
-    <div id="qpPresSection" class="hidden">
-      <div class="qp-pres-header">
-        <span id="qpPresCount">📦 Satélites</span>
-        <span class="qp-tip">💡 Si no tocas el precio, sigue la sugerencia</span>
-      </div>
-      <div id="qpPresList" class="qp-pres-list"></div>
-    </div>
-
-    <!-- [catálogo v4] imprimir membretes de los que cambien (hook publicar_precio 339b) -->
-    <div class="flex items-center justify-between" style="margin:2px 16px 10px;padding:8px 12px;border:1px solid #28344c;border-radius:10px;background:#0e1626">
-      <span class="text-[11px] font-bold text-slate-300">🖨 Imprimir membretes de los que cambien</span>
-      <button type="button" id="qpMembretesSw" class="toggle-sw" onclick="this.classList.toggle('on');MOS._qpBeep('tick')"><span class="toggle-sw-knob"></span></button>
-    </div>
-
-    <!-- Footer con acciones -->
-    <div class="qp-footer">
-      <button onclick="MOS.cerrarModalPrecioRapido()" class="qp-btn-ghost">Cancelar</button>
-      <button id="qpBtnGuardar" onclick="MOS.guardarPrecioRapido()" class="qp-btn-primary">
-        <span id="qpBtnLabel">✓ Guardar</span>
-      </button>
-    </div>
-  </div>
-</div>
+<!-- [§11 · purga] modalPrecioRapido eliminado (reemplazado por el editor unificado _paso2Abrir modo catalogo) -->
 
 <!-- ══ Lightbox de imagen ═══════════════════════════════════════ -->
 <div id="imgPreviewOverlay" onclick="MOS.closeImagePreview()" style="display:none;position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.92);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:20px;cursor:zoom-out;animation:imgFadeIn .15s ease-out">
@@ -19362,7 +19298,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.527';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.528';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19412,7 +19348,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.527"></script>
+<script src="js/api.js?v=2.43.528"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19427,7 +19363,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.527"></script>
+<script src="js/app.js?v=2.43.528"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
