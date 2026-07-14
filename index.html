@@ -5811,29 +5811,34 @@
     /* [v41.16] Overlay foto en grande */
     .alm-foto-overlay {
       position: fixed; inset: 0;
-      background: rgba(0,0,0,.92);
+      background: rgba(0,0,0,.94);
       backdrop-filter: blur(10px);
       z-index: 9500;
       display: flex; align-items: center; justify-content: center;
-      flex-direction: column; gap: 14px;
-      padding: 20px;
       animation: almOverlayFade .25s ease;
-      cursor: pointer;
+      overscroll-behavior: contain;
     }
     .alm-foto-overlay.hidden { display: none; }
+    /* [F] viewport de zoom/pan: recorta el desborde de la imagen ampliada */
+    .alm-foto-stage {
+      position: absolute; inset: 0;
+      overflow: hidden; touch-action: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: zoom-in;
+    }
     .alm-foto-grande {
-      max-width: 95vw; max-height: 80vh;
+      max-width: 96vw; max-height: 92vh;
       object-fit: contain;
-      border-radius: 12px;
+      border-radius: 10px;
       box-shadow: 0 20px 50px -10px rgba(0,0,0,.8);
-      animation: almFotoZoom .35s cubic-bezier(.34,1.56,.64,1);
+      transform-origin: 0 0;
+      will-change: transform;
+      user-select: none; -webkit-user-drag: none;
+      animation: almFotoFadeIn .3s ease;
     }
-    @keyframes almFotoZoom {
-      0% { opacity: 0; transform: scale(.7); }
-      100% { opacity: 1; transform: scale(1); }
-    }
+    @keyframes almFotoFadeIn { from { opacity: 0 } to { opacity: 1 } }
     .alm-foto-close {
-      position: absolute; top: 20px; right: 20px;
+      position: absolute; top: 18px; right: 18px; z-index: 3;
       background: rgba(0,0,0,.65); color: #fff;
       width: 44px; height: 44px;
       border-radius: 50%; border: 2px solid rgba(255,255,255,.3);
@@ -5841,12 +5846,33 @@
       cursor: pointer; transition: transform .15s;
     }
     .alm-foto-close:hover { transform: scale(1.1) rotate(90deg); }
+    /* [F] controles flotantes de zoom */
+    .alm-foto-ctrls {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 3;
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(8,13,24,.82); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,.14); border-radius: 999px;
+      padding: 7px 9px;
+    }
+    .alm-foto-ctrls button[data-z] {
+      width: 38px; height: 38px; border-radius: 50%;
+      background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.16);
+      font-size: 19px; font-weight: 800; cursor: pointer; transition: .15s; line-height: 1;
+    }
+    .alm-foto-ctrls button[data-z]:hover { background: #34d399; color: #04140d; border-color: transparent; }
     .alm-foto-link {
       color: #fcd34d; font-size: 12px; font-weight: 700;
-      text-decoration: underline;
-      background: rgba(0,0,0,.5);
-      padding: 8px 16px; border-radius: 999px;
+      text-decoration: none; padding: 0 12px 0 6px;
     }
+    .alm-foto-link:hover { text-decoration: underline; }
+    .alm-foto-hint {
+      position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 3;
+      color: rgba(255,255,255,.66); font-size: 11px; font-weight: 600;
+      background: rgba(8,13,24,.7); backdrop-filter: blur(6px);
+      padding: 6px 13px; border-radius: 999px; border: 1px solid rgba(255,255,255,.1);
+      pointer-events: none;
+    }
+    @media (max-width: 560px) { .alm-foto-hint { display: none; } }
 
     /* ════════════════════════════════════════════════════════
        [v41.20] OVERLAY UNIFICADO COSTOS — split foto + form + sugerencias inline
@@ -6471,6 +6497,23 @@
     .cat-toolbar > .cat-search-wrap input:focus {
       border-color: #c9a227;
       box-shadow: 0 0 0 3px rgba(255,215,0,.18), 0 0 18px rgba(255,215,0,.25);
+    }
+    /* [v5 §11 · punto A] En el Catálogo el botón "Compras" se ve neutral (como los
+       demás de la toolbar); el verde de marca aparece solo al hover/click.
+       Especificidad .cat-toolbar>.btn-mesa-compras (0,2,0) gana al .btn-mesa-compras (0,1,0) inyectado. */
+    .cat-toolbar > .btn-mesa-compras {
+      background: #131d30 !important;
+      color: #cbd5e1 !important;
+      border: 1px solid #2a3550 !important;
+      box-shadow: none !important;
+    }
+    .cat-toolbar > .btn-mesa-compras:hover,
+    .cat-toolbar > .btn-mesa-compras:active,
+    .cat-toolbar > .btn-mesa-compras:focus-visible {
+      background: linear-gradient(180deg,#34d399,#059669) !important;
+      color: #04140d !important;
+      border-color: transparent !important;
+      box-shadow: 0 8px 18px -6px rgba(52,211,153,.6) !important;
     }
     .cat-toolbar > .cat-tool-btn {
       flex-shrink: 0;
@@ -19317,7 +19360,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.520';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.521';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19367,7 +19410,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.520"></script>
+<script src="js/api.js?v=2.43.521"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19382,7 +19425,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.520"></script>
+<script src="js/app.js?v=2.43.521"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

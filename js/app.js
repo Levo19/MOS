@@ -9115,6 +9115,7 @@ const MOS = (() => {
     document.getElementById('opsCostosTitulo').textContent = 'Compra ' + op.idGuia + (_resumen ? ' · ' + _resumen.toUpperCase() : '');
     document.getElementById('opsCostosSubtitle').textContent = (_prov ? '🏭 ' + _prov + ' · ' : '') + _lin.length + ' línea(s)';
     modal.classList.remove('hidden');
+    modal.style.zIndex = '9700'; // [E] por encima de la Mesa (z-9500) que queda atenuada detrás
     _renderModalCostosCompleto(op);
   }
 
@@ -9473,6 +9474,12 @@ const MOS = (() => {
       }
       #modalCostosGuiaUnif .alm-v-costo-helper { color: #cbd5e1; text-align: right; font-size: 11px; line-height: 1.3; font-family: ui-monospace,monospace; }
       #modalCostosGuiaUnif .alm-v-costo-helper-bruto { color: #fbbf24; font-weight: 800; }
+      /* [G] fila de monto compacta: input acotado (no estira toda la fila) + costo/u a la derecha */
+      #modalCostosGuiaUnif .alm-v-costo-controls { grid-template-columns: 42px minmax(94px,130px) 1fr; gap: 8px; min-height: 0; }
+      #modalCostosGuiaUnif .alm-v-costo-input { padding: 7px 9px; font-size: 14px; }
+      #modalCostosGuiaUnif .alm-v-costo-cant { font-size: 12.5px; padding: 5px 3px; }
+      #modalCostosGuiaUnif .alm-v-costo-helper { justify-self: end; align-self: center; }
+      #modalCostosGuiaUnif .alm-v-costo-line { padding: 10px 12px; }
       #modalCostosGuiaUnif .alm-v-marca-ok    { color: #34d399; font-weight: 700; }
       #modalCostosGuiaUnif .alm-v-marca-ocr   { color: #fbbf24; font-weight: 700; }
       #modalCostosGuiaUnif .alm-v-marca-falta { color: #f87171; font-weight: 700; animation: pulse 1.6s infinite; }
@@ -9597,6 +9604,8 @@ const MOS = (() => {
       const okItems = res.filter(x => x.ok);
       // refrescar costos en memoria para que el Paso 2 calcule con lo nuevo
       okItems.forEach(x => { const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
+      // [I] Paso 2 REEMPLAZA a Paso 1 en el mismo espacio: ocultamos Paso 1 al abrir Paso 2.
+      document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
       _paso2Abrir(okItems, st.idGuia);
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -9624,79 +9633,315 @@ const MOS = (() => {
   }
 
   function _paso2Abrir(items, idGuia) {
+    _p2InyectarCSS();
     document.getElementById('paso2Modal')?.remove();
     const filas = items.map(x => {
       const p = S.productos.find(y => y.idProducto === x.idCanonico) || {};
       const mi = (function(){ try { return _calcularMargenInfo(p); } catch(_) { return null; } })();
       const margenC = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : (mi ? parseFloat(mi.objetivo) : null);
       const tieneCostoPrevio = (parseFloat(x.costoAnterior) || 0) > 0;
-      const sugerido = (margenC != null && margenC < 100 && x.costoNuevo > 0)
-        ? _r1(x.costoNuevo / (1 - margenC / 100)) : null;
-      const satelites = _paso2Satelites(x, p, margenC);   // [v5 §11] presentaciones/derivados afectados
-      return { x, p, margenC, sugerido, tieneCostoPrevio, satelites };
+      const costoNuevo = parseFloat(x.costoNuevo) || 0;
+      const precioActual = parseFloat(p.precioVenta) || 0;
+      // margen actual del catálogo (con el costo ANTERIOR, si lo hay)
+      const margenActual = (precioActual > 0 && parseFloat(x.costoAnterior) > 0)
+        ? (1 - parseFloat(x.costoAnterior) / precioActual) * 100
+        : (margenC != null ? margenC : null);
+      const sugerido = (margenC != null && margenC < 100 && costoNuevo > 0)
+        ? _r1(costoNuevo / (1 - margenC / 100)) : null;
+      const precioEd = (sugerido != null ? sugerido : (precioActual > 0 ? precioActual : null));
+      const margenEd = (precioEd > 0 && costoNuevo > 0) ? (1 - costoNuevo / precioEd) * 100 : margenC;
+      const satelites = _paso2Satelites(x, p, margenC);
+      return { x, p, margenC, sugerido, tieneCostoPrevio, satelites, precioActual, margenActual, precioEd, margenEd };
     });
+    window._paso2Filas = filas;
+    const kpi = (lbl, val, hero) => `<div class="p2-kpi${hero ? ' p2-kpi-hero' : ''}"><span class="p2-kl">${lbl}</span>${val}</div>`;
     document.body.insertAdjacentHTML('beforeend', `
-    <div id="paso2Modal" class="modal-backdrop open" style="z-index:9600;display:flex" onclick="if(event.target===this)this.remove()">
-      <div class="modal-box p-0" style="max-width:520px;width:100%;animation:catFotoSheetIn .35s cubic-bezier(.34,1.56,.64,1)">
+    <div id="paso2Modal" class="modal-backdrop open" style="z-index:9700;display:flex" onclick="if(event.target===this)MOS._paso2CerrarAMesa()">
+      <div class="modal-box p-0" style="max-width:540px;width:100%;animation:catFotoSheetIn .35s cubic-bezier(.34,1.56,.64,1)">
         <div class="px-5 py-4" style="border-bottom:1px solid #1e293b">
           <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800">
             <span style="color:#34d399">✓ Paso 1</span><span style="color:#475569">──</span>
             <span style="color:#34d399">● Paso 2 · Precios (con la jefa)</span>
-            <button onclick="document.getElementById('paso2Modal').remove()" class="modal-close-x" style="margin-left:auto">×</button>
+            <button onclick="MOS._paso2CerrarAMesa()" class="modal-close-x" style="margin-left:auto">×</button>
           </div>
-          <div class="text-[10px] mt-1" style="color:#93a4c2">Costos aplicados con historial · toca cada producto para decidir su precio (bidireccional precio↔margen)</div>
+          <div class="text-[10px] mt-1" style="color:#93a4c2">Costos aplicados con historial · abre cada producto para ajustar precio ↔ margen y ver sus curvas</div>
         </div>
-        <div class="px-5 py-4 space-y-2" style="max-height:60vh;overflow-y:auto">
-          ${filas.map(f => `
-          <div class="rounded-xl px-3 py-2.5" style="background:#0e1626;border:1px ${f.tieneCostoPrevio ? 'solid #28344c' : 'dashed rgba(251,191,36,.5)'}">
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-xs font-bold text-slate-200" style="flex:1;min-width:0">${_escapeHtml(f.p.descripcion || f.x.idCanonico)}</span>
-              <span class="text-[10px]" style="color:#fbbf24">costo ${f.x.costoAnterior != null && f.tieneCostoPrevio ? (+parseFloat(f.x.costoAnterior).toFixed(2)) + '→' : ''}${(+parseFloat(f.x.costoNuevo).toFixed(2))}</span>
+        <div class="px-5 py-4 space-y-2.5" style="max-height:62vh;overflow-y:auto">
+          ${filas.map((f, i) => {
+            const cn = (+f.x.costoNuevo).toFixed(2);
+            const ca = f.tieneCostoPrevio ? (+parseFloat(f.x.costoAnterior).toFixed(2)) + '→' : '';
+            return `
+          <div class="p2-row${f.tieneCostoPrevio ? '' : ' is-new'}" data-idx="${i}">
+            <div class="p2-row-top">
+              <span class="p2-name">${_escapeHtml(f.p.descripcion || f.x.idCanonico)}</span>
+              <span class="p2-costo-chip">🏭 costo ${ca}<b>S/ ${cn}</b></span>
             </div>
-            <div class="flex items-center gap-2 mt-1.5 flex-wrap">
-              ${f.tieneCostoPrevio && f.sugerido != null
-                ? `<span class="text-[11px]" style="color:#93a4c2">precio <s style="opacity:.7">S/${(parseFloat(f.p.precioVenta)||0)}</s> →</span>
-                   <span class="text-sm font-extrabold" style="color:#34d399">S/ ${f.sugerido}</span>
-                   <span class="qp-mode-chip">AUTO ${f.margenC}%</span>`
-                : `<span class="text-[10.5px]" style="color:#fbbf24">⚠ ${f.tieneCostoPrevio ? 'sin margen guardado' : 'primer costo registrado'} — define el precio y NACE su contrato</span>`}
-              <button onclick="MOS.abrirModalPrecioCurvas('${f.x.idCanonico}')"
-                      class="text-[10.5px] font-extrabold px-3 py-1.5 rounded-lg" style="margin-left:auto;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">
-                ${f.tieneCostoPrevio && f.sugerido != null ? 'Revisar / ajustar' : 'Definir precio'}</button>
+            <div class="p2-kpis">
+              ${kpi('Precio actual', `<b>${f.precioActual > 0 ? 'S/ ' + f.precioActual : '—'}</b>`)}
+              ${kpi('Margen', `<b id="p2mg_${i}">${_p2MargenTxt(f)}</b>`)}
+              ${kpi(f.tieneCostoPrevio ? 'Precio sugerido' : 'Precio nuevo', `<b id="p2pr_${i}" class="p2-hero-v">${f.precioEd != null ? 'S/ ' + f.precioEd : 'define'}</b>`, true)}
             </div>
-            ${(f.satelites && f.satelites.length) ? `
-            <div style="margin-top:9px;padding-top:9px;border-top:1px dashed #28344c;display:flex;flex-direction:column;gap:6px">
-              <div style="font-size:8.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#5f7192">${f.satelites.length} satélite(s) afectado(s) por el costo · precio auto por su margen</div>
-              ${f.satelites.map(s => `
-              <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 8px;background:#0b1425;border:1px solid #1e293b;border-left:2px solid ${s.tipo === 'der' ? '#a855f7' : '#34d399'};border-radius:8px">
-                <span style="font-size:10.5px;font-weight:700;flex:1;min-width:66px;color:#dbe4f3">${s.ico} ${_escapeHtml(s.p.descripcion || s.p.idProducto)}</span>
-                <span style="font-size:8.5px;color:#8ea3c4;font-family:ui-monospace,monospace">×${s.factor} · costo ${s.costo}</span>
-                ${s.sugerido != null
-                  ? `<span style="font-size:8px;color:#8ea3c4">S/${s.precioActual || '—'}→</span><span style="font-size:12px;font-weight:800;color:#34d399;font-family:ui-monospace,monospace">S/ ${s.sugerido}</span><span class="qp-mode-chip" style="font-size:7.5px;padding:1px 5px">AUTO ${s.margen != null ? (+s.margen).toFixed(0) + '%' : ''}</span>`
-                  : `<span style="font-size:9px;color:#fbbf24;font-weight:700">⚠ define su precio</span>`}
-              </div>`).join('')}
-            </div>` : ''}
-          </div>`).join('')}
+            ${!f.tieneCostoPrevio ? `<div class="p2-firstcost">⚠ Primer costo registrado — al definir el precio NACE su contrato de margen.</div>` : ''}
+            <button class="p2-toggle" onclick="MOS._p2Toggle(${i})">
+              <span>📈 Ajustar precio ↔ margen · ver curvas</span><span class="p2-chev">▾</span>
+            </button>
+            <div class="p2-editor" id="p2ed_${i}" hidden>
+              <div class="p2-chart-wrap"><canvas id="p2cv_${i}" class="p2-canvas"></canvas>
+                <div class="p2-chart-legend"><span><i style="background:#34d399"></i>precio</span><span><i style="background:#fbbf24;height:2px"></i>costo</span><span class="p2-chart-drag">↔ arrastra para ver fechas anteriores</span></div>
+              </div>
+              <div class="p2-edit-grid">
+                <label class="p2-field"><span>Precio venta S/</span>
+                  <input id="p2ip_${i}" type="number" step="0.1" min="0" value="${f.precioEd != null ? f.precioEd : ''}" oninput="MOS._p2Sync(${i},'precio')"></label>
+                <label class="p2-field"><span>Margen %</span>
+                  <input id="p2im_${i}" type="number" step="0.1" ${f.x.costoNuevo > 0 ? '' : 'disabled'} value="${f.margenEd != null ? (+f.margenEd).toFixed(1) : ''}" oninput="MOS._p2Sync(${i},'margen')"></label>
+              </div>
+              <div class="p2-bidir-hint">↔ Bidireccional: cambias el precio → recalcula el margen · cambias el margen → recalcula el precio. ESE margen queda de contrato.</div>
+              ${(f.satelites && f.satelites.length) ? `
+              <div class="p2-sats">
+                <div class="p2-sats-lbl">${f.satelites.length} satélite(s) afectado(s) · precio auto por su margen</div>
+                ${f.satelites.map(s => `
+                <div class="p2-sat" style="border-left-color:${s.tipo === 'der' ? '#a855f7' : '#34d399'}">
+                  <span class="p2-sat-name">${s.ico} ${_escapeHtml(s.p.descripcion || s.p.idProducto)}</span>
+                  <span class="p2-sat-meta">×${s.factor} · costo ${s.costo}</span>
+                  ${s.sugerido != null
+                    ? `<span class="p2-sat-arrow">S/${s.precioActual || '—'}→</span><span class="p2-sat-sug">S/ ${s.sugerido}</span><span class="qp-mode-chip" style="font-size:7.5px;padding:1px 5px">AUTO ${s.margen != null ? (+s.margen).toFixed(0) + '%' : ''}</span>`
+                    : `<span class="p2-sat-warn">⚠ define su precio</span>`}
+                </div>`).join('')}
+              </div>` : ''}
+            </div>
+          </div>`; }).join('')}
         </div>
         <div class="px-5 py-4 flex gap-2" style="border-top:1px solid #1e293b">
-          <button onclick="document.getElementById('paso2Modal').remove()" class="flex-1 rounded-xl py-2.5 text-xs font-bold" style="background:#131d30;border:1px solid #28344c;color:#93a4c2">← Volver a montos</button>
+          <button onclick="MOS._paso2VolverAMontos()" class="flex-1 rounded-xl py-2.5 text-xs font-bold" style="background:#131d30;border:1px solid #28344c;color:#93a4c2">← Volver a montos</button>
           <button onclick="MOS._paso2AplicarAutos()" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">✓ Aplicar precios (padres + satélites) y finalizar</button>
         </div>
       </div>
     </div>`);
-    window._paso2Filas = filas;
+  }
+
+  // [J] Texto del KPI de margen: margen actual (tachado si cambia) → margen nuevo coloreado.
+  function _p2MargenTxt(f) {
+    const costo = parseFloat(f.x.costoNuevo) || 0;
+    const mgNew = (f.precioEd > 0 && costo > 0) ? (1 - costo / f.precioEd) * 100 : null;
+    const colM = m => m == null ? '#9ca3af' : m < 10 ? '#f87171' : m < 20 ? '#fbbf24' : '#34d399';
+    const distinto = (f.margenActual != null && mgNew != null && Math.abs(f.margenActual - mgNew) > 0.5);
+    const act = (f.margenActual != null && distinto) ? `<s style="opacity:.55">${f.margenActual.toFixed(0)}%</s> ` : '';
+    return act + `<span style="color:${colM(mgNew)}">${mgNew != null ? mgNew.toFixed(0) + '%' : '—'}</span>`;
+  }
+
+  // [K] Editor bidireccional precio↔margen inline (por fila del Paso 2).
+  function _p2Sync(i, campo) {
+    const f = (window._paso2Filas || [])[i]; if (!f) return;
+    const costo = parseFloat(f.x.costoNuevo) || 0;
+    const ip = document.getElementById('p2ip_' + i), im = document.getElementById('p2im_' + i);
+    if (campo === 'precio') {
+      const pr = parseFloat(ip && ip.value) || 0;
+      f.precioEd = pr > 0 ? _r1(pr) : null;
+      const mg = (pr > 0 && costo > 0) ? (1 - costo / pr) * 100 : null;
+      f.margenEd = mg;
+      if (im && mg != null) im.value = mg.toFixed(1);
+    } else {
+      const mg = parseFloat(im && im.value);
+      f.margenEd = isNaN(mg) ? null : mg;
+      const pr = (costo > 0 && !isNaN(mg) && mg < 100) ? _r1(costo / (1 - mg / 100)) : null;
+      f.precioEd = pr;
+      if (ip && pr != null) ip.value = pr;
+    }
+    const prEl = document.getElementById('p2pr_' + i); if (prEl) prEl.textContent = f.precioEd != null ? 'S/ ' + f.precioEd : 'define';
+    const mgEl = document.getElementById('p2mg_' + i); if (mgEl) mgEl.innerHTML = _p2MargenTxt(f);
+    // redibuja el punto "hoy" del precio en la curva
+    const cv = document.getElementById('p2cv_' + i);
+    if (cv && cv._setHoyPrecio) cv._setHoyPrecio(f.precioEd || 0);
+  }
+
+  // [K/N] Abre/cierra el editor de una fila; al abrir por 1ª vez, carga la historia y dibuja la curva.
+  async function _p2Toggle(i) {
+    const ed = document.getElementById('p2ed_' + i); if (!ed) return;
+    const row = ed.closest('.p2-row'); const chev = row && row.querySelector('.p2-chev');
+    if (!ed.hasAttribute('hidden')) { ed.setAttribute('hidden', ''); if (chev) chev.style.transform = ''; return; }
+    ed.removeAttribute('hidden'); if (chev) chev.style.transform = 'rotate(180deg)';
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    const f = (window._paso2Filas || [])[i]; if (!f || f._chartDone) return;
+    f._chartDone = true;
+    const cv = document.getElementById('p2cv_' + i);
+    let hist = { P: [], C: [] };
+    try {
+      const r = await API.post('historialPrecioCosto', { idProducto: f.x.idCanonico });
+      const d = r && (r.data || r);
+      hist.P = (d && d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor) })).filter(x => x.v > 0 && !isNaN(x.t));
+      hist.C = (d && d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor) })).filter(x => x.v > 0 && !isNaN(x.t));
+    } catch(_){}
+    f._hist = hist;
+    if (cv) _p2ChartInit(cv, hist, f.precioEd || f.precioActual || 0, parseFloat(f.x.costoNuevo) || 0);
+  }
+
+  // [N] Gráfico cartesiano (X=tiempo real · Y=S/) con costo (─ ─) y precio (──), línea "hoy"
+  //     vertical que cruza ambos (Δ = margen), centrado en la última fecha y ARRASTRABLE para
+  //     ver fechas anteriores (cursor o dedo). Canvas 2D, cero dependencias.
+  function _p2ChartInit(cv, hist, nowPrecio, nowCosto) {
+    const ctx = cv.getContext('2d'); if (!ctx) return;
+    const DAY = 86400000, now = Date.now();
+    const P = (hist.P || []).slice().sort((a, b) => a.t - b.t);
+    const C = (hist.C || []).slice().sort((a, b) => a.t - b.t);
+    let hoyP = nowPrecio, hoyC = nowCosto;
+    const allT = P.concat(C).map(p => p.t).concat([now]);
+    const baseV = P.concat(C).map(p => p.v).concat([hoyP, hoyC].filter(v => v > 0));
+    if (!baseV.length) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
+    const tMin = Math.min(...allT), tMax = Math.max(...allT, now);
+    // Y fijo (estable al arrastrar)
+    let vMin = Math.min(...baseV), vMax = Math.max(...baseV);
+    const vPad = (vMax - vMin) * 0.18 || vMax * 0.18 || 1;
+    vMin = Math.max(0, vMin - vPad); vMax = vMax + vPad;
+    const fullSpan = Math.max(tMax - tMin, DAY);
+    let span = Math.min(fullSpan, 60 * DAY); if (span < DAY) span = DAY;
+    const padT = span * 0.08;
+    const view = { vs: tMax - span - padT, ve: tMax + padT }; // centrado en la ÚLTIMA fecha
+    const M = { l: 42, r: 10, t: 12, b: 22 };
+    let cssW = 0, cssH = 0;
+    function resize() {
+      const dpr = window.devicePixelRatio || 1;
+      cssW = cv.clientWidth || 300; cssH = cv.clientHeight || 150;
+      cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    const plotW = () => cssW - M.l - M.r, plotH = () => cssH - M.t - M.b;
+    const xOf = t => M.l + (t - view.vs) / (view.ve - view.vs) * plotW();
+    const yOf = v => M.t + (1 - (v - vMin) / (vMax - vMin || 1)) * plotH();
+    function draw() {
+      ctx.clearRect(0, 0, cssW, cssH);
+      ctx.font = '9px ui-monospace,monospace'; ctx.textBaseline = 'middle';
+      // grid + Y labels
+      for (let g = 0; g <= 4; g++) {
+        const yy = M.t + g / 4 * plotH(), vv = vMax - g / 4 * (vMax - vMin);
+        ctx.strokeStyle = 'rgba(40,52,76,.65)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(M.l, yy); ctx.lineTo(cssW - M.r, yy); ctx.stroke();
+        ctx.fillStyle = '#5f7192'; ctx.textAlign = 'right'; ctx.fillText('S/' + vv.toFixed(1), M.l - 4, yy);
+      }
+      // X labels (fechas)
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      for (let g = 0; g <= 3; g++) {
+        const tt = view.vs + g / 3 * (view.ve - view.vs), xx = xOf(tt), d = new Date(tt);
+        ctx.fillStyle = '#5f7192'; ctx.fillText(d.getDate() + '/' + (d.getMonth() + 1), Math.min(Math.max(xx, M.l + 12), cssW - M.r - 12), cssH - M.b + 5);
+      }
+      // clip al área de trazado
+      ctx.save(); ctx.beginPath(); ctx.rect(M.l, M.t, plotW(), plotH()); ctx.clip();
+      const serie = (arr, hoyV, color, dash) => {
+        const pts = arr.slice(); if (hoyV > 0) pts.push({ t: now, v: hoyV, hoy: true });
+        if (!pts.length) return;
+        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash(dash);
+        ctx.beginPath(); pts.forEach((p, i) => { const X = xOf(p.t), Y = yOf(p.v); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); ctx.stroke();
+        ctx.setLineDash([]);
+        pts.forEach(p => {
+          const X = xOf(p.t), Y = yOf(p.v);
+          ctx.fillStyle = p.hoy ? '#fff' : color; ctx.beginPath(); ctx.arc(X, Y, p.hoy ? 4 : 2.6, 0, 7); ctx.fill();
+          if (p.hoy) { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X, Y, 4.5, 0, 7); ctx.stroke(); }
+        });
+      };
+      serie(C, hoyC, '#fbbf24', [5, 3]);
+      serie(P, hoyP, '#34d399', []);
+      // línea "hoy" vertical + Δ (margen) entre costo y precio de hoy
+      const xh = xOf(now);
+      ctx.strokeStyle = 'rgba(148,163,184,.45)'; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(xh, M.t); ctx.lineTo(xh, M.t + plotH()); ctx.stroke(); ctx.setLineDash([]);
+      if (hoyP > 0 && hoyC > 0) {
+        const y1 = yOf(hoyC), y2 = yOf(hoyP);
+        ctx.strokeStyle = 'rgba(52,211,153,.55)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(xh, y1); ctx.lineTo(xh, y2); ctx.stroke();
+        const mg = (1 - hoyC / hoyP) * 100;
+        ctx.fillStyle = '#34d399'; ctx.font = '8.5px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText('Δ ' + mg.toFixed(0) + '%', Math.min(xh + 5, cssW - M.r - 30), (y1 + y2) / 2);
+      }
+      ctx.restore();
+      // etiqueta "hoy"
+      ctx.fillStyle = '#93a4c2'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText('hoy', Math.min(Math.max(xh, M.l + 12), cssW - M.r - 12), M.t + 1);
+    }
+    resize(); draw();
+    // Arrastre horizontal (pan) para ver fechas anteriores
+    let drag = null;
+    cv.style.cursor = 'grab';
+    cv.onpointerdown = e => { drag = { x: e.clientX, vs: view.vs, ve: view.ve }; cv.style.cursor = 'grabbing'; try { cv.setPointerCapture(e.pointerId); } catch(_){} };
+    cv.onpointermove = e => {
+      if (!drag) return;
+      const dt = (e.clientX - drag.x) / plotW() * (drag.ve - drag.vs);
+      let vs = drag.vs - dt, ve = drag.ve - dt; const w = ve - vs;
+      const lo = tMin - w * 0.5, hi = tMax + w * 0.15;   // límites: no salirse de la data
+      if (vs < lo) { vs = lo; ve = lo + w; }
+      if (ve > hi) { ve = hi; vs = hi - w; }
+      view.vs = vs; view.ve = ve; draw();
+    };
+    const up = () => { drag = null; cv.style.cursor = 'grab'; };
+    cv.onpointerup = up; cv.onpointercancel = up;
+    // hook para actualizar el punto "hoy" del precio cuando el admin edita
+    cv._setHoyPrecio = v => { hoyP = v > 0 ? v : 0; draw(); };
+  }
+
+  function _p2InyectarCSS() {
+    if (S._p2CSSInjected) return; S._p2CSSInjected = true;
+    const st = document.createElement('style'); st.id = 'paso2CSS';
+    st.textContent = `
+      .p2-row{background:#0e1626;border:1px solid #28344c;border-radius:14px;padding:12px 13px;display:flex;flex-direction:column;gap:9px}
+      .p2-row.is-new{border:1px dashed rgba(251,191,36,.5);background:linear-gradient(180deg,#0e1626,rgba(251,191,36,.04))}
+      .p2-row-top{display:flex;align-items:center;gap:8px}
+      .p2-name{flex:1;min-width:0;font-size:13px;font-weight:800;color:#e6edf7;line-height:1.25}
+      .p2-costo-chip{flex:none;font-size:10px;font-weight:700;color:#fbbf24;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.25);padding:3px 8px;border-radius:999px;font-family:ui-monospace,monospace}
+      .p2-costo-chip b{color:#fde68a}
+      .p2-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+      .p2-kpi{background:#0a1120;border:1px solid #1e293b;border-radius:10px;padding:7px 9px;display:flex;flex-direction:column;gap:2px;min-width:0}
+      .p2-kpi-hero{background:linear-gradient(180deg,rgba(52,211,153,.12),rgba(52,211,153,.05));border-color:rgba(52,211,153,.35)}
+      .p2-kl{font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#5f7192}
+      .p2-kpi b{font-size:13px;font-weight:800;color:#dbe4f3;font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .p2-hero-v{color:#34d399!important;font-size:15px!important}
+      .p2-firstcost{font-size:10px;font-weight:600;color:#fbbf24;background:rgba(251,191,36,.08);border-radius:8px;padding:6px 9px}
+      .p2-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;font-size:11px;font-weight:800;color:#93a4c2;
+        background:#131d30;border:1px solid #28344c;border-radius:10px;padding:8px 12px;cursor:pointer;transition:.16s}
+      .p2-toggle:hover{border-color:#34d399;color:#cdd8ec}
+      .p2-chev{transition:transform .25s cubic-bezier(.4,0,.2,1);font-size:12px}
+      .p2-editor{display:flex;flex-direction:column;gap:10px;animation:p2EdIn .28s ease}
+      @keyframes p2EdIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+      .p2-chart-wrap{background:#0a1120;border:1px solid #1e293b;border-radius:11px;padding:8px 8px 4px}
+      .p2-canvas{width:100%;height:150px;display:block;touch-action:none}
+      .p2-chart-legend{display:flex;align-items:center;gap:12px;font-size:9px;color:#93a4c2;padding:5px 4px 2px}
+      .p2-chart-legend i{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
+      .p2-chart-drag{margin-left:auto;color:#5f7192;font-style:italic}
+      .p2-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+      .p2-field{display:flex;flex-direction:column;gap:3px}
+      .p2-field span{font-size:9px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#7b8aa6}
+      .p2-field input{background:#0f172a;border:1px solid #34d39955;border-radius:9px;padding:9px 11px;font-size:16px;font-weight:800;
+        color:#34d399;font-family:ui-monospace,monospace;text-align:right;width:100%}
+      .p2-field input:focus{outline:2px solid rgba(52,211,153,.4);border-color:#10b981}
+      .p2-field input:disabled{opacity:.45;color:#93a4c2;border-color:#28344c}
+      .p2-field:nth-child(2) input{color:#fbbf24;border-color:rgba(251,191,36,.45)}
+      .p2-bidir-hint{font-size:9.5px;line-height:1.45;color:#7b8aa6}
+      .p2-sats{display:flex;flex-direction:column;gap:6px;border-top:1px dashed #28344c;padding-top:9px}
+      .p2-sats-lbl{font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192}
+      .p2-sat{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:6px 8px;background:#0b1425;border:1px solid #1e293b;border-left:2px solid #34d399;border-radius:8px}
+      .p2-sat-name{font-size:10.5px;font-weight:700;flex:1;min-width:66px;color:#dbe4f3}
+      .p2-sat-meta{font-size:8.5px;color:#8ea3c4;font-family:ui-monospace,monospace}
+      .p2-sat-arrow{font-size:8px;color:#8ea3c4}
+      .p2-sat-sug{font-size:12px;font-weight:800;color:#34d399;font-family:ui-monospace,monospace}
+      .p2-sat-warn{font-size:9px;color:#fbbf24;font-weight:700}
+      @media (prefers-reduced-motion:reduce){.p2-editor,.p2-chev{animation:none;transition:none}}
+    `;
+    document.head.appendChild(st);
   }
 
   async function _paso2AplicarAutos() {
     // [v5 §11] Publica AUTO los precios de canónicos + satélites (respetando su margen).
     const jobs = [];
     (window._paso2Filas || []).forEach(f => {
-      if (f.tieneCostoPrevio && f.sugerido != null && f.sugerido > 0) jobs.push({ id: f.x.idCanonico, precio: f.sugerido });
+      // [J/K] usa el precio EDITADO (sugerido por defecto, o el que el admin ajustó en el editor).
+      if (f.precioEd != null && f.precioEd > 0) jobs.push({ id: f.x.idCanonico, precio: f.precioEd });
       (f.satelites || []).forEach(s => {
         if (s.sugerido != null && s.sugerido > 0 && s.p && s.p.idProducto) jobs.push({ id: s.p.idProducto, precio: s.sugerido });
       });
     });
     document.getElementById('paso2Modal')?.remove();
-    if (!jobs.length) { toast('Nada en AUTO — define los precios uno a uno', 'info'); return; }
+    document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
+    S._opsModoCostos = false;
+    if (!jobs.length) { toast('Nada en AUTO — define los precios uno a uno', 'info'); _mesaVolver(); return; }
+    // [L] optimista: regresamos a la Mesa YA (refrescada); la publicación corre en background.
+    _mesaVolver();
     toast(`Aplicando ${jobs.length} precio(s) con margen respetado…`, 'info');
     try {
       await Promise.all(jobs.map(j =>
@@ -9705,6 +9950,7 @@ const MOS = (() => {
       toast(`✓ ${jobs.length} precio(s) actualizados (padres + satélites) respetando su margen`, 'ok');
       try { renderCatalogo(); } catch(_){}
       try { _mesaComprasSyncBadge(); } catch(_){}
+      _mesaVolver(); // refresca la Mesa con el estado final (compra ahora "Procesada ✓")
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -9724,6 +9970,8 @@ const MOS = (() => {
       const cont = $('almOpsDetalleContent');
       if (cont) cont.innerHTML = _renderVoucher(op, 0);
     }
+    // [L] Si venimos de la Mesa, regresar a ella (des-atenuada y refrescada).
+    if (S._mesaAbierta) _mesaVolver();
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -9737,14 +9985,18 @@ const MOS = (() => {
   function _comprasFlat() {
     const data = (S._opsData && (S._opsData.data || S._opsData)) || {};
     const out = [];
-    (data.porDia || []).forEach(d => (d.operaciones || []).forEach(op => {
-      const t = String(op.tipo || '').toUpperCase();
-      const est = String(op.estado || '').toUpperCase();
-      if (op.esPreingreso) return;
-      if (t !== 'INGRESO_PROVEEDOR' && t !== 'ENTRADA_LIBRE') return;
-      if (est === 'ANULADO' || est === 'ANULADA') return;
-      out.push(op);
-    }));
+    (data.porDia || []).forEach(d => {
+      const dia = d.dia || d.fecha || d.fechaISO || '';
+      (d.operaciones || []).forEach(op => {
+        const t = String(op.tipo || '').toUpperCase();
+        const est = String(op.estado || '').toUpperCase();
+        if (op.esPreingreso) return;
+        if (t !== 'INGRESO_PROVEEDOR' && t !== 'ENTRADA_LIBRE') return;
+        if (est === 'ANULADO' || est === 'ANULADA') return;
+        op._dia = op.fecha || op.fechaISO || dia; // [C] día para agrupar en la Mesa
+        out.push(op);
+      });
+    });
     return out;
   }
 
@@ -9799,6 +10051,7 @@ const MOS = (() => {
       modal.onclick = (e) => { if (e.target === modal) MOS.cerrarMesaCompras(); };
       document.body.appendChild(modal);
     }
+    if (!S._mesaRangoDias) S._mesaRangoDias = 45;
     modal.innerHTML = _mesaComprasHTML();
     requestAnimationFrame(() => modal.classList.add('open'));
     // Si no hay datos aún (ej. entré desde Catálogo sin abrir Almacén), dispara la
@@ -9812,14 +10065,41 @@ const MOS = (() => {
         if (_comprasFlat().length) { clearInterval(_poll); m.innerHTML = _mesaComprasHTML(); }
       }, 700);
     }
+    // [C] la Mesa quiere ventana amplia (~45 días); si la carga base fue corta, amplía en background (cero-GAS).
+    if (!S._mesaRangoServido || S._mesaRangoServido < S._mesaRangoDias) {
+      (async () => {
+        S._mesaCargando = true;
+        try {
+          const r = await API.get('getOperacionesConDetalle', { dias: S._mesaRangoDias });
+          if (r && ((r.data || r).porDia)) {
+            S._opsData = r; S._mesaRangoServido = S._mesaRangoDias;
+            if (typeof _opsPopulateDetCacheFromData === 'function') _opsPopulateDetCacheFromData(r);
+          }
+        } catch(_){}
+        S._mesaCargando = false;
+        const m = document.getElementById('mesaComprasModal');
+        if (m && m.classList.contains('open')) m.innerHTML = _mesaComprasHTML();
+      })();
+    }
   }
   function cerrarMesaCompras() {
+    S._mesaAbierta = false;
     const m = document.getElementById('mesaComprasModal');
     if (!m) return;
     m.classList.remove('open');
-    setTimeout(() => m.remove(), 260);
+    setTimeout(() => { const el = document.getElementById('mesaComprasModal'); if (el) el.remove(); }, 260);
   }
   function mesaSetFiltro(f) { S._mesaFiltro = f; const m = document.getElementById('mesaComprasModal'); if (m) m.innerHTML = _mesaComprasHTML(); }
+
+  // [C] día legible "Sábado 11/7" desde YYYY-MM-DD (o timestamp)
+  function _mesaDiaLabel(iso) {
+    if (!iso) return 'Sin fecha';
+    const s = String(iso).slice(0, 10);
+    const d = new Date(s + 'T12:00:00');
+    if (isNaN(d.getTime())) return s;
+    const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+    return dias[d.getDay()] + ' ' + d.getDate() + '/' + (d.getMonth() + 1);
+  }
 
   function _mesaComprasHTML() {
     const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
@@ -9828,15 +10108,29 @@ const MOS = (() => {
     const activas = cont.pendiente + cont.precios + cont.incompleta;
     const F = S._mesaFiltro || 'activas';
     const pasa = (fase) => F === 'todas' ? true : F === 'activas' ? fase !== 'procesada' : fase === F;
-    const vis = compras.filter(c => pasa(c.est.fase));
-    // orden: incompletas/precios primero (lo urgente), luego pendientes, luego procesadas
+    let vis = compras.filter(c => pasa(c.est.fase));
+    // [C] agrupar por DÍA (fecha desc); dentro del día, lo urgente primero
     const rank = { incompleta: 0, precios: 1, pendiente: 2, procesada: 3 };
-    vis.sort((a, b) => (rank[a.est.fase] - rank[b.est.fase]));
+    const grupos = {};
+    vis.forEach(c => { const k = String(c.op._dia || '').slice(0, 10) || 'z'; (grupos[k] = grupos[k] || []).push(c); });
+    const dias = Object.keys(grupos).sort().reverse();
     const tab = (id, ico, txt, n, tone) => `<button class="mesa-tab ${F === id ? 'on' : ''} t-${tone || 'nk'}" onclick="MOS.mesaSetFiltro('${id}')">${ico} ${txt}${n != null ? ` <span class="mesa-tab-n">${n}</span>` : ''}</button>`;
+    let bodyHtml, i = 0;
+    if (!vis.length) {
+      bodyHtml = `<div class="mesa-empty"><div class="mesa-empty-ic">${F === 'procesada' ? '✓' : '🎉'}</div><p>${F === 'activas' || F === 'todas' ? 'No hay compras que procesar. Todo al día.' : 'Nada en este filtro.'}</p></div>`;
+    } else {
+      bodyHtml = dias.map(k => {
+        const arr = grupos[k].sort((a, b) => rank[a.est.fase] - rank[b.est.fase]);
+        return `<div class="mesa-day"><span class="mesa-day-lbl">${_mesaDiaLabel(k)}</span><span class="mesa-day-ln"></span><span class="mesa-day-cnt">${arr.length} compra${arr.length !== 1 ? 's' : ''}</span></div>
+          <div class="mesa-grid">${arr.map(c => _mesaComprasCard(c.op, c.est, i++)).join('')}</div>`;
+      }).join('');
+      // [C] cargar historial más antiguo (cero-GAS: amplía la ventana de días del RPC)
+      bodyHtml += `<div class="mesa-more"><button onclick="MOS.mesaCargarMas()" class="mesa-more-btn">${S._mesaCargando ? '⏳ Cargando…' : '↓ Ver compras más antiguas (+30 días)'}</button></div>`;
+    }
     return `
       <div class="mesa-sheet" onclick="event.stopPropagation()">
         <div class="mesa-head">
-          <div class="mesa-title"><span class="mesa-ic">🧾</span><div><div class="mesa-h1">Mesa de compras</div><div class="mesa-h2">${compras.length} compra(s) · <b class="mesa-em">${activas} por procesar</b></div></div></div>
+          <div class="mesa-title"><span class="mesa-ic">🧾</span><div><div class="mesa-h1">Mesa de compras</div><div class="mesa-h2">${compras.length} compra(s) · <b class="mesa-em">${activas} por procesar</b> · ${S._mesaRangoDias || 45} días</div></div></div>
           <button class="mesa-x" onclick="MOS.cerrarMesaCompras()" aria-label="Cerrar">✕</button>
         </div>
         <div class="mesa-tabs">
@@ -9847,39 +10141,50 @@ const MOS = (() => {
           ${tab('procesada', '✓', 'Procesadas', cont.procesada, 'em')}
           ${tab('todas', '▦', 'Todas', compras.length, 'nk')}
         </div>
-        <div class="mesa-body">
-          ${vis.length ? vis.map((c, i) => _mesaComprasCard(c.op, c.est, i)).join('')
-            : `<div class="mesa-empty"><div class="mesa-empty-ic">${F === 'procesada' ? '✓' : '🎉'}</div><p>${F === 'activas' || F === 'todas' ? 'No hay compras que procesar. Todo al día.' : 'Nada en este filtro.'}</p></div>`}
-        </div>
+        <div class="mesa-body">${bodyHtml}</div>
       </div>`;
   }
 
+  // [C] amplía la ventana temporal (cero-GAS) y re-renderiza
+  async function mesaCargarMas() {
+    if (S._mesaCargando) return;
+    S._mesaRangoDias = (S._mesaRangoDias || 45) + 30;
+    S._mesaCargando = true;
+    const m = document.getElementById('mesaComprasModal'); if (m) m.innerHTML = _mesaComprasHTML();
+    try {
+      const r = await API.get('getOperacionesConDetalle', { dias: S._mesaRangoDias });
+      if (r && ((r.data || r).porDia)) { S._opsData = r; _opsPopulateDetCacheFromData(r); }
+    } catch(_){}
+    S._mesaCargando = false;
+    const m2 = document.getElementById('mesaComprasModal'); if (m2 && m2.classList.contains('open')) m2.innerHTML = _mesaComprasHTML();
+  }
+
+  // [D] Card grande: proveedor protagonista, productos con fade, progreso 2 pasos.
   function _mesaComprasCard(op, est, i) {
     const prov = _escapeHtml(String(op.nombreProveedor || op.idProveedor || 'Proveedor —').trim());
     const lineas = op.lineas || [];
     const nombres = lineas.map(l => String(l.descripcion || l.codigoProducto || '').trim()).filter(Boolean);
-    const resumen = nombres.length ? _escapeHtml(nombres[0].split(/\s+/).slice(0, 3).join(' ') + (nombres.length > 1 ? ' + ' + (nombres.length - 1) + ' más' : '')) : '(sin líneas)';
-    const gidCorto = _escapeHtml(String(op.idGuia || '').replace(/^G_L\d+/, 'GR·').slice(-10));
+    const listaProd = nombres.length ? nombres.map(n => _escapeHtml(n)).join(' · ') : '(sin líneas)';
+    const gidCorto = _escapeHtml(String(op.idGuia || '').replace(/^G_L\d+/, 'GR·').slice(-9));
     const foto = (op.foto && String(op.foto).trim()) ? '<span class="mesa-foto-ic" title="Tiene foto de factura">📄</span>' : '';
-    const ctaTxt = est.fase === 'pendiente' ? '💰 Ingresar compra'
+    const ctaTxt = est.fase === 'pendiente' ? '💰 Ingresar compra →'
                  : est.fase === 'precios' ? '🏷 Seguir a precios →'
-                 : est.fase === 'incompleta' ? '✍ Completar datos'
+                 : est.fase === 'incompleta' ? '✍ Completar datos →'
                  : '👁 Revisar';
-    // barra doble fase (costos + precios)
     const faseBar = `
       <div class="mesa-phases">
         <div class="mesa-ph ${est.pctC >= 100 ? 'ok' : est.pctC > 0 ? 'mid' : ''}"><span>Paso 1 · costos</span><i style="width:${est.pctC}%"></i><b>${est.costos.con}/${est.costos.total}</b></div>
         <div class="mesa-ph ${est.pctC < 100 ? 'lock' : est.pctP >= 100 ? 'ok' : est.pctP > 0 ? 'mid' : ''}"><span>Paso 2 · precios</span><i style="width:${est.pctC < 100 ? 0 : est.pctP}%"></i><b>${est.pctC < 100 ? '—' : est.precios.con + '/' + est.precios.total}</b></div>
       </div>`;
     return `
-      <button class="mesa-card tone-${est.tone}${est.incompleto ? ' is-incompleta' : ''}" style="animation-delay:${Math.min(i, 14) * 45}ms"
+      <button class="mesa-card tone-${est.tone}${est.incompleto ? ' is-incompleta' : ''}" style="animation-delay:${Math.min(i, 16) * 40}ms"
               onclick="MOS._mesaComprasEntrar('${op.fuente}','${_escapeHtml(op.idGuia)}')">
         <div class="mesa-card-top">
           <span class="mesa-state s-${est.tone}">${est.ico} ${_escapeHtml(est.label)}</span>
           <span class="mesa-gid">${foto}${gidCorto}</span>
         </div>
-        <div class="mesa-card-prod">${resumen}</div>
-        <div class="mesa-card-prov">🏭 ${prov} · ${lineas.length} línea(s)</div>
+        <div class="mesa-card-prov"><span class="mesa-prov-ico">🏭</span> ${prov}</div>
+        <div class="mesa-card-prods"><span class="mesa-prods-n">${lineas.length} ítem${lineas.length !== 1 ? 's' : ''}:</span> ${listaProd}</div>
         ${faseBar}
         <div class="mesa-cta s-${est.tone}">${ctaTxt}</div>
       </button>`;
@@ -9889,16 +10194,46 @@ const MOS = (() => {
     const op = _findOpByKey(fuente + '_' + idGuia);
     if (!op) { toast('Compra no encontrada', 'error'); return; }
     const est = _comprasEstado(op);
-    cerrarMesaCompras();
-    setTimeout(() => {
-      // Paso 1 si faltan costos; si costos completos, salta al Paso 2 (precios).
-      if (est.costos.con < est.costos.total || est.costos.total === 0) {
-        opsEntrarModoCostos(fuente, idGuia);
-      } else {
-        // costos completos → armar items para el Paso 2 directo
-        try { _paso2DesdeGuia(op); } catch(_) { opsEntrarModoCostos(fuente, idGuia); }
-      }
-    }, 200);
+    // [E] La Mesa NO se cierra: queda atrás atenuada; la compra se abre ENCIMA.
+    const m = document.getElementById('mesaComprasModal');
+    if (m) m.classList.add('mesa-dimmed');
+    S._mesaAbierta = true;
+    // Paso 1 si faltan costos; si costos completos, salta al Paso 2 (precios).
+    if (est.costos.con < est.costos.total || est.costos.total === 0) {
+      opsEntrarModoCostos(fuente, idGuia);
+    } else {
+      try { _paso2DesdeGuia(op); } catch(_) { opsEntrarModoCostos(fuente, idGuia); }
+    }
+  }
+
+  // [L] Vuelve a la Mesa: des-atenúa + refresca (para ver el estado nuevo). Si se cerró, la reabre.
+  function _mesaVolver() {
+    S._mesaAbierta = false;
+    const m = document.getElementById('mesaComprasModal');
+    if (!m) { abrirMesaCompras(); return; }
+    m.classList.remove('mesa-dimmed');
+    m.classList.add('open');
+    m.innerHTML = _mesaComprasHTML();
+    try { _mesaComprasSyncBadge(); } catch(_){}
+  }
+
+  // Cierra Paso 2 → regresa a la Mesa (× o backdrop).
+  function _paso2CerrarAMesa() {
+    document.getElementById('paso2Modal')?.remove();
+    document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
+    S._opsModoCostos = false;
+    _mesaVolver();
+  }
+  // Paso 2 → "Volver a montos": reabre Paso 1 (no la Mesa).
+  function _paso2VolverAMontos() {
+    document.getElementById('paso2Modal')?.remove();
+    const p1 = document.getElementById('modalCostosGuiaUnif');
+    if (p1 && S._costosGuiaState) { p1.classList.remove('hidden'); p1.style.zIndex = '9700'; return; }
+    if (S._costosGuiaState) {
+      const op = _findOpByKey(S._costosGuiaState.fuente + '_' + S._costosGuiaState.idGuia);
+      if (op) { _abrirModalCostosUnificado(op); return; }
+    }
+    _mesaVolver();
   }
 
   // Arma el Paso 2 directamente desde una guía ya costeada (sin re-aplicar costos).
@@ -9936,17 +10271,29 @@ const MOS = (() => {
       .mesa-x:hover{background:rgba(244,63,94,.25);color:#fda4af;transform:rotate(90deg)}
       .mesa-tabs{display:flex;gap:7px;padding:12px 18px;overflow-x:auto;border-bottom:1px solid #17233b;scrollbar-width:none}
       .mesa-tabs::-webkit-scrollbar{display:none}
-      .mesa-tab{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#93a4c2;
-        background:#0e1626;border:1px solid #28344c;padding:7px 12px;border-radius:999px;cursor:pointer;transition:.16s;white-space:nowrap}
+      .mesa-tab{flex:none;display:inline-flex;align-items:center;gap:6px;height:34px;box-sizing:border-box;line-height:1;font-size:12px;font-weight:700;color:#93a4c2;
+        background:#0e1626;border:1px solid #28344c;padding:0 13px;border-radius:999px;cursor:pointer;transition:.16s;white-space:nowrap}
       .mesa-tab:hover{border-color:#3a4a6b;color:#cdd8ec;transform:translateY(-1px)}
       .mesa-tab-n{font-family:ui-monospace,monospace;font-size:10.5px;font-weight:800;background:#1a2740;padding:1px 6px;border-radius:999px;color:#cdd8ec}
       .mesa-tab.on{color:#04140d;background:linear-gradient(180deg,#34d399,#059669);border-color:transparent}
       .mesa-tab.on .mesa-tab-n{background:rgba(4,20,13,.25);color:#04140d}
       .mesa-tab.on.t-rose{background:linear-gradient(180deg,#fb7185,#e11d48)} .mesa-tab.on.t-amber{background:linear-gradient(180deg,#fbbf24,#d97706);color:#1a1206}
       .mesa-tab.on.t-blue{background:linear-gradient(180deg,#7cb3f0,#3b82f6);color:#06121f}
-      .mesa-body{padding:16px 18px 26px;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:12px;align-content:start}
-      .mesa-card{text-align:left;cursor:pointer;background:#0e1626;border:1px solid #28344c;border-left:3px solid #3a4a6b;border-radius:14px;
-        padding:13px 14px;display:flex;flex-direction:column;gap:9px;transition:transform .16s ease,box-shadow .2s ease,border-color .2s;
+      .mesa-body{padding:8px 18px 26px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+      /* [C] cabecera de día */
+      .mesa-day{display:flex;align-items:center;gap:11px;padding:16px 2px 9px;position:sticky;top:0;z-index:3;
+        background:linear-gradient(180deg,#080e19 62%,rgba(8,14,25,0))}
+      .mesa-day-lbl{font-size:12px;font-weight:850;letter-spacing:.02em;color:#cdd8ec;text-transform:capitalize;flex:none}
+      .mesa-day-ln{flex:1;height:1px;background:linear-gradient(90deg,#28344c,transparent)}
+      .mesa-day-cnt{flex:none;font-size:10px;font-weight:700;color:#5f7192;font-family:ui-monospace,monospace}
+      .mesa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(288px,1fr));gap:13px;align-content:start}
+      /* [C] cargar más antiguas */
+      .mesa-more{grid-column:1/-1;display:flex;justify-content:center;padding:20px 0 4px}
+      .mesa-more-btn{font-size:12px;font-weight:750;color:#93a4c2;background:#0e1626;border:1px dashed #3a4a6b;
+        border-radius:12px;padding:10px 20px;cursor:pointer;transition:.16s}
+      .mesa-more-btn:hover{border-color:#34d399;color:#34d399;border-style:solid}
+      .mesa-card{text-align:left;cursor:pointer;background:#0e1626;border:1px solid #28344c;border-left:3px solid #3a4a6b;border-radius:16px;
+        padding:15px 16px;display:flex;flex-direction:column;gap:11px;transition:transform .16s ease,box-shadow .2s ease,border-color .2s;
         animation:mesaCardIn .42s cubic-bezier(.22,1,.36,1) both}
       @keyframes mesaCardIn{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
       .mesa-card:hover{transform:translateY(-3px);box-shadow:0 16px 30px -14px rgba(0,0,0,.7)}
@@ -9961,8 +10308,13 @@ const MOS = (() => {
       .s-em{background:rgba(52,211,153,.14);color:#34d399;border:1px solid rgba(52,211,153,.3)}
       .mesa-gid{margin-left:auto;font-family:ui-monospace,monospace;font-size:10px;color:#5f7192;display:inline-flex;gap:4px;align-items:center}
       .mesa-foto-ic{font-size:11px}
-      .mesa-card-prod{font-weight:750;font-size:13.5px;color:#e6edf7;line-height:1.25}
-      .mesa-card-prov{font-size:11px;color:#93a4c2}
+      /* [D] proveedor protagonista */
+      .mesa-card-prov{display:flex;align-items:center;gap:8px;font-weight:850;font-size:15.5px;letter-spacing:-.01em;color:#e6edf7;line-height:1.2}
+      .mesa-prov-ico{font-size:15px;flex:none;filter:drop-shadow(0 1px 3px rgba(0,0,0,.4))}
+      /* [D] productos con desvanecido si son muchos */
+      .mesa-card-prods{position:relative;font-size:11.5px;color:#93a4c2;line-height:1.5;max-height:48px;overflow:hidden;
+        -webkit-mask-image:linear-gradient(180deg,#000 60%,transparent);mask-image:linear-gradient(180deg,#000 60%,transparent)}
+      .mesa-prods-n{font-weight:800;color:#7cb3f0}
       .mesa-phases{display:flex;flex-direction:column;gap:6px;margin-top:2px}
       .mesa-ph{position:relative;display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;color:#7b8aa6;
         background:#0a1120;border:1px solid #1e293b;border-radius:8px;padding:5px 9px;overflow:hidden}
@@ -9986,6 +10338,10 @@ const MOS = (() => {
       .btn-mesa-compras:hover{transform:translateY(-1px);box-shadow:0 10px 20px -6px rgba(52,211,153,.7)}
       .btn-mesa-compras .bmc-n{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:999px;
         background:#fb7185;color:#2a0710;font-size:10px;font-weight:900;display:grid;place-items:center;box-shadow:0 2px 6px rgba(251,113,133,.6)}
+      /* [E] Mesa atenuada detrás mientras se procesa una compra encima */
+      .mesa-backdrop.mesa-dimmed{background:rgba(4,8,16,.85)}
+      .mesa-backdrop.mesa-dimmed .mesa-sheet{transform:scale(.955) translateY(0);filter:blur(2.5px) brightness(.5);
+        pointer-events:none;transition:transform .32s cubic-bezier(.4,0,.2,1),filter .32s ease}
       @media (prefers-reduced-motion:reduce){.mesa-sheet,.mesa-card,.mesa-ph>i,.mesa-x,.btn-mesa-compras{transition:none;animation:none}}
     `;
     document.head.appendChild(st);
@@ -10026,27 +10382,98 @@ const MOS = (() => {
     };
   }
 
-  // [v41.16] Overlay para ver foto de la guía en grande
+  // [v5 §11 · F] Visor de factura con zoom/pan real: doble-clic, rueda (y Ctrl+scroll),
+  // arrastre con cursor/dedo, pellizco táctil, botones +/−/ajustar. Full-res (sin downscale).
   function abrirFotoOverlay(url) {
     if (!url) return;
     _opsBeep('tac');
-    let overlay = $('almFotoOverlay');
+    let overlay = document.getElementById('almFotoOverlay');
     if (!overlay) {
       overlay = document.createElement('div');
       overlay.id = 'almFotoOverlay';
       overlay.className = 'alm-foto-overlay';
-      overlay.onclick = (e) => {
-        if (e.target.id === 'almFotoOverlay' || e.target.classList.contains('alm-foto-close')) {
-          overlay.classList.add('hidden');
-        }
-      };
       document.body.appendChild(overlay);
     }
+    overlay.style.zIndex = '10000'; // por encima del Paso 1 (9700)
     overlay.innerHTML = `
-      <button class="alm-foto-close" title="Cerrar">✕</button>
-      <img class="alm-foto-grande" src="${_escapeHtml(url)}" alt="Foto de la guía">
-      <a class="alm-foto-link" href="${_escapeHtml(url)}" target="_blank" rel="noopener">↗ Abrir en pestaña nueva</a>`;
+      <button class="alm-foto-close" title="Cerrar (Esc)">✕</button>
+      <div class="alm-foto-stage" id="almFotoStage">
+        <img class="alm-foto-grande" id="almFotoImg" src="${_escapeHtml(url)}" alt="Factura de la guía" draggable="false">
+      </div>
+      <div class="alm-foto-ctrls">
+        <button type="button" data-z="out" title="Alejar">−</button>
+        <button type="button" data-z="reset" title="Ajustar a pantalla">⤢</button>
+        <button type="button" data-z="in" title="Acercar">+</button>
+        <a class="alm-foto-link" href="${_escapeHtml(url)}" target="_blank" rel="noopener">↗ Abrir</a>
+      </div>
+      <div class="alm-foto-hint">Doble-clic o rueda = zoom · arrastra para mover</div>`;
     overlay.classList.remove('hidden');
+    _fotoViewerInit(overlay);
+  }
+
+  function _fotoViewerInit(overlay) {
+    const stage = overlay.querySelector('#almFotoStage');
+    const img = overlay.querySelector('#almFotoImg');
+    if (!stage || !img) return;
+    const fv = { s: 1, tx: 0, ty: 0, drag: false, sx: 0, sy: 0, pinch: 0, pd: 0 };
+    const MIN = 1, MAX = 6;
+    const apply = () => {
+      img.style.transform = `translate(${fv.tx}px,${fv.ty}px) scale(${fv.s})`;
+      stage.style.cursor = fv.s > 1 ? (fv.drag ? 'grabbing' : 'grab') : 'zoom-in';
+    };
+    const clamp = v => Math.max(MIN, Math.min(MAX, v));
+    // zoom hacia un punto (px,py) relativo al stage
+    const zoomAt = (px, py, ns) => {
+      ns = clamp(ns);
+      const r = stage.getBoundingClientRect();
+      const cx = px - r.left, cy = py - r.top;
+      fv.tx = cx - (cx - fv.tx) * (ns / fv.s);
+      fv.ty = cy - (cy - fv.ty) * (ns / fv.s);
+      fv.s = ns;
+      if (fv.s <= 1.001) { fv.tx = 0; fv.ty = 0; }
+      apply();
+    };
+    stage.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, fv.s * (e.deltaY < 0 ? 1.18 : 1 / 1.18)); }, { passive: false });
+    stage.addEventListener('dblclick', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, fv.s > 1.5 ? 1 : 2.6); });
+    // arrastre (mouse/touch unificado con Pointer Events)
+    stage.addEventListener('pointerdown', (e) => {
+      if (fv.s <= 1) return; fv.drag = true; fv.sx = e.clientX - fv.tx; fv.sy = e.clientY - fv.ty;
+      try { stage.setPointerCapture(e.pointerId); } catch(_){} apply();
+    });
+    stage.addEventListener('pointermove', (e) => { if (!fv.drag) return; fv.tx = e.clientX - fv.sx; fv.ty = e.clientY - fv.sy; apply(); });
+    const endDrag = () => { fv.drag = false; apply(); };
+    stage.addEventListener('pointerup', endDrag); stage.addEventListener('pointercancel', endDrag);
+    // pellizco (2 dedos)
+    stage.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 2) return; e.preventDefault();
+      const a = e.touches[0], b = e.touches[1];
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const mx = (a.clientX + b.clientX) / 2, my = (a.clientY + b.clientY) / 2;
+      if (fv.pd) zoomAt(mx, my, fv.s * (d / fv.pd));
+      fv.pd = d;
+    }, { passive: false });
+    stage.addEventListener('touchend', () => { fv.pd = 0; });
+    // botones
+    overlay.querySelectorAll('.alm-foto-ctrls button[data-z]').forEach(b => b.onclick = (e) => {
+      e.stopPropagation();
+      const r = stage.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const z = b.dataset.z;
+      if (z === 'in') zoomAt(cx, cy, fv.s * 1.4);
+      else if (z === 'out') zoomAt(cx, cy, fv.s / 1.4);
+      else { fv.s = 1; fv.tx = 0; fv.ty = 0; apply(); }
+    });
+    // cerrar: × · backdrop (solo si no hay zoom) · Esc
+    overlay.querySelector('.alm-foto-close').onclick = () => overlay.classList.add('hidden');
+    stage.addEventListener('click', (e) => { if (e.target === stage && fv.s <= 1) overlay.classList.add('hidden'); });
+    if (!S._fotoEscBound) {
+      S._fotoEscBound = true;
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const ov = document.getElementById('almFotoOverlay');
+        if (ov && !ov.classList.contains('hidden')) ov.classList.add('hidden');
+      });
+    }
+    apply();
   }
 
   // ── Llenar costos de guía (con foto de factura) ──
@@ -43465,7 +43892,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
-    abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, _mesaComprasEntrar, _mesaComprasSyncBadge,
+    abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaCargarMas, _mesaComprasEntrar, _mesaComprasSyncBadge,
+    _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
