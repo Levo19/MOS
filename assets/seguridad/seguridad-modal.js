@@ -331,9 +331,23 @@
     _injectCss();
     var primerRefresh = true;
     var refresh = function() {
-      // [CERO-GAS] getSeguridadAlertas → RPC mos.seguridad_alertas (via DeviceAuth.rpc). Devuelve {ok,data:{count}}.
+      // [fix B2 · CERO-GAS] El badge cuenta lo MISMO que muestra el panel: dispositivos POR ATENDER
+      // (PENDIENTE_APROBACION + SUSPENDIDO), no el log histórico mos.seguridad_alertas (que acumulaba 187
+      // avisos viejos nunca revisados → badge pegado en 187 con el panel vacío). Fuente única: listar_dispositivos.
       var _p = (window.DeviceAuth && typeof DeviceAuth.rpc === 'function')
-        ? DeviceAuth.rpc('seguridad_alertas', { limit: 1 }).then(function(r){ return r && r.data ? r.data : { count: 0 }; })
+        ? DeviceAuth.rpc('listar_dispositivos', {}).then(function(r){
+            var disps = (r && r.data) ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
+            var rolUser = ''; try { rolUser = String((_config.rol && _config.rol()) || '').toUpperCase(); } catch(_){}
+            var esMaster = rolUser === 'MASTER';
+            var n = 0;
+            for (var i = 0; i < disps.length; i++) {
+              var est = String(disps[i].Estado || '').toUpperCase();
+              if (est !== 'PENDIENTE_APROBACION' && est !== 'SUSPENDIDO') continue;
+              if (!esMaster) { var a = String(disps[i].App || '').toUpperCase(); if (a === 'MOS' || a === 'PROYECTOMOS') continue; }
+              n++;
+            }
+            return { count: n };
+          })
         : Promise.reject(new Error('DeviceAuth no disponible'));
       _p.then(function(d) {
         var count = (d && d.count) || 0;
@@ -366,7 +380,7 @@
         }
         primerRefresh = false;
         _badgeCountVistoSet(count);
-        existing.innerHTML = '🚨 <span>' + count + ' alerta' + (count > 1 ? 's' : '') + ' de seguridad</span>';
+        existing.innerHTML = '🚨 <span>' + count + ' dispositivo' + (count > 1 ? 's' : '') + ' por atender</span>';
       }).catch(function() {});
     };
     refresh();
@@ -430,6 +444,13 @@
       var disps = Array.isArray(arr[1]) ? arr[1] : ((arr[1] && arr[1].data) || []);
       _alertasState.items = alertas;
       _alertasState.dispositivos = disps;
+      // [fix B2] abrir en la 1ª pestaña con contenido (si "pendientes" está vacío pero hay suspendidos, ir allí)
+      var nPend = 0, nSusp = 0;
+      for (var k = 0; k < disps.length; k++) {
+        var e = String(disps[k].Estado || '').toUpperCase();
+        if (e === 'PENDIENTE_APROBACION') nPend++; else if (e === 'SUSPENDIDO') nSusp++;
+      }
+      if (_alertasState.tab === 'pendientes' && nPend === 0 && nSusp > 0) _alertasState.tab = 'suspendidos';
       _alertasRender();
     });
   }

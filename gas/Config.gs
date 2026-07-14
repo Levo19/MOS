@@ -2098,18 +2098,21 @@ function instalarTriggerAlertaInactivos2a7d() {
 // [v2.43.172 R6] cancelarPendientesAntiguos — auto-cancela solicitudes
 // PENDIENTE_APROBACION viejas para evitar spam de alertas al admin.
 //
-// Lógica: dispositivo PENDIENTE >20h sin aprobar = el admin claramente lo
-// está ignorando o no le interesa. Marca como CANCELADO_AUTO. Al volver el
-// operador (próximo día), registrarSesionDispositivo lo reutiliza pasando
-// a PENDIENTE_APROBACION nueva (con nueva fecha y push fresh).
+// Lógica: dispositivo PENDIENTE sin aprobar por +2 DÍAS (48h) = solicitud
+// abandonada. Marca como CANCELADO_AUTO. Al volver el operador,
+// registrarSesionDispositivo lo reutiliza pasando a PENDIENTE_APROBACION nueva.
 //
-// Límite configurable vía Property PENDIENTE_AUTO_CANCEL_HORAS (default 20).
-// Trigger sugerido: cada 1h.
+// [dueño 2026-07-14] Antes el default era 20h → cancelaba las solicitudes
+// "de un día para otro" antes de que el master alcanzara a aprobarlas
+// (por eso la solicitud remota "desaparecía"). Subido a 48h = misma regla que
+// la suspensión de dispositivos activos (+2 días). Property PENDIENTE_AUTO_CANCEL_HORAS.
+// ⚠️ CERO-GAS: esta función debe MIGRAR al pg_cron de Supabase
+// (mos.cron_dispositivos_inactivos) y desactivarse su trigger GAS.
 // ════════════════════════════════════════════════════════════════════════
 function cancelarPendientesAntiguos() {
   _garantizarColumnasDispositivos();
-  var horasMax = parseInt(PropertiesService.getScriptProperties().getProperty('PENDIENTE_AUTO_CANCEL_HORAS') || '20', 10);
-  if (isNaN(horasMax) || horasMax < 1) horasMax = 20;
+  var horasMax = parseInt(PropertiesService.getScriptProperties().getProperty('PENDIENTE_AUTO_CANCEL_HORAS') || '48', 10);
+  if (isNaN(horasMax) || horasMax < 1) horasMax = 48;
   var sheet = getSheet('DISPOSITIVOS');
   var data  = sheet.getDataRange().getValues();
   var hdrs  = data[0];
