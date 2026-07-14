@@ -9839,6 +9839,7 @@ const MOS = (() => {
               <input id="p2im_${i}" type="number" step="0.1" ${f.costoNuevo > 0 ? '' : 'disabled'} value="${f.margenEd != null ? (+f.margenEd).toFixed(1) : ''}" oninput="MOS._p2Sync(${i},'margen')"></label>
           </div>
           <div class="p2-bidir-hint">↔ Bidireccional: cambias el precio → recalcula el margen · cambias el margen → recalcula el precio. ESE margen queda de contrato.</div>
+          ${_p2TramosHTML(f, i)}
           ${(f.satelites && f.satelites.length) ? `
           <button class="p2-repartir" onclick="MOS._p2Repartir(${i})" title="Aplica el margen del padre a los satélites activos y no manuales">📊 Repartir este margen a los satélites activos</button>
           <div class="p2-sats">
@@ -9888,6 +9889,38 @@ const MOS = (() => {
     return act + `<span style="color:${colM(mgNew)}">${mgNew != null ? mgNew.toFixed(0) + '%' : '—'}</span>`;
   }
 
+  // [tramos] Escalera de precios por peso (granel): segmentos {min,max en gramos, ajustePct}
+  // que SIGUEN al precio raíz (precio del tramo = precio × (1 + ajuste%)). Solo lectura (auto).
+  function _p2TramosParse(p) {
+    if (!p) return [];
+    let segs = [];
+    try { const raw = p.segmentos_precio || p.segmentosPrecio || ''; segs = (typeof raw === 'string' && raw) ? JSON.parse(raw) : (Array.isArray(raw) ? raw : []); } catch(_) { segs = []; }
+    return (Array.isArray(segs) ? segs : []).slice().sort((a, b) => (a.min || 0) - (b.min || 0));
+  }
+  function _p2TramoRow(s, base, actual) {
+    const aj = parseFloat(s.ajustePct) || 0;
+    const lbl = ((s.min || 0) >= 1000 ? (s.min / 1000) + 'kg' : (s.min || 0) + 'g') + '–' + (s.max == null ? '∞' : (s.max >= 1000 ? (s.max / 1000) + 'kg' : s.max + 'g'));
+    const antes = (base > 0) ? (base * (1 + aj / 100)).toFixed(2) : '—';
+    const ahora = (actual * (1 + aj / 100)).toFixed(2);
+    return `<span class="p2-tramo"><span class="p2-tramo-lbl">${lbl}</span>${base > 0 ? `<s>${antes}</s>→` : ''}<b>S/ ${ahora}</b>${aj ? `<i>${aj > 0 ? '+' : ''}${aj}%</i>` : ''}</span>`;
+  }
+  function _p2TramosHTML(f, i) {
+    const segs = _p2TramosParse(f.p);
+    if (!segs.length) return '';
+    const base = f.precioActual || 0, act = f.precioEd || base || 0;
+    return `<div class="p2-tramos">
+      <div class="p2-tramos-hd">📊 Tramos por peso · siguen al precio raíz <span class="p2-tramos-auto">AUTO</span></div>
+      <div class="p2-tramos-body" id="p2tramosBody_${i}">${segs.map(s => _p2TramoRow(s, base, act)).join('')}</div>
+    </div>`;
+  }
+  function _p2TramosUpd(i) {
+    const f = (window._paso2Filas || [])[i]; if (!f) return;
+    const body = document.getElementById('p2tramosBody_' + i); if (!body) return;
+    const segs = _p2TramosParse(f.p); if (!segs.length) return;
+    const base = f.precioActual || 0, act = f.precioEd || base || 0;
+    body.innerHTML = segs.map(s => _p2TramoRow(s, base, act)).join('');
+  }
+
   // [K] Editor bidireccional precio↔margen inline (por fila del Paso 2).
   function _p2Sync(i, campo) {
     const f = (window._paso2Filas || [])[i]; if (!f) return;
@@ -9911,6 +9944,7 @@ const MOS = (() => {
     // redibuja el punto "hoy" del precio en la curva
     const cv = document.getElementById('p2cv_' + i);
     if (cv && cv._setHoyPrecio) cv._setHoyPrecio(f.precioEd || 0);
+    _p2TramosUpd(i);             // [tramos] la escalera de granel sigue al precio raíz
     _p2FilaMarcarListo(i);       // [H2] progreso por producto
     _p2DraftSaveDebounced();     // [H2] borrador
   }
@@ -10184,6 +10218,14 @@ const MOS = (() => {
       .p2-field input:disabled{opacity:.45;color:#93a4c2;border-color:#28344c}
       .p2-field:nth-child(2) input{color:#fbbf24;border-color:rgba(251,191,36,.45)}
       .p2-bidir-hint{font-size:9.5px;line-height:1.45;color:#7b8aa6}
+      /* [tramos] escalera de granel */
+      .p2-tramos{border:1px dashed rgba(52,211,153,.4);border-radius:10px;padding:8px 10px;background:rgba(52,211,153,.06)}
+      .p2-tramos-hd{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;color:#34d399}
+      .p2-tramos-auto{margin-left:auto;font-size:8px;font-weight:800;padding:1px 6px;border-radius:5px;background:rgba(52,211,153,.16);color:#34d399}
+      .p2-tramos-body{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:6px;font-size:10px;color:#93a4c2;font-family:ui-monospace,monospace}
+      .p2-tramo{display:inline-flex;align-items:center;gap:3px}
+      .p2-tramo-lbl{color:#cbd5e1;font-weight:700}
+      .p2-tramo s{opacity:.5} .p2-tramo b{color:#34d399;font-weight:800} .p2-tramo i{font-style:normal;opacity:.6;font-size:8.5px}
       .p2-repartir{width:100%;font-size:10.5px;font-weight:800;color:#7cb3f0;background:rgba(124,179,240,.1);
         border:1px solid rgba(124,179,240,.32);border-radius:9px;padding:8px 10px;cursor:pointer;transition:.16s}
       .p2-repartir:hover{background:rgba(124,179,240,.2);border-color:#7cb3f0}
