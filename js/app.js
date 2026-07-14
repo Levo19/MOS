@@ -22992,13 +22992,17 @@ const MOS = (() => {
       intentos++;
     } while (enUso.has(pin) && intentos < 200);
     const inp = $('persPin');
-    if (inp) { inp.type = 'text'; inp.value = pin; }   // queda visible; el ojito lo controla
+    if (inp) { inp.type = 'text'; inp.value = pin; inp.dataset.prefilled = ''; }   // recién generado (no es clave existente) → visible; el ojito lo controla
     const eye = $('persPinEye'); if (eye) eye.textContent = '🙈';
   }
 
   // [dueño] ojito 👁 del PIN: muestra/oculta la clave de acceso.
+  // Revelar una clave YA guardada (pre-cargada en edición) es solo para MASTER.
   function _persTogglePin() {
     const inp = $('persPin'); const eye = $('persPinEye'); if (!inp) return;
+    if (inp.type === 'password' && inp.dataset.prefilled === '1' && !_esMasterSession()) {
+      toast('Solo Master puede ver la clave', 'error'); return;
+    }
     const mostrar = inp.type === 'password';
     inp.type = mostrar ? 'text' : 'password';
     if (eye) eye.textContent = mostrar ? '🙈' : '👁';
@@ -23110,10 +23114,29 @@ const MOS = (() => {
         $('persMonto').value  = p.montoBase  || '';
         if ($('persAccesoMos')) $('persAccesoMos').checked = (p.accesoMos === true || p.accesoMos === '1' || p.accesoMos === 1);
       }
+      // [dueño] PIN en edición: NO vacío → asteriscos. La clave real solo se pre-carga si
+      // eres MASTER (un ADMIN no debe poder leerla ni inspeccionando el DOM). El ojo 👁 la revela
+      // (gateado a Master en _persTogglePin). Otros roles: campo en blanco = deja el PIN actual al guardar.
+      const pinEdit = $('persPin');
+      if (pinEdit) {
+        if (_esMasterSession() && p.pin) {
+          pinEdit.type = 'password';           // muestra •••• (asteriscos)
+          pinEdit.value = String(p.pin);        // clave real, oculta hasta tocar el ojo
+          pinEdit.dataset.prefilled = '1';
+        } else {
+          pinEdit.type = 'password';
+          pinEdit.value = '';
+          pinEdit.dataset.prefilled = '';
+        }
+      }
+      const pinEye0 = $('persPinEye'); if (pinEye0) pinEye0.textContent = '👁';
       // Toggle activo + botón eliminar visibles en edición
       if (estadoWrap) estadoWrap.classList.remove('hidden');
       if (btnElim)    btnElim.classList.remove('hidden');
-      if (pinHint)    { pinHint.textContent = '(opcional al editar)'; pinHint.className = 'text-slate-500 text-[10px]'; }
+      if (pinHint)    {
+        pinHint.textContent = _esMasterSession() ? '(toca 👁 para ver · vacío = conservar)' : '(opcional al editar)';
+        pinHint.className = 'text-slate-500 text-[10px]';
+      }
       const tg = $('persEstadoToggle');
       if (tg) tg.checked = String(p.estado) === '1' || p.estado === true;
     } else {
