@@ -4788,66 +4788,7 @@
       /* AJUSTE: cards reales ~135px en promedio (estaba 110 = scroll jank) */
     }
 
-    /* [v2.43.47 PERF] Sparkline rotación — clases CSS para hover (no JS inline).
-       Boost de performance: 2000+ cards renderizan instantáneo. */
-    .cat-spark {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 10px;
-      color: #cbd5e1;
-      cursor: pointer;
-      margin-top: 2px;
-      padding: 3px 7px;
-      border-radius: 6px;
-      border: 1px solid transparent;
-      background: transparent;
-      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease;
-    }
-    .cat-spark .cat-spark-ico { font-size: 11px; }
-    .cat-spark .cat-spark-num { font-weight: 700; }
-    .cat-spark .cat-spark-bars { display: inline-flex; align-items: flex-end; height: 20px; }
-    .cat-spark .cat-spark-arrow {
-      font-weight: 900;
-      font-size: 11px;
-      opacity: 0;
-      transform: translateX(-4px);
-      transition: opacity .15s ease, transform .15s ease;
-      margin-left: 1px;
-    }
-    .cat-spark:hover { transform: translateY(-1px); }
-    .cat-spark:hover .cat-spark-arrow { opacity: 1; transform: translateX(0); }
-    /* Variantes por nivel de rotación (colores dedicados) */
-    .cat-spark-alta .cat-spark-num,
-    .cat-spark-alta .cat-spark-arrow { color: #10b981; }
-    .cat-spark-alta:hover {
-      background: rgba(16,185,129,.08);
-      border-color: rgba(16,185,129,.33);
-      box-shadow: 0 2px 10px -2px rgba(16,185,129,.33);
-    }
-    .cat-spark-media .cat-spark-num,
-    .cat-spark-media .cat-spark-arrow { color: #f59e0b; }
-    .cat-spark-media:hover {
-      background: rgba(245,158,11,.08);
-      border-color: rgba(245,158,11,.33);
-      box-shadow: 0 2px 10px -2px rgba(245,158,11,.33);
-    }
-    .cat-spark-baja .cat-spark-num,
-    .cat-spark-baja .cat-spark-arrow { color: #ef4444; }
-    .cat-spark-baja:hover {
-      background: rgba(239,68,68,.08);
-      border-color: rgba(239,68,68,.33);
-      box-shadow: 0 2px 10px -2px rgba(239,68,68,.33);
-    }
-    .cat-spark-empty {
-      font-size: 9px;
-      color: #64748b;
-    }
-    .cat-spark-empty:hover {
-      background: rgba(148,163,184,.08);
-      border-color: rgba(148,163,184,.25);
-      color: #cbd5e1;
-    }
+    /* [§11 · purga] CSS .cat-spark* eliminado (huérfano: _renderRotacionSparkline borrado; ahora .rot-chip). */
 
     /* [v2.43.47 PERF] Foto miniatura del catálogo — clases CSS con var --cat-foto-hue */
     .cat-foto {
@@ -18740,29 +18681,7 @@
 </div><!-- /viewAnalitica -->
 
 <!-- ── Modal Ajuste de Precios ───────────────────────────── -->
-<div class="modal-backdrop hidden" id="modalAjustePrecios">
-  <div class="modal-box p-6" style="max-width:480px">
-    <div class="flex items-start justify-between mb-1">
-      <div>
-        <h2 class="font-bold text-lg text-white">Ajuste de presentaciones</h2>
-        <p class="text-xs text-slate-500 mt-0.5">El precio base cambió. Revisa y confirma cada presentación.</p>
-      </div>
-      <button onclick="MOS.closeModal('modalAjustePrecios')" class="modal-close-x ml-4 shrink-0">×</button>
-    </div>
-    <!-- Precio base nuevo -->
-    <div id="ajusteBaseInfo" class="flex items-center justify-between rounded-lg bg-indigo-900/20 border border-indigo-800/40 px-4 py-2.5 mb-4 mt-3">
-      <span class="text-xs font-semibold text-indigo-300">Producto base (nuevo precio)</span>
-      <span id="ajusteBasePrecio" class="text-base font-bold text-indigo-300">S/. —</span>
-    </div>
-    <!-- Lista de presentaciones -->
-    <div id="ajusteList" class="space-y-2 max-h-72 overflow-y-auto mb-4"></div>
-    <!-- Acciones -->
-    <div class="flex gap-2">
-      <button onclick="MOS.closeModal('modalAjustePrecios')" class="btn-ghost flex-1 text-sm">Solo precio base</button>
-      <button onclick="MOS.guardarAjustePrecios()" class="btn-primary flex-1 text-sm">✓ Aplicar seleccionados</button>
-    </div>
-  </div>
-</div>
+<!-- [§11 · purga] #modalAjustePrecios eliminado (cluster muerto _abrirAjustePrecios) -->
 
 
 <!-- ── Banner nueva versión · con barra de progreso real ─── -->
@@ -19298,7 +19217,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.528';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.529';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19348,7 +19267,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.528"></script>
+<script src="js/api.js?v=2.43.529"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19363,7 +19282,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.528"></script>
+<script src="js/app.js?v=2.43.529"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

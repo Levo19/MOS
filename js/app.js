@@ -1856,9 +1856,13 @@ const MOS = (() => {
   // el modal de producto/precio/segmentos abierto, mejor esperar a que lo cierre.
   function _catEdicionAbierta() {
     try {
-      const ids = ['modalProducto','modalAjustePrecios','modalApagarBase',
-                   'modalCostosGuia','modalImpactoCostos'];
-      for (const id of ids) { const el = $(id); if (el && el.classList.contains('open')) return true; }
+      // [fix P2] editores que usan clase .open (quitados los ids muertos modalAjustePrecios/
+      // modalCostosGuia/modalImpactoCostos; agregados los VIVOS paso2Modal/mesaComprasModal).
+      const ids = ['modalProducto','modalApagarBase','paso2Modal','mesaComprasModal'];
+      for (const id of ids) { const el = document.getElementById(id); if (el && el.classList.contains('open')) return true; }
+      // el Paso 1 unificado se muestra quitando .hidden (no usa .open)
+      const unif = document.getElementById('modalCostosGuiaUnif');
+      if (unif && !unif.classList.contains('hidden')) return true;
     } catch (_) {}
     return false;
   }
@@ -3291,12 +3295,9 @@ const MOS = (() => {
     const fc = parseFloat(producto.factorConversion || 1);
     if (um !== 'KGM' || fc !== 1) return '';
 
-    let segs = [];
-    try {
-      const raw = producto.segmentos_precio || '';
-      if (typeof raw === 'string' && raw.trim()) segs = JSON.parse(raw);
-      else if (Array.isArray(raw)) segs = raw;
-    } catch(_) { segs = []; }
+    // [fix P2 · dedup + bug] usa el helper único (antes parse inline SIN el fallback camelCase
+    // `segmentosPrecio` → si el objeto traía esa variante, la escalera del card no se veía).
+    const segs = _p2TramosParse(producto);
 
     const idProdEsc = String(producto.idProducto).replace(/'/g, '&#39;');
     const pcKg = parseFloat(producto.precioVenta) || 0;   // precio canónico (por kg) = base donde NO hay tramo
@@ -4680,53 +4681,8 @@ const MOS = (() => {
   // [§11 · purga] _qpSugerido/_qpSyncTramos/_qpRenderPresentaciones/_qpInputTocado/_qpToggleExcluida/
   // _qpActualizarPctBase/_qpSyncPresentaciones/guardarPrecioRapido ELIMINADOS (soporte del modal viejo).
 
-  function _abrirAjustePrecios(idBase, nuevoPrecioBase, presentaciones) {
-    $('ajusteBasePrecio').textContent = fmtMoney(nuevoPrecioBase);
-    S._ajusteBase = { idBase, nuevoPrecioBase };
-    const list = $('ajusteList');
-    list.innerHTML = presentaciones.map((p, i) => {
-      const factor   = parseFloat(p.factorConversion) || 1;
-      const sugerido = nuevoPrecioBase * factor;
-      const actual   = parseFloat(p.precioVenta) || 0;
-      const id       = `ajCheck${i}`;
-      return `<label class="ajuste-row cursor-pointer" for="${id}">
-        <input type="checkbox" class="ajuste-check" id="${id}"
-               data-id="${p.idProducto}" data-precio="${sugerido.toFixed(2)}" checked>
-        <div class="ajuste-info min-w-0">
-          <div class="ajuste-name truncate">${p.descripcion || p.idProducto}</div>
-          <div class="ajuste-factor">Factor ×${factor} · ${p.unidad || 'UND'}</div>
-        </div>
-        <div class="ajuste-prices">
-          <div class="ajuste-current">${fmtMoney(actual)}</div>
-          <div class="ajuste-suggest">→ ${fmtMoney(sugerido)}</div>
-        </div>
-      </label>`;
-    }).join('');
-    openModal('modalAjustePrecios');
-  }
-
-  async function guardarAjustePrecios() {
-    const checks = document.querySelectorAll('#ajusteList input[type=checkbox]:checked');
-    if (!checks.length) { closeModal('modalAjustePrecios'); return; }
-    const updates = [];
-    checks.forEach(cb => updates.push({ idProducto: cb.dataset.id, precio: parseFloat(cb.dataset.precio) }));
-
-    try {
-      await Promise.all(updates.map(u =>
-        API.post('publicarPrecio', { _source: 'MOS_MODAL_PRECIO', idProducto: u.idProducto, precioNuevo: u.precio })
-          .then(() => {
-            const p = S.productos.find(x => x.idProducto === u.idProducto);
-            if (p) p.precioVenta = u.precio;
-          })
-      ));
-      _catSaveCache({ productos: S.productos, equivMap: S.equivMap });
-      toast(`${updates.length} precio${updates.length > 1 ? 's' : ''} actualizados`, 'ok');
-      closeModal('modalAjustePrecios');
-      renderCatalogo();
-    } catch(e) {
-      toast('Error al actualizar: ' + e.message, 'error');
-    }
-  }
+  // [§11 · purga] _abrirAjustePrecios / guardarAjustePrecios / #modalAjustePrecios / S._ajusteBase
+  // ELIMINADOS — cluster muerto (su unico disparador era el flujo viejo de publicar-precio, ya borrado).
 
   // ── ANALÍTICA DE PRODUCTO ───────────────────────────────────
   let _anState = { idProducto: null, dias: 30, data: null, charts: {} };
@@ -5243,105 +5199,9 @@ const MOS = (() => {
   }
 
   // [v2.43.37] Modal rotación: gráfico minimalista + insight + recomendación
-  function abrirModalRotacion(idProducto) {
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    const p = (S.productos || []).find(x => String(x.idProducto) === String(idProducto));
-    if (!p) { toast('Producto no encontrado', 'error'); return; }
-    const cache = S._rotacionSemanalCache || {};
-    // [v2.43.42] Misma agregación que el sparkline (suma canónico + equivs + pres)
-    const serie = _serieRotacionAgregada(p) || [];
-    const unidades = serie.map(s => parseFloat(s.unidades) || 0);
-    const max = Math.max(...unidades, 1);
-    const total = unidades.reduce((a, b) => a + b, 0);
-    const promedio = unidades.length ? total / unidades.length : 0;
-    const ultima = unidades[unidades.length - 1] || 0;
-    const penult = unidades[unidades.length - 2] || 0;
-    const delta = penult > 0 ? ((ultima - penult) / penult) * 100 : (ultima > 0 ? 999 : 0);
-
-    let badge, badgeColor, insightTxt, recomTxt;
-    if (total === 0) {
-      badge = '🌙 SIN ROTACIÓN';        badgeColor = '#64748b';
-      insightTxt = 'Producto sin movimiento en las últimas 8 semanas.';
-      recomTxt = 'Revisá si conviene mantenerlo activo, bajarlo en precio o discontinuarlo.';
-    } else if (promedio >= 10) {
-      badge = `↑ ALTA ROTACIÓN`;        badgeColor = '#10b981';
-      insightTxt = `Producto estrella. ${promedio.toFixed(1)} unidades/semana en promedio.`;
-      recomTxt = `Monitorear stock — considerá reposición frecuente para evitar quiebres.`;
-    } else if (promedio >= 3) {
-      badge = `→ ROTACIÓN MEDIA`;       badgeColor = '#f59e0b';
-      insightTxt = `Producto con movimiento estable: ${promedio.toFixed(1)} u/sem.`;
-      recomTxt = 'Mantené reposición regular acorde al consumo semanal.';
-    } else {
-      badge = `↓ BAJA ROTACIÓN`;        badgeColor = '#ef4444';
-      insightTxt = `Producto lento: solo ${promedio.toFixed(1)} u/sem.`;
-      recomTxt = 'Evaluá si conviene reducir stock o cambiar estrategia de precio.';
-    }
-    let deltaTxt = '';
-    if (penult > 0) {
-      const arrow = delta > 5 ? '↑' : delta < -5 ? '↓' : '→';
-      const c = delta > 5 ? '#10b981' : delta < -5 ? '#ef4444' : '#94a3b8';
-      deltaTxt = `<div style="font-size:13px;color:${c};font-weight:600;margin-top:4px">${arrow} ${Math.abs(Math.round(delta))}% vs semana pasada</div>`;
-    }
-
-    // Gráfico de barras
-    const etiquetas = cache.etiquetas || [];
-    const barras = serie.map((s, i) => {
-      const h = Math.max(4, Math.round((unidades[i] / max) * 100));
-      const color = i === unidades.length - 1 ? badgeColor : '#475569';
-      const lblSem = (s.semana || '').split('-W')[1] || '';
-      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-        <div style="font-size:9px;color:#cbd5e1;font-weight:700">${unidades[i] || ''}</div>
-        <div style="width:100%;max-width:36px;height:${h}px;background:${color};border-radius:3px 3px 0 0;transition:height .4s ease-out;animation:catBarGrow .6s ease-out;box-shadow:0 0 8px -2px ${color}80"></div>
-        <div style="font-size:8px;color:#64748b;font-weight:600">W${lblSem}</div>
-      </div>`;
-    }).join('');
-
-    // Stock + cobertura (si tenemos stock en S.productos)
-    const stockTot = parseFloat(p.stockActual || p.cantidadDisponible || 0);
-    const diasCob = promedio > 0 ? (stockTot / promedio) * 7 : null;
-    const stockHtml = stockTot
-      ? `<div style="font-size:11px;color:#94a3b8;margin-top:6px">📦 Stock actual: <span style="color:#e2e8f0;font-weight:700">${stockTot.toFixed(0)} u</span>${diasCob !== null ? ` · cobertura ~ <span style="color:${diasCob < 7 ? '#f87171' : '#10b981'}">${diasCob.toFixed(1)} días</span>` : ''}</div>`
-      : '';
-
-    const html = `<div class="hor-modal-backdrop" id="modalRotacionWrap" onclick="if(event.target===this)MOS.cerrarModalRotacion()">
-      <div class="hor-modal" style="border-color:${badgeColor}80;box-shadow:0 25px 60px -15px rgba(0,0,0,.7),0 0 0 1px ${badgeColor}33">
-        <div class="hor-modal-hdr" style="background:linear-gradient(135deg,${badgeColor}22,${badgeColor}05);border-bottom:1px solid ${badgeColor}40">
-          <div>
-            <div class="hor-modal-ttl" style="color:${badgeColor}">📊 ${_escapeHtml(p.descripcion || '')}</div>
-            <div class="hor-modal-sub">Rotación últimas ${serie.length || 8} semanas · ${_escapeHtml(p.codigoBarra || p.idProducto || '')}</div>
-          </div>
-          <button class="hor-modal-x" onclick="MOS.cerrarModalRotacion()">✕</button>
-        </div>
-        <div class="hor-modal-body">
-          <div style="text-align:center;margin-bottom:14px">
-            <div style="font-size:18px;font-weight:900;color:${badgeColor};letter-spacing:1px">${badge}</div>
-            ${deltaTxt}
-          </div>
-          ${total > 0 ? `<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:4px;height:130px;background:#0a1424;padding:12px 8px;border-radius:8px;border:1px solid #1e293b">${barras}</div>` : `<div style="text-align:center;padding:30px;color:#475569;font-size:13px;background:#0a1424;border-radius:8px;border:1px solid #1e293b">📊 Sin datos en este rango</div>`}
-          <div style="margin-top:14px;padding:12px;background:rgba(99,102,241,.07);border-left:3px solid #6366f1;border-radius:4px">
-            <div style="font-size:10px;color:#a5b4fc;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">💡 Insight</div>
-            <div style="font-size:13px;color:#e0e7ff;line-height:1.4">${insightTxt}</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:6px;line-height:1.4">${recomTxt}</div>
-            ${stockHtml}
-          </div>
-          <div style="margin-top:14px;text-align:right">
-            <button onclick="MOS.cerrarModalRotacion();MOS.abrirAnalitica('${_escapeHtml(p.idProducto)}')"
-                    style="background:linear-gradient(135deg,#6366f1,#4338ca);color:#fff;border:0;border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer">
-              📊 Ver analítica completa →
-            </button>
-          </div>
-        </div>
-      </div>
-      <style>@keyframes catBarGrow{from{height:0}}</style>
-    </div>`;
-    const old = document.getElementById('modalRotacionWrap');
-    if (old) old.remove();
-    document.body.insertAdjacentHTML('beforeend', html);
-  }
-  function cerrarModalRotacion() {
-    const m = document.getElementById('modalRotacionWrap');
-    if (m) m.remove();
-  }
+  // [§11 · purga] abrirModalRotacion / cerrarModalRotacion / #modalRotacionWrap ELIMINADOS —
+  // cluster muerto (su unico disparador _renderRotacionSparkline fue borrado; _renderRotChip va a analitica).
+  // _serieRotacionAgregada SE CONSERVA (viva en el sort del catalogo).
 
   // ════════════════════════════════════════════════════════════════════
   // [v2.43.51] PURGA DE CATÁLOGO — Master-only
@@ -9235,6 +9095,11 @@ const MOS = (() => {
   // Reusa _qpBuildRows; el costo de cada satélite = costo del padre × factor (cadena).
   function _paso2Satelites(x, p, margenC) {
     if (!p || !p.idProducto) return [];
+    // [fix P2 · dinero] SOLO un CANÓNICO tiene satélites. Si p es presentación/derivado/pack,
+    // _qpBuildRows(p) devolvería sus HERMANOS con costo doblado (canónico×factorPres×factorHermano)
+    // → precios 6-12× inflados publicados a productos ajenos. Guard universal: no cascadear satélites.
+    const esSatelite = !!(p.codigoProductoBase && String(p.codigoProductoBase).trim()) || (parseFloat(p.factorConversion) || 1) !== 1;
+    if (esSatelite) return [];
     let rows; try { rows = _qpBuildRows(p) || []; } catch(_) { rows = []; }
     const costoBase = parseFloat(x.costoNuevo) || 0;
     const costByIdx = {};
@@ -9269,7 +9134,7 @@ const MOS = (() => {
     try { localStorage.setItem(key, JSON.stringify({ canon, sat, ts: Date.now() })); } catch(_){}
   }
   function _p2DraftSaveDebounced() { clearTimeout(S._p2DraftT); S._p2DraftT = setTimeout(_p2DraftSave, 350); }
-  function _p2DraftClear() { const key = S._paso2DraftKey; if (key) { try { localStorage.removeItem(key); } catch(_){} } }
+  function _p2DraftClear() { clearTimeout(S._p2DraftT); const key = S._paso2DraftKey; if (key) { try { localStorage.removeItem(key); } catch(_){} } }
 
   // [H2] progreso por producto: "listo" = tiene precio > 0 y (ya tenía margen · lo tocaste · es catálogo)
   function _p2FilaMarcarListo(i) {
@@ -9291,6 +9156,7 @@ const MOS = (() => {
   // [H8] Publica precio + GRABA el margen resultante como CONTRATO (margenPct·MARGEN), para
   //      canónicos y satélites — mismo comportamiento que tenía el modal §10. Usado por ambos flujos.
   async function _p2Publicar(jobs, source) {
+    let margenFallo = 0;   // [fix P2] contamos fallos al grabar el margen de contrato para AVISAR (antes se tragaban)
     await Promise.all(jobs.map(async j => {
       await API.post('publicarPrecio', { _source: source || 'MOS_PASO2', idProducto: j.id, precioNuevo: j.precio, usuario: S.session?.nombre || '' });
       const p = S.productos.find(x => x.idProducto === j.id);
@@ -9298,10 +9164,15 @@ const MOS = (() => {
       let m = (j.margen != null) ? j.margen : null;
       if (m == null && p) { const c = _costoDerivado(p); if (c > 0 && j.precio > 0) m = Math.round((1 - c / j.precio) * 1000) / 10; }
       if (m != null && m > -100 && m < 100) {
-        await API.post('actualizarProducto', { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' }).catch(() => {});
-        if (p) p.margenPct = _r1(m);
+        try {
+          await API.post('actualizarProducto', { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' });
+          if (p) p.margenPct = _r1(m);
+        } catch(_) { margenFallo++; }   // el precio SÍ se publicó; solo el contrato de margen falló
       }
     }));
+    // [fix P2 · atomicidad] si el precio se publicó pero el margen-contrato NO, avisamos (antes: silencio →
+    // el contrato quedaba stale y la próxima sugerencia de costo salía desviada).
+    if (margenFallo) toast(`⚠ ${margenFallo} precio(s) se publicaron pero su MARGEN de contrato no se guardó — reabre y guarda de nuevo`, 'error', 5000);
   }
 
   // [H8] Guardar desde el CATÁLOGO (modo catálogo del editor unificado): publica y cierra, sin Mesa.
@@ -9345,6 +9216,10 @@ const MOS = (() => {
       if (esCat && precioActual > 0) precioEd = precioActual;   // catálogo: arranca en el precio actual
       let margenEd = (precioEd > 0 && costoNuevo > 0) ? (1 - costoNuevo / precioEd) * 100 : margenC;
       const satelites = _paso2Satelites(x, p, margenC);
+      // [fix P2 · dinero] en CATÁLOGO el usuario edita solo el precio del canónico → satélites OPT-IN
+      // (apagados por defecto), para no re-publicar/resetear satélites (incl. MANUALes) sin querer.
+      // En COMPRA sí arrancan encendidos (cambió el costo → la cascada es deseada).
+      if (esCat) satelites.forEach(s => { s.incluido = false; });
       let _touched = false;
       // [H2] aplicar borrador guardado (si existe) para esta guía
       if (draft) {
@@ -9827,17 +9702,18 @@ const MOS = (() => {
     document.getElementById('paso2Modal')?.remove();
     document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
     S._opsModoCostos = false;
-    if (!jobs.length) { toast('Nada que aplicar — define al menos un precio', 'info'); _mesaVolver(); return; }
+    const _veniaMesa = S._mesaAbierta;   // [fix P2] solo volver a la Mesa si venimos de ella (no desde el voucher de Almacén)
+    if (!jobs.length) { toast('Nada que aplicar — define al menos un precio', 'info'); if (_veniaMesa) _mesaVolver(); return; }
     _p2DraftClear();          // [H2] borrador finalizado → se limpia
     // [L] optimista: regresamos a la Mesa YA (refrescada); la publicación corre en background.
-    _mesaVolver();
+    if (_veniaMesa) _mesaVolver();
     toast(`Aplicando ${jobs.length} precio(s) con margen de contrato…`, 'info');
     try {
       await _p2Publicar(jobs, 'MOS_PASO2');   // [H8] publica precio + graba margenPct·MARGEN
       toast(`✓ ${jobs.length} precio(s) + margen guardados (padres + satélites)`, 'ok');
       try { renderCatalogo(); } catch(_){}
       try { _mesaComprasSyncBadge(); } catch(_){}
-      _mesaVolver();
+      if (_veniaMesa) _mesaVolver();
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
@@ -9887,6 +9763,24 @@ const MOS = (() => {
     return out;
   }
 
+  // [fix P2 · eficiencia] Índice de productos por codigoBarra e idProducto, cacheado y reconstruido
+  // solo cuando cambia S.productos (referencia o longitud). Evita el .find O(N) por línea que corría
+  // en cada re-render de la Mesa (apertura + poll ×12 + filtro + volver…). Los valores son referencias
+  // vivas, así que mutaciones in-place (precio) se ven sin reconstruir.
+  function _prodIndex() {
+    const prods = S.productos || [];
+    if (S._prodIdxCache && S._prodIdxRef === prods && S._prodIdxLen === prods.length) return S._prodIdxCache;
+    const byCod = new Map(), byId = new Map();
+    for (const p of prods) {
+      const cod = String(p.codigoBarra || '').trim();
+      if (cod && !byCod.has(cod)) byCod.set(cod, p);
+      const id = String(p.idProducto || '');
+      if (id) byId.set(id, p);
+    }
+    S._prodIdxCache = { byCod, byId }; S._prodIdxRef = prods; S._prodIdxLen = prods.length;
+    return S._prodIdxCache;
+  }
+
   // Estado de una compra: costos (Paso 1) + precios (Paso 2), derivado de Supabase.
   function _comprasEstado(op) {
     const cost = _opsClasificarCostos(op) || { estado: 'sin', conCosto: 0, total: (op.lineas || []).length };
@@ -9894,12 +9788,12 @@ const MOS = (() => {
     const lineas = ((S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || []);
     // PRECIOS: por cada línea CON costo, ¿el precio del canónico ya refleja el nuevo costo (margen objetivo)?
     let conPrecio = 0, totalCosteados = 0;
+    const idx = _prodIndex();   // [fix P2 · eficiencia] índice O(1) en vez de .find sobre miles de productos por línea
     lineas.forEach(l => {
       const costo = parseFloat(l.precioUnitario) || (parseFloat(l.subtotal) || 0) / (parseFloat(l.cantidad) || 1);
       if (!(costo > 0)) return;
       const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
-      const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod ||
-                                              String(x.idProducto || '') === String(l.idCanonico || ''));
+      const p = (cod && idx.byCod.get(cod)) || idx.byId.get(String(l.idCanonico || ''));
       if (!p) return;                 // [fix] línea sin producto resoluble → no se puede preciar; no la contamos
       totalCosteados++;               // (antes se incrementaba antes del !p → la compra quedaba "falta precios" eterna)
       const venta = parseFloat(p.precioVenta) || 0;
@@ -9915,7 +9809,9 @@ const MOS = (() => {
     else if (cost.estado === 'parcial') { fase = 'incompleta'; tone = 'amber'; ico = '⚠'; label = 'Datos incompletos · faltan ' + (cost.total - cost.conCosto) + ' costo(s)'; }
     else { // costos completos
       const faltanPrecio = totalCosteados - conPrecio;
-      if (faltanPrecio <= 0) { fase = 'procesada'; tone = 'em'; ico = '✓'; label = 'Procesada'; }
+      // [fix P2] si NINGUNA línea resolvió a producto (totalCosteados===0) NO es "procesada" — falta preciar.
+      if (totalCosteados === 0 && cost.total > 0) { fase = 'precios'; tone = 'blue'; ico = '🏷'; label = 'Falta precios (Paso 2)'; }
+      else if (faltanPrecio <= 0) { fase = 'procesada'; tone = 'em'; ico = '✓'; label = 'Procesada'; }
       else if (conPrecio > 0) { fase = 'incompleta'; tone = 'amber'; ico = '⚠'; label = 'Datos incompletos · faltan ' + faltanPrecio + ' precio(s)'; }
       else { fase = 'precios'; tone = 'blue'; ico = '🏷'; label = 'Falta precios (Paso 2)'; }
     }
@@ -9975,7 +9871,9 @@ const MOS = (() => {
     const m = document.getElementById('mesaComprasModal');
     if (!m) return;
     m.classList.remove('open');
-    setTimeout(() => { const el = document.getElementById('mesaComprasModal'); if (el) el.remove(); }, 260);
+    // [fix P2] si se reabre dentro de los 260ms, abrirMesaCompras le vuelve a poner .open →
+    // NO la borres (evita que la Mesa recién reabierta desaparezca por el timer viejo).
+    setTimeout(() => { const el = document.getElementById('mesaComprasModal'); if (el && !el.classList.contains('open')) el.remove(); }, 260);
   }
   function mesaSetFiltro(f) { S._mesaFiltro = f; const m = document.getElementById('mesaComprasModal'); if (m) m.innerHTML = _mesaComprasHTML(); }
 
@@ -10133,7 +10031,7 @@ const MOS = (() => {
     if (S._paso2Modo === 'catalogo') { S._paso2Modo = null; return; }
     document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
     S._opsModoCostos = false;
-    _mesaVolver();
+    if (S._mesaAbierta) _mesaVolver();   // [fix P2] solo si venimos de la Mesa (no del voucher de Almacén)
   }
   // Paso 2 → "Volver a montos": reabre Paso 1 de ESTA guía (nunca una stale), o la Mesa.
   function _paso2VolverAMontos() {
@@ -10768,28 +10666,8 @@ const MOS = (() => {
     }
   }
 
-  // [v41.19] Mostrar/ocultar la sección embebida de sugerencias dentro del
-  // overlay unificado de costos (reemplaza al modalImpactoCostos standalone).
-  function _mostrarSeccionSugerencias() {
-    const sec = $('cguSugerenciasSection');
-    if (sec) {
-      sec.classList.remove('hidden');
-      setTimeout(() => { try { sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch(_){} }, 100);
-    }
-  }
-
-  // ── Panel: Impacto de costos en precios de venta ─────────
-  S._impactoState = S._impactoState || { sugerencias: [], idGuia: null };
-
-  // Abre el modal de impacto INMEDIATAMENTE con skeleton shimmer, antes de
-  // que el backend termine de calcular las sugerencias FIFO. Se reemplaza
-  // por _renderImpactoBody cuando llegan los datos reales.
-
-
-
-
-
-
+  // [§11 · purga] _mostrarSeccionSugerencias / S._impactoState / _renderImpactoBody ELIMINADOS
+  // (cluster impacto/sugerencias huérfano: sin callers vivos; #cguSugerenciasSection ya no existe).
 
   function _formatFechaCorta(yyyymmdd) {
     if (!yyyymmdd) return '';
@@ -43433,7 +43311,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     promoComboBuscar, promoComboAgregar, promoComboCerrarRes,
     promoComboCambiarQty, promoComboQuitar, numStep,
     abrirAnalitica, cerrarAnalitica, setAnPeriodo, guardarStockMinMax, _anCurrentId,
-    guardarAjustePrecios, stepperInc, stepperDec,
+    stepperInc, stepperDec,
     abrirModalProducto, guardarProducto,
     abrirLogProductos, refreshLogProductos, _logToggleCard,
     _logProdFechaOffset, _logProdIrHoy, _logProdVerTodo, _logProdFiltrar,
@@ -43569,7 +43447,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
     // [v2.43.37] Catálogo: filtro de orden + modal de rotación
-    setFiltroOrden, abrirModalRotacion, cerrarModalRotacion,
+    setFiltroOrden,
     // [v2.43.45] Panel flotante de filtros (nuclear)
     _cerrarFiltroFloat, _limpiarYCerrar,
     // [v2.43.51] Purga catálogo (master)
