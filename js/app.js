@@ -15365,13 +15365,15 @@ const MOS = (() => {
     }
   }
 
-  // [424] Extrae el peso implícito del nombre (500GR→0.5, 1KG→1, 250 GR→0.25).
-  // Devuelve kilos o null. Sirve para el guardián: comparar contra la porción tecleada.
+  // [424] Extrae el peso implícito del nombre (500GR→0.5, 1KG→1, 5K→5, 250 GR→0.25).
+  // Devuelve kilos o null. Sirve para el guardián y para sugerir la porción/precio.
+  // [dueño 2026-07-14] Acepta KG/KGS/KILO/KILOS/K (kilos) y GR/GRS/G (gramos). El "K" o "KG"
+  // deben ir pegados al número (5K, 5KG) para no confundir con palabras (PACK no lleva dígito antes).
   function _pesoDesdeNombre(nombre) {
     const s = String(nombre || '').toUpperCase();
-    let m = s.match(/([0-9]+(?:[.,][0-9]+)?)\s*KG/);
+    let m = s.match(/([0-9]+(?:[.,][0-9]+)?)\s*(?:KILOS?|KGS?|K)\b/);
     if (m) return parseFloat(m[1].replace(',', '.'));
-    m = s.match(/([0-9]+(?:[.,][0-9]+)?)\s*GR?\b/);
+    m = s.match(/([0-9]+(?:[.,][0-9]+)?)\s*GR?S?\b/);
     if (m) return parseFloat(m[1].replace(',', '.')) / 1000;
     return null;
   }
@@ -16979,11 +16981,12 @@ const MOS = (() => {
           <input id="satNombre" class="inp w-full" placeholder="Ej: ${_escapeHtml((padre.descripcion||'').replace(/GRANEL/i,'').trim())} 250GR" oninput="MOS._satDerivadoPreview()">
           <div id="satNombreHint" class="text-[11px] mt-1"></div></div>
         <div><label class="lbl">Porción del granel por unidad (kg) <span class="text-rose-400">*</span></label>
-          <input id="satPorcion" class="inp w-full" type="number" step="0.001" min="0.001" placeholder="0.250" oninput="MOS._satDerivadoPreview()">
+          <input id="satPorcion" class="inp w-full" type="number" step="0.001" min="0.001" placeholder="0.250" oninput="MOS._satPorcionInput()">
           <div id="satPorcionHint" class="text-[11px] mt-1 text-slate-500">Cualquier tamaño · ej: 250gr = 0.250 · 5kg = 5 · 25kg = 25</div></div>
         <div class="grid grid-cols-2 gap-3">
           <div><label class="lbl">Precio venta <span class="text-rose-400">*</span></label>
-            <input id="satPrecio" class="inp w-full" type="number" step="0.10" min="0.10" placeholder="0.00"></div>
+            <input id="satPrecio" class="inp w-full" type="number" step="0.10" min="0.10" placeholder="0.00" oninput="MOS._satPrecioInput()">
+            <div id="satPrecioHint" class="text-[10px] mt-1 text-slate-500"></div></div>
           <div><label class="lbl">Código <span class="text-[9px]" style="color:#34d399">auto WH-</span></label>
             <div class="flex gap-1.5"><input id="satCodigo" class="inp flex-1 font-mono text-xs" oninput="MOS._satValidarCodigo()">
             ${_SAT_CAM('satCodigo')}</div><div id="satCodigoFb" class="text-[10px] mt-1"></div></div>
@@ -16999,11 +17002,23 @@ const MOS = (() => {
         $('satPorcion').value = parseFloat(editarProd.factorConversionBase) || '';
         $('satPrecio').value  = parseFloat(editarProd.precioVenta) || '';
         $('satCodigo').value  = editarProd.codigoBarra || '';
+        // [dueño 2026-07-14] EDICIÓN: la porción y el precio ya vienen del producto → NO auto-sugerir encima
+        // (pero los avisos "precio bajo / peso no coincide" sí se muestran).
+        _satPorcionManual = true; _satPrecioManual = true;
         _satDerivadoPreview();
         return;
       }
       btn.textContent = 'Crear derivado';
       openModal('modalSatelite');
+      // [dueño 2026-07-14] B: pre-llenar el nombre con la FAMILIA del padre (sin "GRANEL"), cursor al final,
+      // para que el usuario solo agregue el gramaje (250GR / 5KG). C+A (peso→porción→precio) se auto-sugieren
+      // vía _satDerivadoPreview a medida que escribe. Flags manuales en false: aún no tocó porción/precio.
+      _satPorcionManual = false; _satPrecioManual = false;
+      { const _fam = String(padre.descripcion || '').replace(/\bGRANEL\b/ig, '').replace(/\s+/g, ' ').trim();
+        const _n = $('satNombre');
+        if (_n) { _n.value = _fam ? _fam + ' ' : '';
+          setTimeout(() => { try { _n.focus(); _n.setSelectionRange(_n.value.length, _n.value.length); } catch (_) {} }, 250); } }
+      try { _satDerivadoPreview(); } catch (_) {}
       // [fix rev B1] guardia anti-carrera: si cerraron/cambiaron el modal durante el
       // roundtrip del generador, NO pisar el input del modal nuevo
       { const st = _satState; const cb = await genCodigoUnico('WH-');
@@ -17143,29 +17158,68 @@ const MOS = (() => {
     return fam.filter(w => nomU.indexOf(w) < 0);
   }
 
+  // [dueño 2026-07-14] Flags: el usuario tocó la porción/precio a mano → dejar de auto-sugerir encima.
+  let _satPorcionManual = false, _satPrecioManual = false;
+  function _satPorcionInput() { _satPorcionManual = true; _satDerivadoPreview(); }
+  function _satPrecioInput()  { _satPrecioManual  = true; _satDerivadoPreview(); }
+  function _satFmtPorcion(kg) { const v = Math.round(kg * 1000) / 1000; return String(v); }
+
+  // Modal ＋Derivado inteligente: (C) el peso del nombre (250GR/5KG) sugiere la PORCIÓN;
+  // (A) porción × precio del granel padre sugiere el PRECIO; ambas se auto-rellenan mientras el
+  // usuario no las edite. Si las edita, se respetan y solo se AVISA abajo (precio bajo / peso ≠ nombre).
   function _satDerivadoPreview() {
-    const hint = $('satPorcionHint');
-    const nHint = $('satNombreHint');
-    const nombre  = $('satNombre')?.value || '';
-    const porcion = parseFloat($('satPorcion')?.value) || 0;
-    // ── validador de NOMBRE (familia del padre) ──
+    const padre  = _satState?.padre;
+    const nHint  = $('satNombreHint');
+    const pHint  = $('satPorcionHint');
+    const prHint = $('satPrecioHint');
+    const nombre = $('satNombre')?.value || '';
+    const precPadre = padre ? (parseFloat(padre.precioVenta) || 0) : 0;
+
+    // ── nombre: familia del padre ──
     if (nHint) {
       const falt = _satNombreFaltantes();
       if (nombre.trim() && falt.length) {
-        nHint.innerHTML = `<span style="color:#fbbf24">⚠ El nombre no incluye "${falt.join(' ')}" del granel padre — ¿copiaste de otro producto? (el hijo debe heredar la familia)</span>`;
+        nHint.innerHTML = `<span style="color:#fbbf24">⚠ El nombre no incluye "${falt.join(' ')}" del granel padre — ¿copiaste de otro producto?</span>`;
       } else if (nombre.trim()) {
         nHint.innerHTML = `<span style="color:#34d399">✓ Nombre coherente con el granel padre</span>`;
       } else { nHint.textContent = ''; }
     }
-    // ── guardián de PESO (nombre vs porción) ──
-    if (!hint) return;
+
+    // ── C: peso del nombre → auto-sugerir PORCIÓN (si no la tocaron) ──
     const pesoNom = (typeof _pesoDesdeNombre === 'function') ? _pesoDesdeNombre(nombre) : null;
-    if (porcion > 0 && pesoNom && Math.abs(pesoNom - porcion) > 0.001) {
-      hint.innerHTML = `<span style="color:#fbbf24">⚠ El nombre sugiere ${pesoNom} kg pero la porción es ${porcion} kg — verifica (el nombre suele decir la verdad)</span>`;
-    } else if (porcion > 0 && pesoNom) {
-      hint.innerHTML = `<span style="color:#34d399">✓ Coincide con el nombre (${pesoNom} kg)</span>`;
-    } else {
-      hint.textContent = 'Cualquier tamaño · ej: 250gr = 0.250 · 5kg = 5 · 25kg = 25';
+    const porcEl = $('satPorcion');
+    if (porcEl && !_satPorcionManual && pesoNom && pesoNom > 0) porcEl.value = _satFmtPorcion(pesoNom);
+    const porcion = parseFloat(porcEl?.value) || 0;
+
+    // ── A: porción × precio del granel padre → auto-sugerir PRECIO (si no lo tocaron) ──
+    const sugPrecio = (precPadre > 0 && porcion > 0) ? Math.round(precPadre * porcion * 100) / 100 : 0;
+    const preEl = $('satPrecio');
+    if (preEl && !_satPrecioManual && sugPrecio > 0) preEl.value = sugPrecio.toFixed(2);
+    const precioActual = parseFloat(preEl?.value) || 0;
+
+    // ── porción hint: peso del nombre vs porción ──
+    if (pHint) {
+      if (porcion > 0 && pesoNom && Math.abs(pesoNom - porcion) > 0.001) {
+        pHint.innerHTML = `<span style="color:#fbbf24">⚠ El nombre sugiere ${pesoNom} kg pero la porción es ${porcion} — verifica (el nombre suele decir la verdad)</span>`;
+      } else if (porcion > 0 && pesoNom) {
+        pHint.innerHTML = `<span style="color:#34d399">✓ Coincide con el nombre (${pesoNom} kg)</span>`;
+      } else {
+        pHint.textContent = 'Cualquier tamaño · ej: 250gr = 0.250 · 5kg = 5 · 25kg = 25';
+      }
+    }
+
+    // ── precio hint: sugerencia + aviso si el manual queda muy por debajo del granel equivalente ──
+    if (prHint) {
+      if (sugPrecio > 0) {
+        const base = `S/${precPadre.toFixed(2)}/kg × ${porcion} = S/${sugPrecio.toFixed(2)}`;
+        if (_satPrecioManual && precioActual > 0 && precioActual < sugPrecio * 0.7) {
+          prHint.innerHTML = `<span style="color:#fca5a5">⚠ Muy por debajo: el granel equivalente vale ~S/${sugPrecio.toFixed(2)} (${base})</span>`;
+        } else if (_satPrecioManual) {
+          prHint.innerHTML = `<span style="color:#94a3b8">Sugerido ${base}</span>`;
+        } else {
+          prHint.innerHTML = `<span style="color:#34d399">Sugerido: ${base}</span>`;
+        }
+      } else { prHint.textContent = ''; }
     }
   }
 
@@ -43456,7 +43510,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     scanCodigo, genCodigoUnico,   // [catálogo v4] escáner generalizado + generador con prefijo
     scanBuscarCatalogo, abrirPlusContextual, _cerrarPlusCtx, abrirEditarProducto,           // [catálogo v4] buscador cámara + ＋ contextual
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
-    _satDerivadoPreview, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
+    _satDerivadoPreview, _satPorcionInput, _satPrecioInput, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
     _agTab, _agAlcance, abrirModalPrecioCurvas, guardarCostosYPaso2, _paso2AplicarAutos, _paso2Abrir, _paso2Satelites, _p2GuardarCatalogo,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
