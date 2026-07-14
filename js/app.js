@@ -9116,6 +9116,9 @@ const MOS = (() => {
     document.getElementById('opsCostosSubtitle').textContent = (_prov ? '🏭 ' + _prov + ' · ' : '') + _lin.length + ' línea(s)';
     modal.classList.remove('hidden');
     modal.style.zIndex = '9700'; // [E] por encima de la Mesa (z-9500) que queda atenuada detrás
+    // [E · suavizar] fade de entrada (antes aparecía de golpe = parpadeo)
+    modal.style.animation = 'none'; void modal.offsetWidth; modal.style.animation = 'p1FadeIn .26s ease';
+    const _box = modal.firstElementChild; if (_box) { _box.style.animation = 'p1BoxIn .34s cubic-bezier(.22,1,.36,1)'; }
     _renderModalCostosCompleto(op);
   }
 
@@ -9299,24 +9302,28 @@ const MOS = (() => {
       }
     } catch(_) {}
     return `<div class="alm-v-costo-line${faltaCls}" style="animation-delay:${Math.min(i,12)*30}ms">
-      <div class="alm-v-costo-head">
-        <span id="costoGuiaMarca_${i}" class="alm-v-costo-marca">${marcaIni}</span>
-        <div class="alm-v-costo-head-text">
-          <div class="alm-v-costo-desc">${desc}${equivBadge}</div>
-          <div class="alm-v-costo-cod">▌ ${cod}</div>
+      <div class="cl-head">
+        <span id="costoGuiaMarca_${i}" class="cl-marca">${marcaIni}</span>
+        <div class="cl-titles">
+          <div class="cl-desc">${desc}${equivBadge}</div>
+          <div class="cl-cod">▌ ${cod} · <b>${cant}u</b></div>
         </div>
       </div>
-      <div class="alm-v-costo-controls">
-        <span class="cq">${cant}<i>u</i></span>
-        <label class="ci">
-          <span class="ci-cur">S/</span>
-          <input type="number" step="0.01" min="0" class="alm-v-costo-input"
-                 value="${l.inputValue || ''}"
-                 oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
-                 placeholder="0.00">
-          <span class="ci-mode">${placeholder}</span>
+      <div class="cl-money">
+        <label class="cl-field">
+          <span class="cl-label">Monto ${placeholder.toLowerCase()}</span>
+          <span class="ci">
+            <span class="ci-cur">S/</span>
+            <input type="number" step="0.01" min="0" class="alm-v-costo-input"
+                   value="${l.inputValue || ''}"
+                   oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
+                   placeholder="0.00">
+          </span>
         </label>
-        <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
+        <div class="cl-field cl-readout">
+          <span class="cl-label">Costo unitario</span>
+          <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
+        </div>
       </div>
       ${margenInfoHtml}
     </div>`;
@@ -9349,6 +9356,9 @@ const MOS = (() => {
     const style = document.createElement('style');
     style.id = 'opsCSSModalCostosUnif';
     style.textContent = `
+      /* [E · suavizar] entrada del Paso 1 (fade del overlay + del cuadro) */
+      @keyframes p1FadeIn{from{opacity:0}to{opacity:1}}
+      @keyframes p1BoxIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
       /* ───── [v5 §11] Foto de la factura dentro del Paso 1 (preview + zoom) ───── */
       .ops-p1-foto{position:relative;width:100%;aspect-ratio:16/9;max-height:190px;border-radius:12px;overflow:hidden;
         border:1px solid #28344c;cursor:zoom-in;background:#0a1120 repeating-linear-gradient(135deg,#0f1b31 0 14px,#0c1628 14px 28px);
@@ -9483,46 +9493,47 @@ const MOS = (() => {
       }
       #modalCostosGuiaUnif .alm-v-costo-helper { color: #cbd5e1; text-align: right; font-size: 11px; line-height: 1.3; font-family: ui-monospace,monospace; }
       #modalCostosGuiaUnif .alm-v-costo-helper-bruto { color: #fbbf24; font-weight: 800; }
-      /* [G] fila de monto ORDENADA: cantidad · input acotado (S/ prefijo + modo) · costo/u a la derecha.
-         Con sangría bajo el nombre. El input NUNCA estira toda la fila. */
-      #modalCostosGuiaUnif .alm-v-costo-line { padding: 11px 13px; }
-      #modalCostosGuiaUnif .alm-v-costo-controls {
-        display: grid; grid-template-columns: auto minmax(118px,148px) 1fr; gap: 10px; align-items: center;
-        min-height: 0; margin-top: 9px; padding-left: 30px; /* alinea con el nombre (sangría) */
+      /* [G v2] Fila de monto REDISEÑADA: encabezado (marca + nombre + código·cant) y
+         debajo, con sangría, dos campos etiquetados (Monto · Costo unitario). Ordenada y espaciada. */
+      #modalCostosGuiaUnif .alm-v-costo-line { padding: 13px 15px; }
+      #modalCostosGuiaUnif .cl-head { display: flex; align-items: flex-start; gap: 10px; }
+      #modalCostosGuiaUnif .cl-marca { flex: none; font-size: 15px; line-height: 1.3; width: 20px; text-align: center; }
+      #modalCostosGuiaUnif .cl-titles { min-width: 0; flex: 1; }
+      #modalCostosGuiaUnif .cl-desc { color: #f8fafc; font-weight: 750; font-size: 13.5px; line-height: 1.3; word-break: break-word; }
+      #modalCostosGuiaUnif .cl-cod { color: #7b8aa6; font-size: 10.5px; margin-top: 2px; font-family: ui-monospace,monospace; }
+      #modalCostosGuiaUnif .cl-cod b { color: #cbd5e1; }
+      #modalCostosGuiaUnif .cl-money {
+        display: grid; grid-template-columns: minmax(140px,168px) 1fr; gap: 14px; align-items: end;
+        margin-top: 11px; padding-left: 30px; /* sangría: alinea con el nombre */
       }
-      #modalCostosGuiaUnif .cq {
-        font-size: 12px; font-weight: 800; color: #cbd5e1; font-family: ui-monospace,monospace;
-        background: rgba(15,23,42,.65); border: 1px solid rgba(148,163,184,.18); border-radius: 8px;
-        padding: 6px 9px; text-align: center; white-space: nowrap;
+      #modalCostosGuiaUnif .cl-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+      #modalCostosGuiaUnif .cl-label {
+        font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b;
       }
-      #modalCostosGuiaUnif .cq i { opacity: .55; font-style: normal; font-size: 10px; margin-left: 1px; }
+      #modalCostosGuiaUnif .cl-readout { align-items: flex-end; text-align: right; }
       #modalCostosGuiaUnif .ci {
         display: flex; align-items: stretch; background: #0f172a; border: 1px solid #475569;
-        border-radius: 9px; overflow: hidden;
+        border-radius: 10px; overflow: hidden;
       }
       #modalCostosGuiaUnif .ci:focus-within { border-color: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,.25); }
       #modalCostosGuiaUnif .ci-cur {
-        display: flex; align-items: center; padding: 0 5px 0 10px;
+        display: flex; align-items: center; padding: 0 4px 0 11px;
         color: #93a4c2; font-weight: 800; font-size: 13px; font-family: ui-monospace,monospace;
       }
       #modalCostosGuiaUnif .alm-v-costo-input {
         flex: 1; min-width: 0; width: auto; background: transparent; border: none; border-radius: 0;
-        padding: 8px 6px; font-size: 15px; font-weight: 800; text-align: right; color: #f8fafc;
+        padding: 9px 11px 9px 4px; font-size: 16px; font-weight: 800; text-align: right; color: #f8fafc;
         font-family: ui-monospace,monospace;
       }
       #modalCostosGuiaUnif .alm-v-costo-input:focus { outline: none; box-shadow: none; border: none; }
-      #modalCostosGuiaUnif .ci-mode {
-        display: flex; align-items: center; padding: 0 9px; border-left: 1px solid #28344c;
-        font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #64748b;
-      }
       #modalCostosGuiaUnif .alm-v-costo-helper {
-        justify-self: end; align-self: center; text-align: right;
-        font-size: 11px; color: #cbd5e1; font-family: ui-monospace,monospace; line-height: 1.35;
+        font-size: 13px; color: #cbd5e1; font-family: ui-monospace,monospace; line-height: 1.4;
       }
-      #modalCostosGuiaUnif .cu-bruto { color: #fbbf24; font-weight: 800; }
-      #modalCostosGuiaUnif .cu-u { opacity: .55; margin-left: 1px; }
-      #modalCostosGuiaUnif .cu-neto { display: block; opacity: .6; font-size: 10px; }
-      #modalCostosGuiaUnif .cu-empty { color: #fbbf24; opacity: .8; font-style: italic; }
+      #modalCostosGuiaUnif .cu-bruto { color: #fbbf24; font-weight: 800; font-size: 15px; }
+      #modalCostosGuiaUnif .cu-u { opacity: .55; margin-left: 1px; font-size: 11px; }
+      #modalCostosGuiaUnif .cu-neto { display: block; opacity: .65; font-size: 10.5px; margin-top: 1px; }
+      #modalCostosGuiaUnif .cu-empty { color: #fbbf24; opacity: .8; font-style: italic; font-size: 11.5px; }
+      @media (max-width: 460px) { #modalCostosGuiaUnif .cl-money { grid-template-columns: 1fr; gap: 9px; padding-left: 30px; } #modalCostosGuiaUnif .cl-readout { align-items: flex-start; text-align: left; } }
       #modalCostosGuiaUnif .alm-v-marca-ok    { color: #34d399; font-weight: 700; }
       #modalCostosGuiaUnif .alm-v-marca-ocr   { color: #fbbf24; font-weight: 700; }
       #modalCostosGuiaUnif .alm-v-marca-falta { color: #f87171; font-weight: 700; animation: pulse 1.6s infinite; }
@@ -9635,25 +9646,30 @@ const MOS = (() => {
       return v > 0;
     });
     if (!lineas.length) { toast('⚠ Escribe al menos un monto', 'error'); return; }
-    toast('Paso 1: aplicando costos…', 'info');
-    try {
-      await guardarCostosGuia();   // detalle de la guía (RPC 383, flujo existente)
-      const items = lineas.map(l => ({
-        codProducto: l.codigoProducto || l.codProducto || l.codigoBarra || '',
-        costoUnitario: (function(){ try { return _costosGuiaCalcularBruto(l, st) || parseFloat(l.inputValue) || parseFloat(l.precioUnitario) || 0; } catch(_) { return parseFloat(l.inputValue) || parseFloat(l.precioUnitario) || 0; } })()
-      })).filter(x => x.codProducto && x.costoUnitario > 0);
-      const r = await API.post('aplicarCostosCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items });
-      const res = ((r && (r.data || r)) || {}).items || [];
-      const okItems = res.filter(x => x.ok);
-      // refrescar costos en memoria para que el Paso 2 calcule con lo nuevo
-      okItems.forEach(x => { const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
-      // [I/H] Paso 2 entra deslizándose SOBRE el Paso 1 (se siente un progreso, no un modal nuevo);
-      // el Paso 1 se oculta con un pequeño retardo para que el deslizamiento se solape.
-      S._paso2Origen = { fuente: st.fuente, idGuia: st.idGuia }; // para "Volver a montos"
-      _paso2Abrir(okItems, st.idGuia);
-      const _p1 = document.getElementById('modalCostosGuiaUnif');
-      if (_p1) setTimeout(() => _p1.classList.add('hidden'), 220);
-    } catch (e) { toast('Error: ' + e.message, 'error'); }
+    // [H1 · sin lag] Armamos los ítems LOCALMENTE (costoNuevo = bruto tecleado) y abrimos el Paso 2
+    // AL INSTANTE, sin esperar la red. Los costos ya se autosalvan por línea; la persistencia
+    // (detalle + aplicar al canónico con historial) corre en background.
+    const items = lineas.map(l => {
+      const cod = String(l.codigoBarra || l.codigoProducto || l.codProducto || '').trim();
+      const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod) || {};
+      const bruto = (function(){ try { return _costosGuiaCalcularBruto(l, st) || parseFloat(l.inputValue) || 0; } catch(_) { return parseFloat(l.inputValue) || 0; } })();
+      return { idCanonico: p.idProducto || l.idCanonico || cod, codProducto: cod, costoNuevo: _r1(bruto), costoAnterior: parseFloat(p.precioCosto) || 0 };
+    }).filter(x => x.costoNuevo > 0);
+    if (!items.length) { toast('⚠ Sin líneas válidas', 'error'); return; }
+    // reflejar el costo nuevo en memoria (para que el Paso 2 sugiera con lo nuevo) — DESPUÉS de leer el anterior
+    items.forEach(x => { const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
+    S._paso2Origen = { fuente: st.fuente, idGuia: st.idGuia }; // para "Volver a montos"
+    _paso2Abrir(items, st.idGuia);
+    const _p1 = document.getElementById('modalCostosGuiaUnif');
+    if (_p1) setTimeout(() => _p1.classList.add('hidden'), 220);
+    // persistencia en background (no bloquea el Paso 2)
+    (async () => {
+      try {
+        await guardarCostosGuia();
+        const apiItems = items.map(x => ({ codProducto: x.codProducto, costoUnitario: x.costoNuevo })).filter(x => x.codProducto && x.costoUnitario > 0);
+        await API.post('aplicarCostosCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: apiItems });
+      } catch (e) { toast('⚠ Guardado local; falló persistir costos: ' + (e.message || e), 'error'); }
+    })();
   }
 
   // [v5 §11] Satélites (presentaciones/derivados) de un canónico afectados por el costo nuevo.
@@ -9737,7 +9753,7 @@ const MOS = (() => {
             </button>
             <div class="p2-editor" id="p2ed_${i}" hidden>
               <div class="p2-chart-wrap"><canvas id="p2cv_${i}" class="p2-canvas"></canvas>
-                <div class="p2-chart-legend"><span><i style="background:#34d399"></i>precio</span><span><i style="background:#fbbf24;height:2px"></i>costo</span><span class="p2-chart-drag">↔ arrastra para ver fechas anteriores</span></div>
+                <div class="p2-chart-legend"><span><i style="background:#34d399"></i>precio</span><span><i style="background:#fbbf24;height:2px"></i>costo</span><span class="p2-chart-drag">↔ arrastra · toca un punto para ver el registro</span></div>
               </div>
               <div class="p2-edit-grid">
                 <label class="p2-field"><span>Precio venta S/</span>
@@ -9747,6 +9763,7 @@ const MOS = (() => {
               </div>
               <div class="p2-bidir-hint">↔ Bidireccional: cambias el precio → recalcula el margen · cambias el margen → recalcula el precio. ESE margen queda de contrato.</div>
               ${(f.satelites && f.satelites.length) ? `
+              <button class="p2-repartir" onclick="MOS._p2Repartir(${i})" title="Aplica el margen del padre a los satélites activos y no manuales">📊 Repartir este margen a los satélites activos</button>
               <div class="p2-sats">
                 <div class="p2-sats-lbl">${f.satelites.length} satélite(s) · el margen se HEREDA del padre — enciende para aplicar, edita el precio para MANUAL, apaga para no tocarlo</div>
                 ${f.satelites.map((s, j) => `
@@ -9824,7 +9841,7 @@ const MOS = (() => {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
 
-  // [H · toggle por satélite] editar el precio de un satélite → pasa a MANUAL (su margen se recalcula).
+  // [H · toggle por satélite] editar el precio de un satélite → pasa a MANUAL (su margen se recalcula y SE MUESTRA).
   function _p2SatPrecio(fi, sj) {
     const f = (window._paso2Filas || [])[fi]; const s = f && f.satelites && f.satelites[sj]; if (!s) return;
     const inp = document.getElementById('p2si_' + fi + '_' + sj);
@@ -9833,7 +9850,27 @@ const MOS = (() => {
     s.manual = true;
     if (pr > 0 && s.costo > 0) s.margen = (1 - s.costo / pr) * 100;
     const chip = document.getElementById('p2sm_' + fi + '_' + sj);
-    if (chip) { chip.textContent = 'MANUAL'; chip.classList.add('man'); }
+    // [H3] muestra el NUEVO margen de esa presentación (ej. "MANUAL 18%")
+    if (chip) { chip.textContent = 'MANUAL' + (s.margen != null ? ' ' + s.margen.toFixed(0) + '%' : ''); chip.classList.add('man'); }
+  }
+
+  // [H5] "Repartir margen": aplica el margen ACTUAL del padre a los satélites ACTIVOS y NO manuales
+  //      (recalcula su precio por ese margen). Respeta manuales y apagados. Cascada explícita, no obligatoria.
+  function _p2Repartir(i) {
+    const f = (window._paso2Filas || [])[i]; if (!f || !f.satelites) return;
+    const mg = f.margenEd;
+    if (mg == null || !(mg < 100)) { toast('Define primero el margen del padre', 'info'); return; }
+    let n = 0;
+    f.satelites.forEach((s, j) => {
+      if (!s.incluido || s.manual || !(s.costo > 0)) return; // solo activos, no manuales, con costo
+      s.margen = mg;
+      s.precioEd = _r1(s.costo / (1 - mg / 100));
+      const inp = document.getElementById('p2si_' + i + '_' + j); if (inp) inp.value = s.precioEd;
+      const chip = document.getElementById('p2sm_' + i + '_' + j); if (chip) { chip.textContent = mg.toFixed(0) + '%'; chip.classList.remove('man'); }
+      n++;
+    });
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    toast(n ? `Margen ${mg.toFixed(0)}% repartido a ${n} satélite(s) activo(s)` : 'No hay satélites activos no-manuales para repartir', n ? 'ok' : 'info');
   }
 
   // [K/N] Abre/cierra el editor de una fila; al abrir por 1ª vez, carga la historia y dibuja la curva.
@@ -9850,8 +9887,8 @@ const MOS = (() => {
     try {
       const r = await API.post('historialPrecioCosto', { idProducto: f.x.idCanonico });
       const d = r && (r.data || r);
-      hist.P = (d && d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor) })).filter(x => x.v > 0 && !isNaN(x.t));
-      hist.C = (d && d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor) })).filter(x => x.v > 0 && !isNaN(x.t));
+      hist.P = (d && d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, m: x.motivo })).filter(x => x.v > 0 && !isNaN(x.t));
+      hist.C = (d && d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia })).filter(x => x.v > 0 && !isNaN(x.t));
     } catch(_){}
     f._hist = hist;
     if (cv) _p2ChartInit(cv, hist, f.precioEd || f.precioActual || 0, parseFloat(f.x.costoNuevo) || 0);
@@ -9889,8 +9926,12 @@ const MOS = (() => {
     const plotW = () => cssW - M.l - M.r, plotH = () => cssH - M.t - M.b;
     const xOf = t => M.l + (t - view.vs) / (view.ve - view.vs) * plotW();
     const yOf = v => M.t + (1 - (v - vMin) / (vMax - vMin || 1)) * plotH();
+    let drawnPts = [];        // [H7] posiciones de puntos para detectar clicks
+    let sel = null;           // registro seleccionado (tooltip)
+    const _fechaCorta = t => { try { return new Date(t).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }); } catch(_) { return ''; } };
     function draw() {
       ctx.clearRect(0, 0, cssW, cssH);
+      drawnPts = [];
       ctx.font = '9px ui-monospace,monospace'; ctx.textBaseline = 'middle';
       // grid + Y labels
       for (let g = 0; g <= 4; g++) {
@@ -9907,7 +9948,7 @@ const MOS = (() => {
       }
       // clip al área de trazado
       ctx.save(); ctx.beginPath(); ctx.rect(M.l, M.t, plotW(), plotH()); ctx.clip();
-      const serie = (arr, hoyV, color, dash) => {
+      const serie = (arr, hoyV, color, dash, tipo) => {
         const pts = arr.slice(); if (hoyV > 0) pts.push({ t: now, v: hoyV, hoy: true });
         if (!pts.length) return;
         ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash(dash);
@@ -9915,12 +9956,14 @@ const MOS = (() => {
         ctx.setLineDash([]);
         pts.forEach(p => {
           const X = xOf(p.t), Y = yOf(p.v);
-          ctx.fillStyle = p.hoy ? '#fff' : color; ctx.beginPath(); ctx.arc(X, Y, p.hoy ? 4 : 2.6, 0, 7); ctx.fill();
-          if (p.hoy) { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X, Y, 4.5, 0, 7); ctx.stroke(); }
+          drawnPts.push({ x: X, y: Y, rec: p, tipo });   // [H7]
+          const isSel = sel && sel.rec === p;
+          ctx.fillStyle = p.hoy ? '#fff' : color; ctx.beginPath(); ctx.arc(X, Y, p.hoy ? 4 : (isSel ? 4.5 : 2.6), 0, 7); ctx.fill();
+          if (p.hoy || isSel) { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X, Y, isSel ? 6.5 : 4.5, 0, 7); ctx.stroke(); }
         });
       };
-      serie(C, hoyC, '#fbbf24', [5, 3]);
-      serie(P, hoyP, '#34d399', []);
+      serie(C, hoyC, '#fbbf24', [5, 3], 'C');
+      serie(P, hoyP, '#34d399', [], 'P');
       // línea "hoy" vertical + Δ (margen) entre costo y precio de hoy
       const xh = xOf(now);
       ctx.strokeStyle = 'rgba(148,163,184,.45)'; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
@@ -9937,23 +9980,63 @@ const MOS = (() => {
       // etiqueta "hoy"
       ctx.fillStyle = '#93a4c2'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText('hoy', Math.min(Math.max(xh, M.l + 12), cssW - M.r - 12), M.t + 1);
+      // [H7] tooltip del punto seleccionado
+      if (sel) _drawTip(sel);
+    }
+    function _drawTip(dp) {
+      const p = dp.rec, esP = dp.tipo === 'P';
+      const l1 = (esP ? 'Precio' : 'Costo') + ' S/ ' + (+p.v).toFixed(2);
+      const l2 = p.hoy ? 'ahora (valor actual)' : _fechaCorta(p.t);
+      let l3 = '';
+      if (!p.hoy) {
+        if (!esP && p.g) l3 = '🧾 ' + String(p.g).slice(-8) + (p.u ? ' · ' + p.u : '');
+        else if (p.m || p.u) l3 = (p.m ? p.m : '') + (p.u ? (p.m ? ' · ' : '') + p.u : '');
+      }
+      const lines = [l1, l2].concat(l3 ? [l3] : []);
+      ctx.font = '9px ui-monospace,monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      const wBox = Math.min(180, Math.max.apply(null, lines.map(t => ctx.measureText(t).width)) + 16);
+      const hBox = lines.length * 13 + 8;
+      let bx = dp.x + 8, by = dp.y - hBox - 8;
+      if (bx + wBox > cssW - 2) bx = dp.x - wBox - 8;
+      if (bx < 2) bx = 2;
+      if (by < 2) by = dp.y + 10;
+      ctx.fillStyle = 'rgba(6,11,22,.95)'; ctx.strokeStyle = esP ? 'rgba(52,211,153,.6)' : 'rgba(251,191,36,.6)'; ctx.lineWidth = 1;
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, wBox, hBox, 6); ctx.fill(); ctx.stroke(); }
+      else { ctx.fillRect(bx, by, wBox, hBox); ctx.strokeRect(bx, by, wBox, hBox); }
+      lines.forEach((t, i) => {
+        ctx.fillStyle = i === 0 ? (esP ? '#34d399' : '#fbbf24') : '#cbd5e1';
+        ctx.font = (i === 0 ? '700 ' : '') + '9px ui-monospace,monospace';
+        ctx.fillText(t, bx + 8, by + 5 + i * 13);
+      });
     }
     resize(); draw();
-    // Arrastre horizontal (pan) para ver fechas anteriores
-    let drag = null;
+    // Arrastre horizontal (pan) + click a un punto (tooltip)
+    let drag = null, moved = 0;
     cv.style.cursor = 'grab';
-    cv.onpointerdown = e => { drag = { x: e.clientX, vs: view.vs, ve: view.ve }; cv.style.cursor = 'grabbing'; try { cv.setPointerCapture(e.pointerId); } catch(_){} };
+    cv.onpointerdown = e => { drag = { x: e.clientX, vs: view.vs, ve: view.ve }; moved = 0; cv.style.cursor = 'grabbing'; try { cv.setPointerCapture(e.pointerId); } catch(_){} };
     cv.onpointermove = e => {
       if (!drag) return;
+      moved += Math.abs(e.movementX || 0);
       const dt = (e.clientX - drag.x) / plotW() * (drag.ve - drag.vs);
       let vs = drag.vs - dt, ve = drag.ve - dt; const w = ve - vs;
-      const lo = tMin - w * 0.5, hi = tMax + w * 0.15;   // límites: no salirse de la data
+      const lo = tMin - w * 0.5, hi = tMax + w * 0.15;
       if (vs < lo) { vs = lo; ve = lo + w; }
       if (ve > hi) { ve = hi; vs = hi - w; }
       view.vs = vs; view.ve = ve; draw();
     };
-    const up = () => { drag = null; cv.style.cursor = 'grab'; };
-    cv.onpointerup = up; cv.onpointercancel = up;
+    const up = e => {
+      const wasClick = drag && moved < 5;
+      drag = null; cv.style.cursor = 'grab';
+      if (!wasClick) return;
+      // [H7] hit-test: punto más cercano al click
+      const r = cv.getBoundingClientRect();
+      const cx = e.clientX - r.left, cy = e.clientY - r.top;
+      let best = null, bd = 16 * 16;
+      drawnPts.forEach(dp => { const d = (dp.x - cx) * (dp.x - cx) + (dp.y - cy) * (dp.y - cy); if (d < bd) { bd = d; best = dp; } });
+      sel = (best && (!sel || sel.rec !== best.rec)) ? best : null;
+      draw();
+    };
+    cv.onpointerup = up; cv.onpointercancel = () => { drag = null; cv.style.cursor = 'grab'; };
     // hook para actualizar el punto "hoy" del precio cuando el admin edita
     cv._setHoyPrecio = v => { hoyP = v > 0 ? v : 0; draw(); };
   }
@@ -9996,6 +10079,9 @@ const MOS = (() => {
       .p2-field input:disabled{opacity:.45;color:#93a4c2;border-color:#28344c}
       .p2-field:nth-child(2) input{color:#fbbf24;border-color:rgba(251,191,36,.45)}
       .p2-bidir-hint{font-size:9.5px;line-height:1.45;color:#7b8aa6}
+      .p2-repartir{width:100%;font-size:10.5px;font-weight:800;color:#7cb3f0;background:rgba(124,179,240,.1);
+        border:1px solid rgba(124,179,240,.32);border-radius:9px;padding:8px 10px;cursor:pointer;transition:.16s}
+      .p2-repartir:hover{background:rgba(124,179,240,.2);border-color:#7cb3f0}
       .p2-sats{display:flex;flex-direction:column;gap:6px;border-top:1px dashed #28344c;padding-top:9px}
       .p2-sats-lbl{font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#5f7192;line-height:1.45}
       .p2-sat{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;background:#0b1425;border:1px solid #1e293b;border-left:2px solid #34d399;border-radius:9px;transition:opacity .18s}
@@ -10354,7 +10440,9 @@ const MOS = (() => {
 
   // Arma el Paso 2 directamente desde una guía ya costeada (sin re-aplicar costos).
   function _paso2DesdeGuia(op) {
-    const lineas = op.lineas || [];
+    // [H6] las líneas pueden estar en el cache de detalle, no siempre inline en op → Paso 2 salía VACÍO.
+    const k = op.fuente + '_' + op.idGuia;
+    const lineas = ((S._opsDetCache && S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || []);
     const items = lineas.map(l => {
       const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
       const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod) || {};
@@ -17330,8 +17418,8 @@ const MOS = (() => {
       S._pcPuntos = { P: P, C: C };   // (compat)
       const ley = document.getElementById('pcCurvasLeyenda');
       // [N] gráfico CARTESIANO (X=tiempo real · Y=S/) — mismo motor que el Paso 2, con arrastre.
-      const histP = P.filter(x => !x.hoy).map(x => ({ t: Date.parse(x.ts), v: x.v })).filter(x => x.v > 0 && !isNaN(x.t));
-      const histC = C.filter(x => !x.hoy).map(x => ({ t: Date.parse(x.ts), v: x.v })).filter(x => x.v > 0 && !isNaN(x.t));
+      const histP = P.filter(x => !x.hoy).map(x => ({ t: Date.parse(x.ts), v: x.v, u: x.usuario, m: x.motivo })).filter(x => x.v > 0 && !isNaN(x.t));
+      const histC = C.filter(x => !x.hoy).map(x => ({ t: Date.parse(x.ts), v: x.v, u: x.usuario, g: x.idGuia })).filter(x => x.v > 0 && !isNaN(x.t));
       if (!histP.length && !histC.length && !(precio > 0) && !(costo > 0)) {
         ch.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 16px;font-size:11px;color:#64748b">⬚ aún sin historia · desde hoy, cada cambio de precio y cada compra la van dibujando</div>';
         if (ley) ley.innerHTML = `<span style="color:#34d399">●</span> precio (${histP.length}) &nbsp; <span style="color:#fbbf24">●</span> costo (${histC.length}) · empezando a acumular`;
@@ -44012,7 +44100,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     opsEntrarModoCostos, opsSalirModoCostos,
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaCargarMas, _mesaComprasEntrar, _mesaComprasSyncBadge,
-    _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio,
+    _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
