@@ -16501,6 +16501,13 @@ const MOS = (() => {
         tipo === 'derivado'     ? '🥄 Derivado' :
         tipo === 'presentacion' ? '🧱 Presentación' : '🔵 Canónico');
 
+      // [fix dueño 2026-07-14] Convertir Canónico ⇄ Granel envasable también al EDITAR (antes el toggle
+      // solo aparecía al CREAR → un producto ya creado no se podía volver envasable). Solo aplica a
+      // canónico/envasable; derivado/presentación no se convierten a granel desde aquí.
+      const _envConvertible = (tipo === 'normal' || tipo === 'envasable');
+      $('prodEnvasableRow')?.classList.toggle('hidden', !_envConvertible);
+      $('prodEnvasableSw')?.classList.toggle('on', tipo === 'envasable');
+
       if (tipo === 'derivado') {
         $('prodCodigoProductoBase').value = p.codigoProductoBase || '';
         $('prodFactorConvBase').value     = p.factorConversionBase || '';
