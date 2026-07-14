@@ -23010,9 +23010,21 @@ const MOS = (() => {
   function _persCompartirWhatsApp() {
     const nombre = ($('persNombre')?.value || '').trim();
     const apellido = ($('persApellido')?.value || '').trim();
-    const pin = ($('persPin')?.value || '').trim();
-    const rol = String($('persRol')?.value || '').toUpperCase();
     const isMOS = ($('persAppOrigen')?.value === 'MOS');
+    let pin = ($('persPin')?.value || '').trim();
+    // [FIX Compartir en edición] El campo PIN se deja vacío a propósito al editar
+    // (solo se escribe para CAMBIARLO). Para compartir, si está vacío, usamos el PIN
+    // ya guardado del registro (cfgData.personal/personalMOS) — así Jorgenis y cualquier
+    // usuario existente comparten su PIN real sin tener que regenerarlo.
+    if (!pin) {
+      const idEdit = ($('persId')?.value || '').trim();
+      if (idEdit) {
+        const src = isMOS ? (cfgData.personalMOS || []) : (cfgData.personal || []);
+        const p = src.find(x => x.idPersonal === idEdit);
+        if (p && p.pin) pin = String(p.pin).trim();
+      }
+    }
+    const rol = String($('persRol')?.value || '').toUpperCase();
     if (!nombre) { toast('Falta el nombre', 'error'); return; }
     if (!pin) { toast('Falta el PIN — genera uno con 🎲', 'error'); return; }
     const puedeMOS = isMOS || rol === 'ADMIN' || rol === 'MASTER' || !!($('persAccesoMos')?.checked);
