@@ -33694,7 +33694,6 @@ const MOS = (() => {
 
     // Si va a imprimir → primero PREVIEW del ticket, luego pedir impresora
     let printerId = null;
-    let _ticketEscpos = null;   // [v2.43.377] se captura ANTES del removal optimista (montos intactos)
     if (imprimir) {
       closeModal('modalLiqConfirmar');
       // [v2.41.74] Preview ASCII antes de elegir impresora
@@ -33704,17 +33703,13 @@ const MOS = (() => {
         toast('Pago se registrará sin imprimir', 'info', 3000);
       } else {
         printerId = await _liqElegirImpresora();
-        if (!printerId) {
-          toast('Pago se registró sin imprimir', 'info');
-        } else {
-          // El ascii del print = el MISMO del preview (pendientes aún intactos aquí).
-          try {
-            const ascii = _liqGenerarTicketAscii(personas, comentario, pagadoPor);
-            _ticketEscpos = '\x1b\x40\x1b\x74\x10' + ascii + '\n\n\n\n\x1d\x56\x00';
-          } catch (_) {}
-        }
+        if (!printerId) toast('Pago se registró sin imprimir', 'info');
       }
     }
+    // [dueño 2026-07-14] Snapshot POR PERSONA del ticket (pendientes AÚN intactos = montos correctos): se GUARDA
+    // tras el pago (guardarTicketPago) para que Reimprimir sea IDÉNTICO, y se imprime en 2 copias (jefa+empleado).
+    const _liqPerTicket = {};
+    try { personas.forEach(p => { _liqPerTicket[p.idPersonal] = _liqGenerarTicketAscii([p], comentario, pagadoPor); }); } catch (_) {}
 
     // [v2.41.71] OPTIMISTA INMEDIATO — antes del loop:
     //   1. Quitar días pagados del state local + repaint
@@ -33771,16 +33766,20 @@ const MOS = (() => {
 
     if (okList.length) {
       toast(`✓ ${okList.length} pago(s) registrado(s) · ${_liqMoney(totalPagado)}`, 'ok', 5000);
-      // [v2.43.377] Imprimir el comprobante por la Edge `imprimir` (cero-GAS). El contenido
-      // es EXACTAMENTE el del preview (capturado antes del removal) → lo que ves es lo que sale.
-      if (printerId && _ticketEscpos) {
-        try {
-          await API.imprimirTicketEdge(parseInt(printerId, 10), 'Comprobante de pago', _ticketEscpos);
-          toast('🖨 Comprobante enviado a la impresora', 'ok', 3000);
-        } catch (ePr) {
-          toast('⚠ Pago OK, pero no se pudo imprimir: ' + ((ePr && ePr.message) || ePr), 'warn', 6000);
+      // [dueño 2026-07-14] Por cada pago OK: (1) GUARDAR el ticket snapshot con su idPago → Reimprimir será
+      // IDÉNTICO (cero-GAS, RPC guardar_ticket_pago); (2) imprimir 2 COPIAS (jefa/tesorería + empleado) por la Edge.
+      for (const { persona, res } of okList) {
+        const asciiP = _liqPerTicket[persona.idPersonal];
+        const idPago = res && (res.idPago || (res.data && res.data.idPago));
+        if (asciiP && idPago) {
+          try { await API.post('guardarTicketPago', { idPago, ticketEscPos: asciiP }); } catch (_) {}
+        }
+        if (printerId && asciiP) {
+          try { await _liqPrint2Copias(printerId, asciiP, 'Comprobante de pago'); }
+          catch (ePr) { toast('⚠ Pago OK de ' + persona.nombre + ', pero no imprimió: ' + ((ePr && ePr.message) || ePr), 'warn', 6000); }
         }
       }
+      if (printerId) toast('🖨 Comprobantes enviados (2 copias c/u)', 'ok', 3000);
     }
     if (errList.length) {
       // Restaurar al state los que fallaron
@@ -33879,16 +33878,24 @@ const MOS = (() => {
         return out2;
       };
       const pState = _liqState.pendientes.find(x => x.idPersonal === per.idPersonal);
-      let subtotal = 0;
+      // [dueño 2026-07-14] Créditos SELECCIONADOS agrupados por su fecha → se muestran DENTRO del día en que
+      // ocurrieron y bajan el SUBNETO de ESE día (antes iban en un bloque separado al final). Los que caen fuera
+      // del rango pagado van en un bloque residual "otros días". El neto total PUEDE ser negativo (regla dueño).
+      const _credSel  = (_liqState.creditosSel  && _liqState.creditosSel[per.idPersonal])  || null;
+      const _credData = (_liqState.creditosData && _liqState.creditosData[per.idPersonal]) || [];
+      const _marcados = _credSel ? _credData.filter(t => _credSel.has(t.idVenta)) : [];
+      const _credByFecha = {};
+      _marcados.forEach(t => { const ff = String(t.fecha || '').slice(0, 10); (_credByFecha[ff] = _credByFecha[ff] || []).push(t); });
+      const _fechasPag = new Set(per.fechas || []);
+      let subtotal = 0, descTotal = 0;
       (per.fechas || []).forEach(f => {
         const d = pState ? pState.dias.find(x => x.fecha === f) : null;
-        const m = d ? (parseFloat(d.totalDia) || 0) : 0;
-        subtotal += m;
-        out += '\n' + dosCol(fmtFecha(f), fmtMon(m)) + '\n';
+        const mJor = d ? (parseFloat(d.totalDia) || 0) : 0;
+        subtotal += mJor;
+        out += '\n' + dosCol(fmtFecha(f), fmtMon(mJor)) + '\n';
         if (d) {
           const base = parseFloat(d.montoBase) || 0, env = parseFloat(d.pagoEnvasado) || 0, com = parseFloat(d.bonoMeta) || 0;
           const bon = parseFloat(d.bonificacion) || 0, san = parseFloat(d.sancion) || 0, uds = parseFloat(d.productosEnvasados) || 0;
-          // [418] 🤝 desglose: propio vs colaborativo (pagoEnvasado es el TOTAL; colab = mitades)
           const envColab = parseFloat(d.pagoEnvasadoColab) || 0, udsColab = parseFloat(d.envasadosColab) || 0;
           const envPropio = Math.round((env - envColab) * 100) / 100;
           if (base > 0) out += compLine('Base diaria', base);
@@ -33897,29 +33904,45 @@ const MOS = (() => {
           if (com > 0)  out += compLine('Comision por ventas', com);
           if (bon > 0)  { out += compLine('Bonificacion', bon, '+'); out += motivoLines(d.bonificacionMotivo); }
           if (san > 0)  { out += compLine('Descuento', san, '-');     out += motivoLines(d.sancionMotivo); }
+          // [dueño 2026-07-14] Reporte de auditoría vs meta del día (informativo, no afecta el total).
+          // Solo cuando el rol tiene meta (>0): dice cuántas hizo y si LOGRÓ o NO la meta (30/día).
+          const audH = parseInt(d.auditoriasHechas) || 0, audM = parseInt(d.metaAuditorias) || 0, audOK = !!d.cumplioAuditorias;
+          if (audM > 0) out += dosCol('  Auditorias: ' + audH + '/' + audM, audOK ? 'META OK' : 'NO cumplio') + '\n';
+        }
+        // 🧾 créditos de ESTE día → integrados en el detalle + subneto del día
+        const credDia = _credByFecha[f] || [];
+        if (credDia.length) {
+          let descDia = 0;
+          credDia.forEach(t => { const mm = parseFloat(t.total) || 0; descDia += mm; descTotal += mm; out += compLine('Credito ' + String(t.correlativo || t.idVenta).slice(0, 14), mm, '-'); });
+          descDia = Math.round(descDia * 100) / 100;
+          const netoDia = Math.round((mJor - descDia) * 100) / 100;
+          out += dosCol('  Subneto del dia', (netoDia < 0 ? '-S/' : 'S/') + num(Math.abs(netoDia))) + '\n';
         }
       });
-      out += linea('-') + '\n';
-      // [419] 🧾 DESCUENTOS por notas de crédito (los marcados en el modal) + NETO.
-      // El neto PUEDE ser negativo (decisión del dueño: la deuda supera el jornal).
-      (() => {
-        const sel = (_liqState.creditosSel && _liqState.creditosSel[per.idPersonal]) || null;
-        const data = (_liqState.creditosData && _liqState.creditosData[per.idPersonal]) || [];
-        const marcados = sel ? data.filter(t => sel.has(t.idVenta)) : [];
-        out += dosCol(marcados.length ? 'TOTAL JORNAL' : 'TOTAL A PAGAR', fmtMon(subtotal)) + '\n';
-        if (!marcados.length) return;
+      // créditos de días FUERA del rango pagado (no caen en ningún día del ticket) → bloque residual
+      const _residual = _marcados.filter(t => !_fechasPag.has(String(t.fecha || '').slice(0, 10)));
+      if (_residual.length) {
+        out += '\n' + 'Notas de credito (otros dias):\n';
+        _residual.forEach(t => { const mm = parseFloat(t.total) || 0; descTotal += mm; out += dosCol('  ' + String(t.correlativo || t.idVenta).slice(0, 18) + ' ' + String(t.fecha || '').slice(5, 10), '-S/' + num(mm)) + '\n'; });
+      }
+      descTotal = Math.round(descTotal * 100) / 100;
+      out += linea('=') + '\n';
+      // TOTAL FINAL prominente (doble alto + ancho, centrado). Sin créditos = TOTAL A PAGAR; con créditos = jornal/desc/NETO.
+      const bigLine = (label, monto, neg) => {
+        const s = label + '  ' + (neg ? '-' : '') + fmtMon(Math.abs(monto));
+        const half = Math.floor(W / 2);
+        const pad = Math.max(0, Math.floor((half - s.length) / 2));
+        return '\x1b\x21\x30' + ' '.repeat(pad) + s.slice(0, half) + '\x1b\x21\x00\n';
+      };
+      if (!_marcados.length) {
+        out += bigLine('TOTAL A PAGAR', subtotal);
+      } else {
+        out += dosCol('Total jornal', fmtMon(subtotal)) + '\n';
+        out += dosCol('Descuento creditos', '-S/' + num(descTotal)) + '\n';
         out += linea('-') + '\n';
-        out += 'DESCUENTOS - Notas de credito:\n';
-        let desc = 0;
-        marcados.forEach(t => {
-          const m = parseFloat(t.total) || 0; desc += m;
-          out += dosCol('  ' + (t.correlativo || t.idVenta).slice(0, 20) + ' ' + (t.fecha || '').slice(5), '-' + 'S/' + num(m)) + '\n';
-        });
-        desc = Math.round(desc * 100) / 100;
-        const neto = Math.round((subtotal - desc) * 100) / 100;
-        out += linea('-') + '\n';
-        out += dosCol('NETO A PAGAR', (neto < 0 ? '-S/' + num(Math.abs(neto)) : 'S/' + num(neto))) + '\n';
-      })();
+        const neto = Math.round((subtotal - descTotal) * 100) / 100;
+        out += bigLine('NETO A PAGAR', neto, neto < 0);
+      }
       if (comentario) {
         out += linea('-') + '\n' + 'Comentario:\n';
         const words = String(comentario).split(/\s+/); let buf = '  ';
@@ -33930,6 +33953,16 @@ const MOS = (() => {
       out += centrar('Gracias') + '\n';
     });
     return out;
+  }
+
+  // [dueño 2026-07-14] Imprime el comprobante en 2 COPIAS por la Edge (cero-GAS): una JEFA/TESORERIA y otra
+  // EMPLEADO. `baseAscii` es el ticket base (sin cabecera de copia); acá se antepone la etiqueta de cada copia.
+  async function _liqPrint2Copias(printerId, baseAscii, titulo) {
+    const W = 48;
+    const centrar = (s) => { s = String(s || ''); if (s.length >= W) return s.slice(0, W); return ' '.repeat(Math.floor((W - s.length) / 2)) + s; };
+    const armar = (label) => '\x1b\x40\x1b\x74\x10' + centrar('*** ' + label + ' ***') + '\n' + '-'.repeat(W) + '\n' + baseAscii + '\n\n\n\n\x1d\x56\x00';
+    await API.imprimirTicketEdge(parseInt(printerId, 10), (titulo || 'Comprobante de pago') + ' (Jefa/Tesoreria)', armar('COPIA: JEFA / TESORERIA'));
+    await API.imprimirTicketEdge(parseInt(printerId, 10), (titulo || 'Comprobante de pago') + ' (Empleado)', armar('COPIA: EMPLEADO'));
   }
 
   // [v2.41.74] Animación "ticket impreso" — papel sale flotando del centro
@@ -34248,9 +34281,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const printerId = await _liqElegirImpresora();
     if (!printerId) { _liqReimpLock = false; return; }
     try {
-      const res = await API.post('imprimirTicketPago', { idPago: d.idPago, printerId });
-      _liqSfx('success');
-      toast('✓ Reimpresión enviada · job ' + (res.printJobId || ''), 'ok');
+      // [dueño 2026-07-14] Reimpresión FIEL: usa el ticket SNAPSHOT guardado al pagar (idéntico al original) e
+      // imprime 2 copias (jefa/tesorería + empleado). Si no hay snapshot (pagos viejos, antes de esta versión),
+      // cae al builder server `imprimirTicketPago` (que puede diferir — solo para históricos sin snapshot).
+      if (d.ticketEscPos) {
+        await _liqPrint2Copias(printerId, d.ticketEscPos, 'Comprobante de pago (reimpresion)');
+        _liqSfx('success');
+        toast('✓ Reimpresión fiel enviada (2 copias)', 'ok');
+      } else {
+        const res = await API.post('imprimirTicketPago', { idPago: d.idPago, printerId });
+        _liqSfx('success');
+        toast('✓ Reimpresión enviada (histórico sin snapshot) · job ' + (res.printJobId || ''), 'ok');
+      }
     } catch(e) {
       _liqSfx('error');
       toast('Error: ' + e.message, 'error');

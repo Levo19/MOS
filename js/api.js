@@ -3522,6 +3522,7 @@ const API = (() => {
         actualizarProductoMaster:'actualizar_producto_master',
         crearPersonalMaster:     'crear_personal',
         actualizarPersonalMaster:'actualizar_personal',
+        guardarTicketPago:       'guardar_ticket_pago',
         crearZona:               'crear_zona',
         actualizarZona:          'actualizar_zona',
         crearCategoria:          'crear_categoria',
