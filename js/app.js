@@ -23011,16 +23011,18 @@ const MOS = (() => {
   // [dueño] Compartir el acceso por WhatsApp: link(s) de la app + usuario + clave (PIN).
   const _WH_URL = 'https://levo19.github.io/warehouseMos-/';
   const _MOS_URL = 'https://levo19.github.io/MOS/';
+  const _ME_URL = 'https://levo19.github.io/MosExpress/';
   function _persCompartirWhatsApp() {
     const nombre = ($('persNombre')?.value || '').trim();
     const apellido = ($('persApellido')?.value || '').trim();
-    const isMOS = ($('persAppOrigen')?.value === 'MOS');
+    const appOrigen = $('persAppOrigen')?.value || '';
+    const isMOS = (appOrigen === 'MOS');
     let pin = ($('persPin')?.value || '').trim();
-    // [FIX Compartir en edición] El campo PIN se deja vacío a propósito al editar
-    // (solo se escribe para CAMBIARLO). Para compartir, si está vacío, usamos el PIN
-    // ya guardado del registro (cfgData.personal/personalMOS) — así Jorgenis y cualquier
-    // usuario existente comparten su PIN real sin tener que regenerarlo.
+    // [M1 · fix revisión 500x] Revelar el PIN GUARDADO (para compartirlo) es SOLO para Master — coherente con el
+    // enmascarado del campo. Un admin no-master que dejó el campo en blanco NO puede sacar la clave existente por
+    // el botón Compartir (antes era un bypass de un clic). Si no es Master, debe escribir/generar un PIN nuevo.
     if (!pin) {
+      if (!_esMasterSession()) { toast('Solo Master comparte una clave existente · escribe o 🎲 genera un PIN', 'error'); return; }
       const idEdit = ($('persId')?.value || '').trim();
       if (idEdit) {
         const src = isMOS ? (cfgData.personalMOS || []) : (cfgData.personal || []);
@@ -23033,7 +23035,10 @@ const MOS = (() => {
     if (!pin) { toast('Falta el PIN — genera uno con 🎲', 'error'); return; }
     const puedeMOS = isMOS || rol === 'ADMIN' || rol === 'MASTER' || !!($('persAccesoMos')?.checked);
     let msg = `👋 Hola ${nombre}${apellido ? ' ' + apellido : ''}! Este es tu acceso:\n\n`;
-    if (!isMOS) msg += `📦 Almacén (WH): ${_WH_URL}\n`;
+    // [M2 · fix revisión 500x] Link CORRECTO según la app del usuario (antes un cajero mosExpress recibía el
+    // link del ALMACÉN). MOS-only recibe solo el link de MOS (abajo, por puedeMOS).
+    if (appOrigen === 'warehouseMos')    msg += `📦 Almacén (WH): ${_WH_URL}\n`;
+    else if (appOrigen === 'mosExpress') msg += `🛒 Caja (MosExpress): ${_ME_URL}\n`;
     if (puedeMOS) msg += `🖥️ MOS (panel admin): ${_MOS_URL}\n`;
     msg += `\n🔑 Tu clave (PIN): *${pin}*\n\n_Guárdala, es personal — no la compartas con nadie._`;
     window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');

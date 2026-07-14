@@ -37,7 +37,7 @@ try {
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.43.537';
+const VERSION = '2.43.538';
 const CACHE   = 'mos-v' + VERSION;
 // ⚠️ Los assets propios versionados (app.js/api.js) DEBEN cachearse con EL MISMO
 // `?v=` que index.html usa en su <script src>, o el match offline falla por
@@ -55,8 +55,8 @@ const ASSETS  = [
   // [v2.43.149] Cachear módulos centralizados también — con cache-buster
   // para forzar download nuevo. Sin esto el HTTP cache podía servir versión
   // vieja del archivo (los bumps de sw.js no invalidan recursos no-listados).
-  './assets/membrete/membrete-modal.js?v=2.43.414',
-  './assets/seguridad/seguridad-modal.js?v=2.43.477'
+  './assets/membrete/membrete-modal.js?v=' + VERSION,
+  './assets/seguridad/seguridad-modal.js?v=' + VERSION
 ];
 
 // ── Instalar: cachear secuencial con reporte de progreso ──
