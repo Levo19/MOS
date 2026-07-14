@@ -22977,20 +22977,51 @@ const MOS = (() => {
   }
 
   function _persRandomPin() {
-    const enUso = _persPinsEnUsoAdmin($('persId')?.value);
-    let intentos = 0;
-    let pin;
+    // [dueño] PIN único entre TODO el personal (WH + MOS): el login de WH es por PIN solo,
+    // así que un PIN repetido loguearía a la persona equivocada.
+    const excl = $('persId')?.value;
+    const enUso = new Set(
+      [].concat(cfgData.personalMOS || [], cfgData.personal || [])
+        .filter(p => p.idPersonal !== excl)
+        .map(p => String(p.pin || ''))
+        .filter(Boolean)
+    );
+    let intentos = 0, pin;
     do {
       pin = String(Math.floor(1000 + Math.random() * 9000));
       intentos++;
-    } while (enUso.has(pin) && intentos < 100);
+    } while (enUso.has(pin) && intentos < 200);
     const inp = $('persPin');
-    if (inp) {
-      inp.type = 'text';
-      inp.value = pin;
-      // ocultar después de 3s
-      setTimeout(() => { if (inp.value === pin) inp.type = 'password'; }, 3000);
-    }
+    if (inp) { inp.type = 'text'; inp.value = pin; }   // queda visible; el ojito lo controla
+    const eye = $('persPinEye'); if (eye) eye.textContent = '🙈';
+  }
+
+  // [dueño] ojito 👁 del PIN: muestra/oculta la clave de acceso.
+  function _persTogglePin() {
+    const inp = $('persPin'); const eye = $('persPinEye'); if (!inp) return;
+    const mostrar = inp.type === 'password';
+    inp.type = mostrar ? 'text' : 'password';
+    if (eye) eye.textContent = mostrar ? '🙈' : '👁';
+  }
+
+  // [dueño] Compartir el acceso por WhatsApp: link(s) de la app + usuario + clave (PIN).
+  const _WH_URL = 'https://levo19.github.io/warehouseMos-/';
+  const _MOS_URL = 'https://levo19.github.io/MOS/';
+  function _persCompartirWhatsApp() {
+    const nombre = ($('persNombre')?.value || '').trim();
+    const apellido = ($('persApellido')?.value || '').trim();
+    const pin = ($('persPin')?.value || '').trim();
+    const rol = String($('persRol')?.value || '').toUpperCase();
+    const isMOS = ($('persAppOrigen')?.value === 'MOS');
+    if (!nombre) { toast('Falta el nombre', 'error'); return; }
+    if (!pin) { toast('Falta el PIN — genera uno con 🎲', 'error'); return; }
+    const puedeMOS = isMOS || rol === 'ADMIN' || rol === 'MASTER';
+    let msg = `👋 Hola ${nombre}${apellido ? ' ' + apellido : ''}! Este es tu acceso:\n\n`;
+    if (!isMOS) msg += `📦 Almacén (WH): ${_WH_URL}\n`;
+    if (puedeMOS) msg += `🖥️ MOS (panel admin): ${_MOS_URL}\n`;
+    msg += `\n🔑 Tu clave (PIN): *${pin}*\n\n_Guárdala, es personal — no la compartas con nadie._`;
+    window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
 
   function _persActualizarPreview() {
@@ -23075,9 +23106,9 @@ const MOS = (() => {
       if (estadoWrap) estadoWrap.classList.add('hidden');
       if (btnElim)    btnElim.classList.add('hidden');
       if (pinHint)    { pinHint.textContent = 'requerido al crear', pinHint.className = 'text-amber-400 text-[10px]'; }
-      // Auto: color random no-repetido + (si MOS) PIN random no-repetido
+      // Auto: color random no-repetido + PIN random ÚNICO (WH y MOS) al crear.
       _persRandomColor();
-      if (isMOS) _persRandomPin();
+      _persRandomPin();
     }
     _persRenderChips();
     _persActualizarPreview();
@@ -43420,7 +43451,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _togglePersAudit, abrirModalHistorialAudit, histAuditCargar, histAuditFiltrar,
     abrirModalIntegridad, abrirModalNotificaciones,
     abrirModalEnviarPush, enviarPushUsuario,
-    _persActualizarPreview, _persRandomColor, _persRandomPin, _persSeleccionarColor,
+    _persActualizarPreview, _persRandomColor, _persRandomPin, _persTogglePin, _persCompartirWhatsApp, _persSeleccionarColor,
     abrirModalSerieZona, guardarSerieZona, eliminarSerieZona, _serieActualizarPreview,
     guardarPinEstacion, guardarPinWH,
     seg_consultarClave, seg_rotarManual, seg_cargarAuditoria, seg_ocultar,
