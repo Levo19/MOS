@@ -6498,23 +6498,26 @@
       border-color: #c9a227;
       box-shadow: 0 0 0 3px rgba(255,215,0,.18), 0 0 18px rgba(255,215,0,.25);
     }
-    /* [v5 §11 · punto A] En el Catálogo el botón "Compras" se ve neutral (como los
-       demás de la toolbar); el verde de marca aparece solo al hover/click.
-       Especificidad .cat-toolbar>.btn-mesa-compras (0,2,0) gana al .btn-mesa-compras (0,1,0) inyectado. */
-    .cat-toolbar > .btn-mesa-compras {
-      background: #131d30 !important;
-      color: #cbd5e1 !important;
-      border: 1px solid #2a3550 !important;
-      box-shadow: none !important;
+    /* [v5 §11 · punto A] Botón "Compras" (Mesa) — CSS ESTÁTICO para que tenga su verde
+       de marca SIEMPRE al cargar, en Catálogo Y en Almacén/Operaciones. Antes vivía en
+       CSS inyectado por JS (solo al abrir la Mesa) → "recién al clickear se ponía verde". */
+    .btn-mesa-compras {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12.5px; font-weight: 800; color: #04140d;
+      background: linear-gradient(180deg,#34d399,#059669); border: none;
+      border-radius: 10px; padding: 8px 13px; cursor: pointer;
+      box-shadow: 0 6px 16px -6px rgba(52,211,153,.55);
+      transition: transform .15s, box-shadow .2s; position: relative;
     }
-    .cat-toolbar > .btn-mesa-compras:hover,
-    .cat-toolbar > .btn-mesa-compras:active,
-    .cat-toolbar > .btn-mesa-compras:focus-visible {
-      background: linear-gradient(180deg,#34d399,#059669) !important;
-      color: #04140d !important;
-      border-color: transparent !important;
-      box-shadow: 0 8px 18px -6px rgba(52,211,153,.6) !important;
+    .btn-mesa-compras:hover { transform: translateY(-1px); box-shadow: 0 10px 20px -6px rgba(52,211,153,.7); }
+    .btn-mesa-compras .bmc-n {
+      position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px;
+      padding: 0 4px; border-radius: 999px; background: #fb7185; color: #2a0710;
+      font-size: 10px; font-weight: 900; display: grid; place-items: center;
+      box-shadow: 0 2px 6px rgba(251,113,133,.6);
     }
+    /* en el Catálogo el botón NO debe recortarse por el overflow:hidden de .cat-tool-btn */
+    .cat-toolbar > .btn-mesa-compras { overflow: visible; }
     .cat-toolbar > .cat-tool-btn {
       flex-shrink: 0;
       max-width: 200px; opacity: 1;
@@ -19360,7 +19363,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.522';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.523';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19410,7 +19413,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.522"></script>
+<script src="js/api.js?v=2.43.523"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19425,7 +19428,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.522"></script>
+<script src="js/app.js?v=2.43.523"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

@@ -10149,21 +10149,43 @@ const MOS = (() => {
   // [C] amplía la ventana temporal (cero-GAS) y re-renderiza
   async function mesaCargarMas() {
     if (S._mesaCargando) return;
-    S._mesaRangoDias = (S._mesaRangoDias || 45) + 30;
     S._mesaCargando = true;
-    const m = document.getElementById('mesaComprasModal'); if (m) m.innerHTML = _mesaComprasHTML();
+    // No re-renderizamos aún (eso saltaría al inicio y parpadearía): solo el botón entra en "cargando".
+    const btn = document.querySelector('#mesaComprasModal .mesa-more-btn');
+    if (btn) { btn.textContent = '⏳ Cargando más…'; btn.disabled = true; btn.style.opacity = '.6'; }
+    const nDias = S._mesaRangoDias || 45;
+    S._mesaRangoDias = nDias + 30;
+    let creció = false;
     try {
+      const antes = _comprasFlat().length;
       const r = await API.get('getOperacionesConDetalle', { dias: S._mesaRangoDias });
-      if (r && ((r.data || r).porDia)) { S._opsData = r; _opsPopulateDetCacheFromData(r); }
+      if (r && ((r.data || r).porDia)) {
+        S._opsData = r; S._mesaRangoServido = S._mesaRangoDias;
+        if (typeof _opsPopulateDetCacheFromData === 'function') _opsPopulateDetCacheFromData(r);
+        creció = _comprasFlat().length > antes;
+      }
     } catch(_){}
     S._mesaCargando = false;
-    const m2 = document.getElementById('mesaComprasModal'); if (m2 && m2.classList.contains('open')) m2.innerHTML = _mesaComprasHTML();
+    const m = document.getElementById('mesaComprasModal');
+    if (!m || !m.classList.contains('open')) return;
+    const body = m.querySelector('.mesa-body');
+    const prevScroll = body ? body.scrollTop : 0;
+    m.innerHTML = _mesaComprasHTML();                 // un solo re-render, suave
+    const nb = m.querySelector('.mesa-body');
+    if (nb) nb.scrollTop = prevScroll;                // conserva la posición (no salta al inicio)
+    if (!creció) {                                     // no había más: aviso claro en el botón
+      const nbtn = m.querySelector('.mesa-more-btn');
+      if (nbtn) { nbtn.textContent = '✓ No hay compras más antiguas'; nbtn.disabled = true; nbtn.style.opacity = '.5'; }
+    }
   }
 
   // [D] Card grande: proveedor protagonista, productos con fade, progreso 2 pasos.
   function _mesaComprasCard(op, est, i) {
     const prov = _escapeHtml(String(op.nombreProveedor || op.idProveedor || 'Proveedor —').trim());
-    const lineas = op.lineas || [];
+    // [D fix] las líneas pueden venir en el cache de detalle (no siempre inline en la op) —
+    // mismo origen que _comprasEstado, para que la card NO diga "0 ítems / (sin líneas)".
+    const k = op.fuente + '_' + op.idGuia;
+    const lineas = ((S._opsDetCache && S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || []);
     const nombres = lineas.map(l => String(l.descripcion || l.codigoProducto || '').trim()).filter(Boolean);
     const listaProd = nombres.length ? nombres.map(n => _escapeHtml(n)).join(' · ') : '(sin líneas)';
     const gidCorto = _escapeHtml(String(op.idGuia || '').replace(/^G_L\d+/, 'GR·').slice(-9));
@@ -10184,7 +10206,7 @@ const MOS = (() => {
           <span class="mesa-state s-${est.tone}">${est.ico} ${_escapeHtml(est.label)}</span>
           <span class="mesa-gid">${foto}${gidCorto}</span>
         </div>
-        <div class="mesa-card-prov"><span class="mesa-prov-ico">🏭</span> ${prov}</div>
+        <div class="mesa-card-prov"><span class="mesa-prov-ico">🏭</span><span class="mesa-prov-name">${prov}</span></div>
         <div class="mesa-card-prods"><span class="mesa-prods-n">${lineas.length} ítem${lineas.length !== 1 ? 's' : ''}:</span> ${listaProd}</div>
         ${faseBar}
         <div class="mesa-cta s-${est.tone}">${ctaTxt}</div>
@@ -10261,13 +10283,13 @@ const MOS = (() => {
       @media(min-width:720px){.mesa-backdrop{align-items:center}.mesa-sheet{border-radius:22px;border-bottom:1px solid #28344c;max-height:88vh}
         .mesa-sheet{transform:translateY(24px) scale(.98);opacity:0;transition:transform .34s cubic-bezier(.34,1.3,.5,1),opacity .28s}
         .mesa-backdrop.open .mesa-sheet{transform:none;opacity:1}}
-      .mesa-head{display:flex;align-items:center;gap:12px;padding:16px 18px 12px;border-bottom:1px solid #17233b}
+      .mesa-head{flex:none;display:flex;align-items:center;gap:12px;padding:16px 18px 12px;border-bottom:1px solid #17233b}
       .mesa-ic{font-size:24px;filter:drop-shadow(0 2px 6px rgba(52,211,153,.35))}
       .mesa-h1{font-weight:850;font-size:17px;letter-spacing:-.01em;color:#e6edf7}
       .mesa-h2{font-size:11.5px;color:#93a4c2;margin-top:1px} .mesa-em{color:#34d399}
       .mesa-x{margin-left:auto;width:32px;height:32px;border-radius:50%;background:#131d30;border:1px solid #28344c;color:#93a4c2;font-size:14px;cursor:pointer;transition:.15s}
       .mesa-x:hover{background:rgba(244,63,94,.25);color:#fda4af;transform:rotate(90deg)}
-      .mesa-tabs{display:flex;gap:7px;padding:12px 18px;overflow-x:auto;border-bottom:1px solid #17233b;scrollbar-width:none}
+      .mesa-tabs{flex:none;display:flex;gap:7px;padding:12px 18px;overflow-x:auto;border-bottom:1px solid #17233b;scrollbar-width:none;background:#080e19;position:relative;z-index:4}
       .mesa-tabs::-webkit-scrollbar{display:none}
       .mesa-tab{flex:none;display:inline-flex;align-items:center;gap:6px;height:34px;box-sizing:border-box;line-height:1;font-size:12px;font-weight:700;color:#93a4c2;
         background:#0e1626;border:1px solid #28344c;padding:0 13px;border-radius:999px;cursor:pointer;transition:.16s;white-space:nowrap}
@@ -10277,7 +10299,7 @@ const MOS = (() => {
       .mesa-tab.on .mesa-tab-n{background:rgba(4,20,13,.25);color:#04140d}
       .mesa-tab.on.t-rose{background:linear-gradient(180deg,#fb7185,#e11d48)} .mesa-tab.on.t-amber{background:linear-gradient(180deg,#fbbf24,#d97706);color:#1a1206}
       .mesa-tab.on.t-blue{background:linear-gradient(180deg,#7cb3f0,#3b82f6);color:#06121f}
-      .mesa-body{padding:8px 18px 26px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+      .mesa-body{flex:1 1 auto;min-height:0;padding:8px 18px 26px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
       /* [C] cabecera de día */
       .mesa-day{display:flex;align-items:center;gap:11px;padding:16px 2px 9px;position:sticky;top:0;z-index:3;
         background:linear-gradient(180deg,#080e19 62%,rgba(8,14,25,0))}
@@ -10307,8 +10329,9 @@ const MOS = (() => {
       .mesa-gid{margin-left:auto;font-family:ui-monospace,monospace;font-size:10px;color:#5f7192;display:inline-flex;gap:4px;align-items:center}
       .mesa-foto-ic{font-size:11px}
       /* [D] proveedor protagonista */
-      .mesa-card-prov{display:flex;align-items:center;gap:8px;font-weight:850;font-size:15.5px;letter-spacing:-.01em;color:#e6edf7;line-height:1.2}
-      .mesa-prov-ico{font-size:15px;flex:none;filter:drop-shadow(0 1px 3px rgba(0,0,0,.4))}
+      .mesa-card-prov{display:flex;align-items:flex-start;gap:8px;font-weight:850;font-size:15.5px;letter-spacing:-.01em;color:#e6edf7;line-height:1.2}
+      .mesa-prov-ico{font-size:15px;flex:none;line-height:1.2;filter:drop-shadow(0 1px 3px rgba(0,0,0,.4))}
+      .mesa-prov-name{flex:1;min-width:0;word-break:break-word}
       /* [D] productos con desvanecido si son muchos */
       .mesa-card-prods{position:relative;font-size:11.5px;color:#93a4c2;line-height:1.5;max-height:48px;overflow:hidden;
         -webkit-mask-image:linear-gradient(180deg,#000 60%,transparent);mask-image:linear-gradient(180deg,#000 60%,transparent)}
@@ -10329,13 +10352,9 @@ const MOS = (() => {
       .mesa-card:hover .mesa-cta{filter:brightness(1.12)}
       .mesa-empty{grid-column:1/-1;text-align:center;padding:54px 20px;color:#5f7192}
       .mesa-empty-ic{font-size:44px;opacity:.6;margin-bottom:10px} .mesa-empty p{font-size:13px}
-      /* botón de entrada (Almacén + Catálogo) */
-      .btn-mesa-compras{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;color:#04140d;
-        background:linear-gradient(180deg,#34d399,#059669);border:none;border-radius:10px;padding:8px 13px;cursor:pointer;
-        box-shadow:0 6px 16px -6px rgba(52,211,153,.55);transition:transform .15s,box-shadow .2s;position:relative}
-      .btn-mesa-compras:hover{transform:translateY(-1px);box-shadow:0 10px 20px -6px rgba(52,211,153,.7)}
-      .btn-mesa-compras .bmc-n{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;border-radius:999px;
-        background:#fb7185;color:#2a0710;font-size:10px;font-weight:900;display:grid;place-items:center;box-shadow:0 2px 6px rgba(251,113,133,.6)}
+      /* [punto A] El estilo del botón .btn-mesa-compras vive en index.html (CSS estático)
+         para que tenga su verde SIEMPRE al cargar — antes vivía aquí y solo se inyectaba
+         al abrir la Mesa la 1ª vez, por eso "recién al clickear se ponía verde". */
       /* [E] Mesa atenuada detrás mientras se procesa una compra encima */
       .mesa-backdrop.mesa-dimmed{background:rgba(4,8,16,.85)}
       .mesa-backdrop.mesa-dimmed .mesa-sheet{transform:scale(.955) translateY(0);filter:blur(2.5px) brightness(.5);
