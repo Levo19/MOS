@@ -820,37 +820,83 @@ async function marcarPickupImpreso(idp: string, notas: string): Promise<void> {
       body: JSON.stringify({ notas }) });
   } catch { /* best-effort */ }
 }
+// [rezagado unificado] Ticket 80mm PROFESIONAL de la lista de compra (lo NO despachado).
+// MISMO formato que MOS `_buildRezagadoTicket80mm` (js/app.js): W=48 (todo el ancho del
+// 80mm), nombre completo envuelto en 1-2+ renglones indentados (NUNCA truncado), acentos
+// vía codepage WPC1252, header "LISTA DE COMPRA", TOTAL y pie con fecha. Los 3 disparadores
+// (auto-lunes WH · botón manual WH · botón MOS zonas) imprimen un ticket idéntico.
+// ⚠ Mantener en sync con MOS `_buildRezagadoTicket80mm`.
 function buildPickingTicketB64(pickup: any): { b64: string; lineas: number; unidades: number } {
-  const ESC = '\x1b', GS = '\x1d';
-  const zona = _ascii(pickup.id_zona || 'SIN ZONA');
+  const W = 48;
+  const rep = (ch: string, n: number) => ch.repeat(Math.max(0, n));
+  const norm = (s: any) => String(s == null ? '' : s).normalize('NFC').replace(/[^\x20-\xFF]/g, '');
+  const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
+  const qty = (n: any) => { n = parseFloat(n) || 0; return (Number.isInteger(n) ? ('' + n) : ('' + (Math.round(n * 100) / 100))) + 'x'; };
+  // [rezagado unificado] Rango legible de la semana del bucket (domingo→sábado, TZ-safe UTC).
+  // MISMA lógica que MOS `_buildRezagadoTicket80mm`. bucket = 'YYYY-MM-DD' (domingo que inicia la semana).
+  const fmtSemana = (bucketStr: string) => {
+    const m = String(bucketStr == null ? '' : bucketStr).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return '';
+    const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const d1 = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    const d2 = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + 6));
+    const D1 = d1.getUTCDate(), M1 = d1.getUTCMonth(), Y1 = d1.getUTCFullYear();
+    const D2 = d2.getUTCDate(), M2 = d2.getUTCMonth(), Y2 = d2.getUTCFullYear();
+    if (M1 === M2 && Y1 === Y2) return 'Semana del ' + D1 + ' al ' + D2 + ' ' + MES[M2] + ' ' + Y2;
+    if (Y1 === Y2)             return 'Semana del ' + D1 + ' ' + MES[M1] + ' al ' + D2 + ' ' + MES[M2] + ' ' + Y2;
+    return 'Semana del ' + D1 + ' ' + MES[M1] + ' ' + Y1 + ' al ' + D2 + ' ' + MES[M2] + ' ' + Y2;
+  };
+  // Nombre completo: 1ra línea junto al "20x", continúa indentado bajo el nombre (nunca corta).
+  const wrapNombre = (qtyStr: string, nombre: string) => {
+    const ind = rep(' ', qtyStr.length + 2);
+    const max1 = W - (qtyStr.length + 2);
+    const palabras = norm(nombre).split(/\s+/).filter(Boolean);
+    let linea = '', out = '', primera = true;
+    const flush = () => { out += (primera ? (qtyStr + '  ') : ind) + linea + '\n'; primera = false; linea = ''; };
+    for (const w of palabras) {
+      const cap = primera ? max1 : (W - ind.length);
+      if (linea && (linea.length + 1 + w.length) > cap) flush();
+      linea = linea ? (linea + ' ' + w) : w;
+      while (linea.length > (primera ? max1 : (W - ind.length))) {   // palabra larguísima
+        const cap2 = primera ? max1 : (W - ind.length);
+        out += (primera ? (qtyStr + '  ') : ind) + linea.slice(0, cap2) + '\n'; primera = false; linea = linea.slice(cap2);
+      }
+    }
+    if (linea) flush();
+    return out;
+  };
+  const zona = norm(pickup.id_zona || 'SIN ZONA');
   let items: any[] = [];
   try { items = Array.isArray(pickup.items) ? pickup.items : JSON.parse(pickup.items || '[]'); } catch { items = []; }
   const pend = items.map((it: any) => ({
-    nombre: _ascii(it.nombre || it.skuBase || ''),
+    nombre: norm(it.nombre || it.skuBase || ''),
     cant: Math.max(0, (parseFloat(it.solicitado) || 0) - (parseFloat(it.despachado) || 0)),
   })).filter((x: any) => x.cant > 0);
-  let t = '';
-  t += ESC + '@';
-  t += ESC + '\x61\x01' + ESC + '\x21\x30' + 'ALMACEN\n' + ESC + '\x21\x00';
-  t += 'Picking acumulado semanal\n';
-  t += '================================\n';
-  t += ESC + '\x61\x00';
-  t += 'Zona: ' + zona + '\n';
-  t += 'Pendiente de despachar:\n';
-  t += '--------------------------------\n';
+  // Semana (bucket) desde el id_pickup: PCK-ACU-<zona>-<YYYY-MM-DD>
+  const mb = String(pickup.id_pickup || '').match(/(\d{4}-\d{2}-\d{2})$/);
+  const bucket = mb ? mb[1] : '';
+  // Fecha de impresión (TZ Perú) para el pie.
+  let fechaStr = '';
+  try {
+    const now = new Date();
+    fechaStr = now.toLocaleDateString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric' })
+      + ' ' + now.toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: false });
+  } catch (_) { fechaStr = ''; }
   let uds = 0;
+  let t = '\x1b\x40\x1b\x74\x10';                  // init + codepage WPC1252 (acentos)
+  t += '\x1b\x61\x01\x1b\x21\x30' + norm('LISTA DE COMPRA') + '\n\x1b\x21\x00';
+  t += norm('Rezagado · ' + zona) + '\n';
+  { const _sem = fmtSemana(bucket); if (_sem) t += norm(_sem) + '\n'; }
+  t += '\x1b\x61\x00' + SEP;
+  t += norm('Lo que NO se despachó la semana pasada:') + '\n' + SEPd;
   for (const p of pend) {
-    const c = String(p.cant);
-    const nm = p.nombre.substring(0, 26);
-    const dots = Math.max(1, 30 - nm.length - c.length);
-    t += nm + '.'.repeat(dots) + c + '\n';
+    t += wrapNombre(qty(p.cant), p.nombre);
     uds += p.cant;
   }
-  t += '--------------------------------\n';
-  t += 'Productos: ' + pend.length + '   Unidades: ' + uds + '\n';
-  t += '================================\n';
-  t += ESC + '\x61\x01' + 'Lo NO despachado de la semana\n' + '\n\n\n';
-  t += GS + '\x56\x00';
+  t += SEPd;
+  t += '\x1b\x45\x01' + norm('TOTAL: ' + pend.length + ' productos · ' + qty(uds) + ' uds') + '\x1b\x45\x00\n';
+  t += '\x1b\x61\x01' + norm('Lista de compra' + (fechaStr ? ' · ' + fechaStr : '')) + '\n';
+  t += '\n\n\n\n\x1d\x56\x00';
   let bin = '';
   for (let i = 0; i < t.length; i++) bin += String.fromCharCode(t.charCodeAt(i) & 0xff);
   return { b64: btoa(bin), lineas: pend.length, unidades: uds };

@@ -230,7 +230,7 @@ const MOS = (() => {
     document.querySelectorAll('#bottomnav .bnav-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.view === viewName));
 
-    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', finanzas:'Finanzas', config:'Configuración', zona:'Zona', facturacion:'Facturación' };
+    const titles = { dashboard:'Dashboard', catalogo:'Catálogo', almacen:'Almacén', proveedores:'Proveedores', cajas:'Cajas', finanzas:'Finanzas', config:'Configuración', zona:'Zona', facturacion:'Facturación', tributario:'Tributario', promociones:'Promociones' };
     const t = titles[viewName] || viewName;
     const pt = $('pageTitle'); if (pt) pt.textContent = t;
     const ptd = $('pageTitleDesktop'); if (ptd) ptd.textContent = t;
@@ -1174,9 +1174,16 @@ const MOS = (() => {
     const top = rot.filter(r => r.diasCobertura !== null).slice(0, 8);
     if (!top.length) { const e = $('chartRotacionEmpty'); if (e) e.classList.remove('hidden'); return; }
 
-    const labels = top.map(r => (r.descripcion || r.codigoProducto || '').substring(0, 20));
-    const dias   = top.map(r => r.diasCobertura);
-    const colors = dias.map(d => d <= 7 ? '#f87171' : d <= 15 ? '#fbbf24' : '#4ade80');
+    // [fix legibilidad móvil] Labels con corte LIMPIO al final (antes 20 chars → el eje los recortaba feo "…DE CHO").
+    const labels = top.map(r => { const n = (r.descripcion || r.codigoProducto || '').trim(); return n.length > 15 ? n.slice(0, 14) + '…' : n; });
+    const diasReal = top.map(r => r.diasCobertura);
+    // [fix escala] Un outlier (ej. producto casi sin venta → cobertura enorme/negativa como -600,000) aplanaba
+    // TODAS las demás barras. Capamos la VISTA a un rango sano derivado de los datos (p80×1.3); el tooltip
+    // muestra el valor REAL. Así las barras normales vuelven a ser legibles.
+    const _abs = diasReal.filter(v => Number.isFinite(v)).map(Math.abs).sort((a, b) => a - b);
+    const cap = Math.max(30, Math.min(365, Math.ceil((_abs[Math.floor(_abs.length * 0.8)] || 30) * 1.3)));
+    const dias   = diasReal.map(v => Math.max(-cap, Math.min(cap, Number.isFinite(v) ? v : 0)));
+    const colors = diasReal.map(d => d <= 7 ? '#f87171' : d <= 15 ? '#fbbf24' : '#4ade80');
 
     renderChart('chartRotacion', {
       type: 'bar',
@@ -1187,7 +1194,13 @@ const MOS = (() => {
       options: {
         indexAxis: 'y',
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: {
+            title: (items) => { const i = items[0] ? items[0].dataIndex : 0; return (top[i] && (top[i].descripcion || top[i].codigoProducto)) || ''; },
+            label: (item) => { const real = diasReal[item.dataIndex]; return Number.isFinite(real) ? (Math.round(real).toLocaleString('es-PE') + ' días de cobertura') : 'sin dato'; }
+          } }
+        },
         scales: {
           x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 11 } } },
           y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } } }
@@ -2488,6 +2501,26 @@ const MOS = (() => {
       try { toggleFiltroCat(e); } catch(err) { console.warn('[filtro]', err); }
     });
   }
+  // [perf sesión larga · Fase 4] Red de seguridad anti-degradación: recarga suave si el panel MOS lleva >12h
+  // abierto, está OCULTO (nadie mirando) y NO hay un modal/backdrop abierto (posible edición en curso).
+  // Desactivable con localStorage 'mos_no_autoreload'='1'. Chequea cada 30 min.
+  (function _mosHousekeepReload() {
+    var _bootTs = Date.now();
+    setInterval(function () {
+      try {
+        if (localStorage.getItem('mos_no_autoreload') === '1') return;
+        if (!document.hidden) return;
+        if (Date.now() - _bootTs < 12 * 3600 * 1000) return;
+        // [fix rev 500x] MOS abre sus modales con VARIAS clases (is-open dominante + open + active/show). Un
+        // selector solo-.open dejaba fuera casi todos los modales de EDICIÓN (confirm/prompt _modalConfirm,
+        // editor de cliente, post-it, permisos…) → riesgo de recargar con datos sin guardar. Cubrimos todas,
+        // escopando active/show a overlays/modales (no a tabs/botones .active) para no bloquear la recarga siempre.
+        if (document.querySelector('.is-open, .modal.open, .modal-backdrop.open, .backdrop.open, [class*="overlay"].active, [class*="overlay"].show, [class*="modal"].show, [class*="modal"].active')) return;
+        location.reload();
+      } catch (_) {}
+    }, 30 * 60 * 1000);
+  })();
+
   // Re-bindear cuando renderCatalogo se ejecuta o el catálogo se monta
   document.addEventListener('DOMContentLoaded', _bindBotonFiltroDirecto);
   // Por si DOMContentLoaded ya disparó
@@ -29264,6 +29297,20 @@ const MOS = (() => {
 
   function _audioFlotanteDraggable(el) {
     let dragging = false, ox = 0, oy = 0, sl = 0, st = 0;
+    // [perf/leak] Antes mousemove/mouseup eran listeners ANÓNIMOS en document, agregados cada vez que se
+    // re-creaba el flotante y NUNCA removidos → se acumulaban (los viejos apuntando a nodos detached y
+    // corriendo en cada movimiento del mouse en toda la app). Ahora se agregan SOLO durante el arrastre
+    // (en mousedown) y se REMUEVEN al soltar (mouseup) con handlers nombrados → cero acumulación.
+    const _onMove = (e) => {
+      if (!dragging) return;
+      el.style.left = (sl + e.clientX - ox) + 'px';
+      el.style.top  = (st + e.clientY - oy) + 'px';
+    };
+    const _onUp = () => {
+      dragging = false; el.classList.remove('dragging');
+      document.removeEventListener('mousemove', _onMove);
+      document.removeEventListener('mouseup', _onUp);
+    };
     el.addEventListener('mousedown', e => {
       if (e.target.closest('.audio-flot-btn') || e.target.closest('audio')) return;
       dragging = true;
@@ -29271,13 +29318,9 @@ const MOS = (() => {
       ox = e.clientX; oy = e.clientY; sl = r.left; st = r.top;
       el.classList.add('dragging');
       el.style.right = 'auto'; el.style.bottom = 'auto';
+      document.addEventListener('mousemove', _onMove);
+      document.addEventListener('mouseup', _onUp);
     });
-    document.addEventListener('mousemove', e => {
-      if (!dragging) return;
-      el.style.left = (sl + e.clientX - ox) + 'px';
-      el.style.top  = (st + e.clientY - oy) + 'px';
-    });
-    document.addEventListener('mouseup', () => { dragging = false; el.classList.remove('dragging'); });
   }
 
   async function _audioFlotantePollChunks() {
@@ -29317,6 +29360,10 @@ const MOS = (() => {
     const ch = _audioFlot.chunks[idx];
     if (!ch || _audioFlot.prefetched.has(ch.driveFileId)) return;
     _audioFlot.prefetched.set(ch.driveFileId, 'pending');
+    // [perf/leak] Evicción por ventana deslizante: libera el base64 de los chunks ya reproducidos (idx-6 atrás)
+    // para que el Map no retenga TODA la escucha (decenas de MB en sesiones largas). Si se busca atrás, se re-fetch.
+    const _oldIdx = idx - 6;
+    if (_oldIdx >= 0 && _audioFlot.chunks[_oldIdx]) _audioFlot.prefetched.delete(_audioFlot.chunks[_oldIdx].driveFileId);
     try {
       const data = await API.get('getChunkAudioContent', { fileId: ch.driveFileId });
       if (!data?.base64) throw new Error('vacío');
@@ -31606,9 +31653,16 @@ const MOS = (() => {
     if (d.balanceNetoIGV < 0) {
       $('tribBalanceSub').innerHTML = '✨ <strong>Crédito fiscal a favor</strong> · arrastrable al mes siguiente';
     } else {
+      // [fix] guardar contra fecha ausente/mala del server → antes mostraba "Vence: Invalid Date · faltan undefined días".
       const fecha = new Date(d.fechaVencimiento);
-      const fStr = fecha.toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
-      $('tribBalanceSub').innerHTML = 'Vence: <strong>' + fStr + '</strong> · faltan ' + d.diasParaVencer + ' días';
+      const fechaOk = d.fechaVencimiento != null && d.fechaVencimiento !== '' && !isNaN(fecha.getTime());
+      const dias = Number.isFinite(d.diasParaVencer) ? d.diasParaVencer : null;
+      if (fechaOk) {
+        const fStr = fecha.toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
+        $('tribBalanceSub').innerHTML = 'Vence: <strong>' + fStr + '</strong>' + (dias != null ? ' · faltan ' + dias + ' días' : '');
+      } else {
+        $('tribBalanceSub').innerHTML = 'Vence según el cronograma SUNAT del mes siguiente';
+      }
     }
     $('tribPeriodoBar').style.width = (d.pctMes || 0) + '%';
 
@@ -42031,6 +42085,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const ctr = (s) => { s = norm(s); const l = Math.floor((W - s.length) / 2); return rep(' ', Math.max(0, l)) + s + '\n'; };
     const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
     const qty = (n) => { n = parseFloat(n) || 0; return (Number.isInteger(n) ? ('' + n) : ('' + (Math.round(n * 100) / 100))) + 'x'; };
+    // [rezagado unificado] Rango legible de la semana del bucket (domingo→sábado, TZ-safe UTC).
+    // MISMA lógica que el Edge `buildPickingTicketB64`. bucket = 'YYYY-MM-DD' (domingo que inicia la semana).
+    const fmtSemana = (bucketStr) => {
+      const m = String(bucketStr == null ? '' : bucketStr).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return '';
+      const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+      const d1 = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+      const d2 = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + 6));
+      const D1 = d1.getUTCDate(), M1 = d1.getUTCMonth(), Y1 = d1.getUTCFullYear();
+      const D2 = d2.getUTCDate(), M2 = d2.getUTCMonth(), Y2 = d2.getUTCFullYear();
+      if (M1 === M2 && Y1 === Y2) return 'Semana del ' + D1 + ' al ' + D2 + ' ' + MES[M2] + ' ' + Y2;
+      if (Y1 === Y2)             return 'Semana del ' + D1 + ' ' + MES[M1] + ' al ' + D2 + ' ' + MES[M2] + ' ' + Y2;
+      return 'Semana del ' + D1 + ' ' + MES[M1] + ' ' + Y1 + ' al ' + D2 + ' ' + MES[M2] + ' ' + Y2;
+    };
     // wrap del nombre a partir de la 2da línea, indentado bajo el nombre (col del qty + 2)
     const wrapNombre = (qtyStr, nombre) => {
       const ind = rep(' ', qtyStr.length + 2);
@@ -42054,7 +42122,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     let t = '\x1b\x40\x1b\x74\x10';                  // init + codepage WPC1252
     t += '\x1b\x61\x01\x1b\x21\x30' + norm('LISTA DE COMPRA') + '\n\x1b\x21\x00';
     t += norm('Rezagado · ' + zona) + '\n';
-    if (d.bucket) t += norm('Semana del ' + d.bucket) + '\n';
+    { const _sem = fmtSemana(d.bucket); if (_sem) t += norm(_sem) + '\n'; }
     t += '\x1b\x61\x00' + SEP;
     t += norm('Lo que NO se despachó la semana pasada:') + '\n' + SEPd;
     items.forEach(it => {
@@ -42063,7 +42131,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     });
     t += SEPd;
     t += '\x1b\x45\x01' + norm('TOTAL: ' + (items.length) + ' productos · ' + qty(d.total_pendiente) + ' uds') + '\x1b\x45\x00\n';
-    t += '\x1b\x61\x01' + norm('Impreso desde MOS') + '\n';
+    // Pie unificado con el Edge `buildPickingTicketB64` (mismo ticket en los 3 disparadores).
+    let fechaStr = '';
+    try {
+      const now = new Date();
+      fechaStr = now.toLocaleDateString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric' })
+        + ' ' + now.toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: false });
+    } catch (_) { fechaStr = ''; }
+    t += '\x1b\x61\x01' + norm('Lista de compra' + (fechaStr ? ' · ' + fechaStr : '')) + '\n';
     t += '\n\n\n\n\x1d\x56\x00';
     return t;
   }

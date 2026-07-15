@@ -2,7 +2,7 @@
 <html lang="es" class="h-full">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#020817">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -233,6 +233,50 @@
     @media (max-width: 360px) {
       .bnav-btn .bnav-lbl { font-size: .5rem; }
       .bnav-pill { padding: 5px 3px 4px; }
+    }
+
+    /* ═══ [responsive polish 2026-07-15] pulido móvil/tablet (aditivo, sin reconstruir) ═══ */
+    /* Bottom-nav: el label escala con el ancho para caber los 6 ítems sin truncar (antes "Proveedo…"). */
+    .bnav-btn .bnav-lbl { font-size: clamp(.44rem, 2.05vw, .58rem); }
+    /* Red de seguridad anti-overflow horizontal en móvil/tablet (imágenes y tablas embebidas). */
+    @media (max-width: 767px) {
+      img, video { max-width: 100%; height: auto; }
+      table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+    }
+    /* Barras de tabs (ya scrollean por diseño): inercia táctil + ocultar la scrollbar. */
+    .tab-bar, .alm-tab-bar, [class*="tab-bar"] { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tab-bar::-webkit-scrollbar, .alm-tab-bar::-webkit-scrollbar, [class*="tab-bar"]::-webkit-scrollbar { display: none; }
+
+    /* ═══ [responsive · Catálogo móvil] campos que cuadran, sin truncar ═══ */
+    @media (max-width: 640px) {
+      /* Búsqueda a ancho completo en su propia fila; los botones de acción envuelven debajo. */
+      .cat-toolbar { flex-wrap: wrap; }
+      .cat-toolbar > .cat-search-wrap { flex: 1 1 100% !important; order: -1; }
+      /* Header de la card: la columna precio+botones pasa a una fila completa DEBAJO → el nombre del
+         producto deja de exprimirse a 1 palabra por línea y se lee normal. */
+      .cat-card > .p-4 > .flex.items-start { flex-wrap: wrap; }
+      .cat-card > .p-4 > .flex.items-start > .flex.flex-col.items-end {
+        flex: 1 1 100%; margin-left: 0; margin-top: .5rem;
+        flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
+      }
+      /* Nombres de presentaciones: no truncar ("250…") — se muestran completos (2 líneas si hace falta). */
+      .cat-card .truncate { white-space: normal; overflow: visible; text-overflow: clip; }
+    }
+
+    /* ═══ [responsive · Proveedores móvil] carrusel horizontal (Rolodex) → grid vertical ═══
+       Para 92 proveedores el scroll VERTICAL es lo natural (antes se swipeaba horizontal 1.5 cards
+       a la vez y quedaba media pantalla vacía). En ≤767px pasa a grid que llena el alto. */
+    @media (max-width: 767px) {
+      #listProveedores {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+        gap: 8px !important;
+        overflow-x: visible !important;
+        scroll-snap-type: none !important;
+        margin: 0 !important; padding: 0 !important;
+        touch-action: auto !important; cursor: default !important;
+      }
+      #listProveedores > .card { scroll-snap-align: none !important; scroll-snap-stop: unset !important; }
     }
 
     /* Views — el !important blinda contra overrides accidentales (Tailwind/utilities) */
@@ -14300,6 +14344,17 @@
         .fac-btn-pri:disabled{opacity:.5;cursor:not-allowed}
         .fac-card{background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px}
         .fac-itemrow{display:grid;grid-template-columns:1fr 64px 84px 110px 32px;gap:6px;margin-bottom:6px;align-items:center}
+        /* [responsive · Facturación móvil] antes las 5 columnas (~314px fijos) no cabían en 390 y se cortaba
+           el ✕. Ahora el ítem apila: Descripción full-width arriba; Cant · P.Unit · IGV · ✕ en fila abajo.
+           Header e inputs comparten .fac-itemrow → quedan alineados. */
+        @media (max-width: 640px) {
+          .fac-itemrow { grid-template-columns: 1fr 1fr 1.3fr auto; }
+          /* CLAVE: min-width:0 deja que los inputs number encojan al tamaño del track (su min-content
+             ~171px inflaba los tracks 1fr y desbordaba la fila). width:100% para que llenen su celda. */
+          .fac-itemrow > * { min-width: 0; width: 100%; box-sizing: border-box; }
+          .fac-itemrow > :first-child { grid-column: 1 / -1; }
+          .fac-itemrow > button { width: auto; justify-self: center; }
+        }
         .fac-chip{font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px}
       </style>
       <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -19284,14 +19339,14 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.544"></script>
+<script src="js/api.js?v=2.43.545"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
-<script src="./assets/membrete/membrete-modal.js?v=2.43.544"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.544"></script>
+<script src="./assets/membrete/membrete-modal.js?v=2.43.545"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.545"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -19299,7 +19354,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.544"></script>
+<script src="js/app.js?v=2.43.545"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

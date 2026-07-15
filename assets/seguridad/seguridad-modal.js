@@ -335,6 +335,7 @@
     _injectCss();
     var primerRefresh = true;
     var refresh = function() {
+      if (document.hidden) return;   // [perf sesión larga] el badge no consulta dispositivos con la pestaña oculta
       // [fix B2 · CERO-GAS] El badge cuenta lo MISMO que muestra el panel: dispositivos POR ATENDER
       // (PENDIENTE_APROBACION + SUSPENDIDO), no el log histórico mos.seguridad_alertas (que acumulaba 187
       // avisos viejos nunca revisados → badge pegado en 187 con el panel vacío). Fuente única: listar_dispositivos.

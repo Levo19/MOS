@@ -206,6 +206,9 @@
       '@media (max-width:360px){.ms-prev-box{width:240px;height:120px}.ms-prev-inner{transform:scale(.40)}}',
       '.ms-opt3{transition:transform .15s ease}',
       '.ms-opt3:hover{transform:translateY(-1px)}',
+      // [cantidad membretes] En pantallas angostas el stepper+botón bajan a su propia
+      // fila (full-width, derecha) para no exprimir el título/descripción de la opción.
+      '@media (max-width:560px){.ms-opt3-row{flex-wrap:wrap}.ms-opt3-accion{flex:1 0 100%!important;justify-content:flex-end!important;margin-top:8px}}',
       '.ms-cola-body{gap:8px}',
       '.ms-scroll{scrollbar-width:thin;scrollbar-color:rgba(251,191,36,.45) transparent}',
       '.ms-scroll::-webkit-scrollbar{width:8px;height:8px}',
@@ -1396,13 +1399,13 @@
       return ''
         + '<div class="ms-opt3' + (cfg.hero ? ' popt-hero' : '') + '" style="border-radius:14px;padding:13px 14px;margin-bottom:12px;background:#0e1626;' + (cfg.hero ? '' : 'border:1px solid #1e293b;') + 'position:relative;overflow:hidden">'
         +   (cfg.hero ? '<span class="popt-sheen"></span>' : '')
-        +   '<div style="display:flex;align-items:center;gap:12px">'
+        +   '<div class="ms-opt3-row" style="display:flex;align-items:center;gap:12px">'
         +     '<span style="width:44px;height:44px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;' + tileBg + '">' + cfg.icon + '</span>'
         +     '<span style="flex:1;min-width:0;text-align:left">'
         +       '<span style="display:block;font-size:13.5px;font-weight:800;color:#e2e8f0">' + cfg.titulo + (cfg.badge || '') + '</span>'
         +       '<span style="display:block;font-size:10.5px;color:#94a3b8;margin-top:1px">' + cfg.sub + '</span>'
         +     '</span>'
-        +     '<span style="flex:none;display:flex;align-items:center;gap:8px">' + cfg.accion + '</span>'
+        +     '<span class="ms-opt3-accion" style="flex:none;display:flex;align-items:center;gap:8px">' + cfg.accion + '</span>'
         +   '</div>'
         +   prevBox
         + '</div>';
@@ -1413,14 +1416,14 @@
       icon: svgGondola, titulo: 'Membrete góndola (ME)',
       sub: 'El precio grande para la tienda' + (precio > 0 ? ' · S/ ' + precio.toFixed(2) : ''),
       preview: previewMeHtml,
-      accion: '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_ME\')">🖨 Imprimir</button>'
+      accion: _menuStepperHtml('msMeQty') + '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_ME\')">🖨 Imprimir</button>'
     });
     // ─── WH andamio ───
     var optWh = _opcionHtml({
       icon: svgAndamio, titulo: 'Membrete andamio (WH)',
-      sub: (totalWh > 1 ? 'Rótulo de almacén · ' + totalWh + ' adhesivos (cabecera + ' + (totalWh - 1) + ' códigos)' : 'El rótulo del almacén · 1 adhesivo'),
+      sub: (totalWh > 1 ? 'Rótulo de almacén · ' + totalWh + ' adhesivos (cabecera + ' + (totalWh - 1) + ' códigos) × copias' : 'El rótulo del almacén · 1 adhesivo c/copia'),
       preview: previewWhHtml,
-      accion: '<button class="ms-btn ms-btn-info" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_WH\')">🖨 Imprimir</button>'
+      accion: _menuStepperHtml('msWhQty') + '<button class="ms-btn ms-btn-info" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_WH\')">🖨 Imprimir</button>'
     });
     // ─── Adhesivo envasado (hero · solo derivados) ───
     var qtyIni = (function(){ try { return parseInt(localStorage.getItem('mos_adh_qty_' + (producto.codigoBarra || '')), 10) || Math.max(1, Math.round(parseFloat(producto.adhSugerido) || 0)) || 12; } catch(_) { return 12; } })();
@@ -1434,7 +1437,7 @@
       hero: true, icon: svgRollo,
       titulo: 'Adhesivo envasado',
       badge: ' <span style="font-size:9px;font-weight:800;color:#34d399;background:rgba(52,211,153,.15);border-radius:4px;padding:1px 5px;vertical-align:middle">SOLO DERIVADOS</span>',
-      sub: 'El de Almacén/Envasados (TSC 50×25) — único con cantidad' + (parseFloat(producto.adhSugerido) > 0 ? ' · sugerido ~' + Math.round(producto.adhSugerido) + '/sem' : ''),
+      sub: 'El de Almacén/Envasados (TSC 50×25)' + (parseFloat(producto.adhSugerido) > 0 ? ' · sugerido ~' + Math.round(producto.adhSugerido) + '/sem' : ''),
       preview: previewEnvHtml, scaleH: 108,
       accion: stepperHtml + '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimirEnvasado()">🖨 Imprimir</button>'
     });
@@ -1485,6 +1488,30 @@
     sonidos.click();
   }
 
+  // [cantidad membretes ME/WH] stepper genérico de COPIAS del rótulo. Default 1 (imprime
+  // rápido), paso 1, tope 99. Mismo look que el de envasado pero simple. Cada copia = un
+  // rótulo completo (ME: 1 adhesivo · WH: cabecera + códigos), replicado client-side.
+  function _menuStepperHtml(inputId) {
+    return ''
+      + '<span style="display:inline-flex;align-items:center;border:1px solid #28344c;border-radius:8px;overflow:hidden;flex:none;margin-right:8px" title="Copias a imprimir">'
+      +   '<button onclick="MembreteSystem._qtyStep(\'' + inputId + '\',-1)" style="padding:6px 10px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">−</button>'
+      +   '<input id="' + inputId + '" type="number" min="1" max="99" value="1" onchange="MembreteSystem._qtyClamp(this)" style="width:40px;text-align:center;padding:6px 2px;font-size:14px;font-weight:800;background:#0f172a;color:#e2e8f0;border:none;-moz-appearance:textfield">'
+      +   '<button onclick="MembreteSystem._qtyStep(\'' + inputId + '\',1)" style="padding:6px 10px;font-size:14px;font-weight:800;background:#131d30;color:#93a4c2;border:none;cursor:pointer">+</button>'
+      + '</span>';
+  }
+  function _qtyStep(inputId, delta) {
+    var el = document.getElementById(inputId); if (!el) return;
+    var v = (parseInt(el.value, 10) || 1) + delta;
+    el.value = Math.max(1, Math.min(99, v));
+    sonidos.click();
+  }
+  // [cantidad membretes] corrige el display al perder foco si tecleó algo fuera de rango
+  // (ej. "500" → 99, "" → 1). El submit ya clampa igual; esto solo evita el mismatch visual.
+  function _qtyClamp(el) {
+    if (!el) return;
+    el.value = Math.max(1, Math.min(99, parseInt(el.value, 10) || 1));
+  }
+
   // [catálogo v4] imprimir adhesivo envasado desde el menú del card (SOLO derivados).
   // MOS: Edge print-adhesivo mode:'crear' (RPC atómica reserve-first, imprime server-side,
   // CERO GAS — inyectado como _config.adhesivoEnvasadoCall). WH: camino nativo con progreso.
@@ -1516,6 +1543,15 @@
     // [v1.3 FIX] Aceptar producto directo (auto-mode) o usar global (modal MOS)
     var p = productoDirecto || window._msMenuProd;
     if (!p) return;
+    // [cantidad membretes] Leer las COPIAS del stepper de ESTE tipo ANTES de cerrar el
+    // modal (que remueve el DOM). En auto-mode (WH/ME app, sin menú → productoDirecto
+    // presente) no hay stepper → 1 copia. Backend NO deduplica items idénticos
+    // (Edge expandirMembrete hace forEach), así que replicar N veces imprime N.
+    var copias = 1;
+    if (!productoDirecto) {
+      var qtyEl = document.getElementById(tipo === 'MEMBRETE_ME' ? 'msMeQty' : 'msWhQty');
+      if (qtyEl) copias = Math.max(1, Math.min(99, parseInt(qtyEl.value, 10) || 1));
+    }
     _menuCerrar();
     // [v2026-06-05 REFACTOR] Construcción del item delegada al helper
     // _construirItemCompleto (DRY con _colaAgregarProducto). Mismo flow:
@@ -1526,7 +1562,9 @@
       sonidos.error();
       return;
     }
-    imprimirMembrete({ tipo: tipo, items: [item] });
+    var items = [];
+    for (var i = 0; i < copias; i++) items.push(item);
+    imprimirMembrete({ tipo: tipo, items: items });
   }
   function _menuCerrar() {
     var ov = document.getElementById('msMenuOverlay');
@@ -1985,6 +2023,7 @@
     // [v1.2 FIX] Si ya hay timer, limpiarlo antes de crear nuevo (idempotente)
     if (_badgeAlertasTimer) { try { clearInterval(_badgeAlertasTimer); } catch(_){} _badgeAlertasTimer = null; }
     var refresh = function() {
+      if (document.hidden) return;   // [perf sesión larga] el badge no consulta con la pestaña oculta
       _api('getMembretesMePendientes', { limit: 1 }).then(function(d) {
         var count = (d && d.count) || 0;
         var existing = document.getElementById('msBadgeAlertas');
@@ -2051,6 +2090,8 @@
     _menuImprimir:        _menuImprimir,
     _menuImprimirEnvasado: _menuImprimirEnvasado,   // [catálogo v4] 3ra opción · solo derivados
     _adhQtyStep:          _adhQtyStep,              // [catálogo v4] stepper cantidad
+    _qtyStep:             _qtyStep,                 // [cantidad membretes] stepper copias ME/WH
+    _qtyClamp:            _qtyClamp,                 // [cantidad membretes] clamp display al blur
     _menuCerrar:          _menuCerrar,
     _alertToggleAll:      _alertToggleAll,
     _alertUpdBtns:        _alertUpdBtns,
