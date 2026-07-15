@@ -1389,15 +1389,34 @@
     }, 700);
   }
 
+  // [dueño 2026-07-15] Solicitud de acceso REMOTA explícita → mos.solicitar_acceso_dispositivo (cero-GAS).
+  // Anti-spam: cooldown de 60s. El server también lo aplica (una solicitud por equipo reemplaza a la anterior);
+  // acá gateamos localmente para que el botón diga "espera Xs" sin re-disparar la RPC.
+  var _solicitarCooldownHasta = 0;
   function _solicitarAcceso() {
-    // Re-trigger verificación: registrarSesionDispositivo creará el row PENDIENTE
-    _verificar().then(function(estado) {
-      if (estado === 'PENDIENTE_APROBACION') {
-        _toastAprobado('📤 Solicitud enviada al admin');
+    var ahora = Date.now();
+    if (ahora < _solicitarCooldownHasta) {
+      _toastAprobado('⏳ Espera ' + Math.ceil((_solicitarCooldownHasta - ahora) / 1000) + 's para reenviar');
+      return;
+    }
+    var ua = (navigator.userAgent || '').substring(0, 200);
+    _rpcAnon('solicitar_acceso_dispositivo', {
+      id_dispositivo: _state.deviceId, app: _config.app, user_agent: ua, nombre_equipo: null
+    }).then(function (r) {
+      if (r && r.cooldown) {
+        _solicitarCooldownHasta = Date.now() + (Math.max(1, r.retry_seg || 60)) * 1000;
+        _toastAprobado('⏳ Ya la enviaste · espera ' + (r.retry_seg || 60) + 's');
+        return;
+      }
+      if (r && r.autorizado) { _verificar(); return; }   // ya está activo → re-verifica y entra
+      if (r && r.estado === 'PENDIENTE_APROBACION') {
+        _solicitarCooldownHasta = Date.now() + 60000;      // arranca el cooldown de 60s
+        _toastAprobado('📤 Solicitud enviada · espera la aprobación');
         _sonidoAprobado();
         _vibrar([30, 20, 30]);
+        _verificar();                                       // refresca la UI al estado PENDIENTE
       }
-    }).catch(function(){});
+    }).catch(function () {});
   }
 
   // [v1.0.19] WATCHDOG GLOBAL del estado "VERIFICANDO" (DISENO §Estado 1:

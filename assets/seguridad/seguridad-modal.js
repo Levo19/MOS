@@ -346,7 +346,9 @@
             var n = 0;
             for (var i = 0; i < disps.length; i++) {
               var est = String(disps[i].Estado || '').toUpperCase();
-              if (est !== 'PENDIENTE_APROBACION' && est !== 'SUSPENDIDO') continue;
+              // [dueño 2026-07-15] El badge = BUZÓN DE SOLICITUDES: solo cuenta PENDIENTE_APROBACION
+              // (equipos pidiendo acceso). Un equipo SUSPENDIDO no es accionable → ya no aparece en el badge.
+              if (est !== 'PENDIENTE_APROBACION') continue;
               if (!esMaster) { var a = String(disps[i].App || '').toUpperCase(); if (a === 'MOS' || a === 'PROYECTOMOS') continue; }
               n++;
             }
@@ -384,7 +386,7 @@
         }
         primerRefresh = false;
         _badgeCountVistoSet(count);
-        existing.innerHTML = '🚨 <span>' + count + ' dispositivo' + (count > 1 ? 's' : '') + ' por atender</span>';
+        existing.innerHTML = '📨 <span>' + count + ' solicitud' + (count > 1 ? 'es' : '') + ' de acceso</span>';
       }).catch(function() {});
     };
     refresh();
@@ -423,7 +425,15 @@
       +   '</div>'
       + '</div>');
     _alertasCargar();
+    // [dueño 2026-07-15] tiempo real: refresca el buzón cada 6s mientras está abierto → si otro admin
+    // aprueba/rechaza, la solicitud desaparece sola (evita doble aprobación). Se limpia al cerrar.
+    if (_alertasPollTimer) { clearInterval(_alertasPollTimer); }
+    _alertasPollTimer = setInterval(function () {
+      if (!document.getElementById('segAlertasOverlay')) { clearInterval(_alertasPollTimer); _alertasPollTimer = null; return; }
+      _alertasCargar();
+    }, 6000);
   }
+  var _alertasPollTimer = null;
   function _alertasTab(tab) {
     _alertasState.tab = tab;
     document.querySelectorAll('.seg-tab').forEach(function(b) { b.classList.remove('active'); });
@@ -457,6 +467,14 @@
       if (_alertasState.tab === 'pendientes' && nPend === 0 && nSusp > 0) _alertasState.tab = 'suspendidos';
       _alertasRender();
     });
+  }
+  // [dueño 2026-07-15] Tipo de equipo desde el User_Agent (para el buzón: móvil vs PC).
+  function _tipoDispo(ua) {
+    var s = String(ua || '');
+    if (/Mobi|Android|iPhone|iPod|Windows Phone|BlackBerry/i.test(s)) return { ico: '📱', label: 'Móvil' };
+    if (/iPad|Tablet/i.test(s)) return { ico: '📲', label: 'Tablet' };
+    if (!s) return { ico: '❔', label: '—' };
+    return { ico: '🖥️', label: 'PC' };
   }
   function _alertasRender() {
     var body = document.getElementById('segAlertasBody');
@@ -514,16 +532,23 @@
         actions = ''
           + '<button class="seg-btn seg-btn-warn" onclick="SeguridadSystem._desbloqueoTemp(\'' + _esc(d.ID_Dispositivo) + '\',\'' + _esc(d.Nombre_Equipo || '') + '\')">🚨 Desbloqueo temp</button>';
       }
+      var _tipo = _tipoDispo(d.User_Agent);
+      var _ultSes = String(d.Ultima_Sesion || '').trim();
+      var _appLbl = _esc(d.App || '—');
       return ''
         + '<div class="seg-card">'
         +   '<div class="seg-card-row">'
         +     '<div style="flex:1;min-width:0">'
         +       '<div class="seg-card-titulo">'
-        +         (String(d.App || '').toUpperCase() === 'MOS' ? '🛡 ' : String(d.App || '').toUpperCase() === 'WAREHOUSEMOS' ? '💻 ' : '📱 ')
+        +         _tipo.ico + ' '
         +         _esc(d.Nombre_Equipo || 'Sin nombre')
-        +         ' <span style="font-weight:400;color:#94a3b8">· ' + _esc(d.App || '') + '</span>'
+        +         ' <span style="font-weight:400;color:#94a3b8">· ' + _appLbl + ' · ' + _tipo.label + '</span>'
         +       '</div>'
-        +       '<div class="seg-card-sub">UUID: ' + _esc(String(d.ID_Dispositivo || '').substring(0, 8)) + '… · última: ' + _humanizarFecha(d.Ultima_Conexion) + (diasInactivo ? ' (' + diasInactivo + ')' : '') + '</div>'
+        +       '<div class="seg-card-sub">'
+        +         (_ultSes ? '👤 ' + _esc(_ultSes) + ' · ' : '')
+        +         'nº ' + _esc(String(d.ID_Dispositivo || '').substring(0, 8))
+        +         ' · última: ' + _humanizarFecha(d.Ultima_Conexion) + (diasInactivo ? ' (' + diasInactivo + ')' : '')
+        +       '</div>'
         +     '</div>'
         +     '<span class="seg-chip ' + chipCls + '">' + est + '</span>'
         +   '</div>'
@@ -532,6 +557,7 @@
     }).join('');
   }
   function _alertasCerrar() {
+    if (_alertasPollTimer) { clearInterval(_alertasPollTimer); _alertasPollTimer = null; }
     var ov = document.getElementById('segAlertasOverlay');
     if (ov) { ov.style.animation = 'seg-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
   }
@@ -559,6 +585,8 @@
       return DeviceAuth.rpc(rpcFn, params).then(function(r) {
         if (r && r.ok === false) { _toast('❌ ' + _esc(r.error || 'Error'), { error: true }); return; }
         if (r && r.autorizado === false) { sonidos.rechazado(); _toast('❌ ' + _esc(r.error || 'Clave incorrecta'), { error: true }); return; }
+        // [dueño 2026-07-15] tiempo real: si otro admin ya lo aprobó (activación atómica server), avisar sin re-cantar éxito.
+        if (r && r.ya_aprobado) { _toast('ℹ Ya lo aprobó otro admin', {}); _alertasCargar(); return; }
         sonidos.aprobado(); _toast(okMsg, { success: true }); _alertasCargar();
       }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); })
         .then(_libera, _libera);
