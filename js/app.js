@@ -7638,7 +7638,7 @@ const MOS = (() => {
           <button onclick="MOS._costosGuiaSetIgv('SIN_IGV')" class="alm-v-tg-btn ${st.igvMode === 'SIN_IGV' ? 'active' : ''}">Sin IGV</button>
         </div>
         <label class="alm-v-tg-check">
-          <input type="checkbox" id="costosGuiaUpdMaster" checked>
+          <input type="checkbox" id="costosGuiaUpdMasterV" checked>
           <span>Actualizar catálogo</span>
         </label>
       </div>`;
@@ -7815,7 +7815,7 @@ const MOS = (() => {
       </div>
       <div class="alm-v-autosave-hint">💾 Autoguardado activo · los costos se persisten al instante</div>`;
 
-    return `<input type="hidden" id="costosGuiaInfo" value="${_escapeHtml(op.idGuia)}">
+    return `
       ${chipOcrHtml}
       ${togglesHtml}
       ${progresoHtml}
@@ -8627,7 +8627,7 @@ const MOS = (() => {
         <p class="text-sm">Sin líneas registradas en esta guía</p>
       </div>`;
     }
-    return `<input type="hidden" id="costosGuiaInfo" value="${_escapeHtml(op.idGuia)}">
+    return `
       <div class="flex flex-col gap-2">${_renderCostosLineasInner(op)}</div>`;
   }
 
@@ -10623,7 +10623,17 @@ const MOS = (() => {
       toast('No hay precios para guardar', 'error');
       return;
     }
-    const updateMaster = !!$('costosGuiaUpdMaster')?.checked;
+    // [fix dinero · rev 500x anteayer] El voucher inline (id costosGuiaUpdMasterV) y el modal Paso 1 (id
+    // costosGuiaUpdMaster) coexisten en el DOM (el modal se oculta con .hidden, no se remueve) → un
+    // getElementById genérico devolvía el PRIMERO (el del voucher) aunque el usuario guardara desde el modal,
+    // escribiendo/omitiendo precioCosto al catálogo contra su intención. Ahora leemos el checkbox VISIBLE.
+    const updateMaster = (function () {
+      const els = document.querySelectorAll('#costosGuiaUpdMaster, #costosGuiaUpdMasterV');
+      let vis = null;
+      els.forEach(function (el) { if (!vis) { const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) vis = el; } });
+      const el = vis || els[els.length - 1] || null;
+      return !!(el && el.checked);
+    })();
 
     // [v41.20] Capturar sugerencias inline marcadas para aplicar
     const sugerenciasInline = lineas
@@ -22999,15 +23009,6 @@ const MOS = (() => {
     return new Set(
       all.filter(p => String(p.estado) === '1' && p.idPersonal !== excluirId)
          .map(p => String(p.color || '').toLowerCase())
-    );
-  }
-
-  function _persPinsEnUsoAdmin(excluirId) {
-    return new Set(
-      (cfgData.personalMOS || [])
-        .filter(p => p.idPersonal !== excluirId)
-        .map(p => String(p.pin || ''))
-        .filter(Boolean)
     );
   }
 
