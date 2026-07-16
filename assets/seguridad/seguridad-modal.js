@@ -2,6 +2,9 @@
  *  seguridad-modal.js   [v1.0.0]
  *  Sistema centralizado de Seguridad (dispositivos + horarios).
  *  Standalone — cargado por MOS, WH, ME via script tag.
+ *  2026-07-16 — Buzón (solo MOS): SOLO solicitudes PENDIENTE_APROBACION (sin pestañas
+ *    Suspendidos/Todos); badge tiempo real (se limpia al aprobar, poll 30s); auto-refresh
+ *    del modal SIN parpadeo (silencioso + diff por id+estado, no re-dibuja si no cambió).
  * ============================================================ */
 (function() {
   'use strict';
@@ -328,70 +331,62 @@
     el.addEventListener('pointerup', fin);
     el.addEventListener('pointercancel', fin);
   }
+  // [buzón] Cuenta SOLICITUDES pendientes (PENDIENTE_APROBACION), con filtro de rol (admin no ve MOS).
+  // Un equipo SUSPENDIDO no cuenta (no es una solicitud). Fuente única: listar_dispositivos.
+  function _contarPendientes(disps) {
+    var arr = Array.isArray(disps) ? disps : [];
+    var rolUser = ''; try { rolUser = String((_config.rol && _config.rol()) || '').toUpperCase(); } catch(_){}
+    var esMaster = rolUser === 'MASTER';
+    var n = 0;
+    for (var i = 0; i < arr.length; i++) {
+      if (String(arr[i].Estado || '').toUpperCase() !== 'PENDIENTE_APROBACION') continue;
+      if (!esMaster) { var a = String(arr[i].App || '').toUpperCase(); if (a === 'MOS' || a === 'PROYECTOMOS') continue; }
+      n++;
+    }
+    return n;
+  }
+  // Crea / actualiza / quita la burbuja flotante según el count. opts.silent = no sonar (auto-refresh/modal).
+  function _actualizarBadgeDOM(count, opts) {
+    opts = opts || {};
+    var existing = document.getElementById('segBadge');
+    if (!count || count <= 0) {                 // sin solicitudes → sin burbuja (tiempo real)
+      if (existing) existing.remove();
+      _badgeCountVistoSet(0);
+      return;
+    }
+    if (!existing) {
+      var div = document.createElement('div');
+      div.id = 'segBadge';
+      div.className = 'seg-badge';
+      div.title = 'Arrástrame para moverme · clic para ver solicitudes';
+      div.onclick = function() { if (div._segDragged) { div._segDragged = false; return; } abrirModalAlertas(); };
+      document.body.appendChild(div);
+      _badgeRestaurarPos(div);
+      _badgeHacerArrastrable(div);
+      existing = div;
+    }
+    var ultimoVisto = _badgeCountVisto();
+    if (!opts.silent && count > ultimoVisto) { try { sonidos.alerta(); } catch(_){} }   // suena solo si subió
+    _badgeCountVistoSet(count);
+    existing.innerHTML = '📨 <span>' + count + ' solicitud' + (count > 1 ? 'es' : '') + ' de acceso</span>';
+  }
+  var _badgeRefreshFn = null;
+  // Re-conteo inmediato del badge (tras aprobar/rechazar → la burbuja se limpia al instante, sin esperar el poll).
+  function _refrescarBadge() { if (_badgeRefreshFn) { try { _badgeRefreshFn(); } catch(_){} } }
   function arrancarBadgeAlertas() {
-    // [v1.0.3 FIX] Si ya hay timer, limpiarlo antes de crear uno nuevo.
-    // Antes el early return aceptaba un timer huérfano si el flujo era irregular.
     if (_badgeTimer) { try { clearInterval(_badgeTimer); } catch(_){} _badgeTimer = null; }
     _injectCss();
-    var primerRefresh = true;
     var refresh = function() {
-      if (document.hidden) return;   // [perf sesión larga] el badge no consulta dispositivos con la pestaña oculta
-      // [fix B2 · CERO-GAS] El badge cuenta lo MISMO que muestra el panel: dispositivos POR ATENDER
-      // (PENDIENTE_APROBACION + SUSPENDIDO), no el log histórico mos.seguridad_alertas (que acumulaba 187
-      // avisos viejos nunca revisados → badge pegado en 187 con el panel vacío). Fuente única: listar_dispositivos.
-      var _p = (window.DeviceAuth && typeof DeviceAuth.rpc === 'function')
-        ? DeviceAuth.rpc('listar_dispositivos', {}).then(function(r){
-            var disps = (r && r.data) ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
-            var rolUser = ''; try { rolUser = String((_config.rol && _config.rol()) || '').toUpperCase(); } catch(_){}
-            var esMaster = rolUser === 'MASTER';
-            var n = 0;
-            for (var i = 0; i < disps.length; i++) {
-              var est = String(disps[i].Estado || '').toUpperCase();
-              // [dueño 2026-07-15] El badge = BUZÓN DE SOLICITUDES: solo cuenta PENDIENTE_APROBACION
-              // (equipos pidiendo acceso). Un equipo SUSPENDIDO no es accionable → ya no aparece en el badge.
-              if (est !== 'PENDIENTE_APROBACION') continue;
-              if (!esMaster) { var a = String(disps[i].App || '').toUpperCase(); if (a === 'MOS' || a === 'PROYECTOMOS') continue; }
-              n++;
-            }
-            return { count: n };
-          })
-        : Promise.reject(new Error('DeviceAuth no disponible'));
-      _p.then(function(d) {
-        var count = (d && d.count) || 0;
-        var existing = document.getElementById('segBadge');
-        if (count === 0) {
-          if (existing) existing.remove();
-          _badgeCountVistoSet(0);
-          return;
-        }
-        if (!existing) {
-          var div = document.createElement('div');
-          div.id = 'segBadge';
-          div.className = 'seg-badge';
-          div.title = 'Arrástrame para moverme · clic para ver alertas';
-          // clic abre el modal, salvo que venga de un arrastre (burbuja movible).
-          div.onclick = function() { if (div._segDragged) { div._segDragged = false; return; } abrirModalAlertas(); };
-          document.body.appendChild(div);
-          _badgeRestaurarPos(div);
-          _badgeHacerArrastrable(div);
-          existing = div;
-        }
-        // Sonar SOLO si: (a) refresh posterior y count subió, o
-        // (b) primer refresh y hay MÁS alertas que la última vez que el admin
-        // las vio (persistido en localStorage)
-        var ultimoVisto = _badgeCountVisto();
-        if (!primerRefresh && count > ultimoVisto) {
-          sonidos.alerta();
-        } else if (primerRefresh && count > ultimoVisto) {
-          sonidos.alerta();
-        }
-        primerRefresh = false;
-        _badgeCountVistoSet(count);
-        existing.innerHTML = '📨 <span>' + count + ' solicitud' + (count > 1 ? 'es' : '') + ' de acceso</span>';
-      }).catch(function() {});
+      if (document.hidden) return;   // [perf] no consulta con la pestaña oculta
+      if (!(window.DeviceAuth && typeof DeviceAuth.rpc === 'function')) return;
+      DeviceAuth.rpc('listar_dispositivos', {}).then(function(r){
+        var disps = (r && r.data) ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
+        _actualizarBadgeDOM(_contarPendientes(disps), {});   // background: suena si subió respecto a lo visto
+      }).catch(function(){});
     };
+    _badgeRefreshFn = refresh;
     refresh();
-    _badgeTimer = setInterval(refresh, 60000);
+    _badgeTimer = setInterval(refresh, 30000);   // [dueño 2026-07-16] 60s→30s: detecta solicitudes nuevas más rápido
   }
 
   // ════════════════════════════════════════════════════════════
@@ -406,16 +401,11 @@
       + '<div class="seg-overlay" id="segAlertasOverlay">'
       +   '<div class="seg-modal">'
       +     '<div class="seg-head">'
-      +       '<div class="seg-emoji">🔔</div>'
+      +       '<div class="seg-emoji">📨</div>'
       +       '<div style="flex:1;min-width:0">'
-      +         '<div class="seg-h1">ALERTAS DE SEGURIDAD</div>'
+      +         '<div class="seg-h1">SOLICITUDES DE ACCESO</div>'
       +         '<div class="seg-sub" id="segAlertasSub">cargando…</div>'
       +       '</div>'
-      +     '</div>'
-      +     '<div class="seg-tabs">'
-      +       '<button class="seg-tab active" id="segTabPend"  onclick="SeguridadSystem._alertasTab(\'pendientes\')">Pendientes</button>'
-      +       '<button class="seg-tab"        id="segTabSusp"  onclick="SeguridadSystem._alertasTab(\'suspendidos\')">Suspendidos</button>'
-      +       '<button class="seg-tab"        id="segTabTodos" onclick="SeguridadSystem._alertasTab(\'todos\')">Todos</button>'
       +     '</div>'
       +     '<div class="seg-body" id="segAlertasBody">'
       +       '<div style="text-align:center;color:#94a3b8;padding:20px">cargando…</div>'
@@ -425,49 +415,34 @@
       +     '</div>'
       +   '</div>'
       + '</div>');
-    _alertasCargar();
-    // [dueño 2026-07-15] tiempo real: refresca el buzón cada 6s mientras está abierto → si otro admin
-    // aprueba/rechaza, la solicitud desaparece sola (evita doble aprobación). Se limpia al cerrar.
+    _alertasLastSig = null;   // fuerza el 1er render
+    _alertasCargar(false);
+    // [dueño 2026-07-16] tiempo real SIN parpadeo: refresca en SILENCIO cada 5s (sin spinner) y solo
+    // re-dibuja si la lista CAMBIÓ (diff por id+estado). Si otro admin aprueba, la solicitud desaparece sola.
     if (_alertasPollTimer) { clearInterval(_alertasPollTimer); }
     _alertasPollTimer = setInterval(function () {
       if (!document.getElementById('segAlertasOverlay')) { clearInterval(_alertasPollTimer); _alertasPollTimer = null; return; }
-      _alertasCargar();
-    }, 6000);
+      _alertasCargar(true);   // silent
+    }, 5000);
   }
+  var _alertasLastSig = null;
   var _alertasPollTimer = null;
-  function _alertasTab(tab) {
-    _alertasState.tab = tab;
-    document.querySelectorAll('.seg-tab').forEach(function(b) { b.classList.remove('active'); });
-    var btnId = { pendientes: 'segTabPend', suspendidos: 'segTabSusp', todos: 'segTabTodos' }[tab];
-    var btn = document.getElementById(btnId);
-    if (btn) btn.classList.add('active');
-    _alertasCargar();
-  }
-  function _alertasCargar() {
+  // [dueño 2026-07-16] El buzón es SOLO solicitudes de acceso (PENDIENTE_APROBACION) → sin pestañas.
+  function _alertasTab() { /* deprecado: el buzón ya no tiene pestañas de suspendidos/todos */ }
+  // silent=true (auto-refresh cada 5s): NO muestra spinner; `_alertasRender` solo re-dibuja si la lista cambió.
+  function _alertasCargar(silent) {
     var body = document.getElementById('segAlertasBody');
     if (!body) return;
-    body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span class="seg-spin">◐</span> cargando…</div>';
-    // [CERO-GAS] getSeguridadAlertas → mos.seguridad_alertas · getDispositivos → mos.listar_dispositivos
-    // (via DeviceAuth.rpc). Ambas devuelven {ok,data:...}; se desenvuelve .data.
+    if (!silent) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span class="seg-spin">◐</span> cargando…</div>';
     var _rpcSeg = (window.DeviceAuth && typeof DeviceAuth.rpc === 'function')
       ? DeviceAuth.rpc : function() { return Promise.reject(new Error('DeviceAuth no disponible')); };
-    Promise.all([
-      _rpcSeg('seguridad_alertas', { limit: 100 }).then(function(r){ return r && r.data ? r.data : { items: [], count: 0 }; }).catch(function() { return { items: [], count: 0 }; }),
-      _rpcSeg('listar_dispositivos', {}).then(function(r){ return r && r.data ? r.data : []; }).catch(function() { return []; })
-    ]).then(function(arr) {
-      var alertas = (arr[0] && arr[0].items) || [];
-      var disps = Array.isArray(arr[1]) ? arr[1] : ((arr[1] && arr[1].data) || []);
-      _alertasState.items = alertas;
-      _alertasState.dispositivos = disps;
-      // [fix B2] abrir en la 1ª pestaña con contenido (si "pendientes" está vacío pero hay suspendidos, ir allí)
-      var nPend = 0, nSusp = 0;
-      for (var k = 0; k < disps.length; k++) {
-        var e = String(disps[k].Estado || '').toUpperCase();
-        if (e === 'PENDIENTE_APROBACION') nPend++; else if (e === 'SUSPENDIDO') nSusp++;
-      }
-      if (_alertasState.tab === 'pendientes' && nPend === 0 && nSusp > 0) _alertasState.tab = 'suspendidos';
-      _alertasRender();
-    });
+    _rpcSeg('listar_dispositivos', {}).then(function(r){ return r && r.data ? r.data : []; }).catch(function(){ return []; })
+      .then(function(rd) {
+        var disps = Array.isArray(rd) ? rd : ((rd && rd.data) || []);
+        _alertasState.dispositivos = disps;
+        _alertasRender(!silent);   // no-silent (apertura/acción) fuerza el dibujo
+        _actualizarBadgeDOM(_contarPendientes(disps), { silent: true });   // el badge sigue en sync (sin sonido)
+      });
   }
   // [dueño 2026-07-15] Tipo de equipo desde el User_Agent (para el buzón: móvil vs PC).
   function _tipoDispo(ua) {
@@ -477,35 +452,30 @@
     if (!s) return { ico: '❔', label: '—' };
     return { ico: '🖥️', label: 'PC' };
   }
-  function _alertasRender() {
+  function _alertasRender(force) {
     var body = document.getElementById('segAlertasBody');
     var sub  = document.getElementById('segAlertasSub');
     if (!body) return;
-    var tab = _alertasState.tab;
     var disps = _alertasState.dispositivos || [];
-    var lista = [];
-    if (tab === 'pendientes') {
-      lista = disps.filter(function(d) { return String(d.Estado || '').toUpperCase() === 'PENDIENTE_APROBACION'; });
-    } else if (tab === 'suspendidos') {
-      lista = disps.filter(function(d) { return String(d.Estado || '').toUpperCase() === 'SUSPENDIDO'; });
-    } else {
-      lista = disps.slice();
-    }
-    // [v2.43.168 SEC FIX] Dispositivos MOS solo visibles para MASTER.
-    // Admin común NO debe ver ni aprobar/rechazar dispositivos MOS — eso es
-    // privilegio exclusivo del master según regla del usuario.
+    // [dueño 2026-07-16] SOLO solicitudes de acceso (PENDIENTE_APROBACION). Un suspendido no es accionable
+    // desde el buzón (pide reactivación con su botón → cae aquí como PENDIENTE). MOS solo lo ve/aprueba el MASTER.
     var rolUser = '';
     try { rolUser = String((_config.rol && _config.rol()) || '').toUpperCase(); } catch(_){}
     var esMaster = rolUser === 'MASTER';
-    if (!esMaster) {
-      lista = lista.filter(function(d) {
-        var appD = String(d.App || '').toUpperCase();
-        return appD !== 'MOS' && appD !== 'PROYECTOMOS';
-      });
-    }
-    if (sub) sub.textContent = lista.length + ' · tab "' + tab + '"';
+    var lista = disps.filter(function(d) {
+      if (String(d.Estado || '').toUpperCase() !== 'PENDIENTE_APROBACION') return false;
+      if (!esMaster) { var a = String(d.App || '').toUpperCase(); if (a === 'MOS' || a === 'PROYECTOMOS') return false; }
+      return true;
+    });
+    // [anti-parpadeo] firma de la lista; si no cambió y no es forzado (auto-refresh 5s), NO re-dibuja.
+    var sig = lista.map(function(d){ return String(d.ID_Dispositivo||'') + ':' + String(d.Estado||''); }).join(',');
+    if (!force && sig === _alertasLastSig) return;
+    _alertasLastSig = sig;
+    if (sub) sub.textContent = (lista.length === 0)
+      ? 'sin solicitudes pendientes'
+      : (lista.length + ' solicitud' + (lista.length > 1 ? 'es' : '') + ' de acceso');
     if (lista.length === 0) {
-      body.innerHTML = '<div style="text-align:center;color:#34d399;padding:30px 0;font-size:14px">✅ Nada en esta categoría</div>';
+      body.innerHTML = '<div style="text-align:center;color:#34d399;padding:30px 0;font-size:14px">✅ Sin solicitudes pendientes<br><small style="color:#64748b">Los equipos que pidan acceso aparecerán acá al instante</small></div>';
       return;
     }
     body.innerHTML = lista.map(function(d) {
@@ -587,8 +557,8 @@
         if (r && r.ok === false) { _toast('❌ ' + _esc(r.error || 'Error'), { error: true }); return; }
         if (r && r.autorizado === false) { sonidos.rechazado(); _toast('❌ ' + _esc(r.error || 'Clave incorrecta'), { error: true }); return; }
         // [dueño 2026-07-15] tiempo real: si otro admin ya lo aprobó (activación atómica server), avisar sin re-cantar éxito.
-        if (r && r.ya_aprobado) { _toast('ℹ Ya lo aprobó otro admin', {}); _alertasCargar(); return; }
-        sonidos.aprobado(); _toast(okMsg, { success: true }); _alertasCargar();
+        if (r && r.ya_aprobado) { _toast('ℹ Ya lo aprobó otro admin', {}); _alertasCargar(false); _refrescarBadge(); return; }
+        sonidos.aprobado(); _toast(okMsg, { success: true }); _alertasCargar(false); _refrescarBadge();
       }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); })
         .then(_libera, _libera);
     });
@@ -707,7 +677,8 @@
         }
       } catch(_){}
       _desbCerrar();
-      if (document.getElementById('segAlertasOverlay')) _alertasCargar();
+      if (document.getElementById('segAlertasOverlay')) _alertasCargar(false);
+      _refrescarBadge();
     }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); });
   }
   function _desbCerrar() {
