@@ -1,5 +1,8 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.28 — 2026-07-16 — SUSPENDIDO: botón "Solicitar reactivación (remoto)" (antes solo
+//   in-situ → sin admin presente no había salida; ahora cae al buzón del admin/master).
+//   Texto de suspensión corregido a "2 días" (era "7 días", umbral real 48h).
 // v1.0.21 — 2026-06-16 — GATE ANTI-CARRERA (generaliza al MÓDULO el parche que
 //   WH había hecho por su cuenta → ahora cubre MOS, ME y WH).
 //   ┌─ EL BUG (cazado en WH; "Conectando con MOS" eterno) ─────────────────────
@@ -981,13 +984,22 @@
       _sonidoGrave();
       _vibrar([50, 30, 50]);
     } else if (estado === 'SUSPENDIDO') {
+      // Autoridad de reactivación según la app del equipo: MOS→master, WH/ME→admin o master.
+      var labelSolicitarS = _config.isMaster
+        ? '📨 Solicitar reactivación al master (remoto)'
+        : '📨 Solicitar reactivación al admin/master (remoto)';
       _renderOverlay({
         emoji: '⏸', shake: true, title: 'Dispositivo suspendido',
-        detail: extra || 'Tu dispositivo fue suspendido por inactividad (>7 días sin uso).',
-        subDetail: 'Pide reactivación al admin (panel) o usa "Reactivar in-situ" con clave.',
+        detail: extra || 'Tu dispositivo fue suspendido por inactividad (2 días sin uso).',
+        subDetail: 'Envía la solicitud (cae al panel del admin/master en MOS) o usa "Reactivar in-situ" con clave.',
         devIdCaption: 'ID de este dispositivo · toca para copiar',
         actions: [
-          { id: 'reactivar', label: '🔑 Reactivar in-situ (admin presente)', style: 'primary',
+          // [fix] Botón de solicitud REMOTA — un equipo suspendido puede pedir reactivación; la solicitud
+          // llega al buzón del admin/master en MOS (solicitar_acceso_dispositivo soporta NUEVO y SUSPENDIDO).
+          // Antes solo estaba "Reactivar in-situ" → sin un admin presente físicamente no había salida.
+          { id: 'solicitar', label: labelSolicitarS, style: 'primary',
+            onClick: function() { _solicitarAcceso(); } },
+          { id: 'reactivar', label: '🔑 Reactivar in-situ (admin presente)', style: 'secondary',
             onClick: function() { _abrirModalInSitu(true); } }
         ]
       });
