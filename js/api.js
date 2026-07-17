@@ -1890,6 +1890,17 @@ const API = (() => {
       return { ok: true, skuBase: sku, fotoUrl: up.url, fileId: up.path, actualizados: d.actualizados || 0 };
     }
 
+    if (action === 'subirImagenConfig') {
+      // [bancarización] Sube una imagen de CONFIG (ej. QR de Yape/Plin) al bucket producto-fotos bajo una
+      // ruta de config. NO toca productos. Devuelve {ok, data:{url}}.
+      const b64 = String(p.base64 || p.fotoBase64 || '').trim();
+      if (!b64) return { ok: false, error: 'sin imagen' };
+      try {
+        const up = await _subirFotoStorageMOS('_config/' + String(p.carpeta || 'bancario'), b64, String(p.mimeType || 'image/png'), String(p.nombre || 'img'));
+        return { ok: true, data: { url: up.url } };
+      } catch (e) { if (e && e.sinToken) return null; return { ok: false, error: String((e && e.message) || e) }; }
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // [FASE 2 · LOTE PROVEEDORES/PEDIDOS/PAGOS] — 6 acciones de negocio.
     // Cada una mapea payload-frontend (camelCase) → args jsonb de la RPC mos.* (la RPC re-mapea a snake_case),
@@ -2627,6 +2638,7 @@ const API = (() => {
     // del catálogo). OFF (default) ⇒ recto a GAS (segmentos a la Hoja; foto a Drive) = IDÉNTICO a hoy.
     actualizarSegmentosPrecio:  _mosCatalogoDirecto,
     subirFotoProducto:          _mosCatalogoDirecto,
+    subirImagenConfig:          _mosCatalogoDirecto,
     // [CATÁLOGO · estaciones] 100% Supabase (RPC mos.crear_estacion/actualizar_estacion, SQL 215) — sin GAS,
     // sin clasp. Gate _mosCatalogoDirecto (ON en prod). El trigger de versión (200) bumpea al escribir → WH/ME
     // refrescan. Cierra el último caso del patrón "el dato no aterriza" (antes iba GAS→Hoja + sync batch muerto).

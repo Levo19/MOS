@@ -18226,7 +18226,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['infra','personal','categorias','notifs'];
+    const tabs = ['infra','personal','categorias','notifs','bancarios'];
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -18246,6 +18246,7 @@ const MOS = (() => {
       case 'personal':     renderPersonal();     break;
       case 'categorias':   renderCategorias();   break;
       case 'notifs':       renderNotifsPanel();  break;
+      case 'bancarios':    renderBancarios();    break;
     }
   }
 
@@ -43455,6 +43456,118 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch(e){ toast('Error: '+(e.message||e), 'error'); }
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // CONFIG ▸ BANCARIOS — medios de cobro de la empresa (bancarización ME)
+  // Guarda LIMITE_BANCARIZACION + EMPRESA_MEDIOS_COBRO (JSON) en mos.config vía setConfig.
+  // ═══════════════════════════════════════════════════════════════════
+  let _banc = { limite: 2000, medios: [], _cargado: false };
+  function _bancNuevoId() { return 'm' + Math.random().toString(36).slice(2, 7); }
+  function _bancCap() { const l = $('bancLimite'); if (l) _banc.limite = parseInt(l.value, 10) || _banc.limite; }
+  function renderBancarios() {
+    const box = $('bancariosBody'); if (!box) return;
+    if (!_esAdminOMaster()) { box.innerHTML = '<div class="text-amber-400 text-sm py-6 text-center">Solo admin o master pueden editar los datos bancarios.</div>'; return; }
+    if (!_banc._cargado) {
+      const cfg = (cfgData && cfgData.config) || {};
+      _banc.limite = parseInt(cfg.LIMITE_BANCARIZACION, 10) || 2000;
+      try { _banc.medios = JSON.parse(cfg.EMPRESA_MEDIOS_COBRO || '[]') || []; } catch (_) { _banc.medios = []; }
+      if (!Array.isArray(_banc.medios)) _banc.medios = [];
+      _banc._cargado = true;
+    }
+    box.innerHTML = _bancHtml();
+  }
+  function _bancHtml() {
+    const cardBanco = (x, i) => ''
+      + '<div class="fac-card mb-2">'
+      +   '<div class="flex items-center justify-between mb-2">'
+      +     '<span class="fac-chip" style="background:rgba(52,211,153,.15);color:#34d399">🏦 Cuenta bancaria</span>'
+      +     '<label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" ' + (x.imprime?'checked':'') + ' onchange="MOS.bancSet(' + i + ',\'imprime\',this.checked)"> imprime</label>'
+      +   '</div>'
+      +   '<div class="grid grid-cols-2 gap-2">'
+      +     '<div><label class="fac-lbl">Banco</label><input class="fac-inp w-full" value="' + _escapeHtml(x.banco||'') + '" oninput="MOS.bancSet(' + i + ',\'banco\',this.value)" placeholder="BCP / BBVA…"></div>'
+      +     '<div><label class="fac-lbl">Moneda</label><input class="fac-inp w-full" value="' + _escapeHtml(x.moneda||'PEN') + '" oninput="MOS.bancSet(' + i + ',\'moneda\',this.value)" placeholder="PEN"></div>'
+      +     '<div><label class="fac-lbl">Nº Cuenta</label><input class="fac-inp w-full" value="' + _escapeHtml(x.nroCuenta||'') + '" oninput="MOS.bancSet(' + i + ',\'nroCuenta\',this.value)" placeholder="191-…"></div>'
+      +     '<div><label class="fac-lbl">CCI</label><input class="fac-inp w-full" value="' + _escapeHtml(x.cci||'') + '" oninput="MOS.bancSet(' + i + ',\'cci\',this.value)" placeholder="002-191-…"></div>'
+      +     '<div class="col-span-2"><label class="fac-lbl">Titular</label><input class="fac-inp w-full" value="' + _escapeHtml(x.titular||'') + '" oninput="MOS.bancSet(' + i + ',\'titular\',this.value)" placeholder="INVERSIONES MOS EIRL"></div>'
+      +   '</div>'
+      +   '<button onclick="MOS.bancQuitar(' + i + ')" class="fac-btn-sec mt-2" style="padding:4px 10px;font-size:11px;color:#fca5a5">Quitar</button>'
+      + '</div>';
+    const cardWallet = (x, i) => ''
+      + '<div class="fac-card mb-2">'
+      +   '<div class="flex items-center justify-between mb-2">'
+      +     '<span class="fac-chip" style="background:rgba(139,92,246,.15);color:#c4b5fd">📲 ' + (x.tipo==='yape'?'Yape':'Plin') + '</span>'
+      +     '<label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" ' + (x.imprime?'checked':'') + ' onchange="MOS.bancSet(' + i + ',\'imprime\',this.checked)"> imprime</label>'
+      +   '</div>'
+      +   '<div class="grid grid-cols-2 gap-2">'
+      +     '<div><label class="fac-lbl">Titular</label><input class="fac-inp w-full" value="' + _escapeHtml(x.titular||'') + '" oninput="MOS.bancSet(' + i + ',\'titular\',this.value)" placeholder="Nombre"></div>'
+      +     '<div><label class="fac-lbl">Teléfono</label><input class="fac-inp w-full" value="' + _escapeHtml(x.telefono||'') + '" oninput="MOS.bancSet(' + i + ',\'telefono\',this.value)" placeholder="9########"></div>'
+      +   '</div>'
+      +   '<div class="mt-2 flex items-center gap-3">'
+      +     (x.qrUrl ? '<img src="' + _escapeHtml(x.qrUrl) + '" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid #334155">' : '<span class="text-xs text-slate-500">Sin QR</span>')
+      +     '<label class="fac-btn-sec" style="cursor:pointer;padding:6px 10px;font-size:11px">📷 Subir QR<input type="file" accept="image/*" style="display:none" onchange="MOS.bancSubirQR(' + i + ',this)"></label>'
+      +     (x.qrUrl ? '<button onclick="MOS.bancSet(' + i + ',\'qrUrl\',\'\');MOS.renderBancarios()" class="fac-btn-sec" style="padding:6px 10px;font-size:11px">Quitar QR</button>' : '')
+      +   '</div>'
+      +   '<button onclick="MOS.bancQuitar(' + i + ')" class="fac-btn-sec mt-2" style="padding:4px 10px;font-size:11px;color:#fca5a5">Quitar</button>'
+      + '</div>';
+    const cards = _banc.medios.map((x, i) => x.tipo==='banco' ? cardBanco(x,i) : cardWallet(x,i)).join('')
+      || '<div class="text-slate-500 text-xs py-3">Aún no agregaste medios de cobro.</div>';
+    return ''
+      + '<div class="fac-card mb-3">'
+      +   '<label class="fac-lbl">Límite de bancarización (S/)</label>'
+      +   '<div class="flex items-center gap-2">'
+      +     '<input id="bancLimite" class="fac-inp" style="width:120px" type="number" min="1" value="' + _banc.limite + '">'
+      +     '<span class="text-xs text-slate-500">Pagos ≥ este monto exigen bancarización (Ley 28194 = S/ 2,000).</span>'
+      +   '</div>'
+      + '</div>'
+      + cards
+      + '<div class="flex gap-2 flex-wrap mt-2">'
+      +   '<button onclick="MOS.bancAgregar(\'banco\')" class="fac-btn-sec">+ Cuenta bancaria</button>'
+      +   '<button onclick="MOS.bancAgregar(\'yape\')" class="fac-btn-sec">+ Yape</button>'
+      +   '<button onclick="MOS.bancAgregar(\'plin\')" class="fac-btn-sec">+ Plin</button>'
+      + '</div>'
+      + '<button onclick="MOS.bancGuardar()" class="fac-btn-pri mt-3">Guardar medios de cobro</button>';
+  }
+  function bancSet(i, campo, val) { if (_banc.medios[i]) _banc.medios[i][campo] = val; }
+  function bancAgregar(tipo) {
+    _bancCap();
+    _banc.medios.push(tipo==='banco'
+      ? { id:_bancNuevoId(), tipo:'banco', banco:'', nroCuenta:'', cci:'', titular:'', moneda:'PEN', imprime:true }
+      : { id:_bancNuevoId(), tipo, titular:'', telefono:'', qrUrl:'', imprime:true });
+    renderBancarios();
+  }
+  function bancQuitar(i) { _bancCap(); _banc.medios.splice(i,1); renderBancarios(); }
+  async function bancSubirQR(i, input) {
+    const f = input && input.files && input.files[0]; if (!f) return;
+    if (f.size > 4*1024*1024) { toast('Imagen muy grande (máx 4MB)','error'); input.value=''; return; }
+    _bancCap();
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const b64 = String(reader.result||'');
+      toast('Subiendo QR…','info');
+      try {
+        const r = await API.post('subirImagenConfig', { base64: b64, mimeType: f.type||'image/png', carpeta:'bancario', nombre:'qr_'+((_banc.medios[i]&&_banc.medios[i].id)||i) });
+        const url = (r && r.data && r.data.url) || (r && r.url);
+        if (url && _banc.medios[i]) { _banc.medios[i].qrUrl = url; renderBancarios(); toast('✓ QR subido','success'); }
+        else toast('No se pudo subir el QR','error');
+      } catch(e){ toast('Error: '+(e.message||e),'error'); }
+    };
+    reader.readAsDataURL(f);
+    input.value = '';
+  }
+  async function bancGuardar() {
+    if (!_esAdminOMaster()) { toast('Sin permiso','error'); return; }
+    _bancCap();
+    const limite = _banc.limite || 2000;
+    const medios = _banc.medios.filter(x => x.tipo==='banco' ? (x.banco||x.nroCuenta||x.cci) : (x.titular||x.telefono||x.qrUrl));
+    try {
+      await API.post('setConfig', { clave:'LIMITE_BANCARIZACION', valor: String(limite) });
+      await API.post('setConfig', { clave:'EMPRESA_MEDIOS_COBRO', valor: JSON.stringify(medios) });
+      if (cfgData && cfgData.config) { cfgData.config.LIMITE_BANCARIZACION = String(limite); cfgData.config.EMPRESA_MEDIOS_COBRO = JSON.stringify(medios); }
+      _banc.medios = medios;
+      toast('✓ Medios de cobro guardados','success');
+      renderBancarios();
+    } catch(e){ toast('Error al guardar: '+(e.message||e),'error'); }
+  }
+
   async function facRenderConfig() {
     const box=$('facConfigBody'); if(!box) return; box.innerHTML='Cargando…';
     let cfg;
@@ -43668,6 +43781,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     guardarTarjetaWA, abrirTarjetaModal,
     // Notificaciones (pestaña Configuraciones)
     renderNotifsPanel, refreshNotifs, notifSetFiltro, notifSetEstado,
+    renderBancarios, bancSet, bancAgregar, bancQuitar, bancSubirQR, bancGuardar,
     abrirNotifLog, refreshNotifLog,
     _notifToggleExpand, _notifToggleActiva, _notifToggleRol,
     _notifSetExtra, _notifSetPrioridad, _notifSetExcluir,

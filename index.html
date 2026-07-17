@@ -14436,6 +14436,7 @@
           <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
           <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
           <button class="tab-btn" id="cfgTabNotifs"            onclick="MOS.setCfgTab('notifs')">🔔 Notificaciones</button>
+          <button class="tab-btn" id="cfgTabBancarios"         onclick="MOS.setCfgTab('bancarios')">🏦 Bancarios</button>
         </div>
       </div>
       <div class="text-xs text-slate-600 italic mb-3 sm:hidden">→ Desliza las tablas y los tabs para ver todo</div>
@@ -14593,6 +14594,21 @@
         <!-- Lista -->
         <div id="notifsList" class="space-y-2">
           <div class="text-center py-12 text-slate-500 text-sm">Cargando catálogo...</div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════
+           BANCARIOS — Medios de cobro de la empresa (bancarización ME)
+           ════════════════════════════════════════════════════════ -->
+      <div id="cfgPanelBancarios" class="hidden">
+        <div class="flex items-center justify-between gap-2 mb-1 flex-wrap">
+          <div class="flex-1 min-w-0">
+            <h3 class="font-semibold text-sm text-slate-200">🏦 Medios de cobro de la empresa</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Cuentas, Yape y Plin que se imprimen/muestran cuando una venta requiere <b>bancarización</b> (pagos ≥ límite). Marca cuáles se imprimen.</p>
+          </div>
+        </div>
+        <div id="bancariosBody" class="mt-2">
+          <div class="text-center py-8 text-slate-500 text-sm">Cargando…</div>
         </div>
       </div>
 
@@ -19346,7 +19362,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.545"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.547"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.548"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>

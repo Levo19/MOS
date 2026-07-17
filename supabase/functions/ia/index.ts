@@ -15,7 +15,7 @@ const CORS = {
 const APPS_OK = new Set(['warehouseMos', 'mosExpress', 'MOS']);   // [RIZ Capa 5] MOS reusa la Edge IA para el panel de sugerencias por zona
 const MODELO_DEFAULT = 'claude-haiku-4-5-20251001';
 // whitelist de modelos permitidos (evita que pidan opus u otros caros vía el proxy) — solo haiku/sonnet
-const MODELOS_OK = new Set(['claude-haiku-4-5-20251001', 'claude-3-5-haiku-20241022', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250929']);
+const MODELOS_OK = new Set(['claude-haiku-4-5-20251001', 'claude-3-5-haiku-20241022', 'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250929']);   // [foto/PDF listas] +sonnet-5 (visión/tablas)
 const MAX_TOKENS_CAP = 8192;   // techo duro (= máximo output de Haiku 4.5; analizarListaSombra usa 8192 para listas grandes)
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 
