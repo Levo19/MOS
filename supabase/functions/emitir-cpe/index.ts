@@ -143,24 +143,40 @@ Deno.serve(async (req: Request) => {
       const v = vrows[0];
       const td = String(v.tipo_doc || ''); const nfe = String(v.nf_estado || ''); const corr = String(v.correlativo || '');
       if (td !== 'BOLETA' && td !== 'FACTURA') return json({ status: 'error', error: 'Solo se da de baja BOLETA o FACTURA. Esta venta es ' + td }, 400);
-      // Idempotencia: si ya está en baja, no re-comunicar.
-      if (nfe.startsWith('BAJA_')) return json({ status: 'success', nuevoEstado: nfe, dedup: true });
-      if (nfe !== 'EMITIDO') return json({ status: 'error', error: 'CPE no está EMITIDO en SUNAT (estado: ' + nfe + ')' }, 400);
-      const pb = corr.split('-'); if (pb.length < 2) return json({ status: 'error', error: 'Correlativo inválido: ' + corr }, 400);
-      const bSerie = pb[0]; const bNum = parseInt(pb[pb.length - 1], 10);
-      if (!bNum || bNum < 1) return json({ status: 'error', error: 'número de correlativo inválido' }, 400);
-      const bResp = await fetch(ruta, { method: 'POST',
-        headers: { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ operacion: 'generar_anulacion', tipo_de_comprobante: (td === 'FACTURA') ? 1 : 2, serie: bSerie, numero: bNum, motivo: motivo.substring(0, 250) }) });
-      const bBody = await bResp.json().catch(() => ({}));
-      const bOk = (bResp.status === 200 || bResp.status === 201);
-      const bAcept = bBody.aceptada_por_sunat === true || bBody.anulado === true;
-      const nuevoEstado = bOk ? (bAcept ? 'BAJA_ACEPTADA' : 'BAJA_SOLICITADA') : 'BAJA_ERROR';
-      await fetch(`${sbUrl}/rest/v1/ventas?id_venta=eq.${encodeURIComponent(idVenta)}`, { method: 'PATCH',
+      // [505] NOTA: la REVERSA DEL PAGO (forma_pago='ANULADO' + stock + pickup) la hace el front por la vía
+      // de anulación (me.anular_venta_directo), offline-safe. Acá SOLO se resuelve el lado FISCAL con SUNAT.
+      const patchNf = (estado: string) => fetch(`${sbUrl}/rest/v1/ventas?id_venta=eq.${encodeURIComponent(idVenta)}`, {
+        method: 'PATCH',
         headers: { 'apikey': sbKey!, 'Authorization': 'Bearer ' + sbKey!, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nf_estado: nuevoEstado }) }).catch(() => {});
-      if (!bOk) return json({ status: 'error', error: 'NubeFact baja HTTP ' + bResp.status, nuevoEstado, detalle: JSON.stringify(bBody).substring(0, 200) }, 502);
-      return json({ status: 'success', nuevoEstado, aceptada: bAcept });
+        body: JSON.stringify({ nf_estado: estado }) }).catch(() => {});
+      // Idempotencia: ya en un estado terminal de baja/anulación → no re-comunicar.
+      if (nfe.startsWith('BAJA_') || nfe === 'ANULADO') return json({ status: 'success', nuevoEstado: nfe, dedup: true });
+      // EMITIDO (aceptado por SUNAT) → comunicar la baja YA.
+      if (nfe === 'EMITIDO') {
+        const pb = corr.split('-'); if (pb.length < 2) return json({ status: 'error', error: 'Correlativo inválido: ' + corr }, 400);
+        const bSerie = pb[0]; const bNum = parseInt(pb[pb.length - 1], 10);
+        if (!bNum || bNum < 1) return json({ status: 'error', error: 'número de correlativo inválido' }, 400);
+        const bResp = await fetch(ruta, { method: 'POST',
+          headers: { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operacion: 'generar_anulacion', tipo_de_comprobante: (td === 'FACTURA') ? 1 : 2, serie: bSerie, numero: bNum, motivo: motivo.substring(0, 250) }) });
+        const bBody = await bResp.json().catch(() => ({}));
+        const bOk = (bResp.status === 200 || bResp.status === 201);
+        const bAcept = bBody.aceptada_por_sunat === true || bBody.anulado === true;
+        const nuevoEstado = bOk ? (bAcept ? 'BAJA_ACEPTADA' : 'BAJA_SOLICITADA') : 'BAJA_ERROR';
+        await patchNf(nuevoEstado);
+        if (!bOk) return json({ status: 'error', error: 'NubeFact baja HTTP ' + bResp.status, nuevoEstado, detalle: JSON.stringify(bBody).substring(0, 200) }, 502);
+        return json({ status: 'success', nuevoEstado, aceptada: bAcept, pendiente: false });
+      }
+      // RECHAZADO (SUNAT lo rechazó) → no hay comprobante válido que dar de baja; marcar terminal.
+      if (nfe === 'RECHAZADO') {
+        await patchNf('ANULADO');
+        return json({ status: 'success', nuevoEstado: 'ANULADO', pendiente: false, nota: 'CPE estaba RECHAZADO — sin baja que comunicar.' });
+      }
+      // PENDIENTE / EMITIENDO / '' / ANULADO_PEND_BAJA → aún no aceptado por SUNAT: se AGENDA. La reconciliación
+      // (me.cpe_recon_candidatos + auto-baja) comunicará la baja SOLA apenas SUNAT lo acepte. Cubre "sin internet".
+      await patchNf('ANULADO_PEND_BAJA');
+      return json({ status: 'success', nuevoEstado: 'ANULADO_PEND_BAJA', pendiente: true,
+        nota: 'CPE aún no aceptado por SUNAT — la baja se comunicará automáticamente al aceptarse.' });
     }
 
     // ── generar (emitir) — solo POS ──

@@ -58,6 +58,22 @@ async function consultar(serie: string, numero: number, tipoComprobante: number,
   } catch (e) { return { ok: false, error: 'NETWORK: ' + String((e as Error)?.message || e) }; }
 }
 
+// [505] NubeFact generar_anulacion (Comunicación de Baja) — para las ventas ANULADAS cuyo CPE ya fue
+// aceptado por SUNAT (auto-baja). Devuelve el nuevo estado BAJA_*.
+async function generarBaja(serie: string, numero: number, tipoComprobante: number, ruta: string, token: string) {
+  try {
+    const resp = await fetch(ruta, {
+      method: 'POST',
+      headers: { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operacion: 'generar_anulacion', tipo_de_comprobante: tipoComprobante, serie, numero, motivo: 'Venta anulada en el punto de venta' }),
+    });
+    const body = await resp.json().catch(() => ({}));
+    const ok = (resp.status === 200 || resp.status === 201);
+    const aceptada = body.aceptada_por_sunat === true || body.anulado === true;
+    return { estado: ok ? (aceptada ? 'BAJA_ACEPTADA' : 'BAJA_SOLICITADA') : 'BAJA_ERROR' };
+  } catch { return { estado: 'BAJA_ERROR' }; }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ ok: false, error: 'método no permitido' }, 405);
@@ -76,45 +92,79 @@ Deno.serve(async (req: Request) => {
     // [500x-2b] ventana >= 45d (cubre el sweep GAS de 35d + margen); SUNAT puede aceptar dias despues.
     const dias = Math.min(Math.max(parseInt(String(inp.dias ?? 45), 10) || 45, 1), 90);
     const limite = Math.min(Math.max(parseInt(String(inp.limite ?? 50), 10) || 50, 1), 200);
-    const desde = new Date(Date.now() - dias * 86400 * 1000).toISOString().slice(0, 10);
 
-    // CPE en PENDIENTE (aceptados por NubeFact, sin CDR de SUNAT aún). nf_estado NULL/EMITIENDO incluidos.
-    const q = `${url}/rest/v1/ventas?select=ref_local,correlativo,tipo_doc,nf_estado`
-      + `&tipo_doc=in.(BOLETA,FACTURA)`
-      + `&or=(nf_estado.eq.PENDIENTE,nf_estado.eq.EMITIENDO,nf_estado.is.null)`
-      + `&correlativo=neq.&fecha=gte.${desde}&limit=${limite}`;
-    const rp = await fetch(q, { headers: { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Accept-Profile': 'me' } });
-    if (!rp.ok) return json({ ok: false, error: 'lectura pendientes HTTP ' + rp.status }, 502);
+    // [505] Candidatos vía RPC (me.cpe_recon_candidatos): pendientes NORMALES + ANULADAS que aún deben
+    // comunicar la baja. Cada fila trae `anulada` (forma_pago='ANULADO') → decide la acción fiscal.
+    const rp = await fetch(`${url}/rest/v1/rpc/cpe_recon_candidatos`, {
+      method: 'POST',
+      headers: { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_dias: dias, p_limite: limite }),
+    });
+    if (!rp.ok) return json({ ok: false, error: 'lectura candidatos HTTP ' + rp.status }, 502);
     const pend = await rp.json().catch(() => []);
-    if (!Array.isArray(pend) || pend.length === 0) return json({ ok: true, revisados: 0, emitidos: 0, rechazados: 0, sin_cambio: 0, detalle: [] });
+    if (!Array.isArray(pend) || pend.length === 0) return json({ ok: true, revisados: 0, emitidos: 0, rechazados: 0, bajas: 0, agendadas: 0, sin_cambio: 0, detalle: [] });
 
-    let emitidos = 0, rechazados = 0, sinCambio = 0;
+    // helper: persistir un nf_estado simple (baja/anulación) vía service-role.
+    const setEstado = (ref: string, nf: Record<string, unknown>) => fetch(`${url}/rest/v1/rpc/set_cpe_nf`, {
+      method: 'POST',
+      headers: { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_ref_local: ref, p_nf: nf }),
+    });
+
+    let emitidos = 0, rechazados = 0, bajas = 0, agendadas = 0, sinCambio = 0;
     const detalle: unknown[] = [];
     for (const row of pend) {
       const corr = String(row.correlativo || '');
       const m = /^([A-Za-z0-9]+)-(\d+)$/.exec(corr);
       if (!m) { detalle.push({ correlativo: corr, accion: 'correlativo_malformado' }); continue; }
       const tipoComprobante = (row.tipo_doc === 'FACTURA') ? 1 : 2;
+      const anulada = row.anulada === true;
       const cons = await consultar(m[1], parseInt(m[2], 10), tipoComprobante, ruta, token);
-      if (!cons.ok) { sinCambio++; detalle.push({ correlativo: corr, accion: cons.noExiste ? 'no_existe_nubefact' : 'consulta_fallo' }); continue; }
+      if (!cons.ok) {
+        // La consulta falló (red, o NubeFact dice "no existe"). Si la venta está ANULADA, dejarla en
+        // ANULADO_PEND_BAJA (visible + se reintenta el próximo ciclo) en vez de terminal: "no existe" puede
+        // ser transitorio, y marcar ANULADO nos haría PERDER la baja si el comprobante sí existía y se acepta.
+        if (anulada && row.nf_estado !== 'ANULADO_PEND_BAJA') { await setEstado(row.ref_local, { nf_estado: 'ANULADO_PEND_BAJA' }); }
+        if (anulada) { agendadas++; detalle.push({ correlativo: corr, accion: (cons.noExiste ? 'anulada_no_existe_reintenta' : 'anulada_consulta_fallo') }); }
+        else { sinCambio++; detalle.push({ correlativo: corr, accion: cons.noExiste ? 'no_existe_nubefact' : 'consulta_fallo' }); }
+        continue;
+      }
+
+      // ── Rama ANULADA: la venta ya no cuenta (pago reversado); resolver el lado fiscal ──
+      if (anulada) {
+        if (cons.aceptada) {
+          // SUNAT lo aceptó → comunicar la baja YA (auto-baja).
+          const b = await generarBaja(m[1], parseInt(m[2], 10), tipoComprobante, ruta, token);
+          const sp = await setEstado(row.ref_local, { nf_estado: b.estado, aceptada: true, consultado: true,
+            sunat_desc: cons.sunatDescription, sunat_code: cons.sunat_code });
+          if (sp.ok && (b.estado === 'BAJA_ACEPTADA' || b.estado === 'BAJA_SOLICITADA')) { bajas++; detalle.push({ correlativo: corr, accion: 'auto_baja_' + b.estado }); }
+          else { sinCambio++; detalle.push({ correlativo: corr, accion: 'auto_baja_' + b.estado + (sp.ok ? '' : '_persist_fallo') }); }
+        } else if (cons.rechazado) {
+          // SUNAT lo rechazó → nada que dar de baja; terminal.
+          const sp = await setEstado(row.ref_local, { nf_estado: 'ANULADO', consultado: true, sunat_desc: cons.sunatDescription, sunat_code: cons.sunat_code });
+          if (sp.ok) { agendadas++; detalle.push({ correlativo: corr, accion: 'anulado_rechazado' }); } else { sinCambio++; }
+        } else {
+          // Aún pendiente en SUNAT → esperar; marcar/mantener ANULADO_PEND_BAJA.
+          if (row.nf_estado !== 'ANULADO_PEND_BAJA') { await setEstado(row.ref_local, { nf_estado: 'ANULADO_PEND_BAJA', consultado: true }); }
+          agendadas++; detalle.push({ correlativo: corr, accion: 'baja_agendada_espera_sunat' });
+        }
+        continue;
+      }
+
+      // ── Rama NORMAL: reconciliar el estado de emisión ──
       const nuevoEstado = cons.aceptada ? 'EMITIDO' : (cons.rechazado ? 'RECHAZADO' : 'PENDIENTE');
       if (nuevoEstado === 'PENDIENTE') { sinCambio++; detalle.push({ correlativo: corr, accion: 'sigue_pendiente' }); continue; }
-      // persistir vía set_cpe_nf (no degrada EMITIDO; merge de trazabilidad). PostgREST con service-role.
       const nf = {
         nf_estado: nuevoEstado, nf_hash: cons.hash, nf_enlace: cons.enlace, nf_qr: cons.qrString,
         aceptada: cons.aceptada === true, sunat_desc: cons.sunatDescription, sunat_code: cons.sunat_code,
         enlace_xml: cons.enlace_xml, enlace_cdr: cons.enlace_cdr, numero_orden_sunat: cons.numero_orden_sunat,
         consultado: true,
       };
-      const sp = await fetch(`${url}/rest/v1/rpc/set_cpe_nf`, {
-        method: 'POST',
-        headers: { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ p_ref_local: row.ref_local, p_nf: nf }),
-      });
+      const sp = await setEstado(row.ref_local, nf);
       if (sp.ok) { if (nuevoEstado === 'EMITIDO') emitidos++; else rechazados++; detalle.push({ correlativo: corr, accion: nuevoEstado }); }
       else { sinCambio++; detalle.push({ correlativo: corr, accion: 'set_cpe_nf_HTTP_' + sp.status }); }
     }
-    return json({ ok: true, revisados: pend.length, emitidos, rechazados, sin_cambio: sinCambio, detalle });
+    return json({ ok: true, revisados: pend.length, emitidos, rechazados, bajas, agendadas, sin_cambio: sinCambio, detalle });
   } catch (e) {
     return json({ ok: false, error: String((e as Error)?.message || e) }, 500);
   }
