@@ -1316,8 +1316,10 @@
   function abrirMenuProductoCard(producto) {
     _injectCss();
     sonidos.click();
-    // Auto-imprimir según origen: WH→andamio, ME→góndola (sin tocar global)
-    if (_config.origen === 'WH') return _menuImprimir('MEMBRETE_WH', producto);
+    // Auto-imprimir según origen: WH→andamio, ME→góndola (sin tocar global).
+    // [pres-v1 · punto 11] una PRESENTACIÓN NUNCA va en andamio (trunca el nombre) → si el origen es WH, igual góndola.
+    var _esPres = !!(producto && producto.esPresentacion);
+    if (_config.origen === 'WH') return _menuImprimir(_esPres ? 'MEMBRETE_ME' : 'MEMBRETE_WH', producto);
     if (_config.origen === 'ME') return _menuImprimir('MEMBRETE_ME', producto);
     // Solo MOS muestra el menú con ambas opciones
     if (document.getElementById('msMenuOverlay')) return;
@@ -1418,8 +1420,9 @@
       preview: previewMeHtml,
       accion: _menuStepperHtml('msMeQty') + '<button class="ms-btn ms-btn-primary" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_ME\')">🖨 Imprimir</button>'
     });
-    // ─── WH andamio ───
-    var optWh = _opcionHtml({
+    // ─── WH andamio ─── [pres-v1 · punto 11] las PRESENTACIONES NO llevan andamio (trunca el nombre a 2
+    // líneas y confunde) → solo góndola. Para el resto se muestra normal.
+    var optWh = producto.esPresentacion ? '' : _opcionHtml({
       icon: svgAndamio, titulo: 'Membrete andamio (WH)',
       sub: (totalWh > 1 ? 'Rótulo de almacén · ' + totalWh + ' adhesivos (cabecera + ' + (totalWh - 1) + ' códigos) × copias' : 'El rótulo del almacén · 1 adhesivo c/copia'),
       preview: previewWhHtml,

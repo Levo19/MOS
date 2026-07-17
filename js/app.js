@@ -15421,6 +15421,70 @@ const MOS = (() => {
     return null;
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // [pres-v1] PRESENTACIONES — helpers puros (nombre compuesto · código por factor · contenido auto).
+  // La presentación = FACTOR sobre un producto NIU: pack (×N, factor>1) o fracción (÷N, factor<1).
+  // Nombre = "BASE (del padre) · DESCRIPTOR". Código = prefijo + sufijo derivado del factor (uniforme,
+  // parseable). Sin DOM: testeable en node. NO tocan dinero (solo arman etiquetas/códigos sugeridos).
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  var _PRES_PACKS = { 2: 'Dúo', 3: 'Tripack', 6: 'Sixpack', 12: 'Docena' };
+  var _PRES_FRACC = { 2: 'Media', 3: 'Tercio', 4: 'Cuarto', 6: 'Sexto', 8: 'Octavo' };
+
+  // ¿el factor es una fracción exacta 1/N? → devuelve N, si no null.
+  function _presDenominador(factor) {
+    var f = parseFloat(factor) || 0;
+    if (f <= 0 || f >= 1) return null;
+    var inv = 1 / f, n = Math.round(inv);
+    return (n >= 2 && Math.abs(inv - n) < 1e-6) ? n : null;
+  }
+
+  // Descriptor sugerido a partir del factor (editable por el usuario). '' si es un factor "raro".
+  function _presDescriptorSugerido(factor) {
+    var f = parseFloat(factor) || 0;
+    if (f > 1 && Number.isInteger(f)) return _PRES_PACKS[f] || ('Pack x' + f);
+    var n = _presDenominador(f);
+    if (n) return _PRES_FRACC[n] || ('1/' + n);
+    return '';
+  }
+
+  // Sufijo de código derivado del factor: pack ×N → "X"+N · fracción 1/N → "D"+N · otro → "F"+factor×1000.
+  // Uniforme y unívoco (un factor ⇒ un sufijo). Ej: 3→X3 · 0.125→D8 · 0.25→D4 · 1.5→F1500.
+  function _presCodigoSufijo(factor) {
+    var f = parseFloat(factor) || 0;
+    if (f <= 0) return '';
+    if (f >= 1 && Number.isInteger(f)) return 'X' + f;
+    var n = _presDenominador(f);
+    if (n) return 'D' + n;
+    return 'F' + Math.round(f * 1000);
+  }
+
+  // Formatea kg a etiqueta legible: >=1kg → "1.5 kg" (sin ceros) · <1kg → "250 g".
+  function _presFmtContenidoKg(kg) {
+    if (!(kg > 0)) return '';
+    if (kg >= 1) return String(Math.round(kg * 1000) / 1000).replace(/\.?0+$/, '') + ' kg';
+    return Math.round(kg * 1000) + ' g';
+  }
+
+  // Contenido de la presentación: pack → "3 un" · fracción → magnitud física del padre × factor ("250 g").
+  // '' si es fracción y el padre no tiene magnitud parseable en el nombre.
+  function _presContenidoAuto(padreDesc, factor) {
+    var f = parseFloat(factor) || 0;
+    if (f <= 0) return '';
+    if (f > 1) return (Number.isInteger(f) ? f : (Math.round(f * 100) / 100)) + ' un';
+    var kgBase = _pesoDesdeNombre(padreDesc);
+    if (!kgBase) return '';
+    return _presFmtContenidoKg(kgBase * f);
+  }
+
+  // Nombre compuesto: "BASE · DESCRIPTOR (CONTENIDO)". El " · " es también el punto de corte del adhesivo.
+  function _presNombreCompuesto(padreDesc, descriptor, contenido) {
+    var base = String(padreDesc == null ? '' : padreDesc).toUpperCase().replace(/\s+/g, ' ').trim();
+    var d = String(descriptor == null ? '' : descriptor).trim();
+    if (!d) return base;
+    if (contenido) d = d + ' (' + contenido + ')';
+    return base ? (base + ' · ' + d) : d;
+  }
+
   // [424] Preview del derivado + GUARDIÁN contra el nombre. NUNCA bloquea (el nombre
   // también puede estar mal tipeado, decisión del dueño) — solo avisa en ámbar/rojo.
   function _prodDerivadoPreview() {
@@ -15600,6 +15664,46 @@ const MOS = (() => {
       return cb;
     }
     return _genCodigoPrefijo(pref);   // 4 colisiones seguidas ≈ imposible; el trigger BD respalda
+  }
+
+  // [pres-v1] Slug corto y determinista del padre para el código legible: primeras consonantes de las
+  // 2 primeras palabras (cap 6) + dígitos (cap 4). Ej: "CHAMPIÑONES LATA 393GR" → "CHMLT393".
+  function _presSlugPadre(padreDesc) {
+    var s = String(padreDesc == null ? '' : padreDesc).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    s = s.replace(/[^A-Z0-9 ]/g, ' ');
+    var palabras = s.split(/\s+/).filter(Boolean), letras = '', nums = '';
+    for (var i = 0; i < palabras.length; i++) {
+      var w = palabras[i];
+      var digs = w.replace(/[^0-9]/g, ''); if (digs) nums += digs;
+      var soloL = w.replace(/[^A-Z]/g, '');
+      if (soloL && letras.length < 6) {
+        var cons = soloL.charAt(0) + soloL.slice(1).replace(/[AEIOU]/g, '');
+        letras += cons.slice(0, 3);
+      }
+    }
+    return (letras.slice(0, 6) + nums.slice(0, 4)) || 'PRES';
+  }
+
+  // [pres-v1] Código legible de presentación: P-<slug>-<sufijoFactor>, ≤13 chars (límite scannable CODE128 en el
+  // adhesivo 50mm — mismo rango que los WH- que ya imprimen bien). Colisión: 1 char base36 en el slug (no alarga).
+  // Ej: tripack → P-CHMLT39-X3 · octavo → P-MRGSL2-D8. Fallback aleatorio si todo choca.
+  var _PRES_B36 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  async function _presGenCodigo(padreDesc, factor) {
+    var MAX = 13, suf = _presCodigoSufijo(factor), slugF = _presSlugPadre(padreDesc);
+    var budget = Math.max(3, MAX - 3 - suf.length);
+    var libre = async function (cand) {
+      if (_cbConflictoLocal(cand)) return false;
+      try { var r = await API.post('codigoBarraDisponible', { codigoBarra: cand }); if (r && r.disponible === false) return false; } catch (_) { /* guard BD 426 respalda */ }
+      return true;
+    };
+    var cand = 'P-' + slugF.slice(0, budget) + (suf ? ('-' + suf) : '');
+    if (await libre(cand)) return cand;
+    var slugBase = slugF.slice(0, Math.max(2, budget - 1));
+    for (var k = 0; k < _PRES_B36.length; k++) {
+      cand = 'P-' + slugBase + _PRES_B36[k] + (suf ? ('-' + suf) : '');
+      if (await libre(cand)) return cand;
+    }
+    return await genCodigoUnico('P-');
   }
 
   // Si silencioso=true: solo regenera (uso interno, ej. al guardar con campo vacío).
@@ -16906,7 +17010,7 @@ const MOS = (() => {
     const ops = [];
     if (tipo === 'envasable') {
       ops.push({ k:'derivado',     ic:'🥄', t:'Derivado',     d:'fracción envasada del granel (250gr, 500gr…)' });
-      ops.push({ k:'presentacion', ic:'🧱', t:'Presentación', d:'pack de N unidades' });
+      ops.push({ k:'presentacion', ic:'🧱', t:'Presentación', d:'pack ×N o fracción ÷N (precio propio)' });
       ops.push({ k:'tramo',        ic:'📊', t:'Tramo',        d:'precio por rango de peso' });
       ops.push({ k:'equivalente',  ic:'🏷️', t:'Equivalente',  d:'otro código de barra del mismo producto' });
     } else if (tipo === 'presentacion') {
@@ -16916,7 +17020,7 @@ const MOS = (() => {
       toast('🧱 Un pack no admite satélites: su 2do código NO puede ser equivalente (apuntaría al canónico y se cobraría como 1 unidad). Agrégalo desde el canónico si corresponde.', 'error');
       return;
     } else { // canónico normal o derivado
-      ops.push({ k:'presentacion', ic:'🧱', t:'Presentación', d:'pack de N unidades' });
+      ops.push({ k:'presentacion', ic:'🧱', t:'Presentación', d:'pack ×N o fracción ÷N (precio propio)' });
       ops.push({ k:'equivalente',  ic:'🏷️', t:'Equivalente',  d:'otro código de barra' });
     }
     const html = `<div id="plusCtxMenu" class="fixed z-[95] rounded-xl shadow-2xl overflow-hidden"
@@ -17070,41 +17174,39 @@ const MOS = (() => {
     }
 
     if (tipo === 'presentacion') {
-      const precioPadre = parseFloat(padre.precioVenta) || 0;
-      tit.textContent = '🧱 Nueva presentación';
+      tit.textContent = editarProd ? '🧱 Editar presentación' : '🧱 Nueva presentación';
       her.classList.remove('hidden');
       her.textContent = `Hereda ${igvTxt} · categoría ${padre.idCategoria || '—'} del producto padre`;
+      // [pres-v1] Picker de 2 familias (Pack ×N / Fracción ÷N). El nombre se compone (BASE · DESCRIPTOR) y el
+      // código refleja el factor (P-<slug>-X{N}/D{N}). Reemplaza el input "min 2" (que bloqueaba fracciones).
       body.innerHTML = `
-        <div><label class="lbl">Nombre <span class="text-rose-400">*</span></label>
-          <input id="satNombre" class="inp w-full" placeholder="Ej: ${_escapeHtml((padre.descripcion||'').slice(0,24))} · Pack x12"></div>
-        <div><label class="lbl">¿Cuántas unidades base agrupa? <span class="text-rose-400">*</span></label>
-          <input id="satAgrupa" class="inp w-full" type="number" step="1" min="2" placeholder="12" oninput="MOS._satSugerirPrecioPack(${precioPadre})"></div>
+        <div><label class="lbl">Tipo <span class="text-rose-400">*</span></label>
+          <div class="flex gap-2 mb-2">
+            <button type="button" id="presFamPack" class="flex-1 py-2 rounded-lg text-xs font-bold border" onclick="MOS._presSetFamilia('pack')">🧱 Pack (×N)</button>
+            <button type="button" id="presFamFrac" class="flex-1 py-2 rounded-lg text-xs font-bold border" onclick="MOS._presSetFamilia('frac')">✂️ Fracción (÷N)</button>
+          </div>
+          <div id="presChips" class="flex flex-wrap gap-1.5"></div>
+          <input id="presOtro" type="number" step="0.001" min="0" class="inp w-full hidden mt-1.5" oninput="MOS._presOtroInput()"></div>
+        <div><label class="lbl">Descriptor <span class="text-rose-400">*</span></label>
+          <input id="presDescriptor" class="inp w-full" placeholder="Tripack / Octavo…" oninput="MOS._presRecomponer()">
+          <div id="presContenido" class="text-[11px] mt-1 text-slate-400"></div></div>
+        <div><label class="lbl">Nombre <span class="text-[9px] text-slate-500">se compone solo · editable</span></label>
+          <input id="satNombre" class="inp w-full" oninput="MOS._presNombreManual()"></div>
         <div class="grid grid-cols-2 gap-3">
-          <div><label class="lbl">Precio del pack <span class="text-rose-400">*</span></label>
-            <input id="satPrecio" class="inp w-full" type="number" step="0.10" min="0.10" placeholder="0.00">
+          <div><label class="lbl">Precio <span class="text-rose-400">*</span></label>
+            <input id="satPrecio" class="inp w-full" type="number" step="0.10" min="0.10" placeholder="0.00" oninput="MOS._presPrecioManual()">
             <div id="satPrecioHint" class="text-[10px] mt-1 text-slate-500"></div></div>
           <div><label class="lbl">Código <span class="text-[9px]" style="color:#34d399">auto P-</span></label>
             <div class="flex gap-1.5"><input id="satCodigo" class="inp flex-1 font-mono text-xs" oninput="MOS._satValidarCodigo()">
             ${_SAT_CAM('satCodigo')}</div><div id="satCodigoFb" class="text-[10px] mt-1"></div></div>
         </div>`;
-      // [RONDA 3] modo EDICIÓN
+      btn.textContent = editarProd ? 'Guardar cambios' : 'Crear presentación';
       if (editarProd) {
-        tit.textContent = '🧱 Editar presentación';
-        btn.textContent = 'Guardar cambios';
         body.insertAdjacentHTML('beforeend', `<button type="button" class="w-full text-[11px] text-slate-500 hover:text-slate-300 py-1"
           onclick="MOS.cerrarModalSatelite();MOS.abrirModalProducto('${editarProd.idProducto}')">⚙️ Edición avanzada (stock, costo, política…)</button>`);
-        openModal('modalSatelite');
-        $('satNombre').value = editarProd.descripcion || '';
-        $('satAgrupa').value = parseFloat(editarProd.factorConversion) || '';
-        $('satPrecio').value = parseFloat(editarProd.precioVenta) || '';
-        $('satCodigo').value = editarProd.codigoBarra || '';
-        return;
       }
-      btn.textContent = 'Crear presentación';
       openModal('modalSatelite');
-      // [fix rev B1] misma guardia anti-carrera del generador
-      { const st = _satState; const cb = await genCodigoUnico('P-');
-        if (_satState === st && $('satCodigo')) $('satCodigo').value = cb; }
+      await _presInit(editarProd);
       return;
     }
 
@@ -17277,17 +17379,113 @@ const MOS = (() => {
     return false;
   }
 
-  function _satSugerirPrecioPack(precioPadre) {
-    const n = parseInt($('satAgrupa')?.value) || 0;
-    const hint = $('satPrecioHint');
-    if (!hint) return;
-    if (n >= 2 && precioPadre > 0) {
-      const sug = n * precioPadre;
-      hint.innerHTML = `Sugerencia: ${n} × S/${precioPadre.toFixed(2)} = <b style="color:#34d399">S/ ${sug.toFixed(2)}</b> · pones el tuyo`;
-      const pi = $('satPrecio');
-      if (pi && !pi.value) pi.value = sug.toFixed(2);
-    } else hint.textContent = '';
+  // ═══ [pres-v1] Handlers del PICKER de presentación (pack ×N / fracción ÷N) ═══
+  // (reemplaza al viejo _satSugerirPrecioPack + input satAgrupa "min 2", que no admitía fracciones)
+  const _PRES_FAM_ON = 'background:#0f2f22;border-color:#34d399;color:#eafff5';
+  const _PRES_FAM_OFF = 'background:transparent;border-color:#334155;color:#94a3b8';
+  async function _presInit(editarProd) {
+    const padre = _satState.padre;
+    _satState.presNombreManual = false; _satState.presDescManual = false;
+    if (editarProd) {
+      const f = parseFloat(editarProd.factorConversion) || 0;
+      _satState.presFactor = f;
+      _satState.presFamilia = (f > 0 && f < 1) ? 'frac' : 'pack';
+      _presRenderFamilia();
+      const nm = $('satNombre'); if (nm) nm.value = editarProd.descripcion || '';
+      const pi = $('satPrecio'); if (pi) pi.value = parseFloat(editarProd.precioVenta) || '';
+      const ci = $('satCodigo'); if (ci) ci.value = editarProd.codigoBarra || '';
+      const cont = $('presContenido'); const c = _presContenidoAuto(padre.descripcion, f);
+      if (cont) cont.textContent = c ? ('Contenido: ' + c) : '';
+      _satState.presNombreManual = true;   // en edición respetamos el nombre existente
+      return;
+    }
+    _satState.presFamilia = 'pack'; _satState.presFactor = 0;
+    _presRenderFamilia();
   }
+  function _presSetFamilia(fam) {
+    _satState.presFamilia = fam;
+    const o = $('presOtro'); if (o) o.classList.add('hidden');
+    _presRenderFamilia();
+  }
+  function _presRenderFamilia() {
+    const fam = _satState.presFamilia || 'pack';
+    const bP = $('presFamPack'), bF = $('presFamFrac');
+    if (bP) bP.style.cssText = (fam === 'pack' ? _PRES_FAM_ON : _PRES_FAM_OFF);
+    if (bF) bF.style.cssText = (fam === 'frac' ? _PRES_FAM_ON : _PRES_FAM_OFF);
+    _presRenderChips(fam);
+  }
+  function _presRenderChips(fam) {
+    const cont = $('presChips'); if (!cont) return;
+    const modelos = fam === 'pack'
+      ? [[2, 'Dúo'], [3, 'Tripack'], [6, 'Sixpack'], [12, 'Docena']]
+      : [[0.5, 'Media'], [1 / 3, 'Tercio'], [0.25, 'Cuarto'], [0.125, 'Octavo']];
+    const cur = parseFloat(_satState.presFactor) || 0;
+    let html = modelos.map(function (mm) {
+      const f = mm[0], lbl = mm[1];
+      const activo = cur && Math.abs(cur - f) < 1e-6;
+      const et = fam === 'pack' ? ('×' + f) : ('÷' + Math.round(1 / f));
+      const st = activo ? 'background:#0f2f22;border-color:#34d399;color:#eafff5' : 'background:#1e293b;border-color:#334155;color:#cbd5e1';
+      return `<button type="button" class="px-2.5 py-1 rounded-full text-xs font-bold border" style="${st}" onclick="MOS._presSetModelo(${f})">${lbl} <span class="opacity-60">${et}</span></button>`;
+    }).join('');
+    html += `<button type="button" class="px-2.5 py-1 rounded-full text-xs font-bold border" style="background:#1e293b;border-color:#334155;color:#cbd5e1" onclick="MOS._presMostrarOtro()">Otro…</button>`;
+    cont.innerHTML = html;
+  }
+  function _presMostrarOtro() {
+    const o = $('presOtro'); if (!o) return;
+    o.classList.remove('hidden');
+    o.placeholder = (_satState.presFamilia === 'pack') ? 'Nº de unidades (ej 5)' : 'Divisor (ej 8 = octavo)';
+    o.value = ''; try { o.focus(); } catch (_) {}
+  }
+  function _presOtroInput() {
+    const n = parseFloat($('presOtro')?.value) || 0;
+    if (n <= 0) return;
+    const factor = (_satState.presFamilia === 'pack') ? n : (1 / n);
+    _presAplicar(factor);
+  }
+  async function _presSetModelo(factor) {
+    const o = $('presOtro'); if (o) o.classList.add('hidden');
+    await _presAplicar(factor);
+  }
+  // Núcleo: fija el factor y actualiza descriptor(sugerido)/contenido/nombre/precio-ref/código.
+  async function _presAplicar(factor) {
+    const padre = _satState.padre;
+    _satState.presFactor = factor;
+    _presRenderChips(_satState.presFamilia);
+    const di = $('presDescriptor');
+    if (di && !_satState.presDescManual) di.value = _presDescriptorSugerido(factor);
+    const contenido = _presContenidoAuto(padre.descripcion, factor);
+    const cont = $('presContenido');
+    const esFrac = (factor > 0 && factor < 1);
+    if (cont) {
+      if (contenido && esFrac) cont.textContent = 'Contenido: ' + contenido + ' · baja el stock del padre en ' + factor + ' (verás decimales)';   // [punto 17] aviso stock decimal
+      else if (contenido) cont.textContent = 'Contenido: ' + contenido;
+      else if (esFrac) cont.textContent = '⚠ El padre no tiene magnitud (kg/gr) en el nombre — escribe el contenido en el descriptor';
+      else cont.textContent = '';
+    }
+    if (!_satState.presNombreManual) {
+      const nm = $('satNombre'); if (nm) nm.value = _presNombreCompuesto(padre.descripcion, di ? di.value : '', contenido);
+    }
+    const precioPadre = parseFloat(padre.precioVenta) || 0;
+    const ph = $('satPrecioHint'), pi = $('satPrecio');
+    if (precioPadre > 0 && factor > 0) {
+      const sug = Math.round(precioPadre * factor * 100) / 100;
+      if (ph) ph.innerHTML = `Ref: ${factor > 1 ? (factor + '×') : ('×' + factor)} S/${precioPadre.toFixed(2)} = <b style="color:#34d399">S/ ${sug.toFixed(2)}</b> · pones el tuyo`;
+      // Actualiza la sugerencia al cambiar de modelo, salvo que el usuario ya haya tecleado su precio.
+      if (pi && (!pi.value || _satState.presPrecioAuto)) { pi.value = sug.toFixed(2); _satState.presPrecioAuto = true; }
+    }
+    const st = _satState;
+    const cb = await _presGenCodigo(padre.descripcion, factor);
+    if (_satState === st && $('satCodigo')) { $('satCodigo').value = cb; try { _satValidarCodigo(); } catch (_) {} }
+  }
+  function _presRecomponer() {
+    _satState.presDescManual = true;
+    if (_satState.presNombreManual) return;
+    const padre = _satState.padre;
+    const contenido = _presContenidoAuto(padre.descripcion, _satState.presFactor);
+    const nm = $('satNombre'); if (nm) nm.value = _presNombreCompuesto(padre.descripcion, $('presDescriptor')?.value || '', contenido);
+  }
+  function _presNombreManual() { _satState.presNombreManual = true; }
+  function _presPrecioManual() { _satState.presPrecioAuto = false; }   // el usuario tecleó su precio → no pisarlo
 
   // [RONDA 6] alternar bracket abierto/cerrado ([ incluye · ( excluye)
   function _satBracket(btn) {
@@ -17475,9 +17673,15 @@ const MOS = (() => {
           if (!_satPorcionValida(porcion)) return;   // sin tope superior: cualquier tamaño de envasado
           patch.factorConversionBase = porcion;
         } else {
-          const n = parseInt($('satAgrupa')?.value) || 0;
-          if (n < 2) { toast('⚠ Un pack agrupa 2 o más unidades', 'error'); return; }
-          patch.factorConversion = n;
+          const f = parseFloat(_satState.presFactor) || 0;
+          if (!(f > 0) || f === 1) { toast('⚠ Elegí un tipo: pack ×N o fracción ÷N', 'error'); return; }
+          // [pres-v1 · punto 7] cambiar el factor cambia LO QUE ES la presentación (y su código). Si ya tiene
+          // ventas, distorsiona la rotación histórica → mejor crear una NUEVA y archivar esta. Aviso, no bloquea.
+          const fOrig = parseFloat(editar.factorConversion) || 0;
+          if (Math.abs(f - fOrig) > 1e-6 && !await _modalConfirm(
+                `Cambiar el factor (${fOrig} → ${f}) cambia lo que ES esta presentación y su código. Si ya tiene ventas, es mejor CREAR UNA NUEVA y desactivar esta (para no distorsionar la rotación histórica del padre).\n\n¿Continuar igual?`,
+                { warning: true, titulo: '⚠ Cambio de factor' })) { return; }
+          patch.factorConversion = f;
         }
         _satGuardando = true;
         cerrarModalSatelite();
@@ -17507,11 +17711,11 @@ const MOS = (() => {
         params.factorConversionBase = porcion;
         params.factorConversion = ''; params.mermaEsperadaPct = '';
       } else {
-        const n = parseInt($('satAgrupa')?.value) || 0;
-        if (n < 2) { toast('⚠ Un pack agrupa 2 o más unidades', 'error'); return; }
+        const f = parseFloat(_satState.presFactor) || 0;
+        if (!(f > 0) || f === 1) { toast('⚠ Elegí un tipo: pack ×N o fracción ÷N', 'error'); return; }
         params.esEnvasable = '0';
         params.skuBase = skuPadre;
-        params.factorConversion = n;
+        params.factorConversion = f;
         params.codigoProductoBase = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
       }
       _satGuardando = true;
@@ -43700,7 +43904,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     scanCodigo, genCodigoUnico,   // [catálogo v4] escáner generalizado + generador con prefijo
     scanBuscarCatalogo, abrirPlusContextual, _cerrarPlusCtx, abrirEditarProducto,           // [catálogo v4] buscador cámara + ＋ contextual
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
-    _satDerivadoPreview, _satPorcionInput, _satPrecioInput, _satSugerirPrecioPack, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
+    _satDerivadoPreview, _satPorcionInput, _satPrecioInput, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
+    _presSetFamilia, _presSetModelo, _presMostrarOtro, _presOtroInput, _presRecomponer, _presNombreManual, _presPrecioManual,   // [pres-v1] picker presentación
+    _presCodigoSufijo, _presContenidoAuto, _presNombreCompuesto, _presDescriptorSugerido,                    // [pres-v1] helpers (test/uso)
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
     _agTab, _agAlcance, abrirModalPrecioCurvas, guardarCostosYPaso2, _paso2AplicarAutos, _paso2Abrir, _paso2Satelites, _p2GuardarCatalogo,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
@@ -43956,6 +44162,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         // [catálogo v4 · fix rev] sin este campo el menú NUNCA detectaba derivado
         // → la 3ra opción "Adhesivo envasado" no aparecía desde el card MOS
         codigoProductoBase: p.codigoProductoBase || '',
+        // [pres-v1 · punto 11] presentación = solo góndola (no andamio: el andamio trunca el nombre a 2 líneas)
+        esPresentacion: (_prodTipoDe(p) === 'presentacion'),
         // [RONDA 6] sugerencia del stepper = SU rotación semanal (salidas de almacén)
         adhSugerido: (function(){ try { const serie=(S._rotacionSemanalCache?.productos||{})[String(p.codigoBarra||'').toUpperCase()]||[]; const tot=serie.reduce((a,x)=>a+(parseFloat(x.unidades)||0),0); return serie.length?tot/serie.length:0; } catch(_) { return 0; } })(),
         codigos:     p.codigos || null
