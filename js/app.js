@@ -42083,9 +42083,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const W = 48;
     const rep = (ch, n) => ch.repeat(Math.max(0, n));
     const norm = (s) => String(s == null ? '' : s).normalize('NFC').replace(/[^\x20-\xFF]/g, '');
-    const ctr = (s) => { s = norm(s); const l = Math.floor((W - s.length) / 2); return rep(' ', Math.max(0, l)) + s + '\n'; };
-    const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
-    const qty = (n) => { n = parseFloat(n) || 0; return (Number.isInteger(n) ? ('' + n) : ('' + (Math.round(n * 100) / 100))) + 'x'; };
+    const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';   // [fix 500x S2] `ctr` (centrar) era dead code — nunca se usaba
+    const qty = (n) => { n = Math.max(0, parseFloat(n) || 0); return (Number.isInteger(n) ? ('' + n) : ('' + (Math.round(n * 100) / 100))) + 'x'; };   // [fix 500x S2] clamp ≥0 (nunca "-5x")
     // [rezagado unificado] Rango legible de la semana del bucket (domingo→sábado, TZ-safe UTC).
     // MISMA lógica que el Edge `buildPickingTicketB64`. bucket = 'YYYY-MM-DD' (domingo que inicia la semana).
     const fmtSemana = (bucketStr) => {
@@ -42119,7 +42118,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (linea) flush();
       return out;
     };
-    const items = (d.items || []);
+    // [fix 500x S2] filtrar pendiente>0 (paridad con el Edge buildPickingTicketB64) → items.length y el detalle
+    // solo cuentan productos realmente pendientes (nunca renglones en 0 o negativos).
+    const items = (d.items || []).filter(it => (parseFloat(it.pendiente) || 0) > 0);
     let t = '\x1b\x40\x1b\x74\x10';                  // init + codepage WPC1252
     t += '\x1b\x61\x01\x1b\x21\x30' + norm('LISTA DE COMPRA') + '\n\x1b\x21\x00';
     t += norm('Rezagado · ' + zona) + '\n';

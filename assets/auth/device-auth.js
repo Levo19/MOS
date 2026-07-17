@@ -1,5 +1,8 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.29 — 2026-07-16 — [fix 500x S4] CANCELADO_AUTO (solicitud del día que expiró sin aprobar)
+//   reusa la pantalla NO_REGISTRADO → conserva el botón "Solicitar" en vez de caer a SIN_VERIFICAR
+//   (fail-closed sin salida). Título/detalle propios ("Solicitud expirada").
 // v1.0.28 — 2026-07-16 — SUSPENDIDO: botón "Solicitar reactivación (remoto)" (antes solo
 //   in-situ → sin admin presente no había salida; ahora cae al buzón del admin/master).
 //   Texto de suspensión corregido a "2 días" (era "7 días", umbral real 48h).
@@ -210,7 +213,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.26';
+  var _VERSION = '1.0.29';
 
   var _config = null;
   var _state = {
@@ -1005,8 +1008,11 @@
       });
       _sonidoGrave();
       _vibrar([50, 30, 50]);
-    } else if (estado === 'NO_REGISTRADO') {
-      // [v1.0.2] Labels distinguidos por rol esperado
+    } else if (estado === 'NO_REGISTRADO' || estado === 'CANCELADO_AUTO') {
+      // [v1.0.2] Labels distinguidos por rol esperado. [fix 500x S4] CANCELADO_AUTO (solicitud del día
+      // que expiró sin aprobar) reusa esta pantalla → conserva el botón "Solicitar" en vez de caer a
+      // SIN_VERIFICAR (fail-closed sin salida).
+      var _esCanc = (estado === 'CANCELADO_AUTO');
       var labelSolicitarN = _config.isMaster
         ? '📨 Solicitar acceso al master (remoto)'
         : '📨 Solicitar acceso al admin/master (remoto)';
@@ -1017,8 +1023,8 @@
         ? 'Solo el master puede activar MOS en un dispositivo nuevo.'
         : 'Admin o master pueden aprobar este dispositivo.';
       _renderOverlay({
-        emoji: '🔒', title: 'Dispositivo no autorizado',
-        detail: 'Este dispositivo aún no fue aprobado para esta app.',
+        emoji: '🔒', title: _esCanc ? 'Solicitud expirada' : 'Dispositivo no autorizado',
+        detail: _esCanc ? 'Tu solicitud de acceso venció (no se aprobó el mismo día). Envíala de nuevo.' : 'Este dispositivo aún no fue aprobado para esta app.',
         subDetail: subDetailN,
         devIdCaption: 'ID de este dispositivo · toca para copiar',
         actions: [

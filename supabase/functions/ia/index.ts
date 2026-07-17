@@ -56,6 +56,9 @@ Deno.serve(async (req: Request) => {
       ...(body.system ? { system: String(body.system) } : {}),
       ...(Array.isArray(body.tools) && body.tools.length ? { tools: body.tools } : {}),
       ...(body.tool_choice ? { tool_choice: body.tool_choice } : {}),
+      // [fix 500x S5] passthrough de `thinking` (p.ej. {type:'disabled'}) — el parser de listas lo desactiva para
+      // bajar latencia (evita el bloque thinking que arriesga timeout en visión). Solo se acepta si es objeto válido.
+      ...(body.thinking && typeof body.thinking === 'object' ? { thinking: body.thinking } : {}),
     };
 
     const r = await fetch(ENDPOINT, {

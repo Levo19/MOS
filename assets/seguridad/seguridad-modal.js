@@ -390,9 +390,9 @@
   }
 
   // ════════════════════════════════════════════════════════════
-  // MODAL Alertas Dispositivos (3 tabs)
+  // MODAL Solicitudes de acceso (buzón · solo PENDIENTE_APROBACION, sin pestañas)
   // ════════════════════════════════════════════════════════════
-  var _alertasState = { tab: 'pendientes', items: [], dispositivos: [] };
+  var _alertasState = { dispositivos: [] };
 
   function abrirModalAlertas() {
     _injectCss();
@@ -428,7 +428,6 @@
   var _alertasLastSig = null;
   var _alertasPollTimer = null;
   // [dueño 2026-07-16] El buzón es SOLO solicitudes de acceso (PENDIENTE_APROBACION) → sin pestañas.
-  function _alertasTab() { /* deprecado: el buzón ya no tiene pestañas de suspendidos/todos */ }
   // silent=true (auto-refresh cada 5s): NO muestra spinner; `_alertasRender` solo re-dibuja si la lista cambió.
   function _alertasCargar(silent) {
     var body = document.getElementById('segAlertasBody');
@@ -436,8 +435,10 @@
     if (!silent) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span class="seg-spin">◐</span> cargando…</div>';
     var _rpcSeg = (window.DeviceAuth && typeof DeviceAuth.rpc === 'function')
       ? DeviceAuth.rpc : function() { return Promise.reject(new Error('DeviceAuth no disponible')); };
-    _rpcSeg('listar_dispositivos', {}).then(function(r){ return r && r.data ? r.data : []; }).catch(function(){ return []; })
+    _rpcSeg('listar_dispositivos', {}).then(function(r){ return r && r.data ? r.data : []; }).catch(function(){ return null; })
       .then(function(rd) {
+        // [fix 500x S5] error de red en el poll → NO parpadear a "vacío" ni quitar el badge: conservar lo previo.
+        if (rd === null) return;   // el poll de 5s reintenta; en la 1ª carga queda el spinner hasta el reintento.
         var disps = Array.isArray(rd) ? rd : ((rd && rd.data) || []);
         _alertasState.dispositivos = disps;
         _alertasRender(!silent);   // no-silent (apertura/acción) fuerza el dibujo
@@ -557,8 +558,8 @@
         if (r && r.ok === false) { _toast('❌ ' + _esc(r.error || 'Error'), { error: true }); return; }
         if (r && r.autorizado === false) { sonidos.rechazado(); _toast('❌ ' + _esc(r.error || 'Clave incorrecta'), { error: true }); return; }
         // [dueño 2026-07-15] tiempo real: si otro admin ya lo aprobó (activación atómica server), avisar sin re-cantar éxito.
-        if (r && r.ya_aprobado) { _toast('ℹ Ya lo aprobó otro admin', {}); _alertasCargar(false); _refrescarBadge(); return; }
-        sonidos.aprobado(); _toast(okMsg, { success: true }); _alertasCargar(false); _refrescarBadge();
+        if (r && r.ya_aprobado) { _toast('ℹ Ya lo aprobó otro admin', {}); _alertasCargar(false); return; }
+        sonidos.aprobado(); _toast(okMsg, { success: true }); _alertasCargar(false);
       }).catch(function(e) { sonidos.rechazado(); _toast('❌ ' + _esc(e.message), { error: true }); })
         .then(_libera, _libera);
     });
@@ -1333,7 +1334,6 @@
     sonidos:                  sonidos,
     toast:                    _toast,
     // Internals
-    _alertasTab:           _alertasTab,
     _alertasCerrar:        _alertasCerrar,
     _aprobar:              _aprobar,
     _renombrar:            _renombrar,

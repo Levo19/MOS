@@ -229,9 +229,9 @@
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       max-width: 100%; line-height: 1.1;
     }
-    /* En pantallas estrechas reducir tamaño de label */
+    /* En pantallas estrechas reducir padding del pill. [fix 500x S1] el font-size de .bnav-lbl que había aquí era
+       dead code: la regla clamp() de abajo (misma especificidad, más tarde en el cascade) siempre la vencía. */
     @media (max-width: 360px) {
-      .bnav-btn .bnav-lbl { font-size: .5rem; }
       .bnav-pill { padding: 5px 3px 4px; }
     }
 
@@ -18916,7 +18916,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   }, 10000);
 })();
 </script>
-<script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=1.0.28"></script>
+<script src="https://levo19.github.io/MOS/assets/auth/device-auth.js?v=2.0.28"></script>
 <script>
 (function(){
   // [cero-GAS 2026-07-08] Se eliminó `const GAS_URL` + `mosGasUrl` del init: device-auth v1.0.26 ignora
@@ -19362,7 +19362,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.545"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.548"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=3.43.548"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
