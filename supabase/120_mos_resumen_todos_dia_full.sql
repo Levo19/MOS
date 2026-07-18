@@ -486,7 +486,13 @@ begin
            upper(coalesce(l.estado,'')) as estado,
            coalesce(l.venta_zona, 0)          as venta_zona,
            coalesce(l.bono_meta, 0)           as bono_meta,
-           coalesce(l.productos_envasados, 0) as productos_envasados
+           coalesce(l.productos_envasados, 0) as productos_envasados,
+           -- [fix 2026-07-18] dinero DE RECORD (mega tabla = lo que se paga; modelo comisión)
+           coalesce(l.monto_base, 0)          as monto_base,
+           coalesce(l.pago_envasado, 0)       as pago_envasado,
+           coalesce(l.sancion, 0)             as sancion,
+           coalesce(l.bonificacion, 0)        as bonificacion,
+           coalesce(l.total_dia, 0)           as total_dia
     from mos.liquidaciones_dia l
     where (l.fecha at time zone 'America/Lima')::date = v_fecha
       and btrim(coalesce(l.id_personal,'')) <> ''
@@ -502,8 +508,7 @@ begin
              -- RPC (modelo viejo de bono) NO trae: venta de zona, comisión 5% del excedente
              -- y envasados reales. Así el modal Auditar es IDÉNTICO se abra desde Personal
              -- del día (RPC 105) o desde Liquidaciones (este RPC). Solo cuando la fila existe;
-             -- si no, se conserva lo computado (no pisa con ceros). NO toca bonoMeta/totalDia
-             -- de nivel superior (esos siguen el modelo viejo, fuera de alcance).
+             -- si no, se conserva lo computado (no pisa con ceros).
              || (case when lq.id_personal is not null
                       then jsonb_build_object('kpis',
                              coalesce(t.obj->'kpis','{}'::jsonb)
@@ -511,6 +516,21 @@ begin
                                     'ventaZona', lq.venta_zona,
                                     'comision',  lq.bono_meta,
                                     'envasados', lq.productos_envasados))
+                      else '{}'::jsonb end)
+             -- [fix 2026-07-18] DINERO DE RECORD. Antes el bonoMeta/totalDia de este RPC seguían el modelo
+             -- VIEJO (bono plano por umbral = 0 en config hoy) → el lápiz mostraba TOTAL S/50 mientras
+             -- Auditar/mega mostraba S/122.99 (base + comisión) = subpago. Ahora, cuando hay fila en la mega
+             -- tabla (fuente de verdad de lo que se paga), se toman de ELLA los campos de dinero → ambos
+             -- modales muestran EXACTO lo mismo. Los campos de evaluación (score/checks/limpieza/auditorías)
+             -- se conservan de este RPC (los computa de las evaluaciones).
+             || (case when lq.id_personal is not null
+                      then jsonb_build_object(
+                             'montoBase',    lq.monto_base,
+                             'bonoMeta',     lq.bono_meta,
+                             'pagoEnvasado', lq.pago_envasado,
+                             'sancion',      lq.sancion,
+                             'bonificacion', lq.bonificacion,
+                             'totalDia',     lq.total_dia)
                       else '{}'::jsonb end) as obj
     from todos t
     left join liq lq on lq.id_personal = t.id_key
