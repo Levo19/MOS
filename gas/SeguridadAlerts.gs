@@ -92,14 +92,8 @@ function diagnosticoSetupSeguridad() {
     var sh = SpreadsheetApp.openById(SS_ID).getSheetByName('SEGURIDAD_ALERTAS');
     checks.push({ check: 'sheet_seguridad_alertas', ok: !!sh });
   } catch(_) { checks.push({ check: 'sheet_seguridad_alertas', ok: false }); }
-  // Check 2: Trigger purgarDispositivosInactivos7d
-  try {
-    var triggers = ScriptApp.getProjectTriggers();
-    var hayTrigger = triggers.some(function(t) {
-      return t.getHandlerFunction() === 'purgarDispositivosInactivos7d';
-    });
-    checks.push({ check: 'trigger_purgar_inactivos', ok: hayTrigger });
-  } catch(_) { checks.push({ check: 'trigger_purgar_inactivos', ok: false }); }
+  // [CERO-GAS 2026-07-17] Check 'trigger_purgar_inactivos' RETIRADO — la suspensión por inactividad la hace el
+  // pg_cron mos.cron_dispositivos_inactivos (no un trigger GAS). Exigir el trigger viejo dejaba allOk en rojo permanente.
   // Check 3: WH_GAS_URL configurada en MOS (para invalidar cache)
   try {
     var url = PropertiesService.getScriptProperties().getProperty('WH_GAS_URL') || '';
@@ -147,7 +141,8 @@ function setupTodoSeguridad() {
   setupSeguridadAlertas();
   _garantizarColumnasDispositivosExtendidas();
   // [v2.43.130 FIX] Instalar TODOS los triggers necesarios automáticamente
-  try { instalarTriggerPurgarDispositivos(); } catch(e) { Logger.log('purgar: ' + e.message); }
+  // [CERO-GAS 2026-07-17] instalarTriggerPurgarDispositivos() RETIRADO — la suspensión por inactividad la hace
+  // el pg_cron mos.cron_dispositivos_inactivos (cada hora). El trigger GAS era redundante.
   try { instalarTriggerRevertirDesbloqueos(); } catch(e) { Logger.log('desbloq: ' + e.message); }
   try { instalarTriggerRevertirExtensiones(); } catch(e) { Logger.log('ext: ' + e.message); }
   try { instalarTriggerNotificacionesApertura(); } catch(e) { Logger.log('notifApert: ' + e.message); }
@@ -181,16 +176,6 @@ function _garantizarColumnasDispositivosExtendidas(_lockHeld) {
   }
 }
 
-function instalarTriggerPurgarDispositivos() {
-  var TRG = 'purgarDispositivosInactivos7d';
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === TRG) ScriptApp.deleteTrigger(t);
-  });
-  // [v2.43.173] Movido de 02:00 → 23:15 (ventana de mantenimiento)
-  ScriptApp.newTrigger(TRG).timeBased().atHour(23).nearMinute(15).everyDays(1).create();
-  Logger.log('[Trigger] ' + TRG + ' instalado · diario 23:15');
-  return { ok: true };
-}
 
 // ────────────────────────────────────────────────────────────────────
 // Endpoint público: get alertas activas

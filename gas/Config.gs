@@ -1038,85 +1038,7 @@ function registrarSesionDispositivo(params) {
 
 
 
-// Auto-purge: dispositivos ACTIVOS sin Ultima_Conexion en >7 días → SUSPENDIDO.
-// Diseñado para correr desde un trigger diario (o manual).
-// SUSPENDIDO ≠ INACTIVO: re-activable solo con que el dispositivo vuelva a conectar.
-function purgarDispositivosInactivos(params) {
-  _garantizarColumnasDispositivos();
-  var diasMax = (params && Number(params.dias)) > 0 ? Number(params.dias) : 7;
-  var sheet = getSheet('DISPOSITIVOS');
-  var data  = sheet.getDataRange().getValues();
-  var hdrs  = data[0];
-  var iEst  = hdrs.indexOf('Estado');
-  var iUC   = hdrs.indexOf('Ultima_Conexion');
-  var iSus  = hdrs.indexOf('Suspendido_Desde');
-  var iId   = hdrs.indexOf('ID_Dispositivo');
-  var iNom  = hdrs.indexOf('Nombre_Equipo');
-  var iApp  = hdrs.indexOf('App');
-  var nowMs = Date.now();
-  var limMs = diasMax * 24 * 60 * 60 * 1000;
-  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
-  var suspendidos = 0;
-  var detallesSuspendidos = [];
-  for (var i = 1; i < data.length; i++) {
-    var est = String(data[i][iEst] || '').toUpperCase();
-    if (est !== 'ACTIVO') continue;
-    var uc = data[i][iUC];
-    var ucMs = 0;
-    if (uc instanceof Date) ucMs = uc.getTime();
-    else if (typeof uc === 'string' && uc.trim()) {
-      var d = new Date(uc);
-      if (!isNaN(d.getTime())) ucMs = d.getTime();
-    }
-    if (!ucMs) continue;
-    if ((nowMs - ucMs) > limMs) {
-      sheet.getRange(i + 1, iEst + 1).setValue('SUSPENDIDO');
-      if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue(nowStr);
-      // [CUTOVER auth] auto-suspensión (control) → espejar a la sombra.
-      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(String(data[i][iId] || ''), { Estado: 'SUSPENDIDO', Suspendido_Desde: nowStr });
-      suspendidos++;
-      // [v2.43.167] Capturar detalles para crear alerta de seguridad y push
-      var diasInactivo = Math.floor((nowMs - ucMs) / (24 * 60 * 60 * 1000));
-      detallesSuspendidos.push({
-        idDispositivo: String(data[i][iId] || ''),
-        nombre:        String(data[i][iNom] || ''),
-        app:           String(data[i][iApp] || ''),
-        diasInactivo:  diasInactivo
-      });
-    }
-  }
-  // [v2.43.167] Crear alerta SEGURIDAD_ALERTAS + push master por cada suspendido.
-  // Audit-trail: queda registro de QUÉ dispositivos suspendió el cron.
-  detallesSuspendidos.forEach(function(d) {
-    try {
-      if (typeof _crearAlertaSeg === 'function') {
-        _crearAlertaSeg('DISPOSITIVO_SUSPENDIDO_AUTO', {
-          idDispositivo: d.idDispositivo,
-          descripcion:   (d.app || '').toUpperCase() + ' · ' + (d.nombre || 'Sin nombre') + ' · ' + d.diasInactivo + 'd sin uso',
-          prioridad:     'MEDIA',
-          datosExtra:    d
-        });
-      }
-    } catch(eA) { Logger.log('[purgar] crearAlerta fallo: ' + eA.message); }
-  });
-  if (detallesSuspendidos.length > 0) {
-    try {
-      var resumen = detallesSuspendidos.length + ' dispositivo(s) suspendido(s) por inactividad >' + diasMax + 'd';
-      _enviarPushTodos('🚨 Auto-suspensión dispositivos', resumen, {
-        soloRolesMaster: true, idNotif: 'MOS_DEVICE_SUSPENDIDO_AUTO'
-      });
-    } catch(ePu) { Logger.log('[purgar] push master fallo: ' + ePu.message); }
-  }
-  return { ok: true, data: {
-    suspendidos: suspendidos, dias: diasMax,
-    detalles: detallesSuspendidos
-  }};
-}
 
-// Cron-friendly wrapper: instalable como trigger diario sin params.
-function purgarDispositivosInactivos7d() {
-  return purgarDispositivosInactivos({ dias: 7 });
-}
 
 
 // [v2.43.167] Helper para registrar auditoria sin pasar por verificarClaveAdmin
@@ -1234,35 +1156,6 @@ function _propagarDispositivoSombra(deviceId, app, nombreEquipo, userAgent) {
 }
 
 
-// Rechazar / bloquear dispositivo pendiente o activo
-function rechazarDispositivoPendiente(params) {
-  // [v2.43.138 FIX] Lock + idempotencia: previene sobreescribir un ACTIVO
-  // recién aprobado por otro admin en paralelo (race entre 2 admins).
-  var _lock = LockService.getScriptLock();
-  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
-  try {
-    _garantizarColumnasDispositivos(true);
-    if (!params.ID_Dispositivo) return { ok: false, error: 'Requiere ID_Dispositivo' };
-    var sheet = getSheet('DISPOSITIVOS');
-    if (!sheet) return { ok: false, error: 'Sheet DISPOSITIVOS no creada' };
-    var data  = sheet.getDataRange().getValues();
-    var hdrs  = data[0];
-    var iEst  = hdrs.indexOf('Estado');
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][0]) !== String(params.ID_Dispositivo)) continue;
-      var estadoActual = String(data[i][iEst] || '').toUpperCase();
-      // No rechazar lo que otro admin ya aprobó como ACTIVO (race protection)
-      if (estadoActual === 'ACTIVO') {
-        return { ok: true, skipped: true, motivo: 'ya_activo_no_se_rechaza' };
-      }
-      sheet.getRange(i + 1, iEst + 1).setValue('INACTIVO');
-      // [CUTOVER auth] rechazo/bloqueo (control) → espejar a la sombra.
-      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.ID_Dispositivo, { Estado: 'INACTIVO' });
-      return { ok: true };
-    }
-    return { ok: false, error: 'Dispositivo no encontrado' };
-  } finally { try { _lock.releaseLock(); } catch(_){} }
-}
 
 // ════════════════════════════════════════════════════════════════════════
 // [FASE 0 v2.43.225] reactivarDispositivoSuspendido_LEGACY_NO_USAR ELIMINADA.
@@ -1272,85 +1165,7 @@ function rechazarDispositivoPendiente(params) {
 // ════════════════════════════════════════════════════════════════════════
 
 
-// ════════════════════════════════════════════════════════════════════════
-// [v2.43.167] alertarDispositivosInactivos2a7d — cron diario 02:30 que
-// crea alertas SEGURIDAD_ALERTAS + push master para dispositivos ACTIVOS
-// con Ultima_Conexion entre 2 y 7 días atrás. Dedupe vía Inactivo_Alerta_Ts.
-//
-// Después de los 7 días el otro cron (purgarDispositivosInactivos7d) los
-// marca SUSPENDIDO. Este avisa antes de la suspensión.
-// ════════════════════════════════════════════════════════════════════════
-function alertarDispositivosInactivos2a7d() {
-  _garantizarColumnasDispositivos();
-  var sheet = getSheet('DISPOSITIVOS');
-  var data  = sheet.getDataRange().getValues();
-  var hdrs  = data[0];
-  var iId   = hdrs.indexOf('ID_Dispositivo');
-  var iNom  = hdrs.indexOf('Nombre_Equipo');
-  var iApp  = hdrs.indexOf('App');
-  var iEst  = hdrs.indexOf('Estado');
-  var iUC   = hdrs.indexOf('Ultima_Conexion');
-  var iIAT  = hdrs.indexOf('Inactivo_Alerta_Ts');
-  var nowMs = Date.now();
-  var DOS_DIAS_MS = 2 * 24 * 60 * 60 * 1000;
-  var SIETE_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
-  var nowStr = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
-  var alertados = 0;
-  var detalles = [];
-  for (var i = 1; i < data.length; i++) {
-    var est = String(data[i][iEst] || '').toUpperCase();
-    if (est !== 'ACTIVO') continue;
-    // Dedupe: si ya hay alerta abierta (Ts presente), saltar
-    if (iIAT >= 0 && data[i][iIAT]) continue;
-    var uc = data[i][iUC];
-    var ucMs = 0;
-    if (uc instanceof Date) ucMs = uc.getTime();
-    else if (typeof uc === 'string' && uc.trim()) {
-      var d = new Date(uc);
-      if (!isNaN(d.getTime())) ucMs = d.getTime();
-    }
-    if (!ucMs) continue;
-    var lapse = nowMs - ucMs;
-    if (lapse < DOS_DIAS_MS || lapse > SIETE_DIAS_MS) continue;
-    var diasInactivo = Math.floor(lapse / (24 * 60 * 60 * 1000));
-    var idDisp = String(data[i][iId] || '');
-    var nombre = String(data[i][iNom] || '');
-    var appEq  = String(data[i][iApp] || '');
-    try {
-      if (typeof _crearAlertaSeg === 'function') {
-        _crearAlertaSeg('DISPOSITIVO_INACTIVO_AVISO', {
-          idDispositivo: idDisp,
-          descripcion:   (appEq || '').toUpperCase() + ' · ' + (nombre || 'Sin nombre') + ' · ' + diasInactivo + 'd sin uso',
-          prioridad:     'BAJA',
-          datosExtra:    { diasInactivo: diasInactivo, ultimaConexion: String(uc || '') }
-        });
-      }
-    } catch(eA) { Logger.log('[alertarInactivos] crearAlerta fallo: ' + eA.message); }
-    if (iIAT >= 0) sheet.getRange(i + 1, iIAT + 1).setValue(nowStr);
-    // [CUTOVER auth] marca de aviso de inactividad (control) → espejar.
-    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(idDisp, { Inactivo_Alerta_Ts: nowStr });
-    alertados++;
-    detalles.push({ idDispositivo: idDisp, nombre: nombre, app: appEq, diasInactivo: diasInactivo });
-  }
-  // [CERO-GAS · anti-doble-push] Dispositivos inactivos 2-7d lo envía el pg_cron mos-dispositivos-inactivos
-  // (mos.cron_dispositivos_inactivos). El GAS ya NO pushea (evita doble + deja de leer el Sheet de tokens).
-  return { ok: true, data: { alertados: alertados, detalles: detalles } };
-}
 
-// [v2.43.173] Setup-only: instala el trigger del cron 23:30. Llamar 1 vez
-// desde el editor GAS o desde setupTodoSeguridad. Idempotente.
-// Cambio v2.43.173: movido de 02:30 → 23:30. Razón: durante 23-24h es la
-// ventana de mantenimiento (cron forzar_logout cierra sesiones, nadie usa
-// las apps). Operaciones de seguridad concentradas en esa franja.
-function instalarTriggerAlertaInactivos2a7d() {
-  var TRG = 'alertarDispositivosInactivos2a7d';
-  var existing = ScriptApp.getProjectTriggers().filter(function(t) {
-    return t.getHandlerFunction() === TRG;
-  });
-  if (existing.length > 0) return { ok: true, ya: true, count: existing.length };
-  ScriptApp.newTrigger(TRG).timeBased().atHour(23).nearMinute(30).everyDays(1).create();
-  return { ok: true, instalado: true };
-}
 
 // ════════════════════════════════════════════════════════════════════════
 // [v2.43.172 R6] cancelarPendientesAntiguos — auto-cancela solicitudes
@@ -1408,18 +1223,22 @@ function instalarTriggerCancelarPendientes() {
 // de triggers. Útil tras cambios de horario como v2.43.173.
 function reinstalarTriggersSeguridadNocturno() {
   var TRGS_SEG = {
-    'purgarDispositivosInactivos7d':    { hora: 23, min: 15 },  // antes 02:00
-    'alertarDispositivosInactivos2a7d': { hora: 23, min: 30 }   // antes 02:30
-    // [CERO-GAS 2026-07-14] 'cancelarPendientesAntiguos20h' RETIRADO — migrado a
-    // Supabase (mos.cron_dispositivos_inactivos). Ya no se (re)instala su trigger.
+    // [CERO-GAS 2026-07-14] 'cancelarPendientesAntiguos20h' RETIRADO — migrado a Supabase (mos.cron_dispositivos_inactivos).
+    // [CERO-GAS 2026-07-17] 'purgarDispositivosInactivos7d' + 'alertarDispositivosInactivos2a7d' RETIRADOS — la
+    // suspensión (>2d) y su aviso los hace el pg_cron mos.cron_dispositivos_inactivos (cada hora). Mapa vacío = no
+    // (re)instala ningún trigger GAS de inactividad. Los 2 crons GAS quedaron obsoletos y se borraron.
   };
+  // [CERO-GAS 2026-07-17] Handlers RETIRADOS (funciones borradas/migradas a pg_cron): si quedó algún trigger
+  // huérfano apuntándolos, dispararía "Script function not found" cada noche → correo de fallo al dueño. Los
+  // limpiamos acá también. Correr esta función 1 vez basta para evacuar cualquier trigger huérfano.
+  var RETIRED = { purgarDispositivosInactivos7d: 1, alertarDispositivosInactivos2a7d: 1, cancelarPendientesAntiguos20h: 1 };
   var triggers = ScriptApp.getProjectTriggers();
   var borrados = [];
   var creados  = [];
-  // 1. Borrar triggers existentes para esas funciones (con cualquier horario)
+  // 1. Borrar triggers existentes para esas funciones (con cualquier horario) + los retirados huérfanos
   triggers.forEach(function(t) {
     var fn = t.getHandlerFunction();
-    if (TRGS_SEG.hasOwnProperty(fn)) {
+    if (TRGS_SEG.hasOwnProperty(fn) || RETIRED[fn]) {
       ScriptApp.deleteTrigger(t);
       borrados.push(fn);
     }
@@ -1440,11 +1259,9 @@ function verificarTriggersSeguridad() {
   Logger.log('═════════════════════════════════════════════════');
   Logger.log('TRIGGERS DE SEGURIDAD INSTALADOS');
   Logger.log('═════════════════════════════════════════════════');
-  var esperados = {
-    'purgarDispositivosInactivos7d':    { regla: 'R5a · auto-suspende >7d', horaEsperada: '23:15' },
-    'alertarDispositivosInactivos2a7d': { regla: 'R5b · alerta master 2-7d', horaEsperada: '23:30' },
-    'cancelarPendientesAntiguos20h':    { regla: 'R6  · auto-cancela PEND >20h', horaEsperada: '23:45' }
-  };
+  // [CERO-GAS 2026-07-17] Los 3 triggers de seguridad (R5a purgar >7d, R5b alerta 2-7d, R6 cancelar PEND >20h)
+  // fueron RETIRADOS — la inactividad/expiración la maneja el pg_cron mos.cron_dispositivos_inactivos. Mapa vacío.
+  var esperados = {};
   var triggers = ScriptApp.getProjectTriggers();
   var encontrados = {};
   triggers.forEach(function(t) {

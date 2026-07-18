@@ -295,12 +295,9 @@ function _route(method, e) {
       // ── Dispositivos ───────────────────────────────────────
       case 'registrarSesionDispositivo':   return registrarSesionDispositivo(params);
       // [Lote4 · B2-MOS] case 'reactivarDispositivoSuspendido' duplicado (ya está en línea ~277) — eliminado (era inalcanzable).
-      case 'alertarDispositivosInactivos2a7d': return alertarDispositivosInactivos2a7d();    // [v2.43.167]
       case 'cancelarPendientesAntiguos':     return cancelarPendientesAntiguos();             // [v2.43.172 R6]
       case 'instalarTriggerCancelarPendientes': return instalarTriggerCancelarPendientes();   // [v2.43.172 R6]
       case 'reinstalarTriggersSeguridadNocturno': return reinstalarTriggersSeguridadNocturno(); // [v2.43.173]
-      case 'rechazarDispositivoPendiente': return rechazarDispositivoPendiente(params);
-      case 'purgarDispositivosInactivos':  return purgarDispositivosInactivos(params);
 
       // ── Zonas (puntos de venta) ────────────────────────────
       case 'getZonas':             return getZonas(params);
@@ -439,8 +436,6 @@ function _route(method, e) {
       case 'getVendedoresMEBloqueados': return getVendedoresMEBloqueados(params);
 
       // ── Bloqueo por UUID de dispositivo (encarcela el aparato) ────
-      case 'bloquearDispositivosDeUsuario': return bloquearDispositivosDeUsuario(params);
-      case 'liberarDispositivoBloqueado':   return liberarDispositivoBloqueado(params);
 
       // ── DeviceState: snapshot remoto de sesión por deviceId ──
       case 'syncDeviceState':           return syncDeviceState(params);
