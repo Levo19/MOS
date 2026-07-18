@@ -2023,7 +2023,8 @@ function cierreNocturnoTodos() {
       var cuerpo = partes.join(' · ');
       // [CERO-GAS · anti-doble-push] El aviso de cierre nocturno lo envía el pg_cron mos-cierre-forzado-11pm
       // (mos.cerrar_sesiones_forzado_11pm). El GAS ya NO pushea (evita doble + deja de leer el Sheet de tokens).
-      // (cierreNocturnoTodos SIGUE haciendo el cierre real en la Hoja para lectores legacy — solo se quitó el push.)
+      // [2026-07-18] cierreNocturnoTodos §3 ahora enumera + escribe Forzar_Logout en la SOMBRA (mos.dispositivos),
+      // NO la hoja (orfanada). El cierre de sesión efectivo del device lo maneja el pg_cron 11pm + debeCerrar.
     }
   } catch(eP) { Logger.log('[CierreNoct] push fallo: ' + eP.message); }
 
