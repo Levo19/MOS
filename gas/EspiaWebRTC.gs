@@ -320,22 +320,12 @@ function espiaSubirChunk(params) {
     return { ok: false, error: 'Chunk demasiado grande (>20MB decodificado)' };
   }
   // [v2.43.59] Validar que el deviceId existe + que hay sesión activa para él
+  // [CERO-GAS] verdad = mos.dispositivos. FAIL-CLOSED: si la validación no se puede resolver
+  // (Supabase caído), se RECHAZA — no se deja pasar un chunk con deviceId sin verificar.
   try {
-    var dispShs = getSheet('DISPOSITIVOS');
-    if (dispShs) {
-      var dispData = dispShs.getDataRange().getValues();
-      var dispHdrs = dispData[0];
-      var idxDevId = dispHdrs.indexOf('ID_Dispositivo');
-      if (idxDevId < 0) idxDevId = dispHdrs.indexOf('deviceId');
-      var existe = false;
-      if (idxDevId >= 0) {
-        for (var di = 1; di < dispData.length; di++) {
-          if (String(dispData[di][idxDevId]).trim() === deviceId) { existe = true; break; }
-        }
-      }
-      if (!existe) return { ok: false, error: 'deviceId no autorizado' };
-    }
-  } catch(_){}
+    var dsp = _dispositivoDesdeSombra(deviceId);
+    if (!dsp) return { ok: false, error: 'deviceId no autorizado' };
+  } catch(eDsp){ return { ok: false, error: 'validación de dispositivo no disponible' }; }
   // Validar sesión activa si vino sesionId
   if (sesionId) {
     var row = _buscarSesion(sesionId);

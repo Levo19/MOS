@@ -2677,11 +2677,13 @@ const API = (() => {
     // anular_pago verifica clave admin. localId estable lo deriva _mosLocalId. Gate _mosPagosJornalDirecto.
     marcarPagos:                _mosPagosJornalDirecto,
     anularPago:                 _mosPagosJornalDirecto,
-    // [229] FASE 4 escrituras dispositivos (panel admin). Lecturas ya directas (getDispositivos/Bloqueados).
-    crearDispositivo:            _mosDispositivosDirecto,
-    actualizarDispositivo:       _mosDispositivosDirecto,
-    aprobarDispositivoPendiente: _mosDispositivosDirecto,
-    revocarDispositivo:          _mosDispositivosDirecto,
+    // [cero-GAS dueño 2026-07-17] escrituras dispositivos (panel admin) SIN fallback GAS: gate ()=>true (siempre
+    // directo a RPCs mos.admin_crear/aprobar/revocar_dispositivo) + en _MOS_DIRECT_REQUIRED (null→LANZA, jamás GAS).
+    // actualizarDispositivo se resuelve por _MOS_ADMIN_RPC ANTES de _postMOS → su entrada acá es inalcanzable.
+    crearDispositivo:            () => true,
+    actualizarDispositivo:       () => true,
+    aprobarDispositivoPendiente: () => true,
+    revocarDispositivo:          () => true,
     // [Reparación #7 · PURGA] borrado de catálogo 100% Supabase (RPC mos.eliminar_items_catalogo): transacción
     // atómica (auth MASTER + integridad + snapshot/LÁPIDA + delete + bump), sin LockService → sin "Lock timeout".
     // El sync se parcheó (tombstone) para no resucitar lo purgado. Gate _mosPurgaDirecto, default OFF → GAS.
@@ -2801,7 +2803,9 @@ const API = (() => {
     // [dueño · fix "clave errónea" al eliminar presentaciones] La purga es un DELETE de datos del catálogo: el
     // GAS de purga valida la clave contra el global DESINCRONIZADO (incidente clave-global) → rechazaba la clave
     // master correcta. Fail-closed: sin token/directo → LANZA (reintentar), jamás cae al GAS con clave vieja.
-    eliminarItemsCatalogo: 1 };
+    eliminarItemsCatalogo: 1,
+    // [cero-GAS dueño 2026-07-17] escrituras de dispositivos (panel admin): sin token/RPC → LANZA, jamás GAS.
+    crearDispositivo: 1, aprobarDispositivoPendiente: 1, revocarDispositivo: 1, forzarPushDispositivo: 1, forzarWizardDispositivo: 1 };
 
   // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
   // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe

@@ -495,19 +495,7 @@ function _parseHora(s) {
 // (no spammear a todos los operadores). Usa tokens FCM si existen.
 function _enviarPushSegmentado(idPersonalDestino, titulo, cuerpo) {
   try {
-    var disp = getSheet('DISPOSITIVOS');
-    if (!disp) return;
-    var data = disp.getDataRange().getValues();
-    var hdrs = data[0];
-    var iSes = hdrs.indexOf('Ultima_Sesion');
-    var iApp = hdrs.indexOf('App');
-    var iTok = hdrs.indexOf('FCM_Token');
-    var iEst = hdrs.indexOf('Estado');
-    if (iTok < 0) {
-      // Fallback: si no hay columna token, usa el helper masivo (mejor algo que nada)
-      try { if (typeof _enviarPushTodos === 'function') _enviarPushTodos(titulo, cuerpo, { idNotif: 'MOS_HORARIO_DIRIGIDO' }); } catch(_){}
-      return;
-    }
+    var disps = _dispositivosDesdeSombra({});   // [CERO-GAS] verdad = mos.dispositivos
     // Cargar PERSONAL_MASTER para resolver nombre del destinatario + admins
     var per = _sheetToObjects(getSheet('PERSONAL_MASTER'));
     var nombreDest = '';
@@ -525,14 +513,14 @@ function _enviarPushSegmentado(idPersonalDestino, titulo, cuerpo) {
       }
     });
     var tokens = [];
-    for (var i = 1; i < data.length; i++) {
-      var tok = String(data[i][iTok] || '').trim();
-      var est = String(data[i][iEst] || '').toUpperCase();
-      if (!tok || est === 'INACTIVO') continue;
-      var ses = String(data[i][iSes] || '').toLowerCase().trim();
+    disps.forEach(function(d) {
+      var tok = String(d.FCM_Token || '').trim();
+      var est = String(d.Estado || '').toUpperCase();
+      if (!tok || est === 'INACTIVO') return;
+      var ses = String(d.Ultima_Sesion || '').toLowerCase().trim();
       // Match: el usuario afectado O un admin/master
       if (ses === nombreDest || adminsLow[ses]) tokens.push(tok);
-    }
+    });
     if (!tokens.length) return;
     // Reusar el sender de Push.gs si existe
     if (typeof _fcmEnviar === 'function') {

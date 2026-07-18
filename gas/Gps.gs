@@ -102,8 +102,14 @@ function getUbicacionesDispositivo(params) {
 function verificarSinSenal() {
   _garantizarHojaGps();
 
-  var dispositivos = _sheetToObjects(getSheet('DISPOSITIVOS'))
-    .filter(function(d){ return String(d.Estado).toUpperCase() === 'ACTIVO'; });
+  var dispositivos;
+  try {
+    dispositivos = _dispositivosDesdeSombra({})   // [CERO-GAS] verdad = mos.dispositivos
+      .filter(function(d){ return String(d.Estado).toUpperCase() === 'ACTIVO'; });
+  } catch (eSombra) {
+    Logger.log('[verificarSinSenal] lectura sombra falló, omito este ciclo (sin falsas alertas): ' + (eSombra && eSombra.message));
+    return;
+  }
 
   var ubics = _sheetToObjects(getSheet('UBICACIONES_HISTORIAL'));
   var ultimaPorDevice = {};

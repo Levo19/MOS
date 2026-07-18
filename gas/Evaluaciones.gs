@@ -1633,20 +1633,15 @@ function _verificarImpresorasYAlertar(origenTrigger) {
 function _heartbeatImpresoras() {
   var hayActividad = false;
   try {
-    var sheetD = getSheet('DISPOSITIVOS');
-    var dataD  = sheetD.getDataRange().getValues();
-    var hdrs   = dataD[0];
-    var iUc    = hdrs.indexOf('Ultima_Conexion');
-    var iApp   = hdrs.indexOf('App');
-    var iEst   = hdrs.indexOf('Estado');
+    var disps  = _dispositivosDesdeSombra({});   // [CERO-GAS] verdad = mos.dispositivos
     var ahora  = Date.now();
-    for (var i = 1; i < dataD.length && !hayActividad; i++) {
-      var app = String(dataD[i][iApp] || '').toLowerCase();
+    for (var i = 0; i < disps.length && !hayActividad; i++) {
+      var app = String(disps[i].App || '').toLowerCase();
       if (app === 'mos') continue; // dispositivos del panel admin no son "operación"
-      var est = String(dataD[i][iEst] || '').toUpperCase();
+      var est = String(disps[i].Estado || '').toUpperCase();
       if (est === 'INACTIVO') continue;
-      var uc = dataD[i][iUc];
-      var ts = uc instanceof Date ? uc.getTime() : (uc ? new Date(uc).getTime() : 0);
+      var uc = disps[i].Ultima_Conexion;
+      var ts = uc ? new Date(uc).getTime() : 0;
       if (ts && (ahora - ts) < 20 * 60 * 1000) hayActividad = true;
     }
   } catch(e) { Logger.log('_heartbeatImpresoras DISPOSITIVOS: ' + e.message); }

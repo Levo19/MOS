@@ -39,20 +39,14 @@ function _gateDispositivoMOS(params) {
     var hit = cache.get(ck);
     if (hit === '1') return { ok: true };
     if (hit === '0') return { ok: false, error: 'NO_AUTORIZADO: dispositivo no autorizado para esta acción' };
-    var sheet = getSheet('DISPOSITIVOS');
-    var data = sheet.getDataRange().getValues();
-    var hdrs = data[0];
-    var iId  = hdrs.indexOf('ID_Dispositivo');
-    var iEst = hdrs.indexOf('Estado');
-    var iApp = hdrs.indexOf('App');
+    // [CERO-GAS] la verdad es mos.dispositivos (no la hoja). Lectura por-id (cacheada 60s arriba).
+    var d = _dispositivoDesdeSombra(dev);
     var okDev = false;
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][iId]) !== dev) continue;
-      var appRow = iApp >= 0 ? String(data[i][iApp] || '').toLowerCase() : '';
+    if (d) {
+      var appRow = String(d.App || '').toLowerCase();
       // App MOS explícita o vacía (rows legacy pre-columna App)
-      okDev = (String(data[i][iEst] || '').toUpperCase() === 'ACTIVO')
+      okDev = (String(d.Estado || '').toUpperCase() === 'ACTIVO')
               && (appRow === 'mos' || appRow === 'proyectomos' || appRow === '');
-      break;
     }
     cache.put(ck, okDev ? '1' : '0', 60);
     return okDev ? { ok: true } : { ok: false, error: 'NO_AUTORIZADO: dispositivo no autorizado para esta acción' };
@@ -277,13 +271,10 @@ function _route(method, e) {
       // [v2.43.129] Seguridad: dispositivos + horarios + alertas
       case 'diagnosticoSetupSeguridad':      return diagnosticoSetupSeguridad();
       case 'getSeguridadAlertas':            return getSeguridadAlertas(params);
-      case 'desbloquearTemporalDispositivo': return desbloquearTemporalDispositivo(params);
-      case 'reactivarDispositivoSuspendido': return reactivarDispositivoSuspendido(params);
       case 'solicitarExtensionHorario':      return solicitarExtensionHorario(params);
       case 'aprobarExtensionHorario':        return aprobarExtensionHorario(params);
       case 'notificarmeCuandoAbra':          return notificarmeCuandoAbra(params);
       case 'extenderHorarioHoy':             return extenderHorarioHoy(params);
-      case 'extenderHorarioDispositivo':     return extenderHorarioDispositivo(params);
       case 'wh_invalidarCacheHorario':       return postToWarehouse('invalidarCacheHorario', params);
       case 'wh_verificarHorario':            return postToWarehouse('verificarHorario', params);
       case 'getVentasMosExpress':  return getVentasMosExpress(params);
@@ -302,32 +293,13 @@ function _route(method, e) {
       case 'guardarTarjetaWA':     return guardarTarjetaWA(params);
 
       // ── Dispositivos ───────────────────────────────────────
-      case 'getDispositivos':              return getDispositivos(params);
-      case 'crearDispositivo':             return crearDispositivo(params);
-      case 'actualizarDispositivo':        return actualizarDispositivo(params);
-      case 'registrarConexion':            return registrarConexionDispositivo(params);
       case 'registrarSesionDispositivo':   return registrarSesionDispositivo(params);
-      case 'getDispositivosPendientes':    return getDispositivosPendientes();
-      case 'consultarEstadoDispositivo':   return consultarEstadoDispositivo(params);
-      case 'forzarPushDispositivo':        return forzarPushDispositivo(params);
-      case 'limpiarFlagDevice':            return limpiarFlagDevice(params);
-      case 'verificarMiTokenRegistrado':   return verificarMiTokenRegistrado(params);
-      case 'aprobarDispositivoPendiente':  return aprobarDispositivoPendiente(params);
-      case 'aprobarDispositivoEnSitu':     return aprobarDispositivoEnSitu(params);
       // [Lote4 · B2-MOS] case 'reactivarDispositivoSuspendido' duplicado (ya está en línea ~277) — eliminado (era inalcanzable).
-      case 'forzarReVerifyDispositivo':    return forzarReVerifyDispositivo(params);         // [v2.43.167]
       case 'alertarDispositivosInactivos2a7d': return alertarDispositivosInactivos2a7d();    // [v2.43.167]
       case 'cancelarPendientesAntiguos':     return cancelarPendientesAntiguos();             // [v2.43.172 R6]
       case 'instalarTriggerCancelarPendientes': return instalarTriggerCancelarPendientes();   // [v2.43.172 R6]
       case 'reinstalarTriggersSeguridadNocturno': return reinstalarTriggersSeguridadNocturno(); // [v2.43.173]
       case 'rechazarDispositivoPendiente': return rechazarDispositivoPendiente(params);
-      case 'vincularBrowserDispositivo':   return vincularBrowserDispositivo(params);
-      case 'limpiarPendientesMOS':         return limpiarPendientesMOS();
-      case 'notificarInicioSesionVendedor': return notificarInicioSesionVendedor(params);
-      case 'registrarPermisosDispositivo': return registrarPermisosDispositivo(params);
-      case 'marcarWizardMostrado':         return marcarWizardMostrado(params);
-      case 'forzarWizardDispositivo':      return forzarWizardDispositivo(params);
-      case 'revocarDispositivo':           return revocarDispositivo(params);
       case 'purgarDispositivosInactivos':  return purgarDispositivosInactivos(params);
 
       // ── Zonas (puntos de venta) ────────────────────────────
@@ -469,7 +441,6 @@ function _route(method, e) {
       // ── Bloqueo por UUID de dispositivo (encarcela el aparato) ────
       case 'bloquearDispositivosDeUsuario': return bloquearDispositivosDeUsuario(params);
       case 'liberarDispositivoBloqueado':   return liberarDispositivoBloqueado(params);
-      case 'getDispositivosBloqueados':     return getDispositivosBloqueados(params);
 
       // ── DeviceState: snapshot remoto de sesión por deviceId ──
       case 'syncDeviceState':           return syncDeviceState(params);

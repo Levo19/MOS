@@ -224,65 +224,6 @@ function getSeguridadAlertas(params) {
   } catch(e) { return { ok: false, error: e.message }; }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Desbloqueo temporal de emergencia
-// ────────────────────────────────────────────────────────────────────
-function desbloquearTemporalDispositivo(params) {
-  var _lock = LockService.getScriptLock();
-  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado, reintenta' }; }
-  try {
-    if (!params.deviceId)   return { ok: false, error: 'deviceId requerido' };
-    if (!params.claveAdmin) return { ok: false, error: 'claveAdmin requerida' };
-    if (!params.razon)      return { ok: false, error: 'razón requerida' };
-    var auth = verificarClaveAdmin({
-      clave: params.claveAdmin, accion: 'DESBLOQUEO_TEMPORAL',
-      refDocumento: params.deviceId, appOrigen: params.app || '',
-      detalle: 'Desbloqueo temp: ' + String(params.razon).substring(0, 200)
-    });
-    if (!auth.ok) return auth;
-    if (!auth.data || !auth.data.autorizado) {
-      return { ok: true, data: { autorizado: false, error: auth.data?.error || 'Clave incorrecta' } };
-    }
-    var duracionHoras = parseFloat(params.duracionHoras) || 2;
-    if (duracionHoras < 0.5 || duracionHoras > 12) {
-      return { ok: false, error: 'duracionHoras debe estar entre 0.5 y 12' };
-    }
-    _garantizarColumnasDispositivosExtendidas(true);  // ya estamos dentro del lock
-    var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
-    // [v2.43.137 FIX] Guard: sheet puede ser null en deployment fresco sin setup
-    if (!sheet) return { ok: false, error: 'Sheet DISPOSITIVOS no creada. Ejecuta setupTodoSeguridad() primero.' };
-    var data  = sheet.getDataRange().getValues();
-    var hdrs  = data[0];
-    var iId   = hdrs.indexOf('ID_Dispositivo');
-    var iEst  = hdrs.indexOf('Estado');
-    var iDT   = hdrs.indexOf('Desbloqueo_Temporal_Hasta');
-    var hasta = new Date(Date.now() + duracionHoras * 60 * 60 * 1000);
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][iId]) !== params.deviceId) continue;
-      sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
-      if (iDT >= 0) sheet.getRange(i + 1, iDT + 1).setValue(hasta.toISOString());
-      // [CUTOVER auth] desbloqueo temporal (control) → espejar a la sombra.
-      if (typeof _dualWriteDispositivo === 'function')
-        _dualWriteDispositivo(params.deviceId, { Estado: 'ACTIVO', Desbloqueo_Temporal_Hasta: hasta.toISOString() });
-      _crearAlertaSeg('DESBLOQUEO_TEMPORAL', {
-        idDispositivo: params.deviceId,
-        descripcion: 'Desbloqueo temp ' + duracionHoras + 'h · razón: ' + String(params.razon).substring(0, 150),
-        prioridad: 'ALTA',
-        datosExtra: { hastaIso: hasta.toISOString(), autorizadoPor: auth.data.validadoPor, razon: params.razon }
-      });
-      // [CERO-GAS #26] Push de desbloqueo MOVIDO al frontend (seguridad-modal _desbConfirmar → _config.pushAudiencia
-      // → Edge push audiencia roles admin). El GAS ya NO pushea (evita doble). La acción desbloqueo sigue en GAS.
-      return { ok: true, data: {
-        autorizado: true,
-        hasta: hasta.toISOString(),
-        duracionHoras: duracionHoras,
-        autorizadoPor: auth.data.validadoPor
-      }};
-    }
-    return { ok: false, error: 'Dispositivo no encontrado' };
-  } catch(e) { return { ok: false, error: e.message }; }
-  finally { try { _lock.releaseLock(); } catch(_){} }
-}
 
 // Trigger horario: revierte desbloqueos temporales vencidos
 function revertirDesbloqueosVencidos() {
@@ -332,71 +273,6 @@ function instalarTriggerRevertirDesbloqueos() {
   return { ok: true };
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Reactivar dispositivo suspendido (admin)
-// ────────────────────────────────────────────────────────────────────
-function reactivarDispositivoSuspendido(params) {
-  var _lock = LockService.getScriptLock();
-  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
-  try {
-    if (!params.deviceId) return { ok: false, error: 'deviceId requerido' };
-    // [v2.43.201 FIX SEC] claveAdmin ahora OBLIGATORIA — antes era opcional y
-    // cualquiera con la URL del GAS podía reactivar dispositivos sin clave
-    // (único caller real: device-auth.js, que SIEMPRE la manda).
-    if (!params.claveAdmin) return { ok: false, error: 'Requiere claveAdmin' };
-    var authR = verificarClaveAdmin({
-      clave: params.claveAdmin, accion: 'REACTIVAR_DISPOSITIVO',
-      refDocumento: params.deviceId, appOrigen: params.app || '',
-      dispositivo: params.userAgent || '', deviceId: params.deviceId
-    });
-    if (!authR.ok) return authR;
-    if (!authR.data || !authR.data.autorizado) {
-      return { ok: true, data: { autorizado: false, error: (authR.data && authR.data.error) || 'Clave incorrecta' } };
-    }
-    var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
-    // [v2.43.137 FIX] Guard sheet null
-    if (!sheet) return { ok: false, error: 'Sheet DISPOSITIVOS no creada' };
-    var data = sheet.getDataRange().getValues();
-    var hdrs = data[0];
-    var iId = hdrs.indexOf('ID_Dispositivo');
-    var iEst = hdrs.indexOf('Estado');
-    var iSus = hdrs.indexOf('Suspendido_Desde');
-    var iUC  = hdrs.indexOf('Ultima_Conexion');
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][iId]) !== String(params.deviceId)) continue;
-      sheet.getRange(i + 1, iEst + 1).setValue('ACTIVO');
-      if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue('');
-      // [v2.43.201 FIX] Refrescar Ultima_Conexion — sin esto el cron de purga
-      // de las 23:15 veía la fecha vieja y RE-SUSPENDÍA el dispositivo esa
-      // misma noche (el "se vuelve a bloquear a los pocos días").
-      if (iUC >= 0) sheet.getRange(i + 1, iUC + 1).setValue(
-        Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
-      );
-      // [v2.43.201 FIX CRÍTICO shape] Antes devolvía { ok:true } SIN data.autorizado.
-      // device-auth.js evalúa `if (!d || !d.autorizado) → "Clave incorrecta"` →
-      // el modal decía CLAVE INCORRECTA aunque la clave era correcta y el
-      // dispositivo YA estaba reactivado. Espejar el shape de aprobarDispositivoEnSitu.
-      // [v2.43.224 FIX RAÍZ] Propagar al instante a la sombra mos.dispositivos (lo que lee mint-mos).
-      // Sin esto, la reactivación deja hoja=ACTIVO pero sombra desfasada => 401 hasta el sync horario.
-      // Esta es la def ACTIVA de reactivarDispositivoSuspendido (gana por orden alfabético de clasp sobre
-      // la de Config.gs); por eso la propagación va acá. La de Config.gs quedó neutralizada (_LEGACY).
-      var _appEqR = data[i][hdrs.indexOf('App')] || '';
-      var _nomEqR = data[i][hdrs.indexOf('Nombre_Equipo')] || '';
-      var _shadowOkR = (typeof _propagarDispositivoSombra === 'function')
-        ? _propagarDispositivoSombra(params.deviceId, _appEqR, _nomEqR, params.userAgent) : null;
-      // [CUTOVER auth] _propagarDispositivoSombra NO limpia Suspendido_Desde en la sombra → cerrar ese hueco
-      // (control). Sin esto, el reverse-sync repondría Suspendido_Desde y el cron de purga re-suspendería.
-      if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(params.deviceId, { Suspendido_Desde: '' });
-      return { ok: true, data: Object.assign(
-        { autorizado: true, aprobadoPor: authR.data.validadoPor, accion: 'reactivado',
-          deviceId: String(params.deviceId), shadowOk: _shadowOkR },
-        (typeof _payloadDeviceAuthExtras === 'function' ? _payloadDeviceAuthExtras(data[i], hdrs) : {})
-      ) };
-    }
-    return { ok: false, error: 'Dispositivo no encontrado' };
-  } catch(e) { return { ok: false, error: e.message }; }
-  finally { try { _lock.releaseLock(); } catch(_){} }
-}
 
 // ────────────────────────────────────────────────────────────────────
 // Extensión de horario solicitada por operador

@@ -62,20 +62,9 @@ function _pushComandoDispositivo(deviceId, action, extra) {
   // Necesitamos el token cuyo dispositivo coincida con el ID que tenemos
   // Como deviceId es el UUID, hay que buscarlo por ID_Dispositivo en DISPOSITIVOS
   // y obtener su Ultima_Sesion (nombre del usuario), luego buscar en PUSH_TOKENS.
-  var sheetD = getSheet('DISPOSITIVOS');
-  var dataD = sheetD.getDataRange().getValues();
-  var hdrsD = dataD[0];
-  var iId = hdrsD.indexOf('ID_Dispositivo');
-  var iSesion = hdrsD.indexOf('Ultima_Sesion');
-  var iApp = hdrsD.indexOf('App');
-  var nombreUsuario = '', appOrigen = '';
-  for (var i = 1; i < dataD.length; i++) {
-    if (String(dataD[i][iId]) === String(deviceId)) {
-      nombreUsuario = String(dataD[i][iSesion] || '').trim();
-      appOrigen = String(dataD[i][iApp] || '').trim();
-      break;
-    }
-  }
+  var dsp = _dispositivoDesdeSombra(deviceId);   // [CERO-GAS] verdad = mos.dispositivos
+  var nombreUsuario = dsp ? String(dsp.Ultima_Sesion || '').trim() : '';
+  var appOrigen     = dsp ? String(dsp.App || '').trim() : '';
   if (!nombreUsuario) {
     Logger.log('[push-cmd] Dispositivo ' + deviceId + ' sin Ultima_Sesion — no se puede direccionar');
     return { ok: false, error: 'El dispositivo no tiene un usuario logueado' };
