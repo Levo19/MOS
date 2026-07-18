@@ -1,0 +1,98 @@
+{
+ "plan": [
+  {
+   "id": "IDPRO0002168",
+   "codViejo": "PRE225",
+   "nomViejo": "X 03 UND",
+   "tipo": "PRESENTACION",
+   "codNuevo": "P-MNGPST-X3",
+   "nomNuevo": "MANGA PASTELERA TIPO BOLSA DE UN SOLO USO · Pack x3 (3 un)",
+   "set": {
+    "tipo_producto": "PRESENTACION",
+    "factor_conversion": 3,
+    "factor_conversion_base": null,
+    "codigo_producto_base": null,
+    "sku_base": "LEV597",
+    "es_envasable": false,
+    "unidad_medida": "NIU"
+   }
+  },
+  {
+   "id": "IDPRO0002169",
+   "codViejo": "PRE467",
+   "nomViejo": "X 100 UND",
+   "tipo": "PRESENTACION",
+   "codNuevo": "P-MNGPST-X100",
+   "nomNuevo": "MANGA PASTELERA TIPO BOLSA DE UN SOLO USO · Pack x100 (100 un)",
+   "set": {
+    "tipo_producto": "PRESENTACION",
+    "factor_conversion": 100,
+    "factor_conversion_base": null,
+    "codigo_producto_base": null,
+    "sku_base": "LEV597",
+    "es_envasable": false,
+    "unidad_medida": "NIU"
+   }
+  },
+  {
+   "id": "IDPRO0002224",
+   "codViejo": "PRE263",
+   "nomViejo": "500 GR",
+   "tipo": "DERIVADO",
+   "codNuevo": "WH-UMSAZCD500",
+   "nomNuevo": "UMSHA AZUCAR IMPALPABLE 500GR",
+   "set": {
+    "tipo_producto": "DERIVADO",
+    "codigo_producto_base": "LEV724",
+    "factor_conversion_base": 0.5,
+    "factor_conversion": null,
+    "sku_base": "LEV0002410",
+    "es_envasable": false,
+    "unidad_medida": "NIU"
+   },
+   "skuNuevo": "LEV0002410"
+  },
+  {
+   "id": "IDPRO0002225",
+   "codViejo": "PRE478",
+   "nomViejo": "250 GR",
+   "tipo": "DERIVADO",
+   "codNuevo": "WH-UMSAZCD250",
+   "nomNuevo": "UMSHA AZUCAR IMPALPABLE 250GR",
+   "set": {
+    "tipo_producto": "DERIVADO",
+    "codigo_producto_base": "LEV724",
+    "factor_conversion_base": 0.25,
+    "factor_conversion": null,
+    "sku_base": "LEV0002411",
+    "es_envasable": false,
+    "unidad_medida": "NIU"
+   },
+   "skuNuevo": "LEV0002411"
+  },
+  {
+   "id": "IDPRO0002226",
+   "codViejo": "PRE556",
+   "nomViejo": "1K X 5 PQT",
+   "tipo": "DERIVADO",
+   "codNuevo": "WH-UMSAZD5000",
+   "nomNuevo": "UMSHA AZUCAR IMPALPABLE 5KG",
+   "set": {
+    "tipo_producto": "DERIVADO",
+    "codigo_producto_base": "LEV724",
+    "factor_conversion_base": 5,
+    "factor_conversion": null,
+    "sku_base": "LEV0002412",
+    "es_envasable": false,
+    "unidad_medida": "NIU"
+   },
+   "skuNuevo": "LEV0002412"
+  }
+ ],
+ "tapPlan": {
+  "id": "IDPRO0002147",
+  "codViejo": "PRE461",
+  "accion": "ELIMINAR(desactivar)+venta→00612",
+  "estadoViejo": true
+ }
+}
