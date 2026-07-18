@@ -238,9 +238,9 @@ function _f4DiffHoja(tipo, nuevo, viejo) {
  *  Hace el DRY-RUN: NO escribe la hoja, solo cuenta. Mirá el return / Logs: errores debe ser []. */
 function dryRunDispositivosDesdeSombra() { return resembrarDispositivosDesdeSombra({ dryRun: true }); }
 
-/** Wrapper REAL (escribe la hoja) para correr desde el editor el 1er reverse-sync tras el flip. Devuelve y
- *  loguea el resultado: esperado {ok:true, actualizados:0, agregados:3, errores:[]}. Es lo mismo que ejecuta
- *  el trigger _resembrarDispositivosJob ahora que MOS_DISPOSITIVOS_DIRECTO=1 (acá lo corrés a demanda). */
+/** Utilidad MANUAL (editor): corre un reverse-sync Sombra→Hoja a demanda (refresca la hoja ORFANADA para
+ *  inspección/reparación). El trigger/job automático _resembrarDispositivosJob fue ELIMINADO (cero-GAS
+ *  2026-07-18) → esto ya NO corre solo. Devuelve {ok, actualizados, agregados, errores}. */
 function correrReverseSyncDispositivos() { return resembrarDispositivosDesdeSombra(); }
 
 function resembrarDispositivosDesdeSombra(opts) {

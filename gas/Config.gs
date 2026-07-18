@@ -562,8 +562,8 @@ var _DISP_COLS_EXTRA = ['Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion',
                         // [v2.43.172 R6] Timestamp cuando el cron auto-cancelo una
                         // solicitud PENDIENTE_APROBACION por >20h sin aprobar.
                         // Si esta presente, el row queda con Estado=CANCELADO_AUTO.
-                        // Al volver el operador, registrarSesionDispositivo lo
-                        // reutiliza pasando a PENDIENTE_APROBACION nueva (limpia el flag).
+                        // Al volver el operador, el registro de dispositivo (device-auth → RPC Supabase)
+                        // lo reutiliza pasando a PENDIENTE_APROBACION nueva (limpia el flag).
                         'Cancelado_Auto_Ts'];
 
 // Push helper · notifica a admin/master cuando se aprueba un dispositivo
@@ -804,8 +804,8 @@ function _propagarDispositivoSombra(deviceId, app, nombreEquipo, userAgent) {
 // PENDIENTE_APROBACION viejas para evitar spam de alertas al admin.
 //
 // Lógica: dispositivo PENDIENTE sin aprobar por +2 DÍAS (48h) = solicitud
-// abandonada. Marca como CANCELADO_AUTO. Al volver el operador,
-// registrarSesionDispositivo lo reutiliza pasando a PENDIENTE_APROBACION nueva.
+// abandonada. Marca como CANCELADO_AUTO. Al volver el operador, el registro
+// de dispositivo (device-auth → RPC Supabase) lo reutiliza pasando a PENDIENTE_APROBACION nueva.
 //
 // [dueño 2026-07-14] Antes el default era 20h → cancelaba las solicitudes
 // "de un día para otro" antes de que el master alcanzara a aprobarlas

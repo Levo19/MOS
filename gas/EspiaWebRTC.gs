@@ -717,6 +717,8 @@ function _buscarSesion(sesionId) {
 // Verifica TODO lo que el espía necesita para funcionar end-to-end.
 // Editar PRIMERO el nombre/id del dispositivo target y luego ejecutar.
 function diagnosticarDeviceEspia() {
+  // [CERO-GAS 2026-07-18] Lee la hoja DISPOSITIVOS, ORFANADA (frozen) tras matar el reverse-sync → estado/tokens
+  // pueden estar stale. La verdad es mos.dispositivos (sombra). Diagnóstico editor-only, sin impacto runtime.
   // ⬇⬇⬇ EDITAR ESTE ID con el que vas a espiar ⬇⬇⬇
   var deviceIdTarget = ''; // ej: 'df61a710-1e4f-4fee-bcc8-89759bd02b17'
   var nombreParcial  = 'Tablet zona2'; // si dejás deviceIdTarget vacío, busca por nombre
@@ -1612,6 +1614,7 @@ function _enviarPushDispositivoConRetry(deviceId, payload, intentos) {
 // El return es para inspección programática; los logs son legibles.
 // ════════════════════════════════════════════════════════════════════
 function reporteTokensEspia() {
+  // [CERO-GAS 2026-07-18] Lee la hoja DISPOSITIVOS ORFANADA (frozen) → estado stale. Verdad = mos.dispositivos (sombra). Editor-only.
   var ss = getSpreadsheet();
   var shDisp = ss.getSheetByName('DISPOSITIVOS');
   var shTok  = ss.getSheetByName('PUSH_TOKENS');
