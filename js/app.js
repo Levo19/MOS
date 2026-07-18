@@ -17009,9 +17009,11 @@ const MOS = (() => {
     const tipo = _prodTipoDe(p);
     const ops = [];
     if (tipo === 'envasable') {
+      // [pres-v1] Un GRANEL NO lleva presentación (KGM ignora el precio propio de la presentación y cobra
+      // por kg + tramos). El descuento por volumen se hace con TRAMOS; para un pack con precio propio, primero
+      // se crea el DERIVADO (envasado) y a ESE se le cuelga la presentación.
       ops.push({ k:'derivado',     ic:'🥄', t:'Derivado',     d:'fracción envasada del granel (250gr, 500gr…)' });
-      ops.push({ k:'presentacion', ic:'🧱', t:'Presentación', d:'pack ×N o fracción ÷N (precio propio)' });
-      ops.push({ k:'tramo',        ic:'📊', t:'Tramo',        d:'precio por rango de peso' });
+      ops.push({ k:'tramo',        ic:'📊', t:'Tramo',        d:'precio por rango de peso (descuento por volumen)' });
       ops.push({ k:'equivalente',  ic:'🏷️', t:'Equivalente',  d:'otro código de barra del mismo producto' });
     } else if (tipo === 'presentacion') {
       // [fix rev M3 · money-safe] el modelo de equivalencias cuelga del sku_base del GRUPO:
@@ -17174,6 +17176,12 @@ const MOS = (() => {
     }
 
     if (tipo === 'presentacion') {
+      // [pres-v1] Un GRANEL no lleva presentación NUEVA (KGM ignora su precio propio → se cobra por kg + tramos).
+      // Se bloquea solo la CREACIÓN; editar una existente sigue permitido (los viejos se purgan a mano).
+      if (!editarProd && tipoPadre === 'envasable') {
+        toast('🧱 Un granel no lleva presentación: su precio se ignora (cobra por kg + tramos). Usá TRAMOS para el descuento por volumen, o creá un DERIVADO (envasado) y a ÉSE ponle la presentación.', 'error');
+        return;
+      }
       tit.textContent = editarProd ? '🧱 Editar presentación' : '🧱 Nueva presentación';
       her.classList.remove('hidden');
       her.textContent = `Hereda ${igvTxt} · categoría ${padre.idCategoria || '—'} del producto padre`;
