@@ -835,11 +835,30 @@
   }
   function _solRemoto() {
     sonidos.click();
-    // El registro como PENDIENTE ya se hizo en consultarEstadoDispositivo
-    // (auto-crea PENDIENTE_APROBACION cuando consulta un deviceId nuevo).
-    // Acá solo cambiamos la UI a "esperando aprobación" + polling.
-    document.getElementById('segSolOverlay').remove();
-    _esperandoAprobacion();
+    // El registro como PENDIENTE ya se hizo en consultarEstadoDispositivo (auto-crea
+    // PENDIENTE_APROBACION cuando consulta un deviceId nuevo).
+    // [512] Un pendiente NO tiene login aún → el buzón mostraría "Sin nombre". Pedimos el PIN
+    // del solicitante para IDENTIFICARLO (identificar_solicitante estampa su nombre en el device)
+    // → el admin ve QUIÉN pide en la alerta flotante. Best-effort: si cancela o el PIN no matchea,
+    // igual se envía la solicitud (queda "Sin nombre", como antes).
+    _modalPrompt({
+      title: '¿Quién solicita?',
+      label: 'Tu PIN (para que el admin sepa quién pide acceso):',
+      type: 'password', maxlength: 8, placeholder: '••••', emoji: '👤'
+    }).then(function(pin) {
+      var _dev = '';
+      try {
+        _dev = (window.DeviceAuth && DeviceAuth.deviceId && DeviceAuth.deviceId())
+            || localStorage.getItem('wh_device_id')
+            || localStorage.getItem('mosexpress_deviceId')
+            || localStorage.getItem('mos_device_id') || '';
+      } catch(_){}
+      if (pin && /^\d{3,8}$/.test(String(pin)) && _dev && window.DeviceAuth && typeof DeviceAuth.rpc === 'function') {
+        try { DeviceAuth.rpc('identificar_solicitante', { deviceId: _dev, pin: String(pin) }).catch(function(){}); } catch(_){}
+      }
+      var ov = document.getElementById('segSolOverlay'); if (ov) ov.remove();
+      _esperandoAprobacion();
+    });
   }
   function _esperandoAprobacion() {
     // [v1.0.3 FIX] Limpiar timer huérfano de invocación previa

@@ -37909,6 +37909,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // ── Modal Auditar ────────────────────────────────────────────
   async function abrirAuditar(idPersonal) {
     let r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
+    // [unif modal 2026-07-18] SIEMPRE refrescar de getResumenTodosDia (120) al abrir, para que ESTE modal
+    // muestre EXACTO lo mismo que el lápiz de Liquidaciones (mismo dinero Y mismo score). El cache
+    // `mos_fin_resum_` lo escriben tanto 120 como getPersonalDiaFast (105, que trae score stub 0) → sin este
+    // refresco, abrir desde "Personal del día" podía mostrar un score distinto al del lápiz. Online-only;
+    // si falla (offline) cae al cache/_evalState de abajo.
+    if (navigator.onLine) {
+      try {
+        const fresh = await API.get('getResumenTodosDia', { fecha: _evalState.fecha });
+        if (Array.isArray(fresh) && fresh.length) {
+          _evalState.resumenes = fresh;
+          try { localStorage.setItem('mos_fin_resum_' + _evalState.fecha, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
+          r = fresh.find(x => x.idPersonal === idPersonal) || r;
+        }
+      } catch {}
+    }
     // Si no está en _evalState (módulo Evaluaciones nunca abierto), hidratar
     // desde cache de Cierre/Finanzas, y si tampoco, fetch directo.
     if (!r) {
