@@ -1,13 +1,15 @@
 /**
- * Fase4Dispositivos.gs — [FASE 4.1 · Etapa B+C] Espejo (dual-write) + resembrar + comparador de la
- * sombra mos.dispositivos. Patrón idéntico a _dualWriteMOS: la escritura sigue por GAS→hoja (verdad) y
- * además espeja a Supabase al instante, para que la sombra esté SIEMPRE fresca (y se pueda quitar el
- * doble-check del auth directo en las 3 apps).
+ * Fase4Dispositivos.gs — Espejo (dual-write) + reparación manual de la sombra mos.dispositivos.
  *
- * ⚠️ INERTE: estas funciones EXISTEN pero nadie las invoca todavía. El cableo (llamar
- * _dualWriteDispositivo al final de cada función R/W de Config.gs/Bloqueos.gs/SeguridadAlerts.gs) se hará
- * en un paso posterior, con node -c + deploy disponibles. Mientras tanto, agregar este archivo NO cambia
- * ningún comportamiento (solo define funciones nuevas). resembrar/comparar son de uso manual (admin).
+ * [CERO-GAS 2026-07-18 · ESTADO ACTUAL] La sombra mos.dispositivos es la VERDAD. Las escrituras de estado de
+ * dispositivo van por RPCs mos.admin_* (frontend) + `_dualWriteDispositivo` para las mutaciones que aún corren
+ * en GAS. La hoja DISPOSITIVOS quedó ORFANADA (archivo histórico; el reverse-sync automático se eliminó).
+ *
+ * ⚠️ `_dualWriteDispositivo` NO es inerte — está ACTIVO: lo llama Liquidaciones.gs (cierreNocturnoTodos →
+ * Forzar_Logout; limpiarForzarLogout) y SeguridadAlerts.gs (re-suspensión). NO borrarlo: escribe la sombra
+ * (fuente de verdad) → borrarlo rompería el force-logout/suspensión en el estado que los devices leen por RPC.
+ * `resembrarDispositivosDesde{Hoja,Sombra}` / `correrReverseSyncDispositivos` / `dryRun` / `compararDispositivosMOS`
+ * = utilidades MANUALES de reparación/diagnóstico (editor GAS, sin trigger automático).
  *
  * Reusa los helpers Supabase existentes: _sbUpsert / _sbSelect / _sbCount / _sbCfg_ (Supabase.gs) y
  * _sheetToObjects (Code.gs). No reinventa el cliente HTTP.
