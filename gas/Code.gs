@@ -452,13 +452,9 @@ function _route(method, e) {
       case 'getAuthCatalogo':           return getAuthCatalogo();
 
       // ── Audio: escucha remota on-demand desde MOS ─────────
-      case 'iniciarEscuchaAudio':       return iniciarEscuchaAudio(params);
-      case 'detenerEscuchaAudio':       return detenerEscuchaAudio(params);
-      case 'subirChunkAudio':           return subirChunkAudio(params);
-      case 'getSesionesAudio':          return getSesionesAudio(params);
-      case 'getChunksAudioSesion':      return getChunksAudioSesion(params);
-      case 'getChunkAudioContent':      return getChunkAudioContent(params);
-      case 'getEstadoAudio':            return getEstadoAudio(params);
+      // [CERO-GAS 2026-07-18] Audio remoto (escucha) MIGRADO a Supabase: RPCs mos.espia_audio_* (SQL 508) +
+      // Edge espia-chunk (Storage) + Edge push. Cases iniciar/detener/subirChunk/getSesiones/getChunksAudioSesion/
+      // getChunkAudioContent/getEstadoAudio ELIMINADOS (el controlador MOS los resuelve por intercept en api.js).
 
       // ── GPS: tracking de dispositivos (anti-robo) ─────────
       case 'registrarUbicacion':            return registrarUbicacion(params);

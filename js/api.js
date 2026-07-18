@@ -249,6 +249,24 @@ const API = (() => {
     return res.json();
   }
 
+  // [cero-GAS audio] Push data-only (comando silencioso) a UN dispositivo por su token FCM, vía Edge `push`.
+  // Reemplaza _pushComandoDispositivo de GAS (Audio.gs). Mismo patrón que el wake del espía. Best-effort → bool.
+  async function _pushComandoDeviceMOS(deviceId, data) {
+    try {
+      const token = await _mintTokenMOS(); if (!token) return false;
+      const tk = await _sbRpcMOS('fcm_token_dispositivo', { p: { deviceId: String(deviceId || '') } }, 'mos');
+      const fcm = tk && tk.data && tk.data.fcmToken;
+      if (!fcm) return false;
+      const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/push`, {
+        method: 'POST',
+        headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'send', tokens: [fcm], silencioso: true, data: data || {} })
+      }, 12000);
+      const d = await res.json().catch(() => null);
+      return !!(d && d.ok && d.data && d.data.enviados > 0);
+    } catch (_) { return false; }
+  }
+
   // Lee una tabla del esquema mos.* directo (GET /rest/v1/{tabla}, Accept-Profile 'mos').
   // `query` = querystring PostgREST opcional (ej. 'select=*&estado=eq.1'). Si no hay token
   // → null ("caé a GAS"). Lanza ante HTTP de error. (FASE 1 elegirá RPC vs tabla por caso.)
@@ -3424,6 +3442,26 @@ const API = (() => {
     // liquidaciones) va SIEMPRE por GAS (dual-write → GAS espeja la sombra), aunque su flag de LECTURA esté ON.
     // Con el gate de catálogo OFF (default) ⇒ IDÉNTICO a hoy (va recto a GAS).
     post: (action, p = {}) => {
+      // ── [cero-GAS] Audio remoto: iniciar/detener sesión → RPCs mos.espia_audio_* (SQL 508) + push audio_start/
+      //    stop por Edge. Reemplaza Audio.gs. El controlador usa data.idSesion (iniciar) e ignora el return (detener). ──
+      if (action === 'iniciarEscuchaAudio') {
+        return (async () => {
+          const r = await _sbRpcMOS('espia_audio_iniciar', { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          const idSesion = r.data && r.data.idSesion;
+          const pushOk = await _pushComandoDeviceMOS(p && p.deviceId, { action: 'audio_start', sesionId: idSesion, duracionMaxSeg: '1800' });
+          return { idSesion, folderDriveId: '', pushOk };   // contrato GAS: {idSesion, folderDriveId}
+        })();
+      }
+      if (action === 'detenerEscuchaAudio') {
+        return (async () => {
+          const r = await _sbRpcMOS('espia_audio_detener', { p: p || {} }, 'mos');
+          const dev = (r && r.data && r.data.deviceId) || (p && p.deviceId) || '';
+          if (dev) await _pushComandoDeviceMOS(dev, { action: 'audio_stop' });
+          return { ok: true };
+        })();
+      }
       // [cero-GAS F2 · impresión Z-cierre] El ticket Z ya existe 100% cero-GAS en turno.html (lee me.datos_turno +
       //   arma el ESC/POS + lo manda a la Edge `imprimir`, con ?autoprint=1 que auto-imprime a la impresora de la
       //   caja). En vez de duplicar sus ~600 líneas de render acá, REUSAMOS esa página verificada cargándola en un
@@ -3485,6 +3523,48 @@ const API = (() => {
           if (r == null) throw new Error('Sin conexión con el servidor');
           if (r.ok === false) throw new Error(r.error || 'Error del servidor');
           return r.data;   // {desde,hasta,chunks:[...]} — el front lee r.chunks
+        })();
+      }
+      // ── [cero-GAS] MONITOREO DE SEGURIDAD del local (audio): ciclo de sesión + chunks 100% Supabase (SQL 508 +
+      //    mos.espia_chunks/Storage). Graba equipos PROPIEDAD+APROBADOS por la empresa, dentro del local — complemento
+      //    liviano del CCTV (que tiene hosting propio); acá en fragmentos por límites de Supabase. "espía" = codename
+      //    legacy, NO vigilancia de personas. Reemplaza Audio.gs (AUDIO_SESIONES sheet + Drive). ──
+      if (action === 'getEstadoAudio') {
+        return (async () => {
+          const r = await _sbRpcMOS('espia_audio_estado', { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r.data;   // {activa, sesion?:{idSesion,...}}
+        })();
+      }
+      if (action === 'getSesionesAudio') {
+        return (async () => {
+          const r = await _sbRpcMOS('espia_audio_sesiones_listar', { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r.data;   // [{idSesion,deviceId,autorizadoPor,inicio,fin,duracionSeg,estado,motivo}]
+        })();
+      }
+      if (action === 'getChunksAudioSesion') {
+        return (async () => {
+          const r = await _sbRpcMOS('espia_audio_chunks', { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          // Contrato del controlador: usa ch.driveFileId como clave/handle → lo aliaseamos a la URL pública de
+          // Storage (única por chunk). getChunkAudioContent (abajo) recibe esa URL y la baja.
+          return (Array.isArray(r.data) ? r.data : []).map(ch => Object.assign({}, ch, { driveFileId: ch.url }));
+        })();
+      }
+      if (action === 'getChunkAudioContent') {
+        return (async () => {
+          const fileId = String((p && p.fileId) || '');   // ahora = URL pública de Storage (alias driveFileId)
+          if (!fileId) throw new Error('Requiere fileId');
+          const resp = await fetch(fileId);   // bucket `espia` es público
+          if (!resp.ok) throw new Error('No se pudo leer chunk: HTTP ' + resp.status);
+          const bytes = new Uint8Array(await resp.arrayBuffer());
+          let bin = ''; const CH = 0x8000;
+          for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+          return { base64: btoa(bin), mimeType: resp.headers.get('Content-Type') || 'audio/webm', size: bytes.length };
         })();
       }
       // [cero-GAS F3] Ticket de costos/reporte-jefa de una guía → ESC/POS client-side + Edge `imprimir` (antes GAS).
