@@ -44,25 +44,6 @@ function _normalizarApp(s) {
   return s;
 }
 
-// ────────────────────────────────────────────────────────────
-// ESTADO DE BLOQUEO
-// Llamado por MosExpress y warehouseMos cada 30s.
-// ────────────────────────────────────────────────────────────
-function getEstadoBloqueoUsuario(params) {
-  // [CERO-HOJA shim 2026-07-17] Delega en la RPC Supabase mos.estado_bloqueo_usuario, que hace LO MISMO
-  // (bloqueo + heartbeat dispositivo con auto-estacion WH + heartbeat personal) leyendo/escribiendo Supabase,
-  // NO la hoja. Shape identico al viejo (verificado). Red para clientes ME/WH cacheados PRE-2026-07-03; los
-  // clientes actuales ya llaman la RPC directo (cero-fallback). Borrable cuando la flota este en build nuevo.
-  if (!params || (!params.nombre && !params.idPersonal)) {
-    return { ok: false, error: 'Requiere nombre o idPersonal' };
-  }
-  try {
-    var r = _sbRpc('mos', 'estado_bloqueo_usuario', { p: params });
-    if (r && r.ok && r.data != null) return r.data;
-  } catch (e) { Logger.log('[getEstadoBloqueoUsuario shim] ' + (e && e.message)); }
-  // fail-SAFE: RPC no responde -> {ok:false} -> el cliente salta el tick y CONSERVA su ultimo estado.
-  return { ok: false, error: 'estado_bloqueo temporalmente no disponible' };
-}
 
 // ────────────────────────────────────────────────────────────
 // BLOQUEAR/ACTIVAR VENDEDOR ME por NOMBRE (no toca PERSONAL_MASTER)

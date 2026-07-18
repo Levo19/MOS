@@ -293,7 +293,8 @@ function _route(method, e) {
       case 'guardarTarjetaWA':     return guardarTarjetaWA(params);
 
       // ── Dispositivos ───────────────────────────────────────
-      case 'registrarSesionDispositivo':   return registrarSesionDispositivo(params);
+      // [CERO-GAS 2026-07-18] case 'registrarSesionDispositivo' ELIMINADO — sin callers (heartbeat va por RPC mos.estado_bloqueo_usuario).
+      // [CERO-GAS 2026-07-18] reverse-sync Sombra→Hoja de dispositivos ELIMINADO (fold + trigger + job). Hoja orfanada.
       // [Lote4 · B2-MOS] case 'reactivarDispositivoSuspendido' duplicado (ya está en línea ~277) — eliminado (era inalcanzable).
       case 'cancelarPendientesAntiguos':     return cancelarPendientesAntiguos();             // [v2.43.172 R6]
       case 'instalarTriggerCancelarPendientes': return instalarTriggerCancelarPendientes();   // [v2.43.172 R6]
@@ -428,7 +429,7 @@ function _route(method, e) {
       case 'anularJornadas':                   return anularJornadas(params);
 
       // ── Bloqueo remoto de usuarios (ME / WH) ───────────────
-      case 'getEstadoBloqueoUsuario':   return getEstadoBloqueoUsuario(params);
+      // [CERO-GAS 2026-07-18] case 'getEstadoBloqueoUsuario' ELIMINADO — ME/WH leen mos.estado_bloqueo_usuario directo (cero-fallback).
       case 'desbloquearUsuarioTemporal':return desbloquearUsuarioTemporal(params);
       case 'getBloqueosActivos':        return getBloqueosActivos(params);
       case 'bloquearVendedorME':        return bloquearVendedorME(params);

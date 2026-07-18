@@ -138,33 +138,6 @@ function _dualWriteDispositivo(deviceId, patch) {
 }
 
 /**
- * _dualDeleteDispositivo(deviceId) — espeja a la sombra un BORRADO de fila de la hoja DISPOSITIVOS (para los
- * pocos sitios que eliminan filas: limpiarPendientesMOS, reasignación de PK en vincularBrowserDispositivo).
- * Sin esto, la fila borrada sobreviviría en mos.dispositivos y el reverse-sync la RE-AGREGARÍA a la hoja
- * (deshaciendo la limpieza). Best-effort: nunca lanza. Idempotente (borrar lo ya borrado = ok).
- * _sbDelete tiene guard anti-wipe (rechaza sin filtros); acá siempre filtramos por id exacto.
- */
-function _dualDeleteDispositivo(deviceId) {
-  try {
-    var id = String(deviceId || '').trim();
-    if (!id) return false;
-    try { _sbCfg_(); } catch (eCfg) {
-      Logger.log('[_dualDeleteDispositivo] Supabase no configurado, omito: ' + (eCfg && eCfg.message || eCfg));
-      return false;
-    }
-    var del = _sbDelete('mos.dispositivos', { id_dispositivo: 'eq.' + id });
-    if (!del.ok) {
-      Logger.log('[_dualDeleteDispositivo] delete falló HTTP ' + del.code + ' ' + (del.error || ''));
-      return false;
-    }
-    return true;
-  } catch (e) {
-    Logger.log('[_dualDeleteDispositivo] EXCEPCIÓN: ' + (e && e.message || e));
-    return false;
-  }
-}
-
-/**
  * resembrarDispositivosDesdeHoja() — backfill/reconciliación: lee TODA la hoja DISPOSITIVOS y la upserta a
  * la sombra (fila completa). Uso manual (admin), una vez antes de migrar lectores y como reparación.
  * Devuelve {ok, filas, upserted, errores}.
@@ -481,71 +454,11 @@ function compararDispositivosMOS() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════════
-// [FASE 4.1 · Etapa B — versión segura para el outage] RECONCILIACIÓN PERIÓDICA en vez de cablear 20
-// dual-writes a ciegas. Un trigger time-based reespeja la hoja completa a la sombra cada 5 min. Cubre TODAS
-// las columnas/operaciones, NO toca ninguna función existente (cero riesgo de romper MOS), idempotente.
-// Mantiene la sombra fresca (lag ≤5 min, aceptable: el doble-check actual ya tolera el round-trip GAS).
-// El dual-write instantáneo granular (latencia de segundos) se cablea DESPUÉS, cuando se pueda probar.
-// OJO triggers GAS: pueden morir en silencio (ver memoria). El comparador compararDispositivosMOS() es el
-// detector; aprobarDispositivoEnSitu/Pendiente YA espejan al instante (_propagarDispositivoSombra) el caso
-// más urgente (device nuevo → entra ya). INERTE hasta que se corra instalarTriggerResembrarDispositivos().
+// [CERO-GAS 2026-07-18] La reconciliación periódica AUTOMÁTICA (trigger 5min + fold en syncMOSReciente +
+// _resembrarDispositivosJob + instalar/quitarTrigger + _mosDispositivosDirecto) fue ELIMINADA. La verdad es
+// mos.dispositivos (escrituras vía RPCs mos.admin_* + _dualWriteDispositivo en mutaciones GAS); la hoja
+// DISPOSITIVOS quedó ORFANADA (archivo histórico). Se conservan como utilidades MANUALES de reparación/
+// diagnóstico (editor GAS, sin trigger): compararDispositivosMOS(), correrReverseSyncDispositivos(),
+// dryRunDispositivosDesdeSombra(), resembrarDispositivosDesdeHoja/Sombra() — refrescan la hoja bajo demanda.
+// aprobarDispositivoEnSitu/Pendiente espejan al instante (_propagarDispositivoSombra) el caso urgente.
 // ════════════════════════════════════════════════════════════════════════════════════════════════════
-/**
- * [CUTOVER auth · flag-aware] Lee mos.config['MOS_DISPOSITIVOS_DIRECTO'] (best-effort, default OFF).
- * Mismo patrón que _mosSyncOffTablas: si la lectura de config falla, devuelve false (no cambia nada) y el
- * job sigue Hoja→Sombra como siempre. SOLO con la lectura limpia y el valor en {1,true,si,on} devuelve true.
- * Con flag ON, el resembrado invierte la dirección (Sombra→Hoja) para no pisar la escritura directa.
- */
-function _mosDispositivosDirecto() {
-  try {
-    var r = _sbSelect('mos.config', { select: 'valor', filters: { clave: 'eq.MOS_DISPOSITIVOS_DIRECTO' }, limit: 1 });
-    if (!r || !r.ok || !r.data || !r.data.length) return false;
-    var v = String(r.data[0].valor || '').trim().toLowerCase();
-    return (v === '1' || v === 'true' || v === 'si' || v === 'sí' || v === 'on');
-  } catch (e) {
-    Logger.log('[_mosDispositivosDirecto] WARN: ' + (e && e.message || e) + ' → default OFF (Hoja→Sombra)');
-    return false;
-  }
-}
-
-function _resembrarDispositivosJob() {
-  try {
-    // Flag OFF (default, estado actual): Hoja→Sombra (igual que siempre). Flag ON (post-cutover): Sombra→Hoja
-    // (reverse-sync — la escritura directa es la verdad; la hoja queda de espejo para los ~13 lectores GAS).
-    if (_mosDispositivosDirecto()) {
-      var rev = resembrarDispositivosDesdeSombra();
-      Logger.log('[_resembrarDispositivosJob · DIRECTO] reverse Sombra→Hoja: ' + JSON.stringify(rev));
-    } else {
-      var r = resembrarDispositivosDesdeHoja();
-      Logger.log('[_resembrarDispositivosJob] Hoja→Sombra: ' + JSON.stringify(r));
-    }
-  } catch (e) {
-    Logger.log('[_resembrarDispositivosJob] EXCEPCIÓN: ' + (e && e.message || e));
-  }
-}
-
-function instalarTriggerResembrarDispositivos() {
-  // Elimina cualquier trigger previo de este job (idempotente — evita duplicar al re-correr).
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === '_resembrarDispositivosJob') {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
-  ScriptApp.newTrigger('_resembrarDispositivosJob').timeBased().everyMinutes(5).create();
-  Logger.log('[instalarTriggerResembrarDispositivos] trigger cada 5 min instalado');
-  return { ok: true, intervalo: '5min', job: '_resembrarDispositivosJob' };
-}
-
-function quitarTriggerResembrarDispositivos() {
-  // KILL-SWITCH: apaga la reconciliación periódica (vuelve al estado previo, solo aprobar espeja).
-  var triggers = ScriptApp.getProjectTriggers();
-  var n = 0;
-  for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === '_resembrarDispositivosJob') {
-      ScriptApp.deleteTrigger(triggers[i]); n++;
-    }
-  }
-  Logger.log('[quitarTriggerResembrarDispositivos] ' + n + ' trigger(s) eliminado(s)');
-  return { ok: true, eliminados: n };
-}

@@ -462,15 +462,9 @@ function syncMOSReciente(){
   // si el trigger muere (Google desactiva los time-based) el latido se congela → mos.finanzas_rango/
   // historial_precios_lista marcan _fresh=false → el front cae a GAS (no sirve P&L/historial viejo).
   try{ _estamparLatidoMOS(r); }catch(eHb){ Logger.log('[syncMOSReciente] heartbeat WARN: '+(eHb&&eHb.message||eHb)); }
-  // [FASE 4.1] Reconciliación dispositivos sombra (foldeada al sync de 15min — MOS en tope de 20 triggers,
-  // mismo criterio que recon/catálogo). _resembrarDispositivosJob ya tiene try/catch interno; el externo
-  // garantiza que un fallo de la sombra de dispositivos NUNCA rompe el sync de datos.
-  // [QUOTA urlfetch] OJO: existe ADEMÁS un trigger de 5min (instalarTriggerResembrarDispositivos) que corre
-  // este MISMO job → 288 urlfetch/día REDUNDANTES con esta llamada foldeada (96/día ya cubren la sombra de
-  // dispositivos con sobra; aprobar device nuevo espeja al instante vía _propagarDispositivoSombra). Para
-  // ahorrar ~288 urlfetch/día, ejecutar UNA vez quitarTriggerResembrarDispositivos() en el editor (la sombra
-  // sigue cubierta por esta llamada de 15min). Es operación de trigger (config), no se cablea aquí.
-  try{ if(typeof _resembrarDispositivosJob==='function') _resembrarDispositivosJob(); }catch(eD){ Logger.log('[syncMOSReciente] resembrar dispositivos WARN: '+(eD&&eD.message||eD)); }
+  // [CERO-GAS 2026-07-18] Reconciliación Sombra→Hoja de dispositivos ELIMINADA (antes foldeada aquí + trigger 5min).
+  // La hoja DISPOSITIVOS quedó ORFANADA (archivo histórico solo-lectura): la verdad es mos.dispositivos —
+  // escrituras vía RPCs mos.admin_* + _dualWriteDispositivo (mutaciones GAS). Ningún lector crítico lee la hoja.
   return r;
 }
 function syncMOSCompleto(){
@@ -1454,7 +1448,8 @@ var _TRG_PROTEGIDOS = {
   // dinero / liquidaciones (CIERRE real, no sync de subida)
   _liqDiaCronDiario:true, cierreNocturnoTodos:true, cerrarSemanaAutomatico:true, cronSaludStockWH:true,
   // seguridad / horarios / push / dispositivos / operativos
-  _resembrarDispositivosJob:true, _heartbeatImpresoras:true, _etiqCronEscalacion:true,
+  // [CERO-GAS 2026-07-18] _resembrarDispositivosJob removido — reverse-sync Sombra→Hoja eliminado (hoja orfanada).
+  _heartbeatImpresoras:true, _etiqCronEscalacion:true,
   alertasOperativasDiarias:true
 };
 

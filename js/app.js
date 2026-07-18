@@ -819,10 +819,9 @@ const MOS = (() => {
   }
 
   // Heartbeat ligero del MASTER/ADMIN cuando está en MOS panel.
-  // Llama getEstadoBloqueoUsuario con appOrigen='mos' que actualiza
-  // PERSONAL_MASTER.Ultima_Conexion vía registrarConexionPersonal.
-  // Sin esto, el master/admin siempre figuraba "sin conexión" en el panel
-  // aunque estuviera viendo MOS en este mismo momento.
+  // [CERO-GAS] Llama la RPC mos.estado_bloqueo_usuario (API.estadoBloqueoMOS, appOrigen='mos') que actualiza
+  // ultima_conexion en Supabase. Sin esto, el master/admin figuraba "sin conexión" en el panel aunque
+  // estuviera viendo MOS en este momento.
   let _mosHbTimer = null;
   function vincularEsteBrowser() { /* deprecated: mantener export para compat */ }
   async function _mosHeartbeat() {
