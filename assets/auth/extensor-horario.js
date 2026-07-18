@@ -226,23 +226,11 @@
       +   '<h3 class="eh-title">Extender horario operativo</h3>'
       +   '<p class="eh-sub">Permite usar la app pasado el horario de cierre.<br>Solo admin o master · clave 8 dígitos</p>'
       +   vigenteHtml
-      +   '<label class="eh-label">¿Cuánto tiempo?</label>'
-      +   '<div class="eh-opciones">'
-      +     '<button class="eh-opt" data-min="20">'
-      +       '<span class="eh-opt-emoji">⚡</span>'
-      +       '<span class="eh-opt-min">20 min</span>'
-      +       '<span class="eh-opt-hint">rápido</span>'
-      +     '</button>'
-      +     '<button class="eh-opt" data-min="60">'
-      +       '<span class="eh-opt-emoji">🕐</span>'
-      +       '<span class="eh-opt-min">1 hora</span>'
-      +       '<span class="eh-opt-hint">estándar</span>'
-      +     '</button>'
-      +     '<button class="eh-opt" data-min="120">'
-      +       '<span class="eh-opt-emoji">🕑</span>'
-      +       '<span class="eh-opt-min">2 horas</span>'
-      +       '<span class="eh-opt-hint">extendido</span>'
-      +     '</button>'
+      // [511] Extensión FIJA de 1 hora (in-situ y remoto). Sin selector de tiempo.
+      +   '<div class="eh-opt eh-sel" style="grid-column:1/-1;cursor:default;pointer-events:none;margin-bottom:14px">'
+      +     '<span class="eh-opt-emoji">🕐</span>'
+      +     '<span class="eh-opt-min">1 hora</span>'
+      +     '<span class="eh-opt-hint">se concede 1 hora extra a este equipo</span>'
       +   '</div>'
       +   '<label class="eh-label">Clave admin (8 dígitos)</label>'
       +   '<input type="password" class="eh-input" id="ehClave" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="••••••••">'
@@ -255,29 +243,14 @@
       + '</div>';
     document.body.appendChild(ov);
 
-    var minSel = 0;
+    var minSel = 60;   // [511] extensión FIJA de 1 hora — sin selector
     var clave = document.getElementById('ehClave');
     var btnOk = document.getElementById('ehOk');
     var err = document.getElementById('ehErr');
 
     function _updateOkState() {
-      var claveOk = /^\d{8}$/.test(clave.value);
-      btnOk.disabled = !(minSel > 0 && claveOk);
+      btnOk.disabled = !/^\d{8}$/.test(clave.value);   // solo depende de la clave (tiempo fijo)
     }
-
-    Array.prototype.forEach.call(ov.querySelectorAll('.eh-opt'), function(b) {
-      b.addEventListener('click', function() {
-        Array.prototype.forEach.call(ov.querySelectorAll('.eh-opt'), function(x) {
-          x.classList.remove('eh-sel');
-        });
-        b.classList.add('eh-sel');
-        minSel = parseInt(b.getAttribute('data-min'), 10);
-        _sonidoTick();
-        _vibrar([20]);
-        _updateOkState();
-        if (clave) clave.focus();
-      });
-    });
 
     // Trimear input al pegar para evitar el caso "12345678 " con espacio
     clave.addEventListener('input', function() {

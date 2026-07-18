@@ -220,6 +220,10 @@
     // [cero-GAS 406] extensión de horario directo a Supabase (reemplaza SeguridadAlerts.gs).
     solicitarExtensionHorario:   'solicitar_extension_horario',
     extenderHorarioHoy:          'extender_horario_hoy',
+    // [511] flujo remoto: listar alertas al buzón + aprobar/rechazar extensión (1h al UUID).
+    listarSeguridadAlertas:      'seguridad_alertas',
+    aprobarExtensionHorario:     'aprobar_extension_horario',
+    rechazarExtensionHorario:    'rechazar_extension_horario',
     // [cero-GAS] validar horario → mos.resolver_horario_personal (330, grant anon 391). data
     // {permitido,motivo,fuente,dia,apertura,cierre} casa con lo que consume el widget.
     verificarHorario:            'resolver_horario_personal'
@@ -368,7 +372,7 @@
     var ultimoVisto = _badgeCountVisto();
     if (!opts.silent && count > ultimoVisto) { try { sonidos.alerta(); } catch(_){} }   // suena solo si subió
     _badgeCountVistoSet(count);
-    existing.innerHTML = '📨 <span>' + count + ' solicitud' + (count > 1 ? 'es' : '') + ' de acceso</span>';
+    existing.innerHTML = '📨 <span>' + count + ' solicitud' + (count > 1 ? 'es' : '') + '</span>';
   }
   var _badgeRefreshFn = null;
   // Re-conteo inmediato del badge (tras aprobar/rechazar → la burbuja se limpia al instante, sin esperar el poll).
@@ -379,9 +383,14 @@
     var refresh = function() {
       if (document.hidden) return;   // [perf] no consulta con la pestaña oculta
       if (!(window.DeviceAuth && typeof DeviceAuth.rpc === 'function')) return;
-      DeviceAuth.rpc('listar_dispositivos', {}).then(function(r){
-        var disps = (r && r.data) ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : [];
-        _actualizarBadgeDOM(_contarPendientes(disps), {});   // background: suena si subió respecto a lo visto
+      // [511] Buzón unificado: accesos UUID pendientes + solicitudes de extensión de horario.
+      Promise.all([
+        DeviceAuth.rpc('listar_dispositivos', {}).then(function(r){ return (r && r.data) ? (Array.isArray(r.data) ? r.data : (r.data.data || [])) : []; }).catch(function(){ return []; }),
+        _fetchExtensiones()
+      ]).then(function(res){
+        var disps = res[0], exts = res[1];
+        _alertasState.extensiones = exts;
+        _actualizarBadgeDOM(_contarPendientes(disps) + exts.length, {});   // background: suena si subió
       }).catch(function(){});
     };
     _badgeRefreshFn = refresh;
@@ -392,7 +401,15 @@
   // ════════════════════════════════════════════════════════════
   // MODAL Solicitudes de acceso (buzón · solo PENDIENTE_APROBACION, sin pestañas)
   // ════════════════════════════════════════════════════════════
-  var _alertasState = { dispositivos: [] };
+  var _alertasState = { dispositivos: [], extensiones: [] };
+  // [511] Trae las solicitudes de EXTENSIÓN DE HORARIO pendientes (buzón unificado). Siempre visibles a
+  // cualquier admin (no es acceso a MOS → sin filtro master). Devuelve [] ante error (no rompe el badge).
+  function _fetchExtensiones() {
+    if (!(window.DeviceAuth && typeof DeviceAuth.rpc === 'function')) return Promise.resolve([]);
+    return DeviceAuth.rpc('seguridad_alertas', { tipo: 'EXTENSION_HORARIO_PENDIENTE' })
+      .then(function(r){ var d = r && r.data; return (d && Array.isArray(d.items)) ? d.items : []; })
+      .catch(function(){ return []; });
+  }
 
   function abrirModalAlertas() {
     _injectCss();
@@ -435,14 +452,19 @@
     if (!silent) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px"><span class="seg-spin">◐</span> cargando…</div>';
     var _rpcSeg = (window.DeviceAuth && typeof DeviceAuth.rpc === 'function')
       ? DeviceAuth.rpc : function() { return Promise.reject(new Error('DeviceAuth no disponible')); };
-    _rpcSeg('listar_dispositivos', {}).then(function(r){ return r && r.data ? r.data : []; }).catch(function(){ return null; })
-      .then(function(rd) {
-        // [fix 500x S5] error de red en el poll → NO parpadear a "vacío" ni quitar el badge: conservar lo previo.
-        if (rd === null) return;   // el poll de 5s reintenta; en la 1ª carga queda el spinner hasta el reintento.
-        var disps = Array.isArray(rd) ? rd : ((rd && rd.data) || []);
+    // [511] Buzón unificado: dispositivos (accesos UUID) + extensiones de horario.
+    Promise.all([
+      _rpcSeg('listar_dispositivos', {}).then(function(r){ return r && r.data ? r.data : []; }).catch(function(){ return null; }),
+      _fetchExtensiones()
+    ]).then(function(res) {
+        var rd = res[0], exts = res[1] || [];
+        // [fix 500x S5] error de red en dispositivos → NO parpadear a "vacío": conservar lo previo.
+        if (rd === null && !exts.length) return;
+        var disps = (rd === null) ? _alertasState.dispositivos : (Array.isArray(rd) ? rd : ((rd && rd.data) || []));
         _alertasState.dispositivos = disps;
+        _alertasState.extensiones  = exts;
         _alertasRender(!silent);   // no-silent (apertura/acción) fuerza el dibujo
-        _actualizarBadgeDOM(_contarPendientes(disps), { silent: true });   // el badge sigue en sync (sin sonido)
+        _actualizarBadgeDOM(_contarPendientes(disps) + exts.length, { silent: true });
       });
   }
   // [dueño 2026-07-15] Tipo de equipo desde el User_Agent (para el buzón: móvil vs PC).
@@ -453,11 +475,67 @@
     if (!s) return { ico: '❔', label: '—' };
     return { ico: '🖥️', label: 'PC' };
   }
+  // [511] Tarjeta de solicitud de EXTENSIÓN DE HORARIO (buzón). El aprobador es cualquier admin MOS (sin
+  // re-clave: la sesión MOS ya es admin). Concede 1h al UUID que la pidió (backend aprobar_extension_horario).
+  function _renderExtCard(e) {
+    var nombre = _esc(e.idPersonal || 'operador');
+    var dev = '';
+    try { dev = String(e.idDispositivo || (e.datos_extra_json && e.datos_extra_json.deviceId) || '').substring(0, 8); } catch(_){}
+    var motivo = '';
+    try { var dx = e.datos_extra_json || {}; motivo = String(dx.motivo || ''); } catch(_){}
+    var appLbl = '';
+    try { appLbl = String((e.datos_extra_json && e.datos_extra_json.app) || ''); } catch(_){}
+    return ''
+      + '<div class="seg-card" style="border-color:rgba(251,191,36,.45);background:linear-gradient(180deg,rgba(251,191,36,.06),transparent)">'
+      +   '<div class="seg-card-row">'
+      +     '<div style="flex:1;min-width:0">'
+      +       '<div class="seg-card-titulo">⏰ ' + nombre + ' <span style="font-weight:400;color:#fbbf24">· pide +1h</span></div>'
+      +       '<div class="seg-card-sub">'
+      +         (motivo ? '📝 ' + _esc(motivo) + ' · ' : '')
+      +         (appLbl ? _esc(appLbl) + ' · ' : '')
+      +         (dev ? 'nº ' + _esc(dev) + ' · ' : '')
+      +         _humanizarFecha(e.fecha)
+      +       '</div>'
+      +     '</div>'
+      +     '<span class="seg-chip seg-chip-warn">EXTENSIÓN</span>'
+      +   '</div>'
+      +   '<div class="seg-card-actions">'
+      +     '<button class="seg-btn seg-btn-ok" onclick="SeguridadSystem._aprobarExt(\'' + _esc(e.idAlerta) + '\')">✓ Aprobar 1h</button>'
+      +     '<button class="seg-btn seg-btn-warn" onclick="SeguridadSystem._rechazarExt(\'' + _esc(e.idAlerta) + '\')">✗ Rechazar</button>'
+      +   '</div>'
+      + '</div>';
+  }
+  function _aprobarExt(idAlerta) {
+    if (!idAlerta || _accionEnVuelo['ext_' + idAlerta]) return;
+    _accionEnVuelo['ext_' + idAlerta] = true;
+    var por = 'admin';
+    try { por = (_config.nombre && _config.nombre()) || (_config.idPersonal && _config.idPersonal()) || 'admin'; } catch(_){}
+    _api('aprobarExtensionHorario', { idAlerta: idAlerta, aprobadoPor: por }).then(function() {
+      try { sonidos.aprobado ? sonidos.aprobado() : sonidos.click(); } catch(_){}
+      _toast('✅ Extensión de 1h concedida', { success: true });
+      _refrescarBadge(); _alertasCargar(false);
+    }).catch(function(e) { _toast('❌ ' + _esc(e && e.message), { error: true }); })
+      .then(function(){ delete _accionEnVuelo['ext_' + idAlerta]; });
+  }
+  function _rechazarExt(idAlerta) {
+    if (!idAlerta || _accionEnVuelo['ext_' + idAlerta]) return;
+    _accionEnVuelo['ext_' + idAlerta] = true;
+    var por = 'admin';
+    try { por = (_config.nombre && _config.nombre()) || (_config.idPersonal && _config.idPersonal()) || 'admin'; } catch(_){}
+    _api('rechazarExtensionHorario', { idAlerta: idAlerta, aprobadoPor: por }).then(function() {
+      try { sonidos.click(); } catch(_){}
+      _toast('Solicitud de extensión rechazada', {});
+      _refrescarBadge(); _alertasCargar(false);
+    }).catch(function(e) { _toast('❌ ' + _esc(e && e.message), { error: true }); })
+      .then(function(){ delete _accionEnVuelo['ext_' + idAlerta]; });
+  }
+
   function _alertasRender(force) {
     var body = document.getElementById('segAlertasBody');
     var sub  = document.getElementById('segAlertasSub');
     if (!body) return;
     var disps = _alertasState.dispositivos || [];
+    var exts  = _alertasState.extensiones || [];   // [511] solicitudes de extensión de horario
     // [dueño 2026-07-16] SOLO solicitudes de acceso (PENDIENTE_APROBACION). Un suspendido no es accionable
     // desde el buzón (pide reactivación con su botón → cae aquí como PENDIENTE). MOS solo lo ve/aprueba el MASTER.
     var rolUser = '';
@@ -468,18 +546,23 @@
       if (!esMaster) { var a = String(d.App || '').toUpperCase(); if (a === 'MOS' || a === 'PROYECTOMOS') return false; }
       return true;
     });
-    // [anti-parpadeo] firma de la lista; si no cambió y no es forzado (auto-refresh 5s), NO re-dibuja.
-    var sig = lista.map(function(d){ return String(d.ID_Dispositivo||'') + ':' + String(d.Estado||''); }).join(',');
+    // [anti-parpadeo] firma de la lista (incluye extensiones); si no cambió y no es forzado, NO re-dibuja.
+    var sig = lista.map(function(d){ return String(d.ID_Dispositivo||'') + ':' + String(d.Estado||''); }).join(',')
+            + '|EXT:' + exts.map(function(e){ return String(e.idAlerta||'') + ':' + String(e.estado||''); }).join(',');
     if (!force && sig === _alertasLastSig) return;
     _alertasLastSig = sig;
-    if (sub) sub.textContent = (lista.length === 0)
+    var total = lista.length + exts.length;
+    if (sub) sub.textContent = (total === 0)
       ? 'sin solicitudes pendientes'
-      : (lista.length + ' solicitud' + (lista.length > 1 ? 'es' : '') + ' de acceso');
-    if (lista.length === 0) {
-      body.innerHTML = '<div style="text-align:center;color:#34d399;padding:30px 0;font-size:14px">✅ Sin solicitudes pendientes<br><small style="color:#64748b">Los equipos que pidan acceso aparecerán acá al instante</small></div>';
+      : (total + ' solicitud' + (total > 1 ? 'es' : '')
+         + (exts.length && !lista.length ? ' de extensión' : (exts.length ? '' : ' de acceso')));
+    if (total === 0) {
+      body.innerHTML = '<div style="text-align:center;color:#34d399;padding:30px 0;font-size:14px">✅ Sin solicitudes pendientes<br><small style="color:#64748b">Los accesos de equipos y las extensiones de horario aparecerán acá al instante</small></div>';
       return;
     }
-    body.innerHTML = lista.map(function(d) {
+    // [511] Sección de EXTENSIONES DE HORARIO (arriba) → cualquier admin aprueba 1h al equipo.
+    var extHtml = exts.map(_renderExtCard).join('');
+    body.innerHTML = extHtml + lista.map(function(d) {
       var est = String(d.Estado || '').toUpperCase();
       var chipCls = est === 'ACTIVO' ? 'seg-chip-ok'
                   : est === 'PENDIENTE_APROBACION' ? 'seg-chip-warn'
@@ -1020,30 +1103,30 @@
     });
   }
 
+  // [511] Solicitud remota: 1 HORA fija (sin preguntar minutos), envía UUID + app para que el admin
+  // conceda el desbloqueo a ESTE equipo. Solo se pide el motivo.
   function _fueraSolicitarExtension() {
     _modalPrompt({
-      title: 'Solicitar extensión',
-      label: '¿Cuántos minutos extra necesitas?',
-      default: '60',
-      type: 'number',
+      title: 'Solicitar extensión (1 hora)',
+      label: 'Explícale al admin por qué necesitas 1 hora más:',
+      placeholder: 'Ej: cliente importante, inventario...',
       emoji: '⏰'
-    }).then(function(minRaw) {
-      if (!minRaw) return;
-      var min = parseInt(minRaw) || 0;
-      if (min <= 0 || min > 240) { _toast('⚠ Entre 1 y 240 min', { error: true }); return; }
-      _modalPrompt({
-        title: 'Motivo',
-        label: 'Explícale al admin por qué necesitas la extensión:',
-        placeholder: 'Ej: cliente importante, inventario...',
-        emoji: '📝'
-      }).then(function(motivo) {
-        if (!motivo || !motivo.trim()) { _toast('⚠ Ingresa un motivo', { error: true }); return; }
-        sonidos.click();
-        _api('solicitarExtensionHorario', { idPersonal: _config.idPersonal(), minutos: min, motivo: motivo }).then(function() {
-          _toast('✅ Solicitud enviada al admin', { success: true });
-          _fueraCerrar();
-        }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
-      });
+    }).then(function(motivo) {
+      if (!motivo || !motivo.trim()) { _toast('⚠ Ingresa un motivo', { error: true }); return; }
+      sonidos.click();
+      var _dev = '';
+      try {
+        _dev = (window.DeviceAuth && DeviceAuth.deviceId && DeviceAuth.deviceId())
+            || localStorage.getItem('wh_device_id')
+            || localStorage.getItem('mosexpress_deviceId')
+            || localStorage.getItem('mos_device_id') || '';
+      } catch(_){}
+      var _app = (_config && _config.app) || (window.WH_CONFIG ? 'warehouseMos' : 'mosExpress');
+      if (_app === 'MOS' && window.WH_CONFIG) _app = 'warehouseMos';
+      _api('solicitarExtensionHorario', { idPersonal: _config.idPersonal(), minutos: 60, motivo: motivo, deviceId: _dev, app: _app }).then(function() {
+        _toast('✅ Solicitud de 1h enviada al admin', { success: true });
+        _fueraCerrar();
+      }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
     });
   }
   function _fueraNotificarme(apertura) {
@@ -1339,6 +1422,8 @@
     _renombrar:            _renombrar,
     _rechazar:             _rechazar,
     _reactivar:            _reactivar,
+    _aprobarExt:           _aprobarExt,     // [511] aprobar extensión de horario (1h al UUID)
+    _rechazarExt:          _rechazarExt,    // [511] rechazar extensión de horario
     _desbloqueoTemp:       _desbloqueoTemp,
     _desbDur:              _desbDur,
     _desbConfirmar:        _desbConfirmar,
