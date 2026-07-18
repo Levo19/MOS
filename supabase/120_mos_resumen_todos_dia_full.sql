@@ -242,7 +242,7 @@ begin
                       E'\n' order by e.hora)                 as comentarios
     from virt_base vb
     join mos.evaluaciones e
-      on e.id_personal = 'MEX:'||vb.nombre
+      on mos._norm_nom(replace(split_part(e.id_personal,'|',1),'MEX:','')) = mos._norm_nom(vb.nombre)
      and coalesce(e.activo, true) = true
      and (e.fecha at time zone 'America/Lima')::date = v_fecha
     group by vb.nombre
@@ -253,7 +253,7 @@ begin
            (kv.value = to_jsonb(true) or lower(kv.value::text) in ('true','"true"','1','"1"')) as cval
     from virt_base vb
     join mos.evaluaciones e
-      on e.id_personal = 'MEX:'||vb.nombre
+      on mos._norm_nom(replace(split_part(e.id_personal,'|',1),'MEX:','')) = mos._norm_nom(vb.nombre)
      and coalesce(e.activo, true) = true
      and (e.fecha at time zone 'America/Lima')::date = v_fecha
      and jsonb_typeof(coalesce(e.control_checks,'{}'::jsonb)) = 'object'
@@ -281,7 +281,7 @@ begin
            ) order by e.hora), '[]'::jsonb) as detalle
     from virt_base vb
     join mos.evaluaciones e
-      on e.id_personal = 'MEX:'||vb.nombre
+      on mos._norm_nom(replace(split_part(e.id_personal,'|',1),'MEX:','')) = mos._norm_nom(vb.nombre)
      and coalesce(e.activo, true) = true
      and (e.fecha at time zone 'America/Lima')::date = v_fecha
      and coalesce(e.sancion,0) > 0
@@ -296,7 +296,7 @@ begin
            ) order by e.hora), '[]'::jsonb) as detalle
     from virt_base vb
     join mos.evaluaciones e
-      on e.id_personal = 'MEX:'||vb.nombre
+      on mos._norm_nom(replace(split_part(e.id_personal,'|',1),'MEX:','')) = mos._norm_nom(vb.nombre)
      and coalesce(e.activo, true) = true
      and (e.fecha at time zone 'America/Lima')::date = v_fecha
      and coalesce(e.bonificacion,0) > 0
@@ -377,7 +377,10 @@ begin
   virt_json as (
     select jsonb_build_object(
       -- ── PREEXISTENTES / paritarios con resumen_dia ──
-      'idPersonal',     'MEX:'||vc.nombre,
+      -- [UNIF id 2026-07-18] clave CANÓNICA MEX:<NOMBRE>|<ZONA> (mos._identidad_persona), = la que usa
+      -- liquidaciones_dia/veto/pago/recompute → el lápiz de Liquidación y el botón Auditar leen el MISMO id,
+      -- el JOIN liq (abajo) matchea → ventaZona/comisión aparecen, y "Sin meta" desaparece.
+      'idPersonal',     mos._identidad_persona(null, vc.nombre, vc.zona_principal, true),
       'nombre',         vc.nombre,                              -- GAS: apellido vacío → trim(nombre||' '||'')
       'rol',            vc.rol,
       'appOrigen',      'mosExpress',
@@ -439,7 +442,10 @@ begin
                           vc.base_efectiva + 0 + (case when vc.auditado then vc.bono_meta_bruto else 0 end)
                           + 0 + vc.bonificacion_total - vc.sancion_total, 2)),
       'virtual',        true
-    ) as obj, vc.nombre as id_key
+    -- [UNIF id 2026-07-18] id_key CANÓNICO = idPersonal (arriba) → el JOIN liq (mos.liquidaciones_dia)
+    -- matchea la fila de la mega tabla y los kpis ventaZona/comisión/envasados afloran. La union `todos`
+    -- ya NO antepone 'MEX:' porque esta clave ya viene completa (MEX:<NOMBRE>|<ZONA>).
+    ) as obj, mos._identidad_persona(null, vc.nombre, vc.zona_principal, true) as id_key
     from virt_fin vc
   ),
   -- ── (1) items reales (presente=true) con virtual:false ───────────────────────────────────────────
@@ -453,7 +459,7 @@ begin
   todos as (
     select obj, id_key from reales_json
     union all
-    select obj, ('MEX:'||id_key) from virt_json
+    select obj, id_key from virt_json   -- id_key ya es canónico MEX:<NOMBRE>|<ZONA> (no re-prefijar)
   ),
   -- ── (3) cruce liquidaciones_dia → liqEstado/vetada ────────────────────────────────────────────────
   liq as (

@@ -206,8 +206,9 @@ begin
     -- comisión 5% del excedente de zona, proporcional a lo cobrado por la persona
     v_vcob  := mos._venta_cobrada_persona(v_nomfull, v_zona, v_dia);
     v_vzona := mos._venta_cobrada_zona(v_zona, v_dia);
-    v_meta  := mos._meta_zona(v_zona);
-    v_pct   := mos._comision_pct(v_zona);
+    -- [509] política VERSIONADA por fecha: usa el % / meta que regía EL DÍA v_dia (no retroactivo).
+    v_meta  := mos._meta_zona(v_zona, v_dia);
+    v_pct   := mos._comision_pct(v_zona, v_dia);
     v_pool  := round(greatest(0::numeric, v_vzona - v_meta) * v_pct / 100.0, 2);
     v_bono  := case when v_vzona > 0 then round(v_pool * (v_vcob / v_vzona), 2) else 0 end;
     v_prog  := case when v_meta > 0 then round(v_vcob / v_meta * 100, 1) else 0 end;

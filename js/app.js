@@ -20531,6 +20531,12 @@ const MOS = (() => {
       if (btnElim)    btnElim.classList.add('hidden');
     }
 
+    // [509] Vigencia de política: default HOY (Lima, UTC-5). Los cambios de meta/comisión aplican
+    // desde esta fecha hacia adelante (no retroactivo). El admin puede fijar una fecha anterior.
+    if ($('zonaPoliticaVigencia')) {
+      $('zonaPoliticaVigencia').value = new Date(Date.now() - 5*3600*1000).toISOString().slice(0,10);
+    }
+
     // Si es la zona de almacén, ocultar sección "Política de la zona" y
     // mostrar nota — su configuración va en CONFIG_MOS (chips de Operadores).
     const z2 = id ? cfgData.zonas.find(x => x.idZona === id) : null;
@@ -20591,7 +20597,9 @@ const MOS = (() => {
       direccion:     $('zonaDireccion')?.value || '',
       responsable:   $('zonaResponsable')?.value || '',
       estado,
-      politicaJSON:  politicaJSON
+      politicaJSON:  politicaJSON,
+      // [509] fecha desde la que aplican los cambios de meta/comisión (no retroactivo). Default hoy.
+      politicaVigenteDesde: $('zonaPoliticaVigencia')?.value || ''
     };
     if (!params.idZona) delete params.idZona;
     // OPTIMISTA
