@@ -68,6 +68,23 @@ begin
   -- stock (el ítem ya vive en la acumulada). '' (estado en blanco anómalo) se permite.
   v_est_up := upper(coalesce(v_pickup.estado, ''));
   if v_est_up not in ('PENDIENTE', 'EN_PROCESO', '') then
+    -- [fix Rep#3 2026-07-18] Pickup YA terminal (típico: cerró PARCIAL/COMPLETADO y la RESPUESTA del cierre
+    -- se perdió en la red frágil del almacén → el cliente reintenta/drena la cola). NO re-despachar (money:
+    -- retorno temprano, sin crear_despacho_rapido, sin tocar stock), PERO recuperar la GUÍA existente y
+    -- devolverla con ok:true+idGuia para que el reintento/drain REIMPRIMA el ticket (evento wh:guia-sincronizada
+    -- → imprimirTicketGuia, dedup por wh.reservar_ticket = un solo ticket físico). Antes esta rama devolvía
+    -- yaCerrado SIN idGuia → el drain nunca reimprimía → "se creó pero no imprime" + toast confuso.
+    select id_guia into v_guia_prev
+    from wh.guias
+    where comentario like '%[pickup:' || v_idp || ']%'
+    order by fecha desc
+    limit 1;
+    if v_guia_prev is not null then
+      return jsonb_build_object('ok', true, 'data', jsonb_build_object(
+        'idGuia', v_guia_prev, 'estado', v_est_up, 'yaCerrado', true, 'idempotente', true,
+        'despachados', 0, 'noDespachados', 0));
+    end if;
+    -- terminal SIN guía (ABSORBIDO en la acumulada / ELIMINADO): genuinamente nada que despachar ni reimprimir
     return jsonb_build_object('ok', false,
       'error', 'El pickup ya no es despachable (estado=' || v_est_up || ')', 'yaCerrado', true);
   end if;
