@@ -18216,7 +18216,7 @@
           <div class="col-span-2">
             <label class="lbl">📅 Vigencia de meta / comisión (desde)</label>
             <input id="zonaPoliticaVigencia" class="inp" type="date">
-            <p class="text-[10px] text-slate-500 mt-1">Los cambios de meta, % comisión y meta de auditorías aplican <b>desde esta fecha hacia adelante</b>. Los días anteriores conservan el valor que regía entonces (<b>no retroactivo</b>). Podés fijar una fecha anterior si querés que aplique retroactivo a propósito. Default: hoy.</p>
+            <p class="text-[10px] text-slate-500 mt-1">Los cambios de <b>meta de venta</b> y <b>% de comisión</b> aplican <b>desde esta fecha hacia adelante</b>. Los días anteriores conservan el valor que regía entonces (<b>no retroactivo</b>). Podés fijar una fecha anterior si querés que aplique retroactivo a propósito. Default: hoy. <span class="text-slate-600">(La meta de auditorías usa el valor global de CONFIG_MOS.)</span></p>
           </div>
           <div class="col-span-2 text-[11px] text-slate-400 italic p-2 rounded" style="background:rgba(34,197,94,.05);border:1px dashed rgba(34,197,94,.3)">
             ⓘ Estos campos aplican a la operación POS (cajeros y vendedores). El almacén tiene sus propias reglas (guías + envasado + auditorías generales) en la sección Operadores.
@@ -19360,7 +19360,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.556"></script>
+<script src="js/api.js?v=2.43.557"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19375,7 +19375,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.556"></script>
+<script src="js/app.js?v=2.43.557"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

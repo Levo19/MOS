@@ -112,12 +112,18 @@ declare
 begin
   if not mos._claim_ok() then return jsonb_build_object('ok',false,'error','APP_NO_AUTORIZADA'); end if;
   if v_id is null then return jsonb_build_object('ok',false,'error','idZona requerido'); end if;
+  -- [fix 500x] verificar existencia ANTES de registrar historial → evita historial huérfano si la zona no existe
+  if not exists (select 1 from mos.zonas where id_zona = v_id) then
+    return jsonb_build_object('ok',false,'error','zona no encontrada');
+  end if;
 
-  -- versionar los 3 campos numéricos de política (antes de pisar politica_json)
+  -- versionar SOLO los campos del path de DINERO que el recompute (289) lee date-aware:
+  -- metaDiaria (_meta_zona(zona,dia)) y comisionExcedentePct (_comision_pct(zona,dia)). metaAuditorias
+  -- NO se versiona: el recompute la toma del config GLOBAL (evalMetaAuditorias), no de la zona → versionarla
+  -- no afectaría el cálculo y daría una falsa sensación de vigencia.
   if v_pol is not null and jsonb_typeof(v_pol) = 'object' then
     perform mos._zona_politica_registrar(v_id, 'comisionExcedentePct', mos._numn(v_pol->>'comisionExcedentePct'), v_vig, v_por);
     perform mos._zona_politica_registrar(v_id, 'metaDiaria',           mos._numn(v_pol->>'metaDiaria'),           v_vig, v_por);
-    perform mos._zona_politica_registrar(v_id, 'metaAuditorias',       mos._numn(v_pol->>'metaAuditorias'),       v_vig, v_por);
   end if;
 
   update mos.zonas set

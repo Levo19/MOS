@@ -189,7 +189,11 @@ begin
   -- ventas cobradas del día, match contención bidireccional vs nlow; zona por zona_id de la venta.
   vventas as (
     select vb.nlow,
-           coalesce(c.zona_id, v.zona_id, '') as zona,
+           -- [UNIF id · fix 500x 2026-07-18] zona de la VENTA primero (como el recompute 289 que puebla la
+           -- mega tabla: usa v.zona_id). Antes `coalesce(c.zona_id, v.zona_id)` tomaba la zona de la CAJA,
+           -- que en cajas mal configuradas (ej. zona_id 'SINZONA') difería de la mega → clave distinta →
+           -- comisión NO aparecía. La caja queda solo como fallback si la venta no trae zona.
+           coalesce(nullif(v.zona_id,''), nullif(c.zona_id,''), '') as zona,
            coalesce(v.total,0)::numeric as total
     from virt_base vb
     join me.ventas v
@@ -207,8 +211,23 @@ begin
   vventas_zona as (
     select nlow, zona, sum(total) as tot from vventas where zona <> '' group by nlow, zona
   ),
+  -- [fix 500x 2026-07-18] zona principal = la de la MEGA TABLA (liquidaciones_dia) cuando existe fila ese
+  -- día (es la fuente de verdad del dinero, seteada al crear la liquidación en ME). Solo si NO hay fila se
+  -- deriva de ventas. Antes se derivaba SIEMPRE de ventas → cajas/ventas con zona_id espuria ('SINZONA')
+  -- daban una zona distinta a la mega → la clave canónica no matcheaba → comisión NO aparecía.
   vzona_ppal as (
-    select distinct on (nlow) nlow, zona from vventas_zona order by nlow, tot desc, zona
+    select vb.nlow,
+           coalesce(
+             (select nullif(split_part(l.id_personal,'|',2),'')
+                from mos.liquidaciones_dia l
+               where (l.fecha at time zone 'America/Lima')::date = v_fecha
+                 and l.id_personal like 'MEX:%'
+                 and mos._norm_nom(replace(split_part(l.id_personal,'|',1),'MEX:','')) = mos._norm_nom(vb.nombre)
+               order by coalesce(l.total_dia,0) desc, l.id_personal
+               limit 1),
+             (select vzp.zona from vventas_zona vzp where vzp.nlow = vb.nlow order by vzp.tot desc, vzp.zona limit 1)
+           ) as zona
+    from virt_base vb
   ),
   vmeta as (
     select vb.nlow,
