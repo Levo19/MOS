@@ -11,39 +11,6 @@
 //    no requieren PIN ni credenciales
 // ============================================================
 
-// ────────────────────────────────────────────────────────────
-// Helper: parsear user agent para nombre legible del dispositivo
-// Ej: "Android · SM-G960F · Chrome" o "Windows · Chrome" o "iOS · iPhone · Safari"
-// ────────────────────────────────────────────────────────────
-function _parseUserAgent(ua) {
-  if (!ua) return '';
-  var s = String(ua);
-  // Plataforma
-  var plat = '';
-  if (/android/i.test(s))      plat = 'Android';
-  else if (/iphone/i.test(s))  plat = 'iOS · iPhone';
-  else if (/ipad/i.test(s))    plat = 'iOS · iPad';
-  else if (/ipod/i.test(s))    plat = 'iOS · iPod';
-  else if (/windows nt/i.test(s)) plat = 'Windows';
-  else if (/macintosh|mac os/i.test(s)) plat = 'Mac';
-  else if (/linux/i.test(s))   plat = 'Linux';
-  // Modelo Android: "Android X.Y.Z; ES; SM-G960F Build/..."
-  var modelo = '';
-  if (plat === 'Android') {
-    var m = s.match(/Android[^)]*?;\s*[a-z]{2,3}[-\w]*;\s*([^);]+)/i)
-         || s.match(/;\s*([^);]+)\s+Build\//);
-    if (m) modelo = m[1].trim();
-  }
-  // Browser
-  var nav = '';
-  if (/edg\//i.test(s))         nav = 'Edge';
-  else if (/opr\/|opera/i.test(s)) nav = 'Opera';
-  else if (/chrome\//i.test(s)) nav = 'Chrome';
-  else if (/firefox/i.test(s))  nav = 'Firefox';
-  else if (/safari/i.test(s))   nav = 'Safari';
-  var parts = [plat, modelo, nav].filter(function(x){ return !!x; });
-  return parts.join(' · ');
-}
 
 // ════════════════════════════════════════════════
 // CONSULTA CONVENIENCE PARA APPS CLIENTES
@@ -567,42 +534,7 @@ var _DISP_COLS_EXTRA = ['Ultima_Zona', 'Ultima_Estacion', 'Ultima_Sesion',
                         'Cancelado_Auto_Ts'];
 
 // Push helper · notifica a admin/master cuando se aprueba un dispositivo
-function _notificarAprobacionDispositivo(deviceId, app, nombreEquipo, aprobadoPor, accion) {
-  try {
-    var titulo = '✅ Dispositivo aprobado';
-    var appLabel = (app || '').toUpperCase() || '—';
-    var nombre   = nombreEquipo || ('UUID ' + (deviceId || '').substring(0, 8) + '...');
-    var quien    = aprobadoPor || 'admin';
-    var via      = accion === 'creado' ? 'in-situ' : (accion === 'reactivado' ? 'in-situ (reactivado)' : 'desde panel');
-    var cuerpo   = nombre + ' · ' + appLabel + ' · aprobado por ' + quien + ' (' + via + ')';
-    _enviarPushTodos(titulo, cuerpo, { soloRolesAdmin: true, idNotif: 'MOS_DEVICE_APROBADO' });
-  } catch (e) { Logger.log('Push aprobación falló: ' + e.message); }
-}
 
-function _garantizarColumnasDispositivos(_lockHeld) {
-  // [v2.43.136 FIX] Lock opt-in para evitar race entre callers concurrentes
-  var _lock = null;
-  if (!_lockHeld) {
-    _lock = LockService.getScriptLock();
-    try { _lock.waitLock(15000); } catch(e) { /* continúa sin lock; mejor algo que nada */ }
-  }
-  try {
-    var sheet = getSheet('DISPOSITIVOS');
-    var data = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues();
-    var hdrs = (data[0] || []).map(function(h) { return String(h).trim(); });
-    var faltan = _DISP_COLS_EXTRA.filter(function(c) { return hdrs.indexOf(c) === -1; });
-    if (faltan.length > 0) {
-      var startCol = sheet.getLastColumn() + 1;
-      sheet.getRange(1, startCol, 1, faltan.length).setValues([faltan]);
-      sheet.getRange(1, startCol, 1, faltan.length)
-           .setFontWeight('bold').setBackground('#1f2937').setFontColor('#fff');
-      SpreadsheetApp.flush();
-    }
-    return sheet;
-  } finally {
-    if (_lock) { try { _lock.releaseLock(); } catch(_){} }
-  }
-}
 
 /**
  * [v2.43.28] Telemetría de quota de localStorage de dispositivos ME.
@@ -646,10 +578,6 @@ function reportarQuotaDispositivo(params) {
 // Property que se bumpea para forzar re-verificación global de TODOS los devices.
 // Cuando server cambia este número, los clientes detectan que su cache local
 // tiene una versión menor → invalidan cache y re-verifican.
-function _getDeviceVerifyVersion() {
-  var v = parseInt(PropertiesService.getScriptProperties().getProperty('DEVICE_VERIFY_VERSION') || '1', 10);
-  return isNaN(v) ? 1 : v;
-}
 // Fecha "hoy" en TZ Lima en formato YYYY-MM-DD. El cliente la compara con su
 // `lastVerifyDate` para validar "cache válido este mismo día". Defensa contra
 // manipulación del reloj del cliente — el cliente NO confía en su propio reloj
@@ -742,50 +670,6 @@ function _marcarAlertaSegRevisadaPorDispositivo(idDispositivo, revisadaPor) {
 //
 // Devuelve true si la sombra quedó ACTIVA (confirmado por read-back), false si no.
 // ════════════════════════════════════════════════════════════════════════
-function _propagarDispositivoSombra(deviceId, app, nombreEquipo, userAgent) {
-  try {
-    if (!deviceId) return false;
-    // ¿Supabase configurado? Si no, salir limpio (entorno sin sombra).
-    try { _sbCfg_(); } catch (eCfg) {
-      Logger.log('[_propagarDispositivoSombra] Supabase no configurado, omito: ' + (eCfg && eCfg.message || eCfg));
-      return false;
-    }
-    var row = {
-      id_dispositivo:  String(deviceId),
-      estado:          'ACTIVO',
-      ultima_conexion: Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'")
-    };
-    if (app)          row.app           = String(app);
-    if (nombreEquipo) row.nombre_equipo = String(nombreEquipo);
-    if (userAgent)    row.user_agent    = String(userAgent).substring(0, 500);
-
-    var up = _sbUpsert('mos.dispositivos', [row], 'id_dispositivo');
-    if (!up.ok) {
-      Logger.log('[_propagarDispositivoSombra] upsert falló HTTP ' + up.code + ' ' + (up.error || ''));
-      return false;
-    }
-    // Read-back de confirmación: la fila debe quedar ACTIVA con app que mint-mos acepta.
-    var rb = _sbSelect('mos.dispositivos', {
-      select: 'id_dispositivo,estado,app',
-      filters: { id_dispositivo: 'eq.' + String(deviceId) },
-      limit: 1
-    });
-    if (rb.ok && Array.isArray(rb.data) && rb.data.length) {
-      var r0 = rb.data[0];
-      var estadoOk = String(r0.estado || '').toUpperCase() === 'ACTIVO';
-      var appVal   = String(r0.app == null ? '' : r0.app);
-      // mint-mos acepta app ∈ {null,'','MOS'}. Si la sombra quedó con otra app
-      // (ej. 'mosExpress'), mint-mos para MOS NO la aceptaría → no es ACTIVA-para-MOS.
-      var appOkMos = (appVal === '' || appVal === 'MOS');
-      return estadoOk && appOkMos;
-    }
-    Logger.log('[_propagarDispositivoSombra] read-back sin fila para ' + deviceId);
-    return false;
-  } catch (e) {
-    Logger.log('[_propagarDispositivoSombra] EXCEPCIÓN: ' + (e && e.message || e));
-    return false;
-  }
-}
 
 
 

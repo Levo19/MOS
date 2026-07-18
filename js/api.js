@@ -525,9 +525,6 @@ const API = (() => {
   // [227] pago de jornales directo: RPC mos.marcar_pagos (acepta fechas[]→snapshot de liquidaciones_dia) +
   // mos.anular_pago (verifica clave admin server-side). Gate cfgKey 'pagosJornalDirecto' (get_flags).
   function _mosPagosJornalDirecto() { return !!_mosFlag('mos_pagos_jornal_directo', 'pagosJornalDirecto'); }
-  // [229] FASE 4 escrituras de dispositivos (panel admin MOS): crear/actualizar/aprobar (RPCs admin_* gated app=MOS)
-  // + revocar (mos.revocar_dispositivo). Gate cfgKey 'dispositivosDirecto' (MOS_CONFIG). Lecturas ya directas.
-  function _mosDispositivosDirecto() { return !!_mosFlag('mos_dispositivos_directo', 'dispositivosDirecto'); }
   // [Reparación #7] PURGA de catálogo DIRECTA (RPC mos.eliminar_items_catalogo). Mata el "⚠ Lock timeout"
   // del GAS (LockService). Gate _mosPurgaDirecto (server MOS_PURGA_DIRECTO || local). Default OFF → GAS.
   function _mosPurgaDirecto() { return !!_mosFlag('mos_purga_directo', 'purgaDirecto'); }

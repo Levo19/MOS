@@ -224,15 +224,6 @@ function revertirDesbloqueosVencidos() {
   return { ok: true, revertidos: 0, nota: 'migrado a pg_cron mos-revertir-desbloqueos (opera sobre la sombra)' };
 }
 
-function instalarTriggerRevertirDesbloqueos() {
-  var TRG = 'revertirDesbloqueosVencidos';
-  ScriptApp.getProjectTriggers().forEach(function(t) {
-    if (t.getHandlerFunction() === TRG) ScriptApp.deleteTrigger(t);
-  });
-  ScriptApp.newTrigger(TRG).timeBased().everyHours(1).create();
-  Logger.log('[Trigger] ' + TRG + ' instalado · cada 1h');
-  return { ok: true };
-}
 
 
 // ────────────────────────────────────────────────────────────────────

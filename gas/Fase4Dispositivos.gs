@@ -462,5 +462,5 @@ function compararDispositivosMOS() {
 // DISPOSITIVOS quedó ORFANADA (archivo histórico). Se conservan como utilidades MANUALES de reparación/
 // diagnóstico (editor GAS, sin trigger): compararDispositivosMOS(), correrReverseSyncDispositivos(),
 // dryRunDispositivosDesdeSombra(), resembrarDispositivosDesdeHoja/Sombra() — refrescan la hoja bajo demanda.
-// aprobarDispositivoEnSitu/Pendiente espejan al instante (_propagarDispositivoSombra) el caso urgente.
+// La aprobación de dispositivo (device-auth.js → RPC mos.aprobar_dispositivo, _rpcAnon) escribe la sombra directo.
 // ════════════════════════════════════════════════════════════════════════════════════════════════════
