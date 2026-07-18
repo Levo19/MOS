@@ -1927,78 +1927,53 @@ function cierreNocturnoTodos() {
   // La PWA cliente, al hacer su próximo heartbeat consultarEstadoDispositivo,
   // recibe forzar_logout=true y cierra sesión local + caja (si aplica).
   try {
-    if (typeof _garantizarColumnasDispositivos === 'function') _garantizarColumnasDispositivos();
-    var dispoSh = getSheet('DISPOSITIVOS');
-    if (dispoSh) {
-      var dd = dispoSh.getDataRange().getValues();
-      var hdrs = dd[0] || [];
-      var iApp = hdrs.indexOf('App');
-      var iSes = hdrs.indexOf('Ultima_Sesion');
-      var iEst = hdrs.indexOf('Estado');
-      var iFL  = hdrs.indexOf('Forzar_Logout');
-      var iFLts= hdrs.indexOf('Logout_Auto_Ts');
-      var iIdD = hdrs.indexOf('ID_Dispositivo');   // [CUTOVER auth] para espejar el logout forzado a la sombra
-      // Set de nombres admin/master para EXCLUIRLOS del logout forzado
-      var adminsNorm = {};
-      try {
-        var perAll = _sheetToObjects(getSheet('PERSONAL_MASTER'));
-        perAll.forEach(function(p) {
-          var rol = String(p.rol || '').toUpperCase();
-          if (rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN' ||
-              String(p.appOrigen || '') === 'MOS') {
-            var n2 = (String(p.nombre || '') + ' ' + String(p.apellido || '')).toLowerCase().trim();
-            if (n2) adminsNorm[n2] = true;
-            var n1 = String(p.nombre || '').toLowerCase().trim();
-            if (n1) adminsNorm[n1] = true;
-          }
-        });
-      } catch(_){}
-      var nowStrUTC = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
-      for (var rd = 1; rd < dd.length; rd++) {
-        var app = String(dd[rd][iApp] || '').toLowerCase();
-        // Solo apps operativas — mos es panel admin, se excluye
-        if (app !== 'mosexpress' && app !== 'warehousemos') {
-          resultado.devices.omitidos++;
-          continue;
+    // [CERO-GAS 2026-07-18] Enumeración desde la SOMBRA (mos.dispositivos = verdad), NO la hoja (orfanada:
+    // Ultima_Sesion/Estado/App quedaban stale tras borrar registrarSesionDispositivo + matar el reverse-sync).
+    // El write del logout forzado YA iba a la sombra vía _dualWriteDispositivo; ahora la LECTURA también.
+    // El device lee forzar_logout por RPC/sombra (device-auth). Se dejó de escribir la hoja (orfanada).
+    var dispSombra = _dispositivosDesdeSombra();   // shape hoja (PascalCase), verdad = Supabase
+    // Set de nombres admin/master para EXCLUIRLOS del logout forzado
+    var adminsNorm = {};
+    try {
+      var perAll = _sheetToObjects(getSheet('PERSONAL_MASTER'));
+      perAll.forEach(function(p) {
+        var rol = String(p.rol || '').toUpperCase();
+        if (rol === 'MASTER' || rol === 'ADMINISTRADOR' || rol === 'ADMIN' ||
+            String(p.appOrigen || '') === 'MOS') {
+          var n2 = (String(p.nombre || '') + ' ' + String(p.apellido || '')).toLowerCase().trim();
+          if (n2) adminsNorm[n2] = true;
+          var n1 = String(p.nombre || '').toLowerCase().trim();
+          if (n1) adminsNorm[n1] = true;
         }
-        var ses = String(dd[rd][iSes] || '').toLowerCase().trim();
-        if (ses && adminsNorm[ses]) {
-          resultado.devices.omitidos++;
-          continue;
-        }
-        var est = String(dd[rd][iEst] || '').toUpperCase();
-        if (est === 'INACTIVO' || est === 'PENDIENTE_APROBACION') {
-          resultado.devices.omitidos++;
-          continue;
-        }
-        // [v2.43.24] CRÍTICO: si este vendedor tenía una caja ABIERTA que el
-        // bridge NO logró cerrar, NO marcar forzar_logout. Sino el frontend
-        // mata local y la caja queda HUÉRFANA (ABIERTA en CAJAS sin owner
-        // local). Mejor el cajero vuelve, ve su caja y la cierra manual.
-        if (ses && vendedoresConCajaError[ses]) {
-          resultado.devices.omitidos++;
-          Logger.log('[CierreNoct] OMITIENDO forzar_logout para "' + ses + '" — su caja no cerró bien (cajas: ' + JSON.stringify(resultado.me.cajasNoCerradas) + ')');
-          continue;
-        }
-        try {
-          if (iFL >= 0)   dispoSh.getRange(rd + 1, iFL + 1).setValue('1');
-          // [v2.43.60] Forzar formato TEXTO (@) en la columna ANTES de setValue
-          // para que Google Sheets no auto-parsee el ISO como Date local.
-          // Sin esto Sheets convertía a Date object con timezone del spreadsheet
-          // (Lima UTC-5), generando errores de 12h al leer de vuelta.
-          if (iFLts >= 0) {
-            dispoSh.getRange(rd + 1, iFLts + 1).setNumberFormat('@').setValue(nowStrUTC);
-          }
-          // [CUTOVER auth] logout forzado nocturno (control) → espejar a la sombra (si no, el reverse-sync lo borra).
-          if (iIdD >= 0 && typeof _dualWriteDispositivo === 'function')
-            _dualWriteDispositivo(String(dd[rd][iIdD] || ''), { Forzar_Logout: '1', Logout_Auto_Ts: nowStrUTC });
-          resultado.devices.marcados++;
-        } catch(eD) {
-          resultado.devices.errores++;
-          Logger.log('[CierreNoct] device error fila=' + (rd+1) + ': ' + eD.message);
-        }
+      });
+    } catch(_){}
+    var nowStrUTC = Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+    dispSombra.forEach(function(dv) {
+      var app = String(dv.App || '').toLowerCase();
+      // Solo apps operativas — mos es panel admin, se excluye
+      if (app !== 'mosexpress' && app !== 'warehousemos') { resultado.devices.omitidos++; return; }
+      var ses = String(dv.Ultima_Sesion || '').toLowerCase().trim();
+      if (ses && adminsNorm[ses]) { resultado.devices.omitidos++; return; }
+      var est = String(dv.Estado || '').toUpperCase();
+      if (est === 'INACTIVO' || est === 'PENDIENTE_APROBACION') { resultado.devices.omitidos++; return; }
+      // [v2.43.24] CRÍTICO: si este vendedor tenía una caja ABIERTA que el bridge NO logró cerrar, NO marcar
+      // forzar_logout (sino el frontend mata local y la caja queda HUÉRFANA sin owner). Vuelve y cierra manual.
+      if (ses && vendedoresConCajaError[ses]) {
+        resultado.devices.omitidos++;
+        Logger.log('[CierreNoct] OMITIENDO forzar_logout para "' + ses + '" — su caja no cerró bien (cajas: ' + JSON.stringify(resultado.me.cajasNoCerradas) + ')');
+        return;
       }
-    }
+      try {
+        var idDev = String(dv.ID_Dispositivo || '');
+        // logout forzado nocturno → SOLO a la sombra (verdad); el device lo lee por RPC/sombra.
+        if (idDev && typeof _dualWriteDispositivo === 'function')
+          _dualWriteDispositivo(idDev, { Forzar_Logout: '1', Logout_Auto_Ts: nowStrUTC });
+        resultado.devices.marcados++;
+      } catch(eD) {
+        resultado.devices.errores++;
+        Logger.log('[CierreNoct] device error id=' + (dv.ID_Dispositivo || '') + ': ' + eD.message);
+      }
+    });
   } catch(eD2) {
     resultado.devices.errores++;
     Logger.log('[CierreNoct] DISPOSITIVOS fatal: ' + eD2.message);
@@ -2134,20 +2109,14 @@ function getCronStatus() {
 function marcarLogoutHonrado(params) {
   var deviceId = String(params.deviceId || params.ID_Dispositivo || '').trim();
   if (!deviceId) return { ok: false, error: 'Requiere deviceId' };
-  if (typeof _garantizarColumnasDispositivos === 'function') _garantizarColumnasDispositivos();
-  var sheet = getSheet('DISPOSITIVOS');
-  var data  = sheet.getDataRange().getValues();
-  var hdrs  = data[0] || [];
-  var iId   = hdrs.indexOf('ID_Dispositivo');
-  var iFL   = hdrs.indexOf('Forzar_Logout');
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][iId]) !== deviceId) continue;
-    if (iFL >= 0) sheet.getRange(i + 1, iFL + 1).setValue('');
-    // [CUTOVER auth] limpiar Forzar_Logout (control) → espejar (si no, el reverse-sync repone '1' y re-cierra sesión).
-    if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Forzar_Logout: '' });
-    return { ok: true };
-  }
-  return { ok: false, error: 'Dispositivo no encontrado' };
+  // [CERO-GAS 2026-07-18] Limpia Forzar_Logout DIRECTO en la sombra (mos.dispositivos, keyed por id). La hoja
+  // quedó orfanada: buscarlo ahí perdería devices aprobados tras el freeze → quedarían en LOOP de logout.
+  // Verifica existencia con _dispositivoDesdeSombra (evita crear fila basura vía upsert) y preserva el
+  // contrato {ok:false,'no encontrado'} para ids inexistentes.
+  var dv = (typeof _dispositivoDesdeSombra === 'function') ? _dispositivoDesdeSombra(deviceId) : null;
+  if (!dv) return { ok: false, error: 'Dispositivo no encontrado' };
+  if (typeof _dualWriteDispositivo === 'function') _dualWriteDispositivo(deviceId, { Forzar_Logout: '' });
+  return { ok: true };
 }
 
 // [v2.41.38] Auto-instalación silenciosa del trigger de cierre nocturno.

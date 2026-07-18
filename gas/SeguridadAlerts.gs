@@ -143,7 +143,7 @@ function setupTodoSeguridad() {
   // [v2.43.130 FIX] Instalar TODOS los triggers necesarios automáticamente
   // [CERO-GAS 2026-07-17] instalarTriggerPurgarDispositivos() RETIRADO — la suspensión por inactividad la hace
   // el pg_cron mos.cron_dispositivos_inactivos (cada hora). El trigger GAS era redundante.
-  try { instalarTriggerRevertirDesbloqueos(); } catch(e) { Logger.log('desbloq: ' + e.message); }
+  // [CERO-GAS 2026-07-18] instalarTriggerRevertirDesbloqueos() removido — migrado a pg_cron mos-revertir-desbloqueos (SQL 354, sombra).
   try { instalarTriggerRevertirExtensiones(); } catch(e) { Logger.log('ext: ' + e.message); }
   try { instalarTriggerNotificacionesApertura(); } catch(e) { Logger.log('notifApert: ' + e.message); }
   return diagnosticoSetupSeguridad();
@@ -210,42 +210,18 @@ function getSeguridadAlertas(params) {
 }
 
 
-// Trigger horario: revierte desbloqueos temporales vencidos
+// [CERO-GAS 2026-07-18] MIGRADO a pg_cron `mos-revertir-desbloqueos` (SQL 354 → mos.revertir_desbloqueos_vencidos)
+// que opera sobre la SOMBRA (mos.dispositivos = la verdad). Esta versión GAS leía la hoja DISPOSITIVOS que quedó
+// ORFANADA al matar el reverse-sync → decisiones STALE: podía re-suspender un device RE-EXTENDIDO en la sombra
+// y BORRARLE su Desbloqueo_Temporal_Hasta válido (los desbloqueos nuevos van solo a la sombra vía RPC
+// mos.extender_horario_dispositivo). Ahora es NO-OP y AUTO-DESINSTALA su trigger horario (no gastar cuota).
 function revertirDesbloqueosVencidos() {
-  var _lock = LockService.getScriptLock();
-  try { _lock.waitLock(15000); } catch(e) { return { ok: false, error: 'Sistema ocupado' }; }
   try {
-    var sheet = SpreadsheetApp.openById(SS_ID).getSheetByName('DISPOSITIVOS');
-    if (!sheet) return { ok: true, revertidos: 0 };
-    var data = sheet.getDataRange().getValues();
-    var hdrs = data[0];
-    var iEst = hdrs.indexOf('Estado');
-    var iDT  = hdrs.indexOf('Desbloqueo_Temporal_Hasta');
-    var iSus = hdrs.indexOf('Suspendido_Desde');
-    var iIdR = hdrs.indexOf('ID_Dispositivo');   // [CUTOVER auth] para espejar la re-suspensión a la sombra
-    if (iDT < 0) return { ok: true, revertidos: 0 };
-    var nowMs = Date.now();
-    var nowIso = new Date(nowMs).toISOString();
-    var rev = 0;
-    for (var i = 1; i < data.length; i++) {
-      var rawDT = data[i][iDT];
-      if (!rawDT) continue;
-      var hastaMs = 0;
-      if (rawDT instanceof Date) hastaMs = rawDT.getTime();
-      else { var d = new Date(rawDT); if (!isNaN(d.getTime())) hastaMs = d.getTime(); }
-      if (!hastaMs || hastaMs > nowMs) continue;
-      // [v2.43.130 FIX] Vencido → re-suspender + limpiar DT + setear Suspendido_Desde
-      sheet.getRange(i + 1, iEst + 1).setValue('SUSPENDIDO');
-      sheet.getRange(i + 1, iDT + 1).setValue('');
-      if (iSus >= 0) sheet.getRange(i + 1, iSus + 1).setValue(nowIso);
-      // [CUTOVER auth] re-suspensión por desbloqueo vencido (control) → espejar a la sombra.
-      if (iIdR >= 0 && typeof _dualWriteDispositivo === 'function')
-        _dualWriteDispositivo(String(data[i][iIdR] || ''), { Estado: 'SUSPENDIDO', Desbloqueo_Temporal_Hasta: '', Suspendido_Desde: nowIso });
-      rev++;
-    }
-    return { ok: true, revertidos: rev };
-  } catch(e) { return { ok: false, error: e.message }; }
-  finally { try { _lock.releaseLock(); } catch(_){} }
+    ScriptApp.getProjectTriggers().forEach(function(t) {
+      if (t.getHandlerFunction() === 'revertirDesbloqueosVencidos') ScriptApp.deleteTrigger(t);
+    });
+  } catch(_) {}
+  return { ok: true, revertidos: 0, nota: 'migrado a pg_cron mos-revertir-desbloqueos (opera sobre la sombra)' };
 }
 
 function instalarTriggerRevertirDesbloqueos() {
