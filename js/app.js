@@ -19592,6 +19592,21 @@ const MOS = (() => {
   // 👥 .users con .ucard desplegables) → ciclo de vida → 🗄️ archivados.
   // Todos los handlers reales se conservan 1:1. Cero-GAS (solo pinta cfgData).
   // ════════════════════════════════════════════════════════════════════
+  // [Realidad del heartbeat] device-auth late cada 10 MIN (verificar_dispositivo escribe
+  // ultima_conexion=now()). "En línea" = último latido ≤12 min (10 + margen). El umbral viejo
+  // de 5 min hacía que un equipo ACTIVO pareciera desconectado entre latidos (bug visto por el
+  // dueño: él mismo salía "hace 8m" con el panel abierto). Además, el dispositivo de ESTE
+  // navegador está en línea por definición (está renderizando esto).
+  const _CFG_ONLINE_MIN = 12;
+  function _esMiDispositivo(d) {
+    try { return String(d.ID_Dispositivo) === String(localStorage.getItem('mos_device_id') || ''); } catch (_) { return false; }
+  }
+  function _dispEnLinea(d) {
+    if (String(d.Estado || '').toUpperCase() !== 'ACTIVO') return false;
+    if (_esMiDispositivo(d)) return true;
+    return _dispActividad(d.Ultima_Conexion).minutos <= _CFG_ONLINE_MIN;
+  }
+
   let _cfgQ = '';           // buscador equipo/persona
   let _cfgVerTodos = false; // ⏸ suspendidos: ON = mostrar también susp>7d + inactivos
   let _cfgQTimer = null;
@@ -19690,7 +19705,7 @@ const MOS = (() => {
   function _cfgCmdBar() {
     const devs = cfgData.dispositivos || [];
     const activos = devs.filter(d => String(d.Estado).toUpperCase() === 'ACTIVO');
-    const online = activos.filter(d => _dispActividad(d.Ultima_Conexion).minutos < 5).length;
+    const online = activos.filter(_dispEnLinea).length;
     const zonasN = (cfgData.zonas || []).filter(z => String(z.estado) === '1' || z.estado === 1).length;
     const estN = (cfgData.estaciones || []).filter(e => String(e.activo) === '1').length;
     return `<div class="cmd">
@@ -19727,7 +19742,11 @@ const MOS = (() => {
       const n = _normNombre(d.Ultima_Sesion);
       if (!n || (n !== full && n !== solo)) return;
       const a2 = _dispActividad(d.Ultima_Conexion);
-      if (a2.minutos < act.minutos) act = { color: a2.color, label: a2.label, dot: a2.dot, minutos: a2.minutos };
+      if (a2.minutos < act.minutos) {
+        act = (a2.minutos <= _CFG_ONLINE_MIN)
+          ? { color: '#10b981', label: 'en línea', dot: '🟢', minutos: a2.minutos }
+          : { color: a2.color, label: a2.label, dot: a2.dot, minutos: a2.minutos };
+      }
     });
     return act;
   }
@@ -19806,7 +19825,7 @@ const MOS = (() => {
     if (esAlm) {
       const ops = (cfgData.personal || []).filter(p => String(p.rol || '').toUpperCase() !== 'SUPERVISOR').filter(p => qMatch((p.nombre || '') + ' ' + (p.apellido || '')));
       n = ops.length;
-      online = ops.filter(p => _personaActEfectiva(p).minutos < 5).length;
+      online = ops.filter(p => _personaActEfectiva(p).minutos <= _CFG_ONLINE_MIN).length;
       cards = ops.map(p => _cfgUcardPersona(p, 'warehouseMos'));
       addLabel = '＋ agregar almacenero / envasador'; addApp = 'warehouseMos';
     } else {
@@ -19818,7 +19837,7 @@ const MOS = (() => {
       });
       const lista = (kZona ? grupos[kZona] : []).filter(c => qMatch(c.nombre));
       n = lista.length;
-      online = lista.filter(c => { const d = dispPorCajero[_normNombre(c.nombre)]; return d && _personaActividad(d.Ultima_Conexion).minutos < 5; }).length;
+      online = lista.filter(c => { const d = dispPorCajero[_normNombre(c.nombre)]; return d && _dispEnLinea(d); }).length;
       cards = lista.map(c => _cfgUcardCajero(c, dispPorCajero, bloqMap));
       addLabel = '＋ agregar cajero / vendedor'; addApp = 'mosExpress';
     }
@@ -20055,7 +20074,7 @@ const MOS = (() => {
   function _cfgZonaVip() {
     const dispMOS = (cfgData.dispositivos || []).filter(_isAppMOS);
     const activos = dispMOS.filter(d => String(d.Estado).toUpperCase() === 'ACTIVO');
-    const onlineNow = activos.filter(d => _dispActividad(d.Ultima_Conexion).minutos < 5).length;
+    const onlineNow = activos.filter(_dispEnLinea).length;
     const visibles = _fleetDe(dispMOS);
     const ocultos = dispMOS.filter(d => !_dispVisibleFleet(d) && String(d.Estado).toUpperCase() !== 'PENDIENTE_APROBACION').length;
 
@@ -20078,7 +20097,7 @@ const MOS = (() => {
     });
     const ascendidos = (cfgData.personal || []).filter(p => p.accesoMos === true || p.accesoMos === '1' || p.accesoMos === 1);
     const nAdm = adminsMOS.length + ascendidos.length;
-    const onlineAdm = adminsMOS.concat(ascendidos).filter(p => _personaActEfectiva(p).minutos < 5).length;
+    const onlineAdm = adminsMOS.concat(ascendidos).filter(p => _personaActEfectiva(p).minutos <= _CFG_ONLINE_MIN).length;
     const ucards = adminsMOS.filter(p => !_cfgQ || _normNombre((p.nombre || '') + ' ' + (p.apellido || '')).includes(_cfgQ)).map(p => _cfgUcardPersona(p, 'MOS'))
       .concat(ascendidos.filter(p => !_cfgQ || _normNombre((p.nombre || '') + ' ' + (p.apellido || '')).includes(_cfgQ)).map(p => _cfgUcardPersona(p, 'warehouseMos', { ascendido: true })));
     const adminsBlock = `<details class="users" ${_cfgIsOpen('z:__VIP__', true) ? 'open' : ''} ontoggle="MOS._cfgDetToggle('z:__VIP__',this.open)" style="border-color:rgba(245,184,73,.3)">
@@ -22753,7 +22772,7 @@ const MOS = (() => {
     const tipo = _dispTipoVisual(d);
     const act = _dispActividad(d.Ultima_Conexion);
     const estado = String(d.Estado || '').toUpperCase();
-    const isFresh = estado === 'ACTIVO' && act.minutos < 5;
+    const isFresh = _dispEnLinea(d);
     const isSusp = estado === 'SUSPENDIDO' || estado.startsWith('CANCELADO');
     const stateCls = isFresh ? 'online' : (isSusp ? 'susp' : '');
     const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
@@ -22772,7 +22791,7 @@ const MOS = (() => {
     const grad = user ? _avatarGrad(user) : '#33415a';
     const rol = user ? _rolDe(user) : '';
     const pill = isFresh
-      ? `<span class="pill" style="background:rgba(16,185,129,.16);color:#6ee7b7">● live</span>`
+      ? `<span class="pill" style="background:rgba(16,185,129,.16);color:#6ee7b7">● live${_esMiDispositivo(d) ? ' · tú' : ''}</span>`
       : isSusp
         ? `<span class="pill" style="background:rgba(249,115,22,.16);color:#fdba74">⏸ ${estado.startsWith('CANCELADO') ? 'arch' : 'susp'}</span>`
         : `<span class="pill" style="background:rgba(245,184,73,.14);color:#fbd989">◐ ${act.label.replace('hace ', '')}</span>`;
@@ -22907,9 +22926,7 @@ const MOS = (() => {
 
   // Cuenta dispositivos online (ACTIVO + actividad <5 min) en una estación
   function _dispOnlineEnEstacion(idEstacion) {
-    return _dispEnEstacion(idEstacion).filter(d =>
-      _dispActividad(d.Ultima_Conexion).minutos < 5
-    ).length;
+    return _dispEnEstacion(idEstacion).filter(_dispEnLinea).length;
   }
 
   function _dispPendientes() {
