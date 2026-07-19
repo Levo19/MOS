@@ -13091,6 +13091,8 @@
     }
     .zhb-fresh { margin-left:auto; display:flex; align-items:center; gap:.35rem; font-size:.7rem; color:#64748b; white-space:nowrap; }
     .zhb-groups { display:flex; gap:.55rem; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin; }
+    /* PC: envolver en vez de scroll (que no se esconda ningún botón) */
+    @media (min-width:900px) { .zhb-groups { flex-wrap:wrap; overflow-x:visible; } }
     .zhb-group {
       display:flex; flex-direction:column; gap:.3rem; flex-shrink:0;
       background:rgba(15,23,42,.45); border:1px solid rgba(51,65,85,.4);
