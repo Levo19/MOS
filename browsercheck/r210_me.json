@@ -1,0 +1,1 @@
+{"url":"https://levo19.github.io/MosExpress/","waitMs":28000,"localStorage":{"mosexpress_deviceId":"7e57c1a0-de1c-4a7e-b0de-c47a10906476"},"evalAfter":"(async()=>({ver:(await (await fetch('version.json?b='+Date.now())).json()).version,vueMonto:(document.getElementById('app')||document.body).innerHTML.length>2000}))()","screenshot":"r210_me.png"}

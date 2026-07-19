@@ -41893,7 +41893,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     S._zonaDiaFiltro = { modo: 'todos', offset: 0 }; S._zonaDiaSet = null; S._zonaDiaSetKey = null;
     _zonaCargarPanel(true);
   }
-  function zonaRefrescar() { _zonaCargarPanel(true); }
+  // [rev100 2.43.584] zonaRefrescar eliminado (su botón ⟳ se retiró; el panel se refresca solo).
   function zonaSetOrden(v) { S._zonaFiltros.orden = v; renderZona(); }
   function zonaFiltrar()   { S._zonaFiltros.q = ($('zonaSearch') && $('zonaSearch').value || '').trim(); renderZona(); }
   function zonaToggleKpi(kpi) {
@@ -44353,7 +44353,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     facLookup, facEmitir, facCargarHistorial, facAnular, _facReglasRefresh,
     facGuardarConfig, facGuardarSeries, facAlinear,
     // [RIZ Capa 4] Módulo Zona — solo activo si el flag mos_zona_modulo está ON
-    loadZona, renderZona, zonaCambiarZona, zonaRefrescar, zonaSetOrden, zonaFiltrar,
+    loadZona, renderZona, zonaCambiarZona, zonaSetOrden, zonaFiltrar,
     zonaToggleGrupo,
     zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,

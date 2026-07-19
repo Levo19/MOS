@@ -335,3 +335,23 @@ Pregunta del dueño: "¿eliminaste el GAS?". Auditoría honesta encontró 2 rast
    (pg_cron es el dueño del autocierre).
 PENDIENTE conocido (fuera de este alcance, ya en PUNTO_DE_RETOMA_cero_gas): el boot de WH aún
 hace 3 lecturas al GAS de MOS (getPersonalConPin/getProductos/getProveedores — maestros).
+
+## Ronda 13 — ANALÍTICA DE PRODUCTO EN POS (2026-07-19 · ME 2.8.208 · SQL 531)
+Proyecto del dueño: dar luces al vendedor/cajero de zona sobre cuánto puede vender y qué alistar.
+- GESTO: click derecho (PC) / long-press ~550ms (táctil) en cualquier producto del catálogo POS.
+  Guard anti doble-acción: _anaPosFired evita que el long-press además agregue al carrito.
+- RPC me.analitica_pos (claim me._claim_zona_ok|mos, grant authenticated): resuelve el PADRE
+  canónico del grupo (misma lógica 428 de analitica_producto), ventas de LA ZONA día a día de
+  las 4 semanas ISO completas anteriores (presentaciones ×factor → unidades canónicas, excluye
+  ANULADO), semana actual real, PRONÓSTICO por día = promedio del mismo isodow en las 4 previas,
+  TENDENCIA = lógica exacta MOS/zona (picos semanales, regr_slope/media, umbral 0.10 →
+  CRECIENTE/DECRECIENTE/ESTABLE/NULA), stock almacén (wh.stock, tiempo real), stock zona
+  (me.stock_zonas), venc. próximo del libro de zona. UNA llamada por apertura.
+- CARD (Vue, tema claro POS): header gradiente índigo con foto + chip tendencia (↑ Sube / ↓ Baja /
+  ≈ Estable / ∅ Sin rotar); 4 KPIs (pronóstico semana · vendidos semana · stock zona · stock
+  almacén); insight simple ("Hoy suele venderse ~N y ya llevas M — stock corto, pide a almacén");
+  chart "esta semana" real (emerald sólido) vs pronóstico (ghost punteado) con HOY resaltado;
+  chart 4 semanas S1→S4 día a día con totales; aviso de lote próximo a vencer.
+- Verificado: RPC probado con productos reales (anuladas excluidas ✓, FEFO padre ✓), boot ME
+  2.8.208 sin pantalla blanca (Vue montado, realtime SUBSCRIBED), endpoint REST 200 con shape
+  completo. Device de prueba TEST-CLAUDE-ME (…476, mosExpress, ACTIVO) creado para browserchecks.
