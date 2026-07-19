@@ -355,3 +355,16 @@ Proyecto del dueño: dar luces al vendedor/cajero de zona sobre cuánto puede ve
 - Verificado: RPC probado con productos reales (anuladas excluidas ✓, FEFO padre ✓), boot ME
   2.8.208 sin pantalla blanca (Vue montado, realtime SUBSCRIBED), endpoint REST 200 con shape
   completo. Device de prueba TEST-CLAUDE-ME (…476, mosExpress, ACTIVO) creado para browserchecks.
+
+## REVISIÓN 100x DE LOS 3 DÍAS (2026-07-19 noche · WH 2.13.460 · MOS 2.43.584 · ME 2.8.220)
+Suites BD 82/82 ✅ (34 sorpresas/mermas + 24 stock + 24 FEFO — regresión tras 19 SQLs 516-534).
+Defs prod verificadas 8/8 (las redefiniciones encadenadas no se pisaron: cerrar_guia_idempotente
+conserva [527]+[530]; analitica_pos=532; extensión=534; gates ampliados intactos).
+Boots prod: WH "✅ CERO fetches a GAS" · MOS sin errores + 0 botones refresh · ME sin errores Vue.
+MUERTOS ELIMINADOS: ME modal simple impresora (+exports) y CSS .pres-btn; MOS ↺ de envasados y
+zonaRefrescar. BUG CAZADO POR LA PROPIA REVISIÓN: la limpieza 2.8.219 se llevó por accidente
+haptic() (vivía dentro del bloque borrado) → setup de Vue crasheaba TODA la app; el browsercheck
+lo detectó antes de que un cajero lo sufriera → hotfix 2.8.220 inmediato.
+GAS restante (backlog pre-existente, NO de estos 3 días): ME conserva 4 constantes GAS con
+caminos legacy (API_URL propio, fallback apiPost de seguridad, MOS_URL device-auth legacy);
+MOS conserva 2 transportes (_fetch genérico + adhesivos gated) + turno.html?api=. WH = 0.

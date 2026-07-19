@@ -1102,7 +1102,9 @@
               || window.MOS_GAS_URL
               || (window.config && window.config.value && window.config.value.mosUrl)
               || '';
-    if (!gasUrl || !deviceId) {
+    // [CERO-GAS 2026-07-19] gasUrl ya NO es requerido: ExtensorHorario v1.0.3 es 100% Supabase
+    // (las apps purgaron sus URLs GAS — WH 2.13.459 / ME 2.8.221). Solo exigimos deviceId.
+    if (!deviceId) {
       _toast('⚠ Configuración incompleta', { error: true });
       return;
     }

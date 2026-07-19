@@ -1150,14 +1150,10 @@ const API = (() => {
   // fallo (null sin token / throw / HTTP) → GAS RAW (red de seguridad). setup/otras acciones → GAS siempre.
   function _mosAdhesivosEdge() { return !!_mosFlag('mos_adhesivos_edge', 'adhesivosEdge'); }
 
+  // [CERO-GAS 2026-07-19] _adhGasRaw RETIRADO: el editor de adhesivos va por RPCs mos.adhesivo_*
+  // + Edge print-adhesivo-plantilla (flag mos_adhesivos_edge='1' en config). Fail-closed.
   async function _adhGasRaw(action, params) {
-    const url = getUrl();
-    if (!url) throw new Error('GAS URL no configurada');
-    const res = await _fetchConTimeout(url, {
-      method: 'POST', headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(Object.assign({}, params || {}, { action: action }))
-    }, DEFAULT_TIMEOUT_MS);
-    return res.json();   // RAW — NO desempaqueta d.data (igual que el fetch propio del editor)
+    throw new Error('Acción de adhesivos sin camino directo (cero-GAS): ' + action);
   }
 
   async function _adhPlantillaImprimirEdge(params) {

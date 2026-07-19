@@ -27631,7 +27631,8 @@ const MOS = (() => {
   // ── Abrir turno externo ─────────────────────────
   function cjAbrirTurno(idCaja) {
     _finBeep('click');
-    window.open('./turno.html?idCaja=' + idCaja + '&api=' + encodeURIComponent(API.getUrl()), '_blank');
+    // [CERO-GAS] api= eliminado: turno.html es 100% Supabase (solo lee idCaja/autoprint)
+    window.open('./turno.html?idCaja=' + idCaja, '_blank');
   }
 
   // ── [v41.3] Cerrar caja forzadamente desde MOS (admin/master) ─────
