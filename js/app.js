@@ -41198,8 +41198,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       return '✅ Recuperadas';
     };
     const ORDEN_EST = ['🔴 Vencidas', '🟡 Pendientes', '◐ Parciales', '🔄 Transformadas', '✅ Recuperadas', '🗑 Eliminadas'];
+    // [Dueño] la ÚLTIMA fecha SIEMPRE primero (descendente estricto) — también dentro de cada grupo
+    const ordenadas = vis.slice(0, 250).sort((a, b) => new Date(b.fechaIngreso) - new Date(a.fechaIngreso));
     const grupos = {};
-    vis.slice(0, 250).forEach(m => {
+    ordenadas.forEach(m => {
       const k = _mermasAgrupar === 'ESTADO' ? _estadoLblM(m) : _diaLblM(m.fechaIngreso);
       (grupos[k] = grupos[k] || []).push(m);
     });
@@ -41257,7 +41259,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       return d.toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short' });
     };
     const grupos = {};
-    rows.forEach(x => { const k = _diaLbl(x.ts); (grupos[k] = grupos[k] || []).push(x); });
+    rows.slice().sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      .forEach(x => { const k = _diaLbl(x.ts); (grupos[k] = grupos[k] || []).push(x); });
     const fila = s => {
       const esFallo = s.estado === 'FALLO';
       const esDisc = s.estado === 'DISCREPANCIA';
