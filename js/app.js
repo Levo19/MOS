@@ -41126,12 +41126,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // ── 📅 POR VENCER · panel de solo-visualización (semáforo unificado con WH, SQL 526) ──
   let _vencData = [];
   let _vencFiltro = 'RIESGO';
+  let _vencDetalle = null;   // codigoProducto en vista detalle (FIFO + historial), null = lista
   async function abrirVencimientosPanel() {
     const esAlm = _esZonaAlmacen({ idZona: S.zonaActual,
       nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
     const zona = esAlm ? null : S.zonaActual;
     const t = document.getElementById('vencTituloMos');
     if (t) t.textContent = 'Por vencer · ' + (zona || 'almacén');
+    _vencDetalle = null;
     openModal('modalVencimientos');
     $('vencListaMos').innerHTML = '<div class="muted" style="text-align:center;padding:20px">Cargando…</div>';
     try {
@@ -41140,9 +41142,75 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (e) { _vencData = []; }
     _vencRender();
   }
-  function vencSetFiltro(f) { _vencFiltro = f; _vencRender(); }
+  function vencSetFiltro(f) { _vencFiltro = f; _vencDetalle = null; _vencRender(); }
+  function vencVerProducto(cod) { _vencDetalle = String(cod); _vencRender(); }
+  function vencVolver() { _vencDetalle = null; _vencRender(); }
+  // Historial del lote (wh.get_historial_lote — gate ampliado a MOS en SQL 530). Toggle inline.
+  async function vencHistLote(idLote) {
+    const box = document.getElementById('vencHist_' + idLote);
+    if (!box) return;
+    if (box.dataset.abierto === '1') { box.style.display = 'none'; box.dataset.abierto = '0'; return; }
+    box.style.display = ''; box.dataset.abierto = '1';
+    if (box.dataset.cargado === '1') return;
+    box.innerHTML = '<div class="muted" style="font-size:11px;padding:6px">Cargando historial…</div>';
+    try {
+      const r = await API.rpcWH('get_historial_lote', { idLote });
+      const rows = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+      box.dataset.cargado = '1';
+      if (!rows.length) { box.innerHTML = '<div class="muted" style="font-size:11px;padding:6px">Sin movimientos registrados</div>'; return; }
+      const ACC = { INGRESO: ['#34d399','↑'], CONSUMO: ['#fca5a5','↓'], MERMA: ['#f87171','♻'], CREACION: ['#34d399','↑'] };
+      box.innerHTML = rows.map(m => {
+        const [col, ico] = ACC[String(m.accion || '').toUpperCase()] || ['#94a3b8','·'];
+        const ts = m.ts ? new Date(m.ts).toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+        return '<div style="display:flex;gap:8px;align-items:center;padding:5px 8px;border-top:1px solid #16233d;font-size:11px">' +
+          '<span style="color:' + col + ';font-weight:900;width:14px">' + ico + '</span>' +
+          '<span style="color:' + col + ';font-weight:800;white-space:nowrap">' + (m.accion || '?') + ' ' + (m.cantidad || 0) + 'u</span>' +
+          '<span class="muted" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">' + _esc(m.motivo || '') + '</span>' +
+          '<span class="muted" style="white-space:nowrap">' + ts + (m.idGuia ? ' · ' + _esc(m.idGuia) : '') + '</span></div>';
+      }).join('');
+    } catch (e) {
+      box.innerHTML = '<div style="color:#fca5a5;font-size:11px;padding:6px">No se pudo cargar el historial</div>';
+    }
+  }
   function _vencRender() {
     const rows = _vencData;
+    const nomProdV = cod => {
+      const p2 = (S.productos || []).find(x => String(x.codigoBarra) === String(cod));
+      return p2 ? (p2.descripcion || cod) : cod;
+    };
+    const COLSV = {
+      VENCIDO: ['rgba(220,38,38,.18)', '#fca5a5', 'rgba(239,68,68,.45)', '#dc2626'],
+      CRITICO: ['rgba(249,115,22,.16)', '#fdba74', 'rgba(249,115,22,.4)', '#f97316'],
+      ALERTA:  ['rgba(245,158,11,.13)', '#fcd34d', 'rgba(245,158,11,.35)', '#f59e0b'],
+      URGENTE: ['rgba(234,179,8,.11)', '#fde047', 'rgba(234,179,8,.3)', '#eab308'],
+      SANO:    ['rgba(71,85,105,.25)', '#cbd5e1', 'rgba(148,163,184,.2)', '#334155']
+    };
+    // ── DETALLE de producto: FIFO activos (vence primero arriba) + historial por lote ──
+    if (_vencDetalle) {
+      const lotes = rows.filter(l => String(l.codigoProducto) === _vencDetalle)
+        .slice().sort((a, b) => (a.diasRestantes ?? 999) - (b.diasRestantes ?? 999));
+      $('vencKpisMos').innerHTML = '';
+      $('vencFiltrosMos').innerHTML = `<button class="chip" style="cursor:pointer" onclick="MOS.vencVolver()">← Volver a la lista</button>`;
+      $('vencListaMos').innerHTML = `
+        <div style="margin-bottom:10px"><b style="color:#eaf1fb;font-size:14px">${_esc(nomProdV(_vencDetalle))}</b>
+        <div class="muted" style="font-size:10px">${_esc(_vencDetalle)} · 🎯 FIFO: vence primero, sale primero · ${lotes.length} lote${lotes.length === 1 ? '' : 's'} activo${lotes.length === 1 ? '' : 's'}</div></div>` +
+        (lotes.length ? lotes.map(l => {
+          const [bg, col, bor, borde] = COLSV[l.severidad] || COLSV.SANO;
+          const d = l.diasRestantes;
+          const fv = l.fechaVencimiento ? new Date(l.fechaVencimiento + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+          return `<div class="prow" style="border-left:4px solid ${borde};gap:10px;flex-wrap:wrap">
+            <div style="width:52px;height:52px;border-radius:12px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;background:${bg};color:${col};border:1px solid ${bor}">
+              <span style="font-size:17px;line-height:1">${d < 0 ? Math.abs(d) : d}</span>
+              <span style="font-size:7px;letter-spacing:.04em;opacity:.85;margin-top:2px">${d < 0 ? 'D VENCIDO' : 'DÍAS'}</span></div>
+            <div style="flex:1;min-width:130px"><b style="color:#eaf1fb;font-family:monospace;font-size:12px">${_esc(l.idLote)}</b>
+            <div class="muted" style="font-size:10px">📅 vence ${_esc(fv)} · 📋 guía ${_esc(l.idGuia || '—')}</div></div>
+            <span class="mono" style="white-space:nowrap;font-weight:800;color:#eaf1fb">${l.cantidadActual} <span class="muted" style="font-size:9px">uds</span></span>
+            <button class="chip" style="cursor:pointer" onclick="MOS.vencHistLote('${_esc(l.idLote)}')">📜 Historial</button>
+            <div id="vencHist_${_esc(l.idLote)}" data-abierto="0" style="display:none;flex-basis:100%;background:#0a1424;border-radius:10px;border:1px solid #16233d;margin-top:6px"></div>
+          </div>`;
+        }).join('') : '<div class="muted" style="text-align:center;padding:20px">Sin lotes activos</div>');
+      return;
+    }
     const grupos = { VENCIDO: [], CRITICO: [], ALERTA: [], URGENTE: [], SANO: [] };
     rows.forEach(l => (grupos[l.severidad] = grupos[l.severidad] || []).push(l));
     const KP = [
@@ -41185,11 +41253,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ? `<div style="width:56px;height:56px;border-radius:12px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;background:${bg};color:${col};border:1px solid ${bor}"><span style="font-size:19px;line-height:1">${Math.abs(d)}</span><span style="font-size:7.5px;letter-spacing:.04em;opacity:.85;margin-top:2px">D VENCIDO</span></div>`
         : `<div style="width:56px;height:56px;border-radius:12px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;background:${bg};color:${col};border:1px solid ${bor}"><span style="font-size:19px;line-height:1">${d}</span><span style="font-size:7.5px;letter-spacing:.04em;opacity:.85;margin-top:2px">DÍAS</span></div>`;
       const fv = l.fechaVencimiento ? new Date(l.fechaVencimiento + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-      return `<div class="prow" style="border-left:4px solid ${borde};gap:10px">
+      return `<div class="prow" style="border-left:4px solid ${borde};gap:10px;cursor:pointer" onclick="MOS.vencVerProducto('${_esc(l.codigoProducto)}')" title="Ver lotes FIFO + historial">
         ${tile}
         <div style="flex:1;min-width:140px"><b style="color:#eaf1fb">${_esc(nomProd(l.codigoProducto))}</b>
         <div class="muted" style="font-size:10px">vence ${_esc(fv)} · lote ${_esc(l.idLote)} · guía ${_esc(l.idGuia || '—')}</div></div>
         <span class="mono" style="white-space:nowrap;font-weight:800;color:#eaf1fb">${l.cantidadActual} <span class="muted" style="font-size:9px">uds</span></span>
+        <span class="muted" style="font-size:14px">›</span>
       </div>`;
     }).join('');
   }
@@ -44449,7 +44518,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     eliminarZona, _zonaActualizarPreview,
     toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
     cfgBuscar, cfgToggleSusp, _cfgDetToggle, catBuscar,
-    abrirSorpresasPanel, abrirVencimientosPanel, vencSetFiltro,
+    abrirSorpresasPanel, abrirVencimientosPanel, vencSetFiltro, vencVerProducto, vencVolver, vencHistLote,
     abrirMermasPanel, mermasSetFiltro, mermasSetAgrupar, mermasVerFoto,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     editarMetaChip, guardarMetaChip,

@@ -286,3 +286,28 @@ origen no vuelve. Balance neto por unidad correcto en los 4 caminos.
   llevan 0 id_lote) → asignación FEFO al cerrar + ledger wh.zona_lotes → vistas Por vencer en
   ZONA-01/02 con inferencia de restos ("te mandé 20 que vencen el X; vendiste 10, jefe 2 → debes
   tener 8"). Toca cierre de despacho + ventas ME (money-path) → diseñar con calma antes de tocar.
+
+## Ronda 9 — FASE 2 FEFO POR ZONA (2026-07-19 · MOS 2.43.581 · SQL 527-529 · suite 24/24 ✅)
+CAUSA de la muerte del sistema de lotes: TODO vivía en GAS cerrarGuia (Guias.gs
+_consumirLotesFIFO + propagar_lotes_zona_cierre). El cutover cero-GAS del cierre (~16-jun) lo
+dejó sin caller: lotes WH congelados, me.zona_lotes sin ingresos desde el 18-jun, rotación en
+zona (RIZ Capa 5) nunca cableada, y BONUS: me.zona_recibir_lote gateaba mos._claim_ok — las
+llamadas con claim warehouseMos/mosExpress morían en silencio (en la era GAS todo era
+service_role '').
+REVIVIDO EN SERVER (hooks SIEMPRE blindados — jamás tumban dinero):
+- wh._consumir_lotes_fefo: consumo FEFO WH + escribe wh.lotes_historial (¡primer escritor!).
+- me.zona_consumir_fefo_cod: rotación FEFO zona por cod_barras (fallback sku_base×factor).
+- Hooks en wh.cerrar_guia_idempotente + wh.crear_despacho_rapido: salida consume FEFO;
+  SALIDA_ZONA hereda lote+vencimiento a la zona (propagar, idempotente); devolución descuenta
+  el libro de la zona.
+- me.cerrar_guia_zona_idempotente: SALIDA_JEFA consume; SALIDA_MOVIMIENTO hereda al destino
+  (gate anti-dedup igual que el saldo).
+- Trigger tg_zona_lotes_venta en me.ventas_detalle: la venta rota FEFO (zona de ventas.zona_id).
+- Reconciliación 529: 16,096 uds / 161 productos consumidas FEFO (drift del hueco del cutover),
+  auditadas id_guia='RECON20260719'; drift restante 0. Semáforo real: 4V/1C/1A/3U/176 sanos.
+- vencimientos_lista v2 con p.zona → me.zona_lotes de esa zona, mismo semáforo.
+- MOS: botón 📅 en TODAS las zonas (almacén = WH; zonas = libro), badge por alcance, título
+  dinámico. Suite `_test_fefo_zona.js` 24/24 (tx+ROLLBACK): FEFO WH, herencia, venta, jefa,
+  traslado, devolución, idempotencia, huérfano blindado.
+NOTA: el libro de zonas arranca con lo heredado de HOY en adelante (lo pre-existente en zona
+sin lote queda como huérfano informativo — el consumo huérfano no rompe nada).

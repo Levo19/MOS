@@ -1,0 +1,1 @@
+{"url":"https://levo19.github.io/MOS/","waitMs":30000,"localStorage":{"mos_device_id":"7e57c1a0-de1c-4a7e-b0de-c47a10906474"},"evalAfter":"(async()=>({ver:(await (await fetch('version.json?b='+Date.now())).json()).version,btn:!!document.getElementById('zonaBtnVenc'),titulo:!!document.getElementById('vencTituloMos')}))()","screenshot":"r581_mos.png"}
