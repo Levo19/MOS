@@ -405,14 +405,10 @@ const MOS = (() => {
       const t0 = Date.now();
       _netSyncStart('PRECARGANDO');
 
-      // Warmup ping ULTRALIGERO — calienta el script GAS antes del fan-out.
-      // Si el primer hit a GAS demora 2-5s en frío, el resto irá más rápido.
-      const warmup = (typeof API !== 'undefined' && API.get)
-        ? API.get('ping', {}).catch(() => null)
-        : Promise.resolve();
-
-      // Fan-out: lanzamos TODO en paralelo (no esperan al ping si ya está
-      // caliente). 200ms de buffer para no competir con el render inicial.
+      // [CERO-GAS] El warmup ping a GAS se eliminó: el fan-out de lecturas es
+      // 100% Supabase — no hay script frío que calentar.
+      // Fan-out: lanzamos TODO en paralelo. 200ms de buffer para no competir
+      // con el render inicial.
       setTimeout(() => {
         const tasks = [];
         const hoy = (typeof today === 'function') ? today() :
@@ -23396,6 +23392,8 @@ const MOS = (() => {
     const pagoWrap = $('persPagoWrap'); if (pagoWrap) pagoWrap.style.display = isMOS ? 'none' : '';
     // [dueño] ascenso: el permiso admin a MOS solo aplica a operadores WH (los MOS ya son admin/master)
     const ascWrap = $('persAscensoWrap'); if (ascWrap) ascWrap.style.display = isMOS ? 'none' : '';
+    // [Mockup modales] Acciones rápidas: solo al EDITAR (con id) — al crear no hay a quién apuntar
+    const quickWrap = $('persQuickWrap'); if (quickWrap) quickWrap.classList.toggle('hidden', !id);
     if ($('persAccesoMos')) $('persAccesoMos').checked = false;
     // Set rol options based on app — todos en MAYÚSCULAS para coincidir con DB
     const rolSel = $('persRol');

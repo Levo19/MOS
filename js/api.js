@@ -289,17 +289,17 @@ const API = (() => {
   // Regla: si flag MAESTRO ON → intenta `directo`; si devuelve null (sin token o
   // acción sin backend RLS) o LANZA → cae a `gas`. Con flag OFF → siempre `gas`
   // (INERTE). `flagFn` opcional permite gate por-acción (default = _mosLecturaDirecta).
-  async function _conFallbackMOS(directo, gas, flagFn) {
-    // [0% GAS / 0% FALLBACK 2026-07-04] La sombra Supabase es la ÚNICA fuente. Ya NO se cae a GAS en NINGÚN caso
-    // (ni con el gate OFF, ni al boot antes de que get_flags resuelva, ni sin token). `directo` puede devolver
-    // null por transitorios (token minteándose / sombra sincronizando _fresh:false) → reintenta 3× con backoff y
-    // devuelve null; el caller ya tolera el path directo (usa caché local). `gas`/`flagFn` quedan ignorados.
+  // [CERO-GAS] Lecturas MOS: la sombra Supabase es la ÚNICA fuente — no existe fallback.
+  // null por transitorio (token minteándose / _fresh:false) → 3 reintentos con backoff;
+  // el caller tolera null usando su caché local.
+  async function _conFallbackMOS(directo) {
     for (let i = 0; i < 3; i++) {
       try { const r = await directo(); if (r != null) return r; } catch (_) { /* reintenta */ }
       if (i < 2) await new Promise(res => setTimeout(res, 400));
     }
     return null;
   }
+
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 1 · PILOTO] Lectura directa del CATÁLOGO MAESTRO (getProductos).
@@ -3240,115 +3240,75 @@ const API = (() => {
       // [FASE 1 · PILOTO] getProductos → lectura directa Supabase con gate por-acción + frescura + fallback GAS.
       // Con el flag OFF (default) esto es IDÉNTICO a hoy: _conFallbackMOS NO entra al directo y va directo a GAS.
       if (action === 'getProductos') {
-        return _conFallbackMOS(
-          () => _getProductosDirecto(p),                 // directo: RPC + map a shape-hoja + filtros (null→GAS)
-          () => _fetch('GET', { action, ...p }),         // gas: la llamada de SIEMPRE (devuelve d.data = array)
-          _mosCatalogoDirecto                            // gate por-acción (default OFF)
-        );
+        return _conFallbackMOS(() => _getProductosDirecto(p));
       }
       // [FASE 1] getFinanzasRango → lectura directa (RPC finanzas_rango) con gate por-acción + frescura + fallback GAS.
       // Flag OFF (default) ⇒ IDÉNTICO a hoy (va directo a GAS). Devuelve {serie,totales,desde,hasta} igual que GAS.
       if (action === 'getFinanzasRango') {
-        return _conFallbackMOS(
-          () => _getFinanzasRangoDirecto(p),
-          () => _fetch('GET', { action, ...p }),
-          _mosFinanzasDirecto
-        );
+        return _conFallbackMOS(() => _getFinanzasRangoDirecto(p));
       }
       // [FASE 1] getHistorialPrecios → lectura directa (RPC historial_precios_lista). Flag OFF (default) ⇒ GAS.
       if (action === 'getHistorialPrecios') {
-        return _conFallbackMOS(
-          () => _getHistorialPreciosDirecto(p),
-          () => _fetch('GET', { action, ...p }),
-          _mosHistorialDirecto
-        );
+        return _conFallbackMOS(() => _getHistorialPreciosDirecto(p));
       }
       // [DUAL-WRITE · LOTE PROVEEDORES/PEDIDOS/PAGOS/PROVPROD/JORNADAS] read-paths directos (RPCs 94). Cada uno
       // gated por SU gate de LECTURA _mos<Modulo>Lectura (maestro OR mos_<modulo>_lectura). La ESCRITURA de estos
       // módulos ya NO va directa: va SIEMPRE por GAS (dual-write → GAS espeja la sombra). Así, prender la lectura
       // de un módulo NO toca su escritura. Gate de lectura OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy.
       if (action === 'getProveedores') {
-        return _conFallbackMOS(
-          () => _getProveedoresDirecto(p),
-          () => _fetch('GET', { action, ...p }),
-          _mosProveedoresLectura
-        );
+        return _conFallbackMOS(() => _getProveedoresDirecto(p));
       }
       if (action === 'getPedidos') {
-        return _conFallbackMOS(
-          () => _getPedidosDirecto(p),
-          () => _fetch('GET', { action, ...p }),
-          _mosPedidosLectura
-        );
+        return _conFallbackMOS(() => _getPedidosDirecto(p));
       }
       if (action === 'getPagos') {
-        return _conFallbackMOS(
-          () => _getPagosDirecto(p),
-          () => _fetch('GET', { action, ...p }),
-          _mosPagosLectura
-        );
+        return _conFallbackMOS(() => _getPagosDirecto(p));
       }
       if (action === 'getProveedorProductos') {
-        return _conFallbackMOS(
-          () => _getProveedorProductosDirecto(p),
-          () => _fetch('GET', { action, ...p }),
-          _mosProvProdLectura
-        );
+        return _conFallbackMOS(() => _getProveedorProductosDirecto(p));
       }
       if (action === 'getJornadas') {
-        return _conFallbackMOS(
-          () => _getJornadasDirecto(p),
-          () => _fetch('GET', { action, ...p }),
-          _mosJornadasLectura
-        );
+        return _conFallbackMOS(() => _getJornadasDirecto(p));
       }
       // [DUAL-WRITE · EVAL] getEvaluacionesDia → lectura directa (RPC evaluaciones_dia, 98). Gated por el gate de
       // LECTURA _mosEvalLectura (maestro OR mos_eval_lectura) → la escritura crearEvaluacion ya NO va directa (GAS
       // siempre, dual-write). Flag de lectura OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy. Array camelCase paritario.
       if (action === 'getEvaluacionesDia') {
-        return _conFallbackMOS(
-          () => _getEvaluacionesDiaDirecto(p),
-          () => _fetch('GET', { action, ...p }),
-          _mosEvalLectura
-        );
+        return _conFallbackMOS(() => _getEvaluacionesDiaDirecto(p));
       }
       // [Optimización] getPersonalDiaFast → lectura directa (RPC personal_dia_lista, 105). Lee la sombra
       // liquidaciones_dia (materializada), shape paritario con getPersonalDiaFast. Gated por el MAESTRO
-      // _mosLecturaDirecta (mismo que las demás). Gate OFF ⇒ recto a GAS = IDÉNTICO a hoy. Fallback total a GAS.
+      // _mosLecturaDirecta (mismo que las demás). Cero-GAS: sin fallback (la sombra es la única fuente).
       if (action === 'getPersonalDiaFast') {
-        return _conFallbackMOS(
-          () => _getPersonalDiaFastDirecto(p),
-          () => _fetch('GET', { action, ...p }),
-          _mosLecturaDirecta
-        );
+        return _conFallbackMOS(() => _getPersonalDiaFastDirecto(p));
       }
-      // [Optimización] catálogos base → lectura directa (RPCs 106). Maestro _mosLecturaDirecta + fallback GAS.
+      // [Optimización] catálogos base → lectura directa (RPCs 106). Maestro _mosLecturaDirecta · cero-GAS sin fallback.
       if (action === 'getEquivalencias') {
-        return _conFallbackMOS(() => _getEquivalenciasDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
+        return _conFallbackMOS(() => _getEquivalenciasDirecto(p));
       }
       if (action === 'getCategorias') {
-        return _conFallbackMOS(() => _getCategoriasDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
+        return _conFallbackMOS(() => _getCategoriasDirecto(p));
       }
       // [Optimización] catálogos/config (107) → lectura directa. Maestro + fallback GAS. Nombre de acción no
       // matcheado ⇒ recto a GAS (no rompe; solo no acelera ese caso).
-      if (action === 'getPersonalMaster') { return _conFallbackMOS(() => _getPersonalMasterDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getZonas')          { return _conFallbackMOS(() => _getZonasDirecto(p),          () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getEstaciones')     { return _conFallbackMOS(() => _getEstacionesDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getImpresoras')     { return _conFallbackMOS(() => _getImpresorasDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getSeries')         { return _conFallbackMOS(() => _getSeriesDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getPersonalMaster') { return _conFallbackMOS(() => _getPersonalMasterDirecto(p)); }
+      if (action === 'getZonas')          { return _conFallbackMOS(() => _getZonasDirecto(p)); }
+      if (action === 'getEstaciones')     { return _conFallbackMOS(() => _getEstacionesDirecto(p)); }
+      if (action === 'getImpresoras')     { return _conFallbackMOS(() => _getImpresorasDirecto(p)); }
+      if (action === 'getSeries')         { return _conFallbackMOS(() => _getSeriesDirecto(p)); }
       // [Optimización] read-paths COMPLEJOS (108/109/110): finanzas del día (P&L), productos-proveedor-con-stock,
-      // histórico proveedor. Maestro _mosLecturaDirecta + fallback total a GAS + gate _fresh interno.
+      // histórico proveedor. Maestro _mosLecturaDirecta · cero-GAS · gate _fresh interno.
       if (action === 'getFinanzasDia') {
-        return _conFallbackMOS(() => _getFinanzasDiaDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
+        return _conFallbackMOS(() => _getFinanzasDiaDirecto(p));
       }
       if (action === 'getProductosProveedorConStock') {
-        return _conFallbackMOS(() => _getProductosProveedorStockDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
+        return _conFallbackMOS(() => _getProductosProveedorStockDirecto(p));
       }
       if (action === 'getHistoricoProveedor') {
-        return _conFallbackMOS(() => _getHistoricoProveedorDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta);
+        return _conFallbackMOS(() => _getHistoricoProveedorDirecto(p));
       }
       // [Optimización · vistas cross-app cajas/warehouse] — maestro + fallback GAS + gate _fresh.
-      if (action === 'getCierresCaja')         { return _conFallbackMOS(() => _getCierresCajaDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getCierresCaja')         { return _conFallbackMOS(() => _getCierresCajaDirecto(p)); }
       // [historial + calendario] Supabase-only (RPCs 311). Sin GAS: si no hay token, devuelve null.
       if (action === 'getTicketsDia')          { return _sbRpcMOS('tickets_dia',      { p }, 'mos').catch(() => null); }
       if (action === 'getDiasConTickets')      { return _sbRpcMOS('dias_con_tickets', { p }, 'mos').catch(() => null); }
@@ -3356,8 +3316,8 @@ const API = (() => {
       // [historial] día completo (cajas+tickets+KPIs) de una fecha arbitraria vía cierres_caja(fecha).
       // Directo sin gate _fresh/GAS: el histórico es estable y GAS no soporta fecha. Devuelve .data o null.
       if (action === 'getCierresDia')          { return _sbRpcMOS('cierres_caja',     { p }, 'mos').then(r => (r && r.data) ? r.data : null).catch(() => null); }
-      if (action === 'getMermasWarehouse')     { return _conFallbackMOS(() => _getMermasWarehouseDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getEnvasadosWarehouse')  { return _conFallbackMOS(() => _getEnvasadosWarehouseDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getMermasWarehouse')     { return _conFallbackMOS(() => _getMermasWarehouseDirecto(p)); }
+      if (action === 'getEnvasadosWarehouse')  { return _conFallbackMOS(() => _getEnvasadosWarehouseDirecto(p)); }
       // [v2.43.410 cero-GAS] getAlertasWarehouse SIN fallback GAS: la RPC mos.alertas_warehouse
       // devuelve _fresh:true con la sombra WH viva (verificado: 413 lotes frescos). El fallback a GAS
       // solo disparaba CORS en el arranque (el prefetch corre antes de que el token MOS esté listo).
@@ -3365,72 +3325,72 @@ const API = (() => {
       if (action === 'getAlertasWarehouse')    { return _getAlertasWarehouseDirecto(p).catch(() => null); }
       // [cero-GAS · Etapa 3] 'getRotacion' es el nombre real que usa el dashboard (app.js:1119);
       // faltaba el intercept → esa llamada caía a GAS. Alias a la misma RPC directa mos.rotacion_productos.
-      if (action === 'getRotacionProductos' || action === 'getRotacion') { return _conFallbackMOS(() => _getRotacionProductosDirecto(p),   () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getCatalogoStockResumen'){ return _conFallbackMOS(() => _getCatalogoStockResumenDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getDashboardAlmacen')    { return _conFallbackMOS(() => _getDashboardAlmacenDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getRotacionProductos' || action === 'getRotacion') { return _conFallbackMOS(() => _getRotacionProductosDirecto(p)); }
+      if (action === 'getCatalogoStockResumen'){ return _conFallbackMOS(() => _getCatalogoStockResumenDirecto(p)); }
+      if (action === 'getDashboardAlmacen')    { return _conFallbackMOS(() => _getDashboardAlmacenDirecto(p)); }
       // [Optimización · portables 114/115/116]
-      if (action === 'getConfig')              { return _conFallbackMOS(() => _getConfigDirecto(p),             () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getDispositivos')        { return _conFallbackMOS(() => _getDispositivosDirecto(p),       () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      // [cero-GAS G2] GPS tracking — gate _mosLecturaDirecta (ON prod) + el RPC checa GPS_DIRECTO (OFF→null→GAS).
-      if (action === 'getUltimaUbicacionDispositivo') { return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getUbicacionesDispositivo')     { return _conFallbackMOS(() => _getUbicacionesDispositivoDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getConfig')              { return _conFallbackMOS(() => _getConfigDirecto(p)); }
+      if (action === 'getDispositivos')        { return _conFallbackMOS(() => _getDispositivosDirecto(p)); }
+      // [cero-GAS G2] GPS tracking — gate _mosLecturaDirecta (ON prod) + el RPC checa GPS_DIRECTO (OFF→null→caché local).
+      if (action === 'getUltimaUbicacionDispositivo') { return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p)); }
+      if (action === 'getUbicacionesDispositivo')     { return _conFallbackMOS(() => _getUbicacionesDispositivoDirecto(p)); }
       // [419] 🧾 créditos pendientes de una persona (tickets ME a CRÉDITO con su documento).
       // Acción NUEVA cero-GAS (sin fallback: si falla, el modal simplemente no muestra créditos).
       if (action === 'getCreditosPersonal') {
         return _sbRpcMOS('creditos_personal', { p: p || {} })
           .then(r => (r && r.ok) ? r : { ok: false, error: (r && r.error) || 'sin token' });
       }
-      if (action === 'getLiquidacionesPendientes') { return _conFallbackMOS(() => _getLiqPendientesDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getLiquidacionesPagadas' || action === 'getLiquidacionesEmitidas') { return _conFallbackMOS(() => _getLiqPagadasDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getLiquidacionesVetadas') { return _conFallbackMOS(() => _getLiqVetadasDirecto(p),        () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getPagoDetalle')         { return _conFallbackMOS(() => _getPagoDetalleDirecto(p),        () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getLiqDiaBonSan')        { return _conFallbackMOS(() => _getLiqDiaBonSanDirecto(p),       () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getProveedoresQueVenden'){ return _conFallbackMOS(() => _getProveedoresQueVendenDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getVendedoresMEBloqueados'){ return _conFallbackMOS(() => _getVendedoresMEBloqueadosDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getDispositivosBloqueados'){ return _conFallbackMOS(() => _getDispositivosBloqueadosDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getNotificacionesConfig'){ return _conFallbackMOS(() => _getNotificacionesConfigDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getAuditoriaAdmin')      { return _conFallbackMOS(() => _getAuditoriaAdminDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getAuditoriaIntegridad' && !p.run) { return _conFallbackMOS(() => _getAuditoriaIntegridadDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getProductosEditadosRecientes') { return _conFallbackMOS(() => _getProductosEditadosRecientesDirecto(p), () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getLiquidacionesPendientes') { return _conFallbackMOS(() => _getLiqPendientesDirecto(p)); }
+      if (action === 'getLiquidacionesPagadas' || action === 'getLiquidacionesEmitidas') { return _conFallbackMOS(() => _getLiqPagadasDirecto(p)); }
+      if (action === 'getLiquidacionesVetadas') { return _conFallbackMOS(() => _getLiqVetadasDirecto(p)); }
+      if (action === 'getPagoDetalle')         { return _conFallbackMOS(() => _getPagoDetalleDirecto(p)); }
+      if (action === 'getLiqDiaBonSan')        { return _conFallbackMOS(() => _getLiqDiaBonSanDirecto(p)); }
+      if (action === 'getProveedoresQueVenden'){ return _conFallbackMOS(() => _getProveedoresQueVendenDirecto(p)); }
+      if (action === 'getVendedoresMEBloqueados'){ return _conFallbackMOS(() => _getVendedoresMEBloqueadosDirecto(p)); }
+      if (action === 'getDispositivosBloqueados'){ return _conFallbackMOS(() => _getDispositivosBloqueadosDirecto(p)); }
+      if (action === 'getNotificacionesConfig'){ return _conFallbackMOS(() => _getNotificacionesConfigDirecto(p)); }
+      if (action === 'getAuditoriaAdmin')      { return _conFallbackMOS(() => _getAuditoriaAdminDirecto(p)); }
+      if (action === 'getAuditoriaIntegridad' && !p.run) { return _conFallbackMOS(() => _getAuditoriaIntegridadDirecto(p)); }
+      if (action === 'getProductosEditadosRecientes') { return _conFallbackMOS(() => _getProductosEditadosRecientesDirecto(p)); }
       // [Optimización · cross-app 117/118/119]
-      if (action === 'getRankingZonas')        { return _conFallbackMOS(() => _getRankingZonasDirecto(p),       () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getRankingZonas')        { return _conFallbackMOS(() => _getRankingZonasDirecto(p)); }
       // [RECABLEADO 2026-06-16 · optimizado SQL 123] productos_sin_venta: 13.8s→0.6s (subqueries correlacionadas
       // sobre CTE → LEFT JOIN). Bajo statement_timeout 8s, paridad de datos verificada (mismo set de 208).
-      if (action === 'getProductosSinVenta')   { return _conFallbackMOS(() => _getProductosSinVentaDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getAlertasOperativas')   { return _conFallbackMOS(() => _getAlertasOperativasDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getGuiasYPreingresos')   { return _conFallbackMOS(() => _getGuiasYPreingresosDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getOperacionesUnificadas'){ return _conFallbackMOS(() => _getOperacionesUnificadasDirecto(p),() => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getStockUnificado')      { return _conFallbackMOS(() => _getStockUnificadoDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getProductosSinVenta')   { return _conFallbackMOS(() => _getProductosSinVentaDirecto(p)); }
+      if (action === 'getAlertasOperativas')   { return _conFallbackMOS(() => _getAlertasOperativasDirecto(p)); }
+      if (action === 'getGuiasYPreingresos')   { return _conFallbackMOS(() => _getGuiasYPreingresosDirecto(p)); }
+      if (action === 'getOperacionesUnificadas'){ return _conFallbackMOS(() => _getOperacionesUnificadasDirecto(p)); }
+      if (action === 'getStockUnificado')      { return _conFallbackMOS(() => _getStockUnificadoDirecto(p)); }
       // [RECABLEADO 2026-06-16 · optimizado SQL 123] insights_stock: 9.8s→0.4s. Bajo timeout, paridad byte-idéntica.
-      if (action === 'getInsightsStock')       { return _conFallbackMOS(() => _getInsightsStockDirecto(p),      () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getAnaliticaProducto')   { return _conFallbackMOS(() => _getAnaliticaProductoDirecto(p),  () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'meCajasAbiertas')        { return _conFallbackMOS(() => _getMeCajasAbiertasDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getInsightsStock')       { return _conFallbackMOS(() => _getInsightsStockDirecto(p)); }
+      if (action === 'getAnaliticaProducto')   { return _conFallbackMOS(() => _getAnaliticaProductoDirecto(p)); }
+      if (action === 'meCajasAbiertas')        { return _conFallbackMOS(() => _getMeCajasAbiertasDirecto(p)); }
       // [Reparación #4] detalle del ticket: Supabase-first (sombra) con GAS de respaldo (meDetalleVenta bridge).
-      if (action === 'meDetalleVenta')         { return _conFallbackMOS(() => _getMeDetalleVentaDirecto(p),     () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'meDetalleVenta')         { return _conFallbackMOS(() => _getMeDetalleVentaDirecto(p)); }
       // [Reparación #4 · Etapa 2] historial de venta Supabase-first (cliente sigue por GAS: shape ME no verificado / GAP).
-      if (action === 'meHistorialVenta')       { return _conFallbackMOS(() => _getMeHistorialVentaDirecto(p),   () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'meCobrosEnVuelo')        { return _conFallbackMOS(() => _getMeCobrosEnVueloDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'meHistorialVenta')       { return _conFallbackMOS(() => _getMeHistorialVentaDirecto(p)); }
+      if (action === 'meCobrosEnVuelo')        { return _conFallbackMOS(() => _getMeCobrosEnVueloDirecto(p)); }
       // [Optimización · portables 124]
-      if (action === 'getTarjetaWA')           { return _conFallbackMOS(() => _getTarjetaWADirecto(p),          () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getTarjetaWA')           { return _conFallbackMOS(() => _getTarjetaWADirecto(p)); }
       // meConsultarCliente: si la sombra NO tiene el doc (encontrado:false), NO servir directo → caer a GAS
       // (preserva el lookup SUNAT/RENIEC en vivo que solo GAS hace). El helper igual devuelve el objeto; el guard
       // de "encontrado" lo aplica aquí envolviendo el directo para que el null caiga al fallback.
       if (action === 'meConsultarCliente')     {
         // Tras miss de sombra, el live-lookup va al Edge `consultar-documento` si el gate SUNAT está ON
         // (con GAS como red de seguridad si el Edge falla); con el gate OFF (default) va recto a GAS = IDÉNTICO a hoy.
-        const _liveLookupCliente = () => _conFallbackMOS(() => _meConsultarClienteEdge(p), () => _fetch('GET', { action, ...p }), _mosSunatEdge);
-        return _conFallbackMOS(async () => { const r = await _getMeConsultarClienteDirecto(p); return (r && r.encontrado) ? r : null; }, _liveLookupCliente, _mosLecturaDirecta);
+        const _liveLookupCliente = () => _conFallbackMOS(() => _meConsultarClienteEdge(p));
+        return _conFallbackMOS(async () => { const r = await _getMeConsultarClienteDirecto(p); return (r && r.encontrado) ? r : null; });
       }
-      if (action === 'getResumenTodosDia')     { return _conFallbackMOS(() => _getResumenTodosDiaDirecto(p),    () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
-      if (action === 'getEcoStatus')           { return _conFallbackMOS(() => _getEcoStatusDirecto(p),         () => _fetch('GET', { action, ...p }), _mosLecturaDirecta); }
+      if (action === 'getResumenTodosDia')     { return _conFallbackMOS(() => _getResumenTodosDiaDirecto(p)); }
+      if (action === 'getEcoStatus')           { return _conFallbackMOS(() => _getEcoStatusDirecto(p)); }
       // [IMPRESORAS Edge] listar/verificar impresoras 100% Supabase (Edge `printers`, shape paritario con GAS) +
       // fallback total a GAS. Gate dedicado _mosImpresorasPNEdge (maestro OR mos_impresoras_pn_edge), default OFF
       // ⇒ recto a GAS = IDÉNTICO a hoy. CAMINO COMPARTIDO (liq/costos/picker) → shape BYTE-equivalente.
       if (action === 'listarImpresorasPN' || action === 'getPrintNodePrinters') {
-        return _conFallbackMOS(() => _listarImpresorasEdge(),       () => _fetch('GET', { action, ...p }), _mosImpresorasPNEdge);
+        return _conFallbackMOS(() => _listarImpresorasEdge());
       }
       if (action === 'verificarImpresoraAhora') {
-        return _conFallbackMOS(() => _verificarImpresoraEdge(p),    () => _fetch('GET', { action, ...p }), _mosImpresorasPNEdge);
+        return _conFallbackMOS(() => _verificarImpresoraEdge(p));
       }
       // ── [cero-GAS] MONITOREO DE SEGURIDAD del local (audio) — LECTURAS (el panel las llama con API.get):
       //    estado/sesiones/chunks/contenido. Backend RPCs mos.espia_audio_* (SQL 508) + mos.espia_chunks/Storage.
@@ -3587,26 +3547,18 @@ const API = (() => {
       // lectura OFF (default) ⇒ recto a GAS = IDÉNTICO a hoy. Devuelve el OBJETO {<app>:{...}} igual que GAS;
       // el consumidor lee `(r && r.data) || r` → ambos sirven.
       if (action === 'getHorariosApps') {
-        return _conFallbackMOS(
-          () => _getHorariosAppsDirecto(p),
-          () => _fetch('POST', { action, ...p }),
-          _mosHorarioLectura
-        );
+        return _conFallbackMOS(() => _getHorariosAppsDirecto(p));
       }
       // [Optimización · portables 124] meGetCreditosPendientes es una LECTURA enviada por POST (API.post,
       // app.js:24917). Read-path directo (RPC me_creditos_pendientes, 124) gated por _mosLecturaDirecta.
       // Devuelve el OBJETO {grupos,totalAcumulado,totalTickets} (r.data); el consumidor lee d.grupos.
       // Gate OFF (default) ⇒ recto a GAS = idéntico a hoy.
       if (action === 'meGetCreditosPendientes') {
-        return _conFallbackMOS(
-          () => _getMeCreditosPendientesDirecto(p),
-          () => _postMOS(action, p),
-          _mosLecturaDirecta
-        );
+        return _conFallbackMOS(() => _getMeCreditosPendientesDirecto(p));
       }
       // [cero-GAS G2] GPS última ubicación también se invoca por POST (app.js verUltimaUbicacionDispositivo).
       if (action === 'getUltimaUbicacionDispositivo') {
-        return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p), () => _postMOS(action, p), _mosLecturaDirecta);
+        return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p));
       }
       // [NIVEL 1 corte-GAS · CERO-GAS] Escrituras admin sin ruta directa → RPCs mos.* (SQL 366). Replica el
       // contrato de _fetch('POST'): lanza si {ok:false}, devuelve r.data. Sin fallback GAS.
