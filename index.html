@@ -14835,30 +14835,13 @@
           <div class="w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#3a2a08,#5a3d0a);">🎯</div>
           <div class="min-w-0 flex-1">
             <h2 class="font-bold text-base text-white">Productos sorpresa</h2>
-            <p class="text-[11px] text-slate-500 mt-0.5">prueba de escaneo real · solo admins · la sorpresa corrige la guía</p>
+            <p class="text-[11px] text-slate-500 mt-0.5">seguimiento de las pruebas de escaneo real · el registro se hace en WH</p>
           </div>
           <button onclick="MOS.closeModal('modalSorpresas')" class="modal-close-x">×</button>
         </div>
         <div class="overflow-y-auto px-4 py-4 flex-1 cfgpanel">
-          <!-- registro rápido -->
-          <div class="card" style="margin-top:0">
-            <div class="slab" style="margin-bottom:8px">🎯 Registrar (guía → producto → ±)</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
-              <div class="field"><label class="lbl">Guía (SALIDA_ZONA)</label>
-                <div style="display:flex;gap:6px"><input id="sorpGuia" class="inp" placeholder="G_…" style="flex:1"><button class="abtn" onclick="MOS.scanCodigo({inputId:'sorpGuia'})" title="Escanear nº de guía">📷</button></div></div>
-              <div class="field"><label class="lbl">Producto (de esa guía)</label>
-                <div style="display:flex;gap:6px"><input id="sorpCod" class="inp" placeholder="código de barra" style="flex:1"><button class="abtn" onclick="MOS.scanCodigo({inputId:'sorpCod'})" title="Escanear producto">📷</button></div></div>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
-              <label class="lbl" style="margin:0">Delta</label>
-              <button class="abtn" style="font-size:16px;padding:6px 14px" onclick="MOS.sorpDelta(-1)">−</button>
-              <b id="sorpDeltaVal" class="mono" style="font-size:19px;color:#fcd34d;min-width:44px;text-align:center">−1</b>
-              <button class="abtn" style="font-size:16px;padding:6px 14px" onclick="MOS.sorpDelta(1)">＋</button>
-              <span class="muted" style="font-size:10.5px;flex:1;min-width:140px">− quitas físico (vuelve al andamio) · ＋ mandas de más</span>
-              <button class="btn-primary" style="background:linear-gradient(135deg,#eab308,#f5b849)!important;color:#1a1206!important;padding:9px 16px;border-radius:11px" onclick="MOS.registrarSorpresaMOS()">🎯 Registrar</button>
-            </div>
-            <div id="sorpMsg" class="cfg-note" style="display:none;margin-top:9px"></div>
-          </div>
+          <!-- [Dueño] MOS solo da SEGUIMIENTO: el registro de sorpresas vive en WH (🎯 en el card de la guía) -->
+          <div class="callout g" style="margin-top:0">👁 <b>Solo seguimiento.</b> Las sorpresas se registran en <b>WH</b> (🎯 en el card de la guía de salida). Aquí ves el resultado: si el cajero/vendedor escaneó bien al recibir → ✅; si copió el papel → ❌ con alerta.</div>
           <div id="sorpKpis"></div>
           <div id="sorpScore"></div>
           <div id="sorpLista"><div class="muted" style="text-align:center;padding:20px">Cargando…</div></div>
@@ -19600,7 +19583,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.577';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.578';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19650,7 +19633,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.577"></script>
+<script src="js/api.js?v=2.43.578"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19665,7 +19648,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.577"></script>
+<script src="js/app.js?v=2.43.578"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

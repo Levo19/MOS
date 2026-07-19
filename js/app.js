@@ -41111,6 +41111,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _mermasRender();
   }
   function mermasSetFiltro(f) { _mermasFiltro = f; _mermasRender(); }
+  let _mermasAgrupar = 'FECHA';   // FECHA | ESTADO (pedido dueño: organizar por fechas y estados)
+  function mermasSetAgrupar(a) { _mermasAgrupar = a; _mermasRender(); }
+  // Lightbox simple para la foto de la merma (click en el thumbnail)
+  function mermasVerFoto(url) {
+    if (!url) return;
+    let ov = document.getElementById('mermasFotoOv');
+    if (!ov) { ov = document.createElement('div'); ov.id = 'mermasFotoOv'; document.body.appendChild(ov); }
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9700;display:grid;place-items:center;padding:16px;cursor:zoom-out';
+    ov.onclick = () => ov.remove();
+    ov.innerHTML = `<img src="${_esc(url)}" style="max-width:96vw;max-height:92vh;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.6)" onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'No se pudo cargar la foto',style:'color:#fca5a5'}))">`;
+  }
   function _mermasRender() {
     const rows = _mermasData;
     // KPIs de dinero (costo × cantidades) — mes actual
@@ -41133,7 +41144,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     </div>`;
     const FILTROS = [['TODAS', 'Todas'], ['PENDIENTES', 'Pendientes'], ['VENCIDAS', 'Vencidas'], ['RECUPERADAS', 'Recuperadas'], ['ELIMINADAS', 'Eliminadas'], ['TRANSFORMADAS', 'Transformadas']];
     $('mermasFiltros').innerHTML = FILTROS.map(([k, l]) =>
-      `<span class="chip ${_mermasFiltro === k ? 'gold' : ''}" style="cursor:pointer" onclick="MOS.mermasSetFiltro('${k}')">${l}</span>`).join('');
+      `<span class="chip ${_mermasFiltro === k ? 'gold' : ''}" style="cursor:pointer" onclick="MOS.mermasSetFiltro('${k}')">${l}</span>`).join('') +
+      `<span class="muted" style="font-size:10px;align-self:center;margin-left:6px">agrupar:</span>` +
+      ['FECHA', 'ESTADO'].map(a => `<span class="chip ${_mermasAgrupar === a ? 'ok' : ''}" style="cursor:pointer" onclick="MOS.mermasSetAgrupar('${a}')">${a === 'FECHA' ? '📅 Fecha' : '🧭 Estado'}</span>`).join('');
     let vis = rows;
     if (_mermasFiltro === 'PENDIENTES') vis = rows.filter(m => (m.cantidadPendiente || 0) > 0);
     else if (_mermasFiltro === 'VENCIDAS') vis = rows.filter(m => m.vencida);
@@ -41145,38 +41158,61 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const p = (S.productos || []).find(x => String(x.codigoBarra) === String(cod));
       return p ? (p.descripcion || cod) : cod;
     };
-    $('mermasLista').innerHTML = vis.slice(0, 200).map(m => {
+    // ── fila con thumbnail de foto (click → lightbox) ──
+    const fila = m => {
       const pendN = m.cantidadPendiente || 0;
       const sla = pendN > 0
-        ? (m.vencida ? `<span class="chip bad sla">🔴 VENCIDA ${m.diasPendiente != null ? '· ' + m.diasPendiente + 'd' : ''}</span>`
+        ? (m.vencida ? `<span class="chip bad sla">🔴 VENCIDA${m.diasPendiente != null ? ' · ' + m.diasPendiente + 'd' : ''}</span>`
                      : `<span class="chip warn sla">⏳ ${Math.max(0, 3 - (m.diasPendiente || 0))}d restantes</span>`)
         : '';
       const est = pendN > 0 ? (m.cantidadReparada > 0 ? '<span class="chip warn">parcial</span>' : '<span class="chip">pendiente</span>')
         : (m.estado === 'DESECHADA' ? '<span class="chip">eliminada</span>' : '<span class="chip ok">resuelta</span>');
       const trans = m.idGuiaTransformacion ? `<span class="chip" style="background:rgba(167,139,250,.15);color:#c4b5fd;border-color:rgba(167,139,250,.4)">🔄 ${m.idGuiaTransformacion}</span>` : '';
       const dinero = (m.costoUnitario || 0) > 0
-        ? `<span class="mono" style="color:${m.cantidadReparada > 0 ? '#7ff0c4' : '#fca5a5'}">S/ ${((m.costoUnitario || 0) * (m.cantidadReparada > 0 ? m.cantidadReparada : m.cantidadOriginal)).toFixed(2)}${m.cantidadReparada > 0 ? ' rec.' : ''}</span>` : '';
-      const foto = m.foto ? ` · <a href="${_esc(m.foto)}" target="_blank" rel="noopener" style="color:#8fd0ff">📷 foto</a>` : '';
+        ? `<span class="mono" style="color:${m.cantidadReparada > 0 ? '#7ff0c4' : '#fca5a5'};white-space:nowrap">S/ ${((m.costoUnitario || 0) * (m.cantidadReparada > 0 ? m.cantidadReparada : m.cantidadOriginal)).toFixed(2)}${m.cantidadReparada > 0 ? ' rec.' : ''}</span>` : '';
+      const thumb = m.foto
+        ? `<div onclick="MOS.mermasVerFoto('${_esc(m.foto)}')" style="width:46px;height:46px;border-radius:10px;overflow:hidden;flex-shrink:0;cursor:zoom-in;border:1px solid #26375a;background:#0a1424"><img src="${_esc(m.foto)}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.textContent='📷';this.parentNode.style.display='grid';this.parentNode.style.placeItems='center'"></div>`
+        : `<div style="width:46px;height:46px;border-radius:10px;flex-shrink:0;display:grid;place-items:center;border:1px dashed #26375a;color:#5f7290;font-size:15px">🧺</div>`;
       const guias = [m.idGuia ? 'de ' + m.idGuia : '', m.idGuiaSalida ? 'salida ' + m.idGuiaSalida : ''].filter(Boolean).join(' · ');
-      return `<div class="prow">
-        <div style="flex:1;min-width:170px"><b style="color:#eaf1fb">${_esc(nomProd(m.codProducto))} · ${m.cantidadOriginal}</b> ${est} ${sla} ${trans}
-        <div class="muted" style="font-size:10px">ingresó ${_esc(m.usuario || '—')} ${new Date(m.fechaIngreso).toLocaleDateString('es-PE')} · culpa <b>${_esc(m.culpa || '—')}</b>${m.cantidadReparada ? ' · rec. ' + m.cantidadReparada : ''}${m.cantidadDesechada ? ' · elim. ' + m.cantidadDesechada : ''}${pendN ? ' · pend. ' + pendN : ''}${guias ? ' · ' + guias : ''}${foto}</div></div>
+      const bordeVenc = m.vencida ? 'border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.04)' : '';
+      return `<div class="prow" style="${bordeVenc}">
+        ${thumb}
+        <div style="flex:1;min-width:150px"><b style="color:#eaf1fb">${_esc(nomProd(m.codProducto))} · ${m.cantidadOriginal}</b> ${est} ${sla} ${trans}
+        <div class="muted" style="font-size:10px">ingresó ${_esc(m.usuario || '—')} · culpa <b>${_esc(m.culpa || '—')}</b>${m.cantidadReparada ? ' · rec. ' + m.cantidadReparada : ''}${m.cantidadDesechada ? ' · elim. ' + m.cantidadDesechada : ''}${pendN ? ' · pend. ' + pendN : ''}${guias ? ' · ' + guias : ''}</div></div>
         ${dinero}</div>`;
-    }).join('');
+    };
+    // ── agrupación: por FECHA (Hoy/Ayer/día) o por ESTADO ──
+    const _diaLblM = ts => {
+      const d = new Date(ts); const hoy = new Date();
+      if (d.toDateString() === hoy.toDateString()) return 'Hoy';
+      if (d.toDateString() === new Date(hoy.getTime() - 864e5).toDateString()) return 'Ayer';
+      return d.toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short', year: d.getFullYear() !== hoy.getFullYear() ? '2-digit' : undefined });
+    };
+    const _estadoLblM = m => {
+      const pendN = m.cantidadPendiente || 0;
+      if (pendN > 0 && m.vencida) return '🔴 Vencidas';
+      if (pendN > 0 && (m.cantidadReparada || 0) > 0) return '◐ Parciales';
+      if (pendN > 0) return '🟡 Pendientes';
+      if (m.idGuiaTransformacion) return '🔄 Transformadas';
+      if (m.estado === 'DESECHADA') return '🗑 Eliminadas';
+      return '✅ Recuperadas';
+    };
+    const ORDEN_EST = ['🔴 Vencidas', '🟡 Pendientes', '◐ Parciales', '🔄 Transformadas', '✅ Recuperadas', '🗑 Eliminadas'];
+    const grupos = {};
+    vis.slice(0, 250).forEach(m => {
+      const k = _mermasAgrupar === 'ESTADO' ? _estadoLblM(m) : _diaLblM(m.fechaIngreso);
+      (grupos[k] = grupos[k] || []).push(m);
+    });
+    const claves = _mermasAgrupar === 'ESTADO'
+      ? ORDEN_EST.filter(k => grupos[k])
+      : Object.keys(grupos);   // ya vienen ordenadas por fecha desc del server
+    $('mermasLista').innerHTML = claves.map(k =>
+      `<div class="card" style="margin-top:10px"><div class="slab" style="margin-bottom:8px">${k} · ${grupos[k].length}</div>${grupos[k].map(fila).join('')}</div>`).join('');
   }
 
-  // ── 🎯 SORPRESAS · panel + registro (clave admin server-side) ──
-  let _sorpDelta = -1;
-  function sorpDelta(dir) {
-    _sorpDelta += dir;
-    if (_sorpDelta === 0) _sorpDelta = dir > 0 ? 1 : -1;
-    const el = $('sorpDeltaVal');
-    if (el) { el.textContent = (_sorpDelta > 0 ? '+' : '−') + Math.abs(_sorpDelta); el.style.color = _sorpDelta > 0 ? '#7ff0c4' : '#fcd34d'; }
-  }
+  // ── 🎯 SORPRESAS · SOLO SEGUIMIENTO (el registro vive en WH — decisión dueño) ──
   async function abrirSorpresasPanel() {
     openModal('modalSorpresas');
-    _sorpDelta = -1; sorpDelta(0 === 0 ? 0 : 0); // repinta
-    const el = $('sorpDeltaVal'); if (el) el.textContent = '−1';
     _sorpCargar();
   }
   async function _sorpCargar() {
@@ -41211,57 +41247,36 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         const pct = Math.round(v.p / v.t * 100);
         return `<div class="prow" style="padding:8px 12px"><b style="color:#eaf1fb">${_esc(op)}</b><span style="margin-left:auto" class="chip ${pct >= 80 ? 'ok' : (pct >= 50 ? 'warn' : 'bad')}">${v.p}/${v.t} · ${pct}%${pct < 80 ? ' ⚠' : ''}</span></div>`;
       }).join('') + `</div>` : '';
-    // historial
-    $('sorpLista').innerHTML = `<div class="card"><div class="slab" style="margin-bottom:8px">Historial (30d)</div>` +
-      (rows.length ? rows.slice(0, 100).map(s => {
-        const chip = s.estado === 'PASO' ? `<span class="chip ok">✅ PASÓ${s.operador ? ' · ' + _esc(s.operador) : ''}</span>`
-          : s.estado === 'FALLO' ? `<span class="chip bad">❌ FALLÓ${s.operador ? ' · ' + _esc(s.operador) + ' copió el papel (' + (s.cantRegistrada ?? '—') + ')' : ''}</span>`
-          : s.estado === 'DISCREPANCIA' ? `<span class="chip warn">⚠️ discrepancia (${s.cantRegistrada ?? '—'})</span>`
-          : '<span class="chip warn">⏳ esperando recepción</span>';
-        const monto = (s.costo || 0) > 0 ? ` · S/${(Math.abs(s.delta) * s.costo).toFixed(2)}` : '';
-        return `<div class="prow" style="padding:9px 12px">
-          <div style="flex:1;min-width:160px"><b style="color:#eaf1fb">${_esc(s.codProducto)}</b> <span class="chip gold">${s.delta > 0 ? '+' : ''}${s.delta}</span>
-          <div class="muted" style="font-size:10px">${_esc(s.idGuia)} · ${_esc(s.idZona || '')} · ${new Date(s.ts).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · por ${_esc(s.admin || '—')} · papel ${s.cantOriginal} → real ${s.cantCorregida}${monto}</div></div>
-          ${chip}</div>`;
-      }).join('') : '<div class="muted" style="text-align:center;padding:14px">Sin sorpresas en 30 días.</div>') + `</div>`;
+    // historial AGRUPADO POR FECHA (seguimiento) con alertas visuales por estado
+    const _diaLbl = ts => {
+      const d = new Date(ts); const hoy = new Date();
+      const d0 = d.toDateString(), h0 = hoy.toDateString();
+      const ayer = new Date(hoy.getTime() - 864e5).toDateString();
+      if (d0 === h0) return 'Hoy';
+      if (d0 === ayer) return 'Ayer';
+      return d.toLocaleDateString('es-PE', { weekday: 'short', day: '2-digit', month: 'short' });
+    };
+    const grupos = {};
+    rows.forEach(x => { const k = _diaLbl(x.ts); (grupos[k] = grupos[k] || []).push(x); });
+    const fila = s => {
+      const esFallo = s.estado === 'FALLO';
+      const esDisc = s.estado === 'DISCREPANCIA';
+      const chip = s.estado === 'PASO' ? `<span class="chip ok">✅ PASÓ${s.operador ? ' · ' + _esc(s.operador) : ''}</span>`
+        : esFallo ? `<span class="chip bad">❌ FALLÓ${s.operador ? ' · ' + _esc(s.operador) + ' copió el papel (' + (s.cantRegistrada ?? '—') + ')' : ''}</span>`
+        : esDisc ? `<span class="chip warn">⚠️ discrepancia (${s.cantRegistrada ?? '—'})</span>`
+        : '<span class="chip warn">⏳ esperando recepción</span>';
+      const monto = (s.costo || 0) > 0 ? ` · S/${(Math.abs(s.delta) * s.costo).toFixed(2)}` : '';
+      const borde = esFallo ? 'border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.05)'
+        : esDisc ? 'border-color:rgba(245,184,73,.4)' : '';
+      return `<div class="prow" style="padding:9px 12px;${borde}">
+        <div style="flex:1;min-width:160px"><b style="color:#eaf1fb">${_esc(s.codProducto)}</b> <span class="chip gold">${s.delta > 0 ? '+' : ''}${s.delta}</span>
+        <div class="muted" style="font-size:10px">${_esc(s.idGuia)} · ${_esc(s.idZona || '')} · ${new Date(s.ts).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })} · admin ${_esc(s.admin || '—')} · papel ${s.cantOriginal} → real ${s.cantCorregida}${monto}</div></div>
+        ${chip}</div>`;
+    };
+    $('sorpLista').innerHTML = rows.length
+      ? Object.entries(grupos).map(([dia, lista]) => `<div class="card"><div class="slab" style="margin-bottom:8px">${dia} · ${lista.length}</div>${lista.map(fila).join('')}</div>`).join('')
+      : '<div class="card"><div class="muted" style="text-align:center;padding:14px">Sin sorpresas en 30 días.</div></div>';
   }
-  function _sorpMsg(html, esError) {
-    const el = $('sorpMsg'); if (!el) return;
-    el.style.display = '';
-    el.style.borderColor = esError ? 'rgba(239,68,68,.4)' : 'rgba(16,185,129,.4)';
-    el.innerHTML = html;
-  }
-  async function registrarSorpresaMOS() {
-    const guia = String($('sorpGuia')?.value || '').trim();
-    const cod = String($('sorpCod')?.value || '').trim();
-    if (!guia || !cod) { _sorpMsg('Falta la guía o el producto', true); return; }
-    if (!_sorpDelta) { _sorpMsg('Delta no puede ser 0', true); return; }
-    // clave admin (8 díg) — el server re-verifica (honra acceso_mos); pedirAuth cachea 5 min
-    const auth = await pedirAuth({ accion: 'SORPRESA', refDocumento: guia, contexto: `Sorpresa ${cod} Δ${_sorpDelta} en ${guia}` });
-    if (!auth) return;
-    _sorpMsg('Registrando…', false);
-    try {
-      const r = await API.rpcWH('registrar_sorpresa', {
-        id_sorpresa: 'SORP_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e4),
-        id_guia: guia, cod_producto: cod, delta: _sorpDelta,
-        clave_admin: auth.clave, admin: S.session?.nombre || '', app: 'MOS',
-        device: (localStorage.getItem('mos_device_id') || '').slice(0, 12)
-      });
-      if (r && r.ok) {
-        try { _finBeep?.('breakeven'); } catch (_) {}
-        _sorpMsg(`🎯 Registrada: <b>${_esc(cod)}</b> ${_sorpDelta > 0 ? '+' : ''}${_sorpDelta} · papel ${r.cant_original} → real <b>${r.cant_corregida}</b> (invisible al operador)`, false);
-        const c = $('sorpCod'); if (c) c.value = '';
-        _sorpCargar();
-      } else {
-        const e = (r && r.error) || 'error';
-        const msj = { PRODUCTO_NO_EN_GUIA: '⛔ Ese producto NO fue despachado en esta guía', SORPRESA_TARDE: '⏱ La zona ya cerró la recepción — tarde para sorprender', CLAVE_INVALIDA: '🔑 Clave admin rechazada', GUIA_INVALIDA: 'La guía no existe o no es de salida a zona', DELTA_EXCEDE: 'El delta excede lo que tiene la línea' }[e] || e;
-        try { _finBeep?.('error'); } catch (_) {}
-        if (navigator.vibrate) { try { navigator.vibrate([120, 60, 120]); } catch (_) {} }
-        _sorpMsg(msj + (r && r.detalle ? ' · ' + _esc(r.detalle) : ''), true);
-      }
-    } catch (e) { _sorpMsg('Error: ' + _esc(e.message || e), true); }
-  }
-
   function renderZona() {
     const cont = $('zonaLista');
     if (!cont) return;
@@ -44347,7 +44362,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     eliminarZona, _zonaActualizarPreview,
     toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
     cfgBuscar, cfgToggleSusp, _cfgDetToggle, catBuscar,
-    abrirSorpresasPanel, abrirMermasPanel, sorpDelta, registrarSorpresaMOS, mermasSetFiltro,
+    abrirSorpresasPanel, abrirMermasPanel, mermasSetFiltro, mermasSetAgrupar, mermasVerFoto,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     editarMetaChip, guardarMetaChip,
     abrirModalClaveGlobal, cgConsultar, cgRotar,
