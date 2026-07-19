@@ -163,3 +163,19 @@ real: sorpresa en guía de prueba → recepción simulada → veredicto + push.
   chips, ▶ Procesar TODO/PARTE/NADA + 🔄 transformación con cantidad destino editable,
   ☐/☑ batch eliminar, badge vencidas). Boot verificado sin errores (módulos vivos).
 - ✅ Batch = UNA guía (SQL 518 wh.mermas_eliminar_batch, WH 2.13.448): línea trazable por merma, stock exacto por generación, idempotente por local_id. CERO pendientes.
+
+## Revisión 100x senior (2026-07-19) — 30/30 ✅
+Suite `supabase/_test_100x_sorpresas_mermas.js` (transacción + ROLLBACK; stub del validador de
+clave SOLO dentro de la tx — S12 verifica que NO persiste). 3 BUGS REALES cazados y corregidos:
+1. **SQL 519**: la recepción (146) AGREGA líneas por código → la evaluación comparaba contra la
+   línea: guía con mismo producto en 2+ líneas daba DISCREPANCIA falsa al honesto. Ahora compara
+   TOTALES por código; Σ deltas estable en corridas múltiples (ts_resultado=now() por tx).
+2. **SQL 520**: la guía semanal GMERMA<lunes> puede existir CERRADA → filas viejas le agregaban
+   líneas (unidades sin descontar + documento mutado). Ahora nueva ABIERTA con sufijo.
+   ⚠ Bug LATENTE idéntico en 66/resolver_merma legacy (la UI nueva ya no lo usa).
+3. **api.js MOS**: tribResumenMes/IGV* corrían en el prefetch ANTES del mint → fallback GAS.
+   → _MOS_DIRECT_REQUIRED (null lanza; catch existente). CERO GAS re-verificado en todos los flujos.
+Cobertura: clave real/stub, 7 guardias, dedups, stock por generación (ABIERTA/CERRADA/v2/vieja),
+trigger PASÓ/FALLÓ/DISCREPANCIA + multilínea + multi-sorpresa, parcial iterativo, transformación
+default, batch una-guía (mixto + omitidas), alcances wh-15d/mos-total, yaResuelta.
+WH 2.13.449: labels/icono 🔄 para guías TRANSFORMACION.
