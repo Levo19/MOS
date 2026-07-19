@@ -148,5 +148,18 @@ evaluación del día (join wh.sorpresas por operador/fecha — NO toca liquidaci
 **F4 · Verificación integral:** browsercheck + screenshots vs mockup por fase; prueba E2E
 real: sorpresa en guía de prueba → recepción simulada → veredicto + push.
 
-## Estado
-- 2026-07-18: decisiones cerradas (§3) · mockup v2 (artifact d4cc280d) · F0 APLICADA en prod.
+## Estado — TODO IMPLEMENTADO 2026-07-18
+- F0 ✅ SQL 516 (sorpresas + trigger evaluación + push) — prod.
+- F1 ✅ SQL 517 (mermas v2: culpa, SLA 3d corridos, parcial iterativo, transformación con
+  guía automática CERRADA, batch, stock_descontado para coexistir con filas viejas,
+  mermas_lista wh/mos, cron 8am — detectó 3 vencidas reales) — prod, smoke E2E ROLLBACK.
+- F3 ✅ MOS 2.43.576: Zona→ALMACÉN alterna Guías ↔ 🎯(solo admins)+♻️(badge=3 real);
+  panel Mermas (KPIs S/, 6 filtros, SLA chips, culpa, fotos, guías vinculadas) y panel
+  Sorpresas (registro cámara+clave server-side+guardias, score por operador) — screenshots
+  sm1/sm2/sm3 vs mockup.
+- F2 ✅ WH 2.13.447: 🎯 en CARD de guías SALIDA_ZONA (solo admin/ascendido; hoja con líneas,
+  guardia código-ajeno con vibración, clave recordada en memoria); ♻️ "a mermas" por línea
+  en INGRESO_DEVOLUCION_ZONA cerrada (culpa+foto obligatoria+stock-out); cesta v2 (culpa/SLA
+  chips, ▶ Procesar TODO/PARTE/NADA + 🔄 transformación con cantidad destino editable,
+  ☐/☑ batch eliminar, badge vencidas). Boot verificado sin errores (módulos vivos).
+- Pendiente fino: batch eliminar genera N guías (una por merma) — refinamiento futuro: una sola.
