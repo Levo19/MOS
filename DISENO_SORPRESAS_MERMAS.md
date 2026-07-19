@@ -192,3 +192,13 @@ WH 2.13.449: labels/icono 🔄 para guías TRANSFORMACION.
 4. Panel Mermas MOS: thumbnails con lightbox, vencidas borde rojo, agrupar 📅Fecha/🧭Estado.
 5. Panel Sorpresas MOS: SOLO SEGUIMIENTO (registro solo en WH) — historial por fecha con
    alertas (FALLÓ rojo). MOS 2.43.578 · WH 2.13.450.
+
+## Ronda 3 de feedback (2026-07-19) — MOS 2.43.579 · WH 2.13.451 · SQL 522
+1. Botones NO se esconden: deshabilitados NOTORIOS (gris punteado + 🚫 + toast explicando) —
+   ♻️ a mermas habilitado solo en devoluciones ABIERTAS de HOY; 🎯 solo en despachos de HOY.
+2. Puerta B (hallazgo en andamio) VIVE en: WH → nav Mermas (cesta) → botón rojo "+ Registrar
+   merma" (además FAB 🗑+ en esa vista y botón en el KPI mermas del Dashboard). Motor v2.
+3. SQL 522: registrar_sorpresa exige guía DE HOY (server) + modal muestra NOMBRE del producto
+   (enriquecido del catálogo; antes salía el código dos veces). Suite 33/33 ✅.
+4/5. MOS: orden DESCENDENTE estricto por fecha en mermas y sorpresas (última fecha primero,
+   también dentro de grupos por estado); guía referenciada visible por fila.
