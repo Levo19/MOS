@@ -3720,15 +3720,15 @@ const API = (() => {
     // me.ops_meta / wh.ops_meta. app.js lo usa para refrescar SOLO la pantalla activa (debounce +
     // money-safe). ADITIVO: los pollers (Finanzas/Cajas/Almacén/RIZ) siguen de red de seguridad.
     onOpsRealtime:              (cb) => { _RT.onOps = (typeof cb === 'function') ? cb : null; },
-    // [PN 100% Supabase] intenta leer los PN de WH directo (mos.wh_productos_nuevos, cross-app). La RPC
-    // auto-gatea con WH_REGISTRAR_PN_DIRECTO: si está OFF devuelve PN_DIRECTO_OFF → caemos a GAS (la Hoja
-    // sigue siendo la verdad mientras WH no escriba directo). Mismo shape (array) que el GAS → el consumidor no cambia.
+    // [PN 100% Supabase · CERO-GAS 2026-07-18] WH_REGISTRAR_PN_DIRECTO=1 en prod: WH emite PN
+    // directo a wh.producto_nuevo (217) y MOS los lee de mos.wh_productos_nuevos (218). SIN
+    // fallback GAS: transitorio (token minteándose) → [] y el próximo poll del badge lo trae.
     getProductosNuevosWH: async (p = {}) => {
       try {
         const r = await _sbRpcMOS('wh_productos_nuevos', { p }, 'mos');
         if (r && r.ok) return r.data || [];
-      } catch (_) { /* → GAS */ }
-      return _fetch('GET', { action: 'getProductosNuevosWH', ...p });
+      } catch (_) { /* transitorio → [] */ }
+      return [];
     },
     // [NIVEL 1 corte-GAS] lanzar producto nuevo 100% Supabase (mos.lanzar_producto_nuevo, SQL 370, cross-app WH
     // vía elevación de claim). Contrato _fetch: lanza si !ok, devuelve r.data.
