@@ -1,0 +1,11 @@
+{
+  "url": "http://127.0.0.1:8203/index.html",
+  "waitMs": 16000,
+  "viewport": { "width": 390, "height": 900 },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906474",
+    "MOS_SESSION": "{\"idPersonal\":\"TEST-CLAUDE\",\"nombre\":\"PRUEBA CLAUDE\",\"rol\":\"MASTER\",\"idSesion\":\"testclaude1\"}"
+  },
+  "evalAfter": "(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));const b=[...document.querySelectorAll('button,a')].find(el=>/Entrar a MOS/i.test(el.textContent||''));if(b)b.click();await w(2600);try{MOS.nav('config')}catch(e){}await w(2200);try{MOS.setCfgTab('infra')}catch(e){}await w(4500);const c=document.getElementById('infraContenedor');const cards=[...c.querySelectorAll('.card')];const meZona=cards.find(cd=>/MosExpress/.test(cd.textContent||'')&&!/Premium/.test(cd.textContent||''));const almZona=cards.find(cd=>/Almac/.test(cd.textContent||'')&&!/Premium/.test(cd.textContent||''));const out={meFound:!!meZona,almFound:!!almZona};const rxSeries=/SERIES DOCUMENTALES/;if(almZona)out.almSeries=rxSeries.test(almZona.textContent||'');if(meZona){out.meSeries=rxSeries.test(meZona.textContent||'');meZona.scrollIntoView({block:'start'});}out.ov=document.documentElement.scrollWidth>innerWidth+1;await w(500);return out;})()",
+  "screenshot": "f2_verify.png"
+}

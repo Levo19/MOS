@@ -14433,7 +14433,10 @@
       <div class="tab-scroll-wrap pb-1 mb-2">
         <div class="tab-bar w-max">
           <button class="tab-btn active" id="cfgTabInfra"     onclick="MOS.setCfgTab('infra')">🏗️ Infraestructura</button>
-          <button class="tab-btn" id="cfgTabPersonal"          onclick="MOS.setCfgTab('personal')">👥 Personal</button>
+          <!-- [Fase2] Pestaña "Personal" fusionada dentro de Infraestructura: los usuarios viven
+               en cada zona (👥 desplegable + "+ usuario"), metas en chips de política, horarios en
+               chips app+horario. El panel #cfgPanelPersonal queda oculto (renderPersonal aún lo usa
+               en background para guardarMetaChip); sin botón de acceso directo. -->
           <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
           <button class="tab-btn" id="cfgTabNotifs"            onclick="MOS.setCfgTab('notifs')">🔔 Notificaciones</button>
           <button class="tab-btn" id="cfgTabBancarios"         onclick="MOS.setCfgTab('bancarios')">🏦 Bancarios</button>
@@ -14450,8 +14453,21 @@
           Jerarquía: <strong class="text-slate-300">Zonas</strong> → <strong class="text-slate-300">Estaciones</strong> → <strong class="text-slate-300">Impresoras</strong>. Usa los botones contextuales dentro de cada card para agregar.
         </p>
 
+        <!-- [Fase2] Herramientas agrupadas — antes eran 7 botones sueltos en 2 filas.
+             <details> nativo (sin JS): declutter del top de Infraestructura. -->
+        <style>
+          details.cfg-tools > summary { list-style:none; cursor:pointer; user-select:none; }
+          details.cfg-tools > summary::-webkit-details-marker { display:none; }
+          details.cfg-tools > summary::before { content:'\25B8'; display:inline-block; margin-right:.4rem; transition:transform .2s; color:#64748b; }
+          details.cfg-tools[open] > summary::before { transform:rotate(90deg); }
+        </style>
+        <details class="cfg-tools mb-3">
+          <summary class="text-xs font-bold px-3 py-2 rounded-lg inline-flex items-center gap-1.5"
+                   style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid #334155;color:#cbd5e1;">
+            🛠 Herramientas y diagnóstico
+          </summary>
+          <div class="flex items-center gap-2 mt-2 flex-wrap">
         <!-- [v2.43.127] Sistema de membretes (calibración + colas) -->
-        <div class="flex items-center gap-2 mb-3 flex-wrap">
           <button onclick="window.MembreteSystem && MembreteSystem.abrirCalibrador()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
                   style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(251,191,36,.45);color:#fbbf24"
                   title="Calibrar impresora de adhesivos (drift compensation)">
@@ -14478,10 +14494,7 @@
                   title="Todos los lotes (pendientes + historial). Filtra por tipo con los tabs dentro.">
             📋 Lotes de impresión
           </button>
-        </div>
-
-        <!-- [v2.41.76] Acceso a diagnóstico del cron de cierre nocturno -->
-        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <!-- [v2.41.76] Acceso a diagnóstico del cron de cierre nocturno -->
           <button onclick="MOS.abrirCronStatus()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
                   style="background:linear-gradient(135deg,#1e1b4b,#0d0d2e);border:1px solid rgba(168,85,247,.4);color:#c4b5fd"
                   title="Ver estado del trigger 23h + últimas corridas">
@@ -14499,7 +14512,8 @@
                   title="Roadmap estratégico InversionMos · plan de mejoras">
             🗺 <span class="ml-1">Proyección</span>
           </button>
-        </div>
+          </div>
+        </details>
 
         <!-- Vista jerárquica -->
         <div id="infraContenedor" class="space-y-4">
@@ -18105,8 +18119,12 @@
 <!-- Modal Categoría -->
 <div class="modal-backdrop hidden" id="modalCategoria">
   <div class="modal-box p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 id="modalCategoriaTitle" class="font-bold text-lg text-white">Nueva Categoría</h2>
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:linear-gradient(135deg,#7c2d12,#f59e0b);">🏷️</div>
+      <div class="min-w-0 flex-1">
+        <h2 id="modalCategoriaTitle" class="font-bold text-lg text-white truncate">Nueva Categoría</h2>
+        <p class="text-[11px] text-slate-500 mt-0.5">Agrupa productos · define margen o precio tope</p>
+      </div>
       <button onclick="MOS.closeModal('modalCategoria')" class="modal-close-x">×</button>
     </div>
     <input type="hidden" id="catId">
@@ -19310,7 +19328,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.555';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.567';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19375,7 +19393,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.559"></script>
+<script src="js/app.js?v=2.43.567"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

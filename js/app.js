@@ -19592,6 +19592,11 @@ const MOS = (() => {
   function renderInfra() {
     const cont = $('infraContenedor');
     if (!cont) return;
+    // [Fase2] Cargar horarios una sola vez para los chips app+horario por zona.
+    // _cargarHorariosApps cachea 5min → tras poblar, la condición es falsa y no re-renderiza en loop.
+    if (!S._horariosAppsCache) {
+      _cargarHorariosApps(false).then(() => { if (S.cfgTab === 'infra') renderInfra(); }).catch(() => {});
+    }
     const zonas = cfgData.zonas || [];
     const estaciones = cfgData.estaciones || [];
     const impresoras = cfgData.impresoras || [];
@@ -19637,11 +19642,6 @@ const MOS = (() => {
             <div class="text-[9px] uppercase text-slate-500 tracking-wider mt-0.5">estaciones</div>
           </div>
         </div>
-        <button onclick="MOS.infraToggleHeatmap()"
-                class="ml-auto text-xs px-3 py-1.5 rounded-lg transition-all"
-                style="background:${_infraHeatmapActivo ? 'linear-gradient(90deg,#dc2626,#f59e0b)' : '#1e293b'};color:${_infraHeatmapActivo ? '#fff' : '#94a3b8'};border:1px solid ${_infraHeatmapActivo ? '#dc2626' : '#334155'};font-weight:700;">
-          🔥 Heatmap ${_infraHeatmapActivo ? 'ON' : 'OFF'}
-        </button>
       </div>
     </div>`;
 
@@ -19708,6 +19708,9 @@ const MOS = (() => {
           </div>
         </div>
 
+        <!-- [Fase2] App + horario de la zona -->
+        ${_zonaAppChips(z)}
+
         <!-- Series documentales (chips) -->
         ${seriesHTML}
 
@@ -19725,6 +19728,9 @@ const MOS = (() => {
                 class="mt-3 w-full text-xs text-slate-400 hover:text-white py-2 rounded-lg border border-dashed border-slate-700 hover:border-emerald-700 hover:bg-emerald-900/20 transition-colors">
           + estación a esta zona
         </button>
+
+        <!-- [Fase2] Usuarios de la zona (fusión con Personal) -->
+        ${_renderZonaUsuarios(z)}
       </div>`;
     }).join('');
 
@@ -19769,27 +19775,52 @@ const MOS = (() => {
         </div>
       </div>` : '';
 
-    // Sección de dispositivos sin estación asignada todavía
-    const moviles = _dispMoviles();
-    const movHTML = moviles.length ? `
-      <div class="card p-4 mt-4" style="background:linear-gradient(135deg,#0d1526 0%,#0a1424 100%);border:1px solid #334155;">
-        <div class="flex items-center gap-2 mb-3">
-          <span class="text-xl">📱</span>
+    // [Fase2] Sección "Sin estación asignada" ELIMINADA (pedido del usuario). Los dispositivos
+    // aprobados que aún no eligieron estación aparecen en su zona/estación al hacer login.
+
+    // [Fase1] Archivados: equipos auto-cancelados por +7 días sin conectar.
+    // Colapsable (arranca cerrado). Reversibles: reconectar los reabre a PENDIENTE (SQL 100),
+    // o el admin los reactiva a mano (mismo path de aprobación, cero-GAS igual que el resto).
+    const archivados = _dispArchivados();
+    const archHTML = archivados.length ? `
+      <div class="card p-4 mt-4" style="background:#0a0f1c;border:1px solid #1e293b;">
+        <button onclick="MOS.toggleArchivados()"
+                class="w-full flex items-center gap-2 text-left"
+                style="background:none;border:none;cursor:pointer;">
+          <span class="text-xl" style="filter:grayscale(0.6);opacity:.7;">🗄️</span>
           <div class="flex-1">
-            <h3 class="font-bold text-sm text-white">Sin estación asignada</h3>
-            <p class="text-[10px] text-slate-500">Dispositivos aprobados que aún no han hecho login en ninguna estación. Aparecerán en la zona/estación que escojan al ingresar.</p>
+            <h3 class="font-bold text-sm" style="color:#94a3b8;">Archivados</h3>
+            <p class="text-[10px] text-slate-600">Equipos sin conectar +7 días. No es baneo: al reconectar vuelven a pedir acceso, o reactívalos aquí.</p>
           </div>
-          <span class="badge badge-gray text-xs">${moviles.length}</span>
-        </div>
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          ${moviles.map(d => _renderDispositivoChip(d)).join('')}
+          <span class="badge badge-gray text-xs">${archivados.length}</span>
+          <span class="text-slate-500 text-xs transition-transform" style="transform:rotate(${_archExpandido ? 90 : 0}deg);">▸</span>
+        </button>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3" style="display:${_archExpandido ? 'grid' : 'none'};">
+          ${archivados.map(d => {
+            const ico = _dispIcono(d.Nombre_Equipo);
+            const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+            const act = _dispActividad(d.Ultima_Conexion);
+            return `<div class="flex items-center gap-2.5 p-2.5 rounded-lg" style="background:#0d1424;border:1px solid #1e293b;opacity:.85;">
+              <span class="text-2xl shrink-0" style="filter:grayscale(0.5);">${ico}</span>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="font-semibold text-xs truncate" style="color:#cbd5e1;">${d.Nombre_Equipo || 'Dispositivo'}</span>
+                  ${_appBadge(d.App)}
+                </div>
+                <div class="text-[10px] mt-0.5" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div>
+              </div>
+              <button onclick="MOS.aprobarDispositivo('${idAttr}')"
+                      class="btn-ghost text-xs px-2.5 py-1.5 shrink-0"
+                      style="color:#34d399;border:1px solid #065f46;" title="Reactivar (volver a ACTIVO)">↺ Reactivar</button>
+            </div>`;
+          }).join('')}
         </div>
       </div>` : '';
 
     // Zona Premium · admins+master con app=MOS (sin estación/impresora asignada)
     const premiumHTML = _renderInfraPremium();
 
-    cont.innerHTML = summaryHTML + premiumHTML + pendHTML + zonasHTML + movHTML + cardNuevaZona;
+    cont.innerHTML = summaryHTML + premiumHTML + pendHTML + zonasHTML + archHTML + cardNuevaZona;
 
     // Guardar mapa de estaciones para detectar movimientos en próximo render
     _dispActualizarMapa();
@@ -19803,6 +19834,9 @@ const MOS = (() => {
   ];
 
   function _renderInfraSeries(zona, estZona) {
+    // [Fase2] Almacén NO factura → sin series documentales (coherente con Fase 0 / SQL 513).
+    // Evita ofrecer "+ NOTA_VENTA/BOLETA/FACTURA" en una zona que no emite comprobantes.
+    if (_esZonaAlmacen(zona)) return '';
     const series = (cfgData.series || []).filter(s => s.idZona === zona.idZona);
     const chips = _SERIE_TIPOS.map(t => {
       const seriesTipo = series.filter(s => s.tipoDocumento === t.tipo);
@@ -19950,18 +19984,13 @@ const MOS = (() => {
         </div>`
       : '';
 
-    // B/F: Decoración según dispositivos online + modo heatmap
+    // B/F: Decoración según dispositivos online
     const onlineEnEst = _dispOnlineEnEstacion(e.idEstacion);
     const fantasmasAqui = _dispFantasmasDeEstacion(e.idEstacion);
     let cardBg = '#0d1526';
     let cardBorder = activa ? '#1e293b' : '#475569';
     let cardExtra = '';
-    if (_infraHeatmapActivo && activa) {
-      const hm = _heatmapColor(_dispEnEstacion(e.idEstacion).length);
-      cardBg = hm.bg !== 'transparent' ? hm.bg : cardBg;
-      cardBorder = hm.border;
-      cardExtra = `box-shadow: inset 0 0 20px ${hm.bg};`;
-    } else if (activa && onlineEnEst > 0) {
+    if (activa && onlineEnEst > 0) {
       // B: borde verde sutil cuando hay dispositivos online
       cardBorder = 'rgba(16,185,129,0.5)';
       cardExtra = 'box-shadow: 0 0 12px rgba(16,185,129,0.18);';
@@ -20063,12 +20092,33 @@ const MOS = (() => {
       </div>`;
     }).join('');
 
+    // [Fase2] Admins/master como USUARIOS de la zona Premium (app MOS). Usan el panel web
+    // (no tablets) → _renderPersonaCard oculta espía y muestra 🔑 clave global. Colapsable.
+    const adminsMOS = (cfgData.personalMOS || []).filter(p => {
+      const r = String(p.rol || '').toUpperCase();
+      return r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR';
+    });
+    const admExp = !!_zonaUsrExpand['__PREMIUM__'];
+    const adminsBlock = adminsMOS.length ? `<div class="mt-3 pt-3" style="border-top:1px dashed rgba(251,191,36,0.25);">
+      <div class="flex items-center gap-2">
+        <button onclick="MOS.toggleZonaUsuarios('__PREMIUM__')" class="flex-1 flex items-center gap-2 text-left" style="background:none;border:none;cursor:pointer;">
+          <span class="text-base">👥</span>
+          <span class="text-[11px] font-bold text-amber-200 uppercase tracking-wider">Administradores</span>
+          <span class="text-[10px] text-amber-300/60">· acceso al panel MOS</span>
+          <span class="badge badge-gray text-[10px]">${adminsMOS.length}</span>
+          <span class="text-amber-400/60 text-xs transition-transform" style="transform:rotate(${admExp ? 90 : 0}deg);">▸</span>
+        </button>
+        <button onclick="MOS.abrirModalPersonal(null,'MOS')" class="text-[11px] px-2.5 py-1 rounded-lg shrink-0 hover:brightness-125 transition-all" style="background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);color:#fcd34d;font-weight:700;" title="Registrar admin / master">+ admin</button>
+      </div>
+      <div class="space-y-2 mt-2" style="display:${admExp ? 'block' : 'none'};">${adminsMOS.map(p => _renderPersonaCard(p, 'MOS')).join('')}</div>
+    </div>` : '';
+
     return `<div class="card p-4 mb-4" style="background:linear-gradient(135deg,#1a1410 0%,#0d1526 50%,#1a1410 100%);border:2px solid rgba(251,191,36,0.45);box-shadow:0 0 24px rgba(251,191,36,0.12);">
       <div class="flex items-center gap-2 mb-3 pb-3" style="border-bottom:1px dashed rgba(251,191,36,0.25)">
         <span class="text-2xl">🏆</span>
         <div class="flex-1 min-w-0">
           <h3 class="font-black text-base text-amber-200">Zona Premium · Admin & Master</h3>
-          <p class="text-[10px] text-amber-300/70">Dispositivos del panel MOS · sin estación ni impresora asignada</p>
+          <p class="text-[10px] text-amber-300/70">App MOS · panel web · sin estación ni impresora asignada</p>
         </div>
         <div class="flex items-center gap-2 text-[11px]">
           <span class="px-2 py-1 rounded-full font-bold" style="background:rgba(16,185,129,0.18);color:#6ee7b7;">${onlineNow} online</span>
@@ -20077,7 +20127,22 @@ const MOS = (() => {
           ${inactivos.length ? `<span class="px-2 py-1 rounded-full font-bold" style="background:rgba(148,163,184,0.15);color:#cbd5e1;">${inactivos.length} off</span>` : ''}
         </div>
       </div>
+      <div class="flex flex-wrap items-center gap-1.5 mb-3">
+        <button onclick="MOS.abrirModalHorarioApp('MOS')"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors"
+          style="background:rgba(99,102,241,0.14);border:1px solid rgba(99,102,241,0.55);color:#e2e8f0"
+          title="App del panel · toca para editar su horario">
+          <span>👑</span><span class="font-bold" style="color:#a5b4fc">MOS</span></button>
+        <button onclick="MOS.abrirModalHorarioApp('MOS')"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors"
+          style="background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.35);color:#fcd34d"
+          title="Horario del panel MOS · toca para editar">
+          <span>🕐</span>${_horarioHoyTxt('MOS')
+            ? `<span class="font-semibold">${_horarioHoyTxt('MOS')}</span>`
+            : `<span class="opacity-70">Horario</span>`}</button>
+      </div>
       <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">${cardsHTML}</div>
+      ${adminsBlock}
     </div>`;
   }
 
@@ -21692,6 +21757,48 @@ const MOS = (() => {
   // Chips bonitos de política dentro de la card de cada zona en Infra.
   // Para zonas POS: meta diaria, comisión %, meta auditorías
   // Para almacén: tarifa envasado, meta guías, meta auditorías (de CONFIG_MOS)
+  // [Fase2] App + horario por zona. La app se deriva: almacén→warehouseMos, resto→mosExpress.
+  // (La zona Premium/MOS se renderiza aparte en _renderInfraPremium con su propia app MOS.)
+  const _APP_META_ZONA = {
+    mosExpress:   { icon: '🛒', label: 'MosExpress', color: '#f59e0b' },
+    warehouseMos: { icon: '🏭', label: 'Almacén',    color: '#ea580c' },
+    MOS:          { icon: '👑', label: 'MOS',         color: '#6366f1' }
+  };
+  function _zonaAppKey(z) { return _esZonaAlmacen(z) ? 'warehouseMos' : 'mosExpress'; }
+  // Horario de HOY (TZ Perú) resumido para el chip, o null si no hay cache/datos.
+  function _horarioHoyTxt(app) {
+    const conf = ((S && S._horariosAppsCache) || {})[app];
+    if (!conf || !conf.horario) return null;
+    let k = null;
+    try {
+      const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Lima', weekday: 'short' })
+        .format(new Date()).toLowerCase().slice(0, 3);
+      k = { mon: 'lun', tue: 'mar', wed: 'mie', thu: 'jue', fri: 'vie', sat: 'sab', sun: 'dom' }[wd];
+    } catch (_) {}
+    const c = (k && conf.horario[k]) || {};
+    if (c.activo === false) return 'cerrado hoy';
+    if (!c.apertura || !c.cierre) return null;
+    return String(c.apertura).replace(':00', 'h') + '→' + String(c.cierre).replace(':00', 'h');
+  }
+  function _zonaAppChips(z) {
+    const app = _zonaAppKey(z);
+    const m = _APP_META_ZONA[app] || _APP_META_ZONA.mosExpress;
+    const hoy = _horarioHoyTxt(app);
+    const appChip = `<button onclick="MOS.abrirModalHorarioApp('${app}')"
+      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors"
+      style="background:${m.color}14;border:1px solid ${m.color}55;color:#e2e8f0"
+      title="App de esta zona · toca para editar su horario">
+      <span>${m.icon}</span><span class="font-bold" style="color:${m.color}">${m.label}</span></button>`;
+    const horChip = `<button onclick="MOS.abrirModalHorarioApp('${app}')"
+      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors"
+      style="background:rgba(99,102,241,0.05);border:1px solid #33415588;color:#cbd5e1"
+      title="Horario de la app · toca para editar">
+      <span>🕐</span>${hoy
+        ? `<span class="text-slate-300 font-semibold">${hoy}</span>`
+        : `<span class="text-slate-500">Horario</span>`}</button>`;
+    return `<div class="flex flex-wrap items-center gap-1.5 mb-3 px-1">${appChip}${horChip}</div>`;
+  }
+
   function _renderChipsPoliticaZona(z) {
     const esAlmacen = _esZonaAlmacen(z);
     let chips = [];
@@ -21702,12 +21809,11 @@ const MOS = (() => {
       const tarifa = cfg.evalTarifaEnvasadoPorUnidad != null ? parseFloat(cfg.evalTarifaEnvasadoPorUnidad) : null;
       const metaGuias = parseFloat(cfg.evalMetaAlmacenero) || 0;
       const metaAud   = parseFloat(cfg.evalMetaAuditorias) || 0;
-      if (tarifa != null && !isNaN(tarifa)) {
-        chips.push(_chipPolitica('💵', 'Envasado', 'S/ ' + tarifa.toFixed(2), '/und', '#10b981'));
-      }
-      if (metaGuias > 0) chips.push(_chipPolitica('📦', 'Meta guías', String(metaGuias), '/día', '#ea580c'));
-      if (metaAud > 0)   chips.push(_chipPolitica('📋', 'Auditorías', String(metaAud), '/día', '#fbbf24'));
-      if (!chips.length) return _chipsAvisoVacio('almacen');
+      // [Fase2] Chips EDITABLES (antes solo lectura) — el Almacén se configuraba en la
+      // pestaña Personal; ahora se edita aquí (click → inline). guardarMetaChip → CONFIG_MOS.
+      chips.push(_renderMetaChip('Meta guías', 'evalMetaAlmacenero', metaGuias > 0 ? String(metaGuias) : '', '/día', '#ea580c'));
+      chips.push(_renderMetaChip('Tarifa envasado', 'evalTarifaEnvasadoPorUnidad', (tarifa != null && !isNaN(tarifa)) ? tarifa.toFixed(2) : '', 'S/und', '#10b981'));
+      chips.push(_renderMetaChip('Auditorías', 'evalMetaAuditorias', metaAud > 0 ? String(metaAud) : '', '/día', '#fbbf24'));
     } else {
       // Política POS desde politicaJSON de la zona
       let pol = {};
@@ -21952,6 +22058,11 @@ const MOS = (() => {
     }
     // Actualizar badges
     _actualizarBadgesPersonal();
+
+    // [Fase2] La pestaña Personal se fusionó en Infraestructura (usuarios por zona). Cualquier
+    // mutación de persona (alta/edición/toggle) llama renderPersonal aunque el panel esté oculto;
+    // si estamos viendo Infra, refrescamos esa vista para que el cambio aparezca en las zonas 👥.
+    if (S.cfgTab === 'infra' && $('infraContenedor')) renderInfra();
   }
 
   // Editar meta inline (chip → input → guardar al blur/enter)
@@ -22360,6 +22471,8 @@ const MOS = (() => {
     if (!cfgData.config) cfgData.config = {};
     cfgData.config[configKey] = v;
     renderPersonal();
+    // [Fase2] Las metas de Almacén también se editan desde Infraestructura → refrescar esa vista.
+    if (S.cfgTab === 'infra') renderInfra();
     try {
       await API.post('setConfig', { clave: configKey, valor: v });
       toast(`Meta actualizada · ${configKey} = ${v}`, 'ok');
@@ -22371,18 +22484,18 @@ const MOS = (() => {
   // Pinta el card "🛒 Vendedores — MosExpress" en Config → Personal.
   // Lee del cache localStorage de liquidaciones pendientes (mismo source
   // que la pantalla de Liquidaciones, ya prefetcheado al login).
-  function _cfgRenderMeCajeros() {
-    const cont = $('listMeCajeros');
-    if (!cont) return;
+  // [Fase2] Normalizador de nombre compartido (cajeros ME viven por nombre, no por id).
+  function _normNombre(s) { return String(s || '').trim().toLowerCase(); }
+
+  // [Fase2] Datos de cajeros ME agrupados por zona — EXTRAÍDO de _cfgRenderMeCajeros para
+  // reutilizar en la fusión usuarios-por-zona (Infraestructura) SIN duplicar la lógica.
+  // La zona se infiere del dispositivo donde el cajero tiene Ultima_Sesion (Ultima_Zona).
+  function _cfgCajerosData() {
     let pendientes = null;
     try {
       const raw = localStorage.getItem('mos_liq_pendientes');
-      if (raw) {
-        const p = JSON.parse(raw);
-        pendientes = p && p.data;
-      }
+      if (raw) { const p = JSON.parse(raw); pendientes = p && p.data; }
     } catch {}
-
     let cajeros = (pendientes && Array.isArray(pendientes.personal))
       ? pendientes.personal.filter(p => {
           const app = String(p.appOrigen || '').toLowerCase();
@@ -22390,60 +22503,37 @@ const MOS = (() => {
         })
       : [];
     // Agregar bloqueados que no aparecen en jornadas de la semana
-    const _normN = s => String(s || '').trim().toLowerCase();
-    const yaListados = new Set(cajeros.map(c => _normN(c.nombre)));
+    const yaListados = new Set(cajeros.map(c => _normNombre(c.nombre)));
     (cfgData.bloqueosME || []).forEach(b => {
-      if (!yaListados.has(_normN(b.nombre))) {
-        cajeros.push({
-          nombre: b.nombre,
-          rol: 'CAJERO',
-          appOrigen: 'mosExpress',
-          montoTotal: 0, diasPendientes: 0, diasAuditados: 0,
-          esVirtual: false
-        });
+      if (!yaListados.has(_normNombre(b.nombre))) {
+        cajeros.push({ nombre: b.nombre, rol: 'CAJERO', appOrigen: 'mosExpress',
+          montoTotal: 0, diasPendientes: 0, diasAuditados: 0, esVirtual: false });
       }
     });
-
-    const cnt = $('cfgMeCajerosCount');
-    if (cnt) {
-      cnt.textContent = cajeros.length + (cajeros.length === 1 ? ' activo' : ' activos');
-      cnt.className = 'badge ' + (cajeros.length ? 'badge-green' : 'badge-gray') + ' text-xs';
-    }
-    if (!cajeros.length) {
-      cont.innerHTML = '<p class="text-xs text-slate-500 italic text-center py-3">Sin cajeros activos esta semana.</p>';
-      return;
-    }
-    // Map por nombre normalizado: el bloqueo vive en BLOQUEOS_USUARIO (no toca PERSONAL_MASTER)
-    const _norm = s => String(s || '').trim().toLowerCase();
     const bloqMap = {};
-    (cfgData.bloqueosME || []).forEach(b => { bloqMap[_norm(b.nombre)] = b; });
-
-    // Cruzar con DISPOSITIVOS para detectar última conexión + zona principal
-    // del cajero (via Ultima_Zona del dispositivo donde tiene Ultima_Sesion).
+    (cfgData.bloqueosME || []).forEach(b => { bloqMap[_normNombre(b.nombre)] = b; });
+    // Cruzar con DISPOSITIVOS: última conexión + zona principal del cajero.
     const dispPorCajero = {};
     (cfgData.dispositivos || []).forEach(d => {
       if (String(d.Estado).toUpperCase() !== 'ACTIVO') return;
-      const sesNorm = _norm(d.Ultima_Sesion);
+      const sesNorm = _normNombre(d.Ultima_Sesion);
       if (!sesNorm) return;
       const t = new Date(d.Ultima_Conexion || 0).getTime() || 0;
       const prev = dispPorCajero[sesNorm];
-      if (!prev || (new Date(prev.Ultima_Conexion || 0).getTime() || 0) < t) {
-        dispPorCajero[sesNorm] = d;
-      }
+      if (!prev || (new Date(prev.Ultima_Conexion || 0).getTime() || 0) < t) dispPorCajero[sesNorm] = d;
     });
-
-    // Agrupar cajeros por zona inferida (Ultima_Zona del dispositivo)
-    // Si no tiene dispositivo / Ultima_Zona → grupo "Sin zona"
+    // Agrupar por zona inferida; sin dispositivo/zona → '__SIN_ZONA__'.
     const grupos = {};
     cajeros.forEach(c => {
-      const disp = dispPorCajero[_norm(c.nombre)];
+      const disp = dispPorCajero[_normNombre(c.nombre)];
       const zonaId = String(disp?.Ultima_Zona || '').trim() || '__SIN_ZONA__';
-      if (!grupos[zonaId]) grupos[zonaId] = [];
-      grupos[zonaId].push(c);
+      (grupos[zonaId] = grupos[zonaId] || []).push(c);
     });
+    return { cajeros, grupos, dispPorCajero, bloqMap };
+  }
 
-    // Función render de una persona (común a todos los grupos)
-    const renderPersona = (c) => {
+  // [Fase2] Card de un cajero ME — EXTRAÍDA del closure renderPersona (reutilizable).
+  function _renderCajeroCard(c, dispPorCajero, bloqMap) {
       const initials = String(c.nombre || '?').split(/\s+/).map(s => s[0] || '').join('').slice(0, 2).toUpperCase();
       const monto = parseFloat(c.montoTotal) || 0;
       const dias = parseInt(c.diasPendientes) || 0;
@@ -22451,11 +22541,11 @@ const MOS = (() => {
       const virt = c.esVirtual
         ? '<span class="badge badge-yellow text-[9px] ml-1" title="Detectado de ventas (no en PERSONAL_MASTER)">virtual</span>'
         : '';
-      const reg = bloqMap[_norm(c.nombre)];
+      const reg = bloqMap[_normNombre(c.nombre)];
       const bloqueado = !!(reg && reg.fechaBloqueo && !reg.unlockVigente);
       const safeNombre = String(c.nombre || '').replace(/'/g, '&#39;');
       // Indicador de actividad cruzando con DISPOSITIVOS
-      const dispActivo = dispPorCajero[_norm(c.nombre)];
+      const dispActivo = dispPorCajero[_normNombre(c.nombre)];
       const act = dispActivo ? _personaActividad(dispActivo.Ultima_Conexion) : { color: '#64748b', label: 'sin sesión', dot: '⚫', minutos: Infinity };
       const isFresh = act.minutos < 5;
       const opacity = bloqueado ? 'opacity:0.6;' : '';
@@ -22497,7 +22587,22 @@ const MOS = (() => {
           <span class="pers-switch-slider"></span>
         </label>
       </div>`;
-    };
+  }
+
+  function _cfgRenderMeCajeros() {
+    const cont = $('listMeCajeros');
+    if (!cont) return;
+    const { cajeros, grupos, dispPorCajero, bloqMap } = _cfgCajerosData();
+
+    const cnt = $('cfgMeCajerosCount');
+    if (cnt) {
+      cnt.textContent = cajeros.length + (cajeros.length === 1 ? ' activo' : ' activos');
+      cnt.className = 'badge ' + (cajeros.length ? 'badge-green' : 'badge-gray') + ' text-xs';
+    }
+    if (!cajeros.length) {
+      cont.innerHTML = '<p class="text-xs text-slate-500 italic text-center py-3">Sin cajeros activos esta semana.</p>';
+      return;
+    }
 
     // Render por grupo (zona). Ordena las zonas alfabéticamente y deja
     // "Sin zona" al final.
@@ -22524,9 +22629,52 @@ const MOS = (() => {
           <span class="text-[10px] uppercase tracking-wider text-amber-300/70 font-bold">${nombreZona}</span>
           <span class="text-[10px] text-slate-500">${desgloseRol}</span>
         </div>
-        <div class="space-y-2">${lista.map(renderPersona).join('')}</div>
+        <div class="space-y-2">${lista.map(c => _renderCajeroCard(c, dispPorCajero, bloqMap)).join('')}</div>
       </div>`;
     }).join('');
+  }
+
+  // [Fase2] FUSIÓN usuarios-por-zona: bloque 👥 desplegable dentro de cada zona de
+  // Infraestructura. Reutiliza _renderPersonaCard (operadores WH, personas reales) y
+  // _renderCajeroCard (cajeros ME, por nombre). Los admins/master van en la zona Premium.
+  const _zonaUsrExpand = {}; // idZona → bool (colapsado por defecto)
+  function toggleZonaUsuarios(idZona) {
+    _zonaUsrExpand[idZona] = !_zonaUsrExpand[idZona];
+    renderInfra();
+  }
+  function _renderZonaUsuarios(z) {
+    const esAlm = _esZonaAlmacen(z);
+    const app = esAlm ? 'warehouseMos' : 'mosExpress';
+    const addLabel = esAlm ? '+ operador' : '+ cajero';
+    let cards = [], count = 0, sub = '';
+    if (esAlm) {
+      const ops = (cfgData.personal || []).filter(p => String(p.rol || '').toUpperCase() !== 'SUPERVISOR');
+      count = ops.length;
+      cards = ops.map(p => _renderPersonaCard(p, 'warehouseMos'));
+      sub = 'almaceneros + envasadores';
+    } else {
+      const { grupos, dispPorCajero, bloqMap } = _cfgCajerosData();
+      const lista = grupos[String(z.idZona)] || [];
+      count = lista.length;
+      cards = lista.map(c => _renderCajeroCard(c, dispPorCajero, bloqMap));
+      sub = 'cajeros / vendedores';
+    }
+    const exp = !!_zonaUsrExpand[z.idZona];
+    const safeZ = String(z.idZona).replace(/'/g, '&#39;');
+    // Header siempre visible (aunque no haya usuarios) para permitir "+ usuario".
+    return `<div class="mt-3 pt-3" style="border-top:1px dashed #1e293b;">
+      <div class="flex items-center gap-2">
+        <button onclick="MOS.toggleZonaUsuarios('${safeZ}')" class="flex-1 flex items-center gap-2 text-left ${count ? '' : 'opacity-70'}" style="background:none;border:none;cursor:pointer;">
+          <span class="text-base">👥</span>
+          <span class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Usuarios de la zona</span>
+          <span class="text-[10px] text-slate-500">· ${sub}</span>
+          <span class="badge badge-gray text-[10px]">${count}</span>
+          <span class="text-slate-500 text-xs transition-transform" style="transform:rotate(${exp ? 90 : 0}deg);">▸</span>
+        </button>
+        <button onclick="MOS.abrirModalPersonal(null,'${app}')" class="text-[11px] px-2.5 py-1 rounded-lg shrink-0 hover:brightness-125 transition-all" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-weight:700;" title="Registrar ${esAlm ? 'operador de almacén' : 'cajero / vendedor'}">${addLabel}</button>
+      </div>
+      ${count ? `<div class="space-y-2 mt-2" style="display:${exp ? 'block' : 'none'};">${cards.join('')}</div>` : ''}
+    </div>`;
   }
 
   // Activa/bloquea un vendedor ME por NOMBRE en BLOQUEOS_USUARIO
@@ -22783,8 +22931,7 @@ const MOS = (() => {
   // Trails: fantasmas que se quedan 5s en la estación de origen tras un movimiento
   let _dispFantasmas = {}; // { deviceId: { desde, hacia, ico, nombre, expira } }
   let _dispCleanupTimer = null;
-  // Modo heatmap: colorea estaciones según cantidad de dispositivos online
-  let _infraHeatmapActivo = false;
+  let _archExpandido = false; // [Fase1] sección "Archivados" colapsada por defecto
 
   // Devuelve dispositivos cuya ÚLTIMA sesión fue en esta estación
   // (sin importar cuánto tiempo, mantiene "viviendo" donde estuvo último)
@@ -22792,21 +22939,6 @@ const MOS = (() => {
     return (cfgData.dispositivos || []).filter(d => {
       if (String(d.Estado).toUpperCase() !== 'ACTIVO') return false;
       return String(d.Ultima_Estacion || '') === String(idEstacion);
-    });
-  }
-
-  // Devuelve solo dispositivos que NUNCA se han logueado en una estación
-  // (recién aprobados o registrados a mano sin sesión todavía)
-  function _dispMoviles() {
-    return (cfgData.dispositivos || []).filter(d => {
-      const estado = String(d.Estado).toUpperCase();
-      if (estado === 'PENDIENTE_APROBACION') return false; // van en sección aparte
-      if (estado === 'INACTIVO') return false;             // bloqueados no se muestran como móviles
-      // [v2.43.68] Excluir dispositivos del MOS Admin — ya aparecen en
-      // "Zona Premium · Admin & Master". Antes el mismo dispositivo se mostraba
-      // duplicado en ambas listas (App=mos siempre cumple !Ultima_Estacion).
-      if (_isAppMOS(d)) return false;
-      return !d.Ultima_Estacion; // solo los que nunca tuvieron estación
     });
   }
 
@@ -22868,56 +23000,26 @@ const MOS = (() => {
     ).length;
   }
 
-  // Toggle heatmap
-  function infraToggleHeatmap() {
-    _infraHeatmapActivo = !_infraHeatmapActivo;
-    renderInfra();
-  }
-
-  // Color del borde según densidad de dispositivos en estación (modo heatmap)
-  function _heatmapColor(cantOnline) {
-    if (cantOnline === 0) return { bg: 'transparent', border: '#1e293b', label: '' };
-    if (cantOnline === 1) return { bg: 'rgba(14,165,233,0.10)',  border: '#0284c7', label: '🟦' };
-    if (cantOnline === 2) return { bg: 'rgba(16,185,129,0.12)',  border: '#10b981', label: '🟩' };
-    if (cantOnline === 3) return { bg: 'rgba(251,191,36,0.14)',  border: '#f59e0b', label: '🟨' };
-    if (cantOnline <= 5)  return { bg: 'rgba(249,115,22,0.16)',  border: '#ea580c', label: '🟧' };
-    return                       { bg: 'rgba(239,68,68,0.18)',   border: '#dc2626', label: '🟥' };
-  }
-
   function _dispPendientes() {
     return (cfgData.dispositivos || []).filter(d =>
       String(d.Estado).toUpperCase() === 'PENDIENTE_APROBACION'
     );
   }
 
-  // Render compacto de un chip de dispositivo (dentro de estación o lista global)
-  function _renderDispositivoChip(d, opts) {
-    opts = opts || {};
-    const ico = _dispIcono(d.Nombre_Equipo);
-    const act = _dispActividad(d.Ultima_Conexion);
-    const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
-    const isFresh = act.minutos < 5;
-    const sesion = d.Ultima_Sesion ? ` · 👤 <span class="text-emerald-400 font-bold">${d.Ultima_Sesion}</span>` : '';
-    const cls = opts.compact ? 'text-[10px] px-2 py-1.5' : 'text-[11px] px-3 py-2';
-    const claseFresh = isFresh ? 'disp-chip-live' : '';
-    const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
-    const pinBtn = '';
-    const yaSoyBadge = '';
-    return `<div class="disp-chip flex items-center gap-2 rounded-lg ${cls} ${claseFresh}"
-      style="background:#0a1424;border:1px solid #1e293b;transition:all 0.2s;">
-      <span class="text-base shrink-0 relative cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')" title="Editar">${ico}${dotPulse}</span>
-      <div class="flex-1 min-w-0 cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')">
-        <div class="font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'} ${yaSoyBadge}</div>
-        <div class="text-[9px] truncate" style="color:${act.color};">
-          ${act.dot} ${act.label}${sesion}
-        </div>
-      </div>
-      ${pinBtn}
-      <button onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;" title="Espiar dispositivo (audio + GPS)">🕵️</button>
-      <button onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
-    </div>`;
+  // [Fase1] Archivados: equipos auto-cancelados por +7 días sin conectar.
+  // NO es baneo — reversibles: al reconectar, verificar_dispositivo (SQL 100)
+  // los reabre a PENDIENTE_APROBACION. Se muestran en una sección colapsable.
+  function _dispArchivados() {
+    return (cfgData.dispositivos || []).filter(d =>
+      String(d.Estado).toUpperCase().startsWith('CANCELADO')
+    );
+  }
+  function toggleArchivados() {
+    _archExpandido = !_archExpandido;
+    renderInfra();
   }
 
+  // Render compacto de un chip de dispositivo (dentro de estación o lista global)
   // Config CRUD
   function _estActualizarPreview() {
     const nom = ($('estNombre')?.value || '').trim();
@@ -43613,7 +43715,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     if (totalPrev >= 2000) {
       if (!medio) { toast('Operación ≥ S/2000: indica el medio de pago (bancarización)', 'warn'); return; }
-      if (medio==='EFECTIVO' && !confirm('SUNAT (Ley 28194): operaciones ≥ S/2000 deben pagarse por medio bancario (transferencia, depósito, tarjeta). ¿Emitir igual como EFECTIVO?')) return;
+      if (medio==='EFECTIVO' && !await _modalConfirm('SUNAT (Ley 28194): operaciones ≥ S/2000 deben pagarse por medio bancario (transferencia, depósito, tarjeta). ¿Emitir igual como EFECTIVO?', { warning: true, titulo: 'Pago en efectivo ≥ S/2000', okText: 'Emitir en EFECTIVO' })) return;
     }
     const tdoc = doc.length===11 ? '6' : (doc.length===8 ? '1' : '0');
     const itemsNF = items.map(it => {
@@ -44031,7 +44133,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalEstacion, guardarEstacion, eliminarEstacion, _estActualizarPreview,
     abrirModalImpresora, guardarImpresora, eliminarImpresora, _impActualizarPreview,
     eliminarZona, _zonaActualizarPreview,
-    toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva, infraToggleHeatmap,
+    toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva, toggleArchivados, toggleZonaUsuarios,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     editarMetaChip, guardarMetaChip,
     abrirModalClaveGlobal, cgConsultar, cgRotar,
