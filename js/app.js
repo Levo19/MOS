@@ -19854,14 +19854,18 @@ const MOS = (() => {
     const horChip = `<span class="pchip" style="cursor:pointer" onclick="MOS.abrirModalHorarioApp('${app}')" title="Horario de la app · toca para editar"><span>🕐</span><div><div class="pv">${hoy || '—'}</div><div class="pl">Horario</div></div></span>`;
     if (_esZonaAlmacen(z)) {
       const cfg = cfgData.config || {};
-      // display formateado; data-meta-valor conserva el crudo para editarMetaChip
-      const mk = (icon, key, raw, disp, lbl, unidad) => `<span class="pchip meta-chip" style="cursor:pointer" data-meta-key="${key}" data-meta-valor="${raw}" onclick="MOS.editarMetaChip('${key}', this)" title="Click para editar"><span>${icon}</span><div><div class="pv">${disp !== '' ? disp : '—'}</div><div class="pl">${lbl} <span class="pu">${unidad}</span></div></div></span>`;
+      // [Verdad efectiva] El chip muestra el valor QUE USA el cálculo (SQL 120/93: _cfg_num(clave, default)):
+      // CONFIG_MOS manda; si la clave está vacía, rige el default de fábrica → se marca "def".
+      const mk = (icon, key, raw, disp, lbl, unidad, esDef, titulo) => `<span class="pchip meta-chip" style="cursor:pointer" data-meta-key="${key}" data-meta-valor="${raw}" onclick="MOS.editarMetaChip('${key}', this)" title="${titulo || 'Click para editar'}"><span>${icon}</span><div><div class="pv">${disp !== '' ? disp : '—'}${esDef ? ' <span style="font-size:8px;color:#f5b849;font-weight:700">def</span>' : ''}</div><div class="pl">${lbl} <span class="pu">${unidad}</span></div></div></span>`;
       const rawT = cfg.evalTarifaEnvasadoPorUnidad != null ? String(cfg.evalTarifaEnvasadoPorUnidad) : '';
-      const dispT = rawT !== '' && !isNaN(parseFloat(rawT)) ? 'S/' + parseFloat(rawT).toFixed(2) : '';
+      const tieneT = rawT !== '' && !isNaN(parseFloat(rawT));
+      const dispT = 'S/' + parseFloat(tieneT ? rawT : '0.10').toFixed(2); // default SQL: 0.10
+      const rawA = String(cfg.evalMetaAuditorias || '');
+      const dispA = rawA !== '' ? rawA : '30'; // default SQL: 30
       return `<div class="srow"><span class="slab">🎯 Política</span>
-        ${mk('💵', 'evalTarifaEnvasadoPorUnidad', rawT, dispT, 'Envasado', '/und')}
-        ${mk('📦', 'evalMetaAlmacenero', cfg.evalMetaAlmacenero || '', cfg.evalMetaAlmacenero || '', 'Guías', '/día')}
-        ${mk('📋', 'evalMetaAuditorias', cfg.evalMetaAuditorias || '', cfg.evalMetaAuditorias || '', 'Auditorías', '/día')}
+        ${mk('💵', 'evalTarifaEnvasadoPorUnidad', rawT, dispT, 'Envasado', '/und', !tieneT, 'Pago del envasador = unidades × esta tarifa (SQL _cfg_num, default 0.10) · click para editar')}
+        ${mk('📦', 'evalMetaAlmacenero', cfg.evalMetaAlmacenero || '', cfg.evalMetaAlmacenero || '', 'Guías', '/día', false, 'Meta informativa de guías: NO entra al pago ni al score (paritario GAS/Supabase) · click para fijarla')}
+        ${mk('📋', 'evalMetaAuditorias', rawA, dispA, 'Auditorías', '/día', rawA === '', 'Meta de auditorías del score (SQL _cfg_num, default 30) · click para editar')}
         ${horChip}</div>`;
     }
     let pol = {};
