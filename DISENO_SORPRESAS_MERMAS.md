@@ -179,3 +179,16 @@ Cobertura: clave real/stub, 7 guardias, dedups, stock por generación (ABIERTA/C
 trigger PASÓ/FALLÓ/DISCREPANCIA + multilínea + multi-sorpresa, parcial iterativo, transformación
 default, batch una-guía (mixto + omitidas), alcances wh-15d/mos-total, yaResuelta.
 WH 2.13.449: labels/icono 🔄 para guías TRANSFORMACION.
+
+## Ajustes de uso real (2026-07-19 · feedback del dueño, 5 puntos)
+1. **SQL 521** — merma desde devolución: SOLO guías **ABIERTAS y DE HOY** (antes CERRADA — al
+   revés). Semántica SPLIT: la parte dañada se resta de la línea → el cierre ingresa solo lo
+   sano; sin tocar stock (nunca entró); recuperar SÍ acredita. Errores: GUIA_NO_ABIERTA /
+   GUIA_NO_ES_DE_HOY. Suite adaptada: 32/32 ✅.
+2. WH "+ Registrar merma" (hallazgo) recableado a v2 (culpa ALMACÉN + sale del vendible + foto).
+3. **FIX botón 🎯 invisible**: `window.SorpresasWH` — una const global NO cuelga de window →
+   `typeof`. esAdmin multi-fuente (rol de sesión → id → nombres de WH_CONFIG.usuario/wh_usuario
+   en personal cache, rol admin o accesoMos). LECCIÓN para memoria.
+4. Panel Mermas MOS: thumbnails con lightbox, vencidas borde rojo, agrupar 📅Fecha/🧭Estado.
+5. Panel Sorpresas MOS: SOLO SEGUIMIENTO (registro solo en WH) — historial por fecha con
+   alertas (FALLÓ rojo). MOS 2.43.578 · WH 2.13.450.
