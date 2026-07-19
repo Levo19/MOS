@@ -3715,6 +3715,8 @@ const API = (() => {
     detenerRealtimeCatalogo:    ()   => _detenerRealtimeCatalogo(),
     // [PRESENCIA] estado presence en vivo { deviceId: [metas] } — {} si el WS no está arriba.
     presencia:                  ()   => (_RT.presState || {}),
+    // [Sorpresas/Mermas] RPC genérica al schema wh (cross-app, gate server-side por claim MOS).
+    rpcWH:                      (fn, p) => _sbRpcMOS(fn, { p: p || {} }, 'wh'),
     onCatalogoVersionRealtime:  (cb) => { _RT.onVersion = (typeof cb === 'function') ? cb : null; },
     // [OPS] Registra el callback que recibe {app:'me'|'wh', dominio, version} en cada UPDATE de
     // me.ops_meta / wh.ops_meta. app.js lo usa para refrescar SOLO la pantalla activa (debounce +

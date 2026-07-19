@@ -40823,6 +40823,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
   async function _zonaCargarPanel(force) {
+    _zonaToggleAlmacenBtns();   // [Sorpresas/Mermas] Guías ↔ 🎯/♻️ según la zona activa
     const lista = $('zonaLista');
     if (lista && (force || !S.zonaProductos.length)) {
       // [RIZ UX] Skeleton de cards con shimmer (en vez de spinner pelado): silueta real de una zona-card.
@@ -41068,6 +41069,199 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaSumar(fn)  { try { return S.zonaProductos.reduce((a,p)=>a+Math.max(0,fn(p)),0); } catch(_) { return 0; } }
 
   // ── Render de cards ────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════════
+  // [🎯 SORPRESAS + ♻️ MERMAS] Paneles MOS (módulo Zona · card ALMACÉN)
+  // Diseño: DISENO_SORPRESAS_MERMAS.md · backend SQL 516/517 (wh.*)
+  // En ALMACÉN el botón Guías se reemplaza por 🎯 (solo admins) y ♻️.
+  // ════════════════════════════════════════════════════════════════════
+  function _esAdminSesion() {
+    const r = String(S.session?.rol || '').toUpperCase();
+    return r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR';
+  }
+  function _zonaToggleAlmacenBtns() {
+    const esAlm = _esZonaAlmacen({ idZona: S.zonaActual,
+      nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
+    const bg = $('zonaBtnGuias'), bs = $('zonaBtnSorpresas'), bm = $('zonaBtnMermas');
+    if (bg) bg.classList.toggle('hidden', esAlm);
+    if (bm) bm.classList.toggle('hidden', !esAlm);
+    if (bs) bs.classList.toggle('hidden', !esAlm || !_esAdminSesion());
+    if (esAlm) _mermasBadgeRefrescar();
+  }
+  // Badge rojo = mermas VENCIDAS (>3 días corridos sin procesar)
+  async function _mermasBadgeRefrescar() {
+    try {
+      const r = await API.rpcWH('mermas_lista', { alcance: 'wh' });
+      const rows = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+      const n = rows.filter(m => m.vencida).length;
+      const b = $('zonaMermasBadge');
+      if (b) { b.textContent = String(n); b.style.display = n > 0 ? '' : 'none'; }
+    } catch (_) {}
+  }
+
+  // ── ♻️ MERMAS · panel auditoría (historial completo alcance=mos) ──
+  let _mermasData = [];
+  let _mermasFiltro = 'TODAS';
+  async function abrirMermasPanel() {
+    openModal('modalMermas');
+    $('mermasLista').innerHTML = '<div class="muted" style="text-align:center;padding:20px">Cargando…</div>';
+    try {
+      const r = await API.rpcWH('mermas_lista', { alcance: 'mos', dias: 365 });
+      _mermasData = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+    } catch (e) { _mermasData = []; }
+    _mermasRender();
+  }
+  function mermasSetFiltro(f) { _mermasFiltro = f; _mermasRender(); }
+  function _mermasRender() {
+    const rows = _mermasData;
+    // KPIs de dinero (costo × cantidades) — mes actual
+    const mesIni = new Date(); mesIni.setDate(1); mesIni.setHours(0, 0, 0, 0);
+    const delMes = rows.filter(m => new Date(m.fechaIngreso) >= mesIni);
+    const sMermado = delMes.reduce((a, m) => a + (m.costoUnitario || 0) * (m.cantidadOriginal || 0), 0);
+    const sRec = delMes.reduce((a, m) => a + (m.costoUnitario || 0) * (m.cantidadReparada || 0), 0);
+    const pend = rows.filter(m => (m.cantidadPendiente || 0) > 0);
+    const venc = pend.filter(m => m.vencida);
+    // culpa por zona (estadística)
+    const porCulpa = {};
+    delMes.forEach(m => { const c = m.culpa || '—'; porCulpa[c] = (porCulpa[c] || 0) + 1; });
+    const topCulpa = Object.entries(porCulpa).sort((a, b) => b[1] - a[1])[0];
+    $('mermasKpis').innerHTML = `<div class="kpi">
+      <div class="k"><div class="kv" style="color:#fca5a5">S/ ${sMermado.toFixed(0)}</div><div class="kl">mermado (mes)</div></div>
+      <div class="k"><div class="kv" style="color:#7ff0c4">S/ ${sRec.toFixed(0)}</div><div class="kl">recuperado ${sMermado > 0 ? Math.round(sRec / sMermado * 100) + '%' : '—'}</div></div>
+      <div class="k"><div class="kv">${pend.length}</div><div class="kl">pendientes</div></div>
+      <div class="k"><div class="kv" style="color:${venc.length ? '#fca5a5' : '#7ff0c4'}">${venc.length}</div><div class="kl">vencidas 🔴</div></div>
+      ${topCulpa ? `<div class="k"><div class="kv" style="font-size:14px">${topCulpa[0]}</div><div class="kl">más culpa (${topCulpa[1]})</div></div>` : ''}
+    </div>`;
+    const FILTROS = [['TODAS', 'Todas'], ['PENDIENTES', 'Pendientes'], ['VENCIDAS', 'Vencidas'], ['RECUPERADAS', 'Recuperadas'], ['ELIMINADAS', 'Eliminadas'], ['TRANSFORMADAS', 'Transformadas']];
+    $('mermasFiltros').innerHTML = FILTROS.map(([k, l]) =>
+      `<span class="chip ${_mermasFiltro === k ? 'gold' : ''}" style="cursor:pointer" onclick="MOS.mermasSetFiltro('${k}')">${l}</span>`).join('');
+    let vis = rows;
+    if (_mermasFiltro === 'PENDIENTES') vis = rows.filter(m => (m.cantidadPendiente || 0) > 0);
+    else if (_mermasFiltro === 'VENCIDAS') vis = rows.filter(m => m.vencida);
+    else if (_mermasFiltro === 'RECUPERADAS') vis = rows.filter(m => (m.cantidadReparada || 0) > 0);
+    else if (_mermasFiltro === 'ELIMINADAS') vis = rows.filter(m => (m.cantidadDesechada || 0) > 0 && (m.cantidadPendiente || 0) === 0);
+    else if (_mermasFiltro === 'TRANSFORMADAS') vis = rows.filter(m => m.idGuiaTransformacion);
+    if (!vis.length) { $('mermasLista').innerHTML = '<div class="muted" style="text-align:center;padding:24px">Sin mermas en este filtro.</div>'; return; }
+    const nomProd = cod => {
+      const p = (S.productos || []).find(x => String(x.codigoBarra) === String(cod));
+      return p ? (p.descripcion || cod) : cod;
+    };
+    $('mermasLista').innerHTML = vis.slice(0, 200).map(m => {
+      const pendN = m.cantidadPendiente || 0;
+      const sla = pendN > 0
+        ? (m.vencida ? `<span class="chip bad sla">🔴 VENCIDA ${m.diasPendiente != null ? '· ' + m.diasPendiente + 'd' : ''}</span>`
+                     : `<span class="chip warn sla">⏳ ${Math.max(0, 3 - (m.diasPendiente || 0))}d restantes</span>`)
+        : '';
+      const est = pendN > 0 ? (m.cantidadReparada > 0 ? '<span class="chip warn">parcial</span>' : '<span class="chip">pendiente</span>')
+        : (m.estado === 'DESECHADA' ? '<span class="chip">eliminada</span>' : '<span class="chip ok">resuelta</span>');
+      const trans = m.idGuiaTransformacion ? `<span class="chip" style="background:rgba(167,139,250,.15);color:#c4b5fd;border-color:rgba(167,139,250,.4)">🔄 ${m.idGuiaTransformacion}</span>` : '';
+      const dinero = (m.costoUnitario || 0) > 0
+        ? `<span class="mono" style="color:${m.cantidadReparada > 0 ? '#7ff0c4' : '#fca5a5'}">S/ ${((m.costoUnitario || 0) * (m.cantidadReparada > 0 ? m.cantidadReparada : m.cantidadOriginal)).toFixed(2)}${m.cantidadReparada > 0 ? ' rec.' : ''}</span>` : '';
+      const foto = m.foto ? ` · <a href="${_esc(m.foto)}" target="_blank" rel="noopener" style="color:#8fd0ff">📷 foto</a>` : '';
+      const guias = [m.idGuia ? 'de ' + m.idGuia : '', m.idGuiaSalida ? 'salida ' + m.idGuiaSalida : ''].filter(Boolean).join(' · ');
+      return `<div class="prow">
+        <div style="flex:1;min-width:170px"><b style="color:#eaf1fb">${_esc(nomProd(m.codProducto))} · ${m.cantidadOriginal}</b> ${est} ${sla} ${trans}
+        <div class="muted" style="font-size:10px">ingresó ${_esc(m.usuario || '—')} ${new Date(m.fechaIngreso).toLocaleDateString('es-PE')} · culpa <b>${_esc(m.culpa || '—')}</b>${m.cantidadReparada ? ' · rec. ' + m.cantidadReparada : ''}${m.cantidadDesechada ? ' · elim. ' + m.cantidadDesechada : ''}${pendN ? ' · pend. ' + pendN : ''}${guias ? ' · ' + guias : ''}${foto}</div></div>
+        ${dinero}</div>`;
+    }).join('');
+  }
+
+  // ── 🎯 SORPRESAS · panel + registro (clave admin server-side) ──
+  let _sorpDelta = -1;
+  function sorpDelta(dir) {
+    _sorpDelta += dir;
+    if (_sorpDelta === 0) _sorpDelta = dir > 0 ? 1 : -1;
+    const el = $('sorpDeltaVal');
+    if (el) { el.textContent = (_sorpDelta > 0 ? '+' : '−') + Math.abs(_sorpDelta); el.style.color = _sorpDelta > 0 ? '#7ff0c4' : '#fcd34d'; }
+  }
+  async function abrirSorpresasPanel() {
+    openModal('modalSorpresas');
+    _sorpDelta = -1; sorpDelta(0 === 0 ? 0 : 0); // repinta
+    const el = $('sorpDeltaVal'); if (el) el.textContent = '−1';
+    _sorpCargar();
+  }
+  async function _sorpCargar() {
+    $('sorpLista').innerHTML = '<div class="muted" style="text-align:center;padding:16px">Cargando…</div>';
+    let rows = [];
+    try {
+      const r = await API.rpcWH('sorpresas_lista', { dias: 30 });
+      rows = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+    } catch (_) {}
+    _sorpRender(rows);
+  }
+  function _sorpRender(rows) {
+    const semana = rows.filter(s => (Date.now() - new Date(s.ts).getTime()) < 7 * 864e5);
+    const conRes = rows.filter(s => s.estado !== 'ESPERANDO');
+    const pasadas = conRes.filter(s => s.estado === 'PASO').length;
+    $('sorpKpis').innerHTML = `<div class="kpi" style="margin-top:12px">
+      <div class="k"><div class="kv" style="color:#fcd34d">${semana.length}</div><div class="kl">esta semana</div></div>
+      <div class="k"><div class="kv" style="color:#7ff0c4">${pasadas}/${conRes.length}</div><div class="kl">pasadas (30d)</div></div>
+      <div class="k"><div class="kv" style="color:#fca5a5">${conRes.length - pasadas}</div><div class="kl">falladas/disc.</div></div>
+      <div class="k"><div class="kv">${conRes.length ? Math.round(pasadas / conRes.length * 100) + '%' : '—'}</div><div class="kl">confiabilidad</div></div>
+    </div>`;
+    // score por operador (30d)
+    const porOp = {};
+    conRes.forEach(s => {
+      const op = s.operador || '—';
+      porOp[op] = porOp[op] || { t: 0, p: 0 };
+      porOp[op].t++; if (s.estado === 'PASO') porOp[op].p++;
+    });
+    const ops = Object.entries(porOp).sort((a, b) => b[1].t - a[1].t);
+    $('sorpScore').innerHTML = ops.length ? `<div class="card"><div class="slab" style="margin-bottom:8px">Score por operador (30d)</div>` +
+      ops.map(([op, v]) => {
+        const pct = Math.round(v.p / v.t * 100);
+        return `<div class="prow" style="padding:8px 12px"><b style="color:#eaf1fb">${_esc(op)}</b><span style="margin-left:auto" class="chip ${pct >= 80 ? 'ok' : (pct >= 50 ? 'warn' : 'bad')}">${v.p}/${v.t} · ${pct}%${pct < 80 ? ' ⚠' : ''}</span></div>`;
+      }).join('') + `</div>` : '';
+    // historial
+    $('sorpLista').innerHTML = `<div class="card"><div class="slab" style="margin-bottom:8px">Historial (30d)</div>` +
+      (rows.length ? rows.slice(0, 100).map(s => {
+        const chip = s.estado === 'PASO' ? `<span class="chip ok">✅ PASÓ${s.operador ? ' · ' + _esc(s.operador) : ''}</span>`
+          : s.estado === 'FALLO' ? `<span class="chip bad">❌ FALLÓ${s.operador ? ' · ' + _esc(s.operador) + ' copió el papel (' + (s.cantRegistrada ?? '—') + ')' : ''}</span>`
+          : s.estado === 'DISCREPANCIA' ? `<span class="chip warn">⚠️ discrepancia (${s.cantRegistrada ?? '—'})</span>`
+          : '<span class="chip warn">⏳ esperando recepción</span>';
+        const monto = (s.costo || 0) > 0 ? ` · S/${(Math.abs(s.delta) * s.costo).toFixed(2)}` : '';
+        return `<div class="prow" style="padding:9px 12px">
+          <div style="flex:1;min-width:160px"><b style="color:#eaf1fb">${_esc(s.codProducto)}</b> <span class="chip gold">${s.delta > 0 ? '+' : ''}${s.delta}</span>
+          <div class="muted" style="font-size:10px">${_esc(s.idGuia)} · ${_esc(s.idZona || '')} · ${new Date(s.ts).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · por ${_esc(s.admin || '—')} · papel ${s.cantOriginal} → real ${s.cantCorregida}${monto}</div></div>
+          ${chip}</div>`;
+      }).join('') : '<div class="muted" style="text-align:center;padding:14px">Sin sorpresas en 30 días.</div>') + `</div>`;
+  }
+  function _sorpMsg(html, esError) {
+    const el = $('sorpMsg'); if (!el) return;
+    el.style.display = '';
+    el.style.borderColor = esError ? 'rgba(239,68,68,.4)' : 'rgba(16,185,129,.4)';
+    el.innerHTML = html;
+  }
+  async function registrarSorpresaMOS() {
+    const guia = String($('sorpGuia')?.value || '').trim();
+    const cod = String($('sorpCod')?.value || '').trim();
+    if (!guia || !cod) { _sorpMsg('Falta la guía o el producto', true); return; }
+    if (!_sorpDelta) { _sorpMsg('Delta no puede ser 0', true); return; }
+    // clave admin (8 díg) — el server re-verifica (honra acceso_mos); pedirAuth cachea 5 min
+    const auth = await pedirAuth({ accion: 'SORPRESA', refDocumento: guia, contexto: `Sorpresa ${cod} Δ${_sorpDelta} en ${guia}` });
+    if (!auth) return;
+    _sorpMsg('Registrando…', false);
+    try {
+      const r = await API.rpcWH('registrar_sorpresa', {
+        id_sorpresa: 'SORP_' + Date.now().toString(36) + '_' + Math.floor(Math.random() * 1e4),
+        id_guia: guia, cod_producto: cod, delta: _sorpDelta,
+        clave_admin: auth.clave, admin: S.session?.nombre || '', app: 'MOS',
+        device: (localStorage.getItem('mos_device_id') || '').slice(0, 12)
+      });
+      if (r && r.ok) {
+        try { _finBeep?.('breakeven'); } catch (_) {}
+        _sorpMsg(`🎯 Registrada: <b>${_esc(cod)}</b> ${_sorpDelta > 0 ? '+' : ''}${_sorpDelta} · papel ${r.cant_original} → real <b>${r.cant_corregida}</b> (invisible al operador)`, false);
+        const c = $('sorpCod'); if (c) c.value = '';
+        _sorpCargar();
+      } else {
+        const e = (r && r.error) || 'error';
+        const msj = { PRODUCTO_NO_EN_GUIA: '⛔ Ese producto NO fue despachado en esta guía', SORPRESA_TARDE: '⏱ La zona ya cerró la recepción — tarde para sorprender', CLAVE_INVALIDA: '🔑 Clave admin rechazada', GUIA_INVALIDA: 'La guía no existe o no es de salida a zona', DELTA_EXCEDE: 'El delta excede lo que tiene la línea' }[e] || e;
+        try { _finBeep?.('error'); } catch (_) {}
+        if (navigator.vibrate) { try { navigator.vibrate([120, 60, 120]); } catch (_) {} }
+        _sorpMsg(msj + (r && r.detalle ? ' · ' + _esc(r.detalle) : ''), true);
+      }
+    } catch (e) { _sorpMsg('Error: ' + _esc(e.message || e), true); }
+  }
+
   function renderZona() {
     const cont = $('zonaLista');
     if (!cont) return;
@@ -44153,6 +44347,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     eliminarZona, _zonaActualizarPreview,
     toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
     cfgBuscar, cfgToggleSusp, _cfgDetToggle, catBuscar,
+    abrirSorpresasPanel, abrirMermasPanel, sorpDelta, registrarSorpresaMOS, mermasSetFiltro,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     editarMetaChip, guardarMetaChip,
     abrirModalClaveGlobal, cgConsultar, cgRotar,
