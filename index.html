@@ -415,6 +415,165 @@
     #infraContenedor .mbtn:hover{transform:scale(1.12)}
     @keyframes cfgBreathe{0%,100%{opacity:.5}50%{opacity:.95}}
 
+    /* ════ [Rediseño Config] Sistema completo del mockup (config_modulo.html) ════ */
+    .cfgtabs{display:flex;gap:6px;flex-wrap:wrap;background:#0a1526;border:1px solid #1c2b45;border-radius:14px;padding:6px;margin-bottom:14px}
+    .cfgtabs .tab-btn{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:#9fb2ce;padding:9px 15px;border-radius:10px;cursor:pointer;transition:.15s;border:1px solid transparent;background:transparent;white-space:nowrap}
+    .cfgtabs .tab-btn:hover{color:#eaf1fb;background:#0e1c34}
+    .cfgtabs .tab-btn.active{color:#04121f;background:linear-gradient(135deg,#68b6ff,#4aa8ff);box-shadow:0 4px 14px rgba(74,168,255,.3)}
+    .cfgtabs .thint{font-size:9px;opacity:.7}
+    @media (max-width:600px){.cfgtabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.cfgtabs::-webkit-scrollbar{display:none}.cfgtabs .tab-btn{flex:0 0 auto}}
+
+    #cfgPanelInfra .cmd{background:linear-gradient(135deg,#0c1c38,#0a1526);border:1px solid #26375a;border-radius:16px;padding:12px 15px;display:flex;align-items:center;gap:0;flex-wrap:wrap;margin-bottom:12px}
+    #cfgPanelInfra .stat{display:flex;align-items:center;gap:10px;padding-right:16px}
+    #cfgPanelInfra .stat+.stat{border-left:1px solid #1c2b45;padding-left:16px}
+    #cfgPanelInfra .stat .big{font-size:20px;font-weight:850;line-height:1;color:#eaf1fb}
+    #cfgPanelInfra .stat .cap{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#5f7290;font-weight:700;margin-top:2px}
+    #cfgPanelInfra .tnum{font-variant-numeric:tabular-nums}
+    #cfgPanelInfra .live-dot{width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 0 0 rgba(16,185,129,.55);animation:cfgPulse 2.4s infinite}
+    #cfgPanelInfra .cmd-right{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    #cfgPanelInfra .search{background:#0a1830;border:1px solid #26375a;border-radius:10px;padding:8px 12px;color:#eaf1fb;font-size:12px;min-width:170px;outline:none}
+    #cfgPanelInfra .search::placeholder{color:#5f7290}
+    #cfgPanelInfra .search:focus{border-color:#4aa8ff}
+    #cfgPanelInfra .tbtn{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:#9fb2ce;background:#0e1b32;border:1px solid #26375a;border-radius:10px;padding:8px 12px;cursor:pointer}
+    #cfgPanelInfra .tbtn.on{color:#fff;background:linear-gradient(90deg,#dc2626,#f59e0b);border-color:transparent}
+    #cfgPanelInfra .actions{background:#0a1424;border:1px solid #1c2b45;border-radius:14px;padding:11px 13px;margin-bottom:12px}
+    #cfgPanelInfra .grp{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+    #cfgPanelInfra .grp+.grp{margin-top:9px;padding-top:9px;border-top:1px solid #1c2b45}
+    #cfgPanelInfra .glabel{font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#5f7290;width:72px;flex-shrink:0}
+    #cfgPanelInfra .abtn{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:#eaf1fb;background:#0e1c34;border:1px solid #26375a;border-radius:9px;padding:7px 12px;cursor:pointer;transition:.15s}
+    #cfgPanelInfra .abtn:hover{border-color:#4aa8ff;background:#0f2038;transform:translateY(-1px)}
+    #cfgPanelInfra .eyebrow{display:flex;align-items:center;gap:10px;margin:18px 0 12px}
+    #cfgPanelInfra .eyebrow .n{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#4aa8ff;border:1px solid rgba(74,168,255,.3);border-radius:6px;padding:1px 6px;font-weight:600}
+    #cfgPanelInfra .eyebrow h2{font-size:14.5px;font-weight:800;margin:0;color:#eaf1fb}
+    #cfgPanelInfra .eyebrow .rule{flex:1;height:1px;background:linear-gradient(90deg,#26375a,transparent)}
+    #cfgPanelInfra .callout{border-left:3px solid #4aa8ff;background:rgba(74,168,255,.06);padding:10px 13px;border-radius:0 11px 11px 0;font-size:12px;color:#9fb2ce;margin-top:12px}
+    #cfgPanelInfra .callout.g{border-color:#f5b849;background:rgba(245,184,73,.06)}
+    #cfgPanelInfra .chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:750;border-radius:999px;padding:3px 9px;border:1px solid transparent;white-space:nowrap}
+    #cfgPanelInfra .chip .d{width:6px;height:6px;border-radius:50%}
+    #cfgPanelInfra .chip.live{color:#7ff0c4;background:rgba(16,185,129,.16);border-color:rgba(16,185,129,.5)}
+    #cfgPanelInfra .chip.occ{color:#9fb2ce;background:#0c1a30;border-color:#26375a}
+    #cfgPanelInfra .chip.appme{color:#7dd3fc;background:rgba(125,211,252,.12);border-color:rgba(125,211,252,.4)}
+    #cfgPanelInfra .chip.appwh{color:#fbbf24;background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.4)}
+    #cfgPanelInfra .chip.appmos{color:#c4b5fd;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.4)}
+    #cfgPanelInfra .chip.hor{color:#a5b4fc;background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.35)}
+    #cfgPanelInfra .iconbtn{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;background:#0c1a30;border:1px solid #26375a;color:#5f7290;cursor:pointer;font-size:12px}
+    #cfgPanelInfra .iconbtn:hover{color:#eaf1fb;border-color:#4aa8ff}
+    #cfgPanelInfra .zone{background:linear-gradient(150deg,#0d2141,#0b1428);border:1px solid #26375a;border-radius:16px;padding:16px;margin-top:14px}
+    #cfgPanelInfra .zone.online{border-color:rgba(16,185,129,.4);box-shadow:0 0 16px rgba(16,185,129,.08)}
+    #cfgPanelInfra .zone.dim{opacity:.8}
+    #cfgPanelInfra .zone.vip{background:linear-gradient(135deg,#1a1410,#0d1526 55%,#161009);border:1.5px solid rgba(245,184,73,.42);box-shadow:0 0 22px rgba(245,184,73,.1)}
+    #cfgPanelInfra .zhead{display:flex;align-items:center;gap:12px;margin-bottom:13px;padding-bottom:12px;border-bottom:1px solid #1c2b45}
+    #cfgPanelInfra .zbadge{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px;background:linear-gradient(135deg,#1e3a8a,#0c4a6e);flex-shrink:0}
+    #cfgPanelInfra .zbadge.gold{background:linear-gradient(135deg,#3a2a08,#5a3d0a)}
+    #cfgPanelInfra .zbadge.wh{background:linear-gradient(135deg,#5a3410,#3a2208)}
+    #cfgPanelInfra .zt{flex:1;min-width:0}
+    #cfgPanelInfra .zt .row1{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+    #cfgPanelInfra .zt h3{margin:0;font-size:16px;font-weight:850;color:#eaf1fb}
+    #cfgPanelInfra .zt h3.gold{color:#fde3a7}
+    #cfgPanelInfra .zt .zid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#5f7290}
+    #cfgPanelInfra .zt .zmeta{font-size:11px;color:#9fb2ce;margin-top:3px}
+    #cfgPanelInfra .zctl{display:flex;align-items:center;gap:8px}
+    #cfgPanelInfra .srow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:11px 0}
+    #cfgPanelInfra .slab{font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#5f7290}
+    #cfgPanelInfra .schip{display:inline-flex;align-items:center;gap:7px;background:#0b1830;border:1px solid #26375a;border-radius:10px;padding:6px 10px}
+    #cfgPanelInfra .schip .ic{font-size:13px}
+    #cfgPanelInfra .schip .tt{font-size:11.5px;font-weight:750;color:#eaf1fb}
+    #cfgPanelInfra .schip .cc{font-size:9.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace}
+    #cfgPanelInfra .schip.add{border-style:dashed;color:#5f7290;cursor:pointer;font-size:11px}
+    #cfgPanelInfra .schip.add:hover{color:#4aa8ff;border-color:#4aa8ff}
+    #cfgPanelInfra .pchip{display:inline-flex;align-items:center;gap:8px;border-radius:11px;padding:7px 11px;border:1px solid #26375a;background:#0a1626}
+    #cfgPanelInfra .pchip .pv{font-size:14px;font-weight:850;line-height:1;color:#eaf1fb}
+    #cfgPanelInfra .pchip .pl{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#5f7290;font-weight:700}
+    #cfgPanelInfra .pchip .pu{font-size:9px;color:#5f7290;text-transform:none}
+    #cfgPanelInfra .stations{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:12px;margin-top:6px}
+    #cfgPanelInfra .station{background:#0b1526;border:1px solid #1c2b45;border-radius:13px;padding:12px}
+    #cfgPanelInfra .station.online{border-color:rgba(16,185,129,.4);box-shadow:0 0 12px rgba(16,185,129,.12)}
+    #cfgPanelInfra .st-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+    #cfgPanelInfra .st-head .sic{font-size:18px}
+    #cfgPanelInfra .st-head .snm{font-size:13px;font-weight:800;color:#eaf1fb}
+    #cfgPanelInfra .st-head .sid{font-size:9.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace}
+    #cfgPanelInfra .printer{display:flex;align-items:center;gap:9px;background:#0a1424;border:1px solid #1c2b45;border-radius:9px;padding:7px 9px;margin-bottom:6px}
+    #cfgPanelInfra .printer .pic{font-size:14px}
+    #cfgPanelInfra .printer .pn{font-size:12px;font-weight:650;color:#eaf1fb}
+    #cfgPanelInfra .pmeta{font-size:9.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace}
+    #cfgPanelInfra .addln{display:block;width:100%;text-align:center;font-size:10.5px;color:#5f7290;border:1px dashed #26375a;border-radius:8px;padding:6px;cursor:pointer;margin-top:2px;background:none}
+    #cfgPanelInfra .addln:hover{color:#4aa8ff;border-color:#4aa8ff}
+    #cfgPanelInfra .assigned-h{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#5f7290;margin:11px 0 8px}
+    #cfgPanelInfra .addstat{border:1.5px dashed #26375a;border-radius:13px;display:grid;place-items:center;color:#5f7290;font-size:11px;font-weight:650;cursor:pointer;gap:5px;text-align:center;padding:10px}
+    #cfgPanelInfra .addstat .plus{font-size:22px}
+    #cfgPanelInfra .users{margin-top:13px;background:#0a1626;border:1px solid #26375a;border-radius:12px;overflow:hidden}
+    #cfgPanelInfra .users>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:9px;padding:11px 13px;font-weight:800;font-size:12.5px;color:#eaf1fb}
+    #cfgPanelInfra .users>summary::-webkit-details-marker{display:none}
+    #cfgPanelInfra .users>summary .uic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:#0e1c34;border:1px solid #26375a}
+    #cfgPanelInfra .users>summary .cnt{margin-left:auto;color:#5f7290;font-size:11px;font-weight:600}
+    #cfgPanelInfra .users[open]>summary{border-bottom:1px solid #1c2b45}
+    #cfgPanelInfra .ucard{border-top:1px solid #1c2b45}
+    #cfgPanelInfra .ucard:first-of-type{border-top:0}
+    #cfgPanelInfra .ucard>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:11px;padding:10px 13px;transition:.15s}
+    #cfgPanelInfra .ucard>summary::-webkit-details-marker{display:none}
+    #cfgPanelInfra .ucard>summary:hover{background:#0c1a2f}
+    #cfgPanelInfra .uav{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:850;font-size:12px;color:#04121f;flex-shrink:0}
+    #cfgPanelInfra .uname{font-size:13px;font-weight:750;display:flex;align-items:center;gap:7px;flex-wrap:wrap;color:#eaf1fb}
+    #cfgPanelInfra .usub{font-size:10px;color:#5f7290;margin-top:2px}
+    #cfgPanelInfra .ucar{color:#5f7290;font-size:12px;transition:.2s}
+    #cfgPanelInfra .ucard[open] .ucar{transform:rotate(180deg)}
+    #cfgPanelInfra .uactions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 13px 12px 56px}
+    #cfgPanelInfra .ubtn{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;color:#9fb2ce;background:#0e1c34;border:1px solid #26375a;border-radius:8px;padding:6px 10px;cursor:pointer;transition:.15s}
+    #cfgPanelInfra .ubtn:hover{border-color:#4aa8ff;color:#eaf1fb;transform:translateY(-1px)}
+    #cfgPanelInfra .ubtn.danger:hover{border-color:#7f1d1d;color:#f87171}
+    #cfgPanelInfra .rolebadge{font-size:9px;font-weight:800;letter-spacing:.04em;padding:2px 7px;border-radius:6px;text-transform:uppercase}
+    #cfgPanelInfra .rolebadge.master{background:rgba(245,184,73,.16);color:#fcd34d;border:1px solid rgba(245,184,73,.4)}
+    #cfgPanelInfra .rolebadge.cajero{background:rgba(56,189,248,.14);color:#7dd3fc;border:1px solid rgba(56,189,248,.35)}
+    #cfgPanelInfra .rolebadge.vend{background:rgba(74,168,255,.12);color:#8fd0ff;border:1px solid rgba(74,168,255,.35)}
+    #cfgPanelInfra .rolebadge.alm{background:rgba(251,146,60,.14);color:#fdba74;border:1px solid rgba(251,146,60,.35)}
+    #cfgPanelInfra .add-row{border:1.5px dashed #26375a;border-radius:12px;text-align:center;padding:11px;color:#5f7290;font-size:12px;font-weight:650;cursor:pointer}
+    #cfgPanelInfra .add-row:hover{border-color:#4aa8ff;color:#4aa8ff}
+    #cfgPanelInfra .pend{background:linear-gradient(135deg,#2a0f12,#0c1424);border:1.5px solid #7f1d1d;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:9px}
+    #cfgPanelInfra .pend-row{display:flex;align-items:center;gap:12px;background:#0a1424;border:1px solid #5b1a1a;border-radius:11px;padding:10px 12px;flex-wrap:wrap}
+    #cfgPanelInfra .pend-row .nm{font-weight:700;font-size:13px;color:#eaf1fb}
+    #cfgPanelInfra .pend-row .mt{font-size:10.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:1px}
+    #cfgPanelInfra .pend-row .rq{font-size:11px;color:#fbbf24;margin-top:2px;font-weight:650}
+    #cfgPanelInfra .act{font-size:12px;font-weight:750;border-radius:9px;padding:8px 12px;cursor:pointer;border:1px solid transparent}
+    #cfgPanelInfra .act.ok{background:#10b981;color:#04150e}
+    #cfgPanelInfra .act.ghost{background:transparent;border-color:#26375a;color:#9fb2ce}
+    #cfgPanelInfra .act.warn{background:transparent;border-color:#7f1d1d;color:#f87171}
+    #cfgPanelInfra .life{background:linear-gradient(135deg,#0c1a33,#0a1424);border:1px solid #26375a;border-radius:16px;padding:16px}
+    #cfgPanelInfra .flow{display:flex;gap:0;flex-wrap:wrap}
+    #cfgPanelInfra .step{flex:1;min-width:140px;position:relative;padding:2px 14px}
+    #cfgPanelInfra .step:not(:last-child)::after{content:"→";position:absolute;right:-6px;top:18px;color:#5f7290}
+    #cfgPanelInfra .step .db{width:11px;height:11px;border-radius:50%;margin-bottom:7px}
+    #cfgPanelInfra .step h4{margin:0;font-size:12.5px;font-weight:800;color:#eaf1fb}
+    #cfgPanelInfra .step .whh{font-size:9.5px;font-weight:700;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace;margin:2px 0 4px}
+    #cfgPanelInfra .step p{margin:0;font-size:10.5px;color:#9fb2ce;line-height:1.4}
+    #cfgPanelInfra .lifenote{margin-top:12px;padding:10px 12px;background:rgba(74,168,255,.07);border:1px solid rgba(74,168,255,.25);border-radius:10px;font-size:11.5px;color:#9fb2ce}
+    #cfgPanelInfra .lifenote b{color:#4aa8ff}
+    #cfgPanelInfra .arch{background:#0a1526;border:1px dashed #26375a;border-radius:16px;padding:13px 15px;margin-top:12px}
+    #cfgPanelInfra .arch summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:9px;font-weight:750;font-size:13px;color:#9fb2ce}
+    #cfgPanelInfra .arch summary::-webkit-details-marker{display:none}
+    #cfgPanelInfra .arch summary .cnt{margin-left:auto;color:#5f7290;font-size:11px}
+    #cfgPanelInfra .muted{color:#5f7290}
+    @keyframes cfgPulse{0%{box-shadow:0 0 0 0 rgba(16,185,129,.55)}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
+    @media (max-width:860px){#cfgPanelInfra .stations{grid-template-columns:1fr}}
+    @media (max-width:600px){
+      #cfgPanelInfra .cmd{padding:11px 12px}
+      #cfgPanelInfra .stat{padding-right:12px}
+      #cfgPanelInfra .stat+.stat{padding-left:12px}
+      #cfgPanelInfra .stat .big{font-size:18px}
+      #cfgPanelInfra .cmd-right{width:100%;margin-left:0;margin-top:10px}
+      #cfgPanelInfra .search{flex:1;min-width:0}
+      #cfgPanelInfra .glabel{width:100%;margin-bottom:2px}
+      #cfgPanelInfra .zhead{flex-wrap:wrap}
+      #cfgPanelInfra .zctl{margin-left:auto}
+      #cfgPanelInfra .fleet{justify-content:center;gap:9px}
+      #infraContenedor .dev{width:calc(50% - 6px);min-width:118px}
+      #cfgPanelInfra .uactions{padding-left:13px}
+      #cfgPanelInfra .flow{flex-direction:column;gap:12px}
+      #cfgPanelInfra .step{padding:0 0 0 4px}
+      #cfgPanelInfra .step:not(:last-child)::after{content:"↓";right:auto;left:2px;top:auto;bottom:-9px}
+    }
+    @media (min-width:601px) and (max-width:900px){#infraContenedor .dev{width:120px}}
+    @media (prefers-reduced-motion:reduce){#cfgPanelInfra *{animation:none!important}}
+
     /* ── Modal Producto rediseñado ── */
     .prod-tipo-bar { display:flex; border-bottom:1px solid #1e293b; background:#070f1a; overflow-x:auto; flex-shrink:0; }
     .prod-tipo-btn { flex:1; padding:10px 6px; font-size:11px; font-weight:700; color:#475569; border-bottom:2px solid transparent; white-space:nowrap; transition:all .15s; min-width:72px; }
@@ -14484,111 +14643,47 @@
     <!-- ═══ VIEW: CONFIGURACIÓN ══════════════════════════════ -->
     <section id="view-config" class="view hidden">
       <!-- Tab bar (scrollable en mobile, con fade lateral indicador) -->
-      <div class="tab-scroll-wrap pb-1 mb-2">
-        <div class="tab-bar w-max">
-          <button class="tab-btn active" id="cfgTabInfra"     onclick="MOS.setCfgTab('infra')">🏗️ Infraestructura</button>
-          <!-- [Fase2] Pestaña "Personal" fusionada dentro de Infraestructura: los usuarios viven
-               en cada zona (👥 desplegable + "+ usuario"), metas en chips de política, horarios en
-               chips app+horario. El panel #cfgPanelPersonal queda oculto (renderPersonal aún lo usa
-               en background para guardarMetaChip); sin botón de acceso directo. -->
-          <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
-          <button class="tab-btn" id="cfgTabNotifs"            onclick="MOS.setCfgTab('notifs')">🔔 Notificaciones</button>
-          <button class="tab-btn" id="cfgTabBancarios"         onclick="MOS.setCfgTab('bancarios')">🏦 Bancarios</button>
-        </div>
+      <!-- [Rediseño Config] Barra de tabs unificada (mockup): píldora única, tab activa azul -->
+      <div class="cfgtabs">
+        <button class="tab-btn active" id="cfgTabInfra"     onclick="MOS.setCfgTab('infra')">🏗️ Infraestructura <span class="thint">+ personal</span></button>
+        <!-- Pestaña "Personal" fusionada: usuarios en cada zona (👥), metas en política, horarios en chips.
+             #cfgPanelPersonal queda oculto (renderPersonal corre en background para guardarMetaChip). -->
+        <button class="tab-btn" id="cfgTabCategorias"        onclick="MOS.setCfgTab('categorias')">🏷️ Categorías</button>
+        <button class="tab-btn" id="cfgTabNotifs"            onclick="MOS.setCfgTab('notifs')">🔔 Notificaciones</button>
+        <button class="tab-btn" id="cfgTabBancarios"         onclick="MOS.setCfgTab('bancarios')">🏦 Bancarios</button>
       </div>
-      <div class="text-xs text-slate-600 italic mb-3 sm:hidden">→ Desliza las tablas y los tabs para ver todo</div>
 
       <!-- ════════════════════════════════════════════════════════
-           INFRAESTRUCTURA — vista jerárquica Zona → Estación → Impresora
+           INFRAESTRUCTURA — reconstrucción fiel al mockup config_modulo.html
            ════════════════════════════════════════════════════════ -->
       <div id="cfgPanelInfra">
-        <!-- Subtítulo breve -->
-        <p class="text-xs text-slate-500 mb-3">
-          Jerarquía: <strong class="text-slate-300">Zonas</strong> → <strong class="text-slate-300">Estaciones</strong> → <strong class="text-slate-300">Impresoras</strong>. Usa los botones contextuales dentro de cada card para agregar.
-        </p>
-
-        <!-- [Fase2] Herramientas agrupadas — antes eran 7 botones sueltos en 2 filas.
-             <details> nativo (sin JS): declutter del top de Infraestructura. -->
-        <style>
-          details.cfg-tools > summary { list-style:none; cursor:pointer; user-select:none; }
-          details.cfg-tools > summary::-webkit-details-marker { display:none; }
-          details.cfg-tools > summary::before { content:'\25B8'; display:inline-block; margin-right:.4rem; transition:transform .2s; color:#64748b; }
-          details.cfg-tools[open] > summary::before { transform:rotate(90deg); }
-        </style>
-        <details class="cfg-tools mb-3">
-          <summary class="text-xs font-bold px-3 py-2 rounded-lg inline-flex items-center gap-1.5"
-                   style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid #334155;color:#cbd5e1;">
-            🛠 Herramientas y diagnóstico
-          </summary>
-          <div class="flex items-center gap-2 mt-2 flex-wrap">
-        <!-- [v2.43.127] Sistema de membretes (calibración + colas) -->
-          <button onclick="window.MembreteSystem && MembreteSystem.abrirCalibrador()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
-                  style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(251,191,36,.45);color:#fbbf24"
-                  title="Calibrar impresora de adhesivos (drift compensation)">
-            🔧 Calibrar impresora
-          </button>
-          <!-- [v2.43.196] Editor de Avisos — usa fallback window.abrirEditorAdhesivos
-               si MOS.abrirEditorAdhesivos no está aún (defensa contra timing
-               de carga del bootstrap script — antes el botón rompía con
-               'MOS.abrirEditorAdhesivos is not a function'). -->
-          <button onclick="(typeof MOS!=='undefined' && MOS.abrirEditorAdhesivos) ? MOS.abrirEditorAdhesivos() : (window.abrirEditorAdhesivos ? window.abrirEditorAdhesivos() : alert('Editor cargando — esperá unos segundos y reintentá'))" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105 active:scale-95"
-                  style="background:linear-gradient(135deg,#312e81,#1e1b4b);border:1px solid rgba(99,102,241,.55);color:#a5b4fc;font-weight:700"
-                  title="Editor visual de adhesivos personalizados (avisos, alertas, promos)">
-            🎨 Editor de avisos
-          </button>
-          <!-- [v2.43.152] Tools simplificado a 2 botones: alertas + lotes globales.
-               El filtrado por tipo se hace DENTRO del modal de lotes con tabs. -->
-          <button onclick="window.MembreteSystem && MembreteSystem.abrirAlertasPrecio && MembreteSystem.abrirAlertasPrecio()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105 active:scale-95"
-                  style="background:linear-gradient(135deg,#7f1d1d,#450a0a);border:1px solid rgba(248,113,113,.5);color:#fca5a5;font-weight:700"
-                  title="Productos cuyo precio cambió y necesitan reimpresión de membrete">
-            🚨 Alertas precio
-          </button>
-          <button onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes('')" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105 active:scale-95"
-                  style="background:linear-gradient(135deg,#1e293b,#0a1424);border:1px solid rgba(251,191,36,.45);color:#fbbf24;font-weight:700"
-                  title="Todos los lotes (pendientes + historial). Filtra por tipo con los tabs dentro.">
-            📋 Lotes de impresión
-          </button>
-          <!-- [v2.41.76] Acceso a diagnóstico del cron de cierre nocturno -->
-          <button onclick="MOS.abrirCronStatus()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
-                  style="background:linear-gradient(135deg,#1e1b4b,#0d0d2e);border:1px solid rgba(168,85,247,.4);color:#c4b5fd"
-                  title="Ver estado del trigger 23h + últimas corridas">
-            🌙 <span class="ml-1">Cierre nocturno</span>
-          </button>
-          <!-- [v2.41.84] Viewer auditoría de acciones admin -->
-          <button onclick="MOS.abrirAuditoriaAdmin()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
-                  style="background:linear-gradient(135deg,#3b0764,#1e1b4b);border:1px solid rgba(217,70,239,.5);color:#f0abfc"
-                  title="Ver registro de autorizaciones admin (MOS + ME + WH)">
-            🔐 <span class="ml-1">Auditoría admin</span>
-          </button>
-          <!-- [v2.41.85] Roadmap de proyección estratégica -->
-          <button onclick="MOS.abrirProyeccion()" class="text-xs px-3 py-1.5 rounded-lg transition-all hover:scale-105"
-                  style="background:linear-gradient(135deg,#064e3b,#022c22);border:1px solid rgba(16,185,129,.5);color:#6ee7b7"
-                  title="Roadmap estratégico InversionMos · plan de mejoras">
-            🗺 <span class="ml-1">Proyección</span>
-          </button>
+        <!-- [Rediseño Config] Acciones agrupadas por función (mockup): Impresión · Operación · Marca.
+             La Tarjeta/WhatsApp deja de estar perdida al fondo. -->
+        <div class="actions">
+          <div class="grp"><span class="glabel">Impresión</span>
+            <button class="abtn" onclick="window.MembreteSystem && MembreteSystem.abrirCalibrador()" title="Calibrar impresora de adhesivos (drift compensation)">🔧 Calibrar impresora</button>
+            <button class="abtn" onclick="window.MembreteSystem && MembreteSystem.abrirHistorialLotes('')" title="Todos los lotes (pendientes + historial)">📋 Lotes de impresión</button>
+            <button class="abtn" onclick="window.MembreteSystem && MembreteSystem.abrirAlertasPrecio && MembreteSystem.abrirAlertasPrecio()" title="Productos con precio cambiado que necesitan reimpresión">🚨 Alertas de precio</button>
           </div>
-        </details>
+          <div class="grp"><span class="glabel">Operación</span>
+            <button class="abtn" onclick="MOS.abrirCronStatus()" title="Estado del trigger 23h + últimas corridas">🌙 Cierre nocturno</button>
+            <button class="abtn" onclick="MOS.abrirProyeccion()" title="Roadmap estratégico InversionMos">🗺 Proyección</button>
+            <button class="abtn" onclick="MOS.abrirAuditoriaAdmin()" title="Registro de autorizaciones admin (MOS + ME + WH)">🔐 Auditoría admin</button>
+          </div>
+          <div class="grp"><span class="glabel">Marca</span>
+            <button class="abtn" onclick="(typeof MOS!=='undefined' && MOS.abrirEditorAdhesivos) ? MOS.abrirEditorAdhesivos() : (window.abrirEditorAdhesivos && window.abrirEditorAdhesivos())" title="Editor visual de adhesivos (avisos, alertas, promos)">🎨 Editor de avisos</button>
+            <button class="abtn" onclick="MOS.abrirTarjetaModal && MOS.abrirTarjetaModal()" title="Editar los números de WhatsApp del QR (clientes / proveedores)">📇 Tarjeta / WhatsApp del QR</button>
+          </div>
+        </div>
 
-        <!-- Vista jerárquica -->
-        <div id="infraContenedor" class="space-y-4">
+        <!-- Vista jerárquica (render 100% de renderInfra) -->
+        <div id="infraContenedor">
           <div class="text-center py-12 text-slate-500 text-sm">Cargando infraestructura...</div>
         </div>
 
         <div class="mt-3 p-3 rounded-lg text-xs text-slate-400" style="background:#0d1526;border:1px solid #1e293b;">
           ℹ️ Las API keys de PrintNode se mantienen en <strong class="text-slate-300">Script Properties</strong> de cada app por seguridad. Aquí solo se gestionan los PrintNode IDs.
         </div>
-
-        <!-- [Tarjeta de presentación] Botón que abre el modal de edición de números WhatsApp -->
-        <button onclick="MOS.abrirTarjetaModal && MOS.abrirTarjetaModal()"
-                class="w-full mt-4 p-4 rounded-xl flex items-center gap-3 text-left transition-all hover:scale-[1.01] active:scale-95"
-                style="background:linear-gradient(135deg,#1e1b4b,#0d1526);border:1px solid rgba(99,102,241,.45);">
-          <span class="text-2xl">📇</span>
-          <span class="flex-1">
-            <span class="block text-sm font-bold text-slate-200">Tarjeta de presentación</span>
-            <span class="block text-xs text-slate-500">Editar los números de WhatsApp del QR (clientes / proveedores)</span>
-          </span>
-          <span class="text-indigo-400 text-lg">›</span>
-        </button>
       </div>
 
       <!-- Personal — vista agrupada con metas inline + indicador de actividad -->
@@ -19382,7 +19477,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.568';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.569';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19447,7 +19542,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.568"></script>
+<script src="js/app.js?v=2.43.569"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

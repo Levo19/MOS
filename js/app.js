@@ -19589,497 +19589,489 @@ const MOS = (() => {
   // ════════════════════════════════════════════════════════════
   // INFRAESTRUCTURA — vista jerárquica Zona > Estación > Impresora
   // ════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════
+  // [REDISEÑO CONFIG · reconstrucción fiel al mockup config_modulo.html]
+  // Sistema: .cmd (stats+buscador+filtro) → .zone.vip → .pend → .zone (series
+  // .schip · política .pchip · .stations con .printer y fleet dibujado ·
+  // 👥 .users con .ucard desplegables) → ciclo de vida → 🗄️ archivados.
+  // Todos los handlers reales se conservan 1:1. Cero-GAS (solo pinta cfgData).
+  // ════════════════════════════════════════════════════════════════════
+  let _cfgQ = '';           // buscador equipo/persona
+  let _cfgVerTodos = false; // ⏸ suspendidos: ON = mostrar también susp>7d + inactivos
+  let _cfgQTimer = null;
+  const _CFG_7D_MIN = 7 * 24 * 60;
+  const _cfgOpen = {};      // estado open/closed de cada <details> (sobrevive re-render del poll)
+
+  function cfgBuscar(v) {
+    _cfgQ = String(v || '').trim().toLowerCase();
+    clearTimeout(_cfgQTimer);
+    _cfgQTimer = setTimeout(() => {
+      renderInfra();
+      const s = $('cfgSearchInp');
+      if (s) { s.focus(); try { s.setSelectionRange(s.value.length, s.value.length); } catch (_) {} }
+    }, 380);
+  }
+  function cfgToggleSusp() { _cfgVerTodos = !_cfgVerTodos; renderInfra(); }
+  function _cfgDetToggle(k, open) { _cfgOpen[k] = open; }
+  function _cfgIsOpen(k, def) { return Object.prototype.hasOwnProperty.call(_cfgOpen, k) ? _cfgOpen[k] : def; }
+
+  // Ciclo de vida en el fleet: ACTIVO siempre · SUSPENDIDO solo si ≤7d (los demás → Archivados).
+  function _dispVisibleFleet(d) {
+    const est = String(d.Estado || '').toUpperCase();
+    if (est === 'ACTIVO') return true;
+    if (est === 'SUSPENDIDO') {
+      if (_cfgVerTodos) return true;
+      return _dispActividad(d.Ultima_Conexion).minutos <= _CFG_7D_MIN;
+    }
+    if (est === 'INACTIVO') return _cfgVerTodos;
+    return false; // PENDIENTE va en su sección · CANCELADO* en Archivados
+  }
+  function _fleetDe(devs) {
+    return (devs || []).filter(_dispVisibleFleet).filter(d => {
+      if (!_cfgQ) return true;
+      return (String(d.Nombre_Equipo || '') + ' ' + String(d.Ultima_Sesion || '')).toLowerCase().includes(_cfgQ);
+    });
+  }
+
+  // Rol de una persona por nombre (para la cara del dispositivo dibujado).
+  function _rolDe(nombre) {
+    const n = _normNombre(nombre);
+    if (!n) return '';
+    const full = p => _normNombre((p.nombre || '') + ' ' + (p.apellido || ''));
+    const a = (cfgData.personalMOS || []).find(p => full(p) === n || _normNombre(p.nombre) === n);
+    if (a) return String(a.rol || '').toLowerCase();
+    const w = (cfgData.personal || []).find(p => full(p) === n || _normNombre(p.nombre) === n);
+    if (w) return String(w.rol || '').toLowerCase();
+    const { grupos } = { grupos: null }; // cajeros: buscar en cache liviano
+    try {
+      const raw = localStorage.getItem('mos_liq_pendientes');
+      const per = raw ? (JSON.parse(raw).data || {}).personal : null;
+      const c = (per || []).find(x => _normNombre(x.nombre) === n);
+      if (c) return String(c.rol || 'cajero').toLowerCase();
+    } catch (_) {}
+    return '';
+  }
+
+  function _rolebadge(rol, opts) {
+    opts = opts || {};
+    const r = String(rol || '').toLowerCase();
+    if (opts.ascendido) return `<span class="rolebadge" style="background:rgba(245,184,73,.16);color:#fcd34d;border:1px solid rgba(245,184,73,.4)">ascendido → admin</span>`;
+    if (r === 'master') return `<span class="rolebadge master">master</span>`;
+    if (r === 'admin' || r === 'administrador') return `<span class="rolebadge" style="background:rgba(167,139,250,.16);color:#c4b5fd;border:1px solid rgba(167,139,250,.4)">admin</span>`;
+    if (r === 'cajero') return `<span class="rolebadge cajero">cajero</span>`;
+    if (r === 'vendedor') return `<span class="rolebadge vend">vendedor</span>`;
+    if (r) return `<span class="rolebadge alm">${r}</span>`;
+    return '';
+  }
+
+  // Badge de estado PrintNode (11 diagnósticos, backend decide) — extraído para .printer.
+  const _IMP_STATE_MAP = {
+    ONLINE:          { cls: 'imp-on',       tx: 'online' },
+    PC_OFFLINE:      { cls: 'imp-pc-off',   tx: 'PC apagada' },
+    PRINTER_OFFLINE: { cls: 'imp-off',      tx: 'apagada' },
+    SIN_PAPEL:       { cls: 'imp-warn',     tx: 'sin papel' },
+    SIN_TINTA:       { cls: 'imp-warn',     tx: 'sin tinta' },
+    ATASCO:          { cls: 'imp-err',      tx: 'atasco' },
+    TAPA_ABIERTA:    { cls: 'imp-warn',     tx: 'tapa abierta' },
+    PAUSED:          { cls: 'imp-paused',   tx: 'pausada' },
+    DISABLED:        { cls: 'imp-disabled', tx: 'deshabilitada' },
+    ERROR:           { cls: 'imp-err',      tx: 'error' },
+    SIN_ID:          { cls: 'imp-noid',     tx: 'sin ID' },
+    ID_INVALIDO:     { cls: 'imp-err',      tx: 'ID inválido' },
+    UNKNOWN:         { cls: 'imp-noinfo',   tx: 'sin señal' }
+  };
+  function _impBadgeHTML(i) {
+    if (!_impPNCargado) return '';
+    const pnSt = _impPNEstado[String(i.printNodeId)];
+    const st = (pnSt && pnSt.state) ? pnSt.state : (i.printNodeId ? 'UNKNOWN' : 'SIN_ID');
+    const cfg = _IMP_STATE_MAP[st] || _IMP_STATE_MAP.UNKNOWN;
+    const icon = (pnSt && pnSt.icon) || '❔';
+    const reason = (pnSt && pnSt.reason) || cfg.tx;
+    return `<span class="imp-estado ${cfg.cls}" title="${_escapeHtml(reason)}">${icon} ${cfg.tx}</span>`;
+  }
+
+  // ── Command bar: stats en vivo + buscador + filtro suspendidos ──
+  function _cfgCmdBar() {
+    const devs = cfgData.dispositivos || [];
+    const activos = devs.filter(d => String(d.Estado).toUpperCase() === 'ACTIVO');
+    const online = activos.filter(d => _dispActividad(d.Ultima_Conexion).minutos < 5).length;
+    const zonasN = (cfgData.zonas || []).filter(z => String(z.estado) === '1' || z.estado === 1).length;
+    const estN = (cfgData.estaciones || []).filter(e => String(e.activo) === '1').length;
+    return `<div class="cmd">
+      <div class="stat"><span class="live-dot"${online ? '' : ' style="animation:none;background:#475569;box-shadow:none"'}></span><div><div class="big tnum" style="color:${online ? '#6ee7b7' : '#94a3b8'}">${online}</div><div class="cap">en línea</div></div></div>
+      <div class="stat"><div><div class="big tnum">${activos.length}</div><div class="cap">dispositivos</div></div></div>
+      <div class="stat"><div><div class="big tnum">${zonasN}</div><div class="cap">zonas</div></div></div>
+      <div class="stat"><div><div class="big tnum">${estN}</div><div class="cap">estaciones</div></div></div>
+      <div class="cmd-right">
+        <input id="cfgSearchInp" class="search" placeholder="🔎 buscar equipo / persona…" value="${_escapeHtml(_cfgQ)}" oninput="MOS.cfgBuscar(this.value)">
+        <button class="tbtn ${_cfgVerTodos ? 'on' : ''}" onclick="MOS.cfgToggleSusp()" title="Mostrar también suspendidos antiguos e inactivos">⏸ suspendidos</button>
+      </div>
+    </div>`;
+  }
+
+  function _cfgEyebrow(n, titulo) {
+    return `<div class="eyebrow"><span class="n">${n}</span><h2>${titulo}</h2><span class="rule"></span></div>`;
+  }
+
+  // ── ucard: persona (admins/operadores) desplegable con acciones ──
+  function _cfgUcardPersona(p, appOrigen, opts) {
+    opts = opts || {};
+    const act = _personaActividad(p.Ultima_Conexion || p.ultimaConexion);
+    const activo = String(p.estado) === '1';
+    const safeId = String(p.idPersonal || '').replace(/'/g, '&#39;');
+    const safeNombre = String(p.nombre || '').replace(/'/g, '&#39;');
+    const ini = ((p.nombre || '?')[0] + (p.apellido || '')[0] || '').toUpperCase() || '?';
+    const rolUp = String(p.rol || '').toUpperCase();
+    const esAdmin = rolUp === 'MASTER' || rolUp === 'ADMIN' || rolUp === 'ADMINISTRADOR';
+    // Última acción (solo admins, del audit cache)
+    let ult = '';
+    if ((esAdmin || opts.ascendido) && _personalAuditCache.length) {
+      const propias = _personalAuditCache.filter(a => String(a.idPersonalAutoriza) === String(p.idPersonal));
+      if (propias.length) {
+        const u = propias[0];
+        const f = u.fecha ? new Date(u.fecha) : null;
+        const fmt = f ? f.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '';
+        ult = ` · última: ${fmt} · ${u.accion || '—'}${u.refDocumento ? ' · ' + String(u.refDocumento).slice(0, 10) + '…' : ''}`;
+      }
+    }
+    const subExtra = opts.ascendido
+      ? ` · acceso_mos · rol real: <b>${String(p.rol || '').toLowerCase()}</b> (cobra como ${String(p.rol || '').toLowerCase()}) · también en Almacén ↑`
+      : (p.montoBase ? ` · S/${parseFloat(p.montoBase).toFixed(2)}/día` : '');
+    const key = 'u:' + safeId + (opts.ascendido ? ':vip' : '');
+    const acciones = [
+      !esAdmin ? `<span class="ubtn" onclick="MOS.abrirEspiaPorUsuario('${safeNombre}')">🕵️ espía</span>` : '',
+      `<span class="ubtn" onclick="MOS.abrirModalEnviarPush('${safeId}','${safeNombre}')">💬 mensaje</span>`,
+      `<span class="ubtn" onclick="MOS.cfgHistorialPersonal('${safeId}','${safeNombre}')">📜 historial</span>`,
+      esAdmin ? `<span class="ubtn" onclick="MOS.abrirModalClaveGlobal('${safeId}')">🔑 permisos / clave</span>` : '',
+      `<span class="ubtn" onclick="MOS.abrirModalHorarioCustom('${safeId}')">🕐 horario</span>`,
+      `<span class="ubtn" onclick="MOS.abrirModalPersonal('${safeId}','${appOrigen}')">✏️ editar</span>`,
+      opts.ascendido ? `<span class="ubtn danger" onclick="MOS.abrirModalPersonal('${safeId}','warehouseMos')">⬇ quitar acceso admin</span>` : '',
+      `<label class="pers-switch" style="transform:scale(.8)" title="${activo ? 'Desactivar' : 'Activar'}"><input type="checkbox" ${activo ? 'checked' : ''} onchange="MOS.togglePersonalActivo('${safeId}','${appOrigen}', event)"><span class="pers-switch-slider"></span></label>`
+    ].filter(Boolean).join('');
+    return `<details class="ucard" ${_cfgIsOpen(key, false) ? 'open' : ''} ontoggle="MOS._cfgDetToggle('${key}',this.open)"><summary>
+      <div class="uav" style="background:${p.color || _avatarGrad(p.nombre)}">${ini}</div>
+      <div style="flex:1;min-width:0"><div class="uname">${p.nombre} ${p.apellido || ''} ${_rolebadge(p.rol, opts)}</div>
+      <div class="usub" style="color:${act.color}">${act.dot} ${act.label}${subExtra}${ult}</div></div><span class="ucar">▾</span></summary>
+      <div class="uactions">${acciones}</div></details>`;
+  }
+
+  // ── ucard: cajero/vendedor ME (por nombre) ──
+  function _cfgUcardCajero(c, dispPorCajero, bloqMap) {
+    const safeNombre = String(c.nombre || '').replace(/'/g, '&#39;');
+    const disp = dispPorCajero[_normNombre(c.nombre)];
+    const act = disp ? _personaActividad(disp.Ultima_Conexion) : { color: '#64748b', label: 'sin sesión', dot: '⚫', minutos: Infinity };
+    const reg = bloqMap[_normNombre(c.nombre)];
+    const bloqueado = !!(reg && reg.fechaBloqueo && !reg.unlockVigente);
+    const ini = String(c.nombre || '?').split(/\s+/).map(s => s[0] || '').join('').slice(0, 2).toUpperCase();
+    const monto = parseFloat(c.montoTotal) || 0;
+    const dias = parseInt(c.diasPendientes) || 0;
+    const aud = parseInt(c.diasAuditados) || 0;
+    const lockBadge = bloqueado ? `<span class="rolebadge" style="background:rgba(239,68,68,.14);color:#fca5a5;border:1px solid rgba(239,68,68,.3)">🔒 bloqueado</span>` : '';
+    const key = 'c:' + _normNombre(c.nombre);
+    return `<details class="ucard" ${_cfgIsOpen(key, false) ? 'open' : ''} ontoggle="MOS._cfgDetToggle('${key}',this.open)"><summary>
+      <div class="uav" style="background:${bloqueado ? '#3a4560' : _avatarGrad(c.nombre)}">${ini}</div>
+      <div style="flex:1;min-width:0"><div class="uname">${c.nombre} ${_rolebadge(c.rol || 'cajero')} ${lockBadge}</div>
+      <div class="usub" style="color:${act.color}">${act.dot} ${act.label} · ${aud}/${dias || '—'} aud · S/${monto.toFixed(2)} semana</div></div><span class="ucar">▾</span></summary>
+      <div class="uactions">
+        <span class="ubtn" onclick="MOS.abrirEspiaPorUsuario('${safeNombre}')">🕵️ espía</span>
+        <span class="ubtn" onclick="MOS.abrirModalEnviarPush('','${safeNombre}')">💬 mensaje</span>
+        <label class="pers-switch" style="transform:scale(.8)" title="${bloqueado ? 'Activar (quita candado)' : 'Bloquear (pantalla candado)'}"><input type="checkbox" ${bloqueado ? '' : 'checked'} onchange="MOS.toggleVendedorME('${safeNombre}', event)"><span class="pers-switch-slider"></span></label>
+      </div></details>`;
+  }
+
+  // ── 👥 usuarios de una zona (fusión Personal) ──
+  function _cfgUsersZona(z) {
+    const esAlm = _esZonaAlmacen(z);
+    let cards = [], n = 0, online = 0, addLabel, addApp;
+    const qMatch = nom => !_cfgQ || _normNombre(nom).includes(_cfgQ);
+    if (esAlm) {
+      const ops = (cfgData.personal || []).filter(p => String(p.rol || '').toUpperCase() !== 'SUPERVISOR').filter(p => qMatch((p.nombre || '') + ' ' + (p.apellido || '')));
+      n = ops.length;
+      online = ops.filter(p => _personaActividad(p.Ultima_Conexion || p.ultimaConexion).minutos < 5).length;
+      cards = ops.map(p => _cfgUcardPersona(p, 'warehouseMos'));
+      addLabel = '＋ agregar almacenero / envasador'; addApp = 'warehouseMos';
+    } else {
+      const { grupos, dispPorCajero, bloqMap } = _cfgCajerosData();
+      // Ultima_Zona del dispositivo puede traer el ID ("ZONA-02") o el NOMBRE ("Zona 02") → matchear ambos
+      const kZona = Object.keys(grupos).find(k => {
+        const kn = _normNombre(k);
+        return kn === _normNombre(z.idZona) || kn === _normNombre(z.nombre);
+      });
+      const lista = (kZona ? grupos[kZona] : []).filter(c => qMatch(c.nombre));
+      n = lista.length;
+      online = lista.filter(c => { const d = dispPorCajero[_normNombre(c.nombre)]; return d && _personaActividad(d.Ultima_Conexion).minutos < 5; }).length;
+      cards = lista.map(c => _cfgUcardCajero(c, dispPorCajero, bloqMap));
+      addLabel = '＋ agregar cajero / vendedor'; addApp = 'mosExpress';
+    }
+    const key = 'z:' + z.idZona;
+    return `<details class="users" ${_cfgIsOpen(key, online > 0) ? 'open' : ''} ontoggle="MOS._cfgDetToggle('${key}',this.open)">
+      <summary><span class="uic">👥</span>Usuarios de la zona <span class="cnt">${n}${online ? ` · ${online} en línea` : ''} ▾</span></summary>
+      ${cards.join('')}
+      <div class="add-row" style="margin:9px 13px 12px" onclick="MOS.abrirModalPersonal(null,'${addApp}')">${addLabel}</div>
+    </details>`;
+  }
+
+  // ── serie chips (.schip) de una zona — Almacén NO factura ──
+  function _cfgSeriesZona(z, estZona) {
+    if (_esZonaAlmacen(z)) return '';
+    const TIPOS = [{ t: 'NOTA_VENTA', ic: '📋' }, { t: 'BOLETA', ic: '🧾' }, { t: 'FACTURA', ic: '🧮' }];
+    const series = (cfgData.series || []).filter(s => s.idZona === z.idZona);
+    const chips = TIPOS.map(tp => {
+      const st = series.filter(s => s.tipoDocumento === tp.t);
+      if (!st.length) return `<span class="schip add" onclick="MOS.abrirModalSerieZona('${z.idZona}','${tp.t}')">${tp.ic} + ${tp.t.toLowerCase().replace('_', ' ')}</span>`;
+      const nombres = [...new Set(st.map(s => s.serie))];
+      const nombreShow = nombres.length > 1 ? '⚠ ' + nombres.join('/') : nombres[0];
+      const corr = Math.max(...st.map(s => parseInt(s.correlativo, 10) || 0));
+      const pausada = !st.every(s => String(s.activo) === '1');
+      return `<span class="schip" onclick="MOS.abrirModalSerieZona('${z.idZona}','${tp.t}',true)" style="cursor:pointer${pausada ? ';opacity:.55' : ''}"><span class="ic">${tp.ic}</span><span class="tt">${nombreShow}</span><span class="cc">corr ${corr}${pausada ? ' · ⏸' : ''}</span></span>`;
+    }).join('');
+    return `<div class="srow"><span class="slab">📄 Series DCPE</span>${chips}</div>`;
+  }
+
+  // ── política chips (.pchip) — POS desde politicaJSON · Almacén editable inline ──
+  function _cfgPoliticaZona(z) {
+    const app = _zonaAppKey(z);
+    const hoy = _horarioHoyTxt(app);
+    const horChip = `<span class="pchip" style="cursor:pointer" onclick="MOS.abrirModalHorarioApp('${app}')" title="Horario de la app · toca para editar"><span>🕐</span><div><div class="pv">${hoy || '—'}</div><div class="pl">Horario</div></div></span>`;
+    if (_esZonaAlmacen(z)) {
+      const cfg = cfgData.config || {};
+      const mk = (icon, key, val, lbl, unidad) => `<span class="pchip meta-chip" style="cursor:pointer" data-meta-key="${key}" data-meta-valor="${val}" onclick="MOS.editarMetaChip('${key}', this)" title="Click para editar"><span>${icon}</span><div><div class="pv">${val !== '' ? val : '—'}</div><div class="pl">${lbl} <span class="pu">${unidad}</span></div></div></span>`;
+      const tarifa = cfg.evalTarifaEnvasadoPorUnidad != null && cfg.evalTarifaEnvasadoPorUnidad !== '' ? 'S/' + parseFloat(cfg.evalTarifaEnvasadoPorUnidad).toFixed(2) : '';
+      return `<div class="srow"><span class="slab">🎯 Política</span>
+        ${mk('💵', 'evalTarifaEnvasadoPorUnidad', cfg.evalTarifaEnvasadoPorUnidad || '', 'Envasado', '/und')}
+        ${mk('📦', 'evalMetaAlmacenero', cfg.evalMetaAlmacenero || '', 'Guías', '/día')}
+        ${mk('📋', 'evalMetaAuditorias', cfg.evalMetaAuditorias || '', 'Auditorías', '/día')}
+        ${horChip}</div>`;
+    }
+    let pol = {};
+    try { pol = z.politicaJSON ? (typeof z.politicaJSON === 'string' ? JSON.parse(z.politicaJSON) : z.politicaJSON) : {}; } catch (_) {}
+    const meta = parseFloat(pol.metaDiaria), pct = parseFloat(pol.comisionExcedentePct), aud = parseFloat(pol.metaAuditorias);
+    const mkz = (icon, val, lbl, unidad) => `<span class="pchip" style="cursor:pointer" onclick="MOS.abrirModalZona('${z.idZona}')" title="Editar en la zona"><span>${icon}</span><div><div class="pv">${val}</div><div class="pl">${lbl}${unidad ? ` <span class="pu">${unidad}</span>` : ''}</div></div></span>`;
+    return `<div class="srow"><span class="slab">🎯 Política</span>
+      ${mkz('💰', (!isNaN(meta) && meta > 0) ? 'S/' + meta.toFixed(0) : '—', 'Meta', '/día')}
+      ${mkz('🎯', (!isNaN(pct) && pct >= 0) ? pct + '%' : '—', 'Comisión', '')}
+      ${mkz('📋', (!isNaN(aud) && aud > 0) ? String(aud) : '—', 'Auditorías', '/día')}
+      ${horChip}</div>`;
+  }
+
+  // ── estación (.station) con impresoras y fleet dibujado ──
+  function _cfgStation(e, impresoras) {
+    const activa = String(e.activo) === '1' || e.activo === 1 || e.activo === true;
+    const imps = impresoras.filter(i => i.idEstacion === e.idEstacion);
+    const tipoIcon = { CAJA: '🛒', ALMACEN: '🏭', ENVASADO: '🍶' }[e.tipo] || '📍';
+    const appb = e.appOrigen === 'mosExpress' ? '<span class="appb me">ME</span>' : '<span class="appb wh">WH</span>';
+    const safeId = String(e.idEstacion).replace(/'/g, '&#39;');
+    const online = _dispOnlineEnEstacion(e.idEstacion) > 0;
+
+    const impsHTML = imps.length ? imps.map(i => {
+      const impActiva = String(i.activo) === '1' || i.activo === 1 || i.activo === true;
+      const impIcon = { TICKET: '🖨️', ADHESIVO: '🏷️', ZPL: '📄' }[i.tipo] || '🖨️';
+      const pnSt = _impPNEstado[String(i.printNodeId)];
+      return `<div class="printer${impActiva ? '' : '" style="opacity:.5'}">
+        <span class="pic">${impIcon}</span>
+        <div style="flex:1;min-width:0"><div class="pn">${i.nombre} ${_impBadgeHTML(i)}</div>
+        <div class="pmeta">PN ${i.printNodeId || '—'} · ${i.tipo}${pnSt && pnSt.computer ? ' · ' + pnSt.computer : ''}</div></div>
+        <label class="pers-switch" style="transform:scale(.68)" onclick="event.stopPropagation()" title="${impActiva ? 'Desactivar' : 'Activar'}"><input type="checkbox" ${impActiva ? 'checked' : ''} onchange="MOS.toggleImpresoraActiva('${i.idImpresora}', event)"><span class="pers-switch-slider"></span></label>
+        <span class="iconbtn" style="width:22px;height:22px;font-size:10px" onclick="MOS.abrirModalImpresora('${i.idImpresora}')">✏️</span>
+      </div>`;
+    }).join('') : `<div class="pmeta" style="color:#f5b849;padding:4px 2px">⚠ sin impresoras</div>`;
+
+    const fleetDevs = _fleetDe(_dispEnEstacion(e.idEstacion));
+    const fleetHTML = fleetDevs.length
+      ? `<div class="assigned-h">📱 equipos en esta estación</div><div class="fleet">${fleetDevs.map(d => _dispDrawn(d)).join('')}</div>`
+      : `<div class="assigned-h">📱 equipos</div><div class="fleet"><div class="addstat" style="width:132px;min-height:90px"><span class="plus">＋</span>sin equipos hoy</div></div>`;
+
+    // Trail fantasma (se mudó de estación hace <5s) — feature viva, se conserva
+    const fantasmas = _dispFantasmasDeEstacion(e.idEstacion);
+    const fantasmaHTML = fantasmas.length ? `<div class="pmeta disp-fantasma" style="margin-top:6px;border:1px dashed rgba(99,102,241,.4);border-radius:8px;padding:5px 8px">${fantasmas.map(f => { const dest = (cfgData.estaciones || []).find(es => es.idEstacion === f.hacia); return `${f.ico} ${f.nombre} → <b style="color:#a5b4fc">${dest?.nombre || '…'}</b>`; }).join('<br>')}</div>` : '';
+
+    return `<div class="station${online && activa ? ' online' : ''}${activa ? '' : '" style="opacity:.6'}">
+      <div class="st-head"><span class="sic">${tipoIcon}</span>
+        <div style="flex:1;min-width:0"><div class="snm">${e.nombre} ${appb}</div><div class="sid">${e.idEstacion}</div></div>
+        <label class="pers-switch" style="transform:scale(.8)" onclick="event.stopPropagation()" title="${activa ? 'Desactivar estación' : 'Activar estación'}"><input type="checkbox" ${activa ? 'checked' : ''} onchange="MOS.toggleEstacionActiva('${safeId}', event)"><span class="pers-switch-slider"></span></label>
+        <span class="iconbtn" onclick="MOS.abrirModalEstacion('${safeId}')">✏️</span></div>
+      ${impsHTML}
+      <span class="addln" onclick="MOS.abrirModalImpresora(null,'${safeId}')">+ impresora</span>
+      ${fleetHTML}
+      ${fantasmaHTML}
+    </div>`;
+  }
+
+  // ── zona completa (.zone) ──
+  function _cfgZona(z, estaciones, impresoras) {
+    const estZona = estaciones.filter(e => e.idZona === z.idZona);
+    const totalImp = impresoras.filter(i => estZona.some(e => e.idEstacion === i.idEstacion)).length;
+    const zonaActiva = String(z.estado) === '1' || z.estado === 1;
+    const online = estZona.reduce((a, e) => a + _dispOnlineEnEstacion(e.idEstacion), 0);
+    const esAlm = _esZonaAlmacen(z);
+    const app = _zonaAppKey(z);
+    const appChip = esAlm ? `<span class="chip appwh">🏭 warehouseMos</span>` : `<span class="chip appme">🛒 MosExpress</span>`;
+    const hoy = _horarioHoyTxt(app);
+    const horChip = `<span class="chip hor" style="cursor:pointer" onclick="MOS.abrirModalHorarioApp('${app}')">🕐 ${hoy || 'horario'}</span>`;
+    const liveChip = online ? `<span class="chip live"><span class="d" style="background:#10b981"></span>${online} en línea</span>` : '';
+    const estsHTML = estZona.length
+      ? `<div class="stations">${estZona.map(e => _cfgStation(e, impresoras)).join('')}</div>`
+      : `<div class="pmeta" style="text-align:center;padding:14px;font-style:italic">Esta zona no tiene estaciones aún.</div>`;
+    return `<div class="zone${online && zonaActiva ? ' online' : ''}${zonaActiva ? '' : ' dim'}">
+      <div class="zhead"><div class="zbadge${esAlm ? ' wh' : ''}">${esAlm ? '🏭' : '🏬'}</div>
+        <div class="zt"><div class="row1"><h3>${z.nombre}</h3>${liveChip}${appChip}${horChip}<span class="zid">${z.idZona}</span></div>
+        <div class="zmeta">${estZona.length} estación${estZona.length === 1 ? '' : 'es'} · ${totalImp} impresora${totalImp === 1 ? '' : 's'}${z.responsable ? ' · resp. ' + z.responsable : ''}${z.direccion ? ' · 📍 ' + z.direccion : ''}</div></div>
+        <div class="zctl"><label class="pers-switch" title="${zonaActiva ? 'Desactivar zona' : 'Activar zona'}" onclick="event.stopPropagation()"><input type="checkbox" ${zonaActiva ? 'checked' : ''} onchange="MOS.toggleZonaActiva('${z.idZona}', event)"><span class="pers-switch-slider"></span></label>
+        <span class="iconbtn" onclick="MOS.abrirModalZona('${z.idZona}')">✏️</span></div></div>
+      ${_cfgSeriesZona(z, estZona)}
+      ${_cfgPoliticaZona(z)}
+      ${estsHTML}
+      ${_cfgUsersZona(z)}
+      <span class="addln" style="margin-top:12px" onclick="MOS.abrirModalEstacion(null,'${z.idZona}')">+ estación a esta zona</span>
+    </div>`;
+  }
+
+  // ── cajeros SIN zona asignada (bloqueados / sin sesión) — sección del mockup ──
+  function _cfgSinZona() {
+    const { grupos, dispPorCajero, bloqMap } = _cfgCajerosData();
+    const zonasNorm = (cfgData.zonas || []).flatMap(z => [_normNombre(z.idZona), _normNombre(z.nombre)]);
+    const sueltos = Object.keys(grupos)
+      .filter(k => k === '__SIN_ZONA__' || !zonasNorm.includes(_normNombre(k)))
+      .flatMap(k => grupos[k])
+      .filter(c => !_cfgQ || _normNombre(c.nombre).includes(_cfgQ));
+    if (!sueltos.length) return '';
+    return `<details class="users" ${_cfgIsOpen('z:__SINZONA__', false) ? 'open' : ''} ontoggle="MOS._cfgDetToggle('z:__SINZONA__',this.open)" style="margin-top:14px;border-style:dashed">
+      <summary><span class="uic">🌫</span>Cajeros sin zona asignada <span class="cnt">${sueltos.length} · bloqueados / sin sesión ▾</span></summary>
+      ${sueltos.map(c => _cfgUcardCajero(c, dispPorCajero, bloqMap)).join('')}
+    </details>`;
+  }
+
+  // ── pendientes de aprobación (.pend) ──
+  function _cfgPend() {
+    const pendientes = _dispPendientes().filter(d => !_cfgQ || (String(d.Nombre_Equipo || '') + String(d.Ultima_Sesion || '')).toLowerCase().includes(_cfgQ));
+    if (!pendientes.length) return '';
+    const rows = pendientes.map(d => {
+      const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+      const act = _dispActividad(d.Ultima_Conexion);
+      const appL = String(d.App || '').toLowerCase();
+      const appTxt = appL.indexOf('warehouse') >= 0 ? 'warehouseMos' : (appL === 'mos' ? 'MOS' : 'mosExpress');
+      return `<div class="pend-row" data-pend-card="${idAttr}">
+        <div class="devt phone susp" style="transform:scale(.55);margin:-22px -10px -22px -14px"><div class="face"><div class="avatar" style="background:#4a5a75">${(d.Ultima_Sesion || d.Nombre_Equipo || '?')[0].toUpperCase()}</div></div></div>
+        <div style="flex:1;min-width:0"><div class="nm">${d.Nombre_Equipo || 'Dispositivo nuevo'}</div>
+          <div class="mt">nº ${String(d.ID_Dispositivo).slice(0, 8)} · ${appTxt}</div>
+          <div class="rq">👤 solicita: ${d.Ultima_Sesion || 'sin identificar'} · ${act.label}</div></div>
+        <span class="act ok" onclick="MOS.aprobarDispositivo('${idAttr}')">✓ Aprobar</span>
+        <span class="act ghost" onclick="MOS.aprobarDispositivoConNombre('${idAttr}')" title="Renombrar antes de aprobar">✎</span>
+        <span class="act warn" onclick="MOS.rechazarDispositivo('${idAttr}')">✕</span>
+      </div>`;
+    }).join('');
+    return _cfgEyebrow('A', 'Esperando aprobación') + `<div class="pend">${rows}</div>`;
+  }
+
+  // ── ciclo de vida (informativo, del mockup) ──
+  function _cfgLife() {
+    return `${_cfgEyebrow('C', 'Ciclo de vida + archivado')}
+    <div class="life"><div class="flow">
+      <div class="step"><div class="db" style="background:#10b981;box-shadow:0 0 10px rgba(16,185,129,.55)"></div><h4>En línea</h4><div class="whh">&lt;5 min</div><p>Opera ahora. Brillo verde + quién está.</p></div>
+      <div class="step"><div class="db" style="background:#f5b849"></div><h4>Inactivo</h4><div class="whh">&lt;2 días</div><p>Chip "último: X · hace Yh". Visible.</p></div>
+      <div class="step"><div class="db" style="background:#f97316"></div><h4>Suspendido</h4><div class="whh">2 días →</div><p>Auto (cron 9am). Gris + reactivable 1 toque.</p></div>
+      <div class="step"><div class="db" style="background:#64748b"></div><h4>Archivado</h4><div class="whh">7 días →</div><p>Sale de la vista. Reaparece si vuelve a conectar.</p></div>
+    </div><div class="lifenote">🔑 <b>Archivado ≠ bloqueado.</b> El equipo real reconecta y vuelve a pedir acceso solo; el abandonado queda archivado sin ensuciar la vista.</div></div>`;
+  }
+
+  // ── archivados (.arch): INACTIVO + CANCELADO* + SUSPENDIDO>7d ──
+  function _cfgArch() {
+    const arch = _dispArchivados().filter(d => !_cfgQ || (String(d.Nombre_Equipo || '') + String(d.Ultima_Sesion || '')).toLowerCase().includes(_cfgQ));
+    if (!arch.length) return '';
+    const rows = arch.map(d => {
+      const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+      const act = _dispActividad(d.Ultima_Conexion);
+      return `<div class="printer" style="opacity:.8">
+        <span class="pic" style="filter:grayscale(.6)">${_dispIcono(d.Nombre_Equipo)}</span>
+        <div style="flex:1;min-width:0"><div class="pn">${d.Nombre_Equipo || 'Dispositivo'} ${_appBadge(d.App)}</div>
+        <div class="pmeta" style="color:${act.color}">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div></div>
+        <span class="act ghost" style="color:#34d399;border-color:#065f46" onclick="MOS.aprobarDispositivo('${idAttr}')">↺ Reactivar</span>
+      </div>`;
+    }).join('');
+    return `<details class="arch" ${_cfgIsOpen('arch', false) ? 'open' : ''} ontoggle="MOS._cfgDetToggle('arch',this.open)">
+      <summary>🗄️ Archivados <span class="muted" style="font-weight:400">· sin conectar +7 días · reversibles</span> <span class="cnt">${arch.length} ▾</span></summary>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">${rows}</div>
+    </details>`;
+  }
+
   function renderInfra() {
     const cont = $('infraContenedor');
     if (!cont) return;
-    // [Fase2] Cargar horarios una sola vez para los chips app+horario por zona.
-    // _cargarHorariosApps cachea 5min → tras poblar, la condición es falsa y no re-renderiza en loop.
+    // Horarios para los chips (cache 5min); tras poblar, la condición es falsa → no re-loop.
     if (!S._horariosAppsCache) {
       _cargarHorariosApps(false).then(() => { if (S.cfgTab === 'infra') renderInfra(); }).catch(() => {});
     }
     const zonas = cfgData.zonas || [];
     const estaciones = cfgData.estaciones || [];
     const impresoras = cfgData.impresoras || [];
-
-    // ── A: Header summary con contadores en vivo ──
-    const dispActivos = (cfgData.dispositivos || []).filter(d => String(d.Estado).toUpperCase() === 'ACTIVO');
-    const onlineCount = dispActivos.filter(d => _dispActividad(d.Ultima_Conexion).minutos < 5).length;
-    const totalZ = zonas.filter(z => String(z.estado) === '1' || z.estado === 1).length;
-    const totalE = estaciones.filter(e => String(e.activo) === '1').length;
-    const summaryHTML = `<div class="card p-3 mb-4" style="background:linear-gradient(135deg,#0c1a2e 0%,#0d1526 100%);border:1px solid #1e3a8a;">
-      <div class="flex items-center gap-3 flex-wrap">
-        <div class="flex items-center gap-2">
-          <span class="relative inline-block" style="width:14px;height:14px;">
-            <span class="absolute inset-0 rounded-full" style="background:${onlineCount > 0 ? '#10b981' : '#475569'};"></span>
-            ${onlineCount > 0 ? '<span class="disp-dot-pulse" style="position:absolute;inset:0;width:14px;height:14px;top:0;right:0;"></span>' : ''}
-          </span>
-          <div>
-            <div class="text-xl font-black ${onlineCount > 0 ? 'text-emerald-300' : 'text-slate-500'} leading-none">${onlineCount}</div>
-            <div class="text-[9px] uppercase text-slate-500 tracking-wider mt-0.5">online ahora</div>
-          </div>
-        </div>
-        <div class="text-slate-700 text-lg">·</div>
-        <div class="flex items-center gap-2">
-          <span class="text-lg">📱</span>
-          <div>
-            <div class="text-base font-bold text-slate-200 leading-none">${dispActivos.length}</div>
-            <div class="text-[9px] uppercase text-slate-500 tracking-wider mt-0.5">dispositivos</div>
-          </div>
-        </div>
-        <div class="text-slate-700 text-lg">·</div>
-        <div class="flex items-center gap-2">
-          <span class="text-lg">🏬</span>
-          <div>
-            <div class="text-base font-bold text-slate-200 leading-none">${totalZ}</div>
-            <div class="text-[9px] uppercase text-slate-500 tracking-wider mt-0.5">zonas</div>
-          </div>
-        </div>
-        <div class="text-slate-700 text-lg">·</div>
-        <div class="flex items-center gap-2">
-          <span class="text-lg">🛒</span>
-          <div>
-            <div class="text-base font-bold text-slate-200 leading-none">${totalE}</div>
-            <div class="text-[9px] uppercase text-slate-500 tracking-wider mt-0.5">estaciones</div>
-          </div>
-        </div>
-      </div>
-    </div>`;
-
-    // Card punteado para crear primera/nueva zona
-    const cardNuevaZona = `<button onclick="MOS.abrirModalZona(null)"
-        class="w-full py-6 rounded-xl border-2 border-dashed border-slate-700 hover:border-sky-600 hover:bg-sky-900/10 transition-all text-slate-500 hover:text-sky-300 group">
-        <div class="flex items-center justify-center gap-2 text-sm font-semibold">
-          <span class="text-xl">🏬</span>
-          <span>+ agregar nueva zona</span>
-        </div>
-        <p class="text-[10px] text-slate-600 group-hover:text-sky-500 mt-1">Crea otro punto de venta físico</p>
-      </button>`;
-
-    if (!zonas.length) {
-      cont.innerHTML = summaryHTML + `<div class="card p-12 text-center text-slate-500">
-        <div class="text-6xl mb-3">🏗️</div>
-        <p class="font-bold text-slate-300 mb-1">Sin zonas todavía</p>
-        <p class="text-xs mb-4">Crea tu primera zona para empezar a configurar la infraestructura.</p>
-        <button class="btn-primary text-sm px-4 py-2" onclick="MOS.abrirModalZona(null)">+ Crear primera zona</button>
-      </div>`;
-      return;
-    }
-
-    const zonasHTML = zonas.map(z => {
-      const zonaActiva = String(z.estado) === '1' || z.estado === 1 || z.estado === true;
-      const estZona = estaciones.filter(e => e.idZona === z.idZona);
-      const totalImp = estZona.reduce((acc, e) =>
-        acc + impresoras.filter(i => i.idEstacion === e.idEstacion).length, 0);
-      // C: Contador de dispositivos online en esta zona
-      const onlineEnZona = estZona.reduce((acc, e) => acc + _dispOnlineEnEstacion(e.idEstacion), 0);
-
-      const estadoBadge = zonaActiva
-        ? '<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/60 text-emerald-300 font-bold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>activa</span>'
-        : '<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 font-bold">inactiva</span>';
-      const onlineBadge = onlineEnZona > 0
-        ? `<span class="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold disp-chip-live" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.5);"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>${onlineEnZona} online</span>`
-        : '';
-
-      const estsHTML = estZona.map(e => _renderInfraEstacion(e, impresoras)).join('');
-      const seriesHTML = _renderInfraSeries(z, estZona);
-
-      return `<div class="card p-4" style="background:linear-gradient(135deg,#0d1f3a 0%,#0d1526 100%);border:1px solid ${zonaActiva ? '#1e3a8a' : '#334155'};${zonaActiva ? '' : 'opacity:0.7;'}">
-        <!-- Header zona -->
-        <div class="flex items-start justify-between gap-3 mb-3 pb-3" style="border-bottom:1px solid #1e293b;">
-          <div class="flex items-start gap-3 flex-1 min-w-0">
-            <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0" style="background:linear-gradient(135deg,#1e3a8a,#0c4a6e);">🏬</div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <h3 class="text-base font-black text-white truncate">${z.nombre}</h3>
-                ${estadoBadge}
-                ${onlineBadge}
-                <span class="font-mono text-[10px] text-slate-500">${z.idZona}</span>
-              </div>
-              <p class="text-xs text-slate-400 mt-0.5 truncate">${z.direccion ? '📍 ' + z.direccion : ''}${z.responsable ? '  ·  👤 ' + z.responsable : ''}</p>
-              <p class="text-[11px] text-slate-500 mt-1">${estZona.length} estación${estZona.length === 1 ? '' : 'es'} · ${totalImp} impresora${totalImp === 1 ? '' : 's'}</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <label class="pers-switch" title="${zonaActiva ? 'Desactivar zona' : 'Activar zona'}" onclick="event.stopPropagation()">
-              <input type="checkbox" ${zonaActiva ? 'checked' : ''} onchange="MOS.toggleZonaActiva('${z.idZona}', event)">
-              <span class="pers-switch-slider"></span>
-            </label>
-            <button onclick="MOS.abrirModalZona('${z.idZona}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded border border-slate-700" title="Editar zona">✏️</button>
-          </div>
-        </div>
-
-        <!-- [Fase2] App + horario de la zona -->
-        ${_zonaAppChips(z)}
-
-        <!-- Series documentales (chips) -->
-        ${seriesHTML}
-
-        <!-- Chips de política de la zona (meta + comisión + auditorías o
-             tarifa de almacén) — muestran lo configurado en politicaJSON -->
-        ${_renderChipsPoliticaZona(z)}
-
-        <!-- Grid de estaciones -->
-        ${estZona.length > 0
-          ? `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${estsHTML}</div>`
-          : `<div class="text-center py-6 text-slate-500 text-xs italic">Esta zona no tiene estaciones aún.</div>`}
-
-        <!-- Botón agregar estación -->
-        <button onclick="MOS.abrirModalEstacion(null,'${z.idZona}')"
-                class="mt-3 w-full text-xs text-slate-400 hover:text-white py-2 rounded-lg border border-dashed border-slate-700 hover:border-emerald-700 hover:bg-emerald-900/20 transition-colors">
-          + estación a esta zona
-        </button>
-
-        <!-- [Fase2] Usuarios de la zona (fusión con Personal) -->
-        ${_renderZonaUsuarios(z)}
-      </div>`;
-    }).join('');
-
-    // Sección de dispositivos pendientes de aprobación (arriba si hay alguno)
-    const pendientes = _dispPendientes();
-    const pendHTML = pendientes.length ? `
-      <div class="card p-4 mb-4" style="background:linear-gradient(135deg,#3b1010 0%,#0d1526 100%);border:2px solid #ef4444;animation:pulse 2s ease-in-out infinite;">
-        <div class="flex items-center gap-2 mb-3">
-          <span class="text-2xl">🔔</span>
-          <div class="flex-1">
-            <h3 class="font-black text-base text-white">Dispositivos esperando aprobación</h3>
-            <p class="text-[11px] text-red-200">Estos equipos intentaron conectarse pero aún no están autorizados.</p>
-          </div>
-          <span class="badge badge-red text-xs">${pendientes.length}</span>
-        </div>
-        <div class="space-y-2">
-          ${pendientes.map(d => {
-            const ico = _dispIcono(d.Nombre_Equipo);
-            const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
-            const act = _dispActividad(d.Ultima_Conexion);
-            return `<div class="disp-pend-card flex items-center gap-3 p-3 rounded-lg" data-pend-card="${idAttr}" style="background:#0a1424;border:1px solid #7f1d1d;">
-              <span class="text-3xl shrink-0">${ico}</span>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="font-bold text-sm text-white truncate">${d.Nombre_Equipo || 'Dispositivo nuevo'}</span>
-                  ${_appBadge(d.App)}
-                </div>
-                <div class="text-[10px] text-slate-500 font-mono truncate mt-0.5">${d.ID_Dispositivo}</div>
-                <div class="text-[10px] mt-0.5" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div>
-              </div>
-              <button onclick="MOS.aprobarDispositivo('${idAttr}')"
-                      class="btn-primary text-xs px-3 py-1.5 shrink-0"
-                      style="background:#10b981" title="Aprobar con el nombre actual">✓ Aprobar</button>
-              <button onclick="MOS.aprobarDispositivoConNombre('${idAttr}')"
-                      class="btn-ghost text-xs px-2 py-1.5 shrink-0"
-                      style="color:#a5b4fc;border:1px solid #312e81" title="Renombrar antes de aprobar">✎</button>
-              <button onclick="MOS.rechazarDispositivo('${idAttr}')"
-                      class="btn-ghost text-xs px-2 py-1.5 shrink-0"
-                      style="color:#f87171;border:1px solid #7f1d1d" title="Rechazar">✕</button>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>` : '';
-
-    // [Fase2] Sección "Sin estación asignada" ELIMINADA (pedido del usuario). Los dispositivos
-    // aprobados que aún no eligieron estación aparecen en su zona/estación al hacer login.
-
-    // [Fase1] Archivados: equipos auto-cancelados por +7 días sin conectar.
-    // Colapsable (arranca cerrado). Reversibles: reconectar los reabre a PENDIENTE (SQL 100),
-    // o el admin los reactiva a mano (mismo path de aprobación, cero-GAS igual que el resto).
-    const archivados = _dispArchivados();
-    const archHTML = archivados.length ? `
-      <div class="card p-4 mt-4" style="background:#0a0f1c;border:1px solid #1e293b;">
-        <button onclick="MOS.toggleArchivados()"
-                class="w-full flex items-center gap-2 text-left"
-                style="background:none;border:none;cursor:pointer;">
-          <span class="text-xl" style="filter:grayscale(0.6);opacity:.7;">🗄️</span>
-          <div class="flex-1">
-            <h3 class="font-bold text-sm" style="color:#94a3b8;">Archivados</h3>
-            <p class="text-[10px] text-slate-600">Equipos sin conectar +7 días. No es baneo: al reconectar vuelven a pedir acceso, o reactívalos aquí.</p>
-          </div>
-          <span class="badge badge-gray text-xs">${archivados.length}</span>
-          <span class="text-slate-500 text-xs transition-transform" style="transform:rotate(${_archExpandido ? 90 : 0}deg);">▸</span>
-        </button>
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3" style="display:${_archExpandido ? 'grid' : 'none'};">
-          ${archivados.map(d => {
-            const ico = _dispIcono(d.Nombre_Equipo);
-            const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
-            const act = _dispActividad(d.Ultima_Conexion);
-            return `<div class="flex items-center gap-2.5 p-2.5 rounded-lg" style="background:#0d1424;border:1px solid #1e293b;opacity:.85;">
-              <span class="text-2xl shrink-0" style="filter:grayscale(0.5);">${ico}</span>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="font-semibold text-xs truncate" style="color:#cbd5e1;">${d.Nombre_Equipo || 'Dispositivo'}</span>
-                  ${_appBadge(d.App)}
-                </div>
-                <div class="text-[10px] mt-0.5" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div>
-              </div>
-              <button onclick="MOS.aprobarDispositivo('${idAttr}')"
-                      class="btn-ghost text-xs px-2.5 py-1.5 shrink-0"
-                      style="color:#34d399;border:1px solid #065f46;" title="Reactivar (volver a ACTIVO)">↺ Reactivar</button>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>` : '';
-
-    // Zona Premium · admins+master con app=MOS (sin estación/impresora asignada)
-    const premiumHTML = _renderInfraPremium();
-
-    cont.innerHTML = summaryHTML + premiumHTML + pendHTML + zonasHTML + archHTML + cardNuevaZona;
-
-    // Guardar mapa de estaciones para detectar movimientos en próximo render
+    const zonasHTML = zonas.length
+      ? _cfgEyebrow('B', 'Zonas · estaciones · impresoras · equipos') + zonas.map(z => _cfgZona(z, estaciones, impresoras)).join('')
+      : '';
+    cont.innerHTML =
+      _cfgCmdBar() +
+      _cfgZonaVip() +
+      _cfgPend() +
+      zonasHTML +
+      _cfgSinZona() +
+      `<span class="addln" style="margin-top:14px;padding:13px;font-size:12px" onclick="MOS.abrirModalZona(null)">🏬 + agregar nueva zona</span>` +
+      _cfgLife() +
+      _cfgArch();
     _dispActualizarMapa();
   }
 
-  // ── Series documentales por zona (chips) ─────────────────
-  const _SERIE_TIPOS = [
-    { tipo: 'NOTA_VENTA', icon: '📋', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.4)' },
-    { tipo: 'BOLETA',     icon: '🧾', color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: 'rgba(96,165,250,0.4)' },
-    { tipo: 'FACTURA',    icon: '🧮', color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.4)' }
-  ];
-
-  function _renderInfraSeries(zona, estZona) {
-    // [Fase2] Almacén NO factura → sin series documentales (coherente con Fase 0 / SQL 513).
-    // Evita ofrecer "+ NOTA_VENTA/BOLETA/FACTURA" en una zona que no emite comprobantes.
-    if (_esZonaAlmacen(zona)) return '';
-    const series = (cfgData.series || []).filter(s => s.idZona === zona.idZona);
-    const chips = _SERIE_TIPOS.map(t => {
-      const seriesTipo = series.filter(s => s.tipoDocumento === t.tipo);
-      if (!seriesTipo.length) {
-        // Chip vacío: + serie de este tipo
-        return `<button onclick="MOS.abrirModalSerieZona('${zona.idZona}','${t.tipo}')"
-          class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed text-[11px] hover:bg-slate-800/50 transition-colors"
-          style="border-color:#334155;color:#64748b;"
-          title="Crear serie ${t.tipo} para esta zona">
-          <span>${t.icon}</span>
-          <span class="font-bold">+ ${t.tipo}</span>
-        </button>`;
-      }
-      // Determinar nombre representativo
-      const nombres = [...new Set(seriesTipo.map(s => s.serie))];
-      const tieneDiversidad = nombres.length > 1;
-      const nombreShow = tieneDiversidad ? '⚠ ' + nombres.join('/') : nombres[0];
-      const corrMax = Math.max(...seriesTipo.map(s => parseInt(s.correlativo, 10) || 0));
-      const todasActivas = seriesTipo.every(s => String(s.activo) === '1');
-      const cubre = seriesTipo.length;
-      const total = estZona.length;
-      const cobertura = (cubre === total) ? '' : ` · ${cubre}/${total} est.`;
-
-      return `<button onclick="MOS.abrirModalSerieZona('${zona.idZona}','${t.tipo}',true)"
-        class="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-[11px] hover:brightness-125 transition-all ${todasActivas ? '' : 'opacity-60'}"
-        style="background:${t.bg};border-color:${t.border};color:${t.color};"
-        title="${tieneDiversidad ? 'Diversidad de nombres entre estaciones' : 'Editar serie ' + t.tipo}">
-        <span>${t.icon}</span>
-        <div class="flex flex-col items-start leading-tight">
-          <span class="font-black">${nombreShow}</span>
-          <span class="text-[9px] opacity-70">corr ${corrMax}${cobertura}</span>
-        </div>
-        ${todasActivas ? '' : '<span class="text-[9px] text-slate-500">⏸</span>'}
-      </button>`;
-    }).join('');
-
-    return `<div class="mb-3 pb-3" style="border-bottom:1px dashed #1e293b;">
-      <div class="flex items-center gap-2 mb-2">
-        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">📄 Series documentales</span>
-        ${estZona.length === 0 ? '<span class="text-[9px] text-amber-500 italic">⚠ agrega estaciones primero</span>' : ''}
-      </div>
-      <div class="flex flex-wrap gap-2">${chips}</div>
-    </div>`;
-  }
-
-  function _renderInfraEstacion(e, impresoras) {
-    const activa = String(e.activo) === '1' || e.activo === 1 || e.activo === true;
-    const imps = impresoras.filter(i => i.idEstacion === e.idEstacion);
-    const tipoIcon = { CAJA: '🛒', ALMACEN: '🏭', ENVASADO: '🍶' }[e.tipo] || '📍';
-    const appColor = e.appOrigen === 'mosExpress' ? '#818cf8' : '#fb923c';
-    const appBadge = e.appOrigen === 'mosExpress'
-      ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(99,102,241,0.2);color:#a5b4fc;">ME</span>'
-      : '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(249,115,22,0.2);color:#fdba74;">WH</span>';
-    const safeId = String(e.idEstacion).replace(/'/g, '&#39;');
-
-    const impsHTML = imps.length
-      ? imps.map(i => {
-          const impActiva = String(i.activo) === '1' || i.activo === 1 || i.activo === true;
-          const impIcon = { TICKET: '🖨️', ADHESIVO: '🏷️', ZPL: '📄' }[i.tipo] || '🖨️';
-          // [v2.41.81] Estado semántico de PrintNode con 11 diagnósticos
-          // distintos (SIN_ID, ID_INVALIDO, PC_OFFLINE, SIN_PAPEL, SIN_TINTA,
-          // ATASCO, TAPA_ABIERTA, PAUSED, DISABLED, ERROR, ONLINE, UNKNOWN).
-          // El backend devuelve {state, reason, icon, color}. El frontend
-          // solo mapea a clase CSS — no decide el diagnóstico.
-          const pnSt = _impPNEstado[String(i.printNodeId)];
-          const _impStateMap = {
-            ONLINE:          { cls: 'imp-on',       tx: 'online' },
-            PC_OFFLINE:      { cls: 'imp-pc-off',   tx: 'PC apagada' },
-            PRINTER_OFFLINE: { cls: 'imp-off',      tx: 'apagada' },
-            SIN_PAPEL:       { cls: 'imp-warn',     tx: 'sin papel' },
-            SIN_TINTA:       { cls: 'imp-warn',     tx: 'sin tinta' },
-            ATASCO:          { cls: 'imp-err',      tx: 'atasco' },
-            TAPA_ABIERTA:    { cls: 'imp-warn',     tx: 'tapa abierta' },
-            PAUSED:          { cls: 'imp-paused',   tx: 'pausada' },
-            DISABLED:        { cls: 'imp-disabled', tx: 'deshabilitada' },
-            ERROR:           { cls: 'imp-err',      tx: 'error' },
-            SIN_ID:          { cls: 'imp-noid',     tx: 'sin ID' },
-            ID_INVALIDO:     { cls: 'imp-err',      tx: 'ID inválido' },
-            UNKNOWN:         { cls: 'imp-noinfo',   tx: 'sin señal' }
-          };
-          let estadoBadge = '';
-          if (_impPNCargado) {
-            // Si no hay printNodeId, el badge "SIN_ID" igualmente debe verse
-            // (lo trae el backend ahora). Si por algún motivo no llegó info,
-            // sigue cayendo a UNKNOWN.
-            const st = (pnSt && pnSt.state) ? pnSt.state : (i.printNodeId ? 'UNKNOWN' : 'SIN_ID');
-            const cfg = _impStateMap[st] || _impStateMap.UNKNOWN;
-            const icon = (pnSt && pnSt.icon) || '❔';
-            const reason = (pnSt && pnSt.reason) || cfg.tx;
-            estadoBadge = `<span class="imp-estado ${cfg.cls}" title="${_escapeHtml(reason)}">${icon} ${cfg.tx}</span>`;
-          }
-          const stCur = pnSt && pnSt.state;
-          const offlineCls = (_impPNCargado && stCur && stCur !== 'ONLINE') ? ' imp-row-off' : '';
-          return `<div class="flex items-center gap-2 px-2 py-1.5 rounded ${impActiva ? '' : 'opacity-50'}${offlineCls}" style="background:#0a1424;border:1px solid #1e293b;">
-            <span class="text-sm shrink-0">${impIcon}</span>
-            <div class="flex-1 min-w-0">
-              <div class="text-xs font-medium text-slate-200 truncate">${i.nombre} ${estadoBadge}</div>
-              <div class="text-[10px] text-slate-500 truncate">PN ${i.printNodeId || '—'} · ${i.tipo}${pnSt && pnSt.computer ? ' · ' + pnSt.computer : ''}</div>
-            </div>
-            <label class="pers-switch" style="transform:scale(0.7);" title="${impActiva ? 'Desactivar' : 'Activar'}" onclick="event.stopPropagation()">
-              <input type="checkbox" ${impActiva ? 'checked' : ''} onchange="MOS.toggleImpresoraActiva('${i.idImpresora}', event)">
-              <span class="pers-switch-slider"></span>
-            </label>
-            <button onclick="MOS.abrirModalImpresora('${i.idImpresora}')" class="text-[10px] text-slate-500 hover:text-white p-1" title="Editar">✏️</button>
-          </div>`;
-        }).join('')
-      : `<div class="text-[10px] text-amber-500 italic px-2 py-1.5">⚠ sin impresoras</div>`;
-
-    // Dispositivos asignados a esta estación (última sesión, sin límite de tiempo)
-    const dispEnEst = _dispEnEstacion(e.idEstacion);
-    const dispsHTML = dispEnEst.length
-      ? `<div class="mt-2 pt-2" style="border-top:1px dashed #1e293b;">
-          <div class="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">📱 Asignados a esta estación</div>
-          <div class="fleet">${dispEnEst.map(d => _dispDrawn(d)).join('')}</div>
-        </div>`
-      : '';
-
-    // B/F: Decoración según dispositivos online
-    const onlineEnEst = _dispOnlineEnEstacion(e.idEstacion);
-    const fantasmasAqui = _dispFantasmasDeEstacion(e.idEstacion);
-    let cardBg = '#0d1526';
-    let cardBorder = activa ? '#1e293b' : '#475569';
-    let cardExtra = '';
-    if (activa && onlineEnEst > 0) {
-      // B: borde verde sutil cuando hay dispositivos online
-      cardBorder = 'rgba(16,185,129,0.5)';
-      cardExtra = 'box-shadow: 0 0 12px rgba(16,185,129,0.18);';
-    }
-
-    // D: Trail fantasma — dispositivos que se fueron de aquí en los últimos 5s
-    const fantasmasHTML = fantasmasAqui.length ? `
-      <div class="mt-2 px-2 py-1.5 rounded text-[10px] disp-fantasma" style="background:rgba(99,102,241,0.05);border:1px dashed rgba(99,102,241,0.4);">
-        ${fantasmasAqui.map(f => {
-          const estDest = (cfgData.estaciones || []).find(es => es.idEstacion === f.hacia);
-          return `<div class="flex items-center gap-1 italic opacity-80">
-            <span>${f.ico}</span>
-            <span class="text-slate-400">${f.nombre}</span>
-            <span class="text-indigo-300">→</span>
-            <span class="text-indigo-300 font-bold">${estDest?.nombre || '...'}</span>
-            <span class="text-[8px] text-slate-600 ml-auto">se mudó hace momentos</span>
-          </div>`;
-        }).join('')}
-      </div>` : '';
-
-    return `<div class="rounded-lg p-3 ${activa ? '' : 'opacity-60'}" style="background:${cardBg};border:1px solid ${cardBorder};${cardExtra}transition:all 0.4s ease;">
-      <div class="flex items-start gap-2 mb-2">
-        <span class="text-xl shrink-0" style="line-height:1;">${tipoIcon}</span>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="text-sm font-bold text-white truncate">${e.nombre}</span>
-            ${appBadge}
-          </div>
-          <div class="text-[10px] text-slate-500 font-mono truncate">${e.idEstacion}</div>
-        </div>
-        <label class="pers-switch shrink-0" style="transform:scale(0.85);" title="${activa ? 'Desactivar estación' : 'Activar estación'}" onclick="event.stopPropagation()">
-          <input type="checkbox" ${activa ? 'checked' : ''} onchange="MOS.toggleEstacionActiva('${safeId}', event)">
-          <span class="pers-switch-slider"></span>
-        </label>
-        <button onclick="MOS.abrirModalEstacion('${safeId}')" class="text-xs text-slate-400 hover:text-white p-1" title="Editar estación">✏️</button>
-      </div>
-      <div class="space-y-1.5">
-        ${impsHTML}
-      </div>
-      <button onclick="MOS.abrirModalImpresora(null,'${safeId}')"
-              class="mt-2 w-full text-[10px] text-slate-500 hover:text-white py-1.5 rounded border border-dashed border-slate-700 hover:border-purple-700 hover:bg-purple-900/20 transition-colors">
-        + impresora
-      </button>
-      ${dispsHTML}
-      ${fantasmasHTML}
-    </div>`;
-  }
-
   // ════════════════════════════════════════════════════════════
-  // ZONA PREMIUM · ADMIN & MASTER (app=MOS, sin estación/impresora)
+  // ZONA VIP · Panel MOS (Admins & Master) — fiel al mockup
   // ════════════════════════════════════════════════════════════
   function _isAppMOS(d) {
     const a = String(d.App || '').toLowerCase();
     return a === 'mos';
   }
 
-  function _renderInfraPremium() {
+  function _cfgZonaVip() {
     const dispMOS = (cfgData.dispositivos || []).filter(_isAppMOS);
-    if (!dispMOS.length) return '';
-    const activos    = dispMOS.filter(d => String(d.Estado).toUpperCase() === 'ACTIVO');
-    const pendientes = dispMOS.filter(d => String(d.Estado).toUpperCase() === 'PENDIENTE_APROBACION');
-    const inactivos  = dispMOS.filter(d => ['INACTIVO','SUSPENDIDO'].indexOf(String(d.Estado).toUpperCase()) >= 0);
-    const onlineNow  = activos.filter(d => _dispActividad(d.Ultima_Conexion).minutos < 5).length;
+    const activos = dispMOS.filter(d => String(d.Estado).toUpperCase() === 'ACTIVO');
+    const onlineNow = activos.filter(d => _dispActividad(d.Ultima_Conexion).minutos < 5).length;
+    const visibles = _fleetDe(dispMOS);
+    const ocultos = dispMOS.filter(d => !_dispVisibleFleet(d) && String(d.Estado).toUpperCase() !== 'PENDIENTE_APROBACION').length;
 
-    // [Rediseño Config] Dispositivos del panel MOS DIBUJADOS (mockup). El detalle/permisos
-    // se abre con el botón 🛡️ (abrirDetalleDispositivo) dentro del monitor de cada equipo.
-    const cardsHTML = dispMOS.map(d => _dispDrawn(d)).join('');
+    // Series CPE que emite el panel (BOLETA/FACTURA compartidas con las zonas POS)
+    const nombresB = [...new Set((cfgData.series || []).filter(s => s.tipoDocumento === 'BOLETA').map(s => s.serie))];
+    const nombresF = [...new Set((cfgData.series || []).filter(s => s.tipoDocumento === 'FACTURA').map(s => s.serie))];
+    const serieChip = (ic, noms, lbl) => noms.length ? `<span class="schip"><span class="ic">${ic}</span><span class="tt">${noms.join('/')}</span><span class="cc">${lbl}</span></span>` : '';
+    const seriesRow = (nombresB.length || nombresF.length)
+      ? `<div class="srow"><span class="slab">📄 Series DCPE · VIP</span>${serieChip('🧾', nombresB, 'boleta')}${serieChip('🧮', nombresF, 'factura')}<span class="chip occ" style="border-style:dashed">compartida con zonas</span></div>`
+      : '';
 
-    // [Fase2] Admins/master como USUARIOS de la zona Premium (app MOS). Usan el panel web
-    // (no tablets) → _renderPersonaCard oculta espía y muestra 🔑 clave global. Colapsable.
+    const fleetHTML = visibles.length
+      ? `<div class="fleet">${visibles.map(d => _dispDrawn(d)).join('')}</div>`
+      : `<div class="pmeta" style="padding:8px 2px">Sin equipos en línea ahora.</div>`;
+
+    // Admins reales + ascendidos (accesoMos) del personal WH
     const adminsMOS = (cfgData.personalMOS || []).filter(p => {
       const r = String(p.rol || '').toUpperCase();
       return r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR';
     });
-    const admExp = !!_zonaUsrExpand['__PREMIUM__'];
-    const adminsBlock = adminsMOS.length ? `<div class="mt-3 pt-3" style="border-top:1px dashed rgba(251,191,36,0.25);">
-      <div class="flex items-center gap-2">
-        <button onclick="MOS.toggleZonaUsuarios('__PREMIUM__')" class="flex-1 flex items-center gap-2 text-left" style="background:none;border:none;cursor:pointer;">
-          <span class="text-base">👥</span>
-          <span class="text-[11px] font-bold text-amber-200 uppercase tracking-wider">Administradores</span>
-          <span class="text-[10px] text-amber-300/60">· acceso al panel MOS</span>
-          <span class="badge badge-gray text-[10px]">${adminsMOS.length}</span>
-          <span class="text-amber-400/60 text-xs transition-transform" style="transform:rotate(${admExp ? 90 : 0}deg);">▸</span>
-        </button>
-        <button onclick="MOS.abrirModalPersonal(null,'MOS')" class="text-[11px] px-2.5 py-1 rounded-lg shrink-0 hover:brightness-125 transition-all" style="background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);color:#fcd34d;font-weight:700;" title="Registrar admin / master">+ admin</button>
-      </div>
-      <div class="space-y-2 mt-2" style="display:${admExp ? 'block' : 'none'};">${adminsMOS.map(p => _renderPersonaCard(p, 'MOS')).join('')}</div>
-    </div>` : '';
+    const ascendidos = (cfgData.personal || []).filter(p => p.accesoMos === true || p.accesoMos === '1' || p.accesoMos === 1);
+    const nAdm = adminsMOS.length + ascendidos.length;
+    const onlineAdm = adminsMOS.concat(ascendidos).filter(p => _personaActividad(p.Ultima_Conexion || p.ultimaConexion).minutos < 5).length;
+    const ucards = adminsMOS.filter(p => !_cfgQ || _normNombre((p.nombre || '') + ' ' + (p.apellido || '')).includes(_cfgQ)).map(p => _cfgUcardPersona(p, 'MOS'))
+      .concat(ascendidos.filter(p => !_cfgQ || _normNombre((p.nombre || '') + ' ' + (p.apellido || '')).includes(_cfgQ)).map(p => _cfgUcardPersona(p, 'warehouseMos', { ascendido: true })));
+    const adminsBlock = `<details class="users" ${_cfgIsOpen('z:__VIP__', true) ? 'open' : ''} ontoggle="MOS._cfgDetToggle('z:__VIP__',this.open)" style="border-color:rgba(245,184,73,.3)">
+      <summary><span class="uic" style="border-color:rgba(245,184,73,.3)">👥</span>Administradores <span class="cnt">${nAdm} · MOS · gestión global${onlineAdm ? ` · ${onlineAdm} en línea` : ''} ▾</span></summary>
+      ${ucards.join('')}
+      <div class="add-row" style="margin:9px 13px 12px" onclick="MOS.abrirModalPersonal(null,'MOS')">＋ agregar / ascender admin</div>
+    </details>`;
 
-    return `<div class="card p-4 mb-4" style="background:linear-gradient(135deg,#1a1410 0%,#0d1526 50%,#1a1410 100%);border:2px solid rgba(251,191,36,0.45);box-shadow:0 0 24px rgba(251,191,36,0.12);">
-      <div class="flex items-center gap-2 mb-3 pb-3" style="border-bottom:1px dashed rgba(251,191,36,0.25)">
-        <span class="text-2xl">🏆</span>
-        <div class="flex-1 min-w-0">
-          <h3 class="font-black text-base text-amber-200">Zona Premium · Admin & Master</h3>
-          <p class="text-[10px] text-amber-300/70">App MOS · panel web · sin estación ni impresora asignada</p>
-        </div>
-        <div class="flex items-center gap-2 text-[11px]">
-          <span class="px-2 py-1 rounded-full font-bold" style="background:rgba(16,185,129,0.18);color:#6ee7b7;">${onlineNow} online</span>
-          <span class="px-2 py-1 rounded-full font-bold" style="background:rgba(251,191,36,0.18);color:#fcd34d;">${activos.length} activos</span>
-          ${pendientes.length ? `<span class="px-2 py-1 rounded-full font-bold animate-pulse" style="background:rgba(248,113,113,0.18);color:#fca5a5;">${pendientes.length} pend</span>` : ''}
-          ${inactivos.length ? `<span class="px-2 py-1 rounded-full font-bold" style="background:rgba(148,163,184,0.15);color:#cbd5e1;">${inactivos.length} off</span>` : ''}
-        </div>
-      </div>
-      <div class="flex flex-wrap items-center gap-1.5 mb-3">
-        <button onclick="MOS.abrirModalHorarioApp('MOS')"
-          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors"
-          style="background:rgba(99,102,241,0.14);border:1px solid rgba(99,102,241,0.55);color:#e2e8f0"
-          title="App del panel · toca para editar su horario">
-          <span>👑</span><span class="font-bold" style="color:#a5b4fc">MOS</span></button>
-        <button onclick="MOS.abrirModalHorarioApp('MOS')"
-          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors"
-          style="background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.35);color:#fcd34d"
-          title="Horario del panel MOS · toca para editar">
-          <span>🕐</span>${_horarioHoyTxt('MOS')
-            ? `<span class="font-semibold">${_horarioHoyTxt('MOS')}</span>`
-            : `<span class="opacity-70">Horario</span>`}</button>
-      </div>
-      <div class="fleet">${cardsHTML}</div>
+    return `${_cfgEyebrow('VIP', 'Panel MOS · Admins & Master')}
+    <div class="zone vip">
+      <div class="zhead"><div class="zbadge gold">🏆</div>
+        <div class="zt"><div class="row1"><h3 class="gold">Admins & Master · VIP</h3><span class="chip appmos">🖥️ MOS</span>${onlineNow ? `<span class="chip live"><span class="d" style="background:#10b981"></span>${onlineNow} en línea</span>` : ''}</div>
+        <div class="zmeta">Entran al panel con permisos y monitoreo · <b style="color:#fde3a7">también emite facturación (CPE)</b></div></div>
+        <span class="iconbtn" onclick="MOS.abrirModalHorarioApp('MOS')" title="Horario del panel MOS">🕐</span></div>
+      ${seriesRow}
+      ${fleetHTML}
       ${adminsBlock}
+      <div class="callout g" style="margin-top:12px">Hoy: <b>${onlineNow} en línea</b> · ${activos.length} activos · ${ocultos} apagados/antiguos → viven en 🗄️ Archivados (la zona VIP queda limpia).</div>
     </div>`;
   }
 
@@ -21696,11 +21688,6 @@ const MOS = (() => {
   // Para almacén: tarifa envasado, meta guías, meta auditorías (de CONFIG_MOS)
   // [Fase2] App + horario por zona. La app se deriva: almacén→warehouseMos, resto→mosExpress.
   // (La zona Premium/MOS se renderiza aparte en _renderInfraPremium con su propia app MOS.)
-  const _APP_META_ZONA = {
-    mosExpress:   { icon: '🛒', label: 'MosExpress', color: '#f59e0b' },
-    warehouseMos: { icon: '🏭', label: 'Almacén',    color: '#ea580c' },
-    MOS:          { icon: '👑', label: 'MOS',         color: '#6366f1' }
-  };
   function _zonaAppKey(z) { return _esZonaAlmacen(z) ? 'warehouseMos' : 'mosExpress'; }
   // Horario de HOY (TZ Perú) resumido para el chip, o null si no hay cache/datos.
   function _horarioHoyTxt(app) {
@@ -21717,77 +21704,6 @@ const MOS = (() => {
     if (!c.apertura || !c.cierre) return null;
     return String(c.apertura).replace(':00', 'h') + '→' + String(c.cierre).replace(':00', 'h');
   }
-  function _zonaAppChips(z) {
-    const app = _zonaAppKey(z);
-    const m = _APP_META_ZONA[app] || _APP_META_ZONA.mosExpress;
-    const hoy = _horarioHoyTxt(app);
-    const appChip = `<button onclick="MOS.abrirModalHorarioApp('${app}')"
-      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors"
-      style="background:${m.color}14;border:1px solid ${m.color}55;color:#e2e8f0"
-      title="App de esta zona · toca para editar su horario">
-      <span>${m.icon}</span><span class="font-bold" style="color:${m.color}">${m.label}</span></button>`;
-    const horChip = `<button onclick="MOS.abrirModalHorarioApp('${app}')"
-      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors"
-      style="background:rgba(99,102,241,0.05);border:1px solid #33415588;color:#cbd5e1"
-      title="Horario de la app · toca para editar">
-      <span>🕐</span>${hoy
-        ? `<span class="text-slate-300 font-semibold">${hoy}</span>`
-        : `<span class="text-slate-500">Horario</span>`}</button>`;
-    return `<div class="flex flex-wrap items-center gap-1.5 mb-3 px-1">${appChip}${horChip}</div>`;
-  }
-
-  function _renderChipsPoliticaZona(z) {
-    const esAlmacen = _esZonaAlmacen(z);
-    let chips = [];
-
-    if (esAlmacen) {
-      // Datos del almacén vienen de CONFIG_MOS global
-      const cfg = cfgData.config || {};
-      const tarifa = cfg.evalTarifaEnvasadoPorUnidad != null ? parseFloat(cfg.evalTarifaEnvasadoPorUnidad) : null;
-      const metaGuias = parseFloat(cfg.evalMetaAlmacenero) || 0;
-      const metaAud   = parseFloat(cfg.evalMetaAuditorias) || 0;
-      // [Fase2] Chips EDITABLES (antes solo lectura) — el Almacén se configuraba en la
-      // pestaña Personal; ahora se edita aquí (click → inline). guardarMetaChip → CONFIG_MOS.
-      chips.push(_renderMetaChip('Meta guías', 'evalMetaAlmacenero', metaGuias > 0 ? String(metaGuias) : '', '/día', '#ea580c'));
-      chips.push(_renderMetaChip('Tarifa envasado', 'evalTarifaEnvasadoPorUnidad', (tarifa != null && !isNaN(tarifa)) ? tarifa.toFixed(2) : '', 'S/und', '#10b981'));
-      chips.push(_renderMetaChip('Auditorías', 'evalMetaAuditorias', metaAud > 0 ? String(metaAud) : '', '/día', '#fbbf24'));
-    } else {
-      // Política POS desde politicaJSON de la zona
-      let pol = {};
-      try {
-        pol = z.politicaJSON ? (typeof z.politicaJSON === 'string' ? JSON.parse(z.politicaJSON) : z.politicaJSON) : {};
-      } catch(_){}
-      const meta = parseFloat(pol.metaDiaria);
-      const pct  = parseFloat(pol.comisionExcedentePct);
-      const aud  = parseFloat(pol.metaAuditorias);
-      if (!isNaN(meta) && meta > 0)  chips.push(_chipPolitica('💰', 'Meta venta', 'S/ ' + meta.toFixed(0), '/día', '#f59e0b'));
-      if (!isNaN(pct)  && pct  >= 0) chips.push(_chipPolitica('🎯', 'Comisión',   pct + '%',                'excedente', '#10b981'));
-      if (!isNaN(aud)  && aud  > 0)  chips.push(_chipPolitica('📋', 'Auditorías', String(aud),              '/día', '#fbbf24'));
-      if (!chips.length) return _chipsAvisoVacio('pos', z.idZona);
-    }
-    return `<div class="flex flex-wrap gap-1.5 mb-3 px-1">${chips.join('')}</div>`;
-  }
-
-  function _chipPolitica(icon, label, valor, unidad, color) {
-    return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px]"
-      style="background:rgba(99,102,241,0.05);border:1px solid ${color}66;color:#e2e8f0">
-      <span>${icon}</span>
-      <span class="text-slate-400 text-[10px]">${label}</span>
-      <span style="color:${color}" class="font-black">${valor}</span>
-      <span class="text-slate-500 text-[9px]">${unidad}</span>
-    </span>`;
-  }
-
-  function _chipsAvisoVacio(tipo, idZona) {
-    const mensaje = tipo === 'almacen'
-      ? '⚠ Almacén sin tarifa/metas configuradas — edita en Personal → Operadores'
-      : '⚠ Sin meta configurada — click ✏️ arriba para llenarla';
-    return `<div class="px-3 py-2 mb-3 rounded-lg text-[11px] text-red-300"
-      style="background:rgba(248,113,113,0.08);border:1px dashed rgba(248,113,113,0.4)">
-      ${mensaje}
-    </div>`;
-  }
-
   // ── Render compacto: meta + comisión POR ZONA ─────────────────
   // Reemplaza el chip global confuso. Cada zona se edita aparte abriendo
   // su modal de edición. Si no tiene política configurada → badge ⚠.
@@ -22574,46 +22490,6 @@ const MOS = (() => {
   // [Fase2] FUSIÓN usuarios-por-zona: bloque 👥 desplegable dentro de cada zona de
   // Infraestructura. Reutiliza _renderPersonaCard (operadores WH, personas reales) y
   // _renderCajeroCard (cajeros ME, por nombre). Los admins/master van en la zona Premium.
-  const _zonaUsrExpand = {}; // idZona → bool (colapsado por defecto)
-  function toggleZonaUsuarios(idZona) {
-    _zonaUsrExpand[idZona] = !_zonaUsrExpand[idZona];
-    renderInfra();
-  }
-  function _renderZonaUsuarios(z) {
-    const esAlm = _esZonaAlmacen(z);
-    const app = esAlm ? 'warehouseMos' : 'mosExpress';
-    const addLabel = esAlm ? '+ operador' : '+ cajero';
-    let cards = [], count = 0, sub = '';
-    if (esAlm) {
-      const ops = (cfgData.personal || []).filter(p => String(p.rol || '').toUpperCase() !== 'SUPERVISOR');
-      count = ops.length;
-      cards = ops.map(p => _renderPersonaCard(p, 'warehouseMos'));
-      sub = 'almaceneros + envasadores';
-    } else {
-      const { grupos, dispPorCajero, bloqMap } = _cfgCajerosData();
-      const lista = grupos[String(z.idZona)] || [];
-      count = lista.length;
-      cards = lista.map(c => _renderCajeroCard(c, dispPorCajero, bloqMap));
-      sub = 'cajeros / vendedores';
-    }
-    const exp = !!_zonaUsrExpand[z.idZona];
-    const safeZ = String(z.idZona).replace(/'/g, '&#39;');
-    // Header siempre visible (aunque no haya usuarios) para permitir "+ usuario".
-    return `<div class="mt-3 pt-3" style="border-top:1px dashed #1e293b;">
-      <div class="flex items-center gap-2">
-        <button onclick="MOS.toggleZonaUsuarios('${safeZ}')" class="flex-1 flex items-center gap-2 text-left ${count ? '' : 'opacity-70'}" style="background:none;border:none;cursor:pointer;">
-          <span class="text-base">👥</span>
-          <span class="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Usuarios de la zona</span>
-          <span class="text-[10px] text-slate-500">· ${sub}</span>
-          <span class="badge badge-gray text-[10px]">${count}</span>
-          <span class="text-slate-500 text-xs transition-transform" style="transform:rotate(${exp ? 90 : 0}deg);">▸</span>
-        </button>
-        <button onclick="MOS.abrirModalPersonal(null,'${app}')" class="text-[11px] px-2.5 py-1 rounded-lg shrink-0 hover:brightness-125 transition-all" style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;font-weight:700;" title="Registrar ${esAlm ? 'operador de almacén' : 'cajero / vendedor'}">${addLabel}</button>
-      </div>
-      ${count ? `<div class="space-y-2 mt-2" style="display:${exp ? 'block' : 'none'};">${cards.join('')}</div>` : ''}
-    </div>`;
-  }
-
   // Activa/bloquea un vendedor ME por NOMBRE en BLOQUEOS_USUARIO
   // (no toca PERSONAL_MASTER — los cajeros ME comparten el usuario plantilla)
   async function toggleVendedorME(nombre, ev) {
@@ -22860,27 +22736,38 @@ const MOS = (() => {
     const appCls = appL === 'mos' ? 'mos' : (appL.indexOf('express') >= 0 || appL === 'me' ? 'me' : (appL.indexOf('warehouse') >= 0 || appL === 'wh' ? 'wh' : ''));
     const appLbl = appCls === 'mos' ? 'MOS' : (appCls === 'me' ? 'ME' : (appCls === 'wh' ? 'WH' : ''));
     const user = d.Ultima_Sesion || '';
-    const ini = (String(user || d.Nombre_Equipo || '?').trim().charAt(0) || '?').toUpperCase();
-    const grad = _avatarGrad(user || d.Nombre_Equipo);
+    // Iniciales: 1ª letra del USUARIO; sin usuario, del nombre del equipo (nunca "?" salvo vacío total)
+    const baseIni = String(user || d.Nombre_Equipo || '').trim();
+    const ini = (baseIni.charAt(0) || '·').toUpperCase();
+    const grad = user ? _avatarGrad(user) : '#33415a';
+    const rol = user ? _rolDe(user) : '';
     const pill = isFresh
-      ? `<span class="pill" style="background:rgba(16,185,129,.16);color:#6ee7b7">🔴 live</span>`
+      ? `<span class="pill" style="background:rgba(16,185,129,.16);color:#6ee7b7">● live</span>`
       : isSusp
         ? `<span class="pill" style="background:rgba(249,115,22,.16);color:#fdba74">⏸ ${estado.startsWith('CANCELADO') ? 'arch' : 'susp'}</span>`
-        : `<span class="pill" style="background:rgba(148,163,184,.14);color:#cbd5e1">${act.dot} off</span>`;
+        : `<span class="pill" style="background:rgba(245,184,73,.14);color:#fbd989">◐ ${act.label.replace('hace ', '')}</span>`;
     const appc = appLbl ? `<span class="appc appb ${appCls}">${appLbl}</span>` : '';
-    const face = `<div class="face"><div class="avatar" style="background:${grad}">${ini}</div>${user ? `<div class="uname">${user}</div>` : ''}<div class="ust" style="color:${act.color}">${act.label}</div></div>`;
+    // Cara del mockup: avatar + nombre del usuario + ROL (o estado corto). El tiempo va en el cap, no acá.
+    const ust = rol || (isFresh ? 'en línea' : (user ? '' : act.label));
+    const face = `<div class="face"><div class="avatar" style="background:${grad}">${ini}</div>${user ? `<div class="uname">${user.split(/\s+/)[0]}</div>` : ''}${ust ? `<div class="ust" style="color:${isFresh ? '#6ee7b7' : act.color}">${ust}</div>` : ''}</div>`;
     let devt;
     if (tipo === 'phone')       devt = `<div class="devt phone ${stateCls}">${face}</div>`;
     else if (tipo === 'tablet') devt = `<div class="devt tablet ${stateCls}">${face}</div>`;
     else if (tipo === 'laptop') devt = `<div class="devt laptop ${stateCls}"><div class="lid">${face}</div><div class="base"></div></div>`;
     else                        devt = `<div class="devt pc ${stateCls}"><div class="screen">${face}</div><div class="stand"></div><div class="foot"></div></div>`;
-    const cap = `<div class="cap"><div class="t">${d.Nombre_Equipo || '—'}</div><div class="s">${user ? user + ' · ' : ''}${act.label}</div></div>`;
+    // Cap del mockup: "Desktop MOS / Luis · master · 8m"
+    const tRel = act.label.replace('hace ', '').replace('inactivo ', '');
+    const capS = user
+      ? `${user.split(/\s+/)[0]}${rol ? ` · <b style="color:#fdba74">${rol}</b>` : ''} · ${tRel}`
+      : act.label;
+    const cap = `<div class="cap"><div class="t">${d.Nombre_Equipo || '—'}</div><div class="s">${capS}</div></div>`;
     const master = _esMasterSession();
     const monitor = `<div class="monitor">`
       + `<span class="mbtn perm" onclick="event.stopPropagation();MOS.abrirDetalleDispositivo('${idAttr}')" title="Permisos y acciones del dispositivo">🛡️</span>`
       + `<span class="mbtn spy" onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" title="Espiar (audio + GPS)">🕵️</span>`
-      + (master ? `<span class="mbtn spy2" onclick="event.stopPropagation();MOS.abrirEspiaV2('${idAttr}')" title="Espía V2 · WebRTC live (Master)">🛰️</span>` : '')
-      + (master ? `<span class="mbtn tl" onclick="event.stopPropagation();MOS.abrirTimelineBufferEspia('${idAttr}')" title="Timeline buffer (12h histórico)">📼</span>` : '')
+      + (master && !isSusp ? `<span class="mbtn spy2" onclick="event.stopPropagation();MOS.abrirEspiaV2('${idAttr}')" title="Espía V2 · WebRTC live (Master)">🛰️</span>` : '')
+      + (master && !isSusp ? `<span class="mbtn tl" onclick="event.stopPropagation();MOS.abrirTimelineBufferEspia('${idAttr}')" title="Timeline buffer (12h histórico)">📼</span>` : '')
+      + (isSusp ? `<span class="mbtn" style="background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.4);color:#6ee7b7" onclick="event.stopPropagation();MOS.aprobarDispositivo('${idAttr}')" title="Reactivar">↻</span>` : '')
       + `<span class="mbtn edit" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>`
       + `</div>`;
     return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${monitor}</div>`;
@@ -22926,7 +22813,6 @@ const MOS = (() => {
   // Trails: fantasmas que se quedan 5s en la estación de origen tras un movimiento
   let _dispFantasmas = {}; // { deviceId: { desde, hacia, ico, nombre, expira } }
   let _dispCleanupTimer = null;
-  let _archExpandido = false; // [Fase1] sección "Archivados" colapsada por defecto
 
   // Devuelve dispositivos cuya ÚLTIMA sesión fue en esta estación
   // (sin importar cuánto tiempo, mantiene "viviendo" donde estuvo último)
@@ -23004,14 +22890,15 @@ const MOS = (() => {
   // [Fase1] Archivados: equipos auto-cancelados por +7 días sin conectar.
   // NO es baneo — reversibles: al reconectar, verificar_dispositivo (SQL 100)
   // los reabre a PENDIENTE_APROBACION. Se muestran en una sección colapsable.
+  // [Rediseño] Archivados = todo lo que NO va en el fleet: INACTIVO, CANCELADO*,
+  // y SUSPENDIDO con +7 días sin conectar. Reversibles (reconexión o ↺ manual).
   function _dispArchivados() {
-    return (cfgData.dispositivos || []).filter(d =>
-      String(d.Estado).toUpperCase().startsWith('CANCELADO')
-    );
-  }
-  function toggleArchivados() {
-    _archExpandido = !_archExpandido;
-    renderInfra();
+    return (cfgData.dispositivos || []).filter(d => {
+      const est = String(d.Estado || '').toUpperCase();
+      if (est === 'INACTIVO' || est.startsWith('CANCELADO')) return true;
+      if (est === 'SUSPENDIDO') return _dispActividad(d.Ultima_Conexion).minutos > (7 * 24 * 60);
+      return false;
+    });
   }
 
   // Render compacto de un chip de dispositivo (dentro de estación o lista global)
@@ -44128,7 +44015,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalEstacion, guardarEstacion, eliminarEstacion, _estActualizarPreview,
     abrirModalImpresora, guardarImpresora, eliminarImpresora, _impActualizarPreview,
     eliminarZona, _zonaActualizarPreview,
-    toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva, toggleArchivados, toggleZonaUsuarios,
+    toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
+    cfgBuscar, cfgToggleSusp, _cfgDetToggle,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     editarMetaChip, guardarMetaChip,
     abrirModalClaveGlobal, cgConsultar, cgRotar,
