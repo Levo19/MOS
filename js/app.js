@@ -41084,14 +41084,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const bg = $('zonaBtnGuias'), bs = $('zonaBtnSorpresas'), bm = $('zonaBtnMermas'), bv = $('zonaBtnVenc');
     if (bg) bg.classList.toggle('hidden', esAlm);
     if (bm) bm.classList.toggle('hidden', !esAlm);
-    if (bv) bv.classList.toggle('hidden', !esAlm);
+    // [Fase 2 FEFO] 📅 Por vencer en TODAS las zonas: almacén = lotes WH; zonas = libro me.zona_lotes
+    if (bv) bv.classList.remove('hidden');
     if (bs) bs.classList.toggle('hidden', !esAlm || !_esAdminSesion());
-    if (esAlm) { _mermasBadgeRefrescar(); _vencBadgeRefrescar(); }
+    if (esAlm) _mermasBadgeRefrescar();
+    _vencBadgeRefrescar(esAlm ? null : S.zonaActual);
   }
-  // Badge rojo = lotes VENCIDOS + CRÍTICOS (≤7d) en el almacén
-  async function _vencBadgeRefrescar() {
+  // Badge rojo = lotes VENCIDOS + CRÍTICOS (≤7d) del alcance activo (almacén o zona)
+  async function _vencBadgeRefrescar(zona) {
     try {
-      const r = await API.rpcWH('vencimientos_lista', {});
+      const r = await API.rpcWH('vencimientos_lista', zona ? { zona } : {});
       const rows = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
       const n = rows.filter(l => l.severidad === 'VENCIDO' || l.severidad === 'CRITICO').length;
       const b = $('zonaVencBadge');
@@ -41125,10 +41127,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   let _vencData = [];
   let _vencFiltro = 'RIESGO';
   async function abrirVencimientosPanel() {
+    const esAlm = _esZonaAlmacen({ idZona: S.zonaActual,
+      nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
+    const zona = esAlm ? null : S.zonaActual;
+    const t = document.getElementById('vencTituloMos');
+    if (t) t.textContent = 'Por vencer · ' + (zona || 'almacén');
     openModal('modalVencimientos');
     $('vencListaMos').innerHTML = '<div class="muted" style="text-align:center;padding:20px">Cargando…</div>';
     try {
-      const r = await API.rpcWH('vencimientos_lista', {});
+      const r = await API.rpcWH('vencimientos_lista', zona ? { zona } : {});
       _vencData = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
     } catch (e) { _vencData = []; }
     _vencRender();

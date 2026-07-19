@@ -268,3 +268,21 @@ origen no vuelve. Balance neto por unidad correcto en los 4 caminos.
   (perfil fresco → UUID nuevo → auto-registro 1ra visita, BY DESIGN del fix deadlock). Se
   borraron nominal y existe TEST-CLAUDE-WH (7e57c1a0-…-c47a10906475, ACTIVO) + regla: todo
   escenario browsercheck WH lleva localStorage wh_device_id fijo.
+
+## Ronda 8 — Semáforo vencimientos + historial de lote (2026-07-19 · WH 2.13.457 · MOS 2.43.580 · SQL 525-526)
+- FIX historial modal Lotes: wh.lotes_historial era cascarón (0 filas, sin escritores). SQL 525:
+  get_historial_lote SINTETIZA desde fuentes reales (INGRESO de lotes_vencimiento + MERMAS por
+  lote + CONSUMO acumulado FEFO inicial−actual + legacy union).
+- SQL 526 wh.vencimientos_lista: semáforo UNIFICADO server-side (claim wh O mos): VENCIDO /
+  CRÍTICO ≤7 / ALERTA ≤30 / URGENTE ≤90 (categoría NUEVA del dueño: zonas no deberían tener
+  producto a <3 meses) / SANO. Umbrales wh.config (DIAS_ALERTA_VENC_URGENTE def 90). GRANT
+  authenticated explícito.
+- WH: VencimientosView consume el RPC (severidad server), 5 KPIs + chip ≤90d + sv-urg amarillo.
+- MOS: botón 📅 Por vencer en zona ALMACÉN (junto a 🎯/♻️, solo visualización) + badge rojo
+  (vencidos+críticos) + modalVencimientos con el mismo semáforo.
+- FEFO confirmado: getLotesFIFO y el picking ordenan por fecha_vencimiento asc ("vence primero,
+  sale primero") — es FEFO real, cubre el caso "el último en llegar vence antes".
+- PENDIENTE FASE 2 (diseño abajo): lote-en-guía de salida (las 2446 líneas SALIDA_ZONA de 30d
+  llevan 0 id_lote) → asignación FEFO al cerrar + ledger wh.zona_lotes → vistas Por vencer en
+  ZONA-01/02 con inferencia de restos ("te mandé 20 que vencen el X; vendiste 10, jefe 2 → debes
+  tener 8"). Toca cierre de despacho + ventas ME (money-path) → diseñar con calma antes de tocar.
