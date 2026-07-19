@@ -3021,6 +3021,33 @@ const API = (() => {
         _RT.chWhOps = chWh;
       } catch (e) { try { console.warn('[Realtime] wh.ops_meta no abrió (poller sigue):', e); } catch (_) {} }
 
+      // [PRESENCIA · tiempo real] Canal presence sobre el MISMO WS. Este cliente anuncia
+      // {deviceId, nombre, rol, app:'MOS'} y escucha el estado global. Contrato compartido:
+      // ME/WH pueden unirse al MISMO canal 'ecos-presencia' con su app para presencia total.
+      // Best-effort: si falla, el heartbeat de 10min (verificar_dispositivo) sigue siendo la base.
+      try {
+        const devId = String(localStorage.getItem('mos_device_id') || '').trim();
+        if (devId) {
+          const ses = (() => { try { return JSON.parse(localStorage.getItem('MOS_SESSION') || 'null'); } catch (_) { return null; } })();
+          const chP = client.channel('ecos-presencia', { config: { presence: { key: devId } } });
+          chP.on('presence', { event: 'sync' }, () => {
+            try {
+              _RT.presState = chP.presenceState() || {};
+              window.dispatchEvent(new CustomEvent('mos:presencia', { detail: _RT.presState }));
+            } catch (_) {}
+          });
+          chP.subscribe((status) => {
+            try { console.log('[Realtime] canal ecos-presencia:', status); } catch (_) {}
+            if (status === 'SUBSCRIBED') {
+              try {
+                chP.track({ deviceId: devId, nombre: (ses && ses.nombre) || '', rol: (ses && ses.rol) || '', app: 'MOS' });
+              } catch (_) {}
+            }
+          });
+          _RT.chPres = chP;
+        }
+      } catch (e) { try { console.warn('[Realtime] presencia no abrió (heartbeat sigue):', e); } catch (_) {} }
+
       _rtCablearListeners();
     } catch (err) {
       try { console.warn('[Realtime] arranque falló (poller sigue):', err); } catch (_) {}
@@ -3059,10 +3086,13 @@ const API = (() => {
     try { if (_RT.channel && _RT.client && _RT.client.removeChannel) _RT.client.removeChannel(_RT.channel); } catch (_) {}
     try { if (_RT.chMeOps && _RT.client && _RT.client.removeChannel) _RT.client.removeChannel(_RT.chMeOps); } catch (_) {}
     try { if (_RT.chWhOps && _RT.client && _RT.client.removeChannel) _RT.client.removeChannel(_RT.chWhOps); } catch (_) {}
+    try { if (_RT.chPres && _RT.client && _RT.client.removeChannel) _RT.client.removeChannel(_RT.chPres); } catch (_) {}
     try { if (_RT.client && _RT.client.disconnect) _RT.client.disconnect(); } catch (_) {}
     _RT.channel = null;
     _RT.chMeOps = null;
     _RT.chWhOps = null;
+    _RT.chPres  = null;
+    _RT.presState = {};
     _RT.client  = null;
     _RT.started = false;
   }
@@ -3683,6 +3713,8 @@ const API = (() => {
     // la suscripción en login/logout.
     iniciarRealtimeCatalogo:    ()   => _iniciarRealtimeCatalogo(),
     detenerRealtimeCatalogo:    ()   => _detenerRealtimeCatalogo(),
+    // [PRESENCIA] estado presence en vivo { deviceId: [metas] } — {} si el WS no está arriba.
+    presencia:                  ()   => (_RT.presState || {}),
     onCatalogoVersionRealtime:  (cb) => { _RT.onVersion = (typeof cb === 'function') ? cb : null; },
     // [OPS] Registra el callback que recibe {app:'me'|'wh', dominio, version} en cada UPDATE de
     // me.ops_meta / wh.ops_meta. app.js lo usa para refrescar SOLO la pantalla activa (debounce +

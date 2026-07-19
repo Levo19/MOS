@@ -19252,6 +19252,18 @@ const MOS = (() => {
   }
 
   // ── CATEGORÍAS / política de precios ─────────────────────
+  // [Mockup] estado del buscador de categorías
+  let _catQ = '';
+  let _catQTimer = null;
+  function catBuscar(v) {
+    _catQ = String(v || '').trim().toLowerCase();
+    clearTimeout(_catQTimer);
+    _catQTimer = setTimeout(() => {
+      _renderCategoriasCards($('catGridContainer'), cfgData.categorias || []);
+      const s = $('catSearchInp');
+      if (s) { s.focus(); try { s.setSelectionRange(s.value.length, s.value.length); } catch (_) {} }
+    }, 320);
+  }
   async function renderCategorias(skipFetch) {
     const cont = $('catGridContainer');
     if (!cont) return;
@@ -19271,57 +19283,47 @@ const MOS = (() => {
   }
 
   function _renderCategoriasCards(cont, rows) {
-    if (!rows.length) {
-      cont.innerHTML = `<div class="col-span-full text-center py-10 text-slate-500 text-sm">
-        <div class="text-3xl mb-2 opacity-50">🏷️</div>
-        Sin categorías. Crea una con "+ Nueva categoría"
+    // [Mockup] cmd bar: contadores + buscador + nueva categoría
+    const bar = $('catCmdBar');
+    if (bar) {
+      const modos = [...new Set(rows.map(c => String(c.modoVenta || '').toUpperCase()).filter(Boolean))];
+      bar.innerHTML = `<div class="cmd">
+        <div class="stat"><div><div class="big tnum">${rows.length}</div><div class="cap">categorías</div></div></div>
+        <div class="stat"><div><div class="big tnum">${modos.length}</div><div class="cap">modos de venta</div></div></div>
+        <div class="cmd-right">
+          <input id="catSearchInp" class="search" placeholder="🔎 buscar categoría…" value="${_escapeHtml(_catQ)}" oninput="MOS.catBuscar(this.value)">
+          <button class="abtn" onclick="MOS.abrirModalCategoria(null)">＋ nueva categoría</button>
+        </div>
+      </div>`;
+    }
+    cont.className = 'grid2';
+    const vis = _catQ
+      ? rows.filter(c => (String(c.nombre || '') + ' ' + String(c.idCategoria || '')).toLowerCase().includes(_catQ))
+      : rows;
+    if (!vis.length) {
+      cont.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:36px 0;color:#5f7290;font-size:13px">
+        <div style="font-size:28px;opacity:.5;margin-bottom:8px">🏷️</div>
+        ${_catQ ? 'Sin resultados para "' + _escapeHtml(_catQ) + '"' : 'Sin categorías. Crea una con "＋ nueva categoría"'}
       </div>`;
       return;
     }
-    cont.innerHTML = rows.map((c, idx) => {
+    const modoIcos = { MARGEN: '📈', FIJO: '🔒', COMPETITIVO: '🎯', LIBRE: '🆓' };
+    cont.innerHTML = vis.map(c => {
       const activa = String(c.estado) === '1';
       const modo = String(c.modoVenta || '').toUpperCase();
-      const modoCls = modo === 'MARGEN' ? 'modo-margen' :
-                      modo === 'FIJO' ? 'modo-fijo' :
-                      modo === 'COMPETITIVO' ? 'modo-comp' : 'modo-libre';
-      const modoIco = modo === 'MARGEN' ? '📈'
-                    : modo === 'FIJO'   ? '🔒'
-                    : modo === 'COMPETITIVO' ? '🎯'
-                    : '🆓';
-      const margenStr = (modo === 'MARGEN' || modo === 'COMPETITIVO')
-        ? (parseFloat(c.margenPct) || 0).toFixed(1) + '%' : '—';
-      const topeStr = parseFloat(c.precioTope) > 0 ? 'S/ ' + parseFloat(c.precioTope).toFixed(2) : '';
-      return `
-        <div class="cat-card-modern ${!activa ? 'inactiva' : ''} ${modoCls}"
-             style="--i:${Math.min(idx, 20)}"
-             onclick="MOS.abrirModalCategoria('${c.idCategoria}', event)">
-          <div class="flex items-start justify-between gap-2 mb-1">
-            <div class="flex items-center gap-2 min-w-0 flex-1">
-              <span style="font-size:18px">${modoIco}</span>
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-semibold text-slate-100 truncate">${c.nombre || c.idCategoria}</div>
-                <div class="text-[9px] text-slate-600 font-mono truncate">${c.idCategoria}</div>
-              </div>
-            </div>
-            <span class="cat-modo-pill ${modoCls}">${modo}</span>
-          </div>
-          <div class="flex items-center gap-3 text-xs mt-2">
-            <div>
-              <div class="text-[9px] uppercase text-slate-500 font-bold tracking-wider">Margen</div>
-              <div class="font-mono font-bold text-amber-400">${margenStr}</div>
-            </div>
-            ${topeStr ? `<div>
-              <div class="text-[9px] uppercase text-slate-500 font-bold tracking-wider">Tope</div>
-              <div class="font-mono text-slate-300">${topeStr}</div>
-            </div>` : ''}
-            <div class="ml-auto">
-              <span class="text-[9px] ${activa ? 'text-emerald-400' : 'text-slate-500'}">${activa ? '● Activa' : '○ Inactiva'}</span>
-            </div>
-          </div>
-          ${c.descripcion ? `<div class="text-[10px] text-slate-500 mt-1.5 truncate">${c.descripcion}</div>` : ''}
+      const margen = (modo === 'MARGEN' || modo === 'COMPETITIVO') ? (parseFloat(c.margenPct) || 0).toFixed(1) + '%' : '';
+      const tope = parseFloat(c.precioTope) > 0 ? 'S/' + parseFloat(c.precioTope).toFixed(2) : '';
+      const chipCls = modo === 'COMPETITIVO' ? 'tope' : (modo === 'FIJO' ? 'fijo' : (modo === 'LIBRE' ? 'libre' : ''));
+      const chipTxt = modo === 'MARGEN' ? `margen ${margen}` : (modo === 'COMPETITIVO' ? `margen ${margen} · tope` : modo.toLowerCase());
+      return `<div class="catcard${activa ? '' : '" style="opacity:.55'}" onclick="MOS.abrirModalCategoria('${c.idCategoria}', event)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">${modoIcos[modo] || '🏷️'}</span>
+          <div style="flex:1;min-width:0"><div class="ct" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.nombre || c.idCategoria}</div></div>
+          <span class="modechip ${chipCls}">${chipTxt}</span>
         </div>
-      `;
-    }).join('');
+        <div class="cdesc">${c.idCategoria}${tope ? ' · tope ' + tope : ''}${activa ? '' : ' · <span style="color:#94a3b8">inactiva</span>'}${c.descripcion ? ' · ' + _escapeHtml(String(c.descripcion).slice(0, 60)) : ''}</div>
+      </div>`;
+    }).join('') + `<div class="catcard" style="border-style:dashed;display:grid;place-items:center;color:#5f7290;min-height:80px" onclick="MOS.abrirModalCategoria(null)">＋ nueva categoría</div>`;
   }
 
   function abrirModalCategoria(idCategoria, ev) {
@@ -19601,11 +19603,37 @@ const MOS = (() => {
   function _esMiDispositivo(d) {
     try { return String(d.ID_Dispositivo) === String(localStorage.getItem('mos_device_id') || ''); } catch (_) { return false; }
   }
+  // [PRESENCIA · tiempo real] estado del canal Supabase Realtime 'ecos-presencia'
+  // (API.presencia() = { deviceId: [metas] }). Si un equipo está en el canal, está EN LÍNEA
+  // AL SEGUNDO — sobreescribe el heartbeat de 10 min. Best-effort: canal caído ⇒ {}.
+  function _presencia() {
+    try { return (typeof API !== 'undefined' && API.presencia) ? (API.presencia() || {}) : {}; } catch (_) { return {}; }
+  }
+  function _presTieneDevice(id) {
+    return Object.prototype.hasOwnProperty.call(_presencia(), String(id));
+  }
+  function _presNombres() {
+    const out = [];
+    const st = _presencia();
+    for (const k in st) (st[k] || []).forEach(m => { if (m && m.nombre) out.push(_normNombre(m.nombre)); });
+    return out;
+  }
   function _dispEnLinea(d) {
     if (String(d.Estado || '').toUpperCase() !== 'ACTIVO') return false;
     if (_esMiDispositivo(d)) return true;
+    if (_presTieneDevice(d.ID_Dispositivo)) return true;   // presencia WS = vivo al segundo
     return _dispActividad(d.Ultima_Conexion).minutos <= _CFG_ONLINE_MIN;
   }
+  // Re-render suave de Infra cuando cambia la presencia (throttle 2s, solo si la tab está activa)
+  let _presRenderT = 0;
+  try {
+    window.addEventListener('mos:presencia', () => {
+      const ahora = Date.now();
+      if (ahora - _presRenderT < 2000) return;
+      _presRenderT = ahora;
+      if (S.cfgTab === 'infra' && $('infraContenedor')) renderInfra();
+    });
+  } catch (_) {}
 
   let _cfgQ = '';           // buscador equipo/persona
   let _cfgVerTodos = false; // ⏸ suspendidos: ON = mostrar también susp>7d + inactivos
@@ -19714,6 +19742,7 @@ const MOS = (() => {
       <div class="stat"><div><div class="big tnum">${zonasN}</div><div class="cap">zonas</div></div></div>
       <div class="stat"><div><div class="big tnum">${estN}</div><div class="cap">estaciones</div></div></div>
       <div class="cmd-right">
+        ${Object.keys(_presencia()).length ? '<span class="chip live" title="Canal Supabase Realtime activo: presencia al segundo"><span class="d" style="background:#10b981"></span>⚡ en vivo</span>' : ''}
         <input id="cfgSearchInp" class="search" placeholder="🔎 buscar equipo / persona…" value="${_escapeHtml(_cfgQ)}" oninput="MOS.cfgBuscar(this.value)">
         <button class="tbtn ${_cfgVerTodos ? 'on' : ''}" onclick="MOS.cfgToggleSusp()" title="Mostrar también suspendidos antiguos e inactivos">⏸ suspendidos</button>
       </div>
@@ -19735,9 +19764,14 @@ const MOS = (() => {
         _normNombre(S.session.nombre) === _normNombre(p.nombre))) {
       return { color: '#10b981', label: 'en línea · tú', dot: '🟢', minutos: 0 };
     }
-    // (b) dispositivo más fresco con su nombre en Ultima_Sesion
+    // (a2) su nombre está anunciado en el canal de PRESENCIA (tiempo real) → en línea al segundo
     const full = _normNombre((p.nombre || '') + ' ' + (p.apellido || ''));
     const solo = _normNombre(p.nombre);
+    const pres = _presNombres();
+    if (pres.includes(full) || pres.includes(solo)) {
+      return { color: '#10b981', label: 'en línea', dot: '🟢', minutos: 0 };
+    }
+    // (b) dispositivo más fresco con su nombre en Ultima_Sesion
     (cfgData.dispositivos || []).forEach(d => {
       const n = _normNombre(d.Ultima_Sesion);
       if (!n || (n !== full && n !== solo)) return;
@@ -43745,55 +43779,107 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     box.innerHTML = _bancHtml();
   }
   function _bancHtml() {
-    const cardBanco = (x, i) => ''
-      + '<div class="fac-card mb-2">'
-      +   '<div class="flex items-center justify-between mb-2">'
-      +     '<span class="fac-chip" style="background:rgba(52,211,153,.15);color:#34d399">🏦 Cuenta bancaria</span>'
-      +     '<label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" ' + (x.imprime?'checked':'') + ' onchange="MOS.bancSet(' + i + ',\'imprime\',this.checked)"> imprime</label>'
-      +   '</div>'
-      +   '<div class="grid grid-cols-2 gap-2">'
-      +     '<div><label class="fac-lbl">Banco</label><input class="fac-inp w-full" value="' + _escapeHtml(x.banco||'') + '" oninput="MOS.bancSet(' + i + ',\'banco\',this.value)" placeholder="BCP / BBVA…"></div>'
-      +     '<div><label class="fac-lbl">Moneda</label><input class="fac-inp w-full" value="' + _escapeHtml(x.moneda||'PEN') + '" oninput="MOS.bancSet(' + i + ',\'moneda\',this.value)" placeholder="PEN"></div>'
-      +     '<div><label class="fac-lbl">Nº Cuenta</label><input class="fac-inp w-full" value="' + _escapeHtml(x.nroCuenta||'') + '" oninput="MOS.bancSet(' + i + ',\'nroCuenta\',this.value)" placeholder="191-…"></div>'
-      +     '<div><label class="fac-lbl">CCI</label><input class="fac-inp w-full" value="' + _escapeHtml(x.cci||'') + '" oninput="MOS.bancSet(' + i + ',\'cci\',this.value)" placeholder="002-191-…"></div>'
-      +     '<div class="col-span-2"><label class="fac-lbl">Titular</label><input class="fac-inp w-full" value="' + _escapeHtml(x.titular||'') + '" oninput="MOS.bancSet(' + i + ',\'titular\',this.value)" placeholder="INVERSIONES MOS EIRL"></div>'
-      +   '</div>'
-      +   '<button onclick="MOS.bancQuitar(' + i + ')" class="fac-btn-sec mt-2" style="padding:4px 10px;font-size:11px;color:#fca5a5">Quitar</button>'
-      + '</div>';
-    const cardWallet = (x, i) => ''
-      + '<div class="fac-card mb-2">'
-      +   '<div class="flex items-center justify-between mb-2">'
-      +     '<span class="fac-chip" style="background:rgba(139,92,246,.15);color:#c4b5fd">📲 ' + (x.tipo==='yape'?'Yape':'Plin') + '</span>'
-      +     '<label class="flex items-center gap-1.5 text-xs text-slate-300"><input type="checkbox" ' + (x.imprime?'checked':'') + ' onchange="MOS.bancSet(' + i + ',\'imprime\',this.checked)"> imprime</label>'
-      +   '</div>'
-      +   '<div class="grid grid-cols-2 gap-2">'
-      +     '<div><label class="fac-lbl">Titular</label><input class="fac-inp w-full" value="' + _escapeHtml(x.titular||'') + '" oninput="MOS.bancSet(' + i + ',\'titular\',this.value)" placeholder="Nombre"></div>'
-      +     '<div><label class="fac-lbl">Teléfono</label><input class="fac-inp w-full" value="' + _escapeHtml(x.telefono||'') + '" oninput="MOS.bancSet(' + i + ',\'telefono\',this.value)" placeholder="9########"></div>'
-      +   '</div>'
-      +   '<div class="mt-2 flex items-center gap-3">'
-      +     (x.qrUrl ? '<img src="' + _escapeHtml(x.qrUrl) + '" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid #334155">' : '<span class="text-xs text-slate-500">Sin QR</span>')
-      +     '<label class="fac-btn-sec" style="cursor:pointer;padding:6px 10px;font-size:11px">📷 Subir QR<input type="file" accept="image/*" style="display:none" onchange="MOS.bancSubirQR(' + i + ',this)"></label>'
-      +     (x.qrUrl ? '<button onclick="MOS.bancSet(' + i + ',\'qrUrl\',\'\');MOS.renderBancarios()" class="fac-btn-sec" style="padding:6px 10px;font-size:11px">Quitar QR</button>' : '')
-      +   '</div>'
-      +   '<button onclick="MOS.bancQuitar(' + i + ')" class="fac-btn-sec mt-2" style="padding:4px 10px;font-size:11px;color:#fca5a5">Quitar</button>'
-      + '</div>';
-    const cards = _banc.medios.map((x, i) => x.tipo==='banco' ? cardBanco(x,i) : cardWallet(x,i)).join('')
-      || '<div class="text-slate-500 text-xs py-3">Aún no agregaste medios de cobro.</div>';
-    return ''
-      + '<div class="fac-card mb-3">'
-      +   '<label class="fac-lbl">Límite de bancarización (S/)</label>'
-      +   '<div class="flex items-center gap-2">'
-      +     '<input id="bancLimite" class="fac-inp" style="width:120px" type="number" min="1" value="' + _banc.limite + '">'
-      +     '<span class="text-xs text-slate-500">Pagos ≥ este monto exigen bancarización (Ley 28194 = S/ 2,000).</span>'
-      +   '</div>'
-      + '</div>'
-      + cards
-      + '<div class="flex gap-2 flex-wrap mt-2">'
-      +   '<button onclick="MOS.bancAgregar(\'banco\')" class="fac-btn-sec">+ Cuenta bancaria</button>'
-      +   '<button onclick="MOS.bancAgregar(\'yape\')" class="fac-btn-sec">+ Yape</button>'
-      +   '<button onclick="MOS.bancAgregar(\'plin\')" class="fac-btn-sec">+ Plin</button>'
-      + '</div>'
-      + '<button onclick="MOS.bancGuardar()" class="fac-btn-pri mt-3">Guardar medios de cobro</button>';
+    // [Mockup] Bancarios en 2 bloques: A) medios de cobro (cards editables, mismos handlers)
+    // B) Facturación electrónica: series CPE por zona (dato real de mos.series_documentales).
+    const nBancos = _banc.medios.filter(x => x.tipo === 'banco').length;
+    const nWallet = _banc.medios.length - nBancos;
+    const seriesCPE = (cfgData.series || []).filter(x => x.tipoDocumento === 'BOLETA' || x.tipoDocumento === 'FACTURA');
+    const nSeries = [...new Set(seriesCPE.map(x => x.serie))].length;
+
+    const cmd = `<div class="cmd">
+      <div class="stat"><div><div class="big tnum">${nBancos}</div><div class="cap">cuentas</div></div></div>
+      <div class="stat"><div><div class="big tnum">${nWallet}</div><div class="cap">yape / plin</div></div></div>
+      <div class="stat"><div><div class="big tnum">${nSeries}</div><div class="cap">series CPE</div></div></div>
+      <div class="cmd-right">
+        <button class="abtn" onclick="MOS.bancAgregar('banco')">＋ cuenta bancaria</button>
+        <button class="abtn" onclick="MOS.bancAgregar('yape')">＋ Yape</button>
+        <button class="abtn" onclick="MOS.bancAgregar('plin')">＋ Plin</button>
+      </div>
+    </div>
+    <div class="callout">Dos bloques: <b>medios de cobro</b> (se imprimen cuando una venta exige bancarización ≥ límite) y <b>facturación electrónica</b> (series CPE por zona — mismo dato que Infraestructura).</div>`;
+
+    const eyeb = (n, t) => `<div class="eyebrow"><span class="n">${n}</span><h2>${t}</h2><span class="rule"></span></div>`;
+
+    const cardBanco = (x, i) => `<div class="group" style="margin-top:0">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:11px">
+        <span style="font-size:20px">🏦</span>
+        <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px;color:#eaf1fb">${_escapeHtml(x.banco || 'Cuenta bancaria')} · ${_escapeHtml(x.moneda || 'PEN')}</div>
+        <div class="pmeta">${_escapeHtml(x.nroCuenta || 'sin número')}${x.cci ? ' · CCI ' + _escapeHtml(x.cci) : ''}</div></div>
+        <label class="metachip" style="cursor:pointer" title="Se imprime en tickets con bancarización"><input type="checkbox" ${x.imprime ? 'checked' : ''} onchange="MOS.bancSet(${i},'imprime',this.checked)"> imprime</label>
+        <span class="iconbtn" onclick="MOS.bancQuitar(${i})" title="Quitar" style="color:#f87171">🗑️</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+        <div class="field"><label class="lbl">Banco</label><input class="inp" value="${_escapeHtml(x.banco || '')}" oninput="MOS.bancSet(${i},'banco',this.value)" placeholder="BCP / BBVA…"></div>
+        <div class="field"><label class="lbl">Moneda</label><input class="inp" value="${_escapeHtml(x.moneda || 'PEN')}" oninput="MOS.bancSet(${i},'moneda',this.value)" placeholder="PEN"></div>
+        <div class="field"><label class="lbl">Nº cuenta</label><input class="inp" value="${_escapeHtml(x.nroCuenta || '')}" oninput="MOS.bancSet(${i},'nroCuenta',this.value)" placeholder="191-…"></div>
+        <div class="field"><label class="lbl">CCI</label><input class="inp" value="${_escapeHtml(x.cci || '')}" oninput="MOS.bancSet(${i},'cci',this.value)" placeholder="002-191-…"></div>
+        <div class="field" style="grid-column:1/-1"><label class="lbl">Titular</label><input class="inp" value="${_escapeHtml(x.titular || '')}" oninput="MOS.bancSet(${i},'titular',this.value)" placeholder="INVERSIONES MOS EIRL"></div>
+      </div>
+    </div>`;
+
+    const cardWallet = (x, i) => `<div class="group" style="margin-top:0">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:11px">
+        <span style="font-size:20px">📲</span>
+        <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px;color:#eaf1fb">${x.tipo === 'yape' ? 'Yape' : 'Plin'}</div>
+        <div class="pmeta">${_escapeHtml(x.titular || 'sin titular')}${x.telefono ? ' · ' + _escapeHtml(x.telefono) : ''}</div></div>
+        <label class="metachip" style="cursor:pointer"><input type="checkbox" ${x.imprime ? 'checked' : ''} onchange="MOS.bancSet(${i},'imprime',this.checked)"> imprime</label>
+        <span class="iconbtn" onclick="MOS.bancQuitar(${i})" title="Quitar" style="color:#f87171">🗑️</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+        <div class="field"><label class="lbl">Titular</label><input class="inp" value="${_escapeHtml(x.titular || '')}" oninput="MOS.bancSet(${i},'titular',this.value)" placeholder="Nombre"></div>
+        <div class="field"><label class="lbl">Teléfono</label><input class="inp" value="${_escapeHtml(x.telefono || '')}" oninput="MOS.bancSet(${i},'telefono',this.value)" placeholder="9########"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:11px">
+        <div class="qrbox">${x.qrUrl ? `<img src="${_escapeHtml(x.qrUrl)}" alt="QR">` : '📷 QR ' + (x.tipo === 'yape' ? 'Yape' : 'Plin')}</div>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <label class="abtn" style="cursor:pointer">📷 Subir / cambiar QR<input type="file" accept="image/*" style="display:none" onchange="MOS.bancSubirQR(${i},this)"></label>
+          ${x.qrUrl ? `<span class="abtn" onclick="MOS.bancSet(${i},'qrUrl','');MOS.renderBancarios()">Quitar QR</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+
+    const medios = _banc.medios.length
+      ? `<div class="grid2" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${_banc.medios.map((x, i) => x.tipo === 'banco' ? cardBanco(x, i) : cardWallet(x, i)).join('')}</div>`
+      : `<div class="add-row" onclick="MOS.bancAgregar('banco')">Aún no agregaste medios de cobro — ＋ agregar cuenta</div>`;
+
+    const limite = `<div class="group" style="margin-top:12px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="field" style="min-width:140px"><label class="lbl">Límite de bancarización (S/)</label><input id="bancLimite" class="inp" style="width:130px" type="number" min="1" value="${_banc.limite}"></div>
+        <span style="font-size:11px;color:#5f7290;flex:1;min-width:200px">Pagos ≥ este monto exigen bancarización (Ley 28194 = S/ 2,000) → el ticket imprime los medios marcados.</span>
+        <button class="btn-primary" style="padding:10px 18px;border-radius:11px" onclick="MOS.bancGuardar()">💾 Guardar medios de cobro</button>
+      </div>
+    </div>`;
+
+    // ── B) Facturación CPE: series por zona (dato REAL, editable → mismo modal de Infra) ──
+    const zonas = cfgData.zonas || [];
+    const serieChips = z => {
+      const st = (cfgData.series || []).filter(x => x.idZona === z.idZona);
+      const chip = (tipo, ic) => {
+        const rows = st.filter(x => x.tipoDocumento === tipo);
+        if (!rows.length) return '';
+        const noms = [...new Set(rows.map(x => x.serie))].join('/');
+        return `<span class="schip" style="cursor:pointer" onclick="MOS.abrirModalSerieZona('${z.idZona}','${tipo}',true)"><span class="ic">${ic}</span><span class="tt">${noms}</span></span>`;
+      };
+      return chip('NOTA_VENTA', '📋') + chip('BOLETA', '🧾') + chip('FACTURA', '🧮');
+    };
+    const filasZonas = zonas.map(z => {
+      const esAlm = _esZonaAlmacen(z);
+      if (esAlm) return `<div class="prow" style="opacity:.55"><span style="font-size:15px">🏭</span><div style="flex:1"><b style="color:#eaf1fb">${z.nombre}</b> <span class="appb wh">WH</span> · <span style="color:#5f7290;font-size:11px">no vende → <b>sin facturación ni correlativo</b></span></div></div>`;
+      return `<div class="prow"><span style="font-size:15px">🏬</span><div style="flex:1"><b style="color:#eaf1fb">${z.nombre}</b> <span class="appb me">ME</span></div>${serieChips(z)}<span class="iconbtn" onclick="MOS.abrirModalSerieZona('${z.idZona}','BOLETA',true)">✏️</span></div>`;
+    }).join('');
+    const nombresB = [...new Set((cfgData.series || []).filter(x => x.tipoDocumento === 'BOLETA').map(x => x.serie))];
+    const nombresF = [...new Set((cfgData.series || []).filter(x => x.tipoDocumento === 'FACTURA').map(x => x.serie))];
+    const vipRow = (nombresB.length || nombresF.length)
+      ? `<div class="prow" style="border-color:rgba(245,184,73,.3)"><span style="font-size:15px">🏆</span><div style="flex:1"><b style="color:#fde3a7">VIP</b> <span class="appb mos">MOS</span> <span style="font-size:9.5px;color:#5f7290">convierte NV→CPE</span></div>${nombresB.length ? `<span class="schip"><span class="ic">🧾</span><span class="tt">${nombresB.join('/')}</span></span>` : ''}${nombresF.length ? `<span class="schip"><span class="ic">🧮</span><span class="tt">${nombresF.join('/')}</span></span>` : ''}</div>`
+      : '';
+    const fact = `<div class="group" style="margin-top:0">
+      <div class="slab" style="margin-bottom:8px">Series CPE <b style="color:#4aa8ff">por zona</b> <span style="color:#5f7290;font-weight:400;text-transform:none;letter-spacing:0">· mismo dato que Infraestructura (mos.series_documentales) — la emisión escoge la serie de la zona (fac.serie_de_zona)</span></div>
+      <div class="rowlist">${filasZonas}${vipRow}</div>
+      <div class="callout" style="margin-top:12px">El correlativo vivo está en <b>me.correlativos</b> (por serie). El Almacén no factura. La numeración CPE nueva (<b>fac.series</b>) está en 0 · go-live pendiente. Config del emisor (RUC · razón social · NubeFact) vive en el módulo <b>Facturación</b>.</div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="abtn" onclick="MOS.nav('facturacion')">🧾 Abrir módulo Facturación</button></div>
+    </div>`;
+
+    return cmd + eyeb('A', 'Medios de cobro') + medios + limite + eyeb('B', 'Facturación electrónica (CPE)') + fact;
   }
   function bancSet(i, campo, val) { if (_banc.medios[i]) _banc.medios[i][campo] = val; }
   function bancAgregar(tipo) {
@@ -44066,7 +44152,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalImpresora, guardarImpresora, eliminarImpresora, _impActualizarPreview,
     eliminarZona, _zonaActualizarPreview,
     toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
-    cfgBuscar, cfgToggleSusp, _cfgDetToggle,
+    cfgBuscar, cfgToggleSusp, _cfgDetToggle, catBuscar,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     editarMetaChip, guardarMetaChip,
     abrirModalClaveGlobal, cgConsultar, cgRotar,

@@ -451,156 +451,183 @@
     .cfgtabs .thint{font-size:9px;opacity:.7}
     @media (max-width:600px){.cfgtabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.cfgtabs::-webkit-scrollbar{display:none}.cfgtabs .tab-btn{flex:0 0 auto}}
 
-    #cfgPanelInfra .cmd{background:linear-gradient(135deg,#0c1c38,#0a1526);border:1px solid #26375a;border-radius:16px;padding:12px 15px;display:flex;align-items:center;gap:0;flex-wrap:wrap;margin-bottom:12px}
-    #cfgPanelInfra .stat{display:flex;align-items:center;gap:10px;padding-right:16px}
-    #cfgPanelInfra .stat+.stat{border-left:1px solid #1c2b45;padding-left:16px}
-    #cfgPanelInfra .stat .big{font-size:20px;font-weight:850;line-height:1;color:#eaf1fb}
-    #cfgPanelInfra .stat .cap{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#5f7290;font-weight:700;margin-top:2px}
-    #cfgPanelInfra .tnum{font-variant-numeric:tabular-nums}
-    #cfgPanelInfra .live-dot{width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 0 0 rgba(16,185,129,.55);animation:cfgPulse 2.4s infinite}
-    #cfgPanelInfra .cmd-right{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    #cfgPanelInfra .search{background:#0a1830;border:1px solid #26375a;border-radius:10px;padding:8px 12px;color:#eaf1fb;font-size:12px;min-width:170px;outline:none}
-    #cfgPanelInfra .search::placeholder{color:#5f7290}
-    #cfgPanelInfra .search:focus{border-color:#4aa8ff}
-    #cfgPanelInfra .tbtn{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:#9fb2ce;background:#0e1b32;border:1px solid #26375a;border-radius:10px;padding:8px 12px;cursor:pointer}
-    #cfgPanelInfra .tbtn.on{color:#fff;background:linear-gradient(90deg,#dc2626,#f59e0b);border-color:transparent}
-    #cfgPanelInfra .actions{background:#0a1424;border:1px solid #1c2b45;border-radius:14px;padding:11px 13px;margin-bottom:12px}
-    #cfgPanelInfra .grp{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-    #cfgPanelInfra .grp+.grp{margin-top:9px;padding-top:9px;border-top:1px solid #1c2b45}
-    #cfgPanelInfra .glabel{font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#5f7290;width:72px;flex-shrink:0}
-    #cfgPanelInfra .abtn{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:#eaf1fb;background:#0e1c34;border:1px solid #26375a;border-radius:9px;padding:7px 12px;cursor:pointer;transition:.15s}
-    #cfgPanelInfra .abtn:hover{border-color:#4aa8ff;background:#0f2038;transform:translateY(-1px)}
-    #cfgPanelInfra .eyebrow{display:flex;align-items:center;gap:10px;margin:18px 0 12px}
-    #cfgPanelInfra .eyebrow .n{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#4aa8ff;border:1px solid rgba(74,168,255,.3);border-radius:6px;padding:1px 6px;font-weight:600}
-    #cfgPanelInfra .eyebrow h2{font-size:14.5px;font-weight:800;margin:0;color:#eaf1fb}
-    #cfgPanelInfra .eyebrow .rule{flex:1;height:1px;background:linear-gradient(90deg,#26375a,transparent)}
-    #cfgPanelInfra .callout{border-left:3px solid #4aa8ff;background:rgba(74,168,255,.06);padding:10px 13px;border-radius:0 11px 11px 0;font-size:12px;color:#9fb2ce;margin-top:12px}
-    #cfgPanelInfra .callout.g{border-color:#f5b849;background:rgba(245,184,73,.06)}
-    #cfgPanelInfra .chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:750;border-radius:999px;padding:3px 9px;border:1px solid transparent;white-space:nowrap}
-    #cfgPanelInfra .chip .d{width:6px;height:6px;border-radius:50%}
-    #cfgPanelInfra .chip.live{color:#7ff0c4;background:rgba(16,185,129,.16);border-color:rgba(16,185,129,.5)}
-    #cfgPanelInfra .chip.occ{color:#9fb2ce;background:#0c1a30;border-color:#26375a}
-    #cfgPanelInfra .chip.appme{color:#7dd3fc;background:rgba(125,211,252,.12);border-color:rgba(125,211,252,.4)}
-    #cfgPanelInfra .chip.appwh{color:#fbbf24;background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.4)}
-    #cfgPanelInfra .chip.appmos{color:#c4b5fd;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.4)}
-    #cfgPanelInfra .chip.hor{color:#a5b4fc;background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.35)}
-    #cfgPanelInfra .iconbtn{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;background:#0c1a30;border:1px solid #26375a;color:#5f7290;cursor:pointer;font-size:12px}
-    #cfgPanelInfra .iconbtn:hover{color:#eaf1fb;border-color:#4aa8ff}
-    #cfgPanelInfra .zone{background:linear-gradient(150deg,#0d2141,#0b1428);border:1px solid #26375a;border-radius:16px;padding:16px;margin-top:14px}
-    #cfgPanelInfra .zone.online{border-color:rgba(16,185,129,.4);box-shadow:0 0 16px rgba(16,185,129,.08)}
-    #cfgPanelInfra .zone.dim{opacity:.8}
-    #cfgPanelInfra .zone.vip{background:linear-gradient(135deg,#1a1410,#0d1526 55%,#161009);border:1.5px solid rgba(245,184,73,.42);box-shadow:0 0 22px rgba(245,184,73,.1)}
-    #cfgPanelInfra .zhead{display:flex;align-items:center;gap:12px;margin-bottom:13px;padding-bottom:12px;border-bottom:1px solid #1c2b45}
-    #cfgPanelInfra .zbadge{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px;background:linear-gradient(135deg,#1e3a8a,#0c4a6e);flex-shrink:0}
-    #cfgPanelInfra .zbadge.gold{background:linear-gradient(135deg,#3a2a08,#5a3d0a)}
-    #cfgPanelInfra .zbadge.wh{background:linear-gradient(135deg,#5a3410,#3a2208)}
-    #cfgPanelInfra .zt{flex:1;min-width:0}
-    #cfgPanelInfra .zt .row1{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-    #cfgPanelInfra .zt h3{margin:0;font-size:16px;font-weight:850;color:#eaf1fb}
-    #cfgPanelInfra .zt h3.gold{color:#fde3a7}
-    #cfgPanelInfra .zt .zid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#5f7290}
-    #cfgPanelInfra .zt .zmeta{font-size:11px;color:#9fb2ce;margin-top:3px}
-    #cfgPanelInfra .zctl{display:flex;align-items:center;gap:8px}
-    #cfgPanelInfra .srow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:11px 0}
-    #cfgPanelInfra .slab{font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#5f7290}
-    #cfgPanelInfra .schip{display:inline-flex;align-items:center;gap:7px;background:#0b1830;border:1px solid #26375a;border-radius:10px;padding:6px 10px}
-    #cfgPanelInfra .schip .ic{font-size:13px}
-    #cfgPanelInfra .schip .tt{font-size:11.5px;font-weight:750;color:#eaf1fb}
-    #cfgPanelInfra .schip .cc{font-size:9.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace}
-    #cfgPanelInfra .schip.add{border-style:dashed;color:#5f7290;cursor:pointer;font-size:11px}
-    #cfgPanelInfra .schip.add:hover{color:#4aa8ff;border-color:#4aa8ff}
-    #cfgPanelInfra .pchip{display:inline-flex;align-items:center;gap:8px;border-radius:11px;padding:7px 11px;border:1px solid #26375a;background:#0a1626}
-    #cfgPanelInfra .pchip .pv{font-size:14px;font-weight:850;line-height:1;color:#eaf1fb}
-    #cfgPanelInfra .pchip .pl{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#5f7290;font-weight:700}
-    #cfgPanelInfra .pchip .pu{font-size:9px;color:#5f7290;text-transform:none}
-    #cfgPanelInfra .stations{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:12px;margin-top:6px}
-    #cfgPanelInfra .station{background:#0b1526;border:1px solid #1c2b45;border-radius:13px;padding:12px}
-    #cfgPanelInfra .station.online{border-color:rgba(16,185,129,.4);box-shadow:0 0 12px rgba(16,185,129,.12)}
-    #cfgPanelInfra .st-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
-    #cfgPanelInfra .st-head .sic{font-size:18px}
-    #cfgPanelInfra .st-head .snm{font-size:13px;font-weight:800;color:#eaf1fb}
-    #cfgPanelInfra .st-head .sid{font-size:9.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace}
-    #cfgPanelInfra .printer{display:flex;align-items:center;gap:9px;background:#0a1424;border:1px solid #1c2b45;border-radius:9px;padding:7px 9px;margin-bottom:6px}
-    #cfgPanelInfra .printer .pic{font-size:14px}
-    #cfgPanelInfra .printer .pn{font-size:12px;font-weight:650;color:#eaf1fb}
-    #cfgPanelInfra .pmeta{font-size:9.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace}
-    #cfgPanelInfra .addln{display:block;width:100%;text-align:center;font-size:10.5px;color:#5f7290;border:1px dashed #26375a;border-radius:8px;padding:6px;cursor:pointer;margin-top:2px;background:none}
-    #cfgPanelInfra .addln:hover{color:#4aa8ff;border-color:#4aa8ff}
-    #cfgPanelInfra .assigned-h{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#5f7290;margin:11px 0 8px}
-    #cfgPanelInfra .addstat{border:1.5px dashed #26375a;border-radius:13px;display:grid;place-items:center;color:#5f7290;font-size:11px;font-weight:650;cursor:pointer;gap:5px;text-align:center;padding:10px}
-    #cfgPanelInfra .addstat .plus{font-size:22px}
-    #cfgPanelInfra .users{margin-top:13px;background:#0a1626;border:1px solid #26375a;border-radius:12px;overflow:hidden}
-    #cfgPanelInfra .users>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:9px;padding:11px 13px;font-weight:800;font-size:12.5px;color:#eaf1fb}
-    #cfgPanelInfra .users>summary::-webkit-details-marker{display:none}
-    #cfgPanelInfra .users>summary .uic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:#0e1c34;border:1px solid #26375a}
-    #cfgPanelInfra .users>summary .cnt{margin-left:auto;color:#5f7290;font-size:11px;font-weight:600}
-    #cfgPanelInfra .users[open]>summary{border-bottom:1px solid #1c2b45}
-    #cfgPanelInfra .ucard{border-top:1px solid #1c2b45}
-    #cfgPanelInfra .ucard:first-of-type{border-top:0}
-    #cfgPanelInfra .ucard>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:11px;padding:10px 13px;transition:.15s}
-    #cfgPanelInfra .ucard>summary::-webkit-details-marker{display:none}
-    #cfgPanelInfra .ucard>summary:hover{background:#0c1a2f}
-    #cfgPanelInfra .uav{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:850;font-size:12px;color:#04121f;flex-shrink:0}
-    #cfgPanelInfra .uname{font-size:13px;font-weight:750;display:flex;align-items:center;gap:7px;flex-wrap:wrap;color:#eaf1fb}
-    #cfgPanelInfra .usub{font-size:10px;color:#5f7290;margin-top:2px}
-    #cfgPanelInfra .ucar{color:#5f7290;font-size:12px;transition:.2s}
-    #cfgPanelInfra .ucard[open] .ucar{transform:rotate(180deg)}
-    #cfgPanelInfra .uactions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 13px 12px 56px}
-    #cfgPanelInfra .ubtn{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;color:#9fb2ce;background:#0e1c34;border:1px solid #26375a;border-radius:8px;padding:6px 10px;cursor:pointer;transition:.15s}
-    #cfgPanelInfra .ubtn:hover{border-color:#4aa8ff;color:#eaf1fb;transform:translateY(-1px)}
-    #cfgPanelInfra .ubtn.danger:hover{border-color:#7f1d1d;color:#f87171}
-    #cfgPanelInfra .rolebadge{font-size:9px;font-weight:800;letter-spacing:.04em;padding:2px 7px;border-radius:6px;text-transform:uppercase}
-    #cfgPanelInfra .rolebadge.master{background:rgba(245,184,73,.16);color:#fcd34d;border:1px solid rgba(245,184,73,.4)}
-    #cfgPanelInfra .rolebadge.cajero{background:rgba(56,189,248,.14);color:#7dd3fc;border:1px solid rgba(56,189,248,.35)}
-    #cfgPanelInfra .rolebadge.vend{background:rgba(74,168,255,.12);color:#8fd0ff;border:1px solid rgba(74,168,255,.35)}
-    #cfgPanelInfra .rolebadge.alm{background:rgba(251,146,60,.14);color:#fdba74;border:1px solid rgba(251,146,60,.35)}
-    #cfgPanelInfra .add-row{border:1.5px dashed #26375a;border-radius:12px;text-align:center;padding:11px;color:#5f7290;font-size:12px;font-weight:650;cursor:pointer}
-    #cfgPanelInfra .add-row:hover{border-color:#4aa8ff;color:#4aa8ff}
-    #cfgPanelInfra .pend{background:linear-gradient(135deg,#2a0f12,#0c1424);border:1.5px solid #7f1d1d;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:9px}
-    #cfgPanelInfra .pend-row{display:flex;align-items:center;gap:12px;background:#0a1424;border:1px solid #5b1a1a;border-radius:11px;padding:10px 12px;flex-wrap:wrap}
-    #cfgPanelInfra .pend-row .nm{font-weight:700;font-size:13px;color:#eaf1fb}
-    #cfgPanelInfra .pend-row .mt{font-size:10.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:1px}
-    #cfgPanelInfra .pend-row .rq{font-size:11px;color:#fbbf24;margin-top:2px;font-weight:650}
-    #cfgPanelInfra .act{font-size:12px;font-weight:750;border-radius:9px;padding:8px 12px;cursor:pointer;border:1px solid transparent}
-    #cfgPanelInfra .act.ok{background:#10b981;color:#04150e}
-    #cfgPanelInfra .act.ghost{background:transparent;border-color:#26375a;color:#9fb2ce}
-    #cfgPanelInfra .act.warn{background:transparent;border-color:#7f1d1d;color:#f87171}
-    #cfgPanelInfra .life{background:linear-gradient(135deg,#0c1a33,#0a1424);border:1px solid #26375a;border-radius:16px;padding:16px}
-    #cfgPanelInfra .flow{display:flex;gap:0;flex-wrap:wrap}
-    #cfgPanelInfra .step{flex:1;min-width:140px;position:relative;padding:2px 14px}
-    #cfgPanelInfra .step:not(:last-child)::after{content:"→";position:absolute;right:-6px;top:18px;color:#5f7290}
-    #cfgPanelInfra .step .db{width:11px;height:11px;border-radius:50%;margin-bottom:7px}
-    #cfgPanelInfra .step h4{margin:0;font-size:12.5px;font-weight:800;color:#eaf1fb}
-    #cfgPanelInfra .step .whh{font-size:9.5px;font-weight:700;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace;margin:2px 0 4px}
-    #cfgPanelInfra .step p{margin:0;font-size:10.5px;color:#9fb2ce;line-height:1.4}
-    #cfgPanelInfra .lifenote{margin-top:12px;padding:10px 12px;background:rgba(74,168,255,.07);border:1px solid rgba(74,168,255,.25);border-radius:10px;font-size:11.5px;color:#9fb2ce}
-    #cfgPanelInfra .lifenote b{color:#4aa8ff}
-    #cfgPanelInfra .arch{background:#0a1526;border:1px dashed #26375a;border-radius:16px;padding:13px 15px;margin-top:12px}
-    #cfgPanelInfra .arch summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:9px;font-weight:750;font-size:13px;color:#9fb2ce}
-    #cfgPanelInfra .arch summary::-webkit-details-marker{display:none}
-    #cfgPanelInfra .arch summary .cnt{margin-left:auto;color:#5f7290;font-size:11px}
-    #cfgPanelInfra .muted{color:#5f7290}
+    .cfgpanel .cmd{background:linear-gradient(135deg,#0c1c38,#0a1526);border:1px solid #26375a;border-radius:16px;padding:12px 15px;display:flex;align-items:center;gap:0;flex-wrap:wrap;margin-bottom:12px}
+    .cfgpanel .stat{display:flex;align-items:center;gap:10px;padding-right:16px}
+    .cfgpanel .stat+.stat{border-left:1px solid #1c2b45;padding-left:16px}
+    .cfgpanel .stat .big{font-size:20px;font-weight:850;line-height:1;color:#eaf1fb}
+    .cfgpanel .stat .cap{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#5f7290;font-weight:700;margin-top:2px}
+    .cfgpanel .tnum{font-variant-numeric:tabular-nums}
+    .cfgpanel .live-dot{width:10px;height:10px;border-radius:50%;background:#10b981;box-shadow:0 0 0 0 rgba(16,185,129,.55);animation:cfgPulse 2.4s infinite}
+    .cfgpanel .cmd-right{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .cfgpanel .search{background:#0a1830;border:1px solid #26375a;border-radius:10px;padding:8px 12px;color:#eaf1fb;font-size:12px;min-width:170px;outline:none}
+    .cfgpanel .search::placeholder{color:#5f7290}
+    .cfgpanel .search:focus{border-color:#4aa8ff}
+    .cfgpanel .tbtn{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:#9fb2ce;background:#0e1b32;border:1px solid #26375a;border-radius:10px;padding:8px 12px;cursor:pointer}
+    .cfgpanel .tbtn.on{color:#fff;background:linear-gradient(90deg,#dc2626,#f59e0b);border-color:transparent}
+    .cfgpanel .actions{background:#0a1424;border:1px solid #1c2b45;border-radius:14px;padding:11px 13px;margin-bottom:12px}
+    .cfgpanel .grp{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+    .cfgpanel .grp+.grp{margin-top:9px;padding-top:9px;border-top:1px solid #1c2b45}
+    .cfgpanel .glabel{font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#5f7290;width:72px;flex-shrink:0}
+    .cfgpanel .abtn{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;color:#eaf1fb;background:#0e1c34;border:1px solid #26375a;border-radius:9px;padding:7px 12px;cursor:pointer;transition:.15s}
+    .cfgpanel .abtn:hover{border-color:#4aa8ff;background:#0f2038;transform:translateY(-1px)}
+    .cfgpanel .eyebrow{display:flex;align-items:center;gap:10px;margin:18px 0 12px}
+    .cfgpanel .eyebrow .n{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#4aa8ff;border:1px solid rgba(74,168,255,.3);border-radius:6px;padding:1px 6px;font-weight:600}
+    .cfgpanel .eyebrow h2{font-size:14.5px;font-weight:800;margin:0;color:#eaf1fb}
+    .cfgpanel .eyebrow .rule{flex:1;height:1px;background:linear-gradient(90deg,#26375a,transparent)}
+    .cfgpanel .callout{border-left:3px solid #4aa8ff;background:rgba(74,168,255,.06);padding:10px 13px;border-radius:0 11px 11px 0;font-size:12px;color:#9fb2ce;margin-top:12px}
+    .cfgpanel .callout.g{border-color:#f5b849;background:rgba(245,184,73,.06)}
+    .cfgpanel .chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:750;border-radius:999px;padding:3px 9px;border:1px solid transparent;white-space:nowrap}
+    .cfgpanel .chip .d{width:6px;height:6px;border-radius:50%}
+    .cfgpanel .chip.live{color:#7ff0c4;background:rgba(16,185,129,.16);border-color:rgba(16,185,129,.5)}
+    .cfgpanel .chip.occ{color:#9fb2ce;background:#0c1a30;border-color:#26375a}
+    .cfgpanel .chip.appme{color:#7dd3fc;background:rgba(125,211,252,.12);border-color:rgba(125,211,252,.4)}
+    .cfgpanel .chip.appwh{color:#fbbf24;background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.4)}
+    .cfgpanel .chip.appmos{color:#c4b5fd;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.4)}
+    .cfgpanel .chip.hor{color:#a5b4fc;background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.35)}
+    .cfgpanel .iconbtn{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;background:#0c1a30;border:1px solid #26375a;color:#5f7290;cursor:pointer;font-size:12px}
+    .cfgpanel .iconbtn:hover{color:#eaf1fb;border-color:#4aa8ff}
+    .cfgpanel .zone{background:linear-gradient(150deg,#0d2141,#0b1428);border:1px solid #26375a;border-radius:16px;padding:16px;margin-top:14px}
+    .cfgpanel .zone.online{border-color:rgba(16,185,129,.4);box-shadow:0 0 16px rgba(16,185,129,.08)}
+    .cfgpanel .zone.dim{opacity:.8}
+    .cfgpanel .zone.vip{background:linear-gradient(135deg,#1a1410,#0d1526 55%,#161009);border:1.5px solid rgba(245,184,73,.42);box-shadow:0 0 22px rgba(245,184,73,.1)}
+    .cfgpanel .zhead{display:flex;align-items:center;gap:12px;margin-bottom:13px;padding-bottom:12px;border-bottom:1px solid #1c2b45}
+    .cfgpanel .zbadge{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px;background:linear-gradient(135deg,#1e3a8a,#0c4a6e);flex-shrink:0}
+    .cfgpanel .zbadge.gold{background:linear-gradient(135deg,#3a2a08,#5a3d0a)}
+    .cfgpanel .zbadge.wh{background:linear-gradient(135deg,#5a3410,#3a2208)}
+    .cfgpanel .zt{flex:1;min-width:0}
+    .cfgpanel .zt .row1{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+    .cfgpanel .zt h3{margin:0;font-size:16px;font-weight:850;color:#eaf1fb}
+    .cfgpanel .zt h3.gold{color:#fde3a7}
+    .cfgpanel .zt .zid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#5f7290}
+    .cfgpanel .zt .zmeta{font-size:11px;color:#9fb2ce;margin-top:3px}
+    .cfgpanel .zctl{display:flex;align-items:center;gap:8px}
+    .cfgpanel .srow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:11px 0}
+    .cfgpanel .slab{font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#5f7290}
+    .cfgpanel .schip{display:inline-flex;align-items:center;gap:7px;background:#0b1830;border:1px solid #26375a;border-radius:10px;padding:6px 10px}
+    .cfgpanel .schip .ic{font-size:13px}
+    .cfgpanel .schip .tt{font-size:11.5px;font-weight:750;color:#eaf1fb}
+    .cfgpanel .schip .cc{font-size:9.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace}
+    .cfgpanel .schip.add{border-style:dashed;color:#5f7290;cursor:pointer;font-size:11px}
+    .cfgpanel .schip.add:hover{color:#4aa8ff;border-color:#4aa8ff}
+    .cfgpanel .pchip{display:inline-flex;align-items:center;gap:8px;border-radius:11px;padding:7px 11px;border:1px solid #26375a;background:#0a1626}
+    .cfgpanel .pchip .pv{font-size:14px;font-weight:850;line-height:1;color:#eaf1fb}
+    .cfgpanel .pchip .pl{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#5f7290;font-weight:700}
+    .cfgpanel .pchip .pu{font-size:9px;color:#5f7290;text-transform:none}
+    .cfgpanel .stations{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:12px;margin-top:6px}
+    .cfgpanel .station{background:#0b1526;border:1px solid #1c2b45;border-radius:13px;padding:12px}
+    .cfgpanel .station.online{border-color:rgba(16,185,129,.4);box-shadow:0 0 12px rgba(16,185,129,.12)}
+    .cfgpanel .st-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+    .cfgpanel .st-head .sic{font-size:18px}
+    .cfgpanel .st-head .snm{font-size:13px;font-weight:800;color:#eaf1fb}
+    .cfgpanel .st-head .sid{font-size:9.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace}
+    .cfgpanel .printer{display:flex;align-items:center;gap:9px;background:#0a1424;border:1px solid #1c2b45;border-radius:9px;padding:7px 9px;margin-bottom:6px}
+    .cfgpanel .printer .pic{font-size:14px}
+    .cfgpanel .printer .pn{font-size:12px;font-weight:650;color:#eaf1fb}
+    .cfgpanel .pmeta{font-size:9.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace}
+    .cfgpanel .addln{display:block;width:100%;text-align:center;font-size:10.5px;color:#5f7290;border:1px dashed #26375a;border-radius:8px;padding:6px;cursor:pointer;margin-top:2px;background:none}
+    .cfgpanel .addln:hover{color:#4aa8ff;border-color:#4aa8ff}
+    .cfgpanel .assigned-h{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#5f7290;margin:11px 0 8px}
+    .cfgpanel .addstat{border:1.5px dashed #26375a;border-radius:13px;display:grid;place-items:center;color:#5f7290;font-size:11px;font-weight:650;cursor:pointer;gap:5px;text-align:center;padding:10px}
+    .cfgpanel .addstat .plus{font-size:22px}
+    .cfgpanel .users{margin-top:13px;background:#0a1626;border:1px solid #26375a;border-radius:12px;overflow:hidden}
+    .cfgpanel .users>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:9px;padding:11px 13px;font-weight:800;font-size:12.5px;color:#eaf1fb}
+    .cfgpanel .users>summary::-webkit-details-marker{display:none}
+    .cfgpanel .users>summary .uic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:#0e1c34;border:1px solid #26375a}
+    .cfgpanel .users>summary .cnt{margin-left:auto;color:#5f7290;font-size:11px;font-weight:600}
+    .cfgpanel .users[open]>summary{border-bottom:1px solid #1c2b45}
+    .cfgpanel .ucard{border-top:1px solid #1c2b45}
+    .cfgpanel .ucard:first-of-type{border-top:0}
+    .cfgpanel .ucard>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:11px;padding:10px 13px;transition:.15s}
+    .cfgpanel .ucard>summary::-webkit-details-marker{display:none}
+    .cfgpanel .ucard>summary:hover{background:#0c1a2f}
+    .cfgpanel .uav{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:850;font-size:12px;color:#04121f;flex-shrink:0}
+    .cfgpanel .uname{font-size:13px;font-weight:750;display:flex;align-items:center;gap:7px;flex-wrap:wrap;color:#eaf1fb}
+    .cfgpanel .usub{font-size:10px;color:#5f7290;margin-top:2px}
+    .cfgpanel .ucar{color:#5f7290;font-size:12px;transition:.2s}
+    .cfgpanel .ucard[open] .ucar{transform:rotate(180deg)}
+    .cfgpanel .uactions{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 13px 12px 56px}
+    .cfgpanel .ubtn{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;color:#9fb2ce;background:#0e1c34;border:1px solid #26375a;border-radius:8px;padding:6px 10px;cursor:pointer;transition:.15s}
+    .cfgpanel .ubtn:hover{border-color:#4aa8ff;color:#eaf1fb;transform:translateY(-1px)}
+    .cfgpanel .ubtn.danger:hover{border-color:#7f1d1d;color:#f87171}
+    .cfgpanel .rolebadge{font-size:9px;font-weight:800;letter-spacing:.04em;padding:2px 7px;border-radius:6px;text-transform:uppercase}
+    .cfgpanel .rolebadge.master{background:rgba(245,184,73,.16);color:#fcd34d;border:1px solid rgba(245,184,73,.4)}
+    .cfgpanel .rolebadge.cajero{background:rgba(56,189,248,.14);color:#7dd3fc;border:1px solid rgba(56,189,248,.35)}
+    .cfgpanel .rolebadge.vend{background:rgba(74,168,255,.12);color:#8fd0ff;border:1px solid rgba(74,168,255,.35)}
+    .cfgpanel .rolebadge.alm{background:rgba(251,146,60,.14);color:#fdba74;border:1px solid rgba(251,146,60,.35)}
+    .cfgpanel .add-row{border:1.5px dashed #26375a;border-radius:12px;text-align:center;padding:11px;color:#5f7290;font-size:12px;font-weight:650;cursor:pointer}
+    .cfgpanel .add-row:hover{border-color:#4aa8ff;color:#4aa8ff}
+    .cfgpanel .pend{background:linear-gradient(135deg,#2a0f12,#0c1424);border:1.5px solid #7f1d1d;border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:9px}
+    .cfgpanel .pend-row{display:flex;align-items:center;gap:12px;background:#0a1424;border:1px solid #5b1a1a;border-radius:11px;padding:10px 12px;flex-wrap:wrap}
+    .cfgpanel .pend-row .nm{font-weight:700;font-size:13px;color:#eaf1fb}
+    .cfgpanel .pend-row .mt{font-size:10.5px;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:1px}
+    .cfgpanel .pend-row .rq{font-size:11px;color:#fbbf24;margin-top:2px;font-weight:650}
+    .cfgpanel .act{font-size:12px;font-weight:750;border-radius:9px;padding:8px 12px;cursor:pointer;border:1px solid transparent}
+    .cfgpanel .act.ok{background:#10b981;color:#04150e}
+    .cfgpanel .act.ghost{background:transparent;border-color:#26375a;color:#9fb2ce}
+    .cfgpanel .act.warn{background:transparent;border-color:#7f1d1d;color:#f87171}
+    .cfgpanel .life{background:linear-gradient(135deg,#0c1a33,#0a1424);border:1px solid #26375a;border-radius:16px;padding:16px}
+    .cfgpanel .flow{display:flex;gap:0;flex-wrap:wrap}
+    .cfgpanel .step{flex:1;min-width:140px;position:relative;padding:2px 14px}
+    .cfgpanel .step:not(:last-child)::after{content:"→";position:absolute;right:-6px;top:18px;color:#5f7290}
+    .cfgpanel .step .db{width:11px;height:11px;border-radius:50%;margin-bottom:7px}
+    .cfgpanel .step h4{margin:0;font-size:12.5px;font-weight:800;color:#eaf1fb}
+    .cfgpanel .step .whh{font-size:9.5px;font-weight:700;color:#5f7290;font-family:ui-monospace,Menlo,Consolas,monospace;margin:2px 0 4px}
+    .cfgpanel .step p{margin:0;font-size:10.5px;color:#9fb2ce;line-height:1.4}
+    .cfgpanel .lifenote{margin-top:12px;padding:10px 12px;background:rgba(74,168,255,.07);border:1px solid rgba(74,168,255,.25);border-radius:10px;font-size:11.5px;color:#9fb2ce}
+    .cfgpanel .lifenote b{color:#4aa8ff}
+    .cfgpanel .arch{background:#0a1526;border:1px dashed #26375a;border-radius:16px;padding:13px 15px;margin-top:12px}
+    .cfgpanel .arch summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:9px;font-weight:750;font-size:13px;color:#9fb2ce}
+    .cfgpanel .arch summary::-webkit-details-marker{display:none}
+    .cfgpanel .arch summary .cnt{margin-left:auto;color:#5f7290;font-size:11px}
+    .cfgpanel .muted{color:#5f7290}
     @keyframes cfgPulse{0%{box-shadow:0 0 0 0 rgba(16,185,129,.55)}70%{box-shadow:0 0 0 8px transparent}100%{box-shadow:0 0 0 0 transparent}}
-    @media (max-width:860px){#cfgPanelInfra .stations{grid-template-columns:1fr}}
+    @media (max-width:860px){.cfgpanel .stations{grid-template-columns:1fr}}
     @media (max-width:600px){
-      #cfgPanelInfra .cmd{padding:11px 12px}
-      #cfgPanelInfra .stat{padding-right:12px}
-      #cfgPanelInfra .stat+.stat{padding-left:12px}
-      #cfgPanelInfra .stat .big{font-size:18px}
-      #cfgPanelInfra .cmd-right{width:100%;margin-left:0;margin-top:10px}
-      #cfgPanelInfra .search{flex:1;min-width:0}
-      #cfgPanelInfra .glabel{width:100%;margin-bottom:2px}
-      #cfgPanelInfra .zhead{flex-wrap:wrap}
-      #cfgPanelInfra .zctl{margin-left:auto}
-      #cfgPanelInfra .fleet{justify-content:center;gap:9px}
+      .cfgpanel .cmd{padding:11px 12px}
+      .cfgpanel .stat{padding-right:12px}
+      .cfgpanel .stat+.stat{padding-left:12px}
+      .cfgpanel .stat .big{font-size:18px}
+      .cfgpanel .cmd-right{width:100%;margin-left:0;margin-top:10px}
+      .cfgpanel .search{flex:1;min-width:0}
+      .cfgpanel .glabel{width:100%;margin-bottom:2px}
+      .cfgpanel .zhead{flex-wrap:wrap}
+      .cfgpanel .zctl{margin-left:auto}
+      .cfgpanel .fleet{justify-content:center;gap:9px}
       #infraContenedor .fleet{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-      #cfgPanelInfra .uactions{padding-left:13px}
-      #cfgPanelInfra .flow{flex-direction:column;gap:12px}
-      #cfgPanelInfra .step{padding:0 0 0 4px}
-      #cfgPanelInfra .step:not(:last-child)::after{content:"↓";right:auto;left:2px;top:auto;bottom:-9px}
+      .cfgpanel .uactions{padding-left:13px}
+      .cfgpanel .flow{flex-direction:column;gap:12px}
+      .cfgpanel .step{padding:0 0 0 4px}
+      .cfgpanel .step:not(:last-child)::after{content:"↓";right:auto;left:2px;top:auto;bottom:-9px}
     }
     @media (min-width:601px) and (max-width:900px){#infraContenedor .fleet{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}}
     @media (prefers-reduced-motion:reduce){#cfgPanelInfra *{animation:none!important}}
+
+
+    /* ── [Rediseño Config] Tarjetas de las pestañas Categorías/Bancarios (mockup) ── */
+    .cfgpanel .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+    .cfgpanel .catcard{background:#0b1526;border:1px solid #1c2b45;border-radius:12px;padding:13px;cursor:pointer;transition:.15s}
+    .cfgpanel .catcard:hover{border-color:#4aa8ff;transform:translateY(-2px)}
+    .cfgpanel .catcard .ct{font-size:13.5px;font-weight:800;color:#eaf1fb}
+    .cfgpanel .catcard .cdesc{font-size:11px;color:#9fb2ce;margin-top:4px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .cfgpanel .catcard{overflow:hidden}
+    .cfgpanel .modechip{font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:6px;background:rgba(74,168,255,.12);color:#8fd0ff;border:1px solid rgba(74,168,255,.3);white-space:nowrap}
+    .cfgpanel .modechip.tope{background:rgba(167,139,250,.14);color:#c4b5fd;border-color:rgba(167,139,250,.3)}
+    .cfgpanel .modechip.fijo{background:rgba(125,211,252,.12);color:#7dd3fc;border-color:rgba(125,211,252,.3)}
+    .cfgpanel .modechip.libre{background:rgba(148,163,184,.12);color:#cbd5e1;border-color:rgba(148,163,184,.3)}
+    .cfgpanel .group{background:linear-gradient(150deg,#0d2141,#0b1428);border:1px solid #26375a;border-radius:16px;padding:15px;margin-top:14px}
+    .cfgpanel .rowlist{display:flex;flex-direction:column;gap:8px}
+    .cfgpanel .prow{display:flex;align-items:center;gap:10px;background:#0b1526;border:1px solid #1c2b45;border-radius:12px;padding:11px 13px;flex-wrap:wrap}
+    .cfgpanel .prow .pn2{font-size:13.5px;font-weight:750;color:#eaf1fb}
+    .cfgpanel .prow .pr{font-size:10.5px;color:#5f7290;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+    .cfgpanel .qrbox{width:120px;height:120px;border-radius:12px;background:repeating-linear-gradient(45deg,#0e1c34,#0e1c34 6px,#0a1424 6px,#0a1424 12px);border:1px solid #26375a;display:grid;place-items:center;color:#5f7290;font-size:11px;overflow:hidden}
+    .cfgpanel .qrbox img{width:100%;height:100%;object-fit:cover}
+    .cfgpanel .metachip{display:inline-flex;align-items:center;gap:6px;background:#0a1626;border:1px solid #26375a;border-radius:9px;padding:5px 9px;font-size:11px;color:#9fb2ce}
+    .cfgpanel .metachip b{font-weight:800;color:#eaf1fb}
+    /* adaptador: cards de Notificaciones al mismo tono */
+    #cfgPanelNotifs .notif-card{background:#0b1526!important;border:1px solid #1c2b45!important;border-radius:12px!important}
+    #cfgPanelNotifs .notif-card:hover{border-color:#26375a!important}
+    #cfgPanelNotifs .notif-pill{background:#0e1b32;border:1px solid #26375a;color:#9fb2ce;border-radius:10px}
+    #cfgPanelNotifs .notif-pill.active{color:#04121f;background:linear-gradient(135deg,#68b6ff,#4aa8ff);border-color:transparent;font-weight:750}
 
     /* ── Modal Producto rediseñado ── */
     .prod-tipo-bar { display:flex; border-bottom:1px solid #1e293b; background:#070f1a; overflow-x:auto; flex-shrink:0; }
@@ -14684,7 +14711,7 @@
       <!-- ════════════════════════════════════════════════════════
            INFRAESTRUCTURA — reconstrucción fiel al mockup config_modulo.html
            ════════════════════════════════════════════════════════ -->
-      <div id="cfgPanelInfra">
+      <div id="cfgPanelInfra" class="cfgpanel">
         <!-- [Rediseño Config] Acciones agrupadas por función (mockup): Impresión · Operación · Marca.
              La Tarjeta/WhatsApp deja de estar perdida al fondo. -->
         <div class="actions">
@@ -14740,15 +14767,10 @@
 
 
       <!-- Categorías + política de precios -->
-      <div id="cfgPanelCategorias" class="hidden">
-        <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <div class="flex-1 min-w-0">
-            <h3 class="font-semibold text-sm text-slate-200">🏷️ Categorías y política de precios</h3>
-            <p class="text-xs text-slate-500 mt-0.5">Define el modo y margen objetivo para cada categoría. Los productos heredan estas reglas salvo que tengan override propio.</p>
-          </div>
-          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalCategoria(null)">+ Nueva categoría</button>
-        </div>
-        <!-- Grid de cards modernas (reemplaza la tabla) -->
+      <div id="cfgPanelCategorias" class="cfgpanel hidden">
+        <!-- [Mockup] cmd bar de Categorías (contadores + buscador + nueva) — lo pinta renderCategorias -->
+        <div id="catCmdBar"></div>
+        <div class="callout" style="margin-bottom:12px">Cada categoría define su <b>modo de venta</b> (margen % o precio tope) que hereda al producto. El gate de clave admin se conserva para editar.</div>
         <div id="catGridContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"></div>
         <div class="text-[11px] text-slate-600 italic mt-3">
           ℹ️ <strong class="text-emerald-400">📈 MARGEN</strong>: precio = costo / (1 − margen/100). <strong class="text-blue-400">🔒 FIJO</strong>: no sugiere cambio. <strong class="text-amber-400">🎯 COMPETITIVO</strong>: margen + tope. <strong class="text-slate-400">🆓 LIBRE</strong>: todo manual.
@@ -14758,7 +14780,7 @@
       <!-- ════════════════════════════════════════════════════════
            🔔 NOTIFICACIONES — catálogo de pushes del ecosistema
            ════════════════════════════════════════════════════════ -->
-      <div id="cfgPanelNotifs" class="hidden">
+      <div id="cfgPanelNotifs" class="cfgpanel hidden">
         <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
           <div class="flex-1 min-w-0">
             <h3 class="font-semibold text-sm text-slate-200">🔔 Notificaciones push</h3>
@@ -14791,14 +14813,8 @@
       <!-- ════════════════════════════════════════════════════════
            BANCARIOS — Medios de cobro de la empresa (bancarización ME)
            ════════════════════════════════════════════════════════ -->
-      <div id="cfgPanelBancarios" class="hidden">
-        <div class="flex items-center justify-between gap-2 mb-1 flex-wrap">
-          <div class="flex-1 min-w-0">
-            <h3 class="font-semibold text-sm text-slate-200">🏦 Medios de cobro de la empresa</h3>
-            <p class="text-xs text-slate-500 mt-0.5">Cuentas, Yape y Plin que se imprimen/muestran cuando una venta requiere <b>bancarización</b> (pagos ≥ límite). Marca cuáles se imprimen.</p>
-          </div>
-        </div>
-        <div id="bancariosBody" class="mt-2">
+      <div id="cfgPanelBancarios" class="cfgpanel hidden">
+        <div id="bancariosBody" class="mt-1">
           <div class="text-center py-8 text-slate-500 text-sm">Cargando…</div>
         </div>
       </div>
@@ -19516,7 +19532,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.573';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.574';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19566,7 +19582,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.573"></script>
+<script src="js/api.js?v=2.43.574"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19581,7 +19597,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.573"></script>
+<script src="js/app.js?v=2.43.574"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
