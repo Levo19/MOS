@@ -19709,10 +19709,33 @@ const MOS = (() => {
     return `<div class="eyebrow"><span class="n">${n}</span><h2>${titulo}</h2><span class="rule"></span></div>`;
   }
 
+  // [Fix dueño] La actividad de PERSONAL_MASTER se queda vieja (Luis "hace 5h" estando EN el
+  // panel). Verdad efectiva = lo más fresco entre su fila de personal y (a) su sesión viva en
+  // este navegador, (b) el dispositivo más reciente donde figura su Ultima_Sesion.
+  function _personaActEfectiva(p) {
+    let act = _personaActividad(p.Ultima_Conexion || p.ultimaConexion);
+    // (a) es el usuario logueado en ESTE panel → está en línea ahora mismo
+    if (S.session && (String(S.session.idPersonal) === String(p.idPersonal) ||
+        _normNombre(S.session.nombre) === _normNombre((p.nombre || '') + ' ' + (p.apellido || '')) ||
+        _normNombre(S.session.nombre) === _normNombre(p.nombre))) {
+      return { color: '#10b981', label: 'en línea · tú', dot: '🟢', minutos: 0 };
+    }
+    // (b) dispositivo más fresco con su nombre en Ultima_Sesion
+    const full = _normNombre((p.nombre || '') + ' ' + (p.apellido || ''));
+    const solo = _normNombre(p.nombre);
+    (cfgData.dispositivos || []).forEach(d => {
+      const n = _normNombre(d.Ultima_Sesion);
+      if (!n || (n !== full && n !== solo)) return;
+      const a2 = _dispActividad(d.Ultima_Conexion);
+      if (a2.minutos < act.minutos) act = { color: a2.color, label: a2.label, dot: a2.dot, minutos: a2.minutos };
+    });
+    return act;
+  }
+
   // ── ucard: persona (admins/operadores) desplegable con acciones ──
   function _cfgUcardPersona(p, appOrigen, opts) {
     opts = opts || {};
-    const act = _personaActividad(p.Ultima_Conexion || p.ultimaConexion);
+    const act = _personaActEfectiva(p);
     const activo = String(p.estado) === '1';
     const safeId = String(p.idPersonal || '').replace(/'/g, '&#39;');
     const safeNombre = String(p.nombre || '').replace(/'/g, '&#39;');
@@ -19783,7 +19806,7 @@ const MOS = (() => {
     if (esAlm) {
       const ops = (cfgData.personal || []).filter(p => String(p.rol || '').toUpperCase() !== 'SUPERVISOR').filter(p => qMatch((p.nombre || '') + ' ' + (p.apellido || '')));
       n = ops.length;
-      online = ops.filter(p => _personaActividad(p.Ultima_Conexion || p.ultimaConexion).minutos < 5).length;
+      online = ops.filter(p => _personaActEfectiva(p).minutos < 5).length;
       cards = ops.map(p => _cfgUcardPersona(p, 'warehouseMos'));
       addLabel = '＋ agregar almacenero / envasador'; addApp = 'warehouseMos';
     } else {
@@ -19831,12 +19854,14 @@ const MOS = (() => {
     const horChip = `<span class="pchip" style="cursor:pointer" onclick="MOS.abrirModalHorarioApp('${app}')" title="Horario de la app · toca para editar"><span>🕐</span><div><div class="pv">${hoy || '—'}</div><div class="pl">Horario</div></div></span>`;
     if (_esZonaAlmacen(z)) {
       const cfg = cfgData.config || {};
-      const mk = (icon, key, val, lbl, unidad) => `<span class="pchip meta-chip" style="cursor:pointer" data-meta-key="${key}" data-meta-valor="${val}" onclick="MOS.editarMetaChip('${key}', this)" title="Click para editar"><span>${icon}</span><div><div class="pv">${val !== '' ? val : '—'}</div><div class="pl">${lbl} <span class="pu">${unidad}</span></div></div></span>`;
-      const tarifa = cfg.evalTarifaEnvasadoPorUnidad != null && cfg.evalTarifaEnvasadoPorUnidad !== '' ? 'S/' + parseFloat(cfg.evalTarifaEnvasadoPorUnidad).toFixed(2) : '';
+      // display formateado; data-meta-valor conserva el crudo para editarMetaChip
+      const mk = (icon, key, raw, disp, lbl, unidad) => `<span class="pchip meta-chip" style="cursor:pointer" data-meta-key="${key}" data-meta-valor="${raw}" onclick="MOS.editarMetaChip('${key}', this)" title="Click para editar"><span>${icon}</span><div><div class="pv">${disp !== '' ? disp : '—'}</div><div class="pl">${lbl} <span class="pu">${unidad}</span></div></div></span>`;
+      const rawT = cfg.evalTarifaEnvasadoPorUnidad != null ? String(cfg.evalTarifaEnvasadoPorUnidad) : '';
+      const dispT = rawT !== '' && !isNaN(parseFloat(rawT)) ? 'S/' + parseFloat(rawT).toFixed(2) : '';
       return `<div class="srow"><span class="slab">🎯 Política</span>
-        ${mk('💵', 'evalTarifaEnvasadoPorUnidad', cfg.evalTarifaEnvasadoPorUnidad || '', 'Envasado', '/und')}
-        ${mk('📦', 'evalMetaAlmacenero', cfg.evalMetaAlmacenero || '', 'Guías', '/día')}
-        ${mk('📋', 'evalMetaAuditorias', cfg.evalMetaAuditorias || '', 'Auditorías', '/día')}
+        ${mk('💵', 'evalTarifaEnvasadoPorUnidad', rawT, dispT, 'Envasado', '/und')}
+        ${mk('📦', 'evalMetaAlmacenero', cfg.evalMetaAlmacenero || '', cfg.evalMetaAlmacenero || '', 'Guías', '/día')}
+        ${mk('📋', 'evalMetaAuditorias', cfg.evalMetaAuditorias || '', cfg.evalMetaAuditorias || '', 'Auditorías', '/día')}
         ${horChip}</div>`;
     }
     let pol = {};
@@ -20049,7 +20074,7 @@ const MOS = (() => {
     });
     const ascendidos = (cfgData.personal || []).filter(p => p.accesoMos === true || p.accesoMos === '1' || p.accesoMos === 1);
     const nAdm = adminsMOS.length + ascendidos.length;
-    const onlineAdm = adminsMOS.concat(ascendidos).filter(p => _personaActividad(p.Ultima_Conexion || p.ultimaConexion).minutos < 5).length;
+    const onlineAdm = adminsMOS.concat(ascendidos).filter(p => _personaActEfectiva(p).minutos < 5).length;
     const ucards = adminsMOS.filter(p => !_cfgQ || _normNombre((p.nombre || '') + ' ' + (p.apellido || '')).includes(_cfgQ)).map(p => _cfgUcardPersona(p, 'MOS'))
       .concat(ascendidos.filter(p => !_cfgQ || _normNombre((p.nombre || '') + ' ' + (p.apellido || '')).includes(_cfgQ)).map(p => _cfgUcardPersona(p, 'warehouseMos', { ascendido: true })));
     const adminsBlock = `<details class="users" ${_cfgIsOpen('z:__VIP__', true) ? 'open' : ''} ontoggle="MOS._cfgDetToggle('z:__VIP__',this.open)" style="border-color:rgba(245,184,73,.3)">
@@ -22731,7 +22756,12 @@ const MOS = (() => {
     const appL = String(d.App || '').toLowerCase();
     const appCls = appL === 'mos' ? 'mos' : (appL.indexOf('express') >= 0 || appL === 'me' ? 'me' : (appL.indexOf('warehouse') >= 0 || appL === 'wh' ? 'wh' : ''));
     const appLbl = appCls === 'mos' ? 'MOS' : (appCls === 'me' ? 'ME' : (appCls === 'wh' ? 'WH' : ''));
-    const user = d.Ultima_Sesion || '';
+    let user = d.Ultima_Sesion || '';
+    // [Fix dueño] El panel MOS no estampa ultima_sesion en el dispositivo (solo ME/WH lo hacen
+    // al loguear) → si este equipo ES el del navegador actual, el usuario es el de la sesión viva.
+    if (!user && S.session?.nombre) {
+      try { if (String(d.ID_Dispositivo) === String(localStorage.getItem('mos_device_id') || '')) user = S.session.nombre; } catch (_) {}
+    }
     // Iniciales: 1ª letra del USUARIO; sin usuario, del nombre del equipo (nunca "?" salvo vacío total)
     const baseIni = String(user || d.Nombre_Equipo || '').trim();
     const ini = (baseIni.charAt(0) || '·').toUpperCase();
@@ -22743,8 +22773,9 @@ const MOS = (() => {
         ? `<span class="pill" style="background:rgba(249,115,22,.16);color:#fdba74">⏸ ${estado.startsWith('CANCELADO') ? 'arch' : 'susp'}</span>`
         : `<span class="pill" style="background:rgba(245,184,73,.14);color:#fbd989">◐ ${act.label.replace('hace ', '')}</span>`;
     const appc = appLbl ? `<span class="appc appb ${appCls}">${appLbl}</span>` : '';
-    // Cara del mockup: avatar + nombre del usuario + ROL (o estado corto). El tiempo va en el cap, no acá.
-    const ust = rol || (isFresh ? 'en línea' : (user ? '' : act.label));
+    // Cara del mockup: avatar + nombre del usuario + ROL (o "en línea"). El tiempo va SOLO en el cap
+    // (antes, sin usuario, la cara repetía "hace Xm" y quedaba duplicado con el caption).
+    const ust = rol || (isFresh ? 'en línea' : '');
     const face = `<div class="face"><div class="avatar" style="background:${grad}">${ini}</div>${user ? `<div class="uname">${user.split(/\s+/)[0]}</div>` : ''}${ust ? `<div class="ust" style="color:${isFresh ? '#6ee7b7' : act.color}">${ust}</div>` : ''}</div>`;
     let devt;
     if (tipo === 'phone')       devt = `<div class="devt phone ${stateCls}">${face}</div>`;
