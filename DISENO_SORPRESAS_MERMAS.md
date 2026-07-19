@@ -311,3 +311,27 @@ REVIVIDO EN SERVER (hooks SIEMPRE blindados — jamás tumban dinero):
   traslado, devolución, idempotencia, huérfano blindado.
 NOTA: el libro de zonas arranca con lo heredado de HOY en adelante (lo pre-existente en zona
 sin lote queda como huérfano informativo — el consumo huérfano no rompe nada).
+
+## Ronda 10 — Lotes en INGRESOS + detalle navegable MOS (2026-07-19 · MOS 2.43.582 · SQL 530)
+- VERIFICACIÓN pedida: "¿los ingresos de proveedor con fecha crean lote?" → NO (bug real):
+  30d = 208 líneas de INGRESO_PROVEEDOR con fecha_vencimiento → 1 lote. El GAS creaba el lote
+  AL CERRAR el ingreso; cero-GAS no lo portó (mismo hueco 527/528). Por eso "puros envasados"
+  (registrar_envasado sí crea su lote). FIX SQL 530: cerrar_guia_idempotente crea/enlaza lote
+  por línea de ingreso con fecha (LOT<guia>#<linea>, _sync_lote_desde_detalle, idempotente,
+  solo si la línea no tiene lote — si tiene, lo gobierna actualizar_fecha_vencimiento).
+- Panel Por vencer MOS navegable (paridad WH): tap producto → detalle 🎯 FIFO activos (orden
+  vence-primero, tile severidad, guía origen) + 📜 Historial inline por lote (get_historial_lote,
+  gate ampliado a claim MOS). Aplica a almacén Y zonas (zona_lotes.id_lote = lote WH de origen
+  → el historial del lote sirve igual).
+
+## Ronda 11 — CERO-GAS del cierre/lotes, purga física (2026-07-19 · WH 2.13.458 · GAS @532)
+Pregunta del dueño: "¿eliminaste el GAS?". Auditoría honesta encontró 2 rastros REALES:
+1. api.js: si la RPC de cierre devolvía ERROR DE NEGOCIO (null), post() aún caía al GAS legacy
+   (timeouts sellados, errores no). FIX: _IDEMPOTENT_ACTIONS entera sellada fail-closed.
+2. GAS físico VIVO: trigger 21:00 (cerrarGuiasAbiertasGlobal) cerraba por la Hoja y parchaba
+   estado en la sombra SIN aplicar stock (zombi). PURGA desplegada @532: _cerrarGuiaImpl → stub
+   fail-closed; _consumirLotesFIFO y _actualizarLote ELIMINADOS (portados SQL 527/530);
+   _autoCloseDayGuiasImpl/_autocerrarGuiasInactivasImpl/cerrarGuiasAbiertasGlobal → no-op
+   (pg_cron es el dueño del autocierre).
+PENDIENTE conocido (fuera de este alcance, ya en PUNTO_DE_RETOMA_cero_gas): el boot de WH aún
+hace 3 lecturas al GAS de MOS (getPersonalConPin/getProductos/getProveedores — maestros).

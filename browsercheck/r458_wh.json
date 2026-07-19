@@ -1,0 +1,1 @@
+{"url":"https://levo19.github.io/warehouseMos-/","waitMs":30000,"localStorage":{"wh_device_id":"7e57c1a0-de1c-4a7e-b0de-c47a10906475"},"evalAfter":"(async()=>({ver:(await (await fetch('version.json?b='+Date.now())).json()).version}))()","screenshot":"r458_wh.png"}

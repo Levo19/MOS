@@ -122,3 +122,19 @@ Fallback money-write (borrar el brazo GAS tras confirmar directo estable):
 - [ ] Borrar constantes `GAS_URL`/`API_URL`/`MOS_GAS_URL`/`mosGasUrl` de los 3 frontends.
 - [ ] Borrar los guards sentinela `=== 'ENLACE_DE_TU_SCRIPT_GAS_AQUI'` (ME, ~30 sitios, ya inocuos).
 - [ ] `grep` final = 0 · web-check final las 3 apps · recién ahí el dueño borra GAS+Sheets.
+
+## 2026-07-19 — WH: CERO GAS TOTAL ALCANZADO (2.13.459) ✅
+Browsercheck boot prod: "✅ CERO fetches a GAS". Barrido: 0 referencias a script.google.com
+en js/*.js + index.html + sw.js.
+- offline.js: fetch crudos GAS (maestros/stock/config/operacional + rama legacy de 3 GETs)
+  eliminados → reintento directo con backoff; _gasUrl eliminado.
+- api.js: listas sombra → RPCs directas (SQL 349/350, por fin cableadas — eran las últimas
+  escrituras por GAS); pata GAS de post() ELIMINADA (_doFetchWithRetry retirado, fail-closed);
+  procesarEliminacionMermas (zombi) eliminado; call() ya era directo→caché.
+- Config: WH_CONFIG.gasUrl/mosGasUrl eliminadas; guards GPS/push/extensor/precarga limpiados;
+  wh_gas_url purgado de equipos; Tools muestra "100% Supabase"; MOS_URL del DeviceAuth fuera
+  (v1.0.29 auth 100% Supabase).
+- GAS Apps Script (@532): _cerrarGuiaImpl stub fail-closed; _consumirLotesFIFO/_actualizarLote
+  eliminados; autocierres no-op (trigger 21:00 neutralizado).
+PENDIENTE ecosistema (no-WH): purga física de los .gs muertos restantes del proyecto Apps
+Script de WH (inalcanzables desde la app) + rastros de ME/MOS según su propio inventario.
