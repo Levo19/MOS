@@ -2819,6 +2819,10 @@ const API = (() => {
     // GAS de purga valida la clave contra el global DESINCRONIZADO (incidente clave-global) → rechazaba la clave
     // master correcta. Fail-closed: sin token/directo → LANZA (reintentar), jamás cae al GAS con clave vieja.
     eliminarItemsCatalogo: 1,
+    // [Revisión 100x 2026-07-19 · CERO-GAS boot] las lecturas tributarias del prefetch de login
+    // corrían ANTES del mint del token → null → caían al fallback GAS. Directo-requerido:
+    // null LANZA (el prefetch tiene catch; el módulo carga al abrirlo con token ya listo).
+    tribResumenMes: 1, tribIGVFavorMes: 1, tribIGVEmitidoMes: 1,
     // [cero-GAS dueño 2026-07-17] escrituras de dispositivos (panel admin): sin token/RPC → LANZA, jamás GAS.
     crearDispositivo: 1, aprobarDispositivoPendiente: 1, revocarDispositivo: 1, forzarPushDispositivo: 1, forzarWizardDispositivo: 1 };
 
