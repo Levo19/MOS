@@ -162,4 +162,4 @@ real: sorpresa en guía de prueba → recepción simulada → veredicto + push.
   en INGRESO_DEVOLUCION_ZONA cerrada (culpa+foto obligatoria+stock-out); cesta v2 (culpa/SLA
   chips, ▶ Procesar TODO/PARTE/NADA + 🔄 transformación con cantidad destino editable,
   ☐/☑ batch eliminar, badge vencidas). Boot verificado sin errores (módulos vivos).
-- Pendiente fino: batch eliminar genera N guías (una por merma) — refinamiento futuro: una sola.
+- ✅ Batch = UNA guía (SQL 518 wh.mermas_eliminar_batch, WH 2.13.448): línea trazable por merma, stock exacto por generación, idempotente por local_id. CERO pendientes.
