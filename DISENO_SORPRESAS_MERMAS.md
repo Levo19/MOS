@@ -116,3 +116,37 @@ RPCs `registrar_merma` (31) / `resolver_merma` (66), guía `INGRESO_DEVOLUCION_Z
 
 ## Changelog
 - 2026-07-18: diseño v1 + mockup navegable (4 vistas) verificado 390px sin overflow.
+
+---
+
+## 4) PLAN DE IMPLEMENTACIÓN (fases)
+
+**F0 · SQL Sorpresas — ✅ HECHA (516, aplicada 2026-07-18, smoke ROLLBACK previo):**
+wh.sorpresas + wh.registrar_sorpresa (gate clave admin central → honra acceso_mos; guardia
+PRODUCTO_NO_EN_GUIA; corrige cant_recibida de la línea; stock atómico si guía CERRADA;
+SORPRESA_TARDE si la zona ya recibió; idempotente por localId) + wh.sorpresas_lista +
+TRIGGER trg_evaluar_sorpresas sobre me.zona_traslado_verificacion (PASO/FALLO/DISCREPANCIA
++ push MASTER/ADMIN). El hook NO toca el RPC de dinero 146.
+
+**F1 · SQL Mermas:** extender wh.mermas (+culpa, +id_guia_transformacion, +costo_unitario) ·
+extender resolver_merma (transformación → crea guía TRANSFORMACION + stock destino atómico;
+cantidad destino editable default=recuperado; batch eliminar → 1 guía salida) · RPC
+merma_desde_guia (línea de INGRESO_DEVOLUCION_ZONA → merma con culpa) · cron SLA 3 días
+CORRIDOS → push vencidas (pg_cron existente).
+
+**F2 · WH frontend:** botón 🎯 en el CARD de guías SALIDA_ZONA (solo admin/ascendido — gate
+frontend con clave cacheada 5min) + modal escaneo corrediza con guardia-alerta · botón
+"♻️ a mermas" en detalle INGRESO_DEVOLUCION_ZONA · cesta renovada (SLA chips, checks batch,
+procesar TODO/PARTE/NADA + transformación, badge rojo vencidas). Deploy git push (Pages
+/warehouseMos-/) + bump SW.
+
+**F3 · MOS frontend:** Zona → card ALMACÉN: botones 🎯 Sorpresas (panel: registro + hoy +
+score 30d + historial) y ♻️ Mermas (REEMPLAZA Guías de ese card; historial total + KPIs S/
+mermado vs recuperado + culpa por zona + filtros). Observación con monto en la vista de
+evaluación del día (join wh.sorpresas por operador/fecha — NO toca liquidaciones_dia).
+
+**F4 · Verificación integral:** browsercheck + screenshots vs mockup por fase; prueba E2E
+real: sorpresa en guía de prueba → recepción simulada → veredicto + push.
+
+## Estado
+- 2026-07-18: decisiones cerradas (§3) · mockup v2 (artifact d4cc280d) · F0 APLICADA en prod.
