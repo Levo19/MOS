@@ -14850,6 +14850,23 @@
     </div>
 
     <!-- ══ [♻️ MERMAS] Panel MOS: auditoría total + KPIs + filtros ══ -->
+    <div id="modalVencimientos" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalVencimientos')">
+      <div class="modal-box flex flex-col" style="max-width:760px;max-height:92vh">
+        <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1c2b45;background:linear-gradient(135deg,rgba(234,179,8,.09),transparent)">
+          <div class="w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style="background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.35);">📅</div>
+          <div class="min-w-0 flex-1">
+            <h2 class="font-bold text-base text-white">Por vencer · almacén</h2>
+            <p class="text-[11px] text-slate-500 mt-0.5">semáforo FEFO · vencido / crítico ≤7d / alerta ≤30d / urgente ≤90d / sano</p>
+          </div>
+          <button onclick="MOS.closeModal('modalVencimientos')" class="modal-close-x">×</button>
+        </div>
+        <div class="overflow-y-auto px-4 py-4 flex-1 cfgpanel">
+          <div id="vencKpisMos" style="display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-bottom:10px"></div>
+          <div id="vencFiltrosMos" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+          <div id="vencListaMos"></div>
+        </div>
+      </div>
+    </div>
     <div id="modalMermas" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalMermas')">
       <div class="modal-box flex flex-col" style="max-width:760px;max-height:92vh">
         <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1c2b45;background:linear-gradient(135deg,rgba(239,68,68,.09),transparent)">
@@ -16239,6 +16256,7 @@
              🎯 solo lo ven MASTER/ADMIN (incluye ascendidos acceso_mos: entran con rol efectivo ADMIN). -->
         <button id="zonaBtnSorpresas" class="zona-btn-sec hidden" style="border-color:rgba(245,184,73,.5);color:#fcd34d" onclick="MOS.abrirSorpresasPanel()" title="Productos sorpresa: prueba de escaneo real (solo admins)">🎯 Sorpresas</button>
         <button id="zonaBtnMermas" class="zona-btn-sec hidden" style="position:relative;border-color:rgba(239,68,68,.45);color:#fca5a5" onclick="MOS.abrirMermasPanel()" title="Tratamiento de mermas: cesta, SLA y auditoría">♻️ Mermas<span id="zonaMermasBadge" class="zona-guias-badge" style="display:none">0</span></button>
+        <button id="zonaBtnVenc" class="zona-btn-sec hidden" style="position:relative;border-color:rgba(234,179,8,.45);color:#fde047" onclick="MOS.abrirVencimientosPanel()" title="Semáforo de vencimientos del almacén (solo visualización)">📅 Por vencer<span id="zonaVencBadge" class="zona-guias-badge" style="display:none">0</span></button>
         <!-- [ASEGURAR DATA] Log de errores de stock — SOLO master (loadZona lo muestra si rol==='master'). Read-only. -->
         <button id="zonaBtnLogErrores" class="zona-btn-sec hidden" style="border-color:#7f1d1d;color:#fca5a5" onclick="MOS.zonaAbrirLogErrores()" title="Diferencias de stock detectadas (real vs teórico)">⚠ Log de errores</button>
         <span style="flex:1"></span>
@@ -19583,7 +19601,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.579';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.580';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19633,7 +19651,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.579"></script>
+<script src="js/api.js?v=2.43.580"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19648,7 +19666,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.579"></script>
+<script src="js/app.js?v=2.43.580"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

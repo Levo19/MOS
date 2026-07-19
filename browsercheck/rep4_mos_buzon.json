@@ -1,0 +1,11 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 14000,
+  "viewport": { "width": 430, "height": 900 },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906474",
+    "MOS_SESSION": "{\"idPersonal\":\"TEST-CLAUDE\",\"nombre\":\"PRUEBA CLAUDE\",\"rol\":\"MASTER\",\"idSesion\":\"testclaude1\"}"
+  },
+  "evalAfter": "(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));const out={seg:!!window.SeguridadSystem,ext:!!window.ExtensorHorario,aprobarExt:typeof(window.SeguridadSystem&&SeguridadSystem._aprobarExt),rechazarExt:typeof(window.SeguridadSystem&&SeguridadSystem._rechazarExt),rpc:typeof(window.DeviceAuth&&DeviceAuth.rpc)};try{const r=await DeviceAuth.rpc('seguridad_alertas',{tipo:'EXTENSION_HORARIO_PENDIENTE'});out.buzonRPC={ok:r&&r.ok,tieneItems:!!(r&&r.data&&Array.isArray(r.data.items)),count:r&&r.data&&r.data.count};}catch(e){out.buzonRPC='ERR:'+e.message;}try{if(window.ExtensorHorario){ExtensorHorario.abrir({app:'mosExpress',deviceId:'__harness__',onSuccess:function(){}});await w(600);var m=document.getElementById('extHorarioModal');var html=m?m.innerHTML:'';out.extModal={abierto:!!m,tiene1hora:/1 hora/.test(html),tiene20min:/20 min/.test(html),tiene2horas:/2 horas/.test(html)};if(window.ExtensorHorario.cerrar)ExtensorHorario.cerrar();}}catch(e){out.extModal='ERR:'+e.message;}return out;})()",
+  "screenshot": "rep4_mos.png"
+}

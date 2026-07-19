@@ -213,3 +213,58 @@ wrappers abrirCesta/procesar/abrirProcesarMermas/actualizarBadgeMermas). ÚNICA 
 mockup: culpa ALMACÉN FIJA visible, sin select Responsable. Resueltas muestran el CÓMO
 (✓ rec · 🔄 transformada+guía · 🗑 elim+guía · culpa). SQL 523: solucionadas 7 días en WH.
 Suite 34/34 ✅. Boot verificado sin errores.
+
+## Ronda 5 — CAUSA RAÍZ "Pendientes (0)" + cero-rastro (2026-07-19 · WH 2.13.453 · SQL 524)
+BUG REAL reportado en vivo: vista Mermas WH vacía ("Sin mermas pendientes 🎉") con 3 pendientes
+visibles en MOS, y crash `sel is not defined` al abrir "+ Registrar merma".
+CAUSA RAÍZ (verificada con el pipeline exacto del cliente: mint-wh → REST rpc/mermas_lista):
+el RPC SÍ devolvía las 4 filas, pero las 3 mermas legacy de la era Hoja (M001-M003) tenían
+estado PENDIENTE/PROCESADA y la vista filtraba por el string EN_PROCESO → invisibles. MOS las
+veía porque filtra por cantidadPendiente > 0, no por estado.
+FIX doble:
+- SQL 524: normalización NOMINAL de los 3 estados legacy → EN_PROCESO (por id, con guard pend>0).
+- WH `_estadoCanon(m)`: el estado se DERIVA de cantidades (pend>0→EN_PROCESO; solo desechada→
+  DESECHADA; resto→RESUELTA) en los 6 puntos que filtraban por string. A prueba de datos viejos.
+CRASH sel: bloque huérfano del select Responsable (eliminado en Ronda 4) seguía en nueva() → fuera.
+cargar(): si v2 Y legacy fallan → estado de ERROR visible + "↻ Reintentar" (nunca más el 🎉 engañoso).
+CERO-RASTRO mermas (respuesta a "¿todo mermas es 100% Supabase?"): SÍ en runtime —
+mermas_lista/procesar_merma/mermas_eliminar_batch/merma_desde_guia/merma_alta_manual (+foto a
+Storage) todo RPC directo; fallback getMermas también es Supabase (leer_tabla_rls security definer).
+Eliminado el código muerto restante: abrirResolver/balancearResolucion/confirmarResolver +
+sheetResolverMerma (UI legacy sin callers) y las ramas/exports api.js registrarMerma/resolverMerma/
+getMermasEnProceso/getMermasVencidas; registrarMerma/resolverMerma sellados en _WH_NO_GAS
+(un replay de cola vieja jamás cae a GAS). Pendiente menor: purgar las funciones GAS-side
+(getMermasCesta etc.) del Apps Script — ya sin ningún caller frontend.
+Verificación: mint-wh + rpc → ok:true, 4 filas (3 EN_PROCESO vencidas 🔴 + 1 RESUELTA).
+
+## Ronda 6 — UX cesta + verificación de STOCK (2026-07-19 · WH 2.13.454)
+Feedback del dueño en uso real:
+- Card pendiente ahora muestra lo que RESTA (−pend con "de N") — procesar 10/50 dejaba el card en 50.
+  Chips de progreso en el pendiente parcial: "✓ n ya recuperadas · 🗑 n ya eliminadas".
+- Pestañas-ASPECTO con contador en las 3: la merma PARCIAL aparece en Pendientes Y en
+  Solucionado/Descartado (con "⏳ n aún pendientes") — antes el parcial recuperado no dejaba rastro
+  visible en Solucionado.
+- Lightbox de fotos in-app: zoom + ‹ › entre fotos de la pestaña + swipe + flechas + Esc (fuera window.open).
+- Carga OPTIMISTA: warm start pinta el cache al instante y refresca en background (fuera el repintado).
+- Responsive total: móvil 1 col ancha / tablet-PC cards 300-340px / thumb 72px.
+- Dashboard: KPI "Mermas por procesar" (conteo real) + anillo rojo pulsante + chip "⚠ N +3d" si hay
+  vencidas; panel expandible con días/pend y tap→vista. FIX: getDashboard filtraba estado legacy
+  'PENDIENTE' (inexistente tras 524) → canon por cantidad.
+VERIFICACIÓN DE STOCK pedida por el dueño — suite `_test_stock_mermas.js` 24/24 ✅ (tx+ROLLBACK):
+alta manual SEPARA stock al entrar (flag stock_descontado) · recuperar RE-HABILITA (+stock) ·
+eliminar → guía salida SIN doble descuento (v2 documental; legacy descuenta al eliminar) ·
+desde-guía split nunca entra al vendible y recuperada SÍ entra · transformación destino entra /
+origen no vuelve. Balance neto por unidad correcto en los 4 caminos.
+
+## Ronda 7 — Dashboard: alertas sobre su módulo + vista Por vencer (2026-07-19 · WH 2.13.456)
+- Sección "🚨 Alertas" (kpiGrid + 4 panels expandibles) ELIMINADA. Cada alerta = badge SOBRE el
+  acceso rápido de su módulo: ♻️ Merma (N por procesar, dqb-danger pulsante si >3d), ⚡ Envasador
+  (por envasar), 📅 Por vencer NUEVO (críticos rojo / ≤30d ámbar). Stock bajo → chip Estado del día
+  → productos filtrados 'bajo'.
+- Vista Vencimientos moderna (view-vencimientos, VencimientosView): 4 KPIs tap-filtro, default
+  "⚠ En riesgo", tile grande de días con severidad (VENCIDO/CRÍTICO≤7/ALERTA≤30/OK, config
+  DIAS_ALERTA_VENC*), tap → modal lotes FIFO, carga optimista, responsive.
+- INCIDENTE solicitudes: 7 "Sin nombre" PENDIENTE_APROBACION fueron los Playwright de Claude
+  (perfil fresco → UUID nuevo → auto-registro 1ra visita, BY DESIGN del fix deadlock). Se
+  borraron nominal y existe TEST-CLAUDE-WH (7e57c1a0-…-c47a10906475, ACTIVO) + regla: todo
+  escenario browsercheck WH lleva localStorage wh_device_id fijo.

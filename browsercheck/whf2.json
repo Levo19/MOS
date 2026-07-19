@@ -1,0 +1,1 @@
+{"url": "http://127.0.0.1:8204/index.html", "waitMs": 14000, "viewport": {"width": 400, "height": 800}, "localStorage": {"wh_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906474"}, "evalAfter": "(()=>({sorpModulo:typeof SorpresasWH!=='undefined',mermasV2:typeof MermasV2!=='undefined',err:window.__lastError||null}))()", "screenshot": "whf2_boot.png"}

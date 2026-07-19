@@ -1,0 +1,4 @@
+{ "url":"file:///C:/Users/ISO/AppData/Local/Temp/claude/C--Users-ISO/e67aed3e-ba06-48f2-9fff-1668df3b93d6/scratchpad/config_modulo.html",
+  "waitMs":2500,"viewport":{"width":390,"height":1400},
+  "evalAfter":"window.scrollTo(0,0);return {ok:true}",
+  "screenshot":"gap_mock_top.png" }

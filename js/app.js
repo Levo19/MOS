@@ -41081,11 +41081,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaToggleAlmacenBtns() {
     const esAlm = _esZonaAlmacen({ idZona: S.zonaActual,
       nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
-    const bg = $('zonaBtnGuias'), bs = $('zonaBtnSorpresas'), bm = $('zonaBtnMermas');
+    const bg = $('zonaBtnGuias'), bs = $('zonaBtnSorpresas'), bm = $('zonaBtnMermas'), bv = $('zonaBtnVenc');
     if (bg) bg.classList.toggle('hidden', esAlm);
     if (bm) bm.classList.toggle('hidden', !esAlm);
+    if (bv) bv.classList.toggle('hidden', !esAlm);
     if (bs) bs.classList.toggle('hidden', !esAlm || !_esAdminSesion());
-    if (esAlm) _mermasBadgeRefrescar();
+    if (esAlm) { _mermasBadgeRefrescar(); _vencBadgeRefrescar(); }
+  }
+  // Badge rojo = lotes VENCIDOS + CRÍTICOS (≤7d) en el almacén
+  async function _vencBadgeRefrescar() {
+    try {
+      const r = await API.rpcWH('vencimientos_lista', {});
+      const rows = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+      const n = rows.filter(l => l.severidad === 'VENCIDO' || l.severidad === 'CRITICO').length;
+      const b = $('zonaVencBadge');
+      if (b) { b.textContent = String(n); b.style.display = n > 0 ? '' : 'none'; }
+    } catch (_) {}
   }
   // Badge rojo = mermas VENCIDAS (>3 días corridos sin procesar)
   async function _mermasBadgeRefrescar() {
@@ -41110,6 +41121,72 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (e) { _mermasData = []; }
     _mermasRender();
   }
+  // ── 📅 POR VENCER · panel de solo-visualización (semáforo unificado con WH, SQL 526) ──
+  let _vencData = [];
+  let _vencFiltro = 'RIESGO';
+  async function abrirVencimientosPanel() {
+    openModal('modalVencimientos');
+    $('vencListaMos').innerHTML = '<div class="muted" style="text-align:center;padding:20px">Cargando…</div>';
+    try {
+      const r = await API.rpcWH('vencimientos_lista', {});
+      _vencData = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+    } catch (e) { _vencData = []; }
+    _vencRender();
+  }
+  function vencSetFiltro(f) { _vencFiltro = f; _vencRender(); }
+  function _vencRender() {
+    const rows = _vencData;
+    const grupos = { VENCIDO: [], CRITICO: [], ALERTA: [], URGENTE: [], SANO: [] };
+    rows.forEach(l => (grupos[l.severidad] = grupos[l.severidad] || []).push(l));
+    const KP = [
+      ['VENCIDO', grupos.VENCIDO.length, '#fca5a5', 'Vencidos'],
+      ['CRITICO', grupos.CRITICO.length, '#fdba74', 'Críticos'],
+      ['ALERTA',  grupos.ALERTA.length,  '#fcd34d', '≤30 días'],
+      ['URGENTE', grupos.URGENTE.length, '#fde047', '≤90 días'],
+      ['SANO',    grupos.SANO.length,    '#86efac', 'Sanos']
+    ];
+    $('vencKpisMos').innerHTML = KP.map(([k, n, col, lbl]) =>
+      `<div onclick="MOS.vencSetFiltro('${k}')" style="cursor:pointer;text-align:center;padding:9px 4px;border-radius:12px;background:${_vencFiltro === k ? 'rgba(59,130,246,.12)' : 'rgba(30,41,59,.55)'};border:1px solid ${_vencFiltro === k ? 'rgba(96,165,250,.55)' : 'rgba(148,163,184,.16)'}">
+        <div style="font-size:19px;font-weight:900;color:${col}">${n}</div>
+        <div style="font-size:9px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em">${lbl}</div></div>`).join('');
+    const FIL = [['RIESGO', '⚠ En riesgo'], ['TODOS', 'Todos'], ['VENCIDO', 'Vencidos'], ['CRITICO', 'Críticos'], ['ALERTA', '≤30d'], ['URGENTE', '≤90d'], ['SANO', 'Sanos']];
+    $('vencFiltrosMos').innerHTML = FIL.map(([k, l]) =>
+      `<span class="chip ${_vencFiltro === k ? 'gold' : ''}" style="cursor:pointer" onclick="MOS.vencSetFiltro('${k}')">${l}</span>`).join('');
+    let vis;
+    if (_vencFiltro === 'TODOS') vis = rows;
+    else if (_vencFiltro === 'RIESGO') vis = [...grupos.VENCIDO, ...grupos.CRITICO, ...grupos.ALERTA, ...grupos.URGENTE];
+    else vis = grupos[_vencFiltro] || [];
+    if (!vis.length) {
+      $('vencListaMos').innerHTML = `<div class="muted" style="text-align:center;padding:24px">${_vencFiltro === 'RIESGO' ? 'Nada en riesgo 🎉' : 'Sin lotes en este filtro'}</div>`;
+      return;
+    }
+    const nomProd = cod => {
+      const p2 = (S.productos || []).find(x => String(x.codigoBarra) === String(cod));
+      return p2 ? (p2.descripcion || cod) : cod;
+    };
+    const COLS = {
+      VENCIDO: ['rgba(220,38,38,.18)', '#fca5a5', 'rgba(239,68,68,.45)', '#dc2626'],
+      CRITICO: ['rgba(249,115,22,.16)', '#fdba74', 'rgba(249,115,22,.4)', '#f97316'],
+      ALERTA:  ['rgba(245,158,11,.13)', '#fcd34d', 'rgba(245,158,11,.35)', '#f59e0b'],
+      URGENTE: ['rgba(234,179,8,.11)', '#fde047', 'rgba(234,179,8,.3)', '#eab308'],
+      SANO:    ['rgba(71,85,105,.25)', '#cbd5e1', 'rgba(148,163,184,.2)', '#334155']
+    };
+    $('vencListaMos').innerHTML = vis.slice(0, 300).map(l => {
+      const [bg, col, bor, borde] = COLS[l.severidad] || COLS.SANO;
+      const d = l.diasRestantes;
+      const tile = l.severidad === 'VENCIDO'
+        ? `<div style="width:56px;height:56px;border-radius:12px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;background:${bg};color:${col};border:1px solid ${bor}"><span style="font-size:19px;line-height:1">${Math.abs(d)}</span><span style="font-size:7.5px;letter-spacing:.04em;opacity:.85;margin-top:2px">D VENCIDO</span></div>`
+        : `<div style="width:56px;height:56px;border-radius:12px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;background:${bg};color:${col};border:1px solid ${bor}"><span style="font-size:19px;line-height:1">${d}</span><span style="font-size:7.5px;letter-spacing:.04em;opacity:.85;margin-top:2px">DÍAS</span></div>`;
+      const fv = l.fechaVencimiento ? new Date(l.fechaVencimiento + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+      return `<div class="prow" style="border-left:4px solid ${borde};gap:10px">
+        ${tile}
+        <div style="flex:1;min-width:140px"><b style="color:#eaf1fb">${_esc(nomProd(l.codigoProducto))}</b>
+        <div class="muted" style="font-size:10px">vence ${_esc(fv)} · lote ${_esc(l.idLote)} · guía ${_esc(l.idGuia || '—')}</div></div>
+        <span class="mono" style="white-space:nowrap;font-weight:800;color:#eaf1fb">${l.cantidadActual} <span class="muted" style="font-size:9px">uds</span></span>
+      </div>`;
+    }).join('');
+  }
+
   function mermasSetFiltro(f) { _mermasFiltro = f; _mermasRender(); }
   let _mermasAgrupar = 'FECHA';   // FECHA | ESTADO (pedido dueño: organizar por fechas y estados)
   function mermasSetAgrupar(a) { _mermasAgrupar = a; _mermasRender(); }
@@ -44365,7 +44442,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     eliminarZona, _zonaActualizarPreview,
     toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
     cfgBuscar, cfgToggleSusp, _cfgDetToggle, catBuscar,
-    abrirSorpresasPanel, abrirMermasPanel, mermasSetFiltro, mermasSetAgrupar, mermasVerFoto,
+    abrirSorpresasPanel, abrirVencimientosPanel, vencSetFiltro,
+    abrirMermasPanel, mermasSetFiltro, mermasSetAgrupar, mermasVerFoto,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,
     editarMetaChip, guardarMetaChip,
     abrirModalClaveGlobal, cgConsultar, cgRotar,

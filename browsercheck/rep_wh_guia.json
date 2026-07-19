@@ -1,0 +1,7 @@
+{
+  "url": "https://levo19.github.io/warehouseMos-/",
+  "waitMs": 15000,
+  "viewport": { "width": 430, "height": 900 },
+  "evalAfter": "(async()=>{const out={ver:(window.WH_CONFIG&&WH_CONFIG.version)||(document.querySelector('#version,[data-version]')||{}).textContent||'?',apiCrear:typeof(window.API&&API.crearDespachoRapido),apiImprimir:typeof(window.API&&API.imprimirTicketGuia),offMgr:typeof(window.OfflineManager&&OfflineManager.encolar),seg:!!window.SeguridadSystem};try{out.verJson=await fetch('/warehouseMos-/version.json',{cache:'no-store'}).then(r=>r.json()).then(j=>j.version);}catch(e){out.verJson='ERR';}return out;})()",
+  "screenshot": "rep_wh_guia.png"
+}

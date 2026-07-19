@@ -1,0 +1,7 @@
+{
+  "url": "https://levo19.github.io/warehouseMos-/",
+  "waitMs": 12000,
+  "viewport": { "width": 430, "height": 900 },
+  "evalAfter": "(async()=>{const w=ms=>new Promise(r=>setTimeout(r,ms));const out={ext:!!window.ExtensorHorario,seg:!!window.SeguridadSystem};if(window.ExtensorHorario){try{ExtensorHorario.abrir({app:'warehouseMos',deviceId:'__harness__',onSuccess:function(){}});await w(700);var m=document.getElementById('extHorarioModal');var html=m?m.innerHTML:'';out.modal={abierto:!!m,tiene1hora:/1 hora/.test(html),tiene20min:/20 min/.test(html),tiene2horas:/2 horas/.test(html),tieneClave:/Clave admin/.test(html)};if(ExtensorHorario.cerrar)ExtensorHorario.cerrar();}catch(e){out.modal='ERR:'+e.message;}}return out;})()",
+  "screenshot": "rep4_wh_ext.png"
+}
