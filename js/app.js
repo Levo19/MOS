@@ -19950,37 +19950,7 @@ const MOS = (() => {
     const dispsHTML = dispEnEst.length
       ? `<div class="mt-2 pt-2" style="border-top:1px dashed #1e293b;">
           <div class="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">📱 Asignados a esta estación</div>
-          <div class="space-y-1.5">
-            ${dispEnEst.map(d => {
-              const ico = _dispIcono(d.Nombre_Equipo);
-              const act = _dispActividad(d.Ultima_Conexion);
-              const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
-              const movio = _dispSeMovio(d);
-              const isFresh = act.minutos < 5;
-              const claseAnim = movio ? 'disp-chip-moved' : (_dispRenderCount === 0 ? 'disp-chip-arrived' : '');
-              const claseFresh = isFresh ? 'disp-chip-live' : '';
-              const bgColor = movio ? 'rgba(99,102,241,0.12)' : (isFresh ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.06)');
-              const bordColor = movio ? 'rgba(99,102,241,0.5)' : (isFresh ? 'rgba(16,185,129,0.5)' : 'rgba(16,185,129,0.25)');
-              const movedBadge = movio ? '<span class="text-[8px] font-bold text-indigo-300 ml-1" title="Recién movido a esta estación">📍 movido</span>' : '';
-              const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
-              const _pinBtn = '';
-              const _yoBadge = '';
-              return `<div class="disp-chip flex items-center gap-1.5 px-2 py-1.5 rounded ${claseAnim} ${claseFresh}"
-                style="background:${bgColor};border:1px solid ${bordColor};transition:all 0.2s;">
-                <span class="text-sm shrink-0 relative cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')" title="Editar">${ico}${dotPulse}</span>
-                <div class="flex-1 min-w-0 cursor-pointer" onclick="MOS.abrirModalDispositivo('${idAttr}')">
-                  <div class="text-xs font-medium text-slate-200 truncate">${d.Nombre_Equipo || '—'}${movedBadge}${_yoBadge}</div>
-                  <div class="text-[9px] truncate" style="color:${act.color};">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 <span class="text-emerald-400 font-bold">' + d.Ultima_Sesion + '</span>' : ''}</div>
-                </div>
-                ${_pinBtn}
-                <button onclick="event.stopPropagation();MOS.abrirDetalleDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(251,191,36,0.18);border:1px solid rgba(251,191,36,0.5);color:#fcd34d;font-size:10px;" title="Permisos y acciones del dispositivo">🛡️</button>
-                <button onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:10px;" title="Espiar (audio + GPS — clásico)">🕵️</button>
-                ${_esMasterSession() ? `<button onclick="event.stopPropagation();MOS.abrirEspiaV2('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:linear-gradient(135deg,rgba(99,102,241,0.25),rgba(168,85,247,0.25));border:1px solid rgba(168,85,247,0.55);color:#c084fc;font-size:10px;animation:espiaBreath 3s infinite" title="Espía V2 · WebRTC live (Master)">🛰️</button>` : ''}
-                ${_esMasterSession() ? `<button onclick="event.stopPropagation();MOS.abrirTimelineBufferEspia('${idAttr}')" class="shrink-0 w-6 h-6 rounded-full flex items-center justify-center hover:scale-110 transition-all" style="background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.4);color:#c084fc;font-size:10px" title="Timeline buffer (12h histórico)">📼</button>` : ''}
-                <span class="text-[10px] text-slate-500 p-1 cursor-pointer" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>
-              </div>`;
-            }).join('')}
-          </div>
+          <div class="fleet">${dispEnEst.map(d => _dispDrawn(d)).join('')}</div>
         </div>`
       : '';
 
@@ -20055,42 +20025,9 @@ const MOS = (() => {
     const inactivos  = dispMOS.filter(d => ['INACTIVO','SUSPENDIDO'].indexOf(String(d.Estado).toUpperCase()) >= 0);
     const onlineNow  = activos.filter(d => _dispActividad(d.Ultima_Conexion).minutos < 5).length;
 
-    const cardsHTML = dispMOS.map(d => {
-      const ico   = _dispIcono(d.Nombre_Equipo);
-      const act   = _dispActividad(d.Ultima_Conexion);
-      const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
-      const est   = String(d.Estado || '').toUpperCase();
-      const isFresh = est === 'ACTIVO' && act.minutos < 5;
-      const dotPulse = isFresh ? '<span class="disp-dot-pulse"></span>' : '';
-      const estBadge = est === 'ACTIVO'
-        ? '<span class="text-[9px] font-black px-1.5 py-0.5 rounded" style="background:rgba(16,185,129,0.18);color:#6ee7b7;border:1px solid rgba(16,185,129,0.4)">ACTIVO</span>'
-        : (est === 'PENDIENTE_APROBACION'
-          ? '<span class="text-[9px] font-black px-1.5 py-0.5 rounded" style="background:rgba(251,191,36,0.18);color:#fcd34d;border:1px solid rgba(251,191,36,0.4)">PENDIENTE</span>'
-          : (est === 'SUSPENDIDO'
-            ? '<span class="text-[9px] font-black px-1.5 py-0.5 rounded" style="background:rgba(148,163,184,0.18);color:#cbd5e1;border:1px solid rgba(148,163,184,0.4)">SUSPENDIDO</span>'
-            : '<span class="text-[9px] font-black px-1.5 py-0.5 rounded" style="background:rgba(248,113,113,0.18);color:#fca5a5;border:1px solid rgba(248,113,113,0.4)">INACTIVO</span>'));
-
-      // Mini-chips de permisos (parsea JSON)
-      const permsMini = _renderDispPermisosChipsMini(d.Permisos_JSON);
-
-      return `<div class="rounded-xl p-3 cursor-pointer transition-all hover:scale-[1.01] hover:shadow-lg"
-        onclick="MOS.abrirDetalleDispositivo('${idAttr}')"
-        style="background:linear-gradient(135deg,rgba(251,191,36,0.06),rgba(99,102,241,0.04));border:1px solid rgba(251,191,36,0.35);box-shadow:0 0 12px rgba(251,191,36,0.08);">
-        <div class="flex items-start gap-2.5">
-          <div class="relative shrink-0 text-2xl">${ico}${dotPulse}</div>
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="font-black text-sm text-amber-100 truncate">${d.Nombre_Equipo || '—'}</span>
-              ${estBadge}
-            </div>
-            <div class="text-[10px] text-amber-300/60 font-mono truncate mt-0.5">${String(d.ID_Dispositivo).substring(0,18)}...</div>
-            <div class="text-[10px] mt-0.5" style="color:${act.color};">${act.dot} ${act.label}</div>
-            ${permsMini}
-          </div>
-          <span class="text-amber-400/40 text-lg shrink-0">›</span>
-        </div>
-      </div>`;
-    }).join('');
+    // [Rediseño Config] Dispositivos del panel MOS DIBUJADOS (mockup). El detalle/permisos
+    // se abre con el botón 🛡️ (abrirDetalleDispositivo) dentro del monitor de cada equipo.
+    const cardsHTML = dispMOS.map(d => _dispDrawn(d)).join('');
 
     // [Fase2] Admins/master como USUARIOS de la zona Premium (app MOS). Usan el panel web
     // (no tablets) → _renderPersonaCard oculta espía y muestra 🔑 clave global. Colapsable.
@@ -20141,7 +20078,7 @@ const MOS = (() => {
             ? `<span class="font-semibold">${_horarioHoyTxt('MOS')}</span>`
             : `<span class="opacity-70">Horario</span>`}</button>
       </div>
-      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">${cardsHTML}</div>
+      <div class="fleet">${cardsHTML}</div>
       ${adminsBlock}
     </div>`;
   }
@@ -22889,6 +22826,64 @@ const MOS = (() => {
     if (n.includes('laptop') || n.includes('notebook'))  return '💻';
     if (n.includes('pc ') || n.startsWith('pc') || n.includes('desktop')) return '🖥️';
     return '📱';
+  }
+
+  // [Rediseño Config] Tipo VISUAL del dispositivo para dibujarlo (phone/tablet/laptop/pc).
+  // Detecta por User_Agent si existe; cae a heurística por nombre/plataforma.
+  function _dispTipoVisual(d) {
+    const s = (String(d.User_Agent || d.UserAgent || d.userAgent || '') + ' ' +
+               String(d.Nombre_Equipo || '') + ' ' + String(d.Plataforma || d.SO || '')).toLowerCase();
+    if (/ipad|tablet/.test(s)) return 'tablet';
+    if (/iphone|android|mobile|móvil|movil|celular|\bphone\b/.test(s)) return 'phone';
+    if (/macbook|laptop|notebook/.test(s)) return 'laptop';
+    if (/windows|desktop|linux|imac|\bmac\b|\bpc\b/.test(s)) return 'pc';
+    return 'phone';
+  }
+  // Gradiente de avatar determinístico por nombre (mismo nombre → mismo color).
+  function _avatarGrad(name) {
+    const pares = [['#c4b5fd','#818cf8'],['#fcd34d','#f59e0b'],['#6ee7b7','#10b981'],['#7dd3fc','#0ea5e9'],['#fca5a5','#ef4444'],['#f0abfc','#c026d3'],['#fdba74','#f97316']];
+    let h = 0; const t = String(name || '?'); for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+    const p = pares[h % pares.length];
+    return `linear-gradient(135deg,${p[0]},${p[1]})`;
+  }
+  // [Rediseño Config] Dispositivo DIBUJADO (mockup config_modulo.html): silueta real por tipo,
+  // halo verde si está en línea, cara con avatar+usuario, y la botonera 🛡️🕵️🛰️📼✏️ (mismos handlers).
+  function _dispDrawn(d) {
+    const tipo = _dispTipoVisual(d);
+    const act = _dispActividad(d.Ultima_Conexion);
+    const estado = String(d.Estado || '').toUpperCase();
+    const isFresh = estado === 'ACTIVO' && act.minutos < 5;
+    const isSusp = estado === 'SUSPENDIDO' || estado.startsWith('CANCELADO');
+    const stateCls = isFresh ? 'online' : (isSusp ? 'susp' : '');
+    const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+    const appL = String(d.App || '').toLowerCase();
+    const appCls = appL === 'mos' ? 'mos' : (appL.indexOf('express') >= 0 || appL === 'me' ? 'me' : (appL.indexOf('warehouse') >= 0 || appL === 'wh' ? 'wh' : ''));
+    const appLbl = appCls === 'mos' ? 'MOS' : (appCls === 'me' ? 'ME' : (appCls === 'wh' ? 'WH' : ''));
+    const user = d.Ultima_Sesion || '';
+    const ini = (String(user || d.Nombre_Equipo || '?').trim().charAt(0) || '?').toUpperCase();
+    const grad = _avatarGrad(user || d.Nombre_Equipo);
+    const pill = isFresh
+      ? `<span class="pill" style="background:rgba(16,185,129,.16);color:#6ee7b7">🔴 live</span>`
+      : isSusp
+        ? `<span class="pill" style="background:rgba(249,115,22,.16);color:#fdba74">⏸ ${estado.startsWith('CANCELADO') ? 'arch' : 'susp'}</span>`
+        : `<span class="pill" style="background:rgba(148,163,184,.14);color:#cbd5e1">${act.dot} off</span>`;
+    const appc = appLbl ? `<span class="appc appb ${appCls}">${appLbl}</span>` : '';
+    const face = `<div class="face"><div class="avatar" style="background:${grad}">${ini}</div>${user ? `<div class="uname">${user}</div>` : ''}<div class="ust" style="color:${act.color}">${act.label}</div></div>`;
+    let devt;
+    if (tipo === 'phone')       devt = `<div class="devt phone ${stateCls}">${face}</div>`;
+    else if (tipo === 'tablet') devt = `<div class="devt tablet ${stateCls}">${face}</div>`;
+    else if (tipo === 'laptop') devt = `<div class="devt laptop ${stateCls}"><div class="lid">${face}</div><div class="base"></div></div>`;
+    else                        devt = `<div class="devt pc ${stateCls}"><div class="screen">${face}</div><div class="stand"></div><div class="foot"></div></div>`;
+    const cap = `<div class="cap"><div class="t">${d.Nombre_Equipo || '—'}</div><div class="s">${user ? user + ' · ' : ''}${act.label}</div></div>`;
+    const master = _esMasterSession();
+    const monitor = `<div class="monitor">`
+      + `<span class="mbtn perm" onclick="event.stopPropagation();MOS.abrirDetalleDispositivo('${idAttr}')" title="Permisos y acciones del dispositivo">🛡️</span>`
+      + `<span class="mbtn spy" onclick="event.stopPropagation();MOS.abrirEspiaDispositivo('${idAttr}')" title="Espiar (audio + GPS)">🕵️</span>`
+      + (master ? `<span class="mbtn spy2" onclick="event.stopPropagation();MOS.abrirEspiaV2('${idAttr}')" title="Espía V2 · WebRTC live (Master)">🛰️</span>` : '')
+      + (master ? `<span class="mbtn tl" onclick="event.stopPropagation();MOS.abrirTimelineBufferEspia('${idAttr}')" title="Timeline buffer (12h histórico)">📼</span>` : '')
+      + `<span class="mbtn edit" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>`
+      + `</div>`;
+    return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${monitor}</div>`;
   }
 
   // Pill con la app de origen del dispositivo (ME / WH / MOS) — útil para que

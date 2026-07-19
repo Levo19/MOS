@@ -361,6 +361,60 @@
     .modal-close-x { padding: 6px 10px; line-height: 1; font-size: 20px; color: #94a3b8; background: transparent; border: none; cursor: pointer; border-radius: 6px; transition: background .15s, color .15s; }
     .modal-close-x:hover { color: #fff; background: rgba(255,255,255,.05); }
     .modal-close-x:active { background: rgba(255,255,255,.1); }
+
+    /* ════ [Rediseño Config] Dispositivos DIBUJADOS del mockup (config_modulo.html) ════
+       Scopeado a #infraContenedor para no filtrar al resto de la app. */
+    #infraContenedor{ --cline2:#26375a;--cbrand:#4aa8ff;--cink:#eaf1fb;--cink3:#5f7290;
+      --con-glow:rgba(16,185,129,.55);--csusp:#f97316;--cme:#7dd3fc;--cwh:#fbbf24;--cmos:#c4b5fd; }
+    #infraContenedor .fleet{display:flex;gap:11px;flex-wrap:wrap}
+    #infraContenedor .dev{position:relative;width:132px;background:linear-gradient(180deg,#0c1a31,#0a1526);border:1px solid var(--cline2);border-radius:13px;padding:13px 10px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;transition:.18s}
+    #infraContenedor .dev:hover{transform:translateY(-3px);border-color:var(--cbrand)}
+    #infraContenedor .dev .pill{position:absolute;top:9px;left:9px;font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;z-index:3}
+    #infraContenedor .dev .appc{position:absolute;top:9px;right:9px;z-index:3}
+    #infraContenedor .appb{font-size:9px;font-weight:800;padding:2px 6px;border-radius:6px;border:1px solid var(--cline2)}
+    #infraContenedor .appb.me{color:var(--cme);border-color:rgba(125,211,252,.4)}
+    #infraContenedor .appb.wh{color:var(--cwh);border-color:rgba(251,191,36,.4)}
+    #infraContenedor .appb.mos{color:var(--cmos);border-color:rgba(167,139,250,.4)}
+    #infraContenedor .glass{position:relative;margin-top:14px;display:grid;place-items:center}
+    #infraContenedor .glass .halo{position:absolute;inset:-9px;border-radius:20px;filter:blur(9px);opacity:0}
+    #infraContenedor .dev.online .halo{opacity:.85;background:radial-gradient(circle,var(--con-glow),transparent 68%);animation:cfgBreathe 3s infinite}
+    #infraContenedor .face{background:linear-gradient(160deg,#12233f,#0b1730);display:grid;place-items:center;gap:2px;overflow:hidden}
+    #infraContenedor .face .avatar{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:850;font-size:11px;color:#04121f}
+    #infraContenedor .face .uname{font-size:9px;font-weight:750;color:var(--cink);max-width:88%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #infraContenedor .face .ust{font-size:7.5px;font-weight:700}
+    #infraContenedor .devt{position:relative}
+    #infraContenedor .devt.online .face{box-shadow:inset 0 0 20px rgba(16,185,129,.18)}
+    #infraContenedor .devt.susp .face{filter:grayscale(.85) brightness(.7)}
+    #infraContenedor .devt.susp .avatar{background:#33415a!important;color:#0a1424}
+    #infraContenedor .devt.phone{width:64px;height:104px;border-radius:14px;background:linear-gradient(160deg,#1a2c49,#0c1830);padding:5px;box-shadow:0 8px 20px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.05)}
+    #infraContenedor .devt.phone .face{width:100%;height:100%;border-radius:10px}
+    #infraContenedor .devt.phone::before{content:"";position:absolute;top:9px;left:50%;transform:translateX(-50%);width:18px;height:3px;border-radius:3px;background:#0a1424;z-index:2}
+    #infraContenedor .devt.tablet{width:90px;height:102px;border-radius:12px;background:linear-gradient(160deg,#1a2c49,#0c1830);padding:6px;box-shadow:0 8px 20px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.05)}
+    #infraContenedor .devt.tablet .face{width:100%;height:100%;border-radius:7px}
+    #infraContenedor .devt.laptop{width:104px;height:84px}
+    #infraContenedor .devt.laptop .lid{height:68px;border-radius:8px 8px 3px 3px;background:linear-gradient(160deg,#1a2c49,#0c1830);padding:5px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+    #infraContenedor .devt.laptop .face{width:100%;height:100%;border-radius:5px}
+    #infraContenedor .devt.laptop .base{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:118px;height:8px;border-radius:0 0 6px 6px;background:linear-gradient(#2a3c5c,#16233c)}
+    #infraContenedor .devt.pc{width:106px;height:92px}
+    #infraContenedor .devt.pc .screen{height:72px;border-radius:7px;background:linear-gradient(160deg,#1a2c49,#0c1830);padding:6px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.05),0 6px 14px rgba(0,0,0,.4)}
+    #infraContenedor .devt.pc .face{width:100%;height:100%;border-radius:4px}
+    #infraContenedor .devt.pc .stand{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:12px;height:12px;background:#22324e}
+    #infraContenedor .devt.pc .foot{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:46px;height:5px;border-radius:3px;background:#22324e}
+    #infraContenedor .dev .cap{text-align:center;width:100%}
+    #infraContenedor .dev .cap .t{font-size:11px;font-weight:750;color:var(--cink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #infraContenedor .dev .cap .s{font-size:9px;color:var(--cink3);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #infraContenedor .lastchip{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;color:var(--csusp);background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.35);border-radius:999px;padding:2px 7px;margin-top:5px}
+    #infraContenedor .lastchip.idle{color:#fbd989;background:rgba(245,184,73,.1);border-color:rgba(245,184,73,.3)}
+    #infraContenedor .monitor{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;justify-content:center}
+    #infraContenedor .mbtn{width:25px;height:25px;border-radius:7px;display:grid;place-items:center;font-size:11px;cursor:pointer;transition:.15s;border:1px solid transparent;background:#0c1a30;color:var(--cink3)}
+    #infraContenedor .mbtn.perm{background:rgba(251,191,36,.16);border-color:rgba(251,191,36,.5);color:#fcd34d}
+    #infraContenedor .mbtn.spy{background:rgba(99,102,241,.16);border-color:rgba(99,102,241,.5);color:#a5b4fc}
+    #infraContenedor .mbtn.spy2{background:linear-gradient(135deg,rgba(99,102,241,.25),rgba(168,85,247,.25));border-color:rgba(168,85,247,.55);color:#c084fc}
+    #infraContenedor .mbtn.tl{background:rgba(168,85,247,.14);border-color:rgba(168,85,247,.4);color:#c084fc}
+    #infraContenedor .mbtn.edit{background:#0c1a30;border-color:var(--cline2);color:var(--cink3)}
+    #infraContenedor .mbtn:hover{transform:scale(1.12)}
+    @keyframes cfgBreathe{0%,100%{opacity:.5}50%{opacity:.95}}
+
     /* ── Modal Producto rediseñado ── */
     .prod-tipo-bar { display:flex; border-bottom:1px solid #1e293b; background:#070f1a; overflow-x:auto; flex-shrink:0; }
     .prod-tipo-btn { flex:1; padding:10px 6px; font-size:11px; font-weight:700; color:#475569; border-bottom:2px solid transparent; white-space:nowrap; transition:all .15s; min-width:72px; }
@@ -19328,7 +19382,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.567';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.568';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19393,7 +19447,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.567"></script>
+<script src="js/app.js?v=2.43.568"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
