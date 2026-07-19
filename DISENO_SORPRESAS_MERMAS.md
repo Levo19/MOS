@@ -202,3 +202,14 @@ WH 2.13.449: labels/icono 🔄 para guías TRANSFORMACION.
    (enriquecido del catálogo; antes salía el código dos veces). Suite 33/33 ✅.
 4/5. MOS: orden DESCENDENTE estricto por fecha en mermas y sorpresas (última fecha primero,
    también dentro de grupos por estado); guía referenciada visible por fila.
+
+## Ronda 4 — UNIFICACIÓN (2026-07-19 · WH 2.13.452 · SQL 523)
+HALLAZGO: WH tenía DOS sistemas de mermas paralelos. La "Cesta 🗑" del topbar (F2.5,
+js/mermas.js) guardaba en la HOJA vía GAS (getMermasCesta/agregarAMermas/solucionarMerma/
+procesarEliminacionMermas) — datastore paralelo a wh.mermas → por eso "0 pendientes" en el
+topbar vs 3 reales en MOS. ELIMINADO completo (−392 líneas: botón topbar, 3 sheets, mermas.js,
+wrappers abrirCesta/procesar/abrirProcesarMermas/actualizarBadgeMermas). ÚNICA cesta = vista
+♻️ Mermas (nav) con v2. Ícono unificado ♻️ (= botón de guías de devolución). Alta Puerta B al
+mockup: culpa ALMACÉN FIJA visible, sin select Responsable. Resueltas muestran el CÓMO
+(✓ rec · 🔄 transformada+guía · 🗑 elim+guía · culpa). SQL 523: solucionadas 7 días en WH.
+Suite 34/34 ✅. Boot verificado sin errores.
