@@ -6791,7 +6791,7 @@
     }
     /* [v2.43.42] Cuando search-active: los OTROS botones colapsan pero el
        botón Filtro NUNCA pierde clickeabilidad ni durante la transición.
-       Antes usábamos :not(#catFiltroWrap) — esto fallaba en Safari/Edge viejos
+       Antes usabamos :not(#catFiltroWrap) — esto fallaba en Safari/Edge viejos
        Y además la transición .35s dejaba el botón en estado intermedio
        no-clickeable. Ahora marcamos los botones colapsables con clase
        .cat-tool-btn-collapse explícita; el filtro queda fuera. */
@@ -14729,7 +14729,7 @@
           <div><label class="fac-lbl">Hasta</label><input id="facHistHasta" type="date" class="fac-inp"></div>
           <button onclick="MOS.facCargarHistorial()" class="fac-btn-sec">Buscar</button>
         </div>
-        <div id="facHistLista" class="text-sm text-slate-400">Elegí un rango y tocá Buscar.</div>
+        <div id="facHistLista" class="text-sm text-slate-400">Elige un rango y toca Buscar.</div>
       </div>
 
       <!-- CONFIG -->
@@ -15542,7 +15542,7 @@
           <!-- [sin caja] baraja 3D isométrica de tickets SIN caja asignada — ENTRE las cajas y
                los créditos. Rota como créditos. Click → visor filtrado. -->
           <div id="cjSinCajaDeck" class="cj-sincaja-deck hidden" onclick="MOS.cjVerTicketsSinCaja()"
-               title="Tickets sin caja asignada — tocá para revisar">
+               title="Tickets sin caja asignada — toca para revisar">
             <div class="cj-sincaja-siren" aria-hidden="true">⚠</div>
             <div id="cjSinCajaStack" class="cj-sincaja-stack"><!-- cartas inyectadas por JS --></div>
             <div class="cj-sincaja-lbl">🃏 Sin caja · <span id="cjSinCajaN">0</span></div>
@@ -15555,11 +15555,11 @@
           <!-- [v41.1] BARAJA DE CRÉDITOS — cartas flotantes. Un ✈ animado indica cobros en vuelo.
                Click → mesa con todos los tickets (pendientes + enviados con sus botones). -->
           <div id="cjCreditosMano" class="cj-mano-naked hidden"
-               onclick="MOS.cjRepartirMano()" title="Tocá para repartir los créditos">
+               onclick="MOS.cjRepartirMano()" title="Toca para repartir los créditos">
             <div id="cjManoContenedor" class="cj-mano-contenedor">
               <!-- cartas inyectadas por JS -->
             </div>
-            <div id="cjManoAvion" class="cj-mano-avion hidden" title="Hay cobros en vuelo — tocá para ver">✈<span id="cjManoAvionN">0</span></div>
+            <div id="cjManoAvion" class="cj-mano-avion hidden" title="Hay cobros en vuelo — toca para ver">✈<span id="cjManoAvionN">0</span></div>
           </div>
         </div>
 
@@ -15665,7 +15665,7 @@
                 <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
               </div>
               <div id="cjRangoCalGrid" class="grid grid-cols-7 gap-1"></div>
-              <div id="cjRangoCalHint" class="cj-rangocal-hint">Tocá el día de inicio…</div>
+              <div id="cjRangoCalHint" class="cj-rangocal-hint">Toca el día de inicio…</div>
               <div class="cj-cal-legend">
                 <span><i class="cj-cal-lg-tick"></i> con tickets</span>
                 <span><i class="cj-cal-lg-cred"></i> con crédito</span>
@@ -19316,10 +19316,10 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <div id="mosPermsOverlay" class="mos-perms-overlay">
   <div class="mos-perms-modal">
     <div class="mos-perms-emoji">🛡</div>
-    <p class="mos-perms-title">Configurá tus permisos</p>
+    <p class="mos-perms-title">Configura tus permisos</p>
     <p class="mos-perms-sub">
       Para que MOS funcione al 100% necesitamos algunos accesos.
-      Solo te pido lo que falta — los que ya tenés se omiten.
+      Solo te pido lo que falta — los que ya tienes se omiten.
     </p>
 
     <div class="mos-perm-card" data-perm="notifications">
@@ -19657,7 +19657,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.588';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.589';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19707,13 +19707,13 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.587"></script>
+<script src="js/api.js?v=2.43.589"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
-<script src="./assets/membrete/membrete-modal.js?v=3.43.545"></script>
+<script src="./assets/membrete/membrete-modal.js?v=3.43.589"></script>
 <script src="./assets/seguridad/seguridad-modal.js?v=3.43.588"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
@@ -19722,9 +19722,9 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.587"></script>
+<script src="js/app.js?v=2.43.589"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
-     BUG ANTERIOR: usábamos `if (!window.MOS) return;` pero app.js declara
+     BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
      vuelve property de window — el chequeo siempre fallaba silenciosamente
      y MOS.abrirEditorAdhesivos NUNCA se asignaba. Síntoma reportado:
@@ -19736,7 +19736,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 (function() {
   function _abrirEditor() {
     if (!window.EditorAdhesivos || !window.IconosAdhesivo || !window.EditorAdhesivosConverter) {
-      alert('Editor no cargó completo — refrescá con Ctrl+Shift+R');
+      try { MOS.toast('⚠ Editor no cargó completo — refresca con Ctrl+Shift+R', 'warn', 5000); } catch(_) { console.warn('Editor incompleto'); }
       return;
     }
     // Setup lazy: subir hex de iconos al backend la 1ª vez. Idempotente.
@@ -20078,11 +20078,10 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
           _activateWaiting(_reg.waiting);
         } else {
           if (btn) btn.classList.remove('spinning');
-          // Toast via MOS si está disponible
-          if (window.MOS) {
-            const lbl = document.getElementById('syncLabel');
-            if (lbl) { lbl.textContent = '✓ Al día'; setTimeout(() => { lbl.textContent = 'Sync'; }, 2500); }
-          }
+          // [quirúrgico 2026-07-19] era `if (window.MOS)` — app.js declara `const MOS` (lexical,
+          // NO window.*) → el guard siempre fallaba y "✓ Al día" jamás se mostraba.
+          const lbl = document.getElementById('syncLabel');
+          if (lbl) { lbl.textContent = '✓ Al día'; setTimeout(() => { lbl.textContent = 'Sync'; }, 2500); }
         }
       } catch(e) {
         if (btn) btn.classList.remove('spinning');
@@ -20357,7 +20356,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
       } else if (perm === 'install') {
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         if (isIOS) {
-          alert('📱 Instalar en iOS:\n\n1. Toca Compartir\n2. "Añadir a inicio"\n3. Confirmar.\n\nAparecerá como app en tu pantalla.');
+          try { MOS.toast('📱 En iOS: Compartir → "Añadir a inicio" → Confirmar', 'info', 8000); } catch(_) {}
           try {
             const v = window._MOS_PERMS_VERSION || 'unk';
             localStorage.setItem('mos_install_dismissed_v' + v, '1');
@@ -20374,7 +20373,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
         // requiere un user gesture previo — que tenemos porque tocaste el
         // botón "PROBAR"), marcamos audio como OK automáticamente.
         //
-        // Antes usábamos confirm() para preguntar "¿escuchaste?". En algunas
+        // Antes usabamos confirm() para preguntar "¿escuchaste?". En algunas
         // PWAs (Android instalada, modo standalone con permisos restrictivos)
         // confirm() no aparece o se bloquea → el flag nunca se setea → el
         // wizard queda atascado y el botón "ir a app" no se habilita.

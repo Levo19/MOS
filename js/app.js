@@ -2,6 +2,9 @@
 // Full app logic: navigation, views, charts, CRUD
 
 const MOS = (() => {
+  // [quirúrgico 2026-07-19] Redondeo de dinero al acumular (regla del ecosistema: jamás
+  // sumar flotantes crudos — 3×0.80 = 2.4000000000000004).
+  const _money = (v) => Math.round(((+v || 0) + Number.EPSILON) * 100) / 100;
   // ── STATE ────────────────────────────────────────────────────
   const SESSION_KEY = 'MOS_SESSION';
   let S = {
@@ -819,7 +822,6 @@ const MOS = (() => {
   // ultima_conexion en Supabase. Sin esto, el master/admin figuraba "sin conexión" en el panel aunque
   // estuviera viendo MOS en este momento.
   let _mosHbTimer = null;
-  function vincularEsteBrowser() { /* deprecated: mantener export para compat */ }
   async function _mosHeartbeat() {
     try {
       const ses = S.session;
@@ -1365,7 +1367,6 @@ const MOS = (() => {
   }
 
   // Alias para compat con código viejo
-  function _renderLogoMini(p) { return _renderFotoMini(p); }
 
   // [v2.43.47 OPTIMIZACIÓN] Pre-cómputo agregado por skuBase.
   // ANTES: cada render del catálogo iteraba S.productos + S.equivMap para
@@ -2463,23 +2464,6 @@ const MOS = (() => {
     limpiarFiltrosCat();
     _cerrarFiltroFloat();
   }
-  function _registrarCierreFiltroCat() {
-    // Idempotente: solo registra una vez
-    if (window._filtroCloseRegistered) return;
-    window._filtroCloseRegistered = true;
-    document.addEventListener('click', (e) => {
-      const panel = document.getElementById('catFiltroPanel');
-      if (!panel || panel.classList.contains('hidden')) return;
-      const wrap = document.getElementById('catFiltroWrap');
-      if (wrap && wrap.contains(e.target)) return;
-      panel.classList.add('hidden');
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      const panel = document.getElementById('catFiltroPanel');
-      if (panel && !panel.classList.contains('hidden')) panel.classList.add('hidden');
-    });
-  }
 
   // [v2.43.49] Bind directo SOLO click (no pointerdown — causaba doble disparo
   // junto con onclick inline en touch). El onclick inline fue removido del HTML.
@@ -2653,9 +2637,6 @@ const MOS = (() => {
     return { score: 0 };
   }
   // Wrapper compat por si hay callers viejos que esperan solo el número
-  function _catScore(p, qn, words) {
-    return _catScoreInfo(p, qn, words).score;
-  }
   // Resalta words sueltos en una descripción (legacy)
   function _highlight(text, words) {
     if (!words.length || !text) return text || '';
@@ -3227,10 +3208,6 @@ const MOS = (() => {
     }).join('');
   }
 
-  function togglePresentaciones(idProducto) {
-    const el = document.getElementById('pres-' + CSS.escape(idProducto));
-    if (el) el.classList.toggle('open');
-  }
 
   // ─────────────────────────────────────────────────────────────────
   // Paleta de colores para diferenciar cada tramo (asignada de izq→der por rango).
@@ -4243,7 +4220,7 @@ const MOS = (() => {
       hint.textContent = tipo === 'NUEVO'
         ? '📝 Crear nuevo registro en master con datos editables'
         : tipo === 'EQUIVALENTE'
-          ? '🔗 Es el mismo producto que ya tenés — solo agregás el código alterno'
+          ? '🔗 Es el mismo producto que ya tienes — solo agregas el código alterno'
           : '🔄 Sustituís el código falso (típicamente uno corto que empieza con 0) por el real entrante';
     }
     // Sonido
@@ -4309,17 +4286,6 @@ const MOS = (() => {
   }
 
   // Validación inline de campos
-  function _pnValidarCampo(id, validator, msgOk, msgError) {
-    const el = $(id);
-    if (!el) return false;
-    const val = String(el.value || '').trim();
-    const ok = validator(val);
-    el.classList.remove('pn-field-ok', 'pn-field-error');
-    if (val) {
-      el.classList.add(ok ? 'pn-field-ok' : 'pn-field-error');
-    }
-    return ok;
-  }
 
   // Detección de duplicados al pegar código de barras
   function _pnCheckDuplicadoCodigo() {
@@ -5252,40 +5218,6 @@ const MOS = (() => {
   }
 
   // Menú kebab — popover pequeño con la acción Eliminar grupo
-  function abrirMenuPurgaGrupo(idProducto, ev) {
-    if (!_esMasterSession()) return;
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    const existente = document.getElementById('catKebabMenu');
-    if (existente) { existente.remove(); return; }
-    const rect = ev && ev.currentTarget ? ev.currentTarget.getBoundingClientRect()
-                                         : { right: window.innerWidth/2, bottom: window.innerHeight/2 };
-    const menuW = 220;
-    let left = rect.right - menuW;
-    if (left < 8) left = 8;
-    const top = rect.bottom + 4;
-    const html = `<div id="catKebabMenu"
-      style="position:fixed;top:${top}px;left:${left}px;width:${menuW}px;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:6px;box-shadow:0 15px 40px -8px rgba(0,0,0,.6),0 0 0 1px rgba(99,102,241,.15);z-index:99998;animation:catKebabIn .15s ease-out"
-      onclick="event.stopPropagation()">
-      <button onclick="MOS._cerrarKebab();MOS.abrirCestaPurga('${_escapeHtml(idProducto)}',{idProductoFiltro:'${_escapeHtml(idProducto)}'})"
-              style="display:flex;align-items:center;gap:8px;width:100%;background:rgba(248,113,113,.08);border:0;color:#fca5a5;border-radius:6px;padding:9px 10px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s"
-              onmouseover="this.style.background='rgba(248,113,113,.18)'"
-              onmouseout="this.style.background='rgba(248,113,113,.08)'">
-        <span style="font-size:14px">🗑</span>
-        <span>Eliminar grupo del catálogo</span>
-      </button>
-      <style>@keyframes catKebabIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}</style>
-    </div>`;
-    document.body.insertAdjacentHTML('beforeend', html);
-    setTimeout(() => {
-      const close = (e) => {
-        const m = document.getElementById('catKebabMenu');
-        if (!m || m.contains(e.target)) return;
-        m.remove();
-        document.removeEventListener('click', close);
-      };
-      document.addEventListener('click', close);
-    }, 0);
-  }
   function _cerrarKebab() {
     const m = document.getElementById('catKebabMenu');
     if (m) m.remove();
@@ -5793,7 +5725,7 @@ const MOS = (() => {
         if (hint) {
           hint.style.color = '#f59e0b';
           hint.innerHTML = '⚠ ' + _escapeHtml(msg) +
-            '<br><span style="font-size:9px;opacity:.8">Tu clave NO fue consumida. Volvé a hacer click cuando recuperes la red.</span>';
+            '<br><span style="font-size:9px;opacity:.8">Tu clave NO fue consumida. Vuelve a hacer click cuando recuperes la red.</span>';
         }
       // Caso 2: clave incorrecta / no autorizado → reset input + tip 8 dig
       } else if (/clave|autorizado|password/i.test(msg)) {
@@ -6242,13 +6174,6 @@ const MOS = (() => {
   }
   // Pinta lo cacheado en el DOM (debe correr cuando el DOM exista — usar al
   // entrar al módulo o tras render de los containers).
-  function _almPintarDesdeCacheLocal() {
-    if (S._almKpis)         { try { _almRenderKPIs(S._almKpis); } catch {} }
-    if (S._almInsights)     { try { _almRenderInsights(S._almInsights); } catch {} }
-    if (S._almAlertasOps)   { try { _almRenderAlertasOps(S._almAlertasOps); } catch {} }
-    if (S._almRankingZonas) { try { _almRenderRankingZonas(S._almRankingZonas); } catch {} }
-    if (S._almSinVenta)     { try { _almRenderSinVenta(S._almSinVenta); } catch {} }
-  }
   // Auto-refresh background: 60s. Solo cuando la app está visible.
   const ALM_AUTO_REFRESH_MS = 60 * 1000;
   let _almAutoTimer = null;
@@ -6355,10 +6280,6 @@ const MOS = (() => {
     renderAlmTab(S.almTab);
   }
 
-  async function almRefreshCatalogo() {
-    toast('Refrescando catálogo de stock…', 'info');
-    await loadAlmacen(true);
-  }
 
   function setAlmTab(tab) {
     S.almTab = tab;
@@ -6786,11 +6707,6 @@ const MOS = (() => {
     const msg = err && err.message ? err.message : String(err || 'error');
     el.innerHTML = `<div class="text-xs text-rose-400 italic py-3 text-center">⚠ ${msg}</div>`;
   }
-  async function almRefreshResumen() {
-    try { await API.get('bustAlmacenCache', {}); } catch(_){}
-    toast('Cache limpiado, recargando…', 'info');
-    almLoadResumen();
-  }
 
   function _almRenderKPIs(data) {
     if ($('almKpiValor'))    $('almKpiValor').textContent    = 'S/ ' + (data.stockValor || 0).toLocaleString('es-PE', { maximumFractionDigits: 0 });
@@ -6942,7 +6858,7 @@ const MOS = (() => {
       console.warn('[almLoadOps] error:', e);
       if (!S._opsData) {
         const lst = $('almOpsList');
-        if (lst) lst.innerHTML = '<div class="alm-ops-empty"><div class="alm-ops-empty-emoji">⚠</div>Sin conexión — reintentá</div>';
+        if (lst) lst.innerHTML = '<div class="alm-ops-empty"><div class="alm-ops-empty-emoji">⚠</div>Sin conexión — reintenta</div>';
       }
     }
   }
@@ -7168,10 +7084,6 @@ const MOS = (() => {
   // [RONDA/§11 · purga] S._costosGuiaPrefetch + _prefetchCostosGuias eliminados
   // (el detalle de guías se cachea en S._opsDetCache vía _opsPopulateDetCacheFromData).
 
-  async function almRefreshOps() {
-    toast('Refrescando operaciones…', 'info');
-    await almLoadOps(true);
-  }
 
   // Pinta KPIs del día + badge de preingresos pendientes a partir de la
   // respuesta de getGuiasYPreingresos. Reutilizado por prefetch y fetch.
@@ -7222,7 +7134,7 @@ const MOS = (() => {
     dias.forEach(d => {
       (d.operaciones || []).forEach(op => {
         totalOps++;
-        totalMonto += (op.montoTotal || 0);
+        totalMonto = _money(totalMonto + (op.montoTotal || 0));
         const cls = _opsClasificarCostos(op);
         if (cls && cls.estado) {
           totalIng++;
@@ -7962,18 +7874,6 @@ const MOS = (() => {
   }
 
 
-  function _renderPreingresoDetalle(op) {
-    // Preingreso: no hay líneas, mostrar info de cabecera + foto si existe
-    return `
-      <div class="text-[11px] space-y-1">
-        <div class="text-slate-400">📋 Preingreso (sin líneas hasta que sea aprobado y se convierta en guía de ingreso)</div>
-        ${op.idProveedor ? `<div class="text-slate-500"><span class="text-slate-600">Proveedor:</span> ${op.idProveedor}</div>` : ''}
-        ${op.usuario ? `<div class="text-slate-500"><span class="text-slate-600">Usuario:</span> ${op.usuario}</div>` : ''}
-        ${op.comentario ? `<div class="text-slate-500"><span class="text-slate-600">Comentario:</span> ${op.comentario}</div>` : ''}
-        ${op.idGuiaGenerada ? `<div class="text-slate-500"><span class="text-slate-600">Guía generada:</span> <span class="font-mono text-emerald-400">${op.idGuiaGenerada}</span></div>` : ''}
-        <div class="text-slate-500"><span class="text-slate-600">Estado:</span> <span class="text-amber-400 font-semibold">${op.estado || 'PENDIENTE'}</span></div>
-      </div>`;
-  }
 
   function _renderOpDetalle(fuente, idGuia) {
     const key = fuente + '_' + idGuia;
@@ -10755,10 +10655,6 @@ const MOS = (() => {
     }
   }
 
-  async function almRefreshZonas() {
-    toast('Refrescando zonas (ignora cache)…', 'info');
-    await almLoadZonas(true);
-  }
 
   function _almRenderRankingZonas(data) {
     const el = $('almZonasRanking'); if (!el) return;
@@ -12048,7 +11944,7 @@ const MOS = (() => {
       if (btn) { btn.disabled = false; btn.title = ''; }
     } else if (estado === 'offline') {
       wrap.innerHTML = `<span class="adhesivo-imp-dot adhesivo-imp-dot-offline"></span>
-        <span class="adhesivo-imp-txt">🔴 <b>${_escapeHtml(info.nombre || 'Impresora')}</b> offline · revisá PrintNode Client</span>`;
+        <span class="adhesivo-imp-txt">🔴 <b>${_escapeHtml(info.nombre || 'Impresora')}</b> offline · revisa PrintNode Client</span>`;
       if (btn) { btn.disabled = true; btn.title = 'Impresora offline'; }
     } else {
       wrap.innerHTML = `<span class="adhesivo-imp-dot adhesivo-imp-dot-error"></span>
@@ -12402,7 +12298,7 @@ const MOS = (() => {
       const r = await API.post('wh_calibrarImpresoraAdhesivo', {});
       if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
       if (btn) btn.textContent = '✅ Calibrada';
-      try { toast('🎯 Calibración enviada · ya podés imprimir alineado', 'success', 6000); } catch(_){}
+      try { toast('🎯 Calibración enviada · ya puedes imprimir alineado', 'success', 6000); } catch(_){}
       setTimeout(() => { if (btn) { btn.textContent = '🎯 Calibrar'; btn.disabled = false; } }, 3000);
     } catch(e) {
       if (btn) { btn.textContent = '❌ Error'; btn.disabled = false; }
@@ -13520,9 +13416,6 @@ const MOS = (() => {
     if (!S.provCarritos[idProveedor]) S.provCarritos[idProveedor] = { items: {}, ts: Date.now() };
     return S.provCarritos[idProveedor];
   }
-  function _provCarritoTotalItems() {
-    return Object.values(S.provCarritos || {}).filter(c => c && c.items && Object.keys(c.items).length > 0).length;
-  }
 
   // Resumen del carrito de un proveedor — para badge y FAB
   function _provCarritoResumen(idProveedor) {
@@ -13533,7 +13426,7 @@ const MOS = (() => {
     let qty = 0, monto = 0;
     items.forEach(it => {
       qty += parseFloat(it.qty) || 0;
-      monto += (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0);
+      monto = _money(monto + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0));
     });
     return { count: items.length, qty, monto, ts: c.ts };
   }
@@ -14126,16 +14019,6 @@ const MOS = (() => {
     _renderCarritoIfOpen();
   }
 
-  function provPedidoStep(idPP, delta) {
-    const idProv = S.provSelId;
-    if (!idProv) return;
-    const lista = (S.provProductos && S.provProductos[idProv]) || [];
-    const item = lista.find(x => x.idPP === idPP);
-    if (!item) return;
-    const cur = _provStepperQty(idProv, item);
-    const next = Math.max(0, cur + delta);
-    provPedidoSetQty(idPP, next);
-  }
 
   function provPedidoUsarSugerencia(idPP, sug) {
     provPedidoSetQty(idPP, sug);
@@ -14560,15 +14443,6 @@ const MOS = (() => {
     }
   }
 
-  function _filtrarHist(productos, q) {
-    if (!q) return productos;
-    const qn = _norm(q);
-    const palabras = qn.split(/\s+/).filter(Boolean);
-    return productos.filter(it => {
-      const hay = _norm((it.descripcion || '') + ' ' + (it.codigoBarra || ''));
-      return palabras.every(w => hay.indexOf(w) >= 0);
-    });
-  }
 
   function _fmtFechaLarga(fechaStr) {
     if (!fechaStr) return '';
@@ -14841,16 +14715,6 @@ const MOS = (() => {
         tier: tier,
         expires: Date.now() + ttl
       };
-      localStorage.setItem(_AAM_CACHE_KEY, JSON.stringify(cache));
-    } catch(_){}
-  }
-  function _aamCacheClear(accion) {
-    try {
-      const raw = localStorage.getItem(_AAM_CACHE_KEY);
-      if (!raw) return;
-      const cache = JSON.parse(raw);
-      if (accion) delete cache[accion];
-      else Object.keys(cache).forEach(k => delete cache[k]);
       localStorage.setItem(_AAM_CACHE_KEY, JSON.stringify(cache));
     } catch(_){}
   }
@@ -15325,13 +15189,6 @@ const MOS = (() => {
     openModal('modalEcosistema');
   }
 
-  function openConfig() {
-    const inp = $('cfgGasUrl');
-    if (inp) inp.value = API.getUrl();
-    const tr = $('cfgTestResult');
-    if (tr) { tr.classList.add('hidden'); tr.textContent = ''; }
-    openModal('modalConfig');
-  }
 
   function saveConfig() {
     const url = ($('cfgGasUrl')?.value || '').trim();
@@ -16207,109 +16064,6 @@ const MOS = (() => {
   }
 
   // ── Vista por día: agrupado por hora ──
-  function _logProdRenderPorDia(data) {
-    const cont = $('logProductosList');
-    if (!cont) return;
-    const fechaSel = _logProdState.fecha;
-    // Construir mapa skuBase → canónico para resolver títulos correctos
-    const canonicoPorSku = {};
-    data.forEach(p => {
-      const sku = p.skuBase;
-      if (!sku) return;
-      const esCan = !p.codigoProductoBase && (parseFloat(p.factorConversion) === 1 || !p.factorConversion);
-      if (esCan) canonicoPorSku[sku] = p;
-    });
-    // Aplanar todas las entradas del día
-    const eventos = [];
-    data.forEach(p => {
-      // Filtro búsqueda: si no coincide ni este producto ni su canónico (mismo skuBase), saltar
-      const can = p.skuBase ? canonicoPorSku[p.skuBase] : null;
-      const coincideAlguno = _logProdProductoCoincide(p) || (can && _logProdProductoCoincide(can));
-      if (!coincideAlguno) return;
-      const hist = Array.isArray(p.historial) ? p.historial : [];
-      const esCanonico = !p.codigoProductoBase && (parseFloat(p.factorConversion) === 1 || !p.factorConversion);
-      hist.forEach(e => {
-        if (!e.ts) return;
-        if (_logFechaLocal(e.ts) !== fechaSel) return;
-        if (!_logProdEntradaCoincide(e)) return;
-        eventos.push({
-          ts: e.ts,
-          // Título mostrado = canónico (si existe), para agrupar visualmente
-          titulo: can ? (can.descripcion || p.descripcion) : (p.descripcion || '—'),
-          // Sub-título = la presentación específica si no es canónico
-          esCanonico,
-          presentacion: esCanonico ? '' : (p.descripcion || ''),
-          factor: p.factorConversion || '',
-          idProducto: p.idProducto || '',
-          skuBase: p.skuBase || '',
-          entrada: e
-        });
-      });
-    });
-    // Ordenar desc
-    eventos.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
-
-    const cantEl = $('logCantResultados');
-    if (cantEl) cantEl.textContent = `${eventos.length} cambio${eventos.length !== 1 ? 's' : ''}`;
-    const sub = $('logModalSubtitle');
-    const fHoyTxt = new Date(fechaSel + 'T00:00:00').toLocaleDateString('es-PE', { weekday:'long', day:'numeric', month:'long' });
-    if (sub) sub.textContent = `${eventos.length} cambios · ${fHoyTxt}`;
-
-    if (!eventos.length) {
-      cont.innerHTML = '<div class="log-dia-empty">Sin actividad este día</div>';
-      return;
-    }
-
-    // Agrupar por hora
-    const porHora = {};
-    eventos.forEach(ev => {
-      const d = new Date(ev.ts);
-      const hh = String(d.getHours()).padStart(2, '0');
-      const key = hh;
-      if (!porHora[key]) porHora[key] = [];
-      porHora[key].push(ev);
-    });
-    const horas = Object.keys(porHora).sort((a, b) => b.localeCompare(a));
-    cont.innerHTML = horas.map(h => {
-      const evs = porHora[h];
-      return `<div class="log-dia-hour">
-        <div class="log-dia-hour-col">
-          ${h}h
-          <div class="log-dia-hour-col-sub">${evs.length} ev</div>
-        </div>
-        <div class="log-dia-events">
-          ${evs.map(ev => {
-            const e = ev.entrada;
-            const d = new Date(e.ts);
-            const mm = String(d.getMinutes()).padStart(2, '0');
-            const ss = String(d.getSeconds()).padStart(2, '0');
-            let cuerpo = '';
-            if (e.accion === 'crear') {
-              cuerpo = `<span class="log-action log-action-crear">🆕 creó</span>`;
-            } else if (Array.isArray(e.cambios) && e.cambios.length) {
-              cuerpo = `<span class="log-action log-action-editar">✏️ editó</span> ` + e.cambios.map(c =>
-                `<strong style="color:#fbbf24">${c.campo}</strong>: <span class="log-antes">${_logFmtVal(c.antes)}</span> → <span class="log-despues">${_logFmtVal(c.despues)}</span>`
-              ).join(' · ');
-            } else {
-              cuerpo = `<span class="log-action log-action-editar">${e.accion || 'cambio'}</span>`;
-            }
-            const safeId = String(ev.idProducto || '').replace(/'/g, '&#39;');
-            const origenChip = ev.esCanonico
-              ? `<span class="log-origen log-origen-canonico">📦 base</span>`
-              : `<span class="log-origen log-origen-presentacion">📐 ${ev.presentacion || 'presentación'}${ev.factor ? ' · f=' + ev.factor : ''}</span>`;
-            return `<div class="log-dia-event" onclick="MOS.closeModal('modalLogProductos');MOS.abrirModalProducto('${safeId}')">
-              <div class="log-dia-event-prod">${ev.titulo}</div>
-              <div class="flex items-center gap-2 flex-wrap" style="margin:3px 0">
-                ${origenChip}
-                <span style="flex:1;min-width:0">${cuerpo}</span>
-              </div>
-              <div class="log-dia-event-meta">${h}:${mm}:${ss} · 👤 ${e.usuario || '—'} ${e.source ? '· ' + e.source : ''}${e.motivo ? ' · ' + e.motivo : ''}</div>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>`;
-    }).join('');
-  }
 
   // ── DATEPICKER ──
   function _logProdAbrirCalendario(btn) {
@@ -17174,7 +16928,7 @@ const MOS = (() => {
       // [pres-v1] Un GRANEL no lleva presentación NUEVA (KGM ignora su precio propio → se cobra por kg + tramos).
       // Se bloquea solo la CREACIÓN; editar una existente sigue permitido (los viejos se purgan a mano).
       if (!editarProd && tipoPadre === 'envasable') {
-        toast('🧱 Un granel no lleva presentación: su precio se ignora (cobra por kg + tramos). Usá TRAMOS para el descuento por volumen, o creá un DERIVADO (envasado) y a ÉSE ponle la presentación.', 'error');
+        toast('🧱 Un granel no lleva presentación: su precio se ignora (cobra por kg + tramos). Usa TRAMOS para el descuento por volumen, o creá un DERIVADO (envasado) y a ÉSE ponle la presentación.', 'error');
         return;
       }
       tit.textContent = editarProd ? '🧱 Editar presentación' : '🧱 Nueva presentación';
@@ -17677,7 +17431,7 @@ const MOS = (() => {
           patch.factorConversionBase = porcion;
         } else {
           const f = parseFloat(_satState.presFactor) || 0;
-          if (!(f > 0) || f === 1) { toast('⚠ Elegí un tipo: pack ×N o fracción ÷N', 'error'); return; }
+          if (!(f > 0) || f === 1) { toast('⚠ Elige un tipo: pack ×N o fracción ÷N', 'error'); return; }
           // [pres-v1 · punto 7] cambiar el factor cambia LO QUE ES la presentación (y su código). Si ya tiene
           // ventas, distorsiona la rotación histórica → mejor crear una NUEVA y archivar esta. Aviso, no bloquea.
           const fOrig = parseFloat(editar.factorConversion) || 0;
@@ -17715,7 +17469,7 @@ const MOS = (() => {
         params.factorConversion = ''; params.mermaEsperadaPct = '';
       } else {
         const f = parseFloat(_satState.presFactor) || 0;
-        if (!(f > 0) || f === 1) { toast('⚠ Elegí un tipo: pack ×N o fracción ÷N', 'error'); return; }
+        if (!(f > 0) || f === 1) { toast('⚠ Elige un tipo: pack ×N o fracción ÷N', 'error'); return; }
         params.esEnvasable = '0';
         params.skuBase = skuPadre;
         params.factorConversion = f;
@@ -18178,8 +17932,8 @@ const MOS = (() => {
     }
     let total = 0;
     list.innerHTML = _pedidoState.items.map((it, i) => {
-      const sub = (it.cantidad || 0) * (it.precio || 0);
-      total += sub;
+      const sub = _money((it.cantidad || 0) * (it.precio || 0));
+      total = _money(total + sub);
       return `<div class="flex items-center gap-2 p-2 rounded" style="background:#0d1526">
         <div class="min-w-0 flex-1">
           <div class="text-sm text-slate-200 truncate">${it.descripcion}</div>
@@ -19215,41 +18969,7 @@ const MOS = (() => {
   }
 
   // ── Pestaña Configuración → Evaluación ─────────────────
-  async function renderConfigEvalPanel() {
-    try {
-      const res = await API.get('getConfig', {});
-      const cfg = res || {};
-      $('cfgPanelMetaCajero').value     = cfg.evalMetaCajero     || 2000;
-      $('cfgPanelMetaEnvasador').value  = cfg.evalMetaEnvasador  || 500;
-      $('cfgPanelMetaAlmacenero').value = cfg.evalMetaAlmacenero || 15;
-      $('cfgPanelMetaAuditorias').value = cfg.evalMetaAuditorias || 30;
-      $('cfgPanelBonoMetaBase').value   = cfg.evalBonoMetaBase   || 8;
-      $('cfgPanelBonoMetaDoble').value  = cfg.evalBonoMetaDoble  || 15;
-    } catch(_) {}
-  }
 
-  async function guardarConfigEvalPanel() {
-    const btn = $('cfgPanelEvalSaveBtn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
-    const pares = [
-      ['evalMetaCajero',     $('cfgPanelMetaCajero').value],
-      ['evalMetaEnvasador',  $('cfgPanelMetaEnvasador').value],
-      ['evalMetaAlmacenero', $('cfgPanelMetaAlmacenero').value],
-      ['evalMetaAuditorias', $('cfgPanelMetaAuditorias').value],
-      ['evalBonoMetaBase',   $('cfgPanelBonoMetaBase').value],
-      ['evalBonoMetaDoble',  $('cfgPanelBonoMetaDoble').value]
-    ];
-    try {
-      await Promise.all(pares.map(([clave, valor]) =>
-        API.post('setConfig', { clave, valor: String(valor) })
-      ));
-      toast('Configuración guardada ✓', 'ok');
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar configuración'; }
-    }
-  }
 
   // ── CATEGORÍAS / política de precios ─────────────────────
   // [Mockup] estado del buscador de categorías
@@ -20154,29 +19874,6 @@ const MOS = (() => {
   }
 
   // Mini-chips de permisos para preview en cards (4 más relevantes)
-  function _renderDispPermisosChipsMini(permsJson) {
-    if (!permsJson) return '';
-    let p = {};
-    try { p = (typeof permsJson === 'string') ? JSON.parse(permsJson) : permsJson; } catch(_) { return ''; }
-    const items = [
-      { k: 'notif',   i: '🔔' },
-      { k: 'cam',     i: '📸' },
-      { k: 'mic',     i: '🎤' },
-      { k: 'geo',     i: '📍' },
-      { k: 'storage', i: '💾' }
-    ];
-    const chips = items.map(it => {
-      const st = p[it.k];
-      if (!st) return '';
-      let bg, border, color;
-      if (st === 'granted')          { bg='rgba(16,185,129,0.20)'; border='rgba(16,185,129,0.5)';  color='#6ee7b7'; }
-      else if (st === 'denied')      { bg='rgba(248,113,113,0.20)'; border='rgba(248,113,113,0.5)'; color='#fca5a5'; }
-      else if (st === 'unsupported') { bg='rgba(100,116,139,0.20)'; border='rgba(100,116,139,0.5)'; color='#94a3b8'; }
-      else                            { bg='rgba(251,191,36,0.20)'; border='rgba(251,191,36,0.5)';  color='#fcd34d'; }
-      return `<span class="inline-flex items-center text-[9px] px-1 py-0.5 rounded" style="background:${bg};border:1px solid ${border};color:${color};">${it.i}</span>`;
-    }).filter(Boolean).join(' ');
-    return chips ? `<div class="mt-1 flex gap-0.5">${chips}</div>` : '';
-  }
 
   // Render completo de chips (en modal de detalle): muestra todos los permisos con label
   function _renderDispPermisosChipsFull(permsJson, lastUpdate) {
@@ -20366,10 +20063,6 @@ const MOS = (() => {
   }
 
   // [v2.41.83] DEPRECATED — usar pedirAuth(opts) en lugar de prompt()
-  async function _pedirClaveAdmin(accion) {
-    const auth = await pedirAuth({ accion: accion, contexto: 'Acción protegida' });
-    return auth ? auth.clave : '';
-  }
 
   async function revocarDispositivoUUID(id) {
     const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
@@ -21596,7 +21289,6 @@ const MOS = (() => {
     window._horModalDiasState = null;
   }
   // Legacy compat (botones viejos pueden llamarlo)
-  function _horToggleDia(i, checked) { _horTogglePill(i, checked); }
   function _horGuardarModal() {
     const opts = window._horModalOpts;
     if (!opts) return;
@@ -22605,33 +22297,6 @@ const MOS = (() => {
 
   // (renderSeries() obsoleto — series ahora viven dentro de Infraestructura como chips)
 
-  function renderSeguridad() {
-    // Reset panel a estado login
-    seg_ocultar();
-    // Renderizar lista de admins (de cfgData.usuarios MOS o llamar API)
-    const listaEl = $('segListaAdmins');
-    if (listaEl) {
-      const admins = (cfgData.personalMOS || []).filter(u => {
-        const r = String(u.rol || '').toUpperCase();
-        return (r === 'MASTER' || r === 'ADMIN' || r === 'ADMINISTRADOR') && String(u.estado) === '1';
-      });
-      if (!admins.length) {
-        listaEl.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">Sin admins activos. Crea uno en pestaña Personal.</p>';
-      } else {
-        listaEl.innerHTML = admins.map(a => `
-          <div class="flex items-center gap-3 p-3 rounded-lg" style="background:#0d1526;border:1px solid #1e293b;">
-            <div class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm" style="background:${a.color || '#6366f1'}">
-              ${(a.nombre || '?')[0]}${(a.apellido || '')[0] || ''}
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium text-slate-200 truncate">${a.nombre} ${a.apellido || ''}</div>
-              <div class="text-xs text-slate-500 uppercase tracking-wider">${a.rol}</div>
-            </div>
-          </div>
-        `).join('');
-      }
-    }
-  }
 
   // ── Seguridad: Clave Admin Global ──────────────────────
   let _segDataActual = null;
@@ -22908,12 +22573,6 @@ const MOS = (() => {
   }
 
   // Detectar si el dispositivo se movió de estación entre renders
-  function _dispSeMovio(d) {
-    if (_dispRenderCount === 0) return false; // primer render, no animar
-    const prev = _dispUltimaEstacionMap[d.ID_Dispositivo];
-    const ahora = String(d.Ultima_Estacion || '');
-    return prev !== undefined && prev !== ahora;
-  }
 
   function _dispActualizarMapa() {
     let huboMovimientos = false;
@@ -23858,29 +23517,7 @@ const MOS = (() => {
     }
   }
 
-  async function guardarPinEstacion(idEstacion) {
-    const inp = $('pin_' + idEstacion);
-    const pin = inp?.value || '';
-    if (!pin || pin.length < 4) { toast('PIN debe tener al menos 4 dígitos', 'error'); return; }
-    try {
-      await API.post('actualizarEstacion', { idEstacion, adminPin: pin });
-      toast('PIN actualizado', 'ok');
-      if (inp) inp.value = '';
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
-  }
 
-  async function guardarPinWH() {
-    const pin  = $('pinWH')?.value || '';
-    const conf = $('pinWHConfirm')?.value || '';
-    if (!pin || pin.length < 4)  { toast('PIN debe tener al menos 4 dígitos', 'error'); return; }
-    if (pin !== conf)             { toast('Los PINs no coinciden', 'error'); return; }
-    try {
-      await API.post('setConfig', { clave: 'PIN_ADMIN_WH', valor: pin, descripcion: 'PIN administrador warehouseMos' });
-      toast('PIN admin warehouseMos actualizado', 'ok');
-      const pw = $('pinWH'); if (pw) pw.value = '';
-      const pc = $('pinWHConfirm'); if (pc) pc.value = '';
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
-  }
 
   // Close modal on backdrop click — usa _validBackdropClose para evitar
   // cierre al arrastrar selección de texto desde un input hasta el backdrop.
@@ -23896,7 +23533,6 @@ const MOS = (() => {
   });
 
   // Wrapper compat — redirige al nuevo renderizado modernizado
-  function _renderCajasDesdeEstado() { _cjRender(); }
 
   // ════════════════════════════════════════════════════════════
   // ║ MÓDULO CAJAS MODERNIZADO (estilo Bloomberg/trading)       ║
@@ -24223,7 +23859,7 @@ const MOS = (() => {
       Object.keys(bm).forEach(k => {
         const ku = String(k || '').toUpperCase();
         if (ku === 'EFECTIVO' || ku === 'POR_COBRAR' || ku === 'CREDITO' || ku === 'ANULADO') return;
-        total += parseFloat(bm[k]) || 0;
+        total = _money(total + (parseFloat(bm[k]) || 0));
       });
       return s + total;
     }, 0);
@@ -24729,17 +24365,6 @@ const MOS = (() => {
   // ── RANKING: deprecado — la corona 👑 va al card de la caja líder ──
   // (Eliminado: el card de "Ranking del día" + duplicado en TV strip)
 
-  function cjScrollToCaja(idCaja) {
-    const safe = String(idCaja).replace(/'/g, '&#39;');
-    const card = document.getElementById('cjcard-' + safe);
-    if (card) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      card.classList.remove('flash');
-      void card.offsetWidth;
-      card.classList.add('flash');
-      _finBeep('nav');
-    }
-  }
 
   // ── ACTIVIDAD POR HORA (timeline horizontal con barras) ─────
   function _cjRenderActividad(tickets, esHoy) {
@@ -25728,7 +25353,7 @@ const MOS = (() => {
     const lblF = $('cjMesaFechaLabel');
     if (lblF) lblF.textContent = `Todos · ${totalTickets} ticket${totalTickets === 1 ? '' : 's'}`;
     const lblS = $('cjMesaSubtitulo');
-    if (lblS) lblS.textContent = `S/ ${totalMonto.toFixed(2)} pendientes en ${grupos.length} día${grupos.length === 1 ? '' : 's'} · tocá una carta para ver detalle`;
+    if (lblS) lblS.textContent = `S/ ${totalMonto.toFixed(2)} pendientes en ${grupos.length} día${grupos.length === 1 ? '' : 's'} · toca una carta para ver detalle`;
 
     // Días ordenados: hoy primero, luego los más recientes
     const ordenados = grupos.slice().sort((a, b) => {
@@ -26340,7 +25965,7 @@ const MOS = (() => {
       _cjTkRenderFiltrosBtns(); _cjTkRenderVendedoresBtns(); _cjTkRender();
     } catch (e) {
       // [500x] sin try/catch el label quedaba atascado en "buscando…" para siempre ante error de red
-      if (inf) inf.textContent = '⚠ error al buscar · reintentá';
+      if (inf) inf.textContent = '⚠ error al buscar · reintenta';
       try { _finBeep('error'); } catch(_){}
     }
   }
@@ -26408,7 +26033,7 @@ const MOS = (() => {
       html += `<button class="${cls.join(' ')}"${ttl} onclick="MOS._cjRangoCalPick('${f}')">${dia}${dot}</button>`;
     }
     grid.innerHTML = html;
-    if (hint) hint.textContent = (desde && !hasta) ? '📍 ahora el día final…' : (desde && hasta ? `${desde} → ${hasta}` : 'Tocá el día de inicio…');
+    if (hint) hint.textContent = (desde && !hasta) ? '📍 ahora el día final…' : (desde && hasta ? `${desde} → ${hasta}` : 'Toca el día de inicio…');
   }
   function _cjRangoCalPick(f) {
     _finBeep('nav');
@@ -27853,104 +27478,6 @@ const MOS = (() => {
   function _buildCajaCard(c) {
     return _cjBuildCajaCard(c, c.estado === 'ABIERTA', _cjFecha());
   }
-  function _buildCajaCardLegacy(c) {
-    const elapsed   = _cajaElapsed(c.fechaApertura);
-    const pctEfect  = c.totalVentas > 0 ? Math.round(c.efectivo / c.totalVentas * 100) : 0;
-    const pctOtros  = 100 - pctEfect;
-    const metodos   = Object.entries(c.byMetodo || {}).sort((a,b)=>b[1]-a[1])
-      .map(([k,v])=>`<span class="text-xs text-slate-400">${k}: <span class="text-slate-200 font-medium">${fmtMoney(v)}</span></span>`).join('');
-    const tkList    = c.ticketsList || [];
-    const exList    = c.extrasList  || [];
-
-    const estadoBadge = est => {
-      if (est==='ANULADO')    return '<span class="badge badge-red" style="font-size:10px">ANULADO</span>';
-      if (est==='POR_COBRAR') return '<span class="badge badge-yellow" style="font-size:10px">POR COBRAR</span>';
-      if (est==='CREDITO')    return '<span class="badge badge-blue" style="font-size:10px">CRÉDITO</span>';
-      return '';
-    };
-    const metodoBadge = m => {
-      const cls = m==='EFECTIVO'?'badge-green':m==='POR_COBRAR'?'badge-yellow':m==='ANULADO'?'badge-red':'badge-blue';
-      return `<span class="badge ${cls}" style="font-size:10px">${m}</span>`;
-    };
-    const ticketRows = tkList.map(t => {
-      const an = t.estado==='ANULADO';
-      return `<div class="flex items-center gap-2 py-1.5 border-b border-slate-800/60 ${an?'opacity-40':''}">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="text-xs font-mono ${an?'line-through text-slate-500':'text-slate-200'}">${t.correlativo||t.idVenta}</span>
-            ${estadoBadge(t.estado)}
-          </div>
-          <div class="text-xs text-slate-500 truncate mt-0.5">${t.clienteNom||t.clienteDoc||'Sin cliente'} · <span class="text-slate-600">${t.tipoDoc}</span>${t.hora?' · '+t.hora:''}</div>
-        </div>
-        <div class="text-right shrink-0">
-          <div class="text-sm font-semibold ${an?'line-through text-slate-600':'text-white'}">${fmtMoney(t.total)}</div>
-          <div class="mt-0.5">${metodoBadge(t.metodo)}</div>
-        </div>
-      </div>`;
-    }).join('');
-    const extraRows = exList.map(ex=>`
-      <div class="flex items-center justify-between py-1 text-xs border-b border-slate-800/40 last:border-0">
-        <div class="flex items-center gap-1.5">
-          <span class="${ex.tipo==='INGRESO'?'text-emerald-400':'text-red-400'} font-bold">${ex.tipo==='INGRESO'?'▲':'▼'}</span>
-          <span class="text-slate-300">${ex.concepto||ex.tipo}</span>
-          ${ex.hora?`<span class="text-slate-600">${ex.hora}</span>`:''}
-        </div>
-        <span class="font-semibold ${ex.tipo==='INGRESO'?'text-emerald-400':'text-red-400'}">${ex.tipo==='INGRESO'?'+':'-'}${fmtMoney(ex.monto)}</span>
-      </div>`).join('');
-
-    return `
-    <div class="card p-4" id="cajacard-${c.idCaja}" style="border-left:3px solid #22c55e">
-      <div class="flex items-start justify-between mb-3">
-        <div>
-          <div class="font-semibold text-white text-base">${c.vendedor||'—'}</div>
-          <div class="text-xs text-slate-400">${c.zona||c.estacion||'—'} · <span class="text-emerald-400">⏱ ${elapsed}</span></div>
-        </div>
-        <span class="badge badge-green">ABIERTA</span>
-      </div>
-      <div class="grid grid-cols-4 gap-2 mb-3">
-        <div class="card-sm p-2 text-center"><div id="cv-total-${c.idCaja}" class="text-base font-bold text-white">${fmtMoney(c.totalVentas)}</div><div class="text-xs text-slate-500">Total</div></div>
-        <div class="card-sm p-2 text-center"><div id="cv-tickets-${c.idCaja}" class="text-base font-bold text-emerald-400">${c.tickets}</div><div class="text-xs text-slate-500">Tickets</div></div>
-        <div class="card-sm p-2 text-center"><div id="cv-anulados-${c.idCaja}" class="text-base font-bold ${c.anulados>0?'text-red-400':'text-slate-500'}">${c.anulados}</div><div class="text-xs text-slate-500">Anulados</div></div>
-        <div class="card-sm p-2 text-center"><div id="cv-porcobrar-${c.idCaja}" class="text-base font-bold ${c.sinCobrar>0?'text-yellow-400':'text-slate-500'}">${c.sinCobrar}</div><div class="text-xs text-slate-500">Por cobrar</div></div>
-      </div>
-      <div class="mb-2">
-        <div class="flex justify-between text-xs text-slate-500 mb-1">
-          <span id="cv-barlbl-${c.idCaja}">Efectivo ${pctEfect}%</span><span>Otros ${pctOtros}%</span>
-        </div>
-        <div class="flex rounded-full overflow-hidden h-1.5" style="background:#1e293b">
-          <div id="cv-barefect-${c.idCaja}" style="width:${pctEfect}%;background:#22c55e;transition:width .5s"></div>
-          <div id="cv-barotros-${c.idCaja}" style="width:${pctOtros}%;background:#6366f1;transition:width .5s"></div>
-        </div>
-      </div>
-      <div id="cv-metodos-${c.idCaja}" class="flex flex-wrap gap-x-3 gap-y-1 mb-3">${metodos}</div>
-      <button id="cajabtn-${c.idCaja}" onclick="MOS.toggleCajaDetail('${c.idCaja}')"
-        class="w-full text-xs text-slate-400 py-1.5 rounded-lg border border-slate-800 hover:border-indigo-600 hover:text-indigo-400 transition-all flex items-center justify-center gap-1.5">
-        <span id="cajabtn-icon-${c.idCaja}">▼</span>
-        <span id="cajabtn-label-${c.idCaja}">Ver ${tkList.length} ticket${tkList.length!==1?'s':''}</span>
-      </button>
-      <div id="cajadetail-${c.idCaja}" class="hidden mt-3 pt-3 border-t border-slate-800">
-        <div class="flex items-center justify-between mb-2">
-          <span id="cajatickets-label-${c.idCaja}" class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Tickets (${tkList.length})</span>
-        </div>
-        ${tkList.length>0?`<div class="mb-4">${ticketRows}</div>`:`<div class="text-xs text-slate-600 mb-4">Sin tickets aún</div>`}
-        ${exList.length>0?`<div class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Movimientos extra (${exList.length})</div><div class="card-sm p-2 mb-4">${extraRows}</div>`:''}
-        <div class="card-sm p-3 text-xs">
-          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Arqueo estimado</div>
-          <div class="text-xs text-slate-500 mb-1">💵 Físico (en caja)</div>
-          <div class="flex justify-between py-0.5"><span class="text-slate-500">Apertura</span><span>${fmtMoney(c.montoInicial)}</span></div>
-          <div class="flex justify-between py-0.5"><span class="text-slate-500">+ Ventas efectivo</span><span class="text-emerald-400">+${fmtMoney(c.efectivo)}</span></div>
-          ${c.entradas>0?`<div class="flex justify-between py-0.5"><span class="text-slate-500">+ Ingresos extra</span><span class="text-emerald-400">+${fmtMoney(c.entradas)}</span></div>`:''}
-          ${c.salidas>0?`<div class="flex justify-between py-0.5"><span class="text-slate-500">- Salidas extra</span><span class="text-red-400">-${fmtMoney(c.salidas)}</span></div>`:''}
-          <div class="flex justify-between font-bold border-t border-slate-700 pt-1.5 mt-1 mb-3">
-            <span class="text-slate-200">= Esperado físico</span><span class="text-emerald-400">${fmtMoney(c.efectivoEsperado)}</span>
-          </div>
-          ${c.otros>0?`<div class="text-xs text-slate-500 mb-1">📲 Virtual</div>
-          ${Object.entries(c.byMetodo||{}).filter(([k])=>k!=='EFECTIVO').sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="flex justify-between py-0.5"><span class="text-slate-500">${k}</span><span class="text-indigo-400">${fmtMoney(v)}</span></div>`).join('')}
-          <div class="flex justify-between font-bold border-t border-slate-700 pt-1.5 mt-1"><span class="text-slate-200">= Total virtual</span><span class="text-indigo-400">${fmtMoney(c.otros)}</span></div>`:''}
-        </div>
-      </div>
-    </div>`;
-  }
 
   // Helper: actualizar texto de un elemento solo si cambió, con flash opcional
   function _setVal(id, newVal, flash) {
@@ -27962,44 +27489,8 @@ const MOS = (() => {
   }
 
   // Smart update de una card de caja abierta (solo toca los valores que cambiaron)
-  function _updateCajaCard(c) {
-    const card = $('cajacard-' + c.idCaja);
-    if (!card) return false; // no existe → hay que crearla
-    const pct  = c.totalVentas > 0 ? Math.round(c.efectivo / c.totalVentas * 100) : 0;
-    const metosHtml = Object.entries(c.byMetodo || {}).sort((a,b)=>b[1]-a[1])
-      .map(([k,v])=>`<span class="text-xs text-slate-400">${k}: <span class="text-slate-200 font-medium">${fmtMoney(v)}</span></span>`).join('');
-
-    _setVal('cv-total-'    + c.idCaja, fmtMoney(c.totalVentas), true);
-    _setVal('cv-tickets-'  + c.idCaja, c.tickets, true);
-    _setVal('cv-anulados-' + c.idCaja, c.anulados, c.anulados > 0);
-    _setVal('cv-porcobrar-'+ c.idCaja, c.sinCobrar, c.sinCobrar > 0);
-
-    const barEf = $('cv-barefect-' + c.idCaja);
-    const barOt = $('cv-barotros-' + c.idCaja);
-    if (barEf) barEf.style.width = pct + '%';
-    if (barOt) barOt.style.width = (100-pct) + '%';
-    _setVal('cv-barlbl-'   + c.idCaja, `Efectivo ${pct}%`);
-
-    const metDiv = $('cv-metodos-' + c.idCaja);
-    if (metDiv && metDiv.innerHTML !== metosHtml) metDiv.innerHTML = metosHtml;
-
-    // Actualizar elapsed (siempre cambia)
-    const cabeceraEl = card.querySelector('.text-xs.text-slate-400');
-    if (cabeceraEl) {
-      const el = cabeceraEl.querySelector('span.text-emerald-400');
-      if (el) el.textContent = '⏱ ' + _cajaElapsed(c.fechaApertura);
-    }
-    return true;
-  }
 
   // Smart update del historial (filas cerradas)
-  function _updateHistorialRow(c) {
-    const row = document.querySelector('[data-caja-row="' + c.idCaja + '"]');
-    if (!row) return false;
-    _setVal('hr-total-'   + c.idCaja, fmtMoney(c.totalVentas), true);
-    _setVal('hr-tickets-' + c.idCaja, c.tickets, true);
-    return true;
-  }
 
   // [v2.41.91] Snapshot del esperado por caja para detectar cruces de hitos
   if (typeof window._cjBalancePrev === 'undefined') window._cjBalancePrev = {};
@@ -28252,58 +27743,7 @@ const MOS = (() => {
     });
   }
 
-  function _renderChartMetodosHoy() {
-    const hoy      = today();
-    const cajasHoy = (S._todasCajas || []).filter(c =>
-      (c.fechaApertura || '').startsWith(hoy) || (c.fechaCierre || '').startsWith(hoy)
-    );
-    const metAcum  = {};
-    cajasHoy.forEach(c => Object.entries(c.byMetodo || {}).forEach(([k,v]) => {
-      metAcum[k] = (metAcum[k] || 0) + v;
-    }));
-    const metKeys  = Object.keys(metAcum).sort((a,b) => metAcum[b] - metAcum[a]);
-    const totalMet = metKeys.reduce((s,k) => s + metAcum[k], 0);
-    if (!metKeys.length) return;
 
-    renderChart('chartCajasMetodo', {
-      type: 'doughnut',
-      data: {
-        labels: metKeys,
-        datasets: [{ data: metKeys.map(k => metAcum[k]),
-          backgroundColor: _CHART_COLORES, borderWidth: 2, borderColor: '#0f172a', hoverOffset: 6 }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: {
-            label: ctx => ` ${ctx.label}: ${fmtMoney(ctx.raw)} (${Math.round(ctx.raw / totalMet * 100)}%)`
-          }}
-        }
-      }
-    });
-
-    const det = $('cajasMetodoDetalle');
-    if (det) det.innerHTML = metKeys.map((k, i) => `
-      <div class="flex items-center justify-between text-xs">
-        <div class="flex items-center gap-1.5">
-          <span class="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style="background:${_CHART_COLORES[i] || '#64748b'}"></span>
-          <span class="text-slate-400">${k}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="text-slate-500">${Math.round(metAcum[k] / totalMet * 100)}%</span>
-          <span class="font-semibold text-white">${fmtMoney(metAcum[k])}</span>
-        </div>
-      </div>`).join('');
-  }
-
-  function setChartCajasPeriodo(dias) {
-    _chartCajasPeriodo = dias;
-    [7, 30, 90].forEach(d => {
-      const el = $('ccp' + d); if (el) el.classList.toggle('active', d === dias);
-    });
-    _renderChartCajasCompacto(dias);
-  }
 
   function setChartCajasModalPeriodo(dias) {
     _chartCajasModalPeriodo = dias;
@@ -28313,11 +27753,6 @@ const MOS = (() => {
     _renderChartCajasModal(dias);
   }
 
-  function abrirModalHistorialCajas() {
-    const modal = $('modalHistorialCajas'); if (!modal) return;
-    modal.classList.remove('hidden');
-    setTimeout(() => _renderChartCajasModal(_chartCajasModalPeriodo), 50);
-  }
 
   function cerrarModalHistorialCajas() {
     const modal = $('modalHistorialCajas'); if (modal) modal.classList.add('hidden');
@@ -28329,43 +27764,9 @@ const MOS = (() => {
   let _tkFiltroTipo   = '';
   let _modalTicketId  = null;
 
-  function toggleKpiTickets() {
-    const panel = $('cajasTicketsPanel');
-    const arrow = $('cajasKpiTicketsArrow');
-    if (!panel) return;
-    const opening = panel.classList.contains('hidden');
-    panel.classList.toggle('hidden', !opening);
-    if (arrow) arrow.textContent = opening ? '▲' : '▼';
-    if (opening) _renderTicketList();
-  }
 
-  function setTicketFiltroFecha(v) {
-    _tkFiltroFecha = v;
-    ['hoy','semana','mes','todos'].forEach(k => {
-      const el = $('tf' + k.charAt(0).toUpperCase() + k.slice(1));
-      if (el) el.classList.toggle('active', k === v);
-    });
-    _renderTicketList();
-  }
 
-  function setTicketFiltroEstado(v) {
-    _tkFiltroEstado = v;
-    _tkFiltroTipo   = '';
-    ['All','Com','Pend','Anu'].forEach(k => { const el=$('te'+k); if(el) el.classList.remove('active'); });
-    ['NV','B','F'].forEach(k => { const el=$('tt'+k); if(el) el.classList.remove('active'); });
-    const map = {'':'All','COMPLETADO':'Com','POR_COBRAR':'Pend','ANULADO':'Anu'};
-    const el = $('te' + (map[v] || 'All')); if(el) el.classList.add('active');
-    _renderTicketList();
-  }
 
-  function setTicketFiltroTipo(v) {
-    _tkFiltroTipo   = v;
-    _tkFiltroEstado = '';
-    ['All','Com','Pend','Anu'].forEach(k => { const el=$('te'+k); if(el) el.classList.remove('active'); });
-    ['NV','B','F'].forEach(k => { const el=$('tt'+k); if(el) el.classList.remove('active'); });
-    const el = $('tt' + v); if(el) el.classList.add('active');
-    _renderTicketList();
-  }
 
   function _renderTicketList() {
     const container = $('cajasTicketsList');
@@ -28608,84 +28009,6 @@ const MOS = (() => {
     } catch(e) { toast(e.message, 'error'); }
   }
 
-  function toggleKpiVentas() {
-    const panel = $('cajasKpiDetalle');
-    const arrow = $('cajasKpiVentasArrow');
-    if (!panel) return;
-    const opening = panel.classList.contains('hidden');
-    panel.classList.toggle('hidden', !opening);
-    if (arrow) arrow.textContent = opening ? '▲' : '▼';
-    if (!opening) return; // solo renderiza al abrir
-
-    const cajas = S._cajasHoy || [];
-    const body  = $('cajasKpiDetalleBody');
-    if (!body) return;
-
-    if (!cajas.length) {
-      body.innerHTML = '<div class="text-xs text-slate-500">Sin cajas registradas hoy.</div>';
-      return;
-    }
-
-    body.innerHTML = cajas.map(c => {
-      const esAbierta  = c.estado === 'ABIERTA';
-      const badgeCls   = esAbierta ? 'badge-green' : 'badge-gray';
-      const badgeTxt   = esAbierta ? 'ABIERTA' : 'CERRADA';
-      const horaApert  = (c.fechaApertura || '').substring(11, 16);
-      const horaCierre = (c.fechaCierre   || '').substring(11, 16);
-      const rango      = horaCierre ? `${horaApert} → ${horaCierre}` : `desde ${horaApert}`;
-
-      // Métodos virtuales (no efectivo)
-      const virtuales = Object.entries(c.byMetodo || {}).filter(([k]) => k !== 'EFECTIVO').sort((a,b) => b[1]-a[1]);
-
-      return `
-      <div class="border-b border-slate-800 py-3 last:border-0">
-        <!-- Cabecera caja -->
-        <div class="flex items-center justify-between mb-2">
-          <div class="flex items-center gap-2">
-            <span class="badge ${badgeCls} text-xs">${badgeTxt}</span>
-            <span class="font-medium text-sm text-white">${c.vendedor || '—'}</span>
-            <span class="text-xs text-slate-500">${c.zona || c.estacion || ''}</span>
-          </div>
-          <span class="text-xs text-slate-600">${rango}</span>
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-          <!-- Físico -->
-          <div class="card-sm p-2">
-            <div class="text-slate-500 mb-1">💵 Físico</div>
-            <div class="flex justify-between py-0.5"><span class="text-slate-500">Apertura</span><span>${fmtMoney(c.montoInicial)}</span></div>
-            <div class="flex justify-between py-0.5"><span class="text-slate-500">+ Efectivo ventas</span><span class="text-emerald-400">+${fmtMoney(c.efectivo)}</span></div>
-            ${c.entradas > 0 ? `<div class="flex justify-between py-0.5"><span class="text-slate-500">+ Ingresos extra</span><span class="text-emerald-400">+${fmtMoney(c.entradas)}</span></div>` : ''}
-            ${c.salidas  > 0 ? `<div class="flex justify-between py-0.5"><span class="text-slate-500">- Salidas extra</span><span class="text-red-400">-${fmtMoney(c.salidas)}</span></div>` : ''}
-            <div class="flex justify-between font-bold border-t border-slate-700 pt-1 mt-1">
-              <span class="text-slate-300">Esperado físico</span>
-              <span class="text-emerald-400">${fmtMoney(c.efectivoEsperado)}</span>
-            </div>
-          </div>
-
-          <!-- Virtual -->
-          <div class="card-sm p-2">
-            <div class="text-slate-500 mb-1">📲 Virtual</div>
-            ${virtuales.length > 0
-              ? virtuales.map(([k,v]) => `<div class="flex justify-between py-0.5"><span class="text-slate-500">${k}</span><span class="text-indigo-400">${fmtMoney(v)}</span></div>`).join('')
-              : '<div class="text-slate-600 py-0.5">Sin pagos virtuales</div>'
-            }
-            ${virtuales.length > 0 ? `
-            <div class="flex justify-between font-bold border-t border-slate-700 pt-1 mt-1">
-              <span class="text-slate-300">Total virtual</span>
-              <span class="text-indigo-400">${fmtMoney(c.otros)}</span>
-            </div>` : ''}
-          </div>
-        </div>
-
-        <!-- Total caja -->
-        <div class="flex justify-between items-center mt-2 pt-1">
-          <span class="text-xs text-slate-500">Total vendido (efectivo + virtual)</span>
-          <span class="font-bold text-white text-sm">${fmtMoney(c.totalVentas)}</span>
-        </div>
-      </div>`;
-    }).join('');
-  }
 
   async function toggleCajaDetail(idCaja) {
     const detail    = $('cajadetail-' + idCaja);
@@ -29355,42 +28678,7 @@ const MOS = (() => {
   }
 
   // Punto de entrada cuando se hace click en 🎙️ desde Personal del Día
-  async function abrirEscuchaPorUsuario(nombre) {
-    await _refrescarDispositivosFresh();
-    const devs = _buscarDispositivosDeUsuario(nombre);
-    if (!devs.length) {
-      toast(`⚠ ${nombre} no tiene dispositivos registrados con su sesión`, 'warn', 5000);
-      return;
-    }
-    // Advertir si la última conexión es muy vieja
-    const masReciente = devs[0];
-    const ultMs = new Date(masReciente.Ultima_Conexion || 0).getTime() || 0;
-    const minsTranscurridos = (Date.now() - ultMs) / 60000;
-    if (minsTranscurridos > 10) {
-      const horas = Math.floor(minsTranscurridos / 60);
-      const txt = horas > 0 ? `hace ${horas}h` : `hace ${Math.floor(minsTranscurridos)}min`;
-      if (!await _modalConfirm(`⚠ Última conexión de ${nombre} fue ${txt}.\n\nLa app puede estar cerrada — el comando de escucha puede no llegar.\n\n¿Iniciar igual?`, { warning: true, titulo: 'Iniciar escucha' })) return;
-    }
-    if (devs.length === 1) {
-      abrirModalAudioRouted(devs[0].ID_Dispositivo);
-      return;
-    }
-    _selectorDispMostrar(nombre, devs, 'audio');
-  }
 
-  async function abrirGpsPorUsuario(nombre) {
-    await _refrescarDispositivosFresh();
-    const devs = _buscarDispositivosDeUsuario(nombre);
-    if (!devs.length) {
-      toast(`⚠ ${nombre} no tiene dispositivos registrados`, 'warn', 4000);
-      return;
-    }
-    if (devs.length === 1) {
-      abrirModalGps(devs[0].ID_Dispositivo);
-      return;
-    }
-    _selectorDispMostrar(nombre, devs, 'gps');
-  }
 
   function _selectorDispMostrar(nombre, devs, modo) {
     const sub = $('selectorDispSubtitle');
@@ -29430,9 +28718,6 @@ const MOS = (() => {
   }
 
   // Wrapper que enruta desde Configuración → Infraestructura al flotante
-  async function abrirEscuchaDispositivo(idDispositivo) {
-    return _audioFlotanteIniciar(idDispositivo);
-  }
 
   // ════════════════════════════════════════════════════════════
   // WIDGET FLOTANTE de escucha en vivo
@@ -29941,7 +29226,7 @@ const MOS = (() => {
       // [v2.43.90] Si los 3 reintentos de FCM fallaron, avisar al master claramente
       // y NO crear el WebRTC — el device no se va a enterar de nada.
       if (r.pushOk === false) {
-        toast('No se pudo notificar al dispositivo (FCM falló ' + (r.pushIntentos || 3) + 'x). Revisá tokens y volvé a intentar.', 'error', 9000);
+        toast('No se pudo notificar al dispositivo (FCM falló ' + (r.pushIntentos || 3) + 'x). Revisa tokens y volvé a intentar.', 'error', 9000);
         _espiaV2Cerrar('push_fallo');
         return;
       }
@@ -29951,7 +29236,7 @@ const MOS = (() => {
       // (Apps Script no devuelve headers CORS en error). Diferenciamos por code.
       const msg = String(e?.message || 'Error desconocido');
       if (e?.code === 'NETWORK' || /Failed to fetch/i.test(msg)) {
-        toast('⚠ Backend rechazó la petición (500). Revisá logs Apps Script o intentá de nuevo.', 'error', 8000);
+        toast('⚠ Backend rechazó la petición (500). Revisa logs Apps Script o intentá de nuevo.', 'error', 8000);
       } else {
         toast('Error: ' + msg, 'error');
       }
@@ -30193,7 +29478,7 @@ const MOS = (() => {
         const motivo = d.motivoFin || 'desconocido';
         let mensaje = 'El dispositivo cerró la sesión';
         if (/ice_failed/i.test(motivo)) {
-          mensaje = '⚠ Conexión imposible (NAT/firewall). Configurá TURN en Properties para redes móviles/corporativas.';
+          mensaje = '⚠ Conexión imposible (NAT/firewall). Configura TURN en Properties para redes móviles/corporativas.';
         } else if (/page_unload/i.test(motivo)) {
           mensaje = 'El usuario cerró la app en el dispositivo.';
         } else if (/connection_/i.test(motivo)) {
@@ -30249,7 +29534,7 @@ const MOS = (() => {
         _espiaV2._renegEnCurso = true;
         try {
           if (pc.signalingState !== 'stable') {
-            // state cambió mientras esperábamos — descartar
+            // state cambió mientras esperabamos — descartar
           } else {
             const ofertaStr = d.sdpRenegOferta;
             const yaProcesada = _espiaV2._ultimaOfertaProcesada === ofertaStr;
@@ -31406,16 +30691,6 @@ const MOS = (() => {
   // el flujo: el handler espiaModal ya llama a _espiaModalMinimizar.
   // Ningún cleanup adicional necesario — _espiaState se limpia en _espiaDetenerTodo.
 
-  async function _abrirModalAudioLive(idDispositivo) {
-    const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
-    if (!d) return;
-    $('audioLiveDeviceId').value = idDispositivo;
-    $('audioLiveSubtitle').textContent = `${d.Nombre_Equipo || idDispositivo}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}`;
-    openModal('modalAudioLive');
-    await _audioLiveRefrescar();
-    if (_audioLivePollTimer) clearInterval(_audioLivePollTimer);
-    _audioLivePollTimer = setInterval(_audioLiveRefrescar, 10 * 1000);
-  }
 
   async function _audioLiveRefrescar() {
     const id = $('audioLiveDeviceId')?.value;
@@ -31544,19 +30819,6 @@ const MOS = (() => {
   }
 
   // Compat con código viejo (renderDispositivos eliminado)
-  async function toggleEstadoDispositivo(id, nuevoEstado) {
-    const d = cfgData.dispositivos.find(x => x.ID_Dispositivo === id);
-    if (d) d.Estado = nuevoEstado;
-    renderInfra();
-    try {
-      await API.post('actualizarDispositivo', { ID_Dispositivo: id, Estado: nuevoEstado });
-      toast(nuevoEstado === 'ACTIVO' ? 'Dispositivo activado' : 'Dispositivo desactivado', 'ok');
-    } catch(e) {
-      if (d) d.Estado = nuevoEstado === 'ACTIVO' ? 'INACTIVO' : 'ACTIVO';
-      renderInfra();
-      toast(e.message || 'Error', 'error');
-    }
-  }
 
   // ── PWA Install ──────────────────────────────────────────────
   let _installPrompt = null;
@@ -32471,7 +31733,7 @@ const MOS = (() => {
     const auth = await pedirAuth({ accion: 'TRIBUTARIO_OCR_MASIVO', refDocumento: _tribState.mes + '/' + _tribState.anio });
     if (!auth) return;
     if (!await _modalConfirm('¿Procesar con Claude todas las fotos de boletas/facturas SIN OCR del mes ' + _tribState.mes + '/' + _tribState.anio + '?\n\nPuede tardar 1-2 minutos (30 guías ≈ 60s).', { warning: true, titulo: 'OCR masivo del mes', okText: 'Procesar' })) return;
-    toast('🤖 Procesando OCR del mes... esperá 1-2 min', 'info');
+    toast('🤖 Procesando OCR del mes... espera 1-2 min', 'info');
     try {
       const res = await API.post('tribOCRMasivo', {
         mes: _tribState.mes, anio: _tribState.anio, soloSinProcesar: true
@@ -32759,13 +32021,6 @@ const MOS = (() => {
 
   // AbortController activo por petición (B1)
   let _liqAbortCtrl = null;
-  function _liqAbortPrevious() {
-    if (_liqAbortCtrl) {
-      try { _liqAbortCtrl.abort(); } catch(_){}
-    }
-    _liqAbortCtrl = new AbortController();
-    return _liqAbortCtrl.signal;
-  }
 
   const _liqState = {
     tab: 'pendientes',
@@ -32781,15 +32036,6 @@ const MOS = (() => {
   // ── Cache localStorage por pestaña ──────────────────────────
   const LIQ_CACHE_PFX = 'mos_liq_';
   const LIQ_CACHE_TTL = 30 * 60 * 1000;
-  function _liqLoadCache(key) {
-    try {
-      const raw = localStorage.getItem(LIQ_CACHE_PFX + key);
-      if (!raw) return null;
-      const p = JSON.parse(raw);
-      if (Date.now() - (p.ts || 0) > LIQ_CACHE_TTL) return null;
-      return p.data;
-    } catch { return null; }
-  }
   function _liqSaveCache(key, data) {
     // [v2.41.72-B8] Usar helper con toast si falla quota/private mode
     _liqLsSet(LIQ_CACHE_PFX + key, JSON.stringify({ ts: Date.now(), data }));
@@ -32868,13 +32114,6 @@ const MOS = (() => {
   // LIQUIDACIONES v2 — implementación
   // ════════════════════════════════════════════════════════════
   function _liqMoney(n) { return 'S/' + (parseFloat(n) || 0).toFixed(2); }
-  function _liqFmtFecha(s) {
-    if (!s) return '';
-    try {
-      const d = new Date(String(s).substring(0, 10) + 'T12:00:00');
-      return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
-    } catch { return String(s); }
-  }
   function _liqFmtFechaLarga(s) {
     if (!s) return '';
     try {
@@ -33037,25 +32276,6 @@ const MOS = (() => {
   }
 
   // Cargar más días: extender el rango hacia atrás (acumular días viejos)
-  async function liqCargarMasDias() {
-    _liqSfx('tap');
-    const hoy = _liqHoy();
-    const diasActuales = _diff(_liqState.desde, _liqState.hasta);
-    const nuevoDesde = diasActuales < 7  ? _liqOffset(hoy, -13)
-                     : diasActuales < 20 ? _liqOffset(hoy, -29)
-                     :                     _liqOffset(hoy, -59);
-    // [B3] Validar rango antes de fetch
-    if (!_liqValidarRango(nuevoDesde, hoy)) {
-      toast('📅 Rango inválido', 'warn', 3000);
-      return;
-    }
-    _liqState.desde = nuevoDesde;
-    _liqState.hasta = hoy;
-    // [B4] Invalidar cache del rango anterior para forzar fresh
-    try { _liqCacheClear(); } catch(_){}
-    await liqLoadCurrent();
-    toast(`📅 Mostrando últimos ${_diff(nuevoDesde, hoy) + 1} días`, 'info');
-  }
   function _diff(d1, d2) {
     try {
       const a = new Date(d1 + 'T12:00:00').getTime();
@@ -33167,26 +32387,9 @@ const MOS = (() => {
       liqLoadCurrent();
     }
   }
-  function liqSetRangoPreset(preset) { _liqRangoPreset(preset); }
   function _liqSyncRangoInputs() {
     const d = $('liqRangoDesde'); if (d) d.value = _liqState.desde || '';
     const h = $('liqRangoHasta'); if (h) h.value = _liqState.hasta || '';
-  }
-  function _liqLeerRangoInputs() {
-    const d = $('liqRangoDesde');
-    const h = $('liqRangoHasta');
-    // [v2.41.72-B3] Validar formato + orden antes de aceptar
-    const dv = d && d.value;
-    const hv = h && h.value;
-    if (dv && hv && !_liqValidarRango(dv, hv)) {
-      toast('📅 Rango inválido (desde > hasta o formato incorrecto)', 'warn', 4000);
-      // Restaurar valores previos en los inputs
-      _liqSyncRangoInputs();
-      return false;
-    }
-    if (dv) _liqState.desde = dv;
-    if (hv) _liqState.hasta = hv;
-    return true;
   }
 
   // Helper: race API.get contra un timeout para que la UI no se quede eternamente cargando
@@ -34733,69 +33936,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     await _liqEjecutarAnular(d.idPago, auth.clave);
   }
 
-  function _liqAbrirModalAnular(d) {
-    let modal = document.getElementById('modalLiqAnular');
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'modalLiqAnular';
-      modal.className = 'modal-overlay';
-      // [v2.41.70] Estilos inline garantizan que el modal aparezca POR ENCIMA
-      // del nav inferior (z-30) y de cualquier otro overlay. Sin esto, modal
-      // quedaba en z-0 y el nav lo tapaba.
-      // [v2.41.73-B9] z-index DINÁMICO: lee el z-index efectivo del modal
-      // padre visible y suma 100. Antes era 9500 fijo → si ya había un
-      // overlay z=9600 (ej. impresora), el modal anular quedaba detrás.
-      let zParent = 9400;
-      try {
-        const visibles = Array.from(document.querySelectorAll('.modal-backdrop, [class*="modal-overlay"]'))
-          .filter(el => el !== modal && (el.classList.contains('open') || (el.style.display && el.style.display !== 'none')));
-        visibles.forEach(el => {
-          const z = parseInt(window.getComputedStyle(el).zIndex, 10);
-          if (!isNaN(z) && z > zParent) zParent = z;
-        });
-      } catch(_){}
-      const zDinamico = Math.max(9500, zParent + 100);
-      modal.style.cssText = 'position:fixed;inset:0;background:rgba(2,6,23,.85);' +
-        'z-index:' + zDinamico + ';display:flex;align-items:center;justify-content:center;' +
-        'padding:16px;backdrop-filter:blur(4px);';
-      modal.onclick = (ev) => { if (ev.target === modal) _liqCerrarModalAnular(); };
-      document.body.appendChild(modal);
-    }
-    // Si ya existía oculto, mostrar
-    modal.style.display = 'flex';
-    modal.classList.remove('hidden');
-    modal.innerHTML = `
-      <div class="modal-box" onclick="event.stopPropagation()" style="max-width:380px;padding:0;overflow:hidden;background:#0f172a;border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.6);width:100%">
-        <div style="background:linear-gradient(135deg,#7f1d1d,#450a0a);padding:18px 20px;text-align:center;color:#fff">
-          <div style="font-size:28px;margin-bottom:6px">↺</div>
-          <div style="font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.04em">Anular pago</div>
-          <div style="font-size:11px;opacity:.8;margin-top:4px">${_esc(d.idPago)}</div>
-        </div>
-        <div style="padding:16px 20px">
-          <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);border-radius:10px;padding:10px 12px;margin-bottom:14px">
-            <div style="font-weight:800;color:#f1f5f9;font-size:13px">${_esc(d.nombre)}</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:2px">${d.cantidadDias} día(s) · <span style="color:#fbbf24;font-weight:800">${_liqMoney(d.total)}</span></div>
-            <div style="font-size:10px;color:#fca5a5;margin-top:6px">⚠ Los días volverán a Pendientes y la guía se anulará.</div>
-          </div>
-          <label style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">
-            🔑 Clave admin (8 dígitos)
-          </label>
-          <input id="liqAnularInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off"
-                 placeholder="••••••••"
-                 style="width:100%;padding:14px;border:2px solid #334155;border-radius:10px;background:#0f172a;color:#f1f5f9;font-size:22px;text-align:center;letter-spacing:.5em;font-family:ui-monospace,monospace;font-weight:900"
-                 oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,8); if(this.value.length===8) MOS._liqConfirmarAnular();">
-          <div id="liqAnularError" style="font-size:11px;color:#fca5a5;margin-top:8px;min-height:14px;text-align:center"></div>
-          <div style="display:flex;gap:10px;margin-top:14px">
-            <button onclick="MOS._liqCerrarModalAnular()" class="cj-btn cj-btn-secondary" style="flex:1;padding:12px;border-radius:10px;border:none;background:#334155;color:#cbd5e1;font-weight:900;cursor:pointer">Cancelar</button>
-            <button id="liqAnularOk" onclick="MOS._liqConfirmarAnular()" class="cj-btn cj-btn-primary" style="flex:1;padding:12px;border-radius:10px;border:none;background:linear-gradient(135deg,#dc2626,#7f1d1d);color:#fff;font-weight:900;cursor:pointer">
-              ↺ Anular
-            </button>
-          </div>
-        </div>
-      </div>`;
-    modal.classList.remove('hidden');
-    setTimeout(() => { try { document.getElementById('liqAnularInput')?.focus(); } catch(_){} }, 50);
-  }
   function _liqCerrarModalAnular() {
     const m = document.getElementById('modalLiqAnular');
     if (m) { m.style.display = 'none'; m.classList.add('hidden'); }
@@ -34959,29 +34099,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
-  async function _liqMigrar(ev) {
-    if (ev) _liqRipple(ev);
-    try {
-      const res = await API.post('migrarLiquidacionesV2', {});
-      _liqSfx('success');
-      toast(res.msg || `✓ Migrados ${res.migradas || 0} días`, 'ok');
-      liqLoadCurrent();
-    } catch(e) {
-      _liqSfx('error');
-      toast('Error migrando: ' + e.message, 'error');
-    }
-  }
 
   // Helper de impresión rápida (legacy compat — no se usa en v2)
-  function liqVerDetallePend() {}
-  function liqEmitirIndividual() {}
-  function liqEmitirTodos() {}
-  function liqMarcarPagada() {}
-  function liqAnular() {}
-  function liqImprimir() {}
-  function liqVerTicket() {}
-  function liqAnularPersona() {}
-  function liqAnularDia() {}
   function liqCerrarDetalle() { closeModal('modalLiqDetalle'); }
 
   // ════════════════════════════════════════════════════════════
@@ -36666,11 +35785,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const m = $('modalFinGasto'); if (m) { m.classList.remove('hidden'); m.classList.add('open'); }
   }
 
-  function finAbrirModalJornada() {
-    const f = $('finFecha')?.value || today();
-    const inp = $('finJorFecha'); if (inp) inp.value = f;
-    const m = $('modalFinJornada'); if (m) { m.classList.remove('hidden'); m.classList.add('open'); }
-  }
 
   function cerrarModalFin(id) {
     const m = $(id); if (m) { m.classList.add('hidden'); m.classList.remove('open'); }
@@ -36937,7 +36051,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // Alias por compatibilidad con código viejo
-  const finEliminarJornada = finVetarPago;
 
   // Rehabilita el veto: animación de "rejas suben" del overlay vetada,
   // restaura monto, recalcula KPIs locales, y persiste en GAS.
@@ -37229,30 +36342,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     setTimeout(() => { card.style.boxShadow = ''; }, 800);
   }
 
-  async function finImportarCajas() {
-    const fecha = $('finFecha')?.value || today();
-    try {
-      const res = await API.post('importarJornadasDesdeCajas', {
-        fecha, montoDefault: 0, registradoPor: S.session?.nombre || ''
-      });
-      toast(res.importados > 0
-        ? res.importados + ' jornada(s) importada(s) desde cajas'
-        : 'Sin cajas nuevas para importar este día', 'ok');
-      if (res.importados > 0) finCargar();
-    } catch(e) { toast('Error importando cajas: ' + e.message, 'error'); }
-  }
 
   // ── Editor de costo inline (desde alerta sin costo) ─────────
   let _finEditSku = null;
 
-  function finEditarCostoSku(sku) {
-    _finEditSku = sku;
-    _setText('finCostoEditorSku', sku);
-    const inp = $('finCostoEditorInput');
-    if (inp) { inp.value = ''; }
-    $('finCostoEditorWrap')?.classList.remove('hidden');
-    inp?.focus();
-  }
 
   function finCerrarCostoEditor() {
     _finEditSku = null;
@@ -37339,17 +36432,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }, 100);
   }
 
-  async function finGuardarCostoSku() {
-    if (!_finEditSku) return;
-    const costo = parseFloat($('finCostoEditorInput')?.value);
-    if (!costo || costo <= 0) { toast('Ingresa un costo válido', 'error'); return; }
-    try {
-      await API.post('actualizarCostoPorSku', { sku: _finEditSku, precioCosto: costo });
-      finCerrarCostoEditor();
-      toast('Costo actualizado', 'ok');
-      finCargar();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
-  }
 
   // ── Modal Productos Vendidos ─────────────────────────────────
   let _finProdFiltroSinCosto = false;
@@ -37865,12 +36947,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return 'badge-rol-default';
   }
 
-  async function loadEvaluacion() {
-    const lbl = $('evalFechaLbl');
-    if (lbl) lbl.textContent = 'Hoy ' + new Date(_evalState.fecha + 'T00:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' });
-    await refreshEvaluacion();
-    _ensureLiqDefaults();
-  }
 
   async function refreshEvaluacion() {
     const list = $('evalListPersonal');
@@ -37885,13 +36961,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
-  function evalSetApp(app) {
-    _evalState.appFilter = app;
-    document.querySelectorAll('#evalAppFilter .eval-pill').forEach(b => {
-      b.classList.toggle('active', b.dataset.app === app);
-    });
-    _renderEvalLista();
-  }
 
   function _renderEvalLista() {
     const list = $('evalListPersonal');
@@ -39223,26 +38292,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // ── Config de metas y bonos ──────────────────────────────────
-  async function abrirConfigEval() {
-    openModal('modalConfigEval');
-    try {
-      const res = await API.get('getConfig', {});
-      const cfg = res || {};
-      $('cfgMetaCajero').value     = cfg.evalMetaCajero     || 2000;
-      $('cfgMetaEnvasador').value  = cfg.evalMetaEnvasador  || 500;
-      $('cfgMetaAlmacenero').value = cfg.evalMetaAlmacenero || 15;
-      $('cfgMetaAuditorias').value = cfg.evalMetaAuditorias || 30;
-      $('cfgBonoMetaBase').value   = cfg.evalBonoMetaBase   || 8;
-      $('cfgBonoMetaDoble').value  = cfg.evalBonoMetaDoble  || 15;
-    } catch(e) {
-      $('cfgMetaCajero').value = 2000;
-      $('cfgMetaEnvasador').value = 500;
-      $('cfgMetaAlmacenero').value = 15;
-      $('cfgMetaAuditorias').value = 30;
-      $('cfgBonoMetaBase').value = 8;
-      $('cfgBonoMetaDoble').value = 15;
-    }
-  }
 
   async function guardarConfigEval() {
     const btn = $('cfgEvalSaveBtn');
@@ -39269,14 +38318,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
-  function abrirLiquidacion() {
-    const id = $('liqPersona')?.value;
-    const fechaInicio = $('liqFechaInicio')?.value;
-    if (!id) { toast('Elige una persona', 'error'); return; }
-    if (!fechaInicio) { toast('Elige fecha inicio (lunes)', 'error'); return; }
-    const url = `liquidacion.html?id=${encodeURIComponent(id)}&inicio=${encodeURIComponent(fechaInicio)}`;
-    window.open(url, '_blank');
-  }
 
   // ============================================================
   // ── MODAL Producto-Proveedor (cotización) ─────────────────────
@@ -39567,16 +38608,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // Refresh silencioso periódico
   let _promoRefreshTimer = null;
-  function _startPromoRefresh() {
-    if (_promoRefreshTimer) clearInterval(_promoRefreshTimer);
-    _promoRefreshTimer = setInterval(() => {
-      // Solo refresh si la vista está activa
-      if (S.currentView === 'promociones') loadPromociones().catch(() => {});
-    }, 120000);
-  }
 
   // Compat: si alguien llama el viejo método, redirige a nav
-  function abrirModalPromociones() { nav('promociones'); }
 
   function _renderPromoLista() {
     const cont = $('promoLista');
@@ -40919,7 +39952,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try {
       const r = await API.zona.panel({ zona: S.zonaActual });
       if (!r || r.ok === false) return;   // silencioso: no romper la vista por un fallo de polling
-      // El admin pudo haber cambiado de zona / abierto un modal mientras esperábamos → descartar.
+      // El admin pudo haber cambiado de zona / abierto un modal mientras esperabamos → descartar.
       if (S.view !== 'zona' || _zonaHayEdicionAbierta()) return;
       const data = r.data || r;
       const items = Array.isArray(data.items) ? data.items : (Array.isArray(data.productos) ? data.productos : (Array.isArray(data) ? data : []));
@@ -41843,21 +40876,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
   // Compat / re-tap manual: recarga proveedores de un sku puntual (fuerza refetch) y repinta su bloque.
-  async function zonaToggleProveedores(sku) {
-    _zonaSfx('tick'); _zonaVibrar(10);
-    if (!S._zonaProvCache) S._zonaProvCache = {};
-    delete S._zonaProvCache[sku];
-    try {
-      const r = await API.zona.proveedores({ sku });
-      const data = (r && r.data) || r || {};
-      const provs = (data && data.proveedores) || {};
-      S._zonaProvCache[sku] = Array.isArray(provs[sku]) ? provs[sku] : [];
-      // Buscar por data-sku (no por id, para evitar mismatch de escape entre _esc/_zonaEsc en skus raros).
-      Array.prototype.slice.call(document.querySelectorAll('.zona-prov[data-sku]')).forEach(n => {
-        if (n.getAttribute('data-sku') === String(sku)) n.innerHTML = _zonaProvListHtml(S._zonaProvCache[sku]);
-      });
-    } catch (_) {}
-  }
 
   // [MEJORA 5] Renderiza la fila de un código dentro del disclosure (lista + editar por código).
   // [192] Fila minimal por código: SOLO el código + su stock + input set-absoluto. SIN nombres/descripciones
@@ -42587,7 +41605,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     } finally { S._zonaPrintBusy = false; }
   }
-  function zonaImprimirTicket() { return _zonaImprimirFlow('ticket_diario', 'Ticket del día'); }
   function zonaImprimirLista()  { return _zonaImprimirFlow('lista_compras', 'Lista compras'); }
 
   // ════════════ [P1d] VISTA PICKUP ACUMULADO POR ZONA + HISTORIAL POR DÍA ════════════
@@ -43496,13 +42513,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
   // Etiqueta legible de antigüedad (espeja me._edad_lbl del backend).
-  function _trasEdadLbl(seg) {
-    seg = _zonaNum(seg);
-    if (seg < 60)    return 'recién';
-    if (seg < 3600)  return 'hace ' + Math.floor(seg/60) + ' min';
-    if (seg < 86400) return 'hace ' + Math.floor(seg/3600) + ' h';
-    return 'hace ' + Math.floor(seg/86400) + ' d';
-  }
 
   // ── [Reparación #3] Normalización: 3 universos en una lista uniforme, con `origen`. ─────────────────────
   //   • WAREHOUSE pendiente  = despacho de almacén (wh.guias SALIDA_ZONA) aún sin recibir → estado PENDIENTE.
@@ -43624,7 +42634,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     Promise.all([_trasCargarBadge(), _trasCargarResumen(), _trasCargarInternas()]).then(() => { _trasPintarBadge(); _trasRenderGuias(); _trasPoblarOperarios(); });
   }
   function trasCerrarGuias() { closeModal('modalZonaGuias'); S._guiaSel = null; }
-  function trasRefrescarGuias() { _zonaSfx('tick'); _zonaVibrar(15); trasAbrirGuias(); }
 
   // Muestra la vista lista (oculta la de detalle) + repinta.
   function _trasMostrarLista() {
@@ -43862,33 +42871,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // ── "✓ Verificado": el admin marca la guía pendiente como revisada/COMPLETA (optimista + idempotente). ───
   // MOS no escanea; "verificado" registra la guía aceptándola tal cual (escaneado = enviado → COMPLETO).
-  async function trasMarcarVerificado(idGuia) {
-    idGuia = String(idGuia || '');
-    if (!idGuia) return;
-    const btn = $('trasVerifBtn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Verificando…'; }
-    try {
-      // jalar las líneas enviadas para aceptar la guía tal cual (escaneado = enviado).
-      const rg = await API.zona.trasladoGuia({ idGuia });
-      const dg = (rg && rg.data) || rg || {};
-      const lineas = Array.isArray(dg.lineas) ? dg.lineas : [];
-      const escaneados = lineas.map(l => ({ codBarra: String(l.codBarra), cantidad: _zonaNum(l.enviado) }))
-                               .filter(e => e.codBarra && e.cantidad > 0);
-      const r = await API.zona.trasladoCerrar({ idGuia, escaneados });
-      if (!r || r.ok === false) throw new Error((r && r.error) || 'No se pudo verificar');
-      _zonaSfx('ok'); _zonaVibrar([80,60,80]);
-      toast(r.dedup ? 'Esta guía ya estaba verificada' : 'Guía marcada como verificada', 'success');
-      // refrescar fuentes y volver a la lista.
-      await Promise.all([_trasCargarBadge(), _trasCargarResumen()]);
-      _trasPintarBadge();
-      _trasMostrarLista();
-      _trasPoblarOperarios();
-    } catch (e) {
-      _zonaSfx('error'); _zonaVibrar([120,40,120]);
-      toast('No se pudo verificar: ' + (e && (e.message || e)), 'error');
-      if (btn) { btn.disabled = false; btn.textContent = '✓ Marcar verificado'; }
-    }
-  }
 
   // ══════════════════════════════════════════════════════════════
   // FACTURACIÓN CPE — 100% Supabase (fac.* vía wrappers mos.fac_*)
@@ -44348,6 +43330,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // ── PUBLIC API ───────────────────────────────────────────────
   return {
+    toast,
     init, nav, refresh, fabAction, iconBusy,
     // Facturación CPE (100% Supabase)
     setFacTab, facSetTipo, facDocInput, facAddItem, facDelItem, facItemInput,
@@ -44369,26 +43352,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex, zonaKardexTab,
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
-    zonaImprimirTicket, zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
+    zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
     zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
     // [RIZ #4] proveedores reales por canónico (lazy-load por card en ALMACEN)
-    zonaToggleProveedores,
     // [RIZ · TRASLADO VERIFICADO] Guías — solo mostrar (escaneo de recepción vive en ME)
-    trasAbrirGuias, trasCerrarGuias, trasRefrescarGuias,
-    trasGuiasFiltrar, trasGuiasSetOperario, trasGuiasVolver,
-    trasVerGuia, trasMarcarVerificado,
-    // [v2.41.76] Cron diagnóstico
+    trasAbrirGuias, trasCerrarGuias, trasGuiasFiltrar, trasGuiasSetOperario, trasGuiasVolver,
+    trasVerGuia, // [v2.41.76] Cron diagnóstico
     abrirCronStatus, cronReinstalarTrigger, cronEjecutarAhora,
     // [v2.41.84] Auditoría admin viewer
     abrirAuditoriaAdmin, _audAdmExportCSV,
     // [v2.41.85] Proyección — roadmap estratégico
     abrirProyeccion, _proyToggle, _proyResetEstado, _proyExportar,
-    openConfig, saveConfig, testConnection, closeModal, openEcoModal,
-    filterCatalogo, togglePresentaciones,
-    _catCardClick, _catSfx, _catRipple,
+    saveConfig, testConnection, closeModal, openEcoModal,
+    filterCatalogo, _catCardClick, _catSfx, _catRipple,
     verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnBuscarParaCorregir, pnSeleccionarParaCorregir,
@@ -44402,7 +43381,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     pnSetTipo, pnAutogenBarcode, pnBuscarBase, pnSeleccionarBase,
     _pnCheckDuplicadoCodigo, _pnRecalcularMargen, _pnPrellenaEquiv,
     pnToggleDuplicar, pnBuscarParaDuplicar, pnSeleccionarParaDuplicar,
-    abrirModalPromociones, loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
+    loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
     promoSetTipo, promoSetModo, promoQuickFill, promoActualizarEjemplo, promoBuscarBase, promoSeleccionarBase,
     promoGuardar, promoEliminar,
     promoComboBuscar, promoComboAgregar, promoComboCerrarRes,
@@ -44429,8 +43408,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [RONDA 5 · purga] exports equiv embebidas eliminados
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
     // Evaluación de personal
-    loadEvaluacion, refreshEvaluacion, evalSetApp,
-    abrirAuditar, cerrarAuditar, guardarAuditoria,
+    refreshEvaluacion, abrirAuditar, cerrarAuditar, guardarAuditoria,
     auditToggleCheck, auditCheckAll, auditToggle, imprimirLiquidacionDia,
     _auditSetAjuste, _auditAjusteInput,
     _liqLoadPrinters, _liqEnviarPrint, _liqAvisarImpresoraNoLista,
@@ -44443,20 +43421,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     checklistResetRol, guardarChecklists,
     _checklistEditItem, _checklistDelItem,
     _checklistDragStart, _checklistDragOver, _checklistDrop, _checklistDragEnd,
-    updateRateSlider, abrirConfigEval, guardarConfigEval,
-    renderConfigEvalPanel, guardarConfigEvalPanel,
-    abrirLiquidacion,
-
+    updateRateSlider, guardarConfigEval,
     setAlmTab,
     // [v2.43.29] Panel salud stock
     saludLoadIfNeeded, saludRefresh, saludReconciliarUno, saludReconciliarMasivo,
     // [v2.43.30] Horarios apps + custom usuario
     abrirModalHorarioApp, abrirModalHorarioCustom, eliminarHorarioCustom,
-    cerrarModalHorario, _horToggleDia, _horGuardarModal, _horEliminarCustomDesdeModal,
+    cerrarModalHorario, _horGuardarModal, _horEliminarCustomDesdeModal,
     _horTogglePill, _horToggleEsp, _horResetABase,
     _mosCerrarBloqueoYsalir,
-    almLoadResumen, almRefreshResumen, almFiltrarStock, almRefreshCatalogo, almToggleStockExpand,
-    almLoadOps, almRefreshOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
+    almLoadResumen, almFiltrarStock, almToggleStockExpand,
+    almLoadOps, almRenderOps, almToggleOpExpand, almSetRangoOps,
     // [v2.41.99] Filtro solo ingresos
     almToggleFiltroIngreso,
     abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay, abrirFotoOverlay,
@@ -44473,7 +43448,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _abrirModalCostosUnificado, _renderModalCostosCompleto,
     // [v2.43.5] Exponer _opsBeep para callers inline desde template
     _opsBeep,
-    almLoadZonas, almRefreshZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
+    almLoadZonas, almAbrirStockDetalle, cerrarStockDetalle, almRefreshStockDetalle,
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
     pedidoQuitarItem, pedidoCambiarQty, guardarPedido,
@@ -44490,7 +43465,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     provProductoEditarStockMinMax,
     provRangeInput, provRangeChange,
     provEditarBulto,
-    provPedidoSetQty, provPedidoStep, provPedidoUsarSugerencia,
+    provPedidoSetQty, provPedidoUsarSugerencia,
     provAplicarTodasSugerencias, provAccionPedido,
     _provFabSelectorPick, _provFabSelectorCloseClick,
     carritoSetQty, carritoStep, carritoLimpiar, carritoAplicarSugerencias,
@@ -44529,17 +43504,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalEnviarPush, enviarPushUsuario,
     _persActualizarPreview, _persRandomColor, _persRandomPin, _persTogglePin, _persCompartirWhatsApp, _persSeleccionarColor,
     abrirModalSerieZona, guardarSerieZona, eliminarSerieZona, _serieActualizarPreview,
-    guardarPinEstacion, guardarPinWH,
     seg_consultarClave, seg_rotarManual, seg_cargarAuditoria, seg_ocultar,
     av_consultarClaveDesdeMenu,
     toggleVendedorME,
-    abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, toggleEstadoDispositivo,
-    eliminarDispositivo, aprobarDispositivo, aprobarDispositivoConNombre, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
+    abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, eliminarDispositivo, aprobarDispositivo, aprobarDispositivoConNombre, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
     abrirDetalleDispositivo, cerrarDetalleDispositivo, revocarDispositivoUUID, forzarWizardRemoto, forzarPushRemoto, verUltimaUbicacionDispositivo,
-    vincularEsteBrowser,
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
-    abrirModalAudioRouted, abrirEscuchaDispositivo, abrirEscuchaPorUsuario, abrirGpsPorUsuario,
-    _audioLiveIniciar, _audioLiveDetener,
+    abrirModalAudioRouted, _audioLiveIniciar, _audioLiveDetener,
     _audioFlotanteDetener, _audioFlotanteIniciar,
     abrirModalGps, gpsCargar,
     // ESPÍA
@@ -44554,7 +43525,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.45] Panel flotante de filtros (nuclear)
     _cerrarFiltroFloat, _limpiarYCerrar,
     // [v2.43.51] Purga catálogo (master)
-    abrirMenuPurgaGrupo, _cerrarKebab,
+    _cerrarKebab,
     // [v2.43.53] Kebab Master en header (Purgar + Log)
     abrirKebabMaster, _cerrarKebabMaster,
     // [v2.43.57] Espía V2 — WebRTC 4 streams con efectos premium
@@ -44570,9 +43541,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalFotoProducto, cerrarModalFotoProducto,
     _catFotoOnFileSelect, _catFotoTomar, _catFotoGuardar,
     // Cajas
-    loadCajas, toggleCajaDetail, toggleKpiVentas,
-    toggleKpiTickets, setTicketFiltroFecha, setTicketFiltroEstado, setTicketFiltroTipo,
-    confirmarAnularTicket, abrirModalMetodo, cerrarModalMetodo, aplicarCambioMetodo,
+    loadCajas, toggleCajaDetail, confirmarAnularTicket, abrirModalMetodo, cerrarModalMetodo, aplicarCambioMetodo,
     _selMetodo, _onMixtoInput, _renderModalMetodo,
     // Cajas modernizado
     cjDia, cjIrHoy, cjAbrirCalendario, cjCalNavMes, cjElegirFecha,
@@ -44580,7 +43549,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _cjTkAplicarRango, _cjTkHoyRango, _cjTkSetDoc, _cjTkSetZona,
     _cjRangoCalAbrir, _cjRangoCalNavMes, _cjRangoCalPick, cjAbrirTurno,
     cjCerrarCajaForzado,
-    cjScrollToCaja, cjModoTV,
+    cjModoTV,
     _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,
     // [v40.4] Cobro asignado de créditos — mano de cartas
     cjRepartirMano, cjCerrarMesa,
@@ -44618,20 +43587,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     seleccionarUsuario, loginVolver, confirmarPin, logout, lockScreen, _np, _dismissWelcome,
     syncApp, applyPendingUpdate,
     // Finanzas
-    finCargar, finDia, finIrHoy, finAbrirModalGasto, finAbrirModalJornada, finGuardarGasto,
+    finCargar, finDia, finIrHoy, finAbrirModalGasto, finGuardarGasto,
     finAbrirCalendario, finCalNavMes, finElegirFecha, finIrAFecha,
-    finGuardarJornada, finEliminarGasto, finEliminarJornada, finVetarPago, finRehabilitarPago, finBloquearUsuario, finLiberarDispositivosUsuario, finImportarCajas,
-    cerrarModalFin,
-    finEditarCostoSku, finCerrarCostoEditor, finGuardarCostoSku,
-    finAbrirEditorMargenDefault, finCerrarEditorMargenDefault, finGuardarMargenDefault,
+    finGuardarJornada, finEliminarGasto, finVetarPago, finRehabilitarPago, finBloquearUsuario, finLiberarDispositivosUsuario, cerrarModalFin,
+    finCerrarCostoEditor, finAbrirEditorMargenDefault, finCerrarEditorMargenDefault, finGuardarMargenDefault,
     // Liquidaciones v2
-    liqOpen, liqClose, liqSetTab, liqRefresh, liqSetRangoPreset,
-    liqCargarMasDias,
-    liqAbrirConfirmacion, liqConfirmarPago,
+    liqOpen, liqClose, liqSetTab, liqRefresh, liqAbrirConfirmacion, liqConfirmarPago,
     liqReimprimirPago, liqAnularPago,
     _liqCerrarModalAnular, _liqConfirmarAnular,
     _liqTogglePersona, _liqToggleDia, _liqToggleAll,
-    _liqEditarDia, _liqAbrirPagoDet, _liqMigrar, _liqBackfillDia,
+    _liqEditarDia, _liqAbrirPagoDet, _liqBackfillDia,
     // [v2.41.31] Vetar/desvetar inline
     _liqVetarDia, _liqDesvetarDia, _liqToggleVetadasPanel,
     // [v2.41.74] Confirmación, preview ticket, selección global, rango presets
@@ -44644,9 +43609,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.38] Filtro de personas
     _liqToggleFiltroPersona, _liqLimpiarFiltroPersonas,
     // Legacy stubs (no-op)
-    liqVerDetallePend, liqEmitirIndividual, liqEmitirTodos,
-    liqAnularPersona, liqAnularDia,
-    liqVerTicket, liqMarcarPagada, liqAnular, liqImprimir, liqCerrarDetalle,
+    liqCerrarDetalle,
     // Finanzas — modales detalle
     finAbrirModalProductos, finToggleFiltroSinCosto,
     finEditarCostoProd, finCerrarCostoProd, finGuardarCostoProd,

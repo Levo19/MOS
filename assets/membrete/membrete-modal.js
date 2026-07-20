@@ -282,6 +282,22 @@
   };
 
   // ── TOAST ────────────────────────────────────────────────────
+  // [quirúrgico 2026-07-19] Reemplazo de confirm() nativo (prohibido por directriz):
+  // overlay propio ES5 con Promise<boolean>. Mismo look del asset.
+  function _confirmMini(msg) {
+    return new Promise(function(resolve) {
+      var ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(2,6,23,.78);display:flex;align-items:center;justify-content:center;padding:20px';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#0f172a;border:1px solid #334155;border-radius:18px;max-width:440px;width:100%;padding:22px;color:#e2e8f0;font-size:14px;line-height:1.5;box-shadow:0 24px 60px rgba(0,0,0,.5)';
+      var txt = document.createElement('div'); txt.style.whiteSpace = 'pre-wrap'; txt.textContent = msg;
+      var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:10px;margin-top:18px';
+      function mk(label, bg, val) { var b = document.createElement('button'); b.textContent = label; b.style.cssText = 'flex:1;padding:12px;border:0;border-radius:12px;font-weight:800;cursor:pointer;background:' + bg + ';color:#fff'; b.onclick = function() { try { sonidos.click(); } catch(_) {} ov.remove(); resolve(val); }; return b; }
+      row.appendChild(mk('Cancelar', '#334155', false));
+      row.appendChild(mk('Aceptar', '#10b981', true));
+      card.appendChild(txt); card.appendChild(row); ov.appendChild(card); document.body.appendChild(ov);
+    });
+  }
   function _toast(msg, opts) {
     opts = opts || {};
     _injectCss();
@@ -889,7 +905,7 @@
         + '<div style="font-size:12px;color:#fca5a5;font-weight:700;letter-spacing:.5px">🆘 RESETEO DE EMERGENCIA</div>'
         + '<div style="font-size:11px;color:#94a3b8;line-height:1.4">'
         +   'Si los adhesivos están saliendo descuadrados, esto limpia drift y offset '
-        +   'a 0 (sin gastar etiquetas). Después podés re-medir desde cero.'
+        +   'a 0 (sin gastar etiquetas). Después puedes re-medir desde cero.'
         + '</div>'
         + '<button class="ms-btn ms-btn-warn" style="background:rgba(248,113,113,.15);border-color:rgba(248,113,113,.4);color:#fca5a5" onclick="MembreteSystem._calResetEmergencia()">🆘 Resetear drift y offset a 0</button>'
         + '<div style="height:1px;background:#1e293b;margin:6px 0"></div>'
@@ -913,11 +929,13 @@
     var msg = alertaMitadRollo
       + '🆕 ¿Realmente pusiste un ROLLO NUEVO?\n\n'
       + 'SI → gasta ~3 etiquetas calibrando GAP, resetea contador a 0 y guarda fecha.\n'
-      + 'NO → cancelá. Si solo querés re-medir GAP sin cambiar rollo, no uses este botón.';
-    if (!confirm(msg)) return;
-    calibrarRollo().then(function() {
-      setTimeout(_calRefrescar, 1500);
-      setTimeout(_rolloRefrescarBanners, 1700);
+      + 'NO → cancela. Si solo quieres re-medir GAP sin cambiar rollo, no uses este botón.';
+    _confirmMini(msg).then(function(ok) {
+      if (!ok) return;
+      calibrarRollo().then(function() {
+        setTimeout(_calRefrescar, 1500);
+        setTimeout(_rolloRefrescarBanners, 1700);
+      });
     });
   }
   function _calImprimirCals() {
@@ -926,7 +944,7 @@
   function _calAplicarMm() {
     var inp = document.getElementById('msCalMm');
     var mm = parseFloat(inp && inp.value);
-    if (isNaN(mm) || mm < 0) { _toast('⚠ Ingresá los mm de desvío', { error: true }); return; }
+    if (isNaN(mm) || mm < 0) { _toast('⚠ Ingresa los mm de desvío', { error: true }); return; }
     // [v2.43.161] Leer dirección seleccionada (default 'arriba').
     var dirInputs = document.querySelectorAll('input[name="msCalDir"]');
     var direccion = 'arriba';
@@ -938,12 +956,14 @@
     });
   }
   function _calResetEmergencia() {
-    if (!confirm('🆘 ¿Resetear drift y offset a 0?\n\n'
+    _confirmMini('🆘 ¿Resetear drift y offset a 0?\n\n'
       + 'Esto limpia la compensación acumulada que pueda estar rompiendo los adhesivos. '
-      + 'No gasta etiquetas. Después podés re-medir desde cero imprimiendo 10 calibradores.')) return;
-    resetearDriftEmergencia().then(function() {
-      setTimeout(_calRefrescar, 800);
-      setTimeout(_rolloRefrescarBanners, 1000);
+      + 'No gasta etiquetas. Después puedes re-medir desde cero imprimiendo 10 calibradores.').then(function(ok) {
+      if (!ok) return;
+      resetearDriftEmergencia().then(function() {
+        setTimeout(_calRefrescar, 800);
+        setTimeout(_rolloRefrescarBanners, 1000);
+      });
     });
   }
   function _calCerrar() {
@@ -2003,12 +2023,14 @@
   function _alertIgnorar() {
     var sel = _alertSeleccionados();
     if (sel.length === 0) return;
-    if (!confirm('¿Ignorar ' + sel.length + ' precio(s)? No volverán a aparecer hasta que cambien de nuevo.')) return;
-    var ids = sel.map(function(s) { return String(s.idAlerta); });
-    _api('ignorarMembreteMe', { idAlertas: ids }).then(function() {
-      sonidos.subjobDone();
-      _toast('🗑 ' + ids.length + ' alertas ignoradas');
-      _alertCargar();
+    _confirmMini('¿Ignorar ' + sel.length + ' precio(s)? No volverán a aparecer hasta que cambien de nuevo.').then(function(ok) {
+      if (!ok) return;
+      var ids = sel.map(function(s) { return String(s.idAlerta); });
+      _api('ignorarMembreteMe', { idAlertas: ids }).then(function() {
+        sonidos.subjobDone();
+        _toast('🗑 ' + ids.length + ' alertas ignoradas');
+        _alertCargar();
+      });
     });
   }
   function _alertCerrar() {
