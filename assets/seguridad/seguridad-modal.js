@@ -1238,10 +1238,40 @@
       var _app = (_config && _config.app) || (window.WH_CONFIG ? 'warehouseMos' : 'mosExpress');
       if (_app === 'MOS' && window.WH_CONFIG) _app = 'warehouseMos';
       _api('solicitarExtensionHorario', { idPersonal: _config.idPersonal(), minutos: 60, motivo: motivo, deviceId: _dev, app: _app }).then(function() {
-        _toast('✅ Solicitud de 1h enviada al admin', { success: true });
-        _fueraCerrar();
+        // [SEGURIDAD 535] Enviar la solicitud NO desbloquea: la pantalla se queda y un
+        // polling espera la aprobación del admin (forzar_horario_hasta futuro en el device).
+        _toast('📨 Solicitud enviada · espera la aprobación del admin', { success: true });
+        _fueraEsperarAprobacion(_dev);
       }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
     });
+  }
+  // [SEGURIDAD 535] Espera de aprobación remota SIN cerrar el bloqueo: pollea el device cada
+  // 5s; al ver forzar_horario_hasta (o desbloqueo temporal) con vigencia futura, guarda la
+  // extensión local y recién ahí libera la pantalla. Se detiene solo al cerrar/liberar.
+  var _fueraPollAprob = null;
+  function _fueraEsperarAprobacion(deviceId) {
+    if (_fueraPollAprob) return;
+    var hint = document.getElementById('segFueraLockHint');
+    if (hint) hint.textContent = '📨 Solicitud enviada · esperando aprobación del admin…';
+    var t0 = Date.now();
+    _fueraPollAprob = setInterval(function() {
+      if (!document.getElementById('segFueraOverlay')) { clearInterval(_fueraPollAprob); _fueraPollAprob = null; return; }
+      if (Date.now() - t0 > 15 * 60000) { clearInterval(_fueraPollAprob); _fueraPollAprob = null; return; }
+      if (!(window.DeviceAuth && typeof DeviceAuth.rpc === 'function')) return;
+      DeviceAuth.rpc('verificar_horario_dispositivo', { deviceId: deviceId }).then(function(r) {
+        var d = (r && r.data) ? r.data : r;
+        var hasta = (d && (d.forzarHorarioHasta || d.desbloqueoTemporalHasta)) || '';
+        var ms = Date.parse(hasta || '') - Date.now();
+        if (ms > 0) {
+          clearInterval(_fueraPollAprob); _fueraPollAprob = null;
+          try { window.ExtensorHorario && ExtensorHorario.guardarLocal && ExtensorHorario.guardarLocal(hasta); } catch(_) {}
+          try { sonidos.aprobado(); } catch(_) {}
+          try { navigator.vibrate && navigator.vibrate([15, 40, 15, 40, 30]); } catch(_) {}
+          _toast('🎉 ¡Extensión aprobada! +' + Math.max(1, Math.round(ms / 60000)) + ' min', { success: true });
+          horarioPermitido();
+        }
+      }).catch(function() {});
+    }, 5000);
   }
   function _fueraNotificarme(apertura) {
     sonidos.click();
@@ -1255,6 +1285,7 @@
     // (extensión activada / permitido confirmado) → también limpian el cache anti-F5.
     try { localStorage.removeItem(_fueraCacheKey()); } catch(_) {}
     if (_fueraTick) { clearInterval(_fueraTick); _fueraTick = null; }
+    if (_fueraPollAprob) { clearInterval(_fueraPollAprob); _fueraPollAprob = null; }
     var ov = document.getElementById('segFueraOverlay');
     if (ov) { ov.style.animation = 'seg-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
   }

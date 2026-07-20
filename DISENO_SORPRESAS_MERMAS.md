@@ -407,3 +407,40 @@ del carrito → script principal no parseaba → Vue no montaba → {{}} crudos 
 strings exactos. Ritual nuevo obligatorio ME: node --check de los 11 scripts inline + boot-check
 que asserta 0 mustaches (el check por tamaño de DOM era ciego a este fallo). Verificado: 2.8.223
 boot perfecto (screenshot pantalla de permisos), 0 GAS, 11 marcadores de features presentes.
+
+## BLOQUEO UNIFICADO + FIX SEGURIDAD F5 (2026-07-20 · asset + ME 2.8.225 · WH 2.13.465 · MOS 2.43.587)
+REPORTE dueño: (a) dos pantallas fuera-de-horario (modal seguridad descartable + "POS CERRADO"
+legacy) y al cerrar el modal no había cómo reabrir las opciones; (b) GRAVE: F5 desbloqueaba ME.
+CAUSA de (b): el modal era descartable, el enforcement es async fail-open (mint+RPC; ante error
+NO bloquea) y el overlay legacy —el bloqueador confiable— cedía al central desde 2.8.212 → tras
+F5, ventana abierta hasta el próximo check de 5min (o para siempre si el check fallaba).
+SOLUCIÓN (en el ASSET seguridad-modal → unifica ME+WH):
+- PANTALLA ÚNICA fullscreen NO-descartable (fuera "Cerrar y volver"): título por app (POS/
+  ALMACÉN CERRADO), horario, countdown vivo 30s, y CANDADO INTERACTIVO (idea dueño): 🔒 flotando,
+  wiggle al hover, click = vibración+sonido → 🔓 verde y panel desplegable con entrada escalonada
+  (🔑 in-situ · 📨 remoto 1h · 🔔 avisarme).
+- ANTI-F5: el veredicto se persiste (seg_fuera_cache_<app>) y enforceBoot() lo re-aplica AL
+  INSTANTE en cada carga evaluando la ventana con RELOJ LOCAL (soporta ventana que cruza
+  medianoche); se limpia solo al entrar a la ventana, activar extensión, o permitido del server
+  (horarioPermitido()). El tick del countdown auto-desbloquea al llegar la hora.
+- ME: enforceBoot tras init + el check periódico re-asegura la pantalla en cada pasada (fuera el
+  guard _meHorarioModalMostrado que la dejaba cerrada) + permitido limpia cache.
+- WH: enforceBoot tras init; mostrarAlmacenCerrado ya ruteaba al asset.
+Tests preparados: candado+no-descartable (eval en prod), anti-F5 con cache pre-sembrado en ME y
+WH (boot debe bloquear SIN red). Pendiente de correr al liberar el rate-limit de Pages.
+
+## REVISIÓN QUIRÚRGICA WH COMPLETA (2026-07-20 · WH 2.13.466-468)
+8 pasadas sobre 42,711 líneas (25 módulos + 11 js + index):
+ELIMINADO (alcanzabilidad verificada 1×1): módulo PrintNodeStatus, MÓDULO OpLog ENTERO (cola
+IndexedDB sin productores; consumidores repuntados), cluster ReabrirAdmin (fns+sheet; vivo =
+keypad GuiasView), panel aprobación preingresos (4 fns+sheet; vivo = detalle), abrirMas
+(sheet inexistente), verFotos/filtrarChip/jalarTodoPosible/toggleListaSombra(no-op)/
+toggleEstadoCarretaEdit/cambiarCarretasEdit/toggleTppFiltro, re-export instalarPWA.
+TOTAL: 2 módulos + 18 funciones + 2 sheets ≈ 500 líneas muertas fuera.
+VERIFICADO SANO: caminos de dinero (cierre guía con anti-doble+reconciliación en-vuelo;
+despacho con locks; envasado disabled+idempotente), 7/7 scripts inline sintaxis OK, 0 GAS en
+los 11 js + index, escrituras DOM sin guard = 0, timers leak = 0, 9 auxiliares auditados.
+FALSOS POSITIVOS documentados: exports usados solo desde templates generados (onclick con
+args), no-ops defensivos, módulos anidados (MermasV2 dentro del rango de SorpresasWH).
+Suites post-review 82/82 ✅. PENDIENTE (monitores armados): boot test WH ≥466 + los 3 tests de
+seguridad candado/anti-F5 cuando Pages libere el rate-limit.
