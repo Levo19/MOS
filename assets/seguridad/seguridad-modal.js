@@ -45,7 +45,7 @@
       '.seg-card-titulo{font-size:13px;font-weight:800;color:#f1f5f9}',
       '.seg-card-sub{font-size:11px;color:#94a3b8;margin-top:2px}',
       '.seg-card-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}',
-      '.seg-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}',
+      '.seg-card-actions{display:flex;gap:8px;flex-wrap:nowrap;margin-top:8px}.seg-card-actions .seg-btn{min-width:0;white-space:nowrap;padding-left:10px;padding-right:10px}',
       '.seg-chip{padding:3px 10px;border-radius:9999px;font-size:10px;font-weight:800;border:1px solid;display:inline-block}',
       '.seg-chip-info{color:#94a3b8;border-color:rgba(148,163,184,.35);background:rgba(148,163,184,.08)}',
       '.seg-chip-warn{color:#fbbf24;border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.12)}',
@@ -475,33 +475,60 @@
     if (!s) return { ico: '❔', label: '—' };
     return { ico: '🖥️', label: 'PC' };
   }
+  // [537] Identidad visual por app — el admin decide por APP, no por UUID (cada UUID
+  // pertenece a UNA app). El UUID corto queda como mini-texto de soporte.
+  function _appVisual(app) {
+    var a = String(app || '').toLowerCase();
+    if (a === 'mosexpress')   return { ico: '🛒', label: 'MosExpress',  color: '#34d399' };
+    if (a === 'warehousemos') return { ico: '📦', label: 'Warehouse',   color: '#fbbf24' };
+    if (a === 'mos' || a === 'proyectomos') return { ico: '🛡️', label: 'MOS Admin', color: '#818cf8' };
+    return { ico: '❔', label: (app || 'app desconocida'), color: '#94a3b8' };
+  }
+  // [537] "¿Quién estuvo/está en ese equipo?" — 1º snapshot de la solicitud (datos_extra @533),
+  // 2º contexto vivo del dispositivo (RPC 537), 3º "nunca se inició sesión".
+  function _lineaSesion(dx, dev) {
+    dx = dx || {}; dev = dev || {};
+    var quien  = String(dx.solicitante || dev.ultimaSesion || '').trim();
+    var estSes = String(dx.sesionEstado || '').toUpperCase();
+    var det    = String(dx.sesionDetalle || '').trim();
+    if (quien && quien.toUpperCase() !== 'DESCONOCIDO') {
+      // det ya viene autodescriptivo ("sesión ABIERTA · últ. actividad HH:MM") → no duplicar
+      if (estSes === 'ABIERTA')
+        return '🟢 <b>' + _esc(quien) + '</b> · ' + (det ? _esc(det) : 'sesión ABIERTA');
+      if (estSes === 'CERRADA')
+        return '⚪ Último: <b>' + _esc(quien) + '</b> · ' + (det ? _esc(det) : 'sesión cerrada');
+      return '👤 Último en el equipo: <b>' + _esc(quien) + '</b>'
+           + (dev.ultimaConexion ? ' · conex. ' + _humanizarFecha(dev.ultimaConexion) : '');
+    }
+    return '🆕 Nunca se inició sesión en este equipo';
+  }
   // [511] Tarjeta de solicitud de EXTENSIÓN DE HORARIO (buzón). El aprobador es cualquier admin MOS (sin
   // re-clave: la sesión MOS ya es admin). Concede 1h al UUID que la pidió (backend aprobar_extension_horario).
   function _renderExtCard(e) {
-    var nombre = _esc(e.idPersonal || 'operador');
-    var dev = '';
-    try { dev = String(e.idDispositivo || (e.datos_extra_json && e.datos_extra_json.deviceId) || '').substring(0, 8); } catch(_){}
-    var motivo = '';
-    try { var dx = e.datos_extra_json || {}; motivo = String(dx.motivo || ''); } catch(_){}
-    var appLbl = '';
-    try { appLbl = String((e.datos_extra_json && e.datos_extra_json.app) || ''); } catch(_){}
+    // [537 rediseño dueño] Jerarquía: APP (grande) → quién/sesión → motivo. El UUID solo
+    // como mini-texto de soporte (cada UUID pertenece a una única app).
+    var dx = e.datos_extra_json || {};
+    var dev8 = ''; try { dev8 = String(e.idDispositivo || dx.deviceId || '').substring(0, 8); } catch(_){}
+    var motivo = String(dx.motivo || '').trim();
+    var av = _appVisual((e.device && e.device.app) || dx.app);
+    var tipoEq = _tipoDispo(e.device && e.device.userAgent);
     return ''
-      + '<div class="seg-card" style="border-color:rgba(251,191,36,.45);background:linear-gradient(180deg,rgba(251,191,36,.06),transparent)">'
-      +   '<div class="seg-card-row">'
+      + '<div class="seg-card" style="display:block;border-color:rgba(251,191,36,.45);background:linear-gradient(180deg,rgba(251,191,36,.07),transparent)">'
+      +   '<div class="seg-card-row" style="align-items:flex-start">'
+      +     '<div style="font-size:30px;line-height:1;margin-top:2px">' + av.ico + '</div>'
       +     '<div style="flex:1;min-width:0">'
-      +       '<div class="seg-card-titulo">⏰ ' + nombre + ' <span style="font-weight:400;color:#fbbf24">· pide +1h</span></div>'
-      +       '<div class="seg-card-sub">'
-      +         (motivo ? '📝 ' + _esc(motivo) + ' · ' : '')
-      +         (appLbl ? _esc(appLbl) + ' · ' : '')
-      +         (dev ? 'nº ' + _esc(dev) + ' · ' : '')
-      +         _humanizarFecha(e.fecha)
-      +       '</div>'
+      +       '<div class="seg-card-titulo" style="color:' + av.color + '">' + _esc(av.label)
+      +         ' <span style="font-weight:400;color:#94a3b8;font-size:12px">· ' + tipoEq.ico + ' ' + tipoEq.label + '</span></div>'
+      +       '<div class="seg-card-sub" style="margin-top:3px">' + _lineaSesion(dx, e.device) + '</div>'
+      +       (motivo ? '<div class="seg-card-sub" style="margin-top:3px">📝 «' + _esc(motivo) + '»</div>' : '')
+      +       '<div style="font-size:10px;color:#64748b;margin-top:4px">' + _humanizarFecha(e.fecha)
+      +         (dev8 ? ' · equipo nº ' + _esc(dev8) : '') + '</div>'
       +     '</div>'
-      +     '<span class="seg-chip seg-chip-warn">EXTENSIÓN</span>'
+      +     '<span class="seg-chip seg-chip-warn" style="white-space:nowrap">⏰ +1 HORA</span>'
       +   '</div>'
-      +   '<div class="seg-card-actions">'
-      +     '<button class="seg-btn seg-btn-ok" onclick="SeguridadSystem._aprobarExt(\'' + _esc(e.idAlerta) + '\')">✓ Aprobar 1h</button>'
-      +     '<button class="seg-btn seg-btn-warn" onclick="SeguridadSystem._rechazarExt(\'' + _esc(e.idAlerta) + '\')">✗ Rechazar</button>'
+      +   '<div class="seg-card-actions" style="display:flex;gap:8px;margin-top:10px">'
+      +     '<button class="seg-btn seg-btn-ok" style="flex:2" onclick="SeguridadSystem._aprobarExt(\'' + _esc(e.idAlerta) + '\')">✓ Aprobar 1 hora</button>'
+      +     '<button class="seg-btn seg-btn-warn" style="flex:1" onclick="SeguridadSystem._rechazarExt(\'' + _esc(e.idAlerta) + '\')">✗ Rechazar</button>'
       +   '</div>'
       + '</div>';
   }
@@ -576,9 +603,9 @@
       var actions = '';
       if (est === 'PENDIENTE_APROBACION') {
         actions = ''
-          + '<button class="seg-btn seg-btn-ok" onclick="SeguridadSystem._aprobar(\'' + _esc(d.ID_Dispositivo) + '\')">✓ Aprobar</button>'
-          + '<button class="seg-btn seg-btn-info" onclick="SeguridadSystem._renombrar(\'' + _esc(d.ID_Dispositivo) + '\')">✏ Renombrar</button>'
-          + '<button class="seg-btn seg-btn-warn" onclick="SeguridadSystem._rechazar(\'' + _esc(d.ID_Dispositivo) + '\')">✗ Rechazar</button>';
+          + '<button class="seg-btn seg-btn-ok" style="flex:2" onclick="SeguridadSystem._aprobar(\'' + _esc(d.ID_Dispositivo) + '\')">✓ Aprobar</button>'
+          + '<button class="seg-btn seg-btn-info" style="flex:1" title="Renombrar" onclick="SeguridadSystem._renombrar(\'' + _esc(d.ID_Dispositivo) + '\')">✏</button>'
+          + '<button class="seg-btn seg-btn-warn" style="flex:1" onclick="SeguridadSystem._rechazar(\'' + _esc(d.ID_Dispositivo) + '\')">✗ Rechazar</button>';
       } else if (est === 'SUSPENDIDO') {
         actions = ''
           + '<button class="seg-btn seg-btn-ok" onclick="SeguridadSystem._reactivar(\'' + _esc(d.ID_Dispositivo) + '\')">✓ Reactivar</button>'
@@ -588,26 +615,24 @@
           + '<button class="seg-btn seg-btn-warn" onclick="SeguridadSystem._desbloqueoTemp(\'' + _esc(d.ID_Dispositivo) + '\',\'' + _esc(d.Nombre_Equipo || '') + '\')">🚨 Desbloqueo temp</button>';
       }
       var _tipo = _tipoDispo(d.User_Agent);
-      var _ultSes = String(d.Ultima_Sesion || '').trim();
-      var _appLbl = _esc(d.App || '—');
+      var _av = _appVisual(d.App);
+      var _lin = _lineaSesion({ solicitante: d.Ultima_Sesion }, { ultimaConexion: d.Ultima_Conexion });
+      var _chipTxt = est === 'PENDIENTE_APROBACION' ? '🆕 NUEVO EQUIPO' : est;
       return ''
-        + '<div class="seg-card">'
-        +   '<div class="seg-card-row">'
+        + '<div class="seg-card" style="display:block">'
+        +   '<div class="seg-card-row" style="align-items:flex-start">'
+        +     '<div style="font-size:30px;line-height:1;margin-top:2px">' + _av.ico + '</div>'
         +     '<div style="flex:1;min-width:0">'
-        +       '<div class="seg-card-titulo">'
-        +         _tipo.ico + ' '
-        +         _esc(d.Nombre_Equipo || 'Sin nombre')
-        +         ' <span style="font-weight:400;color:#94a3b8">· ' + _appLbl + ' · ' + _tipo.label + '</span>'
-        +       '</div>'
-        +       '<div class="seg-card-sub">'
-        +         (_ultSes ? '👤 ' + _esc(_ultSes) + ' · ' : '')
-        +         'nº ' + _esc(String(d.ID_Dispositivo || '').substring(0, 8))
-        +         ' · última: ' + _humanizarFecha(d.Ultima_Conexion) + (diasInactivo ? ' (' + diasInactivo + ')' : '')
-        +       '</div>'
+        +       '<div class="seg-card-titulo" style="color:' + _av.color + '">' + _esc(_av.label)
+        +         ' <span style="font-weight:400;color:#94a3b8;font-size:12px">· ' + _tipo.ico + ' ' + _tipo.label
+        +         (d.Nombre_Equipo ? ' · ' + _esc(d.Nombre_Equipo) : '') + '</span></div>'
+        +       '<div class="seg-card-sub" style="margin-top:3px">' + _lin + '</div>'
+        +       '<div style="font-size:10px;color:#64748b;margin-top:4px">última conexión ' + _humanizarFecha(d.Ultima_Conexion)
+        +         (diasInactivo ? ' (' + diasInactivo + ')' : '') + ' · equipo nº ' + _esc(String(d.ID_Dispositivo || '').substring(0, 8)) + '</div>'
         +     '</div>'
-        +     '<span class="seg-chip ' + chipCls + '">' + est + '</span>'
+        +     '<span class="seg-chip ' + chipCls + '" style="white-space:nowrap">' + _chipTxt + '</span>'
         +   '</div>'
-        +   '<div class="seg-card-actions">' + actions + '</div>'
+        +   '<div class="seg-card-actions" style="display:flex;gap:8px;margin-top:10px">' + actions + '</div>'
         + '</div>';
     }).join('');
   }

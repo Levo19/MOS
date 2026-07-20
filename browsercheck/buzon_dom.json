@@ -1,0 +1,1 @@
+{"url":"http://127.0.0.1:8124/index.html","waitMs":28000,"localStorage":{"mos_device_id":"7e57c1a0-de1c-4a7e-b0de-c47a10906474"},"evalAfter":"(async()=>{SeguridadSystem.abrirModalAlertas();await new Promise(r=>setTimeout(r,4500));const c=document.querySelector('#segAlertasBody .seg-card');return {html:c?c.outerHTML.slice(0,900):'NO CARD'};})()"}

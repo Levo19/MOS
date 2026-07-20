@@ -1,0 +1,1 @@
+{"url":"https://levo19.github.io/MosExpress/radio.html","waitMs":25000,"evalAfter":"(async()=>{await new Promise(r=>setTimeout(r,4000));const b=document.body.innerHTML;return {datosReales:b.includes('abierto todos los días'),cards:document.querySelectorAll('[class*=card]').length};})()","screenshot":"radio_prod2.png"}
