@@ -1,0 +1,1 @@
+{"url":"https://levo19.github.io/MosExpress/","waitMs":28000,"localStorage":{"mosexpress_deviceId":"7e57c1a0-de1c-4a7e-b0de-c47a10906476"},"evalAfter":"(async()=>{const raw=document.body.innerHTML.split('{'+'{').length-1;return {ver:(await (await fetch('version.json?b='+Date.now())).json()).version,mustachesCrudos:raw}})()","screenshot":"f223_me.png"}

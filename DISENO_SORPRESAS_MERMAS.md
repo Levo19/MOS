@@ -368,3 +368,42 @@ lo detectó antes de que un cajero lo sufriera → hotfix 2.8.220 inmediato.
 GAS restante (backlog pre-existente, NO de estos 3 días): ME conserva 4 constantes GAS con
 caminos legacy (API_URL propio, fallback apiPost de seguridad, MOS_URL device-auth legacy);
 MOS conserva 2 transportes (_fetch genérico + adhesivos gated) + turno.html?api=. WH = 0.
+
+## CAMPAÑA CERO-GAS ME+MOS (2026-07-19 noche · ME 2.8.221 · MOS 2.43.585 · WH 2.13.461)
+ME → CERO TOTAL (0 refs a script.google.com): API_URL neutralizada a sentinela (los ~40 guards
+ENLACE quedan idénticos; fetch residual = fail-closed), MOS_GAS_URL/MOS_URL eliminadas, turno.html
+sin api= (la página lo ignoraba — verificado: solo lee idCaja/autoprint), device-auth sin
+mosGasUrl, Membretes/Seguridad con apiPost fail-closed (migradas van por DeviceAuth.rpc/Edge).
+MOS → adhesivos 100% directo (flag mos_adhesivos_edge='1' + _adhGasRaw retirado fail-closed;
+probe REST adhesivo_plantillas_listar OK), turno opener sin api=. Boot MOS = cero fetches GAS.
+ASSET seguridad-modal: gasUrl opcional en extensión in-situ — cazado bug latente de WH (su purga
+quitó mosGasUrl → el flujo daba "Configuración incompleta"); repin en las 3 apps.
+PENDIENTE ÚNICO (Fase 3, coordinado, NO mecánico): mos._postMOS/_fetch — cutover por acción con
+apagado de sync Hoja→Supabase (setHorarioApp es GAS a propósito: enforcement lee la Hoja).
+VERIFICACIÓN FINAL: boots prod ×3 = "✅ CERO fetches a GAS" en WH, ME y MOS.
+
+## REVISIÓN 200x POR APP (2026-07-19 madrugada · WH 2.13.462 · ME 2.8.222 · MOS sin cambios)
+Tooling propio: cruce getElementById↔ids del DOM (incl. templates JS), onclick↔funciones,
+duplicados por archivo, residuos GAS. Triage señal/ruido: "duplicados" = scope por módulo IIFE
+(falsos positivos); ids en templates JS descartados.
+HALLAZGOS REALES REPARADOS:
+- WH BUG: listener de auditoría con ids VIEJOS (audStockSis/audDifValor) → TypeError en cada
+  tecla del conteo; la "diferencia en vivo" JAMÁS funcionó → ids corregidos (auditStockSis) +
+  display de diferencia agregado al sheet.
+- WH MUERTOS: MembreteView legacy entero (~280 líneas), familia editItem completa (sheet
+  inexistente, sin export), ConfigView.guardarImpresion (inputs inexistentes). Fila Tools
+  "GAS endpoint"→"Backend".
+- ME BUG: el catcher global de errores UI escribía en #toastContainer INEXISTENTE → errores
+  capturados invisibles desde siempre → contenedor on-demand (inferior-izquierda).
+- MOS: limpio — segBadge/modalMesaCreditos/_auditSetAjuste son guards defensivos documentados
+  del patrón de la casa; adhesivoBarcodeSVG es id dinámico del preview (falso positivo).
+VERIFICACIÓN FINAL: suites 82/82 ✅ · boots WH/ME "✅ CERO fetches a GAS", sin errores, versiones
+al día · script.google.com: WH=0, ME=0, MOS=3 (solo el transporte Fase 3 documentado).
+
+## HOTFIX CRÍTICO ME 2.8.223 (post-200x)
+El corte cero-GAS 2.8.221 mutiló SeguridadSystem.iniciar con un regex glotón y devoró el watcher
+del carrito → script principal no parseaba → Vue no montaba → {{}} crudos + modales apilados
+(reporte del dueño: app inaccesible). RECONSTRUIDO desde base sana 2.8.220 re-aplicando todo con
+strings exactos. Ritual nuevo obligatorio ME: node --check de los 11 scripts inline + boot-check
+que asserta 0 mustaches (el check por tamaño de DOM era ciego a este fallo). Verificado: 2.8.223
+boot perfecto (screenshot pantalla de permisos), 0 GAS, 11 marcadores de features presentes.

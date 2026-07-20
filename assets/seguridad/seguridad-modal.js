@@ -1041,37 +1041,104 @@
   // ════════════════════════════════════════════════════════════
   // MODAL Fuera de horario + solicitar extensión + notif al abrir
   // ════════════════════════════════════════════════════════════
+  // ══ [UNIFICADO 2026-07-20 · pedido dueño] PANTALLA ÚNICA DE BLOQUEO fuera-de-horario ══
+  // Fullscreen, NO descartable (antes "Cerrar y volver" dejaba la app usable detrás = agujero).
+  // Countdown vivo + panel "🔓 Opciones de acceso" desplegable (in-situ / remoto / avisarme).
+  // ANTI-F5: al mostrarse persiste el veredicto en localStorage (seg_fuera_cache_<app>) y
+  // enforceBoot() lo re-aplica AL INSTANTE en cada carga evaluando el horario con reloj LOCAL
+  // (sin esperar red). Se limpia solo cuando: el reloj entra a la ventana permitida, una
+  // extensión se activa, o el server confirma permitido (horarioPermitido()).
+  var _fueraTick = null;
+  function _fueraCacheKey() { return 'seg_fuera_cache_' + ((_config && _config.app) || 'app'); }
+  function _hhmmAMin(t) {
+    var m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
+    return m ? (parseInt(m[1],10) * 60 + parseInt(m[2],10)) : null;
+  }
+  // ¿El reloj local está DENTRO de la ventana [apertura, cierre)? null si horario ilegible.
+  function _dentroDeVentana(apertura, cierre) {
+    var a = _hhmmAMin(apertura), c = _hhmmAMin(cierre);
+    if (a == null || c == null) return null;
+    var now = new Date(); var mm = now.getHours() * 60 + now.getMinutes();
+    return (a <= c) ? (mm >= a && mm < c) : (mm >= a || mm < c);   // soporta ventana que cruza medianoche
+  }
+  function _fueraCountdownTxt(apertura) {
+    var a = _hhmmAMin(apertura);
+    if (a == null) return '';
+    var now = new Date(); var mm = now.getHours() * 60 + now.getMinutes();
+    var falta = a - mm; if (falta <= 0) falta += 24 * 60;
+    var h = Math.floor(falta / 60), m = falta % 60;
+    return 'Faltan ' + (h > 0 ? h + 'h ' : '') + m + 'm para abrir';
+  }
   function abrirModalFueraHorario(motivo, apertura, cierre) {
     _injectCss();
     if (document.getElementById('segFueraOverlay')) return;
+    // persistir veredicto (anti-F5)
+    try { localStorage.setItem(_fueraCacheKey(), JSON.stringify({ motivo: motivo || 'fuera', apertura: apertura || '', cierre: cierre || '', ts: Date.now() })); } catch(_) {}
+    var app = (_config && _config.app) || '';
+    var titulo = app === 'warehouseMos' ? 'ALMACÉN CERRADO' : app === 'mosExpress' ? 'POS CERRADO' : 'APP CERRADA';
     var msg = motivo === 'antes_apertura'
       ? 'Puedes acceder a partir de ' + (apertura || '—')
       : motivo === 'despues_cierre'
-      ? 'Tu jornada cerró a las ' + (cierre || '—')
+      ? 'La jornada cerró a las ' + (cierre || '—')
       : motivo === 'dia_cerrado'
       ? 'Hoy no es día laboral'
-      : 'No tienes permiso ahora';
+      : 'Acceso restringido en este momento';
     sonidos.rechazado();
     document.body.insertAdjacentHTML('beforeend', ''
-      + '<div class="seg-overlay" id="segFueraOverlay">'
-      +   '<div class="seg-modal" style="max-width:480px">'
-      +     '<div class="seg-head" style="background:linear-gradient(135deg,rgba(148,163,184,.15),rgba(99,102,241,.05))">'
-      +       '<div class="seg-emoji">🌙</div>'
-      +       '<div style="flex:1"><div class="seg-h1">FUERA DE HORARIO</div><div class="seg-sub">' + _esc(msg) + '</div></div>'
+      + '<div class="seg-overlay" id="segFueraOverlay" style="flex-direction:column;background:linear-gradient(160deg,rgba(30,7,12,.97),rgba(2,6,23,.98));backdrop-filter:blur(16px)">'
+      +   '<div style="max-width:460px;width:100%;text-align:center;padding:10px">'
+      +     '<div style="font-size:74px;line-height:1;margin-bottom:14px;filter:drop-shadow(0 8px 30px rgba(239,68,68,.35))">🌙</div>'
+      +     '<div style="font-size:26px;font-weight:900;letter-spacing:.06em;color:#fca5a5">' + titulo + '</div>'
+      +     '<div style="font-size:13px;color:#94a3b8;margin-top:6px">' + _esc(msg) + '</div>'
+      +     '<div style="margin-top:14px;display:inline-flex;gap:8px;align-items:center;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.28);border-radius:999px;padding:7px 16px">'
+      +       '<span style="font-size:12px;color:#e2e8f0">Horario: <b style="color:#fbbf24">' + _esc(apertura || '—') + ' – ' + _esc(cierre || '—') + '</b></span>'
       +     '</div>'
-      +     '<div class="seg-body">'
-      +       '<div style="text-align:center;font-size:11px;color:#64748b;padding:8px 0">'
-      +         'Tu horario: <b style="color:#fbbf24">' + (apertura || '—') + ' a ' + (cierre || '—') + '</b>'
-      +       '</div>'
-      +       '<button class="seg-btn seg-btn-primary" style="width:100%" onclick="SeguridadSystem._fueraExtenderInSitu()">🔓 Extender ahora (admin in-situ)</button>'
-      +       '<button class="seg-btn seg-btn-secondary" style="width:100%;margin-top:8px" onclick="SeguridadSystem._fueraSolicitarExtension()">⏰ Solicitar extensión al admin (remoto)</button>'
-      +       '<button class="seg-btn seg-btn-info" style="width:100%;margin-top:8px" onclick="SeguridadSystem._fueraNotificarme(\'' + _esc(apertura || '') + '\')">🔔 Notificarme cuando abra</button>'
-      +     '</div>'
-      +     '<div style="padding:14px 22px;border-top:1px solid #1e293b">'
-      +       '<button class="seg-btn seg-btn-warn" style="width:100%" onclick="SeguridadSystem._fueraCerrar()">Cerrar y volver</button>'
+      +     '<div id="segFueraFaltan" style="font-size:12px;color:#64748b;margin-top:10px">' + _fueraCountdownTxt(apertura) + '</div>'
+      +     '<button id="segFueraToggle" class="seg-btn seg-btn-primary" style="width:100%;margin-top:22px" onclick="SeguridadSystem._fueraToggleOpciones()">🔓 Opciones de acceso <span id="segFueraCaret">▾</span></button>'
+      +     '<div id="segFueraOpciones" style="display:none;margin-top:10px;background:rgba(15,23,42,.75);border:1px solid #1e293b;border-radius:16px;padding:12px;text-align:left">'
+      +       '<button class="seg-btn seg-btn-primary" style="width:100%" onclick="SeguridadSystem._fueraExtenderInSitu()">🔑 Activar in-situ (admin o master presente)</button>'
+      +       '<button class="seg-btn seg-btn-secondary" style="width:100%;margin-top:8px" onclick="SeguridadSystem._fueraSolicitarExtension()">📨 Solicitar permiso remoto (1 hora)</button>'
+      +       '<button class="seg-btn seg-btn-info" style="width:100%;margin-top:8px" onclick="SeguridadSystem._fueraNotificarme(\'' + _esc(apertura || '') + '\')">🔔 Avisarme cuando abra</button>'
       +     '</div>'
       +   '</div>'
       + '</div>');
+    // countdown vivo + auto-desbloqueo cuando el reloj ENTRA a la ventana
+    if (_fueraTick) clearInterval(_fueraTick);
+    _fueraTick = setInterval(function() {
+      var el = document.getElementById('segFueraFaltan');
+      if (!el) { clearInterval(_fueraTick); _fueraTick = null; return; }
+      el.textContent = _fueraCountdownTxt(apertura);
+      if (_dentroDeVentana(apertura, cierre) === true) { horarioPermitido(); }
+    }, 30000);
+  }
+  function _fueraToggleOpciones() {
+    var pan = document.getElementById('segFueraOpciones');
+    var car = document.getElementById('segFueraCaret');
+    if (!pan) return;
+    var abierto = pan.style.display !== 'none';
+    pan.style.display = abierto ? 'none' : 'block';
+    if (car) car.textContent = abierto ? '▾' : '▴';
+    sonidos.click();
+  }
+  // El server (o el reloj) confirma que YA se puede: limpiar cache + cerrar la pantalla.
+  function horarioPermitido() {
+    try { localStorage.removeItem(_fueraCacheKey()); } catch(_) {}
+    _fueraCerrar();
+  }
+  // ANTI-F5: aplicar el último veredicto persistido AL INSTANTE en cada boot (reloj local).
+  // La verificación server-side posterior refina (horarioPermitido() la limpia si procede).
+  function enforceBoot() {
+    try {
+      var raw = localStorage.getItem(_fueraCacheKey());
+      if (!raw) return false;
+      var c = JSON.parse(raw);
+      // extensión vigente pisa el bloqueo
+      try { if (window.ExtensorHorario && ExtensorHorario.vigente && ExtensorHorario.vigente() > 0) { horarioPermitido(); return false; } } catch(_) {}
+      var dentro = _dentroDeVentana(c.apertura, c.cierre);
+      if (dentro === true) { try { localStorage.removeItem(_fueraCacheKey()); } catch(_) {} return false; }
+      abrirModalFueraHorario(c.motivo, c.apertura, c.cierre);
+      return true;
+    } catch(_) { return false; }
   }
   // [v1.0.0 EXT-HORARIO] Nueva opción in-situ: admin/master presente con clave.
   // Usa el módulo compartido ExtensorHorario que abre modal moderno con opciones
@@ -1158,6 +1225,10 @@
     }).catch(function(e) { _toast('❌ ' + _esc(e.message), { error: true }); });
   }
   function _fueraCerrar() {
+    // [UNIFICADO] ya no hay botón "Cerrar y volver": esto solo lo llaman los caminos de ÉXITO
+    // (extensión activada / permitido confirmado) → también limpian el cache anti-F5.
+    try { localStorage.removeItem(_fueraCacheKey()); } catch(_) {}
+    if (_fueraTick) { clearInterval(_fueraTick); _fueraTick = null; }
     var ov = document.getElementById('segFueraOverlay');
     if (ov) { ov.style.animation = 'seg-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
   }
@@ -1432,6 +1503,9 @@
     abrirModalAlertas:        abrirModalAlertas,
     abrirModalSolicitarAcceso: abrirModalSolicitarAcceso,
     abrirModalFueraHorario:   abrirModalFueraHorario,
+    enforceBoot:              enforceBoot,
+    horarioPermitido:         horarioPermitido,
+    _fueraToggleOpciones:     _fueraToggleOpciones,
     abrirModalHorarioOperador: abrirModalHorarioOperador,
     abrirModalConfigHorarios: abrirModalConfigHorarios,
     arrancarWidgetMiHorario:  arrancarWidgetMiHorario,
