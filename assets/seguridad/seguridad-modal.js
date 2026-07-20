@@ -1094,8 +1094,29 @@
       +       '<span style="font-size:12px;color:#e2e8f0">Horario: <b style="color:#fbbf24">' + _esc(apertura || '—') + ' – ' + _esc(cierre || '—') + '</b></span>'
       +     '</div>'
       +     '<div id="segFueraFaltan" style="font-size:12px;color:#64748b;margin-top:10px">' + _fueraCountdownTxt(apertura) + '</div>'
-      +     '<button id="segFueraToggle" class="seg-btn seg-btn-primary" style="width:100%;margin-top:22px" onclick="SeguridadSystem._fueraToggleOpciones()">🔓 Opciones de acceso <span id="segFueraCaret">▾</span></button>'
-      +     '<div id="segFueraOpciones" style="display:none;margin-top:10px;background:rgba(15,23,42,.75);border:1px solid #1e293b;border-radius:16px;padding:12px;text-align:left">'
+      +     '<style>'
+      +       '.seg-lock{width:76px;height:76px;border-radius:50%;margin:24px auto 0;display:flex;align-items:center;justify-content:center;font-size:36px;background:rgba(239,68,68,.12);border:2px solid rgba(239,68,68,.4);cursor:pointer;transition:transform .15s,box-shadow .25s,background .35s,border-color .35s;animation:segLockFloat 3s ease-in-out infinite;user-select:none}'
+      +       '.seg-lock:hover{transform:scale(1.14);box-shadow:0 0 0 10px rgba(239,68,68,.1);animation:segLockWiggle .5s ease-in-out}'
+      +       '.seg-lock:active{transform:scale(.9)}'
+      +       '.seg-lock.abierto{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.55);box-shadow:0 0 0 10px rgba(16,185,129,.1);animation:none}'
+      +       '.seg-lock-ico{display:inline-block;transition:transform .3s cubic-bezier(.3,1.6,.4,1)}'
+      +       '.seg-lock.abierto .seg-lock-ico{transform:rotate(-12deg) scale(1.1)}'
+      +       '@keyframes segLockWiggle{0%,100%{rotate:0deg}25%{rotate:-11deg}75%{rotate:11deg}}'
+      +       '@keyframes segLockFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}'
+      +       '.seg-opciones{overflow:hidden;max-height:0;opacity:0;transform:translateY(-10px);transition:max-height .45s cubic-bezier(.3,.9,.4,1),opacity .3s ease,transform .38s ease;margin-top:12px;background:rgba(15,23,42,.8);border:1px solid #1e293b;border-radius:18px;text-align:left}'
+      +       '.seg-opciones.abierta{max-height:320px;opacity:1;transform:none}'
+      +       '.seg-opciones .seg-btn{opacity:0;transform:translateY(6px);transition:opacity .3s ease,transform .3s ease}'
+      +       '.seg-opciones.abierta .seg-btn{opacity:1;transform:none}'
+      +       '.seg-opciones.abierta .seg-btn:nth-child(1){transition-delay:.10s}'
+      +       '.seg-opciones.abierta .seg-btn:nth-child(2){transition-delay:.18s}'
+      +       '.seg-opciones.abierta .seg-btn:nth-child(3){transition-delay:.26s}'
+      +       '@media (prefers-reduced-motion:reduce){.seg-lock{animation:none}.seg-opciones,.seg-opciones .seg-btn{transition:none}}'
+      +     '</style>'
+      +     '<div class="seg-lock" id="segFueraLock" onclick="SeguridadSystem._fueraToggleOpciones()" title="Opciones de acceso" role="button" aria-label="Opciones de acceso">'
+      +       '<span class="seg-lock-ico" id="segFueraLockIco">🔒</span>'
+      +     '</div>'
+      +     '<div id="segFueraLockHint" style="font-size:11px;color:#64748b;margin-top:10px">Toca el candado · opciones de acceso</div>'
+      +     '<div id="segFueraOpciones" class="seg-opciones" style="padding:12px">'
       +       '<button class="seg-btn seg-btn-primary" style="width:100%" onclick="SeguridadSystem._fueraExtenderInSitu()">🔑 Activar in-situ (admin o master presente)</button>'
       +       '<button class="seg-btn seg-btn-secondary" style="width:100%;margin-top:8px" onclick="SeguridadSystem._fueraSolicitarExtension()">📨 Solicitar permiso remoto (1 hora)</button>'
       +       '<button class="seg-btn seg-btn-info" style="width:100%;margin-top:8px" onclick="SeguridadSystem._fueraNotificarme(\'' + _esc(apertura || '') + '\')">🔔 Avisarme cuando abra</button>'
@@ -1112,13 +1133,18 @@
     }, 30000);
   }
   function _fueraToggleOpciones() {
-    var pan = document.getElementById('segFueraOpciones');
-    var car = document.getElementById('segFueraCaret');
+    var pan  = document.getElementById('segFueraOpciones');
+    var lock = document.getElementById('segFueraLock');
+    var ico  = document.getElementById('segFueraLockIco');
+    var hint = document.getElementById('segFueraLockHint');
     if (!pan) return;
-    var abierto = pan.style.display !== 'none';
-    pan.style.display = abierto ? 'none' : 'block';
-    if (car) car.textContent = abierto ? '▾' : '▴';
-    sonidos.click();
+    var abrir = !pan.classList.contains('abierta');
+    pan.classList.toggle('abierta', abrir);
+    if (lock) lock.classList.toggle('abierto', abrir);
+    if (ico)  ico.textContent = abrir ? '🔓' : '🔒';
+    if (hint) hint.textContent = abrir ? 'Elige cómo quieres entrar' : 'Toca el candado · opciones de acceso';
+    try { navigator.vibrate && navigator.vibrate(abrir ? [14, 30, 20] : 12); } catch(_) {}
+    try { abrir ? sonidos.aprobado() : sonidos.click(); } catch(_) { try { sonidos.click(); } catch(__) {} }
   }
   // El server (o el reloj) confirma que YA se puede: limpiar cache + cerrar la pantalla.
   function horarioPermitido() {
