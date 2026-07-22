@@ -2084,6 +2084,15 @@ const API = (() => {
       return _desempacarCatalogo(out);         // {idPP, accion} — el front lee idPP (alta) o nada (edición)
     }
 
+    // [Proveedores v2 · 545] bulto a nivel PRODUCTO: propaga unidades_por_bulto a
+    // TODOS los proveedores del mismo sku_base (regla del dueño: "edito el producto,
+    // no importa quién lo trae").
+    if (action === 'ppSetBultoGlobal') {
+      const out = await _sbRpcMOSWrite('pp_set_bulto_global', { p: { skuBase: String(p.skuBase || ''), unidadesPorBulto: p.unidadesPorBulto } });
+      if (out == null) return null;
+      return _desempacarCatalogo(out);         // {filas}
+    }
+
     // ════════════════════════════════════════════════════════════════════
     // [FASE 2 · LOTE GASTOS (DINERO) + BAJO-RIESGO] — 4 acciones que el frontend MOS llama hoy.
     //   · registrarGasto / eliminarGasto → mos.crear_gasto / mos.eliminar_gasto   (flag mos_gastos_directo, DINERO)

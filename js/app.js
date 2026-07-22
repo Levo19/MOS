@@ -247,8 +247,10 @@ const MOS = (() => {
     // porque ya hay un "+ Nuevo" en el header — botón duplicado innecesario.
     const fab = $('fab');
     if (fab) fab.classList.remove('visible');
-    // FAB del carrito de proveedores: visible en cualquier vista si hay carrito activo
-    _provFabRender();
+    // [v2.43.594] Al ENTRAR al módulo proveedores siempre aterrizas en el HOME semanal
+    // (antes quedaba "atorado" en el último pedido abierto — feedback dueño). El FAB
+    // flotante es el camino directo de vuelta a un pedido.
+    if (viewName === 'proveedores' && S.view !== 'proveedores' && S.pv2) S.pv2.view = 'home';
 
     // Config: show first panel
     if (viewName === 'config') {
@@ -256,6 +258,9 @@ const MOS = (() => {
     }
 
     S.view = viewName;
+    // [v2.43.594] FAB carrito proveedores: se pinta DESPUÉS de fijar S.view (dentro del
+    // módulo se oculta — el pedido ya está en pantalla; al salir reaparece con pop).
+    _provFabRender();
     if (!S.loaded[viewName]) loadView(viewName);
   }
 
@@ -13011,7 +13016,9 @@ const MOS = (() => {
   function _provFabRender() {
     let fab = $('provCarritoFAB');
     const carritos = _provListarCarritosActivos();
-    if (!carritos.length) {
+    // [v2.43.594] Dentro del módulo proveedores el FAB se oculta (el pedido está en
+    // pantalla); en cualquier otra vista flota como "carrito minimizado".
+    if (!carritos.length || S.view === 'proveedores') {
       if (fab) fab.style.display = 'none';
       _provFabSelectorClose();
       return;
@@ -13021,6 +13028,10 @@ const MOS = (() => {
       fab.id = 'provCarritoFAB';
       fab.className = 'prov-cart-fab';
       document.body.appendChild(fab);
+    }
+    if (fab.style.display === 'none' || !fab.style.display) {
+      // reaparece con "pop" (minimizar el pedido → burbuja flotante)
+      fab.classList.remove('fab-pop'); void fab.offsetWidth; fab.classList.add('fab-pop');
     }
     fab.style.display = '';
 
@@ -42372,7 +42383,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         </div></div>`;
     return `
     <div class="pv2-prod ${qb>0?'encarro':''}" id="pv2p-${key}">
-      <div class="padre">${pp.descripcion}<span class="famtag" title="Padre canónico: el stock suma equivalentes y derivados">FAMILIA</span></div>
+      <div class="padre" style="cursor:pointer" onclick="MOS.pv2.editar('${key}')" title="Tocar para editar bulto / precio ref. / mínimo / notas">${pp.descripcion} <span style="opacity:.45;font-size:11px">✎</span><span class="famtag" title="Padre canónico: el stock suma equivalentes y derivados">FAMILIA</span></div>
       <div class="cod">${pp.codigoBarra||pp.skuBase||''}${upb>1?` · bulto ×${upb}`:''}${pp.countEquivalencias?` · ${pp.countEquivalencias} equiv.`:''}</div>
       <div class="costline">
         ${costo>0?`<span class="pv2-costo">💰 últ. costo <b>${fmtMoney(costo)}</b>${costoF?` <small>· guía ${costoF}</small>`:''}</span>`:'<span class="pv2-costo dim">💰 sin costo registrado aún</span>'}
@@ -42535,22 +42546,104 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     addTab(t) {
       const g = $('pv2AtG'), m = $('pv2AtM');
       if (g) g.classList.toggle('on', t === 'g'); if (m) m.classList.toggle('on', t === 'm');
-      if (t === 'm') {
-        const b = $('pv2AddBody');
-        if (b) b.innerHTML = '<p class="pv2-addnote">Busca cualquier producto de tu catálogo maestro (o escanea uno de sus códigos). Se abre el buscador completo:</p>' +
-          '<button class="btn-primary text-sm w-full" onclick="MOS.pv2._mx();MOS.abrirModalProvProducto(null)">📚 Abrir buscador del catálogo maestro</button>' +
-          '<p class="pv2-addnote" style="margin-top:8px">El código que use este proveedor se aprende solo de su primera guía.</p>';
-      } else pv2._addPaint();
+      if (t === 'm') pv2._addPaintMaster(); else pv2._addPaint();
     },
     _addPaint() {
       const b = $('pv2AddBody'); if (!b) return;
       const cand = S.pv2.cand || [];
-      b.innerHTML = '<p class="pv2-addnote">Llegaron en <b>guías de este proveedor</b> pero no están en su catálogo. <b>Tú eliges</b> — nada se agrega solo (una guía mal hecha ya no contamina).</p>' +
-        (cand.length ? cand.map((c, i) => `
-          <div class="pv2-hrow"><div class="r1"><div class="nm">${c.descripcion||c.codigoBarra}</div>
-            <button class="pv2-mini acc" ${c._added?'disabled':''} onclick="MOS.pv2.addGuia(${i})">${c._added?'✓ Agregado':'➕ Agregar'}</button></div>
-            <div class="ev ${c.pocaEvidencia?'warn':''}">${c.pocaEvidencia?'⚠ llegó 1 sola vez — ¿guía mal registrada? revisa antes de agregar':'llegó '+c.veces+' veces'} · últ. ${c.ultFecha||'—'}${c.ultCosto?' · '+fmtMoney(c.ultCosto):''}</div></div>`).join('')
-        : '<p class="pv2-empty">Nada pendiente: todo lo que llegó en sus guías ya está en su catálogo ✓</p>');
+      const nuevos = cand.filter(c => !c.yaAgregado);
+      const yaEstan = cand.filter(c => c.yaAgregado);
+      const fila = (c, i) => `
+          <div class="pv2-hrow" ${c.yaAgregado||c._added?'style="opacity:.6"':''}><div class="r1"><div class="nm" style="white-space:normal">${c.descripcion||c.codigoBarra}</div>
+            <button class="pv2-mini ${c.yaAgregado||c._added?'':'acc'}" ${c.yaAgregado||c._added?'disabled style="cursor:default"':''} onclick="MOS.pv2.addGuia(${i})">${c.yaAgregado?'✓ Ya está agregado':(c._added?'✓ Agregado':'➕ Agregar')}</button></div>
+            <div class="ev ${c.pocaEvidencia&&!c.yaAgregado?'warn':''}">${c.pocaEvidencia&&!c.yaAgregado?'⚠ llegó 1 sola vez — ¿guía mal registrada? revisa antes de agregar':'llegó '+c.veces+' vez'+(c.veces>1?'es':'')} · últ. ${c.ultFecha||'—'}${c.ultCosto?' · '+fmtMoney(c.ultCosto):''}</div></div>`;
+      b.innerHTML = '<p class="pv2-addnote">Llegaron en <b>guías de este proveedor</b>. <b>Tú eliges</b> — nada se agrega solo.</p>' +
+        (nuevos.length ? nuevos.map(c => fila(c, cand.indexOf(c))).join('') : '<p class="pv2-empty" style="padding:10px">Nada nuevo: todo lo de sus guías ya está en su catálogo ✓</p>') +
+        (yaEstan.length ? '<div class="pv2-offsec" style="margin:10px 0 6px">✓ Ya en su catálogo (' + yaEstan.length + ')</div>' + yaEstan.map(c => fila(c, cand.indexOf(c))).join('') : '');
+    },
+    // [v2.43.594] Catálogo maestro INLINE: buscas, tocas y se agrega — sin tercer modal.
+    _addPaintMaster() {
+      const b = $('pv2AddBody'); if (!b) return;
+      b.innerHTML = '<p class="pv2-addnote">Busca en <b>tu catálogo maestro</b> y toca para agregar. Los que agregues van apareciendo abajo. El código de este proveedor se aprende de su 1ra guía; min/ref/bulto se editan tocando el producto en el catálogo.</p>' +
+        '<div class="pv2-search" style="margin-bottom:10px"><input id="pv2MQ" type="search" placeholder="Escribe el producto… (ej. cocinero 1lt)" oninput="MOS.pv2.addBuscar(this.value)" autocomplete="off"></div>' +
+        '<div id="pv2MRes"></div>' +
+        '<div id="pv2MAdd"></div>';
+      pv2._addPaintAgregados();
+      const inp = $('pv2MQ'); if (inp) { inp.focus(); if (S.pv2.addQ) { inp.value = S.pv2.addQ; pv2.addBuscar(S.pv2.addQ); } }
+    },
+    addBuscar(v) {
+      S.pv2.addQ = String(v || '').trim().toLowerCase();
+      const res = $('pv2MRes'); if (!res) return;
+      if (S.pv2.addQ.length < 2) { res.innerHTML = ''; return; }
+      const words = S.pv2.addQ.split(/\s+/);
+      const enCat = new Set((S.pv2.items || []).map(x => String(x.skuBase)));
+      // agrupar por PADRE (skuBase): un resultado por familia, nombre COMPLETO multi-línea
+      const porSku = {};
+      (S.productos || []).forEach(p => {
+        const hay = ((p.descripcion || '') + ' ' + (p.codigoBarra || '') + ' ' + (p.idProducto || '')).toLowerCase();
+        if (!words.every(w => hay.includes(w))) return;
+        const sku = String(p.skuBase || p.idProducto);
+        if (!porSku[sku] || String(p.idProducto) === sku) porSku[sku] = p;
+      });
+      const lista = Object.values(porSku).slice(0, 20);
+      S.pv2._mRes = lista;
+      res.innerHTML = lista.length ? lista.map((p, i) => {
+        const sku = String(p.skuBase || p.idProducto);
+        const ya = enCat.has(sku) || (S.pv2.addAgregados || []).some(a => a.sku === sku);
+        return `<div class="pv2-hrow" ${ya?'style="opacity:.6"':''}><div class="r1">
+          <div class="nm" style="white-space:normal">${p.descripcion}</div>
+          <button class="pv2-mini ${ya?'':'acc'}" ${ya?'disabled style="cursor:default"':''} onclick="MOS.pv2.addPick(${i})">${ya?'✓ Ya está':'➕ Agregar'}</button></div>
+          <div class="ev">${p.codigoBarra||''} · ${sku}</div></div>`;
+      }).join('') : '<p class="pv2-empty" style="padding:10px">Sin coincidencias — prueba con menos palabras.</p>';
+    },
+    async addPick(i) {
+      const p = (S.pv2._mRes || [])[i]; if (!p) return;
+      const sku = String(p.skuBase || p.idProducto);
+      try {
+        await API.post('agregarProductoProveedor', { idProveedor: S.pv2.prov.idProveedor, skuBase: sku, codigoBarra: p.codigoBarra || '', descripcion: p.descripcion || '' });
+        (S.pv2.addAgregados = S.pv2.addAgregados || []).push({ sku, nombre: p.descripcion });
+        pv2.addBuscar(S.pv2.addQ); pv2._addPaintAgregados();
+        toast('✓ ' + p.descripcion.split(' ').slice(0, 3).join(' ') + ' agregado', 'ok');
+        API.get('getProductosProveedorConStockV2', { idProveedor: S.pv2.prov.idProveedor, rangoDias: 30 }).then(r => { if (r) { S.pv2.items = Array.isArray(r) ? r : (r.data || []); } }).catch(() => {});
+      } catch (e) { toast('No se pudo agregar, reintenta', 'error'); }
+    },
+    _addPaintAgregados() {
+      const d = $('pv2MAdd'); if (!d) return;
+      const ag = S.pv2.addAgregados || [];
+      d.innerHTML = ag.length ? '<div class="pv2-offsec" style="margin:12px 0 6px;color:#34d399">✓ Agregados en esta sesión (' + ag.length + ')</div>' +
+        ag.map(a => `<div class="pv2-hrow" style="border-color:rgba(52,211,153,.3)"><div class="r1"><div class="nm" style="white-space:normal">${a.nombre}</div><span style="color:#34d399;font-size:12px;font-weight:800">✓</span></div></div>`).join('') : '';
+    },
+    // [v2.43.594] Editor por producto: min/ref/notas son de ESTE proveedor; el BULTO es
+    // del PRODUCTO (regla del dueño) → se propaga a todos sus proveedores (pp_set_bulto_global).
+    editar(k) {
+      const pp = _pv2Item(k); if (!pp) return;
+      _pv2Modal('✎ ' + pp.descripcion, `
+        <div class="pv2-datarow"><span class="k">Bulto ×</span><input id="pv2eBulto" class="inp text-sm" style="width:110px" type="number" min="1" value="${Math.max(parseFloat(pp.unidadesPorBulto)||1,1)}"><span style="font-size:10.5px;color:#5b6b85;flex:1">del PRODUCTO — se aplica a TODOS sus proveedores</span></div>
+        <div class="pv2-datarow"><span class="k">Precio ref.</span><input id="pv2eRef" class="inp text-sm" style="width:110px" type="number" step="0.01" min="0" value="${parseFloat(pp.precioReferencia)||''}" placeholder="S/"><span style="font-size:10.5px;color:#5b6b85;flex:1">de este proveedor (el últ. costo real sale de sus guías)</span></div>
+        <div class="pv2-datarow"><span class="k">Mín. compra</span><input id="pv2eMin" class="inp text-sm" style="width:110px" type="number" min="0" value="${parseFloat(pp.minimoCompra)||''}" placeholder="0"><span style="font-size:10.5px;color:#5b6b85;flex:1">unidades mínimas que acepta el proveedor</span></div>
+        <div class="pv2-datarow"><span class="k">Notas</span><input id="pv2eNotas" class="inp text-sm" style="flex:1" value="${(pp.notas||'').replace(/"/g,'&quot;')}" placeholder="ej. solo pedidos > S/100"></div>`,
+        `<button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Cancelar</button>
+         <button class="btn-primary text-sm flex-1" onclick="MOS.pv2.editarGuardar('${k}')">💾 Guardar</button>`);
+    },
+    async editarGuardar(k) {
+      const pp = _pv2Item(k); if (!pp || !pp.idPP) { toast('Producto sin idPP', 'error'); return; }
+      const bulto = Math.max(parseInt($('pv2eBulto')?.value) || 1, 1);
+      const ref   = parseFloat($('pv2eRef')?.value) || 0;
+      const min   = parseFloat($('pv2eMin')?.value) || 0;
+      const notas = $('pv2eNotas')?.value || '';
+      const bultoCambio = bulto !== Math.max(parseFloat(pp.unidadesPorBulto)||1,1);
+      pv2._mx();
+      try {
+        await API.post('actualizarProductoProveedor', { idPP: pp.idPP, idProveedor: S.pv2.prov.idProveedor, precioReferencia: ref, minimoCompra: min, notas, unidadesPorBulto: bulto });
+        if (bultoCambio && pp.skuBase) {
+          const r = await API.post('ppSetBultoGlobal', { skuBase: pp.skuBase, unidadesPorBulto: bulto }).catch(() => null);
+          const n = r && r.filas != null ? r.filas : (r && r.data && r.data.filas);
+          toast('💾 Guardado · bulto ×' + bulto + ' aplicado a ' + (n || 'todos') + ' proveedor(es) de este producto', 'ok');
+        } else toast('💾 Guardado', 'ok');
+        pp.unidadesPorBulto = bulto; pp.precioReferencia = ref; pp.minimoCompra = min; pp.notas = notas;
+        pv2Render();
+        _renderProvProductos();   // refetch fresco en bg
+      } catch (e) { toast('No se pudo guardar, reintenta', 'error'); }
     },
     async addGuia(i) {
       const c = (S.pv2.cand || [])[i]; if (!c || c._added) return;
