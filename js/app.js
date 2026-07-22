@@ -200,9 +200,7 @@ const MOS = (() => {
 
     // Al SALIR del módulo proveedores, limpiar la selección activa para
     // que al regresar arranque sin un proveedor pre-seleccionado.
-    if (S.view === 'proveedores' && viewName !== 'proveedores' && S.provSelId) {
-      try { cerrarDetalleProveedor(); } catch {}
-    }
+    // [v2.43.592] cerrarDetalleProveedor eliminado con la UI v1 (pv2 no necesita limpieza al salir).
     // Auto-refresh de almacén: arrancar/detener según vista
     if (viewName === 'almacen') _almIniciarAutoRefresh();
     else _almDetenerAutoRefresh();
@@ -12417,7 +12415,6 @@ const MOS = (() => {
       _provSaveCache(lista);
       if (changed || !cached) renderProveedores();
       // Pre-fetch de productos en background (silencioso, no bloquea UI)
-      _provProdsPrefetchEnBackground(lista);
     } catch(e) {
       if (!S.proveedores || !S.proveedores.length) {
         $('listProveedores').innerHTML = `<p class="text-red-400 text-sm text-center py-8">${e.message}</p>`;
@@ -12430,47 +12427,8 @@ const MOS = (() => {
   // luego itera secuencialmente con un pequeño throttle. Salta proveedores
   // que ya tienen cache fresco (TTL).
   let _provProdsPrefetching = false;
-  function _provProdsPrefetchEnBackground(proveedores) {
-    if (_provProdsPrefetching) return;
-    if (!Array.isArray(proveedores) || !proveedores.length) return;
-    const lista = _filtrarReales(proveedores);
-    if (!lista.length) return;
-    _provProdsPrefetching = true;
-    iconBusy('proveedores', true);
-    let lastId = null;
-    try { lastId = localStorage.getItem('mos_prov_last_sel'); } catch {}
-    // Ordenar: último visitado primero, después por orden natural
-    const orden = lista.slice().sort((a, b) => {
-      if (a.idProveedor === lastId) return -1;
-      if (b.idProveedor === lastId) return 1;
-      return 0;
-    });
-    let i = 0;
-    function siguiente() {
-      if (i >= orden.length) { _provProdsPrefetching = false; iconBusy('proveedores', false); return; }
-      const prov = orden[i++];
-      const idProv = prov.idProveedor;
-      // Skip si ya hay cache fresco
-      if (_provProdsLoadCache(idProv)) {
-        setTimeout(siguiente, 50);
-        return;
-      }
-      API.get('getProductosProveedorConStock', { idProveedor: idProv, rangoDias: 30 })
-        .then(r => {
-          const items = Array.isArray(r) ? r : (r && r.data) || [];
-          S.provProductos = S.provProductos || {};
-          S.provProductos[idProv] = items;
-          _provProdsSaveCache(idProv, items);
-          // Refrescar badge X/Y del card del proveedor en la lista
-          _refreshProvPendientesBadge(idProv);
-          // Si el usuario está viendo este proveedor en este momento, refrescar UI
-          if (S.provSelId === idProv && S.provTab === 'productos') _renderProvProductos();
-        })
-        .catch(() => {})
-        .finally(() => { setTimeout(siguiente, 800); });
-    }
-    siguiente();
-  }
+  // [v2.43.592 · pv2] _provProdsPrefetchEnBackground ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
 
   // Filtra proveedores excluyendo cargadores (nombre prefijo CARGADOR)
   function _filtrarReales(lista) {
@@ -12575,25 +12533,8 @@ const MOS = (() => {
   //   'lejano'   — en 4..6 días o sin día específico (DIARIO/SEGUN_DEMANDA)
   //   'sinDia'   — sin diaPedido configurado
   //   'inactivo' — estado del proveedor != '1'
-  function _provUrgenciaPedido(p) {
-    if (!p) return { estado: 'lejano', dias: NaN, label: '—', cls: '' };
-    if (String(p.estado || '0') !== '1') {
-      return { estado: 'inactivo', dias: NaN, label: 'Inactivo', cls: 'prov-urg-inactivo' };
-    }
-    const num = _provDiaANumero(p.diaPedido);
-    if (!num) {
-      // DIARIO se trata como "siempre puedes pedir" → lejano (no urgente, no rojo)
-      const upper = String(p.diaPedido || '').toUpperCase();
-      if (upper === 'DIARIO' || upper === 'SEGUN_DEMANDA' || upper === 'MISMO_DIA') {
-        return { estado: 'lejano', dias: 0, label: 'Diario', cls: 'prov-urg-lejano' };
-      }
-      return { estado: 'sinDia', dias: NaN, label: 'Sin día', cls: 'prov-urg-sindia' };
-    }
-    const dias = _provDiasHastaProx(num);
-    if (dias === 0)        return { estado: 'hoy',     dias: 0, label: 'PEDIR HOY',                    cls: 'prov-urg-hoy' };
-    if (dias <= 3)         return { estado: 'proximo', dias,    label: `en ${dias} día${dias>1?'s':''}`, cls: 'prov-urg-proximo' };
-    return                       { estado: 'lejano',  dias,    label: `en ${dias} días`,                cls: 'prov-urg-lejano' };
-  }
+  // [v2.43.592 · pv2] _provUrgenciaPedido ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
 
   // Avatar con imagen real si existe, fallback a iniciales con color hash
   function _provAvatarHtmlFull(prov, sizeCls) {
@@ -12647,67 +12588,20 @@ const MOS = (() => {
   }
 
   // Aplica filtro de urgencia a la lista (se llama después del filtro de búsqueda)
-  function _provAplicarFiltroUrgencia(lista) {
-    const f = _provGetFiltroUrg();
-    if (f === 'todos') return lista;
-    return lista.filter(p => {
-      const u = _provUrgenciaPedido(p);
-      if (f === 'hoy')        return u.estado === 'hoy';
-      if (f === 'proximos')   return u.estado === 'hoy' || u.estado === 'proximo';
-      if (f === 'atrasados')  return u.estado === 'inactivo';   // hoy no hay "atrasado real" por modelo
-      return true;
-    });
-  }
+  // [v2.43.592 · pv2] _provAplicarFiltroUrgencia ELIMINADA (UI v1 rehecha)
+
 
   // Ordena por urgencia (HOY → próximos asc por días → lejano → sinDia → inactivo)
-  function _provOrdenarPorUrgencia(lista) {
-    const orden = { hoy: 0, proximo: 1, lejano: 2, sinDia: 3, inactivo: 4 };
-    return lista.slice().sort((a, b) => {
-      const ua = _provUrgenciaPedido(a);
-      const ub = _provUrgenciaPedido(b);
-      const oa = orden[ua.estado] ?? 9;
-      const ob = orden[ub.estado] ?? 9;
-      if (oa !== ob) return oa - ob;
-      // Mismo estado: el de menor días faltantes primero (NaN al final)
-      const da = isNaN(ua.dias) ? 99 : ua.dias;
-      const db = isNaN(ub.dias) ? 99 : ub.dias;
-      if (da !== db) return da - db;
-      // Empate total: alfabético por nombre
-      return String(a.nombre || '').localeCompare(String(b.nombre || ''));
-    });
-  }
+  // [v2.43.592 · pv2] _provOrdenarPorUrgencia ELIMINADA (UI v1 rehecha)
+
 
   // Píldora decisional para el header: pedido o entrega.
   // diaCampo: valor del campo del proveedor (LUNES, DIARIO, etc.)
   // titulo: texto del header (PEDIDO, ENTREGA)
   // emoji: icon
   // opts.contextDia: para entrega — calcula "+N días después del pedido"
-  function _provPildoraDia(diaCampo, titulo, emoji, opts) {
-    if (!diaCampo) return _provPildoraVacia(titulo, emoji, '—', '');
-    const upper = String(diaCampo).toUpperCase();
-    // Casos no-semanales
-    if (upper === 'DIARIO')           return _provPildoraVacia(titulo, emoji, 'Diario', 'prov-pild-neutral');
-    if (upper === 'SEGUN_DEMANDA')    return _provPildoraVacia(titulo, emoji, 'Según demanda', 'prov-pild-neutral');
-    if (upper === 'MISMO_DIA')        return _provPildoraVacia(titulo, emoji, 'Mismo día', 'prov-pild-neutral');
-    if (upper === 'CONTRA_ENTREGA')   return _provPildoraVacia(titulo, emoji, 'Contra entrega', 'prov-pild-neutral');
-    if (upper === '24H')              return _provPildoraVacia(titulo, emoji, '24 horas', 'prov-pild-neutral');
-    if (upper === '48H')              return _provPildoraVacia(titulo, emoji, '48 horas', 'prov-pild-neutral');
-    if (upper === 'FIN_DE_MES')       return _provPildoraVacia(titulo, emoji, 'Fin de mes', 'prov-pild-neutral');
-    // Día semanal: calcular distancia
-    const dias = _provDiasHastaProx(_provDiaANumero(diaCampo));
-    if (isNaN(dias)) return _provPildoraVacia(titulo, emoji, _provDiaLabel(diaCampo), '');
-    const labelDia = _provDiaLabel(diaCampo);
-    let texto, cls;
-    if (dias === 0)     { texto = `🔥 HOY (${labelDia})`;            cls = 'prov-pild-hoy'; }
-    else if (dias === 1){ texto = `Mañana (${labelDia})`;            cls = 'prov-pild-proximo'; }
-    else if (dias <= 3) { texto = `en ${dias} días (${labelDia})`;   cls = 'prov-pild-proximo'; }
-    else                { texto = `en ${dias} días (${labelDia})`;   cls = 'prov-pild-lejano'; }
-    return `
-      <div class="prov-pild ${cls}">
-        <div class="prov-pild-head">${emoji} ${titulo}</div>
-        <div class="prov-pild-body">${texto}</div>
-      </div>`;
-  }
+  // [v2.43.592 · pv2] _provPildoraDia ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
 
   function _provPildoraVacia(titulo, emoji, texto, cls) {
     return `
@@ -12748,43 +12642,8 @@ const MOS = (() => {
   // Abre el modal de Histórico (reemplaza la pestaña). Usa data ya cargada o pide.
   // Renderiza directamente al body del modal usando el render legacy detrás de
   // una redirección temporal — evitamos duplicar IDs (provHistFilter, etc).
-  async function provAbrirHistorico(id) {
-    const prov = S.proveedores.find(p => p.idProveedor === id);
-    if (!prov) return;
-    _finBeep?.('click');
-    const sub = $('provHistModalSub');
-    if (sub) sub.textContent = prov.nombre + ' · últimos 60 días';
-    openModal('modalProvHistorico');
-    const body = $('provHistModalBody');
-    if (!body) return;
-    body.innerHTML = '<p class="text-center py-8 text-slate-500 text-xs">Cargando...</p>';
-    try {
-      // Asegurar data cacheada
-      if (!S.provHistorico[id]) {
-        const r = await API.get('getHistoricoProveedor', { idProveedor: id, dias: 60 });
-        S.provHistorico[id] = (r && r.data) ? r.data : r;
-      }
-      const data = S.provHistorico[id];
-      // Renderizar histórico (reusa _renderProvHistorico → escribe en provTabHistorico oculto)
-      _renderProvHistorico();
-      // Mover el body interior (sin filtro/select para evitar IDs duplicados) al modal
-      const sourceBody = document.querySelector('#provTabHistorico #provHistoricoBody');
-      if (sourceBody && sourceBody.innerHTML.trim()) {
-        body.innerHTML = sourceBody.innerHTML;
-      } else if (data && (data.totalGuias || (data.guiasPorDia && data.guiasPorDia.length))) {
-        // El render aún no terminó (fetch async) — mostrar resumen mínimo
-        body.innerHTML = `<p class="text-center py-6 text-slate-400 text-sm">Cargando detalle…</p>`;
-        setTimeout(() => {
-          const sb = document.querySelector('#provTabHistorico #provHistoricoBody');
-          if (sb && sb.innerHTML.trim()) body.innerHTML = sb.innerHTML;
-        }, 400);
-      } else {
-        body.innerHTML = '<p class="text-center py-8 text-slate-500 text-xs italic">Sin compras en los últimos 60 días</p>';
-      }
-    } catch (e) {
-      body.innerHTML = `<p class="text-center py-8 text-rose-400 text-xs">Error: ${e.message}</p>`;
-    }
-  }
+  // [v2.43.592 · pv2] provAbrirHistorico ELIMINADA (UI v1 rehecha)
+
 
   // Abre el pop-down con datos secundarios del proveedor (banco, CCI, email, etc).
   function provAbrirInfo(id) {
@@ -12818,30 +12677,8 @@ const MOS = (() => {
     openModal('modalProvInfo');
   }
 
-  function _provRenderFiltrosUrgencia(lista) {
-    const cont = $('provFiltrosUrgencia');
-    if (!cont) return;
-    // Conteo por estado
-    const cnt = { hoy: 0, proximo: 0, lejano: 0, sinDia: 0, inactivo: 0 };
-    lista.forEach(p => { cnt[_provUrgenciaPedido(p).estado] = (cnt[_provUrgenciaPedido(p).estado] || 0) + 1; });
-    const f = _provGetFiltroUrg();
-    const total = lista.length;
-    const proximos = cnt.hoy + cnt.proximo;
+  // [v2.43.592 · pv2] _provRenderFiltrosUrgencia ELIMINADA (UI v1 rehecha)
 
-    const pill = (key, label, count, color) => {
-      const active = f === key;
-      const cls = active ? 'prov-urg-pill active ' + color : 'prov-urg-pill ' + color;
-      return `<button class="${cls}" onclick="MOS.provSetFiltroUrgencia('${key}')">${label} <span class="prov-urg-pill-cnt">${count}</span></button>`;
-    };
-
-    let html = '';
-    html += pill('hoy',       '🔥 Pedir hoy',  cnt.hoy,    'rojo');
-    html += pill('proximos',  '⏳ Próximos 3d', proximos,   'amber');
-    html += pill('todos',     '📋 Todos',      total,      'neutral');
-    if (cnt.inactivo > 0) html += pill('atrasados', '⚠ Inactivos', cnt.inactivo, 'gris');
-
-    cont.innerHTML = html;
-  }
 
   function _normaliza(s) {
     return String(s || '').toLowerCase()
@@ -12862,17 +12699,8 @@ const MOS = (() => {
     });
   }
 
-  function provBuscar(q) {
-    S.provQuery = q || '';
-    const inp = $('provSearch');
-    if (inp && inp.value !== S.provQuery) inp.value = S.provQuery;
-    const clr = $('provSearchClear');
-    if (clr) clr.classList.toggle('hidden', !S.provQuery);
-    // Toggle estado del contenedor: si hay query, ensancha el input y oculta pills
-    const wrap = $('provFilasFiltro');
-    if (wrap) wrap.classList.toggle('has-query', !!S.provQuery);
-    renderProveedores();
-  }
+  // [v2.43.592 · pv2] provBuscar ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
 
   // Avatar de iniciales con color hash estable por nombre
   function _provAvatarHtml(nombre) {
@@ -12915,15 +12743,8 @@ const MOS = (() => {
   }
 
   // Refresca solo el badge X/Y del card de un proveedor (sin re-render completo)
-  function _refreshProvPendientesBadge(idProveedor) {
-    if (!idProveedor) return;
-    const card = document.querySelector(`[data-prov-card="${idProveedor}"]`);
-    if (!card) return;
-    const slot = card.querySelector('[data-prov-pend]');
-    if (!slot) return;
-    const stats = _provContarPendientes(idProveedor);
-    slot.outerHTML = _provPendBadgeHtml(idProveedor, stats);
-  }
+  // [v2.43.592 · pv2] _refreshProvPendientesBadge ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
 
   function _provPendBadgeHtml(idProv, stats) {
     if (!stats) {
@@ -12944,113 +12765,21 @@ const MOS = (() => {
     if (!p || !p.telefono) { toast('Sin teléfono', 'error'); return; }
     window.location.href = 'tel:' + p.telefono;
   }
-  function provWhatsApp(idProveedor, ev) {
-    if (ev) ev.stopPropagation();
-    const p = S.proveedores.find(x => x.idProveedor === idProveedor);
-    if (!p || !p.telefono) { toast('Sin teléfono', 'error'); return; }
-    window.open('https://wa.me/' + _provTelLimpio(p.telefono), '_blank');
-  }
+  // [v2.43.592 · pv2] provWhatsApp ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
 
-  function renderProveedores() {
-    if (_pv2On()) return pv2Render();   // [v2.43.591] Proveedores v2 — kill-switch: mos_prov_v2_off=1
-    const el = $('listProveedores');
-    if (!el) return;
-    const reales = _filtrarReales(S.proveedores);
-    const filtradosTexto = _provFiltrarPorQuery(reales, S.provQuery || '');
-    // Pills de urgencia se computan sobre lo filtrado por texto (no por urgencia)
-    _provRenderFiltrosUrgencia(filtradosTexto);
-    // Filtro de urgencia + orden por urgencia
-    const filtrados = _provOrdenarPorUrgencia(_provAplicarFiltroUrgencia(filtradosTexto));
-    const cnt = $('provCount');
-    if (cnt) cnt.textContent = filtrados.length + (S.provQuery ? ' / ' + reales.length : '');
-    if (!reales.length) {
-      el.innerHTML = '<p class="text-slate-500 text-sm text-center py-8">Sin proveedores</p>';
-      return;
-    }
-    if (!filtrados.length) {
-      el.innerHTML = `<p class="text-slate-500 text-sm text-center py-8">Sin resultados</p>`;
-      return;
-    }
-    // Card minimalista: el detalle ya repite todos los datos secundarios
-    // (RUC, forma pago, día pago, botones llamar/whatsapp). Aquí solo lo
-    // estrictamente necesario para responder "¿lo abro o no?".
-    el.innerHTML = filtrados.map((p, idx) => {
-      const sel = S.provSelId === p.idProveedor;
-      const urg = _provUrgenciaPedido(p);
-      const pendStats = _provContarPendientes(p.idProveedor);
-      const pendBadge = _provPendBadgeHtml(p.idProveedor, pendStats);
-      const cartStats = _provCarritoResumen(p.idProveedor);
-      const cartBadge = cartStats
-        ? `<span class="prov-cart-badge" data-prov-cart-badge="${p.idProveedor}" title="Carrito: ${cartStats.count} prods · ${fmtMoney(cartStats.monto)}">🛒 ${cartStats.count}</span>`
-        : `<span data-prov-cart-badge="${p.idProveedor}" style="display:none"></span>`;
-      // Stagger fade-up suave: max 12 cards animados (después es CSS instantáneo)
-      const staggerDelay = idx < 12 ? (idx * 30) : 0;
-      const staggerStyle = staggerDelay > 0 ? `style="animation-delay:${staggerDelay}ms"` : '';
 
-      return `
-        <div class="prov-card-modern ${urg.cls} ${sel ? 'prov-card-active' : ''} ${p._tmp ? 'opacity-60' : ''}"
-             data-prov-card="${p.idProveedor}"
-             ${staggerStyle}
-             onclick="MOS.selectProveedor('${p.idProveedor}')">
-          ${urg.estado === 'hoy' ? '<div class="prov-card-corona" title="Hoy es día de pedido">👑</div>' : ''}
-          <div class="prov-card-head">
-            ${_provAvatarHtmlFull(p, 'prov-avatar')}
-            <div class="min-w-0 flex-1">
-              <div class="prov-card-nombre">${p.nombre}</div>
-              ${p.categoriaProducto ? `<div class="prov-card-cat">${p.categoriaProducto}</div>` : ''}
-            </div>
-            <div class="prov-card-badges">
-              ${cartBadge}
-              ${pendBadge}
-            </div>
-          </div>
-          <div class="prov-card-urg-row">
-            <span class="prov-urg-chip ${urg.cls}">
-              ${urg.estado === 'hoy' ? '🔥' : urg.estado === 'proximo' ? '⏳' : urg.estado === 'inactivo' ? '⚠' : '📅'}
-              ${urg.label}
-            </span>
-          </div>
-          ${_provSparkBars(p.idProveedor)}
-        </div>`;
-    }).join('') +
-    // Inline-detail único (legacy, el detalle real va al panel desktop).
-    `<div id="provInlineDetail" class="prov-inline-detail lg:hidden" style="display:none"></div>`;
-
-    if (S.provSelId) {
-      _provPosicionarInlineDetail(S.provSelId);
-      _provViewToggleConDetalle(true);
-    } else {
-      _provViewToggleConDetalle(false);
-    }
-    _provInerciaActualizar();
-  }
-
-  // Re-evaluar layout al cambiar tamaño de pantalla
-  window.addEventListener('resize', () => {
-    if (S.view === 'proveedores') _provInerciaActualizar();
-  }, { passive: true });
+  function renderProveedores() { pv2Render(); }   // [v2.43.592] módulo Proveedores REHECHO (v2)
 
   // Toggle de la clase con-detalle del view (afecta layout grid)
-  function _provViewToggleConDetalle(activo) {
-    const view = $('view-proveedores');
-    if (!view) return;
-    view.classList.toggle('con-detalle', !!activo);
-    // Re-attachear/detacher inercia del carrusel según corresponda
-    setTimeout(_provInerciaActualizar, 0);
-  }
+  // [v2.43.592 · pv2] _provViewToggleConDetalle ELIMINADA (UI v1 rehecha)
+
 
   // ── Inercia del carrusel horizontal de proveedores ─────────
   // Drag con pointer (touch + mouse), trackea velocidad, en pointerup
   // aplica deceleración exponencial → efecto Apple-like.
   let _inerciaState = null;  // { startX, startScroll, lastX, lastT, vel, dragging, target }
-  function _provInerciaActualizar() {
-    const list = $('listProveedores');
-    if (!list) return;
-    // Carrusel horizontal SIEMPRE en mobile/tablet (con o sin selección).
-    const isHoriz = window.matchMedia('(max-width: 1023px)').matches;
-    if (isHoriz) _provInerciaAttach(list);
-    else         _provInerciaDetach(list);
-  }
+  // [v2.43.592 · pv2] _provInerciaActualizar ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
   function _provInerciaAttach(el) {
     if (el._inerciaAttached) return;
     el._inerciaAttached = true;
@@ -13129,26 +12858,8 @@ const MOS = (() => {
   // El inline-detail ya no se usa (era para tablet, ahora todo va al panel).
   // Función mantenida no-op para compatibilidad con llamadas existentes.
   function _provPosicionarInlineDetail(_idProv) { /* no-op */ }
-  function _provAplicarSeleccion(idAnt, idNuevo) {
-    const list = $('listProveedores');
-    if (!list) return;
-    // Quitar active del anterior (si seguía visible)
-    if (idAnt) {
-      const cardAnt = list.querySelector(`[data-prov-card="${idAnt}"]`);
-      if (cardAnt) cardAnt.classList.remove('prov-card-active');
-    }
-    // Marcar nuevo
-    if (idNuevo) {
-      const cardNuevo = list.querySelector(`[data-prov-card="${idNuevo}"]`);
-      if (cardNuevo) cardNuevo.classList.add('prov-card-active');
-      _provPosicionarInlineDetail(idNuevo);
-      _provViewToggleConDetalle(true);
-    } else {
-      const inline = $('provInlineDetail');
-      if (inline) { inline.style.display = 'none'; inline.innerHTML = ''; }
-      _provViewToggleConDetalle(false);
-    }
-  }
+  // [v2.43.592 · pv2] _provAplicarSeleccion ELIMINADA (UI v1 rehecha)
+
 
   // Breakpoint actual: 'mobile' (<768) | 'tablet' (768-1023) | 'desktop' (≥1024)
   function _provBreakpoint() {
@@ -13163,126 +12874,8 @@ const MOS = (() => {
     return $('proveedorDetail');
   }
 
-  async function selectProveedor(id) {
-    const bp = _provBreakpoint();
-    const isMobile = bp !== 'desktop';
+  // [v2.43.592 · pv2] selectProveedor ELIMINADA (UI v1 rehecha)
 
-    // Toggle: en mobile/tablet, click en el card ya activo lo cierra
-    if (isMobile && S.provSelId === id) {
-      cerrarDetalleProveedor();
-      return;
-    }
-
-    // Reset filtros si se cambia de proveedor
-    if (S.provSelId !== id) {
-      S.provProdFilter = '';
-      S.provHistFilter = '';
-    }
-    const idAnterior = S.provSelId;
-    S.provSelId = id;
-    try { localStorage.setItem('mos_prov_last_sel', id); } catch {}
-    if (!S.provTab || S.provTab === 'info' || S.provTab === 'pedidos') S.provTab = 'productos';
-
-    const prov = S.proveedores.find(p => p.idProveedor === id);
-    if (!prov) return;
-
-    // Mover selección sin re-render de toda la lista (evita parpadeo)
-    if (!$('listProveedores')?.querySelector('[data-prov-card]')) {
-      // Lista todavía no renderizada → render inicial
-      renderProveedores();
-    } else {
-      _provAplicarSeleccion(idAnterior, id);
-    }
-
-    const detailEl = _provDetailTargetEl();
-    if (!detailEl) return;
-    // Limpiar contenido del detail INMEDIATO para evitar mostrar el del proveedor
-    // anterior mientras se monta el nuevo. Render del header debajo va sincrónico.
-    detailEl.innerHTML = '';
-
-    // Pre-carga en paralelo (no espera para mostrar la UI)
-    _precargarProvData(id);
-    const safeNombre = (prov.nombre || '').replace(/"/g, '&quot;');
-    const tieneTel = !!prov.telefono;
-    const urg      = _provUrgenciaPedido(prov);
-    // Calculamos las 3 píldoras decisionales del header
-    const pildoraPedido  = _provPildoraDia(prov.diaPedido,  'PEDIDO',  '📅');
-    const pildoraPago    = _provPildoraPago(prov);
-    const pildoraEntrega = _provPildoraDia(prov.diaEntrega, 'ENTREGA', '🚚', { contextDia: prov.diaPedido });
-
-    detailEl.innerHTML = `
-      <div class="prov-detail-modern ${urg.cls}">
-        <div class="prov-detail-head">
-          ${_provAvatarHtmlFull(prov, 'prov-avatar-xl')}
-          <div class="prov-detail-nombre-wrap">
-            <h3 class="prov-detail-nombre">${safeNombre}</h3>
-            <p class="prov-detail-ruc">${prov.ruc || '—'}${prov.categoriaProducto ? ' · ' + prov.categoriaProducto : ''}</p>
-          </div>
-          <div class="prov-detail-actions-icons">
-            <button class="prov-icon-btn" onclick="event.stopPropagation();MOS.provAbrirHistorico('${id}')" title="Histórico de compras">📊</button>
-            <button class="prov-icon-btn" onclick="event.stopPropagation();MOS.provAbrirInfo('${id}')" title="Datos completos del proveedor">ⓘ</button>
-            <button class="prov-icon-btn" onclick="event.stopPropagation();MOS.abrirModalProveedor('${id}')" title="Editar proveedor">✏️</button>
-            <button class="prov-icon-btn lg:hidden" onclick="event.stopPropagation();MOS.cerrarDetalleProveedor()" title="Cerrar">×</button>
-          </div>
-        </div>
-
-        <!-- 3 píldoras decisionales: pedido / pago / entrega -->
-        <div class="prov-pildoras">
-          ${pildoraPedido}
-          ${pildoraPago}
-          ${pildoraEntrega}
-        </div>
-
-        <!-- Chips compactos: forma pago + responsable (datos secundarios en ⓘ) -->
-        <div class="prov-detail-chips">
-          ${prov.formaPago ? `<span class="prov-chip-mini">${prov.formaPago === 'CREDITO' ? '💳 Crédito ' + (prov.plazoCredito || 0) + 'd' : '💵 Contado'}</span>` : ''}
-          ${prov.responsable ? `<span class="prov-chip-mini">👤 ${prov.responsable}</span>` : ''}
-        </div>
-
-        <!-- Acciones -->
-        <div class="prov-action-row">
-          ${tieneTel ? `<button class="prov-action-btn whatsapp" onclick="MOS.provWhatsApp('${id}', event)">💬 WhatsApp</button>` : ''}
-          ${tieneTel ? `<button class="prov-action-btn" onclick="MOS.provLlamar('${id}', event)">📞 Llamar</button>` : ''}
-          <button class="prov-action-btn" onclick="MOS.abrirModalPago('${id}')">💰 + Pago</button>
-          <button class="prov-action-btn primary" data-prov-carrito-btn="${id}" onclick="MOS.provAccionPedido()">${(_provCarritoResumen(id) || {}).count ? `🛒 Ver carrito (${_provCarritoResumen(id).count})` : '🛒 Armar pedido'}</button>
-        </div>
-      </div>
-      <!-- Productos: contenido directo (ya no es tab) -->
-      <div id="provTabProductos" class="prov-tab-content prov-productos-direct"></div>
-      <!-- Histórico: legacy hidden — ahora vive en modal #modalProvHistorico. -->
-      <div id="provTabHistorico" class="prov-tab-content hidden"></div>
-    `;
-    // Mostrar productos siempre (no hay tabs)
-    S.provTab = 'productos';
-    provSetTab('productos');
-
-    // En mobile/tablet:
-    //  1. Scroll del CARRUSEL para anclar el card seleccionado
-    //  2. Scroll de la página al detail (que está abajo) para que el user lo vea
-    if (isMobile) {
-      requestAnimationFrame(() => {
-        const list = $('listProveedores');
-        const card = document.querySelector(`[data-prov-card="${id}"]`);
-        if (list && card) {
-          const lr = list.getBoundingClientRect();
-          const cr = card.getBoundingClientRect();
-          // Centrar el card en el viewport horizontal del carrusel
-          const offset = (cr.left - lr.left) - (lr.width - cr.width) / 2;
-          list.scrollBy({ left: offset, behavior: 'smooth' });
-        }
-        // Después scroll suave al detail
-        setTimeout(() => {
-          const det = $('proveedorDetail');
-          if (det) {
-            const dr = det.getBoundingClientRect();
-            if (dr.top > window.innerHeight * 0.6) {
-              det.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-          }
-        }, 300);
-      });
-    }
-  }
 
   // ── Pre-carga paralela de los 4 tabs del proveedor ─────────
   S.provPagos     = S.provPagos     || {};
@@ -13290,48 +12883,14 @@ const MOS = (() => {
   S.provHistorico = S.provHistorico || {};
   S.provPedidos   = S.provPedidos   || {};
 
-  function _precargarProvData(id) {
-    if (!id) return;
-    // Pagos (sin tab info — sólo cache para modal de pago)
-    API.get('getPagos', { idProveedor: id })
-      .then(r => { S.provPagos[id] = Array.isArray(r) ? r : (r && r.data) || []; })
-      .catch(() => {});
-    // Productos enriquecidos (con stock + zonas + min/max + sugerencia)
-    API.get('getProductosProveedorConStock', { idProveedor: id, rangoDias: 30 })
-      .then(r => {
-        const items = Array.isArray(r) ? r : (r && r.data) || [];
-        S.provProductos[id] = items;
-        _provProdsSaveCache(id, items);
-        if (S.provSelId === id && S.provTab === 'productos') _renderProvProductos();
-      }).catch(() => {});
-    // Histórico (60 días default)
-    API.get('getHistoricoProveedor', { idProveedor: id, dias: 60 })
-      .then(r => {
-        S.provHistorico[id] = (r && r.data) ? r.data : r;
-        if (S.provSelId === id && S.provTab === 'historico') _renderProvHistorico();
-      }).catch(() => {});
-  }
+  // [v2.43.592 · pv2] _precargarProvData ELIMINADA (UI v1 rehecha)
 
-  function cerrarDetalleProveedor() {
-    const ant = S.provSelId;
-    S.provSelId = null;
-    // Solo togglear clases — sin re-render (evita parpadeo)
-    _provAplicarSeleccion(ant, null);
-    // Reset del panel desktop por si venía con contenido
-    const detailEl = $('proveedorDetail');
-    if (detailEl) detailEl.innerHTML = '<p class="text-center p-6">Selecciona un proveedor para ver pagos y pedidos</p>';
-  }
 
-  function provSetTab(tab) {
-    S.provTab = tab;
-    document.querySelectorAll('.prov-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-    document.querySelectorAll('.prov-tab-content').forEach(c => c.classList.add('hidden'));
-    const targetMap = { productos: 'provTabProductos', historico: 'provTabHistorico' };
-    const target = $(targetMap[tab]);
-    if (target) target.classList.remove('hidden');
-    if (tab === 'productos') _renderProvProductos();
-    if (tab === 'historico') _renderProvHistorico();
-  }
+  // [v2.43.592 · pv2] cerrarDetalleProveedor ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
+
+  // [v2.43.592 · pv2] provSetTab ELIMINADA (UI v1 rehecha)
+
 
   function _renderProvInfo() {
     const id = S.provSelId;
@@ -13368,15 +12927,8 @@ const MOS = (() => {
     }
   }
 
-  function _filtrarPP(items, q) {
-    if (!q) return items;
-    const qn = _norm(q);
-    const palabras = qn.split(/\s+/).filter(Boolean);
-    return items.filter(pp => {
-      const hay = _norm((pp.descripcion || '') + ' ' + (pp.skuBase || '') + ' ' + (pp.codigoBarra || '') + ' ' + (pp.notas || ''));
-      return palabras.every(w => hay.indexOf(w) >= 0);
-    });
-  }
+  // [v2.43.592 · pv2] _filtrarPP ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
 
   // ── Estado del carrito (modelo único) ──────────────────────────
   // S.provCarritos: PERSISTENTE en localStorage. Uno por proveedor.
@@ -13602,11 +13154,8 @@ const MOS = (() => {
   }
 
   // Qty actual en el stepper = qty del carrito persistente (0 si no está)
-  function _provStepperQty(idProveedor, pp) {
-    const c = S.provCarritos[idProveedor];
-    if (!c || !c.items || !c.items[pp.idPP]) return 0;
-    return parseFloat(c.items[pp.idPP].qty) || 0;
-  }
+  // [v2.43.592 · pv2] _provStepperQty ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
 
   // Marcar el carrito como activo (para el FAB global) + persistir
   function _provCarritoMarcarActivo(idProveedor) {
@@ -13640,207 +13189,21 @@ const MOS = (() => {
     _provCarritoMarcarActivo(idProveedor);
   }
 
-  function _provAlertaInfo(a) {
-    switch ((a || '').toUpperCase()) {
-      case 'NEGATIVO':      return { color: '#ef4444', label: '⚠ NEGATIVO' };
-      case 'BAJO_MINIMO':   return { color: '#f59e0b', label: '⬇ Bajo mín' };
-      case 'AGOTAR_PRONTO': return { color: '#fb923c', label: '⏱ Agotar pronto' };
-      case 'CERCA_MINIMO':  return { color: '#eab308', label: '~ Cerca mín' };
-      case 'SIN_ROTACION':  return { color: '#64748b', label: '· Sin rotación' };
-      default:              return { color: '#10b981', label: 'OK' };
-    }
-  }
+  // [v2.43.592 · pv2] _provAlertaInfo ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
 
-  function _pintaProvProductos(items) {
-    const list = $('provProductosList');
-    if (!list) return;
-    if (!items.length) {
-      const filtro = S.provProdFilter || '';
-      list.innerHTML = filtro
-        ? `<p class="text-slate-500 text-sm py-6 text-center">Sin coincidencias para "${filtro}".</p>`
-        : '<p class="text-slate-500 text-sm py-6 text-center">Sin productos registrados.<br>Pulsa <b>⬇️ Jalar</b> para importar desde guías o <b>+ Producto</b> para agregar manual.</p>';
-      // toolbar eliminado — los steppers escriben directo al carrito
-      return;
-    }
-    // El stepper qty refleja el carrito persistente (0 si no está).
-    // La sugerencia se ofrece como botón "Pedir N" si el producto NO está
-    // en carrito todavía.
-    const idProvActual = S.provSelId;
-    list.innerHTML = items.map(pp => {
-      const alert = _provAlertaInfo(pp.alerta);
-      const qtyActual = _provStepperQty(idProvActual, pp);
-      const tienePresentaciones = (pp.countPresentaciones || 1) > 1;
-      const tieneEquiv = (pp.countEquivalencias || 0) > 0;
 
-      // Chips de stock: almacén + zonas REGISTRADAS + (si hay) huérfanas
-      const huerfanas = pp.zonasHuerfanas;
-      const stockChips = [];
-      stockChips.push({ nombre: 'Almacén', cant: pp.stockWh || 0, icon: '🏬' });
-      (pp.zonas || []).forEach(z => {
-        stockChips.push({ nombre: z.nombre, cant: z.cantidad, icon: '🏪' });
-      });
-      if (huerfanas && huerfanas.cantidad !== 0) {
-        stockChips.push({ nombre: 'Sin zona registrada', cant: huerfanas.cantidad, icon: '⚠', huerf: true });
-      }
-      const stockChipsHtml = stockChips.map(c =>
-        `<span class="prov-loc-chip${c.cant < 0 ? ' neg' : c.cant === 0 ? ' zero' : ''}${c.huerf ? ' huerf' : ''}" ${c.huerf ? 'title="Stock en una zona/estación que no está registrada en la tabla ZONAS de MOS — corrige el dato"' : ''}><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>${c.cant}</b></span>`
-      ).join('');
+  // [v2.43.592 · pv2] _pintaProvProductos ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
 
-      // Chips de rotación: solo si hay rotación total > 0.
-      // El chip "Reposición sugerida" usa el TOTAL como referencia
-      // (lo que el almacén debería despachar/día para sostener las ventas).
-      // No es venta del almacén — el almacén no vende.
-      const rotTotal = pp.rotacionDia || 0;
-      const rotChips = [];
-      if (rotTotal > 0) {
-        rotChips.push({ nombre: 'Reposición sugerida', rot: rotTotal, icon: '🏬', tip: 'Lo que el almacén debe despachar por día = suma de ventas en zonas. Aproximación.' });
-        (pp.zonas || []).forEach(z => {
-          if (z.rotacionDia > 0 || z.ventasRango > 0) {
-            rotChips.push({ nombre: z.nombre, rot: z.rotacionDia || 0, icon: '🏪', tip: 'Ventas/día en ' + z.nombre });
-          }
-        });
-        if (huerfanas && huerfanas.rotacionDia > 0) {
-          rotChips.push({ nombre: 'Sin zona registrada', rot: huerfanas.rotacionDia, icon: '⚠', huerf: true, tip: 'Ventas registradas en una estación cuya zona no está en la tabla ZONAS' });
-        }
-      }
-      const rotChipsHtml = rotChips.map(c =>
-        `<span class="prov-rot-chip${c.huerf ? ' huerf' : ''}" title="${c.tip}"><span class="prov-loc-ic">${c.icon}</span>${c.nombre}: <b>↻ ${c.rot}/d</b></span>`
-      ).join('');
-
-      // Bulto del proveedor (cuántas unidades vienen por caja/paquete)
-      const upb = parseInt(pp.unidadesPorBulto) || 1;
-      const bultoChipHtml = `
-        <span class="prov-bulto-chip" onclick="MOS.provEditarBulto('${pp.idPP}', ${upb})" title="Click para editar — el proveedor vende en bultos de N unidades">
-          📦 Bulto × <b>${upb}</b> un
-        </span>`;
-
-      // Dual-range Mín/Máx con marker en la reposición sugerida (rot × 7)
-      const sugRep = Math.max(0, Math.ceil((pp.rotacionDia || 0) * 7));
-      const minVal = parseInt(pp.stockMinimo) || 0;
-      const maxVal = parseInt(pp.stockMaximo) || 0;
-      // Escala del slider: dejar margen suficiente para el sugerido y los valores actuales
-      const escala = Math.max(20, sugRep * 4 || 0, maxVal * 1.3 || 0, minVal * 1.3 || 0, 30);
-      const sugDentro = sugRep > 0 && sugRep >= minVal && (maxVal === 0 || sugRep <= maxVal);
-      const minPctRange = (minVal / escala) * 100;
-      const maxPctRange = (maxVal / escala) * 100;
-      const sugPctRange = sugRep > 0 ? (sugRep / escala) * 100 : 0;
-
-      return `
-      <div class="prov-prod-card${pp._tmp ? ' opacity-60' : ''}${qtyActual > 0 ? ' en-pedido' : ''}" data-idpp="${pp.idPP}" style="border-left:3px solid ${alert.color}">
-        <div class="flex items-start justify-between gap-2 mb-1.5">
-          <div class="min-w-0 flex-1 cursor-pointer" onclick="MOS.abrirModalProvProducto('${pp.idPP}')">
-            <div class="text-sm font-semibold text-slate-100 truncate">${pp.descripcion || pp.skuBase}</div>
-            <div class="text-[10px] text-slate-500 mt-0.5 truncate" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}${tienePresentaciones ? ' · ' + pp.countPresentaciones + ' pres' : ''}${tieneEquiv ? ' · ' + pp.countEquivalencias + ' eq' : ''}</div>
-          </div>
-          <div class="text-right shrink-0 flex flex-col items-end gap-0.5">
-            <div class="text-sm font-bold text-amber-400 whitespace-nowrap">${fmtMoney(pp.precioReferencia || 0)}</div>
-            <span class="text-[9px] font-bold" style="color:${alert.color}">${alert.label}</span>
-          </div>
-        </div>
-
-        <!-- Stock total con sus chips por ubicación + bulto del proveedor -->
-        <div class="prov-metric-block">
-          <div class="prov-metric-head">
-            <span class="prov-stock-label">Stock</span>
-            <span class="prov-stock-num" style="color:${alert.color}">${pp.stockTotal}</span>
-            ${bultoChipHtml}
-          </div>
-          <div class="prov-loc-chips">
-            ${stockChipsHtml}
-          </div>
-        </div>
-
-        <!-- Rotación total con sus chips por ubicación -->
-        ${rotTotal > 0 ? `
-        <div class="prov-metric-block">
-          <div class="prov-metric-head">
-            <span class="prov-stock-label">Rotación</span>
-            <span class="prov-rot-num">↻ ${rotTotal}/d</span>
-          </div>
-          <div class="prov-loc-chips">
-            ${rotChipsHtml}
-          </div>
-        </div>` : ''}
-
-        <!-- Dual-range Mín-Máx con marker en reposición sugerida (rot × 7d) -->
-        <div class="prov-range-block" data-idpp="${pp.idPP}" data-idprod="${pp.idProducto}" data-scale="${escala}" data-sug="${sugRep}">
-          <div class="prov-range-headline">
-            <div class="prov-range-extreme">
-              <span class="prov-range-extreme-lbl">Mín</span>
-              <span class="prov-range-extreme-val" data-vfor="min-${pp.idPP}">${minVal}</span>
-            </div>
-            ${sugRep > 0 ? `
-              <div class="prov-range-mid${sugDentro ? '' : ' off'}" data-mid="${pp.idPP}" title="Reposición sugerida: ${sugRep} (rot × 7d)">
-                <span data-mid-lbl="${pp.idPP}">${sugDentro ? '✓ Sugerido (' + sugRep + ') dentro' : '⚠ Sugerido (' + sugRep + ') fuera'}</span>
-              </div>
-            ` : `<div class="prov-range-mid muted">Sin rotación</div>`}
-            <div class="prov-range-extreme">
-              <span class="prov-range-extreme-lbl">Máx</span>
-              <span class="prov-range-extreme-val" data-vfor="max-${pp.idPP}">${maxVal}</span>
-            </div>
-          </div>
-          <div class="prov-range-track-wrap">
-            <div class="prov-range-track-bg"></div>
-            <div class="prov-range-fill" data-fill="${pp.idPP}" style="left:${minPctRange}%;right:${100 - maxPctRange}%"></div>
-            ${sugRep > 0 ? `
-              <div class="prov-range-mark${sugDentro ? '' : ' off'}" data-mark="${pp.idPP}" style="left:${sugPctRange}%" title="Sugerido: ${sugRep}/sem">
-                <span class="prov-range-mark-num">≈ ${sugRep}</span>
-              </div>
-            ` : ''}
-            <input type="range" min="0" max="${escala}" step="1" value="${minVal}"
-              class="prov-range prov-range-min" data-idpp="${pp.idPP}" data-idprod="${pp.idProducto}" data-bound="min"
-              oninput="MOS.provRangeInput(this)" onchange="MOS.provRangeChange(this)">
-            <input type="range" min="0" max="${escala}" step="1" value="${maxVal}"
-              class="prov-range prov-range-max" data-idpp="${pp.idPP}" data-idprod="${pp.idProducto}" data-bound="max"
-              oninput="MOS.provRangeInput(this)" onchange="MOS.provRangeChange(this)">
-          </div>
-        </div>
-        ${pp.razonSugerencia ? `<div class="prov-sugerencia-txt">${pp.razonSugerencia}</div>` : ''}
-
-        <!-- Acción única: agregar a carrito (sugerencia individual) -->
-        <div class="prov-card-action">
-          ${qtyActual > 0 ? `
-            <button onclick="event.stopPropagation();MOS.provAbrirCarrito('${idProvActual}')" class="prov-en-carrito-chip" title="Click para ver/editar en el carrito">
-              ✓ En carrito: <b>${qtyActual} un</b>${upb > 1 ? ` <span class="prov-en-carrito-bultos">· ${(qtyActual/upb).toFixed(qtyActual % upb === 0 ? 0 : 1)} bulto${qtyActual === upb ? '' : 's'}</span>` : ''}
-            </button>
-          ` : pp.sugerencia > 0 ? `
-            <button onclick="event.stopPropagation();MOS.provPedidoUsarSugerencia('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-cta" title="${pp.razonSugerencia || ''}">
-              🛒 Agregar al pedido: <b>${pp.sugerencia} un</b>${upb > 1 ? ` (${pp.sugerenciaBultos} bulto${pp.sugerenciaBultos === 1 ? '' : 's'} × ${upb})` : ''}
-            </button>
-          ` : `
-            <span class="prov-sin-accion">— Sin sugerencia · stock OK —</span>
-          `}
-          <button onclick="event.stopPropagation();MOS.eliminarProvProductoRapido('${pp.idPP}')" class="prov-card-del" title="Eliminar del catálogo">🗑️</button>
-        </div>
-      </div>`;
-    }).join('');
-  }
 
   // Aplicar sugerencias al carrito + animar FAB + abrir modal
-  function provAplicarTodasSugerencias() {
-    const id = S.provSelId;
-    if (!id) return;
-    _provAplicarSugerenciasACarrito(id);
-    _provCarritosSave();
-    _refreshProvCarritoBadge(id);
-    _provFabBump();
-    _pintaProvProductos(_filtrarPP((S.provProductos && S.provProductos[id]) || [], S.provProdFilter));
-    toast(`${Object.keys((S.provCarritos[id] || {}).items || {}).length} productos agregados al carrito`, 'ok');
-  }
+  // [v2.43.592 · pv2] provAplicarTodasSugerencias ELIMINADA (UI v1 rehecha)
+
 
   // Acción del botón principal del header del detalle.
   // Si carrito vacío → aplica todas las sugerencias y abre modal.
   // Si carrito con items → solo abre modal (para revisar/editar).
-  function provAccionPedido() {
-    const id = S.provSelId;
-    if (!id) return;
-    const resumen = _provCarritoResumen(id);
-    if (!resumen || resumen.count === 0) {
-      // Carrito vacío: aplicar sugerencias y abrir modal
-      provAplicarTodasSugerencias();
-    }
-    provAbrirCarrito(id);
-  }
+  // [v2.43.592 · pv2] provAccionPedido ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
 
   // Línea de desglose del pedido: "1 bulto × 12 un · S/2.50 c/u → S/30.00"
   function _renderDesgloseLine(qty, upb, precio) {
@@ -13863,167 +13226,28 @@ const MOS = (() => {
   }
 
   // ── Editar unidadesPorBulto inline (prompt nativo, simple) ──
-  async function provEditarBulto(idPP, current) {
-    const nuevoStr = await _modalPrompt('¿Cuántas unidades vienen por bulto/caja del proveedor?', String(current || 1), { titulo: 'Unidades por bulto', inputMode: 'numeric', maxlength: 5 });
-    if (nuevoStr === null) return;
-    const nuevo = Math.max(1, parseInt(nuevoStr) || 1);
-    if (nuevo === current) return;
-    const id = S.provSelId;
-    const lista = (S.provProductos && S.provProductos[id]) || [];
-    const item = lista.find(x => x.idPP === idPP);
-    if (item) item.unidadesPorBulto = nuevo;
+  // [v2.43.592 · pv2] provEditarBulto ELIMINADA (UI v1 rehecha)
 
-    // Sincronizar el carrito de ESE proveedor: actualizar upb del item y
-    // re-redondear la qty al nuevo múltiplo (siempre arriba).
-    if (S.provCarritos[id] && S.provCarritos[id].items[idPP]) {
-      const ci = S.provCarritos[id].items[idPP];
-      const qtyAnt = parseFloat(ci.qty) || 0;
-      const qtyRedondeada = Math.ceil(qtyAnt / nuevo) * nuevo;
-      ci.upb = nuevo;
-      ci.qty = qtyRedondeada;
-      S.provCarritos[id].ts = Date.now();
-      _provCarritosSave();
-      _renderCarritoIfOpen();
-      _refreshProvCarritoBadge(id);
-      _provFabRender();
-    }
-    // Re-render para que la sugerencia se recalcule visualmente
-    _pintaProvProductos(_filtrarPP(lista, S.provProdFilter));
-    try {
-      await API.post('actualizarProductoProveedor', { idPP, unidadesPorBulto: nuevo });
-      toast('Bulto actualizado: ' + nuevo + ' un', 'ok');
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    }
-  }
 
   // ── Dual-range Mín/Máx (una sola barra con dos handles + marker) ──
   // oninput: actualiza visual + valida que min ≤ max
-  function provRangeInput(inp) {
-    const block = inp.closest('.prov-range-block');
-    if (!block) return;
-    const idPP  = block.dataset.idpp;
-    const escala = parseInt(block.dataset.scale) || 100;
-    const sug    = parseInt(block.dataset.sug) || 0;
-    const minInp = block.querySelector('.prov-range-min');
-    const maxInp = block.querySelector('.prov-range-max');
-    let minV = parseInt(minInp.value) || 0;
-    let maxV = parseInt(maxInp.value) || 0;
-    // Clamp: el handle que mueves no puede cruzar al otro
-    if (inp.dataset.bound === 'min' && minV > maxV) {
-      minV = maxV; minInp.value = minV;
-    } else if (inp.dataset.bound === 'max' && maxV < minV) {
-      maxV = minV; maxInp.value = maxV;
-    }
-    // Etiquetas
-    const minLbl = block.querySelector(`[data-vfor="min-${idPP}"]`);
-    const maxLbl = block.querySelector(`[data-vfor="max-${idPP}"]`);
-    if (minLbl) minLbl.textContent = minV;
-    if (maxLbl) maxLbl.textContent = maxV;
-    // Fill (zona entre min y max)
-    const fill = block.querySelector(`[data-fill="${idPP}"]`);
-    if (fill) {
-      fill.style.left  = (minV / escala * 100) + '%';
-      fill.style.right = (100 - maxV / escala * 100) + '%';
-    }
-    // ¿El sugerido cae dentro? Pintar marker y pill verde/rojo
-    if (sug > 0) {
-      const dentro = sug >= minV && (maxV === 0 || sug <= maxV);
-      const mark = block.querySelector(`[data-mark="${idPP}"]`);
-      const mid  = block.querySelector(`[data-mid="${idPP}"]`);
-      const lbl  = block.querySelector(`[data-mid-lbl="${idPP}"]`);
-      if (mark) mark.classList.toggle('off', !dentro);
-      if (mid)  mid.classList.toggle('off', !dentro);
-      if (lbl)  lbl.textContent = dentro ? `✓ Sugerido (${sug}) dentro` : `⚠ Sugerido (${sug}) fuera`;
-    }
-  }
-  // onchange: cuando suelta el handle, persistir al GAS
-  function provRangeChange(inp) {
-    const campo = inp.dataset.bound === 'min' ? 'stockMinimo' : 'stockMaximo';
-    provProductoEditarStockMinMax({
-      dataset: {
-        idprod: inp.dataset.idprod,
-        campo:  campo,
-        idpp:   inp.dataset.idpp
-      },
-      value: inp.value
-    });
-  }
+  // [v2.43.592 · pv2] provRangeInput ELIMINADA (UI v1 rehecha)
 
-  function provProductoEditarStockMinMax(inp) {
-    const idProducto = inp.dataset.idprod;
-    const campo      = inp.dataset.campo;
-    const idPP       = inp.dataset.idpp;
-    const valor      = parseFloat(inp.value) || 0;
-    if (!idProducto || !campo) return;
-    // Optimista: actualizar localmente
-    const id = S.provSelId;
-    const lista = (S.provProductos && S.provProductos[id]) || [];
-    const item = lista.find(x => x.idPP === idPP);
-    if (item && item[campo] === valor) return; // sin cambio
-    if (item) item[campo] = valor;
-    // POST al GAS (silencioso). _source autoriza la mutación en _validarSource.
-    API.post('actualizarProductoMaster', {
-      _source:    'MOS_PROV_MINMAX',
-      idProducto: idProducto,
-      [campo]:    valor
-    }).then(() => {
-      toast(campo === 'stockMinimo' ? 'Mín actualizado' : 'Máx actualizado', 'ok');
-    }).catch(e => {
-      toast('Error: ' + e.message, 'error');
-    });
-  }
+  // onchange: cuando suelta el handle, persistir al GAS
+  // [v2.43.592 · pv2] provRangeChange ELIMINADA (UI v1 rehecha)
+
+
+  // [v2.43.592 · pv2] provProductoEditarStockMinMax ELIMINADA (UI v1 rehecha)
+
 
   // Edición del stepper en el card del producto.
   // ESCRIBE DIRECTAMENTE al carrito persistente del proveedor activo.
-  function provPedidoSetQty(idPP, val) {
-    const idProv = S.provSelId;
-    if (!idProv) return;
-    const lista = (S.provProductos && S.provProductos[idProv]) || [];
-    const item = lista.find(x => x.idPP === idPP);
-    if (!item) return;
-    let qty = parseFloat(val);
-    if (isNaN(qty) || qty < 0) qty = 0;
-    const upb = parseInt(item.unidadesPorBulto) || 1;
-    _provCarritoVacioOCrear(idProv);
-    if (qty <= 0) {
-      delete S.provCarritos[idProv].items[idPP];
-    } else {
-      S.provCarritos[idProv].items[idPP] = {
-        idPP:        item.idPP,
-        sku:         item.skuBase,
-        desc:        item.descripcion,
-        codigoBarra: item.codigoBarra,
-        precio:      parseFloat(item.precioReferencia) || 0,
-        qty:         qty,
-        upb:         upb
-      };
-    }
-    S.provCarritos[idProv].ts = Date.now();
-    _provCarritoMarcarActivo(idProv);
-    // Animar el FAB (efecto bump) para que el user note el cambio
-    _provFabBump();
-    // Actualizar visual del card sin re-render
-    const card = document.querySelector(`.prov-prod-card[data-idpp="${idPP}"]`);
-    if (card) {
-      card.classList.toggle('en-pedido', qty > 0);
-      const inp = card.querySelector('.prov-stepper-input');
-      if (inp && document.activeElement !== inp) inp.value = qty;
-      const desglose = card.querySelector(`[data-desglose="${idPP}"]`);
-      if (desglose) desglose.innerHTML = _renderDesgloseLine(qty, upb, item.precioReferencia || 0);
-      // Pulso sutil al card que cambió
-      card.classList.remove('cart-flash');
-      void card.offsetWidth;
-      card.classList.add('cart-flash');
-    }
-    _refreshProvCarritoBadge(idProv);
-    _renderCarritoIfOpen();
-  }
+  // [v2.43.592 · pv2] provPedidoSetQty ELIMINADA (UI v1 rehecha)
 
 
-  function provPedidoUsarSugerencia(idPP, sug) {
-    provPedidoSetQty(idPP, sug);
-  }
+
+  // [v2.43.592 · pv2] provPedidoUsarSugerencia ELIMINADA (UI v1 rehecha)
+
 
   // Animación bump del FAB del carrito
   function _provFabBump() {
@@ -14037,33 +13261,21 @@ const MOS = (() => {
   // ── Modal carrito de pedido ─────────────────────────────────
   S.provCarritoTab = S.provCarritoTab || 'sel'; // 'sel' | 'all'
 
-  function provCarritoSetTab(t) {
-    S.provCarritoTab = t;
-    _renderCarrito();
-  }
+  // [v2.43.592 · pv2] provCarritoSetTab ELIMINADA (UI v1 rehecha)
+
 
   // Abre el modal carrito. Sin args → usa proveedor activo o el último tocado.
   // Con idProveedor → fuerza el carrito de ese proveedor (para FAB cross-vista).
   function provAbrirCarrito(idProveedor) {
-    const id = idProveedor || S.provSelId || S.provCarritoActivoId;
-    if (!id) { toast('Selecciona un proveedor primero', 'error'); return; }
-    S._carritoModalProvId = id;     // a quién pertenece la vista del modal
-    _provCarritoVacioOCrear(id);
-    const prov = (S.proveedores || []).find(p => p.idProveedor === id) || {};
-    const nameEl = $('carritoProvNombre');
-    if (nameEl) nameEl.textContent = prov.nombre || id;
-    const filt = $('carritoFiltro');
-    if (filt) filt.value = '';
-    const items = _provCarritoDe(id) || {};
-    if (!Object.keys(items).length) S.provCarritoTab = 'all';
-    _renderCarrito();
-    openModal('modalCarritoPedido');
+    // [v2.43.592] El FAB abre el PEDIDO v2 (el modal carrito v1 fue eliminado).
+    try { if (typeof switchView === 'function') switchView('proveedores'); } catch (_) {}
+    try { document.querySelectorAll('[data-view="proveedores"]').forEach(b => b.click()); } catch (_) {}
+    setTimeout(() => { try { pv2._abrirRef(idProveedor); } catch (_) {} }, 120);
   }
-  function provCerrarCarrito() { closeModal('modalCarritoPedido'); }
-  function _renderCarritoIfOpen() {
-    const m = $('modalCarritoPedido');
-    if (m && !m.classList.contains('hidden')) _renderCarrito();
-  }
+
+  // [v2.43.592 · pv2] provCerrarCarrito ELIMINADA (modal carrito v1 fuera)
+  function _renderCarritoIfOpen() { try { if (S.view === "proveedores") pv2Render(); } catch (_) {} }   // [v2.43.592] el pedido vive en la vista v2
+
 
   function _carritoTimestampHumano(ts) {
     if (!ts) return '';
@@ -14077,174 +13289,24 @@ const MOS = (() => {
     return `hace ${dias} d`;
   }
 
-  function _renderCarrito() {
-    const id = S._carritoModalProvId || S.provSelId;
-    if (!id) return;
-    const lista = (S.provProductos && S.provProductos[id]) || [];
-    const cont  = $('carritoLista');
-    const tabSel = $('carritoTabSel');
-    const tabAll = $('carritoTabAll');
-    if (tabSel && tabAll) {
-      const isSel = S.provCarritoTab === 'sel';
-      tabSel.style.background = isSel ? '#6366f1' : 'transparent';
-      tabSel.style.color      = isSel ? '#fff'    : '#94a3b8';
-      tabAll.style.background = !isSel ? '#6366f1' : 'transparent';
-      tabAll.style.color      = !isSel ? '#fff'    : '#94a3b8';
-    }
-    const q = ($('carritoFiltro')?.value || '').trim();
-    const carritoItems = _provCarritoDe(id) || {};
-    let filtrados = _filtrarPP(lista, q);
-    if (S.provCarritoTab === 'sel') {
-      filtrados = filtrados.filter(pp => carritoItems[pp.idPP]);
-    }
-    if (!cont) return;
-    if (!filtrados.length) {
-      cont.innerHTML = S.provCarritoTab === 'sel'
-        ? '<p class="text-slate-500 text-sm py-8 text-center">Aún no agregas productos al pedido.<br>Cambia a "Todos" y aumenta cantidades.</p>'
-        : '<p class="text-slate-500 text-sm py-8 text-center">Sin productos.</p>';
-    } else {
-      cont.innerHTML = filtrados.map(pp => _carritoFila(pp, id)).join('');
-    }
-    _renderCarritoFooter(id);
-  }
+  // [v2.43.592 · pv2] _renderCarrito ELIMINADA (UI v1 rehecha)
 
-  function _carritoFila(pp, idProveedor) {
-    const alert = _provAlertaInfo(pp.alerta);
-    const carritoItems = _provCarritoDe(idProveedor) || {};
-    const enCarrito = carritoItems[pp.idPP];
-    const qty = enCarrito ? enCarrito.qty : 0;
-    // upb viene del item del carrito si está, sino del producto (puede haber
-    // sido actualizado en el catálogo y aún no se sincronizó al carrito)
-    const upb = parseInt((enCarrito && enCarrito.upb) || pp.unidadesPorBulto) || 1;
-    const bultos = upb > 1 ? Math.round((qty / upb) * 100) / 100 : 0;
-    const subt = qty * (pp.precioReferencia || 0);
-    const bultoChip = upb > 1
-      ? `<span class="carrito-bulto-chip" title="${upb} unidades por bulto">📦 ×${upb}</span>`
-      : '';
-    return `
-    <div class="carrito-fila${qty > 0 ? ' en-pedido' : ''}" data-idpp="${pp.idPP}">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2 flex-wrap">
-          <div class="text-sm font-semibold text-slate-100 truncate flex-1 min-w-0">${pp.descripcion || pp.skuBase}</div>
-          ${bultoChip}
-        </div>
-        <div class="text-[10px] text-slate-500 truncate" style="font-family:monospace">SKU ${pp.skuBase}${pp.codigoBarra ? ' · ▌' + pp.codigoBarra : ''}</div>
-        <div class="flex items-center gap-2 text-[11px] mt-1" style="color:${alert.color}">
-          <span>📦 Stock <b>${pp.stockTotal}</b></span>
-          ${pp.stockMinimo > 0 ? `<span class="text-slate-500">· mín ${pp.stockMinimo}</span>` : ''}
-          ${pp.sugerencia > 0 ? `<button onclick="MOS.carritoSetQty('${pp.idPP}', ${pp.sugerencia})" class="prov-sug-btn-mini" title="${pp.razonSugerencia || ''}">Sug ${pp.sugerencia}</button>` : ''}
-        </div>
-      </div>
-      <div class="text-right shrink-0 mr-2">
-        <div class="text-[11px] text-slate-500">${fmtMoney(pp.precioReferencia || 0)}</div>
-        <div class="text-sm font-bold ${qty > 0 ? 'text-amber-400' : 'text-slate-600'}">${fmtMoney(subt)}</div>
-        ${qty > 0 && upb > 1 ? `<div class="text-[10px] text-slate-500">${bultos} bulto${Math.round(bultos) === 1 ? '' : 's'}</div>` : ''}
-      </div>
-      <div class="prov-stepper shrink-0">
-        <button onclick="MOS.carritoStep('${pp.idPP}', -${upb})" class="prov-stepper-btn" title="${upb > 1 ? `Quitar 1 bulto (−${upb})` : 'Quitar 1'}">−</button>
-        <input type="number" min="0" step="${upb}" value="${qty}" class="prov-stepper-input" data-idpp="${pp.idPP}"
-          oninput="MOS.carritoSetQty('${pp.idPP}', this.value)">
-        <button onclick="MOS.carritoStep('${pp.idPP}', ${upb})" class="prov-stepper-btn" title="${upb > 1 ? `Sumar 1 bulto (+${upb})` : 'Sumar 1'}">+</button>
-      </div>
-    </div>`;
-  }
 
-  function _renderCarritoFooter(idProveedor) {
-    const carrito = S.provCarritos[idProveedor] || { items: {}, ts: null };
-    const items = Object.values(carrito.items || {});
-    const totalQty = items.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
-    const totalMonto = items.reduce((s, it) => s + (parseFloat(it.qty) || 0) * (parseFloat(it.precio) || 0), 0);
-    const f = $('carritoFooter');
-    if (!f) return;
-    const ageH = carrito.ts ? Math.floor((Date.now() - carrito.ts) / 3600000) : null;
-    const stale = ageH !== null && ageH >= 24;
-    const tsHtml = carrito.ts
-      ? `<div class="text-[10px] ${stale ? 'text-amber-400' : 'text-slate-500'}">${stale ? '⚠ ' : ''}Última edición: ${_carritoTimestampHumano(carrito.ts)}${stale ? ' · stock pudo cambiar' : ''}</div>`
-      : '';
-    f.innerHTML = `
-      <div class="w-full flex flex-wrap items-center gap-2">
-        <div class="min-w-0 flex-1">
-          <div class="text-[10px] text-slate-500 uppercase">Total</div>
-          <div class="text-sm font-bold text-slate-100">${items.length} prods · ${totalQty} unds</div>
-          ${tsHtml}
-        </div>
-        <div class="text-right">
-          <div class="text-[10px] text-slate-500 uppercase">Monto</div>
-          <div class="text-base font-bold text-amber-400">${fmtMoney(totalMonto)}</div>
-        </div>
-      </div>
-      <div class="w-full flex flex-wrap gap-2 mt-2">
-        <button onclick="MOS.carritoAplicarSugerencias()" class="btn-ghost text-xs px-3 py-1.5" title="Reemplaza el carrito con las sugerencias actuales del backend">↻ Aplicar sugerencias</button>
-        <button onclick="MOS.carritoLimpiar()" class="btn-ghost text-xs px-3 py-1.5" ${items.length ? '' : 'disabled style="opacity:.4"'}>Limpiar</button>
-        <button onclick="MOS.provPedidoExportar()" class="btn-primary text-xs px-3 py-1.5 whitespace-nowrap ml-auto" ${items.length ? '' : 'disabled style="opacity:.4"'}>📄 Generar</button>
-      </div>
-    `;
-  }
+  // [v2.43.592 · pv2] _carritoFila ELIMINADA (UI v1 rehecha)
+
+
+  // [v2.43.592 · pv2] _renderCarritoFooter ELIMINADA (UI v1 rehecha)
+
 
   // Operaciones del carrito (PERSISTEN al localStorage)
-  function carritoSetQty(idPP, val) {
-    const id = S._carritoModalProvId || S.provSelId;
-    if (!id) return;
-    const lista = (S.provProductos && S.provProductos[id]) || [];
-    const item = lista.find(x => x.idPP === idPP);
-    if (!item) return;
-    let qty = parseFloat(val);
-    if (isNaN(qty) || qty < 0) qty = 0;
-    _provCarritoVacioOCrear(id);
-    if (qty <= 0) {
-      delete S.provCarritos[id].items[idPP];
-    } else {
-      S.provCarritos[id].items[idPP] = {
-        idPP, sku: item.skuBase, desc: item.descripcion,
-        codigoBarra: item.codigoBarra, precio: parseFloat(item.precioReferencia) || 0,
-        qty: qty,
-        upb: parseInt(item.unidadesPorBulto) || 1
-      };
-    }
-    S.provCarritos[id].ts = Date.now();
-    _provCarritoMarcarActivo(id);
-    _renderCarrito();
-    _refreshProvCarritoBadge(id);
-  }
-  function carritoStep(idPP, delta) {
-    const id = S._carritoModalProvId || S.provSelId;
-    if (!id) return;
-    const cur = (S.provCarritos[id] && S.provCarritos[id].items[idPP] && S.provCarritos[id].items[idPP].qty) || 0;
-    carritoSetQty(idPP, Math.max(0, cur + delta));
-  }
-  async function carritoLimpiar() {
-    const id = S._carritoModalProvId || S.provSelId;
-    if (!id) return;
-    if (!Object.keys((S.provCarritos[id] && S.provCarritos[id].items) || {}).length) return;
-    if (!await _modalConfirm('¿Limpiar el carrito de este proveedor?', { warning: true, titulo: 'Limpiar carrito' })) return;
-    S.provCarritos[id] = { items: {}, ts: Date.now() };
-    _provCarritosSave();
-    _renderCarrito();
-    _refreshProvCarritoBadge(id);
-    _provFabRender();
-  }
-  async function carritoAplicarSugerencias() {
-    const id = S._carritoModalProvId || S.provSelId;
-    if (!id) return;
-    if (!await _modalConfirm('¿Reemplazar el carrito con las sugerencias actuales?\n\nPierdes ajustes manuales.', { warning: true, titulo: 'Aplicar sugerencias' })) return;
-    const productos = (S.provProductos && S.provProductos[id]) || [];
-    const items = {};
-    productos.forEach(pp => {
-      const sug = parseFloat(pp.sugerencia) || 0;
-      if (sug > 0) {
-        items[pp.idPP] = {
-          idPP: pp.idPP, sku: pp.skuBase, desc: pp.descripcion,
-          codigoBarra: pp.codigoBarra, precio: parseFloat(pp.precioReferencia) || 0,
-          qty: sug, upb: parseInt(pp.unidadesPorBulto) || 1
-        };
-      }
-    });
-    S.provCarritos[id] = { items, ts: Date.now() };
-    _provCarritoMarcarActivo(id);
-    _renderCarrito();
-    _refreshProvCarritoBadge(id);
-    toast(`Carrito actualizado · ${Object.keys(items).length} prods`, 'ok');
-  }
+  // [v2.43.592 · pv2] carritoSetQty ELIMINADA (UI v1 rehecha)
+
+  // [v2.43.592 · pv2] carritoStep ELIMINADA (UI v1 rehecha)
+
+  // [v2.43.592 · pv2] carritoLimpiar ELIMINADA (UI v1 rehecha)
+
+  // [v2.43.592 · pv2] carritoAplicarSugerencias ELIMINADA (UI v1 rehecha)
+
 
   function _pedidoCabeceraTexto() {
     const id = S._carritoModalProvId || S.provSelId;
@@ -14386,63 +13448,21 @@ const MOS = (() => {
     _carritoOfrecerLimpiar();
   }
 
-  function _filtrarProvProductos(q) {
-    S.provProdFilter = q || '';
-    const id = S.provSelId;
-    if (!id) return;
-    const items = _filtrarPP(S.provProductos[id] || [], S.provProdFilter);
-    _pintaProvProductos(items);
-  }
+  // [v2.43.592 · pv2] _filtrarProvProductos ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
 
-  async function _renderProvProductos() {
-    const id = S.provSelId;
-    const cont = $('provTabProductos');
-    if (!cont) return;
-    S.provProductos = S.provProductos || {};
-    S.provProdFilter = S.provProdFilter || '';
 
-    // Asegurar contenedor (con buscador + botón)
-    if (!cont.querySelector('#provProductosList')) {
-      cont.innerHTML = `
-        <div class="flex items-center gap-2 mb-3 flex-wrap">
-          <h4 class="font-semibold text-sm text-slate-300 shrink-0">📦 Catálogo</h4>
-          <input id="provProdFilter" class="inp text-xs flex-1" style="min-width:120px;max-width:200px"
-            placeholder="🔍 Filtrar..." oninput="MOS._filtrarProvProductos(this.value)" value="${S.provProdFilter}">
-          <button id="btnJalarProds" class="btn-ghost text-xs px-3 py-1.5 shrink-0" onclick="MOS.jalarProductosProveedor()" title="Importa al catálogo todos los productos comprados a este proveedor según el histórico de guías">⬇️ Jalar</button>
-          <button class="btn-primary text-xs px-3 py-1.5 shrink-0" onclick="MOS.abrirModalProvProducto(null)">+ Producto</button>
-        </div>
-        <div id="provProductosList" class="space-y-2"></div>
-      `;
-    }
-    const list = $('provProductosList');
-
-    // Render cache si existe en memoria (ya hidratado del localStorage al login)
-    if (!S.provProductos[id]) {
-      // Por si el render se llama antes de la hidratación
-      const localCached = _provProdsLoadCache(id);
-      if (localCached) S.provProductos[id] = localCached;
-    }
-    if (S.provProductos[id]) {
-      _pintaProvProductos(_filtrarPP(S.provProductos[id], S.provProdFilter));
-    } else {
-      list.innerHTML = '<div class="skel h-24 rounded-lg"></div><div class="skel h-24 rounded-lg mt-2"></div>';
-    }
-
-    // Fetch fresco con stock + min/max + sugerencia
+  function _renderProvProductos() {
+    // [v2.43.592] SHIM v2: el editor de producto-proveedor (modal reutilizado) llama esto al
+    // guardar — refresca el catálogo del pedido v2 en vez de la lista v1 (eliminada).
     try {
-      const lista = await API.get('getProductosProveedorConStock', { idProveedor: id, rangoDias: 30 });
-      const items = Array.isArray(lista) ? lista : (lista && lista.data) || [];
-      S.provProductos[id] = items;
-      _provProdsSaveCache(id, items);
-      _refreshProvPendientesBadge(id);
-      // Si entre el fetch y la respuesta el usuario cambió de proveedor, NO pintar:
-      // pintaríamos productos del proveedor anterior sobre el detalle del nuevo.
-      if (S.provSelId !== id) return;
-      _pintaProvProductos(_filtrarPP(items, S.provProdFilter));
-    } catch(e) {
-      if (!S.provProductos[id]) list.innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
-    }
+      if (S.pv2 && S.pv2.prov) {
+        API.get('getProductosProveedorConStockV2', { idProveedor: S.pv2.prov.idProveedor, rangoDias: 30 })
+          .then(r => { if (r) { S.pv2.items = Array.isArray(r) ? r : (r.data || []); if (S.view === 'proveedores') pv2Render(); } })
+          .catch(() => {});
+      }
+    } catch (_) {}
   }
+
 
 
   function _fmtFechaLarga(fechaStr) {
@@ -14457,139 +13477,21 @@ const MOS = (() => {
   // Estado de días expandidos (key = idProveedor:fecha)
   S.provHistDiasOpen = S.provHistDiasOpen || {};
 
-  function provHistToggleDia(fecha) {
-    const key = (S.provSelId || '') + ':' + fecha;
-    S.provHistDiasOpen[key] = !S.provHistDiasOpen[key];
-    const id = S.provSelId;
-    if (id && S.provHistorico[id]) _pintaProvHistorico(S.provHistorico[id]);
-  }
+  // [v2.43.592 · pv2] provHistToggleDia ELIMINADA (UI v1 rehecha)
 
-  function _pintaProvHistorico(data) {
-    const body = $('provHistoricoBody');
-    if (!body) return;
-    const tieneDias = data && Array.isArray(data.guiasPorDia) && data.guiasPorDia.length;
-    if (!data || (!tieneDias && (!data.productos || !data.productos.length))) {
-      body.innerHTML = '<p class="text-slate-500 text-sm py-6 text-center">Sin compras registradas en el rango.</p>';
-      return;
-    }
 
-    const filtro = (S.provHistFilter || '').toLowerCase().trim();
-    const _matchItem = (it) => {
-      if (!filtro) return true;
-      const hay = ((it.descripcion || '') + ' ' + (it.codigoBarra || '') + ' ' + (it.skuBase || '')).toLowerCase();
-      return filtro.split(/\s+/).every(w => hay.indexOf(w) >= 0);
-    };
+  // [v2.43.592 · pv2] _pintaProvHistorico ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
 
-    let htmlDias = '';
-    if (tieneDias) {
-      const dias = data.guiasPorDia
-        .map(d => ({ ...d, items: (d.items || []).filter(_matchItem) }))
-        .filter(d => !filtro || d.items.length > 0);
-      if (!dias.length) {
-        htmlDias = '<p class="text-slate-500 text-sm py-6 text-center italic">Sin coincidencias para "' + filtro + '".</p>';
-      } else {
-        htmlDias = `<div class="space-y-2">${dias.map(d => {
-          const key = (S.provSelId || '') + ':' + d.fecha;
-          const open = !!S.provHistDiasOpen[key];
-          return `
-            <div class="hist-dia-card">
-              <div class="hist-dia-header" onclick="MOS.provHistToggleDia('${d.fecha}')">
-                <div class="flex-1 min-w-0">
-                  <div class="text-sm font-bold text-slate-100">${_fmtFechaLarga(d.fecha)}</div>
-                  <div class="text-[11px] text-slate-500 mt-0.5">${d.numItems} producto${d.numItems === 1 ? '' : 's'} · ${d.numGuias} guía${d.numGuias === 1 ? '' : 's'}</div>
-                </div>
-                <div class="text-right shrink-0">
-                  <div class="text-sm font-bold text-amber-400 whitespace-nowrap">${fmtMoney(d.totalDia)}</div>
-                </div>
-                <span class="hist-chevron" style="transform:rotate(${open ? 180 : 0}deg)">▾</span>
-              </div>
-              <div class="hist-dia-body" style="max-height:${open ? 1200 : 0}px">
-                <div class="px-3 pb-3 pt-2 space-y-1.5">
-                  ${d.items.map(it => `
-                    <div class="hist-item-row">
-                      <div class="min-w-0 flex-1">
-                        <div class="text-[13px] text-slate-100 truncate">${it.descripcion || '—'}</div>
-                        <div class="text-[10px] text-slate-500 truncate" style="font-family:monospace">${it.skuBase || ''}${it.codigoBarra ? ' · ▌' + it.codigoBarra : ''}</div>
-                      </div>
-                      <div class="text-right shrink-0">
-                        <div class="text-sm font-bold text-slate-100">${it.cantidad}u</div>
-                        <div class="text-[10px] text-slate-500">× ${fmtMoney(it.precio)} = <b class="text-amber-400">${fmtMoney(it.monto)}</b></div>
-                      </div>
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-            </div>`;
-        }).join('')}</div>`;
-      }
-    }
 
-    body.innerHTML = `
-      <div class="grid grid-cols-3 gap-2 mb-3">
-        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Guías</div><div class="text-base sm:text-lg font-bold text-slate-100">${data.totalGuias || 0}</div></div>
-        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Gastado</div><div class="text-base sm:text-lg font-bold text-amber-400 truncate">${fmtMoney(data.totalGastado || 0)}</div></div>
-        <div class="card-sm p-2 text-center"><div class="text-[10px] text-slate-500 uppercase tracking-wide">Por pagar</div><div class="text-base sm:text-lg font-bold ${(data.porPagar || 0) > 0 ? 'text-rose-400' : 'text-green-400'} truncate">${fmtMoney(data.porPagar || 0)}</div></div>
-      </div>
-      ${htmlDias || '<p class="text-slate-500 text-xs py-2 italic">Tu GAS aún no devuelve histórico por día — redespliega para ver el timeline.</p>'}
-    `;
-  }
+  // [v2.43.592 · pv2] _filtrarProvHistorico ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
 
-  function _filtrarProvHistorico(q) {
-    S.provHistFilter = q || '';
-    const id = S.provSelId;
-    if (id && S.provHistorico[id]) _pintaProvHistorico(S.provHistorico[id]);
-  }
 
-  async function _renderProvHistorico() {
-    const id = S.provSelId;
-    const cont = $('provTabHistorico');
-    if (!cont) return;
-    S.provHistFilter = S.provHistFilter || '';
-    // Asegurar contenedor base (con filtro)
-    if (!cont.querySelector('#provHistoricoBody')) {
-      cont.innerHTML = `
-        <div class="flex items-center gap-2 mb-3 flex-wrap">
-          <h4 class="font-semibold text-sm text-slate-300 shrink-0">📊 Histórico</h4>
-          <input id="provHistFilter" class="inp text-xs flex-1" style="min-width:100px;max-width:180px"
-            placeholder="🔍 Filtrar..." oninput="MOS._filtrarProvHistorico(this.value)" value="${S.provHistFilter}">
-          <select id="provHistoricoDias" class="inp text-xs shrink-0" style="max-width:90px" onchange="MOS._refetchHistoricoProv()">
-            <option value="30">30d</option>
-            <option value="60" selected>60d</option>
-            <option value="90">90d</option>
-            <option value="180">180d</option>
-          </select>
-        </div>
-        <div id="provHistoricoBody"></div>
-      `;
-    }
+  // [v2.43.592 · pv2] _renderProvHistorico ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
 
-    // Render desde cache si existe (instantáneo)
-    if (S.provHistorico[id]) {
-      _pintaProvHistorico(S.provHistorico[id]);
-    } else {
-      $('provHistoricoBody').innerHTML = '<div class="skel h-32 rounded-lg"></div>';
-    }
-
-    // Fetch fresco
-    try {
-      const dias = parseInt($('provHistoricoDias')?.value) || 60;
-      const r = await API.get('getHistoricoProveedor', { idProveedor: id, dias });
-      const data = r && r.data ? r.data : r;
-      S.provHistorico[id] = data;
-      _pintaProvHistorico(data);
-    } catch(e) {
-      if (!S.provHistorico[id]) {
-        $('provHistoricoBody').innerHTML = `<p class="text-red-400 text-sm">Error: ${e.message}</p>`;
-      }
-    }
-  }
 
   // Forzar refetch al cambiar el rango de días
-  function _refetchHistoricoProv() {
-    const id = S.provSelId;
-    if (id) S.provHistorico[id] = null;
-    _renderProvHistorico();
-  }
+  // [v2.43.592 · pv2] _refetchHistoricoProv ELIMINADA (UI v1 rehecha)
+
 
   async function _renderProvPedidos() {
     const id = S.provSelId;
@@ -17754,7 +16656,7 @@ const MOS = (() => {
     }
     closeModal('modalProveedor');
     renderProveedores();
-    if (S.provSelId && S.provSelId === params.idProveedor) selectProveedor(S.provSelId);
+    if (S.pv2 && S.pv2.prov && S.pv2.prov.idProveedor === params.idProveedor) { try { _renderProvProductos(); } catch(_){} }   // [v2.43.592] refresh v2
     // Efecto suave de adición (sin parpadeo): pulse en la card recién insertada.
     if (!isEdit) {
       try { if (navigator.vibrate) navigator.vibrate([20, 30, 40]); } catch (_) {}
@@ -38488,32 +37390,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // Jalar productos del proveedor desde el histórico de guías de WH
-  async function jalarProductosProveedor() {
-    const idProveedor = S.provSelId;
-    if (!idProveedor) return;
-    if (!await _modalConfirm('¿Importar al catálogo todos los productos comprados a este proveedor según las guías cerradas?\n\nNo borra nada — solo agrega los que falten y actualiza precios.', { titulo: 'Jalar catálogo desde guías', okText: 'Importar' })) return;
-    const btn = $('btnJalarProds');
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Jalando…'; }
-    try {
-      const res = await API.post('jalarProductosProveedor', { idProveedor });
-      const data = (res && res.data) ? res.data : res;
-      if (!data) throw new Error('Sin datos');
-      const lineas = [
-        '✓ ' + (data.creados || 0)      + ' creados',
-        '↻ ' + (data.actualizados || 0) + ' actualizados',
-        '— ' + (data.totalGuias || 0)   + ' guías analizadas'
-      ].join(' · ');
-      toast(lineas, 'ok');
-      // Refresh productos del proveedor
-      const lista = await API.get('getProveedorProductos', { idProveedor });
-      S.provProductos[idProveedor] = Array.isArray(lista) ? lista : (lista && lista.data) || [];
-      _renderProvProductos();
-    } catch(e) {
-      toast('Error: ' + e.message, 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = '⬇️ Jalar'; }
-    }
-  }
+  // [v2.43.592 · pv2] jalarProductosProveedor ELIMINADA (UI v1 rehecha — módulo Proveedores v2)
+
 
   async function eliminarProvProducto() {
     const idPP = $('ppId').value;
@@ -43339,7 +42217,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // (mismas claves localStorage → FAB global sigue funcionando).
   // Kill-switch: localStorage.mos_prov_v2_off = '1' → vuelve el módulo v1.
   // ═══════════════════════════════════════════════════════════════════════════
-  function _pv2On() { try { return localStorage.getItem('mos_prov_v2_off') !== '1'; } catch (_) { return true; } }
+  // [v2.43.592] kill-switch retirado: v2 ES el módulo (v1 eliminada).
   S.pv2 = { view: 'home', day: 'auto', q: '', prov: null, items: null, cargando: false, solo: false, det: {}, tab: 'cat', hist: null, cand: null };
 
   const PV2_DIAS = ['LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO','DOMINGO'];
@@ -43359,17 +42237,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const sec = $('view-proveedores');
     if (!sec) return null;
     let root = $('pv2Root');
-    if (!root) {
-      // Guardar el DOM legacy en un holder oculto (los modal-backdrop se quedan a
-      // nivel de sección para poder abrirse; jamás duplicar ids → feedback dueño).
-      const hold = document.createElement('div');
-      hold.id = 'pv2Legacy'; hold.className = 'hidden';
-      Array.from(sec.children).forEach(ch => { if (!ch.classList || !ch.classList.contains('modal-backdrop')) hold.appendChild(ch); });
-      sec.appendChild(hold);
-      root = document.createElement('div');
-      root.id = 'pv2Root';
-      sec.insertBefore(root, sec.firstChild);
-    }
+    if (!root) { root = document.createElement('div'); root.id = 'pv2Root'; sec.appendChild(root); }
     return root;
   }
 
@@ -43395,7 +42263,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       <div class="pv2-top">
         <div>
           <h2 class="pv2-h1">🚚 Pedido semanal</h2>
-          <div class="pv2-sub">${provs.length} proveedores · hoy ${PV2_DIAS_S[hoy]} · <button class="pv2-link" onclick="MOS.pv2.v1()" title="Volver temporalmente al módulo anterior">ver módulo clásico</button></div>
+          <div class="pv2-sub">${provs.length} proveedores · hoy ${PV2_DIAS_S[hoy]}</div>
         </div>
         <div class="pv2-search"><input id="pv2Q" type="search" placeholder="Buscar proveedor, RUC, teléfono…" value="${S.pv2.q||''}" oninput="MOS.pv2.buscar(this.value)"></div>
         <button class="btn-primary text-sm" onclick="MOS.abrirModalProveedor(null)">+ Nuevo</button>
@@ -43576,7 +42444,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ${S.pv2.cargando ? '<div class="skel h-24 rounded-xl"></div><div class="skel h-24 rounded-xl mt-2"></div>' : ''}
       ${!S.pv2.cargando && S.pv2.tab==='cat' ? `<div class="pv2-plist">
           ${activos.map(_pv2CardProd).join('') || '<p class="pv2-empty">Sin productos' + (S.pv2.solo?' en el pedido':'') + '. Usa ➕ para armar su catálogo.</p>'}
-          ${inactivos.length && !S.pv2.solo ? `<div class="pv2-offsec">⏻ Desactivados (${inactivos.length})</div>` + inactivos.map(_pv2CardProd).join('') : ''}
+          ${inactivos.length && !S.pv2.solo ? `<div class="pv2-offsec" style="cursor:pointer" onclick="MOS.pv2.showOff()">⏻ Desactivados (${inactivos.length}) ${S.pv2.off?'▴':'▾'}</div>` + (S.pv2.off ? inactivos.map(_pv2CardProd).join('') : '') : ''}
         </div>` : ''}
       ${!S.pv2.cargando && S.pv2.tab==='hist' ? _pv2HistHtml() : ''}
       ${cs ? `<div class="pv2-cartbar"><div class="in">
@@ -43609,6 +42477,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     volver() { S.pv2.view = 'home'; S.pv2.prov = null; pv2Render(); },
     tab(t)   { S.pv2.tab = t; pv2Render(); },
     solo()   { S.pv2.solo = !S.pv2.solo; pv2Render(); },
+    showOff(){ S.pv2.off = !S.pv2.off; pv2Render(); },
     det(k)   { S.pv2.det[k] = !S.pv2.det[k]; pv2Render(); },
     chg(k,d) { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, _pv2QtyB(pp) + d); pv2Render(); },
     setq(k,v){ const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, parseInt(v)||0); pv2Render(); },
@@ -43643,7 +42512,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${row('Banco', p.banco)}
         ${row('Cuenta', p.numeroCuenta, p.numeroCuenta?`<button class="pv2-mini" onclick="navigator.clipboard&&navigator.clipboard.writeText('${p.numeroCuenta}');MOS.pv2._t('📋 Cuenta copiada')">Copiar</button>`:'')}
         ${row('CCI', p.cci, p.cci?`<button class="pv2-mini" onclick="navigator.clipboard&&navigator.clipboard.writeText('${p.cci}');MOS.pv2._t('📋 CCI copiado')">Copiar</button>`:'')}
-        ${row('Día pedido', p.diaPedido)}
+        ${row('Día pedido', p.diaPedido, `<span class="pv2-diachips">${PV2_DIAS_S.map((d,i)=>`<button class=\`pv2-mini ${_pv2DiaIdx(p.diaPedido)===i?'acc':''}\`" onclick="MOS.pv2.setDia(${i})">${d}</button>`).join('')}</span>`)}
         ${row('Día entrega', p.diaEntrega)}
         ${row('Día pago', p.diaPago)}
         ${row('Responsable', p.responsable)}`,
@@ -43707,7 +42576,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       S.pv2.view = 'home'; pv2Render();
       toast('✅ Pedido de ' + (S.pv2.prov?.nombre || '') + ' marcado como enviado', 'ok');
     },
-    v1() { try { localStorage.setItem('mos_prov_v2_off', '1'); } catch (_) {} location.reload(); },
+    _abrirRef(id) { _pv2Abrir(id); },
+    async setDia(i) {
+      const p = S.pv2.prov; if (!p) return;
+      const dia = PV2_DIAS[i];
+      try {
+        await API.post('actualizarProveedor', { idProveedor: p.idProveedor, diaPedido: dia });
+        p.diaPedido = dia;
+        const sp = (S.proveedores || []).find(x => x.idProveedor === p.idProveedor); if (sp) sp.diaPedido = dia;
+        toast('📅 Día de pedido: ' + dia, 'ok'); pv2._mx(); pv2.datos();
+      } catch (e) { toast('No se pudo guardar el día, reintenta', 'error'); }
+    },
     _t(m) { toast(m, 'ok'); },
     _mx() { const m = $('pv2Modal'); if (m) m.remove(); }
   };
@@ -43850,25 +42729,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _almGenerarPedidoFromInsight, _almPickProveedor, cerrarSelProveedor,
     cerrarModalPedido, pedidoBuscarItem, pedidoAgregarItem,
     pedidoQuitarItem, pedidoCambiarQty, guardarPedido,
-    loadProveedores, selectProveedor, renderProveedores, cerrarDetalleProveedor,
-    abrirModalProveedor, guardarProveedor, provBuscar,
-    provLlamar, provWhatsApp,
-    provSetTab, _renderProvHistorico, _refetchHistoricoProv,
-    // F5 — Modernización Proveedores
-    provSetFiltroUrgencia, provAbrirHistorico, provAbrirInfo,
-    _filtrarProvProductos, _filtrarProvHistorico,
+    loadProveedores, renderProveedores, 
+    abrirModalProveedor, guardarProveedor, 
+    provLlamar, 
+     // F5 — Modernización Proveedores
+    provSetFiltroUrgencia,  provAbrirInfo,
+     
     abrirModalProvProducto, ppBuscar, ppSeleccionar,
     guardarProvProducto, eliminarProvProducto, eliminarProvProductoRapido,
-    jalarProductosProveedor,
-    provProductoEditarStockMinMax,
-    provRangeInput, provRangeChange,
-    provEditarBulto,
-    provPedidoSetQty, provPedidoUsarSugerencia,
-    provAplicarTodasSugerencias, provAccionPedido,
+    
+    
+     
+      
     _provFabSelectorPick, _provFabSelectorCloseClick,
-    carritoSetQty, carritoStep, carritoLimpiar, carritoAplicarSugerencias,
-    provAbrirCarrito, provCerrarCarrito, provCarritoSetTab, _renderCarrito,
-    provHistToggleDia,
+     provAbrirCarrito,
+    
     provPedidoExportar, provPedidoImprimir, provPedidoWhatsApp,
     abrirVistaCargadores, nuevoCargador, editarCargador,
     abrirModalPago, guardarPago, abrirModalPedido,

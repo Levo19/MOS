@@ -15378,85 +15378,7 @@
 
     <!-- ═══ VIEW: PROVEEDORES ════════════════════════════════ -->
     <section id="view-proveedores" class="view">
-      <!-- Header -->
-      <div id="provHeaderBar" class="mb-4">
-        <div class="flex items-center justify-between gap-2 mb-3">
-          <div class="text-sm text-slate-400"><span id="provCount">0</span> proveedores</div>
-          <div class="flex gap-2">
-            <button class="btn-ghost text-sm flex items-center gap-1" onclick="MOS.abrirVistaCargadores()" title="Cargadores temporales">
-              🚚 <span class="hidden sm:inline">Cargadores</span>
-            </button>
-            <button class="btn-primary text-sm" onclick="MOS.abrirModalProveedor(null)">+ Nuevo</button>
-          </div>
-        </div>
-        <!-- Buscador + pills filtro urgencia en una sola fila.
-             Al escribir, el input se ensancha y los pills se ocultan. -->
-        <div id="provFilasFiltro" class="prov-filas-filtro">
-          <div class="prov-search-wrap relative">
-            <input id="provSearch" type="search" autocomplete="off"
-                   oninput="MOS.provBuscar(this.value)"
-                   onfocus="document.getElementById('provFilasFiltro')?.classList.add('searching-focus')"
-                   onblur="if(!this.value)document.getElementById('provFilasFiltro')?.classList.remove('searching-focus')"
-                   placeholder="Buscar por nombre, RUC, teléfono, categoría…"
-                   class="inp w-full pl-9 pr-9 text-sm">
-            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm pointer-events-none">🔎</span>
-            <button id="provSearchClear" type="button" onclick="MOS.provBuscar('')"
-                    class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 text-lg leading-none px-2 hidden">×</button>
-          </div>
-          <div id="provFiltrosUrgencia" class="prov-filtros-urgencia"></div>
-        </div>
-      </div>
-      <div class="grid lg:grid-cols-3 gap-4">
-        <!-- Lista: siempre visible. En mobile/tablet el detalle se inyecta inline bajo el card seleccionado. -->
-        <div id="provListWrap" class="lg:col-span-1">
-          <div id="listProveedores" class="space-y-2">
-            <div class="skel h-20 rounded-xl"></div>
-            <div class="skel h-20 rounded-xl"></div>
-          </div>
-        </div>
-        <!-- Panel detalle (solo desktop ≥ lg) -->
-        <div id="provDetailWrap" class="lg:col-span-2 hidden lg:block">
-          <div id="proveedorDetail" class="prov-detail-card text-slate-500 text-sm">
-            <p class="text-center p-6">Selecciona un proveedor para ver pagos y pedidos</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Modal: HISTÓRICO del proveedor (reemplaza la pestaña) -->
-      <div id="modalProvHistorico" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalProvHistorico')">
-        <div class="modal-box flex flex-col" style="max-width:780px;max-height:90vh">
-          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,0.10),transparent);">
-            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#312e81,#6366f1);">📊</div>
-            <div class="min-w-0 flex-1">
-              <h2 class="font-bold text-base text-white">Histórico de compras</h2>
-              <p id="provHistModalSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
-            </div>
-            <button onclick="MOS.closeModal('modalProvHistorico')" class="modal-close-x">×</button>
-          </div>
-          <div class="overflow-y-auto p-4 flex-1">
-            <div id="provHistModalBody" class="text-sm">
-              <p class="text-center py-8 text-slate-500 text-xs">Cargando...</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Pop-down: DATOS SECUNDARIOS del proveedor (ⓘ) -->
-      <div id="modalProvInfo" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalProvInfo')">
-        <div class="modal-box flex flex-col" style="max-width:480px;max-height:80vh">
-          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(34,211,238,0.10),transparent);">
-            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#164e63,#22d3ee);">ⓘ</div>
-            <div class="min-w-0 flex-1">
-              <h2 class="font-bold text-base text-white">Datos del proveedor</h2>
-              <p id="provInfoModalSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
-            </div>
-            <button onclick="MOS.closeModal('modalProvInfo')" class="modal-close-x">×</button>
-          </div>
-          <div class="overflow-y-auto p-5 flex-1">
-            <div id="provInfoModalBody" class="space-y-2 text-sm"></div>
-          </div>
-        </div>
-      </div>
+      <!-- [v2.43.592] Módulo Proveedores REHECHO: la UI v2 (pv2Root) se inyecta desde app.js. La UI v1 (lista+detalle+histórico) fue eliminada. -->
     </section>
 
     <!-- ═══ VIEW: CAJAS ══════════════════════════════════════════ -->
@@ -19635,27 +19557,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   </div>
 </div>
 
-<!-- Modal: Carrito de pedido (todos los productos del proveedor con +/- inline) -->
-<div id="modalCarritoPedido" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.provCerrarCarrito()">
-  <div class="modal-box p-0" style="max-width:760px;display:flex;flex-direction:column;max-height:92vh;width:100%">
-    <div class="px-5 pt-4 pb-3 flex items-center justify-between flex-shrink-0" style="border-bottom:1px solid #1e293b">
-      <div class="min-w-0 flex-1">
-        <h3 class="font-semibold text-amber-400 text-base">🛒 Carrito de pedido</h3>
-        <p id="carritoProvNombre" class="text-xs text-slate-500 mt-0.5 truncate">—</p>
-      </div>
-      <button onclick="MOS.provCerrarCarrito()" class="modal-close-x">×</button>
-    </div>
-    <div class="px-5 py-2 flex items-center gap-2 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:#060d1f">
-      <input id="carritoFiltro" class="inp text-xs flex-1" placeholder="🔍 Filtrar productos..." oninput="MOS._renderCarrito()">
-      <div class="flex bg-slate-900 rounded-lg p-0.5 text-xs">
-        <button id="carritoTabSel"   onclick="MOS.provCarritoSetTab('sel')" class="px-3 py-1 rounded font-semibold">En pedido</button>
-        <button id="carritoTabAll"   onclick="MOS.provCarritoSetTab('all')" class="px-3 py-1 rounded font-semibold">Todos</button>
-      </div>
-    </div>
-    <div id="carritoLista" class="overflow-y-auto px-3 py-3 space-y-2" style="flex:1"></div>
-    <div id="carritoFooter" class="px-5 py-3 flex flex-wrap items-center gap-2 flex-shrink-0" style="border-top:1px solid #1e293b;background:#0a1428"></div>
-  </div>
-</div>
+<!-- [v2.43.592] Modal carrito v1 ELIMINADO — el pedido vive en la vista Proveedores v2 -->
 
 <!-- Modal: Pedido exportable (vista imprimible + WhatsApp) -->
 <div id="modalPedidoExport" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalPedidoExport')">
@@ -19795,7 +19697,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.591';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.592';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19845,7 +19747,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.591"></script>
+<script src="js/api.js?v=2.43.592"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19860,7 +19762,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.591"></script>
+<script src="js/app.js?v=2.43.592"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
