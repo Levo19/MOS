@@ -42249,7 +42249,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // ── HOME: rail semanal + SIN DÍA ─────────────────────────────────────────
   function _pv2RenderHome(root) {
-    const provs = Array.isArray(S.proveedores) ? S.proveedores : [];
+    // [v2.43.593] Los CARGADORES (flete/carga, prefijo 'CARGADOR') NO son proveedores de
+    // pedido: viven en su propio modal 🚚 (convención existente _filtrarCargadores).
+    const provs = _filtrarReales(Array.isArray(S.proveedores) ? S.proveedores : []);
+    const nCarg = _filtrarCargadores(Array.isArray(S.proveedores) ? S.proveedores : []).length;
     const hoy = _pv2HoyIdx();
     if (S.pv2.day === 'auto') S.pv2.day = provs.some(p => _pv2DiaIdx(p.diaPedido) === hoy) ? hoy : 'sindia';
     const porDia = i => provs.filter(p => _pv2DiaIdx(p.diaPedido) === i);
@@ -42266,6 +42269,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           <div class="pv2-sub">${provs.length} proveedores · hoy ${PV2_DIAS_S[hoy]}</div>
         </div>
         <div class="pv2-search"><input id="pv2Q" type="search" placeholder="Buscar proveedor, RUC, teléfono…" value="${S.pv2.q||''}" oninput="MOS.pv2.buscar(this.value)"></div>
+        <button class="btn-ghost text-sm" onclick="MOS.abrirVistaCargadores()" title="Cargadores de flete y carga — no entran a pedidos; alta rápida solo con nombre">🚚 Cargadores${nCarg?` (${nCarg})`:''}</button>
         <button class="btn-primary text-sm" onclick="MOS.abrirModalProveedor(null)">+ Nuevo</button>
       </div>
       <div class="pv2-rail">
@@ -42512,7 +42516,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${row('Banco', p.banco)}
         ${row('Cuenta', p.numeroCuenta, p.numeroCuenta?`<button class="pv2-mini" onclick="navigator.clipboard&&navigator.clipboard.writeText('${p.numeroCuenta}');MOS.pv2._t('📋 Cuenta copiada')">Copiar</button>`:'')}
         ${row('CCI', p.cci, p.cci?`<button class="pv2-mini" onclick="navigator.clipboard&&navigator.clipboard.writeText('${p.cci}');MOS.pv2._t('📋 CCI copiado')">Copiar</button>`:'')}
-        ${row('Día pedido', p.diaPedido, `<span class="pv2-diachips">${PV2_DIAS_S.map((d,i)=>`<button class=\`pv2-mini ${_pv2DiaIdx(p.diaPedido)===i?'acc':''}\`" onclick="MOS.pv2.setDia(${i})">${d}</button>`).join('')}</span>`)}
+        ${row('Día pedido', p.diaPedido, `<span class="pv2-diachips">${PV2_DIAS_S.map((d,i)=>`<button class="pv2-mini ${_pv2DiaIdx(p.diaPedido)===i?'acc':''}" onclick="MOS.pv2.setDia(${i})">${d}</button>`).join('')}</span>`)}
         ${row('Día entrega', p.diaEntrega)}
         ${row('Día pago', p.diaPago)}
         ${row('Responsable', p.responsable)}`,
@@ -42593,7 +42597,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _pv2Modal(titulo, bodyHtml, footHtml) {
     pv2._mx();
     const div = document.createElement('div');
-    div.id = 'pv2Modal'; div.className = 'modal-backdrop';
+    // [v2.43.593 · FIX] sin la clase 'open' el backdrop queda display:none → los botones
+    // 📇 Datos y ➕ Agregar "no reaccionaban" (el modal se creaba invisible).
+    div.id = 'pv2Modal'; div.className = 'modal-backdrop open';
     div.innerHTML = `<div class="modal-box" style="max-width:460px;max-height:86vh;display:flex;flex-direction:column">
       <div class="px-5 py-4 flex items-center gap-3" style="border-bottom:1px solid #1e293b">
         <h2 class="font-bold text-base text-white flex-1">${titulo}</h2>
