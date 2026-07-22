@@ -12952,6 +12952,7 @@ const MOS = (() => {
   }
 
   function renderProveedores() {
+    if (_pv2On()) return pv2Render();   // [v2.43.591] Proveedores v2 — kill-switch: mos_prov_v2_off=1
     const el = $('listProveedores');
     if (!el) return;
     const reales = _filtrarReales(S.proveedores);
@@ -43329,7 +43330,404 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // ── PUBLIC API ───────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PROVEEDORES V2 — "Pedido semanal" (diseño aprobado por el dueño 2026-07-22,
+  // mockup artifact f0e3b615). Reglas: rail semanal + bucket SIN DÍA · cards
+  // FAMILIA (Σ sin negativos, derivados cuentan stock+rotación al padre) ·
+  // cobertura en semanas (no min/max) · sugerencia EDITABLE · ciclo ⏻/🗑 con
+  // reaparición vía ➕ De sus guías · WhatsApp/imprimir · carrito legacy intacto
+  // (mismas claves localStorage → FAB global sigue funcionando).
+  // Kill-switch: localStorage.mos_prov_v2_off = '1' → vuelve el módulo v1.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function _pv2On() { try { return localStorage.getItem('mos_prov_v2_off') !== '1'; } catch (_) { return true; } }
+  S.pv2 = { view: 'home', day: 'auto', q: '', prov: null, items: null, cargando: false, solo: false, det: {}, tab: 'cat', hist: null, cand: null };
+
+  const PV2_DIAS = ['LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO','DOMINGO'];
+  const PV2_DIAS_S = ['LUN','MAR','MIÉ','JUE','VIE','SÁB','DOM'];
+  function _pv2DiaIdx(d) {
+    const u = String(d || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const i = PV2_DIAS.findIndex(x => u === x || u.slice(0,3) === x.slice(0,3));
+    return i >= 0 ? i : null;
+  }
+  function _pv2HoyIdx() {
+    try {
+      const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Lima', weekday: 'short' }).format(new Date());
+      return { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5, Sun:6 }[wd] ?? new Date().getDay() - 1;
+    } catch (_) { return (new Date().getDay() + 6) % 7; }
+  }
+  function _pv2Root() {
+    const sec = $('view-proveedores');
+    if (!sec) return null;
+    let root = $('pv2Root');
+    if (!root) {
+      // Guardar el DOM legacy en un holder oculto (los modal-backdrop se quedan a
+      // nivel de sección para poder abrirse; jamás duplicar ids → feedback dueño).
+      const hold = document.createElement('div');
+      hold.id = 'pv2Legacy'; hold.className = 'hidden';
+      Array.from(sec.children).forEach(ch => { if (!ch.classList || !ch.classList.contains('modal-backdrop')) hold.appendChild(ch); });
+      sec.appendChild(hold);
+      root = document.createElement('div');
+      root.id = 'pv2Root';
+      sec.insertBefore(root, sec.firstChild);
+    }
+    return root;
+  }
+
+  function pv2Render() {
+    const root = _pv2Root(); if (!root) return;
+    if (S.pv2.view === 'pedido' && S.pv2.prov) return _pv2RenderPedido(root);
+    return _pv2RenderHome(root);
+  }
+
+  // ── HOME: rail semanal + SIN DÍA ─────────────────────────────────────────
+  function _pv2RenderHome(root) {
+    const provs = Array.isArray(S.proveedores) ? S.proveedores : [];
+    const hoy = _pv2HoyIdx();
+    if (S.pv2.day === 'auto') S.pv2.day = provs.some(p => _pv2DiaIdx(p.diaPedido) === hoy) ? hoy : 'sindia';
+    const porDia = i => provs.filter(p => _pv2DiaIdx(p.diaPedido) === i);
+    const sinDia = provs.filter(p => _pv2DiaIdx(p.diaPedido) === null);
+    const sel = S.pv2.day;
+    const lista = (sel === 'sindia' ? sinDia : porDia(sel))
+      .filter(p => !S.pv2.q || ((p.nombre||'')+' '+(p.ruc||'')+' '+(p.telefono||'')+' '+(p.categoriaProducto||'')).toLowerCase().includes(S.pv2.q))
+      .sort((a,b) => String(a.nombre||'').localeCompare(String(b.nombre||'')));
+
+    root.innerHTML = `
+      <div class="pv2-top">
+        <div>
+          <h2 class="pv2-h1">🚚 Pedido semanal</h2>
+          <div class="pv2-sub">${provs.length} proveedores · hoy ${PV2_DIAS_S[hoy]} · <button class="pv2-link" onclick="MOS.pv2.v1()" title="Volver temporalmente al módulo anterior">ver módulo clásico</button></div>
+        </div>
+        <div class="pv2-search"><input id="pv2Q" type="search" placeholder="Buscar proveedor, RUC, teléfono…" value="${S.pv2.q||''}" oninput="MOS.pv2.buscar(this.value)"></div>
+        <button class="btn-primary text-sm" onclick="MOS.abrirModalProveedor(null)">+ Nuevo</button>
+      </div>
+      <div class="pv2-rail">
+        ${PV2_DIAS_S.map((d,i) => {
+          const n = porDia(i).length;
+          const pend = porDia(i).some(p => (_provCarritoResumen(p.idProveedor)||{}).count);
+          return `<div class="pv2-day ${sel===i?'sel':''}" onclick="MOS.pv2.day(${i})">
+            ${i===hoy?'<span class="pv2-hoy">HOY</span>':''}
+            ${n?`<span class="pv2-dot ${pend?'':'off'}"></span>`:''}
+            <div class="dn">${d}</div><div class="dp">${n?n+' prov':'—'}</div></div>`;
+        }).join('')}
+        <div class="pv2-day sindia ${sel==='sindia'?'sel':''}" onclick="MOS.pv2.day('sindia')">
+          <div class="dn">SIN DÍA</div><div class="dp">${sinDia.length}</div></div>
+      </div>
+      ${sel==='sindia' && sinDia.length ? `<div class="pv2-insight">⚠ <b>${sinDia.length} proveedores sin día de pedido.</b> Asígnales su día (📇 Datos → ✏️ Editar) y este panel se vuelve tu agenda semanal.</div>` : ''}
+      <div class="pv2-provlist">
+        ${lista.map(p => {
+          const cs = _provCarritoResumen(p.idProveedor);
+          return `<div class="pv2-prov" onclick="MOS.pv2.abrir('${p.idProveedor}')">
+            ${cs ? `<span class="pv2-cartn">🛒 ${cs.count}</span>` : ''}
+            <div class="nm">${p.nombre||p.idProveedor}</div>
+            <div class="cat">${p.categoriaProducto||''}${p.ruc?' · RUC '+p.ruc:''}</div>
+            <div class="meta">
+              ${_pv2DiaIdx(p.diaPedido)!==null ? `<span class="pv2-pill acc">📅 pide ${PV2_DIAS_S[_pv2DiaIdx(p.diaPedido)]}</span>` : '<span class="pv2-pill warn">📅 sin día</span>'}
+              ${_pv2DiaIdx(p.diaEntrega)!==null ? `<span class="pv2-pill">🚚 entrega ${PV2_DIAS_S[_pv2DiaIdx(p.diaEntrega)]}</span>` : ''}
+              ${p.telefono ? `<span class="pv2-pill ok">💬 ${p.telefono}</span>` : '<span class="pv2-pill">🖨 sin WhatsApp</span>'}
+            </div>
+            <button class="pv2-cta">${cs ? 'Continuar pedido →' : '🛒 Armar pedido'}</button>
+          </div>`;
+        }).join('') || '<p class="pv2-empty">Ningún proveedor aquí' + (S.pv2.q ? ' con ese filtro' : '') + '.</p>'}
+      </div>`;
+  }
+
+  // ── PEDIDO: catálogo familia + historial + ➕ ────────────────────────────
+  async function _pv2Abrir(id) {
+    const prov = (S.proveedores || []).find(p => p.idProveedor === id);
+    if (!prov) { toast('Proveedor no encontrado', 'error'); return; }
+    S.pv2.prov = prov; S.pv2.view = 'pedido'; S.pv2.tab = 'cat'; S.pv2.det = {}; S.pv2.items = null; S.pv2.hist = null; S.pv2.cand = null; S.pv2.cargando = true;
+    S.provSelId = id;                       // los helpers legacy (WA/print) leen esto
+    S._carritoModalProvId = id;
+    pv2Render();
+    try {
+      const [items, hist] = await Promise.all([
+        API.get('getProductosProveedorConStockV2', { idProveedor: id, rangoDias: 30 })
+          .catch(() => null)
+          .then(r => r || API.get('getProductosProveedorConStock', { idProveedor: id, rangoDias: 30 })),
+        API.get('getHistoricoProveedor', { idProveedor: id }).catch(() => null)
+      ]);
+      S.pv2.items = Array.isArray(items) ? items : (items && items.data) || [];
+      S.pv2.hist = hist || null;
+    } catch (e) { S.pv2.items = []; }
+    S.pv2.cargando = false;
+    pv2Render();
+  }
+
+  function _pv2CostoDe(pp) {
+    const uc = (pp.ultimosCostos && pp.ultimosCostos[0] && parseFloat(pp.ultimosCostos[0].costo)) || 0;
+    return uc || parseFloat(pp.precioReferencia) || 0;
+  }
+  function _pv2Key(pp) { return String(pp.idPP || pp.skuBase || pp.codigoBarra); }
+  function _pv2QtyB(pp) {
+    const id = S.pv2.prov.idProveedor;
+    const it = S.provCarritos[id] && S.provCarritos[id].items && S.provCarritos[id].items[_pv2Key(pp)];
+    return it ? (parseFloat(it._bultos) || Math.ceil((parseFloat(it.qty)||0) / Math.max(parseFloat(pp.unidadesPorBulto)||1,1))) : 0;
+  }
+  function _pv2CartSet(pp, bultos) {
+    const id = S.pv2.prov.idProveedor;
+    const c = _provCarritoVacioOCrear(id);
+    const key = _pv2Key(pp);
+    const upb = Math.max(parseFloat(pp.unidadesPorBulto) || 1, 1);
+    bultos = Math.max(0, Math.round(bultos) || 0);
+    if (bultos > 0) c.items[key] = { qty: bultos * upb, precio: _pv2CostoDe(pp), desc: pp.descripcion, skuBase: pp.skuBase, codigoBarra: pp.codigoBarra, _bultos: bultos, _upb: upb };
+    else delete c.items[key];
+    c.ts = Date.now(); S.provCarritoActivoId = id;
+    _provCarritosSave(); _provFabRender();
+  }
+
+  function _pv2CovColor(c) { return c == null ? 'var(--pv2-ink3)' : c < 0.6 ? '#f87171' : c < 1.2 ? '#fbbf24' : '#34d399'; }
+
+  function _pv2CardProd(pp) {
+    const key = _pv2Key(pp);
+    const qb = _pv2QtyB(pp);
+    const upb = Math.max(parseFloat(pp.unidadesPorBulto) || 1, 1);
+    const fam = pp.familia || null;
+    const sug = (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0;
+    const sugTxt = sug > 0 ? `${sug} bulto${sug>1?'s':''} (${sug*upb} un)` : 'No pedir';
+    const razon = (pp.sugerenciaV2 && pp.sugerenciaV2.razon) || (pp.razonSugerencia || '');
+    const costo = _pv2CostoDe(pp);
+    const costoF = pp.ultimosCostos && pp.ultimosCostos[0] ? pp.ultimosCostos[0].fecha : null;
+    const open = S.pv2.det[key];
+    const comp = (pp.competencia || []).filter(x => x.costo != null);
+    const der = (fam && fam.derivados) || [];
+    const cob = fam ? fam.coberturaSem : null;
+    if (pp.activa === false) return `
+      <div class="pv2-prod pv2-off">
+        <div class="r"><div class="l"><span class="tach">${pp.descripcion}</span>
+          <div class="mini-note">⏻ desactivado — no se sugiere ni entra a los pedidos de este proveedor</div></div>
+          <button class="pv2-detbtn" onclick="MOS.pv2.activo('${key}', true)">Reactivar</button>
+          <button class="pv2-detbtn bad" onclick="MOS.pv2.quitar('${key}')">🗑 Quitar</button>
+        </div></div>`;
+    return `
+    <div class="pv2-prod ${qb>0?'encarro':''}" id="pv2p-${key}">
+      <div class="padre">${pp.descripcion}<span class="famtag" title="Padre canónico: el stock suma equivalentes y derivados">FAMILIA</span></div>
+      <div class="cod">${pp.codigoBarra||pp.skuBase||''}${upb>1?` · bulto ×${upb}`:''}${pp.countEquivalencias?` · ${pp.countEquivalencias} equiv.`:''}</div>
+      <div class="costline">
+        ${costo>0?`<span class="pv2-costo">💰 últ. costo <b>${fmtMoney(costo)}</b>${costoF?` <small>· guía ${costoF}</small>`:''}</span>`:'<span class="pv2-costo dim">💰 sin costo registrado aún</span>'}
+        ${comp.map(cp => `<span class="pv2-comp ${costo>0&&cp.costo<costo?'mejor':'peor'}" title="También se lo compras a ${cp.proveedor}">🏷 ${cp.proveedor}: ${fmtMoney(cp.costo)}${cp.fecha?' ('+cp.fecha+')':''}${costo>0?(cp.costo<costo?' · más barato — ¿⏻ aquí?':' · más caro'):''}</span>`).join('')}
+      </div>
+      <div class="famgrid">
+        ${fam ? `<span class="pv2-schip sum" title="Canónico + equivalentes + derivados. Los NEGATIVOS no suman (falta corregir ese stock).">Σ FAMILIA <b>${fam.stockPos}</b>${fam.tieneNegativos?' <small>· hay negativos que NO suman</small>':''}</span>` : ''}
+        <span class="pv2-schip ${((parseFloat(pp.stockWh)||0)<0)?'neg':''}">🏬 Almacén: <b>${pp.stockWh ?? 0}</b>${((parseFloat(pp.stockWh)||0)<0)?' 🔍':''}</span>
+        ${(pp.zonas||[]).map(z => `<span class="pv2-schip ${((parseFloat(z.cantidad)||0)<0)?'neg':''}">🏪 ${z.nombre}: <b>${z.cantidad}</b></span>`).join('')}
+        ${der.map(d => `<span class="pv2-schip deriv" title="Derivado envasado — cuenta en la familia">📦 ${d.nombre}: <b>${d.stock}</b> (${d.stockPadreEq} eq)</span>`).join('')}
+      </div>
+      <div class="pv2-cover">
+        <span class="lbl">⏳ cubre <b style="color:${_pv2CovColor(cob)}">${cob==null?'—':cob+' sem'}</b></span>
+        <div class="bar"><i style="width:${cob==null?0:Math.min(100, cob/2*100)}%;background:${_pv2CovColor(cob)}"></i></div>
+        <span class="lbl dim">${fam&&fam.rotFamiliaDia?`rota ${(fam.rotFamiliaDia*7).toFixed(1)}/sem`:(pp.rotacionDia?`rota ${(pp.rotacionDia*7).toFixed(1)}/sem`:'sin rotación')}</span>
+      </div>
+      <div class="foot">
+        <button class="pv2-sug ${sug===0?'zero':''}" onclick="MOS.pv2.sug('${key}')" title="${razon.replace(/"/g,'&quot;')}">⚡ ${sugTxt}</button>
+        <button class="pv2-detbtn" onclick="MOS.pv2.det('${key}')">${open?'▴ ocultar':(der.length?'🌳 familia':'📊 detalle')}</button>
+        <div class="lt">${qb>0&&costo>0?`<b>${fmtMoney(qb*upb*costo)}</b>`:''}</div>
+        <div class="pv2-step">
+          <button onclick="MOS.pv2.chg('${key}',-1)">−</button>
+          <input class="q" value="${qb}" onchange="MOS.pv2.setq('${key}',this.value)" inputmode="numeric">
+          <span class="u">${upb>1?'bultos':'und'}</span>
+          <button onclick="MOS.pv2.chg('${key}',1)">＋</button>
+        </div>
+      </div>
+      ${open ? `<div class="pv2-det">
+        ${der.length ? `<div class="pv2-detbox arbol"><h5>🌳 Árbol de la familia — los derivados nacen del padre y CUENTAN para él</h5>
+          <div class="dr b"><span>${pp.descripcion} (padre)</span><b>stock ${pp.stockTotal ?? '—'} · venta directa ${(parseFloat(pp.rotacionDia)||0*7).toFixed ? ((parseFloat(pp.rotacionDia)||0)*7).toFixed(1) : '—'}/sem</b></div>
+          ${der.map(d => `<div class="dr"><span>└ ${d.nombre}</span><b>${d.stock} (${d.stockPadreEq} eq) · ${d.ventas30}/30d</b></div>`).join('')}
+          ${fam ? `<div class="hint">💡 Demanda familia ≈ ${(fam.rotFamiliaDia*7).toFixed(1)}/sem — al pedir el padre, pides también para envasar.</div>` : ''}
+        </div>` : ''}
+        <div class="pv2-detbox"><h5>📈 Rotación 30d · almacén repone la Σ de zonas</h5>
+          <div class="dr b"><span>🏬 Almacén (Σ zonas)</span><b>${(((fam&&fam.rotFamiliaDia)||parseFloat(pp.rotacionDia)||0)*30).toFixed(0)} /30d</b></div>
+          ${(pp.zonas||[]).map(z => `<div class="dr"><span>🏪 ${z.nombre}</span><b>${z.ventasRango ?? 0} /30d</b></div>`).join('') || '<div class="dr"><span>sin ventas registradas</span><b>—</b></div>'}
+        </div>
+        <div class="pv2-detbox"><h5>💰 Últimos costos (de tus guías)</h5>
+          ${(pp.ultimosCostos||[]).map(h => `<div class="dr"><span>${h.fecha}</span><b>${fmtMoney(h.costo)}</b></div>`).join('') || '<div class="dr"><span>aún sin guías con costo</span><b>—</b></div>'}
+        </div>
+        <div class="pv2-ciclo">
+          <button class="pv2-detbtn" onclick="MOS.pv2.activo('${key}', false)">⏻ Desactivar aquí</button>
+          <button class="pv2-detbtn bad" onclick="MOS.pv2.quitar('${key}')">🗑 Quitar del catálogo</button>
+          <span>⏻ = visible pero no se sugiere · 🗑 = sale de este proveedor; si vuelve en una guía suya se ofrece de nuevo en ➕</span>
+        </div>
+      </div>` : ''}
+    </div>`;
+  }
+
+  function _pv2RenderPedido(root) {
+    const p = S.pv2.prov;
+    const cs = _provCarritoResumen(p.idProveedor);
+    const items = (S.pv2.items || []).filter(pp => !S.pv2.solo || _pv2QtyB(pp) > 0 || pp.activa === false && false);
+    const activos = items.filter(pp => pp.activa !== false);
+    const inactivos = (S.pv2.items || []).filter(pp => pp.activa === false);
+    root.innerHTML = `
+      <div class="pv2-pedhead">
+        <button class="pv2-back" onclick="MOS.pv2.volver()">←</button>
+        <div class="tt"><h2 class="pv2-h1">${p.nombre}</h2>
+          <div class="pv2-sub">${p.formaPago||''}${_pv2DiaIdx(p.diaPedido)!==null?` · pide ${PV2_DIAS_S[_pv2DiaIdx(p.diaPedido)]}`:' · 📅 sin día asignado'}${_pv2DiaIdx(p.diaEntrega)!==null?` · entrega ${PV2_DIAS_S[_pv2DiaIdx(p.diaEntrega)]}`:''} · la sugerencia es una base editable</div></div>
+        <div class="acts">
+          <button class="btn-ghost text-xs" onclick="MOS.pv2.datos()">📇 Datos</button>
+          <button class="btn-ghost text-xs" onclick="MOS.pv2.sugTodo()">⚡ Sugerir</button>
+          <button class="btn-ghost text-xs" onclick="MOS.pv2.vaciar()">Vaciar</button>
+        </div>
+      </div>
+      <div class="pv2-tabs">
+        <button class="pv2-ftab ${S.pv2.tab==='cat'?'on':''}" onclick="MOS.pv2.tab('cat')">📦 Catálogo${S.pv2.items?` (${S.pv2.items.length})`:''}</button>
+        <button class="pv2-ftab ${S.pv2.tab==='hist'?'on':''}" onclick="MOS.pv2.tab('hist')">🧾 Historial</button>
+        <button class="pv2-ftab ${S.pv2.solo?'on':''}" onclick="MOS.pv2.solo()">Solo con pedido</button>
+        <button class="pv2-ftab add" onclick="MOS.pv2.add()">➕ Agregar producto</button>
+      </div>
+      ${S.pv2.cargando ? '<div class="skel h-24 rounded-xl"></div><div class="skel h-24 rounded-xl mt-2"></div>' : ''}
+      ${!S.pv2.cargando && S.pv2.tab==='cat' ? `<div class="pv2-plist">
+          ${activos.map(_pv2CardProd).join('') || '<p class="pv2-empty">Sin productos' + (S.pv2.solo?' en el pedido':'') + '. Usa ➕ para armar su catálogo.</p>'}
+          ${inactivos.length && !S.pv2.solo ? `<div class="pv2-offsec">⏻ Desactivados (${inactivos.length})</div>` + inactivos.map(_pv2CardProd).join('') : ''}
+        </div>` : ''}
+      ${!S.pv2.cargando && S.pv2.tab==='hist' ? _pv2HistHtml() : ''}
+      ${cs ? `<div class="pv2-cartbar"><div class="in">
+          <div class="tot"><b>${cs.count}</b> productos · <b>${cs.qty}</b> und · est. <b>${fmtMoney(cs.monto)}</b> <small>(a últ. costo)</small></div>
+          <div class="sp"></div>
+          <button class="pv2-bt wa" onclick="MOS.pv2.wa()">💬 WhatsApp</button>
+          <button class="pv2-bt gh" onclick="MOS.provPedidoExportar()">🖨 Imprimir</button>
+          <button class="pv2-bt pri" onclick="MOS.pv2.enviado()">✓ Enviado</button>
+        </div></div>` : ''}`;
+  }
+
+  function _pv2HistHtml() {
+    const h = S.pv2.hist;
+    const dias = (h && Array.isArray(h.guiasPorDia)) ? h.guiasPorDia : [];
+    if (!dias.length) return '<p class="pv2-empty">Sin compras registradas a este proveedor.</p>';
+    return `<div class="pv2-plist">${dias.slice(0, 15).map((d, i) => `
+      <div class="pv2-hrow" onclick="this.classList.toggle('open')">
+        <div class="r1"><div class="nm">🧾 ${d.fecha || d.dia || ''}</div>
+          <div class="qv">${(d.items||[]).length} líneas${d.total ? ' · ' + fmtMoney(d.total) : ''}</div></div>
+        <div class="its">${(d.items||[]).map(it => `<div class="dr"><span>${it.descripcion||it.codigoBarra||''} ×${it.cantidad??''}</span><b>${it.precioUnitario ? fmtMoney(it.precioUnitario) : '—'}</b></div>`).join('')}</div>
+      </div>`).join('')}</div>`;
+  }
+
+  // ── acciones ──
+  function _pv2Item(key) { return (S.pv2.items || []).find(pp => _pv2Key(pp) === key); }
+  const pv2 = {
+    day(d)   { S.pv2.day = d; pv2Render(); },
+    buscar(v){ S.pv2.q = String(v||'').trim().toLowerCase(); const el = $('pv2Q'); pv2Render(); const el2 = $('pv2Q'); if (el2) { el2.focus(); el2.value = v; } },
+    abrir(id){ _pv2Abrir(id); },
+    volver() { S.pv2.view = 'home'; S.pv2.prov = null; pv2Render(); },
+    tab(t)   { S.pv2.tab = t; pv2Render(); },
+    solo()   { S.pv2.solo = !S.pv2.solo; pv2Render(); },
+    det(k)   { S.pv2.det[k] = !S.pv2.det[k]; pv2Render(); },
+    chg(k,d) { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, _pv2QtyB(pp) + d); pv2Render(); },
+    setq(k,v){ const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, parseInt(v)||0); pv2Render(); },
+    sug(k)   { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0); pv2Render(); },
+    sugTodo(){ (S.pv2.items||[]).forEach(pp => { if (pp.activa !== false) _pv2CartSet(pp, (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0); }); pv2Render(); toast('⚡ Sugerencia cargada — es una base editable, no un pedido fijo', 'ok'); },
+    vaciar() { const id = S.pv2.prov.idProveedor; S.provCarritos[id] = { items: {}, ts: Date.now() }; _provCarritosSave(); _provFabRender(); pv2Render(); },
+    async activo(k, val) {
+      const pp = _pv2Item(k); if (!pp || !pp.idPP) { toast('Producto sin idPP', 'error'); return; }
+      pp.activa = val; pv2Render();
+      try { await API.post('actualizarProductoProveedor', { idPP: pp.idPP, idProveedor: S.pv2.prov.idProveedor, activa: val }); toast(val ? '✓ Reactivado' : '⏻ Desactivado — no se sugerirá más para este proveedor', 'ok'); }
+      catch (e) { pp.activa = !val; pv2Render(); toast('No se pudo guardar, reintenta', 'error'); }
+    },
+    async quitar(k) {
+      const pp = _pv2Item(k); if (!pp || !pp.idPP) { toast('Producto sin idPP', 'error'); return; }
+      if (!await _modalConfirm(`¿Quitar "${pp.descripcion}" del catálogo de ${S.pv2.prov.nombre}?\n\nSi vuelve a llegar en una guía suya, se te ofrecerá de nuevo en ➕ De sus guías.`, { titulo: 'Quitar del catálogo', warning: true })) return;
+      try {
+        await API.post('eliminarProductoProveedor', { idPP: pp.idPP });
+        S.pv2.items = (S.pv2.items||[]).filter(x => _pv2Key(x) !== k);
+        const id = S.pv2.prov.idProveedor;
+        if (S.provCarritos[id] && S.provCarritos[id].items) { delete S.provCarritos[id].items[k]; _provCarritosSave(); _provFabRender(); }
+        S.pv2.cand = null;      // que ➕ lo re-detecte desde sus guías (el ciclo se cierra)
+        pv2Render(); toast('🗑 Fuera del catálogo. Si vuelve en una guía, aparecerá en ➕ para decidir.', 'ok');
+      } catch (e) { toast('No se pudo quitar, reintenta', 'error'); }
+    },
+    datos() {
+      const p = S.pv2.prov;
+      const row = (k, v, extra) => `<div class="pv2-datarow"><span class="k">${k}</span><span class="v ${v?'':'empty'}">${v||'— sin registrar'}</span>${extra||''}</div>`;
+      _pv2Modal('📇 ' + (p.nombre||''), `
+        ${row('Teléfono', p.telefono, p.telefono?`<button class="pv2-mini" onclick="window.open('https://wa.me/51${String(p.telefono).replace(/\\D/g,'')}','_blank')">WA</button>`:'')}
+        ${row('RUC', p.ruc)}
+        ${row('Forma pago', p.formaPago)}
+        ${row('Banco', p.banco)}
+        ${row('Cuenta', p.numeroCuenta, p.numeroCuenta?`<button class="pv2-mini" onclick="navigator.clipboard&&navigator.clipboard.writeText('${p.numeroCuenta}');MOS.pv2._t('📋 Cuenta copiada')">Copiar</button>`:'')}
+        ${row('CCI', p.cci, p.cci?`<button class="pv2-mini" onclick="navigator.clipboard&&navigator.clipboard.writeText('${p.cci}');MOS.pv2._t('📋 CCI copiado')">Copiar</button>`:'')}
+        ${row('Día pedido', p.diaPedido)}
+        ${row('Día entrega', p.diaEntrega)}
+        ${row('Día pago', p.diaPago)}
+        ${row('Responsable', p.responsable)}`,
+        `<button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Cerrar</button>
+         <button class="btn-primary text-sm flex-1" onclick="MOS.pv2._mx();MOS.abrirModalProveedor('${p.idProveedor}')">✏️ Editar</button>`);
+    },
+    async add() {
+      _pv2Modal('➕ Agregar producto a ' + (S.pv2.prov.nombre||''), '<div class="pv2-addtabs">' +
+        '<button class="pv2-ftab on" id="pv2AtG" onclick="MOS.pv2.addTab(\'g\')">🧾 De sus guías</button>' +
+        '<button class="pv2-ftab" id="pv2AtM" onclick="MOS.pv2.addTab(\'m\')">📚 Catálogo maestro</button></div>' +
+        '<div id="pv2AddBody"><div class="skel h-16 rounded-lg"></div></div>',
+        '<button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Listo</button>');
+      if (!S.pv2.cand) { try { S.pv2.cand = await API.get('getProvGuiaCandidatos', { idProveedor: S.pv2.prov.idProveedor }) || []; } catch (e) { S.pv2.cand = []; } }
+      pv2._addPaint();
+    },
+    addTab(t) {
+      const g = $('pv2AtG'), m = $('pv2AtM');
+      if (g) g.classList.toggle('on', t === 'g'); if (m) m.classList.toggle('on', t === 'm');
+      if (t === 'm') {
+        const b = $('pv2AddBody');
+        if (b) b.innerHTML = '<p class="pv2-addnote">Busca cualquier producto de tu catálogo maestro (o escanea uno de sus códigos). Se abre el buscador completo:</p>' +
+          '<button class="btn-primary text-sm w-full" onclick="MOS.pv2._mx();MOS.abrirModalProvProducto(null)">📚 Abrir buscador del catálogo maestro</button>' +
+          '<p class="pv2-addnote" style="margin-top:8px">El código que use este proveedor se aprende solo de su primera guía.</p>';
+      } else pv2._addPaint();
+    },
+    _addPaint() {
+      const b = $('pv2AddBody'); if (!b) return;
+      const cand = S.pv2.cand || [];
+      b.innerHTML = '<p class="pv2-addnote">Llegaron en <b>guías de este proveedor</b> pero no están en su catálogo. <b>Tú eliges</b> — nada se agrega solo (una guía mal hecha ya no contamina).</p>' +
+        (cand.length ? cand.map((c, i) => `
+          <div class="pv2-hrow"><div class="r1"><div class="nm">${c.descripcion||c.codigoBarra}</div>
+            <button class="pv2-mini acc" ${c._added?'disabled':''} onclick="MOS.pv2.addGuia(${i})">${c._added?'✓ Agregado':'➕ Agregar'}</button></div>
+            <div class="ev ${c.pocaEvidencia?'warn':''}">${c.pocaEvidencia?'⚠ llegó 1 sola vez — ¿guía mal registrada? revisa antes de agregar':'llegó '+c.veces+' veces'} · últ. ${c.ultFecha||'—'}${c.ultCosto?' · '+fmtMoney(c.ultCosto):''}</div></div>`).join('')
+        : '<p class="pv2-empty">Nada pendiente: todo lo que llegó en sus guías ya está en su catálogo ✓</p>');
+    },
+    async addGuia(i) {
+      const c = (S.pv2.cand || [])[i]; if (!c || c._added) return;
+      try {
+        await API.post('agregarProductoProveedor', { idProveedor: S.pv2.prov.idProveedor, skuBase: c.skuBase, codigoBarra: c.codigoBarra || '', descripcion: c.descripcion || '' });
+        c._added = true; pv2._addPaint();
+        toast('✓ Agregado al catálogo (con su costo aprendido de la guía)', 'ok');
+        API.get('getProductosProveedorConStockV2', { idProveedor: S.pv2.prov.idProveedor, rangoDias: 30 }).then(r => { if (r) { S.pv2.items = Array.isArray(r) ? r : (r.data||[]); if (S.pv2.view==='pedido') pv2Render(); } }).catch(()=>{});
+      } catch (e) { toast('No se pudo agregar, reintenta', 'error'); }
+    },
+    wa() {
+      const p = S.pv2.prov;
+      const cs = _provCarritoResumen(p.idProveedor);
+      if (!cs) { toast('El pedido está vacío', 'error'); return; }
+      const tel = String(p.telefono || '').replace(/\D/g, '');
+      const texto = encodeURIComponent(_pedidoTextoWhatsApp());
+      window.open(tel ? `https://wa.me/51${tel}?text=${texto}` : `https://wa.me/?text=${texto}`, '_blank');
+      _carritoOfrecerLimpiar();
+    },
+    async enviado() {
+      const id = S.pv2.prov.idProveedor;
+      const cs = _provCarritoResumen(id);
+      if (!cs) { toast('El pedido está vacío', 'error'); return; }
+      if (!await _modalConfirm('¿Marcar el pedido como ENVIADO y limpiar el carrito de este proveedor?', { titulo: 'Pedido enviado' })) return;
+      S.provCarritos[id] = { items: {}, ts: Date.now() };
+      _provCarritosSave(); _provFabRender();
+      S.pv2.view = 'home'; pv2Render();
+      toast('✅ Pedido de ' + (S.pv2.prov?.nombre || '') + ' marcado como enviado', 'ok');
+    },
+    v1() { try { localStorage.setItem('mos_prov_v2_off', '1'); } catch (_) {} location.reload(); },
+    _t(m) { toast(m, 'ok'); },
+    _mx() { const m = $('pv2Modal'); if (m) m.remove(); }
+  };
+  function _pv2Modal(titulo, bodyHtml, footHtml) {
+    pv2._mx();
+    const div = document.createElement('div');
+    div.id = 'pv2Modal'; div.className = 'modal-backdrop';
+    div.innerHTML = `<div class="modal-box" style="max-width:460px;max-height:86vh;display:flex;flex-direction:column">
+      <div class="px-5 py-4 flex items-center gap-3" style="border-bottom:1px solid #1e293b">
+        <h2 class="font-bold text-base text-white flex-1">${titulo}</h2>
+        <button onclick="MOS.pv2._mx()" class="modal-close-x">×</button></div>
+      <div class="p-4 overflow-y-auto flex-1">${bodyHtml}</div>
+      <div class="p-3 flex gap-2" style="border-top:1px solid #1e293b">${footHtml}</div></div>`;
+    div.addEventListener('click', e => { if (e.target === div) pv2._mx(); });
+    document.body.appendChild(div);
+  }
+
+
   return {
+    pv2,
     toast,
     init, nav, refresh, fabAction, iconBusy,
     // Facturación CPE (100% Supabase)

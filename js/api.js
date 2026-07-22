@@ -3334,6 +3334,16 @@ const API = (() => {
       if (action === 'getProductosProveedorConStock') {
         return _conFallbackMOS(() => _getProductosProveedorStockDirecto(p));
       }
+      // [Proveedores v2 · 542] catálogo enriquecido (familia+derivados, costos de guías,
+      // competencia, cobertura). Supabase-only; null → el front cae al v1 de arriba.
+      if (action === 'getProductosProveedorConStockV2') {
+        return _sbRpcMOS('productos_proveedor_stock_v2', { p }, 'mos').then(r => (r && r.ok) ? (r.data || []) : null).catch(() => null);
+      }
+      // [Proveedores v2 · 542] productos que llegaron en guías del proveedor y NO están
+      // en su catálogo (alta selectiva con evidencia — nunca bulk).
+      if (action === 'getProvGuiaCandidatos') {
+        return _sbRpcMOS('prov_guia_candidatos', { p }, 'mos').then(r => (r && r.ok) ? (r.data || []) : null).catch(() => null);
+      }
       if (action === 'getHistoricoProveedor') {
         return _conFallbackMOS(() => _getHistoricoProveedorDirecto(p));
       }
