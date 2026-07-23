@@ -42267,6 +42267,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (!lay) {
         lay = document.createElement('div');
         lay.id = 'pv2Layout'; lay.className = 'pv2-layout';
+        // [v2.43.596] backdrop tipo modal: clic FUERA del panel → volver al home
+        lay.addEventListener('click', e => { if (e.target === lay) pv2.volver(); });
         document.body.appendChild(lay);
       }
       return _pv2RenderPedido(lay);
@@ -42333,8 +42335,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       <div class="nm">${p.nombre||id}</div>
       ${p.ruc ? `<div class="pv2-ruc" title="RUC"><span class="bars"></span><span class="dig tnum">${p.ruc}</span></div>` : (p.categoriaProducto?`<div class="cat">${p.categoriaProducto}</div>`:'<div class="cat" style="opacity:.5">— sin RUC —</div>')}
       <div class="pv2-chips" onclick="event.stopPropagation()">
-        <button class="pv2-chip ${diaI!==null?'on':''}" onclick="MOS.pv2.cycleDia('${id}')" title="Día de pedido — toca para cambiar (cíclico L→D)">📅 ${diaI!==null?PV2_DIAS_S[diaI]:'+ día'}</button>
-        <button class="pv2-chip ${PV2_FP.includes(fp)?'on':''} ${fp&&!PV2_FP.includes(fp)?'leg':''}" onclick="MOS.pv2.cycleFP('${id}')" title="Forma de pago — toca para ciclar prepago → contraentrega → postpago">💰 ${PV2_FP.includes(fp)?fp:(fp||'+ pago')}</button>
+        <button class="pv2-chip ${diaI!==null?'on':''}" onclick="MOS.pv2.cycleDia('${id}', this)" title="Día de pedido — toca varias veces hasta el día que quieres; a los segundos la tarjeta vuela a su día">📅 ${diaI!==null?PV2_DIAS_S[diaI]:'+ día'}</button>
+        <button class="pv2-chip ${PV2_FP.includes(fp)?'on':''} ${fp&&!PV2_FP.includes(fp)?'leg':''}" onclick="MOS.pv2.cycleFP('${id}', this)" title="Forma de pago — toca para ciclar prepago → contraentrega → postpago">💰 ${PV2_FP.includes(fp)?fp:(fp||'+ pago')}</button>
         ${bancos.map((b,i)=>`<button class="pv2-chip bank on" onclick="MOS.pv2.banco('${id}',${i})" title="Ver cuenta/CCI de ${b.banco}">🏦 ${b.banco}</button>`).join('')}
         <button class="pv2-chip ${bancos.length?'':'dot'}" onclick="MOS.pv2.banco('${id}',-1)" title="${bancos.length?'Agregar otro banco':'Registrar banco, cuenta y CCI'}">${bancos.length?'＋':'🏦 + banco'}</button>
       </div>
@@ -42474,7 +42476,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const items = (S.pv2.items || []).filter(pp => !S.pv2.solo || _pv2QtyB(pp) > 0 || pp.activa === false && false);
     const activos = items.filter(pp => pp.activa !== false);
     const inactivos = (S.pv2.items || []).filter(pp => pp.activa === false);
-    root.innerHTML = `
+    // [v2.43.596] Panel FLOTANTE encima de la vista (no pantalla completa): el home queda
+    // visible detrás, difuminado; la cartbar es el pie del panel (jamás tapa el menú).
+    root.innerHTML = `<div class="pv2-laypanel"><div class="pv2-laybody">
       <div class="pv2-pedhead">
         <button class="pv2-back" onclick="MOS.pv2.volver()">←</button>
         <div class="tt"><h2 class="pv2-h1">${p.nombre}</h2>
@@ -42497,13 +42501,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           ${inactivos.length && !S.pv2.solo ? `<div class="pv2-offsec" style="cursor:pointer" onclick="MOS.pv2.showOff()">⏻ Desactivados (${inactivos.length}) ${S.pv2.off?'▴':'▾'}</div>` + (S.pv2.off ? inactivos.map(_pv2CardProd).join('') : '') : ''}
         </div>` : ''}
       ${!S.pv2.cargando && S.pv2.tab==='hist' ? _pv2HistHtml() : ''}
-      ${cs ? `<div class="pv2-cartbar"><div class="in">
+      </div>${cs ? `<div class="pv2-cartbar"><div class="in">
           <div class="tot"><b>${cs.count}</b> productos · <b>${cs.qty}</b> und · est. <b>${fmtMoney(cs.monto)}</b> <small>(a últ. costo)</small></div>
           <div class="sp"></div>
           <button class="pv2-bt wa" onclick="MOS.pv2.wa()">💬 WhatsApp</button>
           <button class="pv2-bt gh" onclick="MOS.provPedidoExportar()">🖨 Imprimir</button>
           <button class="pv2-bt pri" onclick="MOS.pv2.enviado()">✓ Enviado</button>
-        </div></div>` : ''}`;
+        </div></div>` : ''}</div>`;
   }
 
   function _pv2HistHtml() {
@@ -42654,22 +42658,60 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       API.post('actualizarProveedor', Object.assign({ idProveedor: id }, campos))
         .catch(() => { toast('No se pudo guardar, reintenta', 'error'); _renderProvProductos(); });
     },
-    cycleDia(id) {
+    // [v2.43.596] Cíclico con VENTANA DE GRACIA: cada toque avanza el chip EN SITIO
+    // (la card no se mueve); 2.5s después del último toque se guarda y la tarjeta
+    // VUELA a su día con efecto. Así puedes pasar de lunes a martes sin que se escape.
+    cycleDia(id, btn) {
       const p = pv2._prov(id); if (!p) return;
       const i = _pv2DiaIdx(p.diaPedido);
       const next = i === null ? 0 : (i + 1) % 8;             // L..D → (8º) sin día → L…
       p.diaPedido = next === 7 ? '' : PV2_DIAS[next];
-      pv2._patch(id, { diaPedido: p.diaPedido });
-      pv2Render();
+      if (btn) {
+        btn.textContent = '📅 ' + (next === 7 ? '+ día' : PV2_DIAS_S[next]);
+        btn.classList.toggle('on', next !== 7);
+        btn.classList.remove('pv2-tick'); void btn.offsetWidth; btn.classList.add('pv2-tick');
+      }
+      S.pv2._dT = S.pv2._dT || {};
+      clearTimeout(S.pv2._dT[id]);
+      S.pv2._dT[id] = setTimeout(() => {
+        pv2._patch(id, { diaPedido: p.diaPedido });
+        const lbl = _pv2DiaIdx(p.diaPedido) !== null ? PV2_DIAS_S[_pv2DiaIdx(p.diaPedido)] : 'sin día';
+        toast('📅 ' + (p.nombre || '').split(' ')[0] + ' → ' + lbl, 'ok');
+        const card = btn && btn.closest('.pv2-prov');
+        if (card && S.pv2.view === 'home') { card.classList.add('pv2-bye'); setTimeout(() => pv2Render(), 380); }
+        else pv2Render();
+      }, 2500);
     },
-    cycleFP(id) {
+    cycleFP(id, btn) {
       const p = pv2._prov(id); if (!p) return;
       const i = PV2_FP.indexOf(String(p.formaPago||'').toUpperCase());
       p.formaPago = PV2_FP[(i + 1) % PV2_FP.length];
-      pv2._patch(id, { formaPago: p.formaPago });
-      pv2Render();
+      if (btn) {
+        btn.textContent = '💰 ' + p.formaPago;
+        btn.classList.add('on'); btn.classList.remove('leg');
+        btn.classList.remove('pv2-tick'); void btn.offsetWidth; btn.classList.add('pv2-tick');
+      }
+      S.pv2._fT = S.pv2._fT || {};
+      clearTimeout(S.pv2._fT[id]);
+      S.pv2._fT[id] = setTimeout(() => pv2._patch(id, { formaPago: p.formaPago }), 1200);
     },
-    _telEdit(id) { MOS.abrirModalProveedor(id); },
+    // [v2.43.596] Teléfono: mini-modal SOLO para el número (no el editor completo).
+    _telEdit(id) {
+      const p = pv2._prov(id); if (!p) return;
+      _pv2Modal('📱 Teléfono · ' + (p.nombre || ''), `
+        <div class="pv2-datarow"><span class="k">Número</span><input id="pv2TelInp" class="inp text-sm tnum" style="flex:1" value="${p.telefono||''}" placeholder="9XXXXXXXX" inputmode="tel" maxlength="12"></div>
+        <p style="font-size:10.5px;color:#5b6b85;margin:8px 0 0">Con el número guardado, la tarjeta muestra los chips <b>📞 Llamar</b> y <b>🟢 WhatsApp</b> directos.</p>`,
+        `<button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Cancelar</button>
+         <button class="btn-primary text-sm flex-1" onclick="MOS.pv2.telGuardar('${id}')">💾 Guardar</button>`);
+      setTimeout(() => { const i = $('pv2TelInp'); if (i) i.focus(); }, 60);
+    },
+    telGuardar(id) {
+      const p = pv2._prov(id); if (!p) return;
+      const tel = ($('pv2TelInp')?.value || '').trim();
+      p.telefono = tel; pv2._mx(); pv2Render();
+      pv2._patch(id, { telefono: tel });
+      toast(tel ? '📱 Teléfono guardado — ya puedes llamar y escribir por WhatsApp' : '📱 Teléfono quitado', 'ok');
+    },
     // ── multi-banco: chip → detalle/editar · ＋ → agregar ──
     banco(id, idx) {
       const p = pv2._prov(id); if (!p) return;

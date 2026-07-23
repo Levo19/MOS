@@ -7167,11 +7167,18 @@
     .pv2-chip.wa{border-color:rgba(37,211,102,.4);color:#25d366;background:rgba(37,211,102,.10)}
     .pv2-chip.nota.on{background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.4);color:#fbbf24}
     .pv2-prov.pv2-bc .pv2-cta{margin-top:auto}
-    .pv2-layout{position:fixed;inset:0;z-index:8500;background:#020817;overflow-y:auto;padding:16px 14px 120px;animation:pv2LayIn .22s ease}
-    @keyframes pv2LayIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-    .pv2-layout .pv2-pedhead{max-width:1060px;margin:0 auto 12px}
-    .pv2-layout .pv2-tabs,.pv2-layout .pv2-plist,.pv2-layout .skel{max-width:1060px;margin-left:auto;margin-right:auto}
-    .pv2-layout .pv2-tabs{margin-bottom:12px}
+    /* [v2.43.596] pedido = OVERLAY flotante encima de la vista (el home respira detrás) */
+    .pv2-layout{position:fixed;inset:0;z-index:8500;background:rgba(2,8,23,.72);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:flex;align-items:center;justify-content:center;padding:20px;animation:pv2LayIn .2s ease}
+    @keyframes pv2LayIn{from{opacity:0}to{opacity:1}}
+    .pv2-laypanel{background:#050e21;border:1px solid var(--pv2-line);border-radius:20px;max-width:1000px;width:100%;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 40px 100px rgba(0,0,0,.6),0 0 0 1px rgba(99,102,241,.12);animation:pv2PanelIn .28s cubic-bezier(.3,1.3,.4,1)}
+    @keyframes pv2PanelIn{from{opacity:0;transform:translateY(26px) scale(.97)}to{opacity:1;transform:none}}
+    .pv2-laybody{flex:1;overflow-y:auto;padding:16px 16px 20px;min-height:0}
+    .pv2-laypanel .pv2-cartbar{position:static;background:#040b1c;border-top:1px solid var(--pv2-line);padding:11px 14px;backdrop-filter:none}
+    .pv2-tick{animation:pv2Tick .28s cubic-bezier(.3,1.6,.4,1)}
+    @keyframes pv2Tick{0%{transform:scale(.85)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
+    .pv2-bye{animation:pv2Bye .38s ease forwards}
+    @keyframes pv2Bye{to{opacity:0;transform:translateY(-14px) scale(.92)}}
+    @media(max-width:640px){ .pv2-layout{padding:8px} .pv2-laypanel{max-height:96vh;border-radius:16px} }
     .prov-cart-fab.fab-pop{animation:fabPop .5s cubic-bezier(.3,1.6,.4,1)}
     @keyframes fabPop{0%{transform:scale(.3) translateY(30px);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1) translateY(0);opacity:1}}
     .pv2-diachips .pv2-mini{padding:4px 7px;font-size:10px}
@@ -19725,7 +19732,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.595';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.596';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19775,7 +19782,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.595"></script>
+<script src="js/api.js?v=2.43.596"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19790,7 +19797,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.595"></script>
+<script src="js/app.js?v=2.43.596"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
