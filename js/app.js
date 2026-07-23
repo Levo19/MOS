@@ -251,6 +251,12 @@ const MOS = (() => {
     // (antes quedaba "atorado" en el último pedido abierto — feedback dueño). El FAB
     // flotante es el camino directo de vuelta a un pedido.
     if (viewName === 'proveedores' && S.view !== 'proveedores' && S.pv2) S.pv2.view = 'home';
+    // [v2.43.595] al SALIR del módulo, el layout de pedido se cierra (el carrito queda
+    // minimizado en el FAB flotante — se re-expande tocándolo desde cualquier vista).
+    if (S.view === 'proveedores' && viewName !== 'proveedores' && S.pv2) {
+      S.pv2.view = 'home';
+      const _lay = $('pv2Layout'); if (_lay) _lay.remove();
+    }
 
     // Config: show first panel
     if (viewName === 'config') {
@@ -42254,7 +42260,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   function pv2Render() {
     const root = _pv2Root(); if (!root) return;
-    if (S.pv2.view === 'pedido' && S.pv2.prov) return _pv2RenderPedido(root);
+    if (S.pv2.view === 'pedido' && S.pv2.prov) {
+      // [v2.43.595] El pedido es un LAYOUT overlay (sensación de carrito activo): tapa
+      // sidebar/nav, su barra WhatsApp vive DENTRO y no estorba el menú de MOS.
+      let lay = $('pv2Layout');
+      if (!lay) {
+        lay = document.createElement('div');
+        lay.id = 'pv2Layout'; lay.className = 'pv2-layout';
+        document.body.appendChild(lay);
+      }
+      return _pv2RenderPedido(lay);
+    }
     return _pv2RenderHome(root);
   }
 
@@ -42273,6 +42289,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       .filter(p => !S.pv2.q || ((p.nombre||'')+' '+(p.ruc||'')+' '+(p.telefono||'')+' '+(p.categoriaProducto||'')).toLowerCase().includes(S.pv2.q))
       .sort((a,b) => String(a.nombre||'').localeCompare(String(b.nombre||'')));
 
+    // [v2.43.595] cerrar el layout de pedido si quedó abierto (home = solo cards)
+    const lay = $('pv2Layout'); if (lay) lay.remove();
     root.innerHTML = `
       <div class="pv2-top">
         <div>
@@ -42297,21 +42315,36 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>
       ${sel==='sindia' && sinDia.length ? `<div class="pv2-insight">⚠ <b>${sinDia.length} proveedores sin día de pedido.</b> Asígnales su día (📇 Datos → ✏️ Editar) y este panel se vuelve tu agenda semanal.</div>` : ''}
       <div class="pv2-provlist">
-        ${lista.map(p => {
-          const cs = _provCarritoResumen(p.idProveedor);
-          return `<div class="pv2-prov" onclick="MOS.pv2.abrir('${p.idProveedor}')">
-            ${cs ? `<span class="pv2-cartn">🛒 ${cs.count}</span>` : ''}
-            <div class="nm">${p.nombre||p.idProveedor}</div>
-            <div class="cat">${p.categoriaProducto||''}${p.ruc?' · RUC '+p.ruc:''}</div>
-            <div class="meta">
-              ${_pv2DiaIdx(p.diaPedido)!==null ? `<span class="pv2-pill acc">📅 pide ${PV2_DIAS_S[_pv2DiaIdx(p.diaPedido)]}</span>` : '<span class="pv2-pill warn">📅 sin día</span>'}
-              ${_pv2DiaIdx(p.diaEntrega)!==null ? `<span class="pv2-pill">🚚 entrega ${PV2_DIAS_S[_pv2DiaIdx(p.diaEntrega)]}</span>` : ''}
-              ${p.telefono ? `<span class="pv2-pill ok">💬 ${p.telefono}</span>` : '<span class="pv2-pill">🖨 sin WhatsApp</span>'}
-            </div>
-            <button class="pv2-cta">${cs ? 'Continuar pedido →' : '🛒 Armar pedido'}</button>
-          </div>`;
-        }).join('') || '<p class="pv2-empty">Ningún proveedor aquí' + (S.pv2.q ? ' con ese filtro' : '') + '.</p>'}
+        ${lista.map(_pv2CardProv).join('') || '<p class="pv2-empty">Ningún proveedor aquí' + (S.pv2.q ? ' con ese filtro' : '') + '.</p>'}
       </div>`;
+  }
+
+  // ── [v2.43.595] Card estilo TARJETA DE PRESENTACIÓN: chips cíclicos + multi-banco + tel ──
+  const PV2_FP = ['PREPAGO','CONTRAENTREGA','POSTPAGO'];
+  function _pv2CardProv(p) {
+    const cs = _provCarritoResumen(p.idProveedor);
+    const id = p.idProveedor;
+    const diaI = _pv2DiaIdx(p.diaPedido);
+    const fp = String(p.formaPago||'').toUpperCase();
+    const bancos = Array.isArray(p.bancos) ? p.bancos : [];
+    const tel = String(p.telefono||'').replace(/\D/g,'');
+    return `<div class="pv2-prov pv2-bc" onclick="MOS.pv2.abrir('${id}')">
+      ${cs ? `<span class="pv2-cartn">🛒 ${cs.count}</span>` : (p.estado==='enviado'?'<span class="pv2-cartn" style="color:#34d399">✓</span>':'')}
+      <div class="nm">${p.nombre||id}</div>
+      ${p.ruc ? `<div class="pv2-ruc" title="RUC"><span class="bars"></span><span class="dig tnum">${p.ruc}</span></div>` : (p.categoriaProducto?`<div class="cat">${p.categoriaProducto}</div>`:'<div class="cat" style="opacity:.5">— sin RUC —</div>')}
+      <div class="pv2-chips" onclick="event.stopPropagation()">
+        <button class="pv2-chip ${diaI!==null?'on':''}" onclick="MOS.pv2.cycleDia('${id}')" title="Día de pedido — toca para cambiar (cíclico L→D)">📅 ${diaI!==null?PV2_DIAS_S[diaI]:'+ día'}</button>
+        <button class="pv2-chip ${PV2_FP.includes(fp)?'on':''} ${fp&&!PV2_FP.includes(fp)?'leg':''}" onclick="MOS.pv2.cycleFP('${id}')" title="Forma de pago — toca para ciclar prepago → contraentrega → postpago">💰 ${PV2_FP.includes(fp)?fp:(fp||'+ pago')}</button>
+        ${bancos.map((b,i)=>`<button class="pv2-chip bank on" onclick="MOS.pv2.banco('${id}',${i})" title="Ver cuenta/CCI de ${b.banco}">🏦 ${b.banco}</button>`).join('')}
+        <button class="pv2-chip ${bancos.length?'':'dot'}" onclick="MOS.pv2.banco('${id}',-1)" title="${bancos.length?'Agregar otro banco':'Registrar banco, cuenta y CCI'}">${bancos.length?'＋':'🏦 + banco'}</button>
+      </div>
+      <div class="pv2-chips" onclick="event.stopPropagation()">
+        ${tel ? `<a class="pv2-chip call" href="tel:+51${tel}" title="Llamar">📞 Llamar</a>
+                 <a class="pv2-chip wa" href="https://wa.me/51${tel}" target="_blank" rel="noopener" title="WhatsApp">🟢 WhatsApp</a>`
+              : `<button class="pv2-chip dot" onclick="MOS.pv2._telEdit('${id}')" title="Registrar teléfono">📱 + teléfono</button>`}
+      </div>
+      <button class="pv2-cta">${cs ? 'Continuar pedido →' : '🛒 Armar pedido'}</button>
+    </div>`;
   }
 
   // ── PEDIDO: catálogo familia + historial + ➕ ────────────────────────────
@@ -42402,6 +42435,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>
       <div class="foot">
         <button class="pv2-sug ${sug===0?'zero':''}" onclick="MOS.pv2.sug('${key}')" title="${razon.replace(/"/g,'&quot;')}">⚡ ${sugTxt}</button>
+        <button class="pv2-chip ${upb>1?'on':'dot'}" onclick="MOS.pv2.editar('${key}')" title="${upb>1?('Bulto ×'+upb+' — tocar para editar'):'Falta el bulto de este producto — tocar para llenarlo'}">📦 ${upb>1?('×'+upb):'bulto?'}</button>
+        <button class="pv2-chip nota ${pp.notas?'on':'dot'}" onclick="MOS.pv2.editar('${key}')" title="${pp.notas?String(pp.notas).replace(/"/g,'&quot;'):'Sin nota — tocar para escribir una (ej. solo pedidos > S/100)'}">📝${pp.notas?'':''}</button>
         <button class="pv2-detbtn" onclick="MOS.pv2.det('${key}')">${open?'▴ ocultar':(der.length?'🌳 familia':'📊 detalle')}</button>
         <div class="lt">${qb>0&&costo>0?`<b>${fmtMoney(qb*upb*costo)}</b>`:''}</div>
         <div class="pv2-step">
@@ -42613,15 +42648,75 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       d.innerHTML = ag.length ? '<div class="pv2-offsec" style="margin:12px 0 6px;color:#34d399">✓ Agregados en esta sesión (' + ag.length + ')</div>' +
         ag.map(a => `<div class="pv2-hrow" style="border-color:rgba(52,211,153,.3)"><div class="r1"><div class="nm" style="white-space:normal">${a.nombre}</div><span style="color:#34d399;font-size:12px;font-weight:800">✓</span></div></div>`).join('') : '';
     },
+    // ── [v2.43.595] chips cíclicos de la tarjeta (optimista + patch parcial) ──
+    _prov(id) { return (S.proveedores||[]).find(x => x.idProveedor === id); },
+    _patch(id, campos) {
+      API.post('actualizarProveedor', Object.assign({ idProveedor: id }, campos))
+        .catch(() => { toast('No se pudo guardar, reintenta', 'error'); _renderProvProductos(); });
+    },
+    cycleDia(id) {
+      const p = pv2._prov(id); if (!p) return;
+      const i = _pv2DiaIdx(p.diaPedido);
+      const next = i === null ? 0 : (i + 1) % 8;             // L..D → (8º) sin día → L…
+      p.diaPedido = next === 7 ? '' : PV2_DIAS[next];
+      pv2._patch(id, { diaPedido: p.diaPedido });
+      pv2Render();
+    },
+    cycleFP(id) {
+      const p = pv2._prov(id); if (!p) return;
+      const i = PV2_FP.indexOf(String(p.formaPago||'').toUpperCase());
+      p.formaPago = PV2_FP[(i + 1) % PV2_FP.length];
+      pv2._patch(id, { formaPago: p.formaPago });
+      pv2Render();
+    },
+    _telEdit(id) { MOS.abrirModalProveedor(id); },
+    // ── multi-banco: chip → detalle/editar · ＋ → agregar ──
+    banco(id, idx) {
+      const p = pv2._prov(id); if (!p) return;
+      const bancos = Array.isArray(p.bancos) ? p.bancos.slice() : [];
+      const b = idx >= 0 ? (bancos[idx] || {}) : {};
+      const nuevo = idx < 0;
+      const BK = ['BCP','INTERBANK','SCOTIABANK','BBVA','BANCO NACIÓN','YAPE','PLIN','OTRO'];
+      _pv2Modal((nuevo?'🏦 Nuevo banco · ':'🏦 ') + (p.nombre||''), `
+        <div class="pv2-datarow"><span class="k">Banco</span>
+          <select id="pv2bBanco" class="inp text-sm" style="flex:1">${BK.map(x=>`<option ${String(b.banco||'').toUpperCase()===x?'selected':''}>${x}</option>`).join('')}</select></div>
+        <div class="pv2-datarow"><span class="k">Cuenta</span><input id="pv2bCta" class="inp text-sm tnum" style="flex:1" value="${b.cuenta||''}" placeholder="número de cuenta">${b.cuenta?`<button class="pv2-mini" onclick="navigator.clipboard&&navigator.clipboard.writeText('${b.cuenta}');MOS.pv2._t('📋 Cuenta copiada')">Copiar</button>`:''}</div>
+        <div class="pv2-datarow"><span class="k">CCI</span><input id="pv2bCci" class="inp text-sm tnum" style="flex:1" value="${b.cci||''}" placeholder="CCI interbancario (opcional)">${b.cci?`<button class="pv2-mini" onclick="navigator.clipboard&&navigator.clipboard.writeText('${b.cci}');MOS.pv2._t('📋 CCI copiado')">Copiar</button>`:''}</div>
+        <p style="font-size:10.5px;color:#5b6b85;margin:8px 0 0">Cuenta y CCI son opcionales — puedes guardar solo el banco y completar después.</p>`,
+        `${!nuevo?`<button class="btn-ghost text-sm" style="color:#f87171" onclick="MOS.pv2.bancoQuitar('${id}',${idx})">🗑</button>`:''}
+         <button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Cancelar</button>
+         <button class="btn-primary text-sm flex-1" onclick="MOS.pv2.bancoGuardar('${id}',${idx})">💾 Guardar</button>`);
+    },
+    async bancoGuardar(id, idx) {
+      const p = pv2._prov(id); if (!p) return;
+      const bancos = Array.isArray(p.bancos) ? p.bancos.slice() : [];
+      const b = { banco: $('pv2bBanco')?.value || 'OTRO', cuenta: ($('pv2bCta')?.value||'').trim(), cci: ($('pv2bCci')?.value||'').trim() };
+      if (idx >= 0) bancos[idx] = b; else bancos.push(b);
+      p.bancos = bancos; pv2._mx(); pv2Render();
+      pv2._patch(id, { bancos });
+      toast('🏦 ' + b.banco + ' guardado', 'ok');
+    },
+    async bancoQuitar(id, idx) {
+      const p = pv2._prov(id); if (!p) return;
+      const bancos = (Array.isArray(p.bancos) ? p.bancos.slice() : []); bancos.splice(idx, 1);
+      p.bancos = bancos; pv2._mx(); pv2Render();
+      pv2._patch(id, { bancos });
+      toast('🏦 Banco quitado', 'ok');
+    },
     // [v2.43.594] Editor por producto: min/ref/notas son de ESTE proveedor; el BULTO es
     // del PRODUCTO (regla del dueño) → se propaga a todos sus proveedores (pp_set_bulto_global).
     editar(k) {
       const pp = _pv2Item(k); if (!pp) return;
+      // [v2.43.595] Precio ref. SOLO si el producto no tiene costo real: con guías que ya
+      // enseñaron el costo, ese campo es inútil (regla del dueño) — se muestra el real.
+      const costoReal = pp.ultimosCostos && pp.ultimosCostos[0];
       _pv2Modal('✎ ' + pp.descripcion, `
         <div class="pv2-datarow"><span class="k">Bulto ×</span><input id="pv2eBulto" class="inp text-sm" style="width:110px" type="number" min="1" value="${Math.max(parseFloat(pp.unidadesPorBulto)||1,1)}"><span style="font-size:10.5px;color:#5b6b85;flex:1">del PRODUCTO — se aplica a TODOS sus proveedores</span></div>
-        <div class="pv2-datarow"><span class="k">Precio ref.</span><input id="pv2eRef" class="inp text-sm" style="width:110px" type="number" step="0.01" min="0" value="${parseFloat(pp.precioReferencia)||''}" placeholder="S/"><span style="font-size:10.5px;color:#5b6b85;flex:1">de este proveedor (el últ. costo real sale de sus guías)</span></div>
+        ${costoReal
+          ? `<div class="pv2-datarow"><span class="k">Costo</span><span class="v" style="font-weight:800">💰 ${fmtMoney(costoReal.costo)} <small style="color:#5b6b85;font-weight:600">real, de su guía del ${costoReal.fecha} — el precio ref. ya no hace falta</small></span><input id="pv2eRef" type="hidden" value="${parseFloat(pp.precioReferencia)||''}"></div>`
+          : `<div class="pv2-datarow"><span class="k">Precio ref.</span><input id="pv2eRef" class="inp text-sm" style="width:110px" type="number" step="0.01" min="0" value="${parseFloat(pp.precioReferencia)||''}" placeholder="S/"><span style="font-size:10.5px;color:#5b6b85;flex:1">solo mientras no llegue una guía con costo real</span></div>`}
         <div class="pv2-datarow"><span class="k">Mín. compra</span><input id="pv2eMin" class="inp text-sm" style="width:110px" type="number" min="0" value="${parseFloat(pp.minimoCompra)||''}" placeholder="0"><span style="font-size:10.5px;color:#5b6b85;flex:1">unidades mínimas que acepta el proveedor</span></div>
-        <div class="pv2-datarow"><span class="k">Notas</span><input id="pv2eNotas" class="inp text-sm" style="flex:1" value="${(pp.notas||'').replace(/"/g,'&quot;')}" placeholder="ej. solo pedidos > S/100"></div>`,
+        <div class="pv2-datarow"><span class="k">📝 Nota</span><input id="pv2eNotas" class="inp text-sm" style="flex:1" value="${(pp.notas||'').replace(/"/g,'&quot;')}" placeholder="ej. solo pedidos > S/100 · llega los jueves"></div>`,
         `<button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Cancelar</button>
          <button class="btn-primary text-sm flex-1" onclick="MOS.pv2.editarGuardar('${k}')">💾 Guardar</button>`);
     },

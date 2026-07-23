@@ -1942,7 +1942,7 @@ const API = (() => {
       const a = { idProveedor: p.idProveedor != null ? String(p.idProveedor) : undefined };
       ['nombre','ruc','telefono','banco','numeroCuenta','cci','email',
        'diaPedido','diaPago','diaEntrega','formaPago','plazoCredito',
-       'responsable','categoriaProducto','estado'].forEach(k => {
+       'responsable','categoriaProducto','estado','bancos'].forEach(k => {   // [546] bancos = jsonb multi-banco
         if (k in p && p[k] !== undefined) a[k] = p[k];
       });
       const out = await _sbRpcMOSWrite('actualizar_proveedor', { p: a });
