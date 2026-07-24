@@ -13474,7 +13474,11 @@ const MOS = (() => {
     try {
       if (S.pv2 && S.pv2.prov) {
         API.get('getProductosProveedorConStockV2', { idProveedor: S.pv2.prov.idProveedor, rangoDias: 30 })
-          .then(r => { if (r) { S.pv2.items = Array.isArray(r) ? r : (r.data || []); if (S.view === 'proveedores') pv2Render(); } })
+          // [v2.43.597] con un modal pv2 abierto SOLO se actualiza la data (repintar
+          // detrás hacía parpadear el overlay); al cerrarse, _mx() repinta si hace falta
+          .then(r => { if (r) { S.pv2.items = Array.isArray(r) ? r : (r.data || []);
+            if ($('pv2Modal')) { S.pv2._dirty = true; return; }
+            if (S.view === 'proveedores') pv2Render(); } })
           .catch(() => {});
       }
     } catch (_) {}
@@ -42277,6 +42281,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // ── HOME: rail semanal + SIN DÍA ─────────────────────────────────────────
+  // [v2.43.597] La lista vive en #pv2HomeBody: el buscador repinta SOLO eso —
+  // recrear el <input> en cada tecla mandaba el caret al inicio ("escribía al revés").
+  function _pv2HomeListaHtml() {
+    const provs = _filtrarReales(Array.isArray(S.proveedores) ? S.proveedores : []);
+    const sinDia = provs.filter(p => _pv2DiaIdx(p.diaPedido) === null);
+    const sel = S.pv2.day;
+    // [v2.43.597] con búsqueda activa se busca en TODOS los días (no solo el
+    // seleccionado) — buscas "ADC" y lo encuentras esté donde esté.
+    const base = S.pv2.q ? provs : (sel === 'sindia' ? sinDia : provs.filter(p => _pv2DiaIdx(p.diaPedido) === sel));
+    const lista = base
+      .filter(p => !S.pv2.q || ((p.nombre||'')+' '+(p.ruc||'')+' '+(p.telefono||'')+' '+(p.categoriaProducto||'')).toLowerCase().includes(S.pv2.q))
+      .sort((a,b) => String(a.nombre||'').localeCompare(String(b.nombre||'')));
+    return `${S.pv2.q ? `<div class="pv2-insight">🔍 Buscando en <b>toda la semana</b> — ${lista.length} resultado${lista.length===1?'':'s'}.</div>` : ''}
+      ${!S.pv2.q && sel==='sindia' && sinDia.length ? `<div class="pv2-insight">⚠ <b>${sinDia.length} proveedores sin día de pedido.</b> Asígnales su día (📇 Datos → ✏️ Editar) y este panel se vuelve tu agenda semanal.</div>` : ''}
+      <div class="pv2-provlist">
+        ${lista.map(_pv2CardProv).join('') || '<p class="pv2-empty">Ningún proveedor aquí' + (S.pv2.q ? ' con ese filtro' : '') + '.</p>'}
+      </div>`;
+  }
   function _pv2RenderHome(root) {
     // [v2.43.593] Los CARGADORES (flete/carga, prefijo 'CARGADOR') NO son proveedores de
     // pedido: viven en su propio modal 🚚 (convención existente _filtrarCargadores).
@@ -42287,9 +42309,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const porDia = i => provs.filter(p => _pv2DiaIdx(p.diaPedido) === i);
     const sinDia = provs.filter(p => _pv2DiaIdx(p.diaPedido) === null);
     const sel = S.pv2.day;
-    const lista = (sel === 'sindia' ? sinDia : porDia(sel))
-      .filter(p => !S.pv2.q || ((p.nombre||'')+' '+(p.ruc||'')+' '+(p.telefono||'')+' '+(p.categoriaProducto||'')).toLowerCase().includes(S.pv2.q))
-      .sort((a,b) => String(a.nombre||'').localeCompare(String(b.nombre||'')));
 
     // [v2.43.595] cerrar el layout de pedido si quedó abierto (home = solo cards)
     const lay = $('pv2Layout'); if (lay) lay.remove();
@@ -42315,10 +42334,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <div class="pv2-day sindia ${sel==='sindia'?'sel':''}" onclick="MOS.pv2.day('sindia')">
           <div class="dn">SIN DÍA</div><div class="dp">${sinDia.length}</div></div>
       </div>
-      ${sel==='sindia' && sinDia.length ? `<div class="pv2-insight">⚠ <b>${sinDia.length} proveedores sin día de pedido.</b> Asígnales su día (📇 Datos → ✏️ Editar) y este panel se vuelve tu agenda semanal.</div>` : ''}
-      <div class="pv2-provlist">
-        ${lista.map(_pv2CardProv).join('') || '<p class="pv2-empty">Ningún proveedor aquí' + (S.pv2.q ? ' con ese filtro' : '') + '.</p>'}
-      </div>`;
+      <div id="pv2HomeBody">${_pv2HomeListaHtml()}</div>`;
   }
 
   // ── [v2.43.595] Card estilo TARJETA DE PRESENTACIÓN: chips cíclicos + multi-banco + tel ──
@@ -42424,12 +42440,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${costo>0?`<span class="pv2-costo">💰 últ. costo <b>${fmtMoney(costo)}</b>${costoF?` <small>· guía ${costoF}</small>`:''}</span>`:'<span class="pv2-costo dim">💰 sin costo registrado aún</span>'}
         ${comp.map(cp => `<span class="pv2-comp ${costo>0&&cp.costo<costo?'mejor':'peor'}" title="También se lo compras a ${cp.proveedor}">🏷 ${cp.proveedor}: ${fmtMoney(cp.costo)}${cp.fecha?' ('+cp.fecha+')':''}${costo>0?(cp.costo<costo?' · más barato — ¿⏻ aquí?':' · más caro'):''}</span>`).join('')}
       </div>
-      <div class="famgrid">
-        ${fam ? `<span class="pv2-schip sum" title="Canónico + equivalentes + derivados. Los NEGATIVOS no suman (falta corregir ese stock).">Σ FAMILIA <b>${fam.stockPos}</b>${fam.tieneNegativos?' <small>· hay negativos que NO suman</small>':''}</span>` : ''}
-        <span class="pv2-schip ${((parseFloat(pp.stockWh)||0)<0)?'neg':''}">🏬 Almacén: <b>${pp.stockWh ?? 0}</b>${((parseFloat(pp.stockWh)||0)<0)?' 🔍':''}</span>
-        ${(pp.zonas||[]).map(z => `<span class="pv2-schip ${((parseFloat(z.cantidad)||0)<0)?'neg':''}">🏪 ${z.nombre}: <b>${z.cantidad}</b></span>`).join('')}
-        ${der.map(d => `<span class="pv2-schip deriv" title="Derivado envasado — cuenta en la familia">📦 ${d.nombre}: <b>${d.stock}</b> (${d.stockPadreEq} eq)</span>`).join('')}
-      </div>
+      ${(() => {   // [v2.43.597] stock como SUMA ordenada: ALMACÉN destacado + zonas + Σ familia
+        const alm = parseFloat(pp.stockWh) || 0;
+        const zonas = pp.zonas || [];
+        const zSum = _money(zonas.reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
+        const famTot = fam ? fam.stockPos : _money(alm + zSum);
+        return `<div class="pv2-stk">
+        <div class="cell alm ${alm<0?'neg':''}" title="Stock del ALMACÉN — el que respalda tus pedidos"><span class="t">🏬 ALMACÉN</span><b>${pp.stockWh ?? 0}</b>${alm<0?'<small>⚠ negativo — corrígelo</small>':''}</div>
+        <span class="op">+</span>
+        <div class="cell ${zSum<0?'neg':''}" title="Σ de todas las zonas de venta"><span class="t">🏪 ZONAS</span><b>${zSum}</b><small>${zonas.map(z => `${z.nombre} ${z.cantidad}`).join(' · ') || 'sin stock en zonas'}</small></div>
+        <span class="op">=</span>
+        <div class="cell fam" title="Canónico + equivalentes + derivados. Los NEGATIVOS no suman."><span class="t">Σ FAMILIA</span><b>${famTot}</b><small>${der.length?`con ${der.length} derivado${der.length>1?'s':''}`:''}${fam&&fam.tieneNegativos?' · ⚠ hay negativos que NO suman':''}</small></div>
+      </div>`; })()}
       <div class="pv2-cover">
         <span class="lbl">⏳ cubre <b style="color:${_pv2CovColor(cob)}">${cob==null?'—':cob+' sem'}</b></span>
         <div class="bar"><i style="width:${cob==null?0:Math.min(100, cob/2*100)}%;background:${_pv2CovColor(cob)}"></i></div>
@@ -42470,14 +42492,37 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     </div>`;
   }
 
+  // [v2.43.597] Cartbar con contenedor ESTABLE (#pv2CartWrap): las acciones de
+  // carrito repintan solo esto + la card tocada — el panel entero ya NO parpadea.
+  function _pv2CartbarHtml() {
+    const p = S.pv2.prov; if (!p) return '';
+    const cs = _provCarritoResumen(p.idProveedor);
+    return cs ? `<div class="pv2-cartbar"><div class="in">
+          <div class="tot"><b>${cs.count}</b> productos · <b>${cs.qty}</b> und · est. <b>${fmtMoney(cs.monto)}</b> <small>(a últ. costo)</small></div>
+          <div class="sp"></div>
+          <button class="pv2-bt wa" onclick="MOS.pv2.wa()">💬 WhatsApp</button>
+          <button class="pv2-bt gh" onclick="MOS.pv2.imprimir()">🖨 Imprimir</button>
+          <button class="pv2-bt pri" onclick="MOS.pv2.enviado()">✓ Enviado</button>
+        </div></div>` : '';
+  }
+  function _pv2RepaintCard(key) {
+    const el = document.getElementById('pv2p-' + key);
+    const pp = _pv2Item(key);
+    if (!el || !pp || pp.activa === false || (S.pv2.solo && _pv2QtyB(pp) === 0)) { pv2Render(); return; }
+    el.outerHTML = _pv2CardProd(pp);
+  }
+  function _pv2RepaintCart() {
+    const w = $('pv2CartWrap'); if (w) w.innerHTML = _pv2CartbarHtml();
+  }
   function _pv2RenderPedido(root) {
     const p = S.pv2.prov;
-    const cs = _provCarritoResumen(p.idProveedor);
     const items = (S.pv2.items || []).filter(pp => !S.pv2.solo || _pv2QtyB(pp) > 0 || pp.activa === false && false);
     const activos = items.filter(pp => pp.activa !== false);
     const inactivos = (S.pv2.items || []).filter(pp => pp.activa === false);
     // [v2.43.596] Panel FLOTANTE encima de la vista (no pantalla completa): el home queda
     // visible detrás, difuminado; la cartbar es el pie del panel (jamás tapa el menú).
+    // [v2.43.597] preservar scroll en re-render completo (antes saltaba arriba = "parpadeo")
+    const _sc = root.querySelector('.pv2-laybody') ? root.querySelector('.pv2-laybody').scrollTop : 0;
     root.innerHTML = `<div class="pv2-laypanel"><div class="pv2-laybody">
       <div class="pv2-pedhead">
         <button class="pv2-back" onclick="MOS.pv2.volver()">←</button>
@@ -42501,13 +42546,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           ${inactivos.length && !S.pv2.solo ? `<div class="pv2-offsec" style="cursor:pointer" onclick="MOS.pv2.showOff()">⏻ Desactivados (${inactivos.length}) ${S.pv2.off?'▴':'▾'}</div>` + (S.pv2.off ? inactivos.map(_pv2CardProd).join('') : '') : ''}
         </div>` : ''}
       ${!S.pv2.cargando && S.pv2.tab==='hist' ? _pv2HistHtml() : ''}
-      </div>${cs ? `<div class="pv2-cartbar"><div class="in">
-          <div class="tot"><b>${cs.count}</b> productos · <b>${cs.qty}</b> und · est. <b>${fmtMoney(cs.monto)}</b> <small>(a últ. costo)</small></div>
-          <div class="sp"></div>
-          <button class="pv2-bt wa" onclick="MOS.pv2.wa()">💬 WhatsApp</button>
-          <button class="pv2-bt gh" onclick="MOS.provPedidoExportar()">🖨 Imprimir</button>
-          <button class="pv2-bt pri" onclick="MOS.pv2.enviado()">✓ Enviado</button>
-        </div></div>` : ''}</div>`;
+      </div><div id="pv2CartWrap">${_pv2CartbarHtml()}</div></div>`;
+    const lb = root.querySelector('.pv2-laybody'); if (lb && _sc) lb.scrollTop = _sc;
   }
 
   function _pv2HistHtml() {
@@ -42522,20 +42562,220 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>`).join('')}</div>`;
   }
 
+  // ── [v2.43.597] Compartir / imprimir: imagen canvas + ticket 80mm + listado ──
+  function _pv2PedData() {
+    const p = S.pv2.prov || {};
+    const id = p.idProveedor;
+    const items = Object.values((S.provCarritos[id] && S.provCarritos[id].items) || {});
+    let total = 0, qty = 0;
+    const lineas = items.map(it => {
+      const q = parseFloat(it.qty) || 0, pr = parseFloat(it.precio) || 0;
+      const sub = _money(q * pr); total = _money(total + sub); qty += q;
+      const blt = parseFloat(it._bultos) || 0, upb = parseFloat(it._upb) || 1;
+      return { desc: it.desc || it.skuBase || '', q, pr, sub, blt, upb };
+    });
+    return { prov: p, fecha: today(), lineas, total, qty };
+  }
+  function _pv2Wrap(ctx, txt, maxW) {
+    const words = String(txt || '').split(/\s+/); const out = []; let ln = '';
+    words.forEach(w => {
+      const t = ln ? ln + ' ' + w : w;
+      if (ctx.measureText(t).width > maxW && ln) { out.push(ln); ln = w; } else ln = t;
+    });
+    if (ln) out.push(ln);
+    return out.length ? out : [''];
+  }
+  // Imagen PROFESIONAL (canvas nativo, sin librerías): 'resumen' → al proveedor ·
+  // 'stock' → stock/pedido completo para la jefa.
+  function _pv2ImgCanvas(tipo) {
+    const d = _pv2PedData();
+    const W = 780, PAD = 34, IW = W - PAD * 2;
+    const cv = document.createElement('canvas'); const ctx = cv.getContext('2d');
+    const items = tipo === 'stock'
+      ? (S.pv2.items || []).filter(pp => pp.activa !== false)
+      : d.lineas;
+    // ── pasada 1: medir alto ──
+    const fName = '700 21px system-ui', fSub = '500 15px system-ui', fBig = '900 30px system-ui';
+    let h = 150;                                     // header
+    ctx.font = fName;
+    const nameW = tipo === 'stock' ? IW - 310 : IW - 170;   // stock: columnas a la derecha
+    const medidas = items.map(it => {
+      const nom = tipo === 'stock' ? (it.descripcion || '') : it.desc;
+      const nl = _pv2Wrap(ctx, nom, nameW).length;
+      const rh = nl * 27 + 26 + 18;
+      h += rh; return { nl, rh };
+    });
+    h += tipo === 'stock' ? 96 : 130;                // total + footer
+    cv.width = W; cv.height = h;
+    // ── fondo ──
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, h);
+    ctx.fillStyle = '#f59e0b'; ctx.fillRect(0, 0, W, 8);
+    // ── header ──
+    let y = 50;
+    ctx.fillStyle = '#94a3b8'; ctx.font = '800 13px system-ui';
+    ctx.fillText(tipo === 'stock' ? 'STOCK / PEDIDO — REVISIÓN' : 'PEDIDO', PAD, y);
+    ctx.textAlign = 'right'; ctx.fillText(d.fecha, W - PAD, y); ctx.textAlign = 'left';
+    y += 34;
+    ctx.fillStyle = '#0f172a'; ctx.font = fBig;
+    ctx.fillText(_pv2Wrap(ctx, d.prov.nombre || '', IW)[0], PAD, y);
+    y += 26;
+    ctx.fillStyle = '#64748b'; ctx.font = '500 14px system-ui';
+    ctx.fillText([d.prov.ruc ? 'RUC ' + d.prov.ruc : '', d.prov.telefono || ''].filter(Boolean).join('  ·  '), PAD, y);
+    y += 18;
+    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
+    y += 8;
+    if (tipo === 'stock') {
+      ctx.fillStyle = '#94a3b8'; ctx.font = '800 12px system-ui'; ctx.textAlign = 'right';
+      ctx.fillText('ALM', W - PAD - 200, y + 18); ctx.fillText('ZONAS', W - PAD - 120, y + 18);
+      ctx.fillText('PEDIDO', W - PAD, y + 18); ctx.textAlign = 'left'; y += 26;
+    }
+    // ── filas ──
+    items.forEach((it, i) => {
+      const esStock = tipo === 'stock';
+      const nom = esStock ? (it.descripcion || '') : it.desc;
+      const qb = esStock ? _pv2QtyB(it) : 0;
+      y += 10;
+      if (esStock && qb > 0) { ctx.fillStyle = '#fffbeb'; ctx.fillRect(PAD - 10, y - 4, IW + 20, medidas[i].rh - 10); ctx.fillStyle = '#f59e0b'; ctx.fillRect(PAD - 10, y - 4, 4, medidas[i].rh - 10); }
+      ctx.font = fName; ctx.fillStyle = '#0f172a';
+      const nls = _pv2Wrap(ctx, nom, nameW);
+      nls.forEach(l => { y += 27; ctx.fillText(l, PAD, y); });
+      if (esStock) {
+        const upb = Math.max(parseFloat(it.unidadesPorBulto) || 1, 1);
+        const zS = _money((it.zonas || []).reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
+        ctx.font = '700 17px system-ui'; ctx.textAlign = 'right'; ctx.fillStyle = '#334155';
+        const yv = y - ((nls.length - 1) * 27) / 2;
+        ctx.fillText(String(it.stockWh ?? 0), W - PAD - 200, yv);
+        ctx.fillText(String(zS), W - PAD - 120, yv);
+        ctx.fillStyle = qb > 0 ? '#b45309' : '#cbd5e1'; ctx.font = '900 17px system-ui';
+        ctx.fillText(qb > 0 ? qb + ' blt (' + (qb * upb) + ' un)' : '—', W - PAD, yv);
+        ctx.textAlign = 'left';
+        y += 26;
+      } else {
+        y += 26;
+        ctx.font = fSub; ctx.fillStyle = '#64748b';
+        ctx.fillText((it.blt > 0 ? it.blt + ' bulto' + (it.blt > 1 ? 's' : '') + ' ×' + it.upb + ' = ' : '') + it.q + ' und' + (it.pr > 0 ? '  ·  a ' + fmtMoney(it.pr) : ''), PAD, y);
+        if (it.sub > 0) { ctx.textAlign = 'right'; ctx.fillStyle = '#0f172a'; ctx.font = '800 18px system-ui'; ctx.fillText(fmtMoney(it.sub), W - PAD, y); ctx.textAlign = 'left'; }
+      }
+      y += 8;
+      ctx.strokeStyle = '#f1f5f9'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
+    });
+    // ── total + footer ──
+    y += 34;
+    if (tipo !== 'stock') {
+      ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(PAD, y - 22); ctx.lineTo(W - PAD, y - 22); ctx.stroke();
+      ctx.font = '900 22px system-ui'; ctx.fillStyle = '#0f172a';
+      ctx.fillText('TOTAL  ·  ' + d.lineas.length + ' prod  ·  ' + d.qty + ' und', PAD, y + 6);
+      ctx.textAlign = 'right'; ctx.fillStyle = '#b45309'; ctx.font = '900 26px system-ui';
+      ctx.fillText(fmtMoney(d.total), W - PAD, y + 6); ctx.textAlign = 'left';
+      y += 26;
+    } else {
+      ctx.font = '800 16px system-ui'; ctx.fillStyle = '#0f172a';
+      ctx.fillText('Pedido: ' + d.lineas.length + ' productos · ' + d.qty + ' und · est. ' + fmtMoney(d.total), PAD, y);
+      y += 8;
+    }
+    y += 26;
+    ctx.font = '500 12px system-ui'; ctx.fillStyle = '#94a3b8';
+    ctx.fillText('Generado desde MOS · ' + new Date().toLocaleString('es-PE'), PAD, y);
+    return cv;
+  }
+  async function _pv2ShareImg(tipo) {
+    const p = S.pv2.prov || {};
+    const cv = _pv2ImgCanvas(tipo);
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    if (!blob) { toast('No se pudo generar la imagen', 'error'); return; }
+    const nombre = (tipo === 'stock' ? 'stock-pedido-' : 'pedido-') + (p.nombre || 'prov').replace(/\W+/g, '_') + '.png';
+    const file = new File([blob], nombre, { type: 'image/png' });
+    const tel = String(p.telefono || '').replace(/\D/g, '');
+    // 1) hoja nativa (celular) → 2) portapapeles (PC: Ctrl+V en el chat) → 3) descarga
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Pedido ' + (p.nombre || '') }); if (tipo !== 'stock') _carritoOfrecerLimpiar(); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    let copiado = false;
+    try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); copiado = true; } } catch (_) {}
+    if (!copiado) {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }
+    toast(copiado ? '🖼 Imagen COPIADA — pégala en el chat con Ctrl+V' : '🖼 Imagen descargada — adjúntala en el chat', 'ok');
+    if (tipo !== 'stock' && tel) window.open('https://wa.me/51' + tel, '_blank');
+    if (tipo !== 'stock') _carritoOfrecerLimpiar();
+  }
+  // Impresión: 'ticket' = resumen 80mm profesional (nombres completos, ancho total) ·
+  // 'listado' = stock/pedido A4 para revisión de la jefa.
+  function _pv2Print(tipo) {
+    const d = _pv2PedData();
+    const win = window.open('', '_blank', 'width=460,height=760');
+    if (!win) { toast('Permite popups para imprimir', 'error'); return; }
+    if (tipo === 'ticket') {
+      win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pedido ${d.prov.nombre||''}</title><style>
+        @page{size:80mm auto;margin:0}
+        body{width:72mm;margin:0 auto;padding:3mm 0 6mm;font-family:'Segoe UI',system-ui,sans-serif;color:#000;font-size:12.5px;line-height:1.35}
+        .c{text-align:center} .b{font-weight:800} .xl{font-size:16px} .g{color:#333;font-size:11px}
+        hr{border:none;border-top:1.5px dashed #000;margin:6px 0}
+        .it{margin:5px 0} .it .nm{font-weight:700;font-size:13px;word-break:break-word}
+        .it .ln{display:flex;justify-content:space-between;font-size:12px}
+        .tot{display:flex;justify-content:space-between;font-size:15px;font-weight:900;border-top:2px solid #000;padding-top:5px;margin-top:6px}
+        @media print{body{padding:0 0 8mm}}
+      </style></head><body>
+        <div class="c b xl">PEDIDO</div>
+        <div class="c b" style="font-size:14px">${d.prov.nombre||''}</div>
+        <div class="c g">${[d.prov.ruc?'RUC '+d.prov.ruc:'',d.prov.telefono||''].filter(Boolean).join(' · ')}</div>
+        <div class="c g">${d.fecha}</div><hr>
+        ${d.lineas.map((it,i)=>`<div class="it"><div class="nm">${i+1}. ${it.desc}</div>
+          <div class="ln"><span>${it.blt>0?it.blt+' blt ×'+it.upb+' = ':''}${it.q} und${it.pr>0?' × '+fmtMoney(it.pr):''}</span><span class="b">${it.sub>0?fmtMoney(it.sub):''}</span></div></div>`).join('')}
+        <div class="tot"><span>TOTAL</span><span>${fmtMoney(d.total)}</span></div>
+        <div class="c g">${d.lineas.length} productos · ${d.qty} und</div><hr>
+        <div class="c g">Generado desde MOS · ${new Date().toLocaleString('es-PE')}</div>
+      </body></html>`);
+    } else {
+      const items = (S.pv2.items || []).filter(pp => pp.activa !== false);
+      win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Stock/Pedido ${d.prov.nombre||''}</title><style>
+        body{font-family:'Segoe UI',system-ui,sans-serif;color:#111;padding:22px;font-size:12px}
+        h1{font-size:18px;margin:0} .g{color:#555;font-size:11px}
+        table{width:100%;border-collapse:collapse;margin-top:12px}
+        th{background:#f3f4f6;text-align:left;padding:6px 8px;font-size:11px;border-bottom:2px solid #333}
+        td{padding:5px 8px;border-bottom:1px solid #ddd;vertical-align:top}
+        .r{text-align:right} .b{font-weight:800} .ped{background:#fffbeb}
+        tfoot td{border-top:2px solid #333;font-weight:800}
+        @media print{body{padding:0}}
+      </style></head><body>
+        <h1>📋 Stock / Pedido — ${d.prov.nombre||''}</h1>
+        <div class="g">${d.fecha} · revisión de cómo está el stock y qué se está pidiendo · generado desde MOS</div>
+        <table><thead><tr><th>#</th><th>Producto</th><th class="r">🏬 Almacén</th><th class="r">🏪 Zonas</th><th class="r">Σ Familia</th><th class="r">⏳ Cubre</th><th class="r">Pedido</th></tr></thead><tbody>
+        ${items.map((pp,i)=>{ const qb=_pv2QtyB(pp); const upb=Math.max(parseFloat(pp.unidadesPorBulto)||1,1);
+          const zS=_money((pp.zonas||[]).reduce((a,z)=>a+(parseFloat(z.cantidad)||0),0));
+          const fam=pp.familia||null; const cob=fam?fam.coberturaSem:null;
+          return `<tr class="${qb>0?'ped':''}"><td>${i+1}</td><td>${pp.descripcion||''}</td>
+            <td class="r b">${pp.stockWh??0}</td><td class="r">${zS}</td><td class="r">${fam?fam.stockPos:_money((parseFloat(pp.stockWh)||0)+zS)}</td>
+            <td class="r">${cob==null?'—':cob+' sem'}</td><td class="r b">${qb>0?qb+' blt ('+(qb*upb)+' un)':'—'}</td></tr>`; }).join('')}
+        </tbody><tfoot><tr><td colspan="6">PEDIDO: ${d.lineas.length} productos · ${d.qty} und</td><td class="r">est. ${fmtMoney(d.total)}</td></tr></tfoot></table>
+      </body></html>`);
+    }
+    win.document.close();
+    setTimeout(() => { win.print(); if (tipo === 'ticket') _carritoOfrecerLimpiar(); }, 450);
+  }
+
   // ── acciones ──
   function _pv2Item(key) { return (S.pv2.items || []).find(pp => _pv2Key(pp) === key); }
   const pv2 = {
     day(d)   { S.pv2.day = d; pv2Render(); },
-    buscar(v){ S.pv2.q = String(v||'').trim().toLowerCase(); const el = $('pv2Q'); pv2Render(); const el2 = $('pv2Q'); if (el2) { el2.focus(); el2.value = v; } },
+    // [v2.43.597] NO re-renderizar el input (caret al inicio = "escribía al revés"):
+    // solo se repinta la lista de resultados.
+    buscar(v){ S.pv2.q = String(v||'').trim().toLowerCase();
+      const b = $('pv2HomeBody'); if (b) b.innerHTML = _pv2HomeListaHtml(); else pv2Render(); },
     abrir(id){ _pv2Abrir(id); },
     volver() { S.pv2.view = 'home'; S.pv2.prov = null; pv2Render(); },
     tab(t)   { S.pv2.tab = t; pv2Render(); },
     solo()   { S.pv2.solo = !S.pv2.solo; pv2Render(); },
     showOff(){ S.pv2.off = !S.pv2.off; pv2Render(); },
-    det(k)   { S.pv2.det[k] = !S.pv2.det[k]; pv2Render(); },
-    chg(k,d) { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, _pv2QtyB(pp) + d); pv2Render(); },
-    setq(k,v){ const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, parseInt(v)||0); pv2Render(); },
-    sug(k)   { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0); pv2Render(); },
+    // [v2.43.597] acciones de card = render PARCIAL (solo la card + cartbar): sin parpadeo
+    det(k)   { S.pv2.det[k] = !S.pv2.det[k]; _pv2RepaintCard(k); },
+    chg(k,d) { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, _pv2QtyB(pp) + d); _pv2RepaintCard(k); _pv2RepaintCart(); },
+    setq(k,v){ const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, parseInt(v)||0); _pv2RepaintCard(k); _pv2RepaintCart(); },
+    sug(k)   { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0); _pv2RepaintCard(k); _pv2RepaintCart(); },
     sugTodo(){ (S.pv2.items||[]).forEach(pp => { if (pp.activa !== false) _pv2CartSet(pp, (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0); }); pv2Render(); toast('⚡ Sugerencia cargada — es una base editable, no un pedido fijo', 'ok'); },
     vaciar() { const id = S.pv2.prov.idProveedor; S.provCarritos[id] = { items: {}, ts: Date.now() }; _provCarritosSave(); _provFabRender(); pv2Render(); },
     async activo(k, val) {
@@ -42603,6 +42843,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.594] Catálogo maestro INLINE: buscas, tocas y se agrega — sin tercer modal.
     _addPaintMaster() {
       const b = $('pv2AddBody'); if (!b) return;
+      // [v2.43.597] el catálogo maestro puede no estar cargado aún (carga lazy de la
+      // vista Catálogo) — sin esto el buscador decía "sin coincidencias" hasta un F5
+      if (!(S.productos && S.productos.length)) {
+        loadCatalogo().then(() => { if ($('pv2MQ') && S.pv2.addQ) pv2.addBuscar(S.pv2.addQ); }).catch(() => {});
+      }
       b.innerHTML = '<p class="pv2-addnote">Busca en <b>tu catálogo maestro</b> y toca para agregar. Los que agregues van apareciendo abajo. El código de este proveedor se aprende de su 1ra guía; min/ref/bulto se editan tocando el producto en el catálogo.</p>' +
         '<div class="pv2-search" style="margin-bottom:10px"><input id="pv2MQ" type="search" placeholder="Escribe el producto… (ej. cocinero 1lt)" oninput="MOS.pv2.addBuscar(this.value)" autocomplete="off"></div>' +
         '<div id="pv2MRes"></div>' +
@@ -42610,41 +42855,63 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       pv2._addPaintAgregados();
       const inp = $('pv2MQ'); if (inp) { inp.focus(); if (S.pv2.addQ) { inp.value = S.pv2.addQ; pv2.addBuscar(S.pv2.addQ); } }
     },
+    // [v2.43.597] Resultado = FAMILIA completa: el PADRE canónico con sus códigos
+    // EQUIVALENTES y sus DERIVADOS (los que SÍ suman stock en el kardex). Las
+    // presentaciones/tramos no aparecen: no suman stock. Buscar por un código
+    // equivalente TAMBIÉN encuentra a la familia.
     addBuscar(v) {
       S.pv2.addQ = String(v || '').trim().toLowerCase();
       const res = $('pv2MRes'); if (!res) return;
       if (S.pv2.addQ.length < 2) { res.innerHTML = ''; return; }
       const words = S.pv2.addQ.split(/\s+/);
       const enCat = new Set((S.pv2.items || []).map(x => String(x.skuBase)));
-      // agrupar por PADRE (skuBase): un resultado por familia, nombre COMPLETO multi-línea
-      const porSku = {};
+      // 1 pasada: familias por sku del padre (derivado cuelga por codigoProductoBase)
+      const fams = {};
+      const F = sku => fams[sku] = fams[sku] || { sku, padre: null, der: [], txt: '' };
       (S.productos || []).forEach(p => {
-        const hay = ((p.descripcion || '') + ' ' + (p.codigoBarra || '') + ' ' + (p.idProducto || '')).toLowerCase();
-        if (!words.every(w => hay.includes(w))) return;
-        const sku = String(p.skuBase || p.idProducto);
-        if (!porSku[sku] || String(p.idProducto) === sku) porSku[sku] = p;
+        const esDeriv = !!(p.codigoProductoBase && String(p.codigoProductoBase).trim());
+        const esPres  = !esDeriv && (parseFloat(p.factorConversion) || 1) !== 1;
+        const sku = esDeriv ? String(p.codigoProductoBase).trim() : String(p.skuBase || p.idProducto);
+        const f = F(sku);
+        if (esDeriv) f.der.push(p);
+        else if (!esPres && (!f.padre || String(p.idProducto) === sku)) f.padre = p;
+        f.txt += ' ' + ((p.descripcion || '') + ' ' + (p.codigoBarra || '') + ' ' + (p.idProducto || '')).toLowerCase();
       });
-      const lista = Object.values(porSku).slice(0, 20);
+      const lista = Object.values(fams).filter(f => {
+        if (!f.padre) return false;
+        const eqs = (S.equivMap && S.equivMap[f.sku]) || [];
+        const hay = f.txt + ' ' + eqs.join(' ').toLowerCase();
+        return words.every(w => hay.includes(w));
+      }).slice(0, 20);
       S.pv2._mRes = lista;
-      res.innerHTML = lista.length ? lista.map((p, i) => {
-        const sku = String(p.skuBase || p.idProducto);
-        const ya = enCat.has(sku) || (S.pv2.addAgregados || []).some(a => a.sku === sku);
+      res.innerHTML = lista.length ? lista.map((f, i) => {
+        const p = f.padre;
+        const eqs = (S.equivMap && S.equivMap[f.sku]) || [];
+        const ya = enCat.has(f.sku) || (S.pv2.addAgregados || []).some(a => a.sku === f.sku);
         return `<div class="pv2-hrow" ${ya?'style="opacity:.6"':''}><div class="r1">
           <div class="nm" style="white-space:normal">${p.descripcion}</div>
           <button class="pv2-mini ${ya?'':'acc'}" ${ya?'disabled style="cursor:default"':''} onclick="MOS.pv2.addPick(${i})">${ya?'✓ Ya está':'➕ Agregar'}</button></div>
-          <div class="ev">${p.codigoBarra||''} · ${sku}</div></div>`;
+          <div class="ev">👑 padre canónico · ${p.codigoBarra||f.sku}${eqs.length?` · ≡ ${eqs.length} equivalente${eqs.length>1?'s':''}`:''}${f.der.length?` · 📦 ${f.der.length} derivado${f.der.length>1?'s':''}`:''}</div>
+          ${f.der.length ? `<div class="ev" style="opacity:.75">└ ${f.der.map(d => d.descripcion).join(' · ')}</div>` : ''}
+          ${(eqs.length || f.der.length) ? `<div class="ev" style="color:#34d399">equivalentes y derivados SUMAN stock al padre en el kardex — se agregan JUNTOS como familia</div>` : ''}</div>`;
       }).join('') : '<p class="pv2-empty" style="padding:10px">Sin coincidencias — prueba con menos palabras.</p>';
     },
-    async addPick(i) {
-      const p = (S.pv2._mRes || [])[i]; if (!p) return;
+    // [v2.43.597] OPTIMISTA: ✓ instantáneo, POST en bg, refetch al cerrar (_dirty)
+    addPick(i) {
+      const fm = (S.pv2._mRes || [])[i]; if (!fm) return;
+      const p = fm.padre || fm;
       const sku = String(p.skuBase || p.idProducto);
-      try {
-        await API.post('agregarProductoProveedor', { idProveedor: S.pv2.prov.idProveedor, skuBase: sku, codigoBarra: p.codigoBarra || '', descripcion: p.descripcion || '' });
-        (S.pv2.addAgregados = S.pv2.addAgregados || []).push({ sku, nombre: p.descripcion });
-        pv2.addBuscar(S.pv2.addQ); pv2._addPaintAgregados();
-        toast('✓ ' + p.descripcion.split(' ').slice(0, 3).join(' ') + ' agregado', 'ok');
-        API.get('getProductosProveedorConStockV2', { idProveedor: S.pv2.prov.idProveedor, rangoDias: 30 }).then(r => { if (r) { S.pv2.items = Array.isArray(r) ? r : (r.data || []); } }).catch(() => {});
-      } catch (e) { toast('No se pudo agregar, reintenta', 'error'); }
+      if ((S.pv2.addAgregados || []).some(a => a.sku === sku)) return;
+      (S.pv2.addAgregados = S.pv2.addAgregados || []).push({ sku, nombre: p.descripcion });
+      pv2.addBuscar(S.pv2.addQ); pv2._addPaintAgregados();
+      toast('✓ ' + p.descripcion.split(' ').slice(0, 3).join(' ') + ' agregado', 'ok');
+      API.post('agregarProductoProveedor', { idProveedor: S.pv2.prov.idProveedor, skuBase: sku, codigoBarra: p.codigoBarra || '', descripcion: p.descripcion || '' })
+        .then(() => { S.pv2._dirty = true; })
+        .catch(() => {
+          S.pv2.addAgregados = (S.pv2.addAgregados || []).filter(a => a.sku !== sku);
+          pv2.addBuscar(S.pv2.addQ); pv2._addPaintAgregados();
+          toast('No se pudo agregar "' + p.descripcion.split(' ').slice(0,3).join(' ') + '" — reintenta', 'error');
+        });
     },
     _addPaintAgregados() {
       const d = $('pv2MAdd'); if (!d) return;
@@ -42782,24 +43049,46 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         _renderProvProductos();   // refetch fresco en bg
       } catch (e) { toast('No se pudo guardar, reintenta', 'error'); }
     },
-    async addGuia(i) {
-      const c = (S.pv2.cand || [])[i]; if (!c || c._added) return;
-      try {
-        await API.post('agregarProductoProveedor', { idProveedor: S.pv2.prov.idProveedor, skuBase: c.skuBase, codigoBarra: c.codigoBarra || '', descripcion: c.descripcion || '' });
-        c._added = true; pv2._addPaint();
-        toast('✓ Agregado al catálogo (con su costo aprendido de la guía)', 'ok');
-        API.get('getProductosProveedorConStockV2', { idProveedor: S.pv2.prov.idProveedor, rangoDias: 30 }).then(r => { if (r) { S.pv2.items = Array.isArray(r) ? r : (r.data||[]); if (S.pv2.view==='pedido') pv2Render(); } }).catch(()=>{});
-      } catch (e) { toast('No se pudo agregar, reintenta', 'error'); }
+    // [v2.43.597] OPTIMISTA: se marca ✓ AL TOQUE y el POST va en segundo plano
+    // (antes esperaba la red → "demora mucho en marcarse"). El catálogo del
+    // proveedor se refresca recién al CERRAR el modal (S.pv2._dirty) — refrescarlo
+    // detrás hacía "parpadear el overlay con los productos".
+    addGuia(i) {
+      const c = (S.pv2.cand || [])[i]; if (!c || c._added || c.yaAgregado) return;
+      c._added = true; pv2._addPaint();
+      toast('✓ Agregado al catálogo (con su costo aprendido de la guía)', 'ok');
+      API.post('agregarProductoProveedor', { idProveedor: S.pv2.prov.idProveedor, skuBase: c.skuBase, codigoBarra: c.codigoBarra || '', descripcion: c.descripcion || '' })
+        .then(() => { S.pv2._dirty = true; })
+        .catch(() => { c._added = false; pv2._addPaint(); toast('No se pudo agregar "' + (c.descripcion||'').split(' ').slice(0,3).join(' ') + '" — reintenta', 'error'); });
     },
+    // [v2.43.597] WhatsApp = selector: imagen resumen (proveedor) · imagen stock/pedido
+    // (jefa) · texto clásico. Imprimir = selector: ticket 80mm · listado completo.
     wa() {
       const p = S.pv2.prov;
-      const cs = _provCarritoResumen(p.idProveedor);
-      if (!cs) { toast('El pedido está vacío', 'error'); return; }
+      if (!_provCarritoResumen(p.idProveedor)) { toast('El pedido está vacío', 'error'); return; }
+      _pv2Modal('💬 Enviar por WhatsApp', `
+        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waImg('resumen')"><span class="ic">🖼</span><span><b>Resumen del pedido → proveedor</b><small>imagen profesional con productos, cantidades y total</small></span></button>
+        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waImg('stock')"><span class="ic">📊</span><span><b>Stock / Pedido completo → jefa</b><small>imagen con almacén, zonas y lo pedido — para revisar cómo se pide</small></span></button>
+        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waTexto()"><span class="ic">✏️</span><span><b>Solo texto</b><small>el resumen clásico como mensaje simple</small></span></button>`,
+        '<button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Cancelar</button>');
+    },
+    waImg(tipo) { _pv2ShareImg(tipo); },
+    waTexto() {
+      const p = S.pv2.prov;
       const tel = String(p.telefono || '').replace(/\D/g, '');
       const texto = encodeURIComponent(_pedidoTextoWhatsApp());
       window.open(tel ? `https://wa.me/51${tel}?text=${texto}` : `https://wa.me/?text=${texto}`, '_blank');
       _carritoOfrecerLimpiar();
     },
+    imprimir() {
+      const p = S.pv2.prov;
+      if (!_provCarritoResumen(p.idProveedor)) { toast('El pedido está vacío', 'error'); return; }
+      _pv2Modal('🖨 Imprimir', `
+        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.printGo('ticket')"><span class="ic">🎫</span><span><b>Ticket 80mm — resumen del pedido</b><small>formato térmico profesional, nombres completos a todo el ancho</small></span></button>
+        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.printGo('listado')"><span class="ic">📋</span><span><b>Listado completo — stock / pedido</b><small>hoja con almacén, zonas, cobertura y lo pedido — para la jefa</small></span></button>`,
+        '<button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Cancelar</button>');
+    },
+    printGo(tipo) { _pv2Print(tipo); },
     async enviado() {
       const id = S.pv2.prov.idProveedor;
       const cs = _provCarritoResumen(id);
@@ -42822,7 +43111,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       } catch (e) { toast('No se pudo guardar el día, reintenta', 'error'); }
     },
     _t(m) { toast(m, 'ok'); },
-    _mx() { const m = $('pv2Modal'); if (m) m.remove(); }
+    __testCanvas(t) { return _pv2ImgCanvas(t); },   // hook de prueba (browsercheck)
+    _mx() {
+      const m = $('pv2Modal'); if (m) m.remove();
+      // [v2.43.597] los agregados del modal se reflejan AHORA (refetch diferido)
+      if (S.pv2._dirty) { S.pv2._dirty = false; _renderProvProductos(); }
+    }
   };
   function _pv2Modal(titulo, bodyHtml, footHtml) {
     pv2._mx();

@@ -7090,6 +7090,26 @@
     .pv2-schip.deriv{border-style:dashed}
     .pv2-schip.neg{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.4);color:#f87171}
     .pv2-schip.neg b{color:#f87171}
+    /* [v2.43.597] stock como SUMA: almacén destacado + zonas + Σ familia */
+    .pv2-stk{display:flex;align-items:stretch;gap:6px;margin-top:8px;flex-wrap:wrap}
+    .pv2-stk .cell{background:var(--pv2-panel);border:1px solid var(--pv2-line);border-radius:10px;padding:6px 11px;display:flex;flex-direction:column;min-width:86px}
+    .pv2-stk .cell .t{font-size:9px;letter-spacing:.08em;font-weight:900;color:var(--pv2-ink3)}
+    .pv2-stk .cell b{font-size:16px;color:#e2e8f0;font-variant-numeric:tabular-nums;line-height:1.2}
+    .pv2-stk .cell small{font-size:9.5px;color:var(--pv2-ink3);font-weight:600}
+    .pv2-stk .cell.alm{background:rgba(245,158,11,.10);border-color:rgba(245,158,11,.45)}
+    .pv2-stk .cell.alm .t{color:#fbbf24}
+    .pv2-stk .cell.alm b{color:#fbbf24;font-size:18px}
+    .pv2-stk .cell.fam{background:var(--pv2-accbg);border-color:rgba(99,102,241,.4)}
+    .pv2-stk .cell.fam .t,.pv2-stk .cell.fam b{color:var(--pv2-acc2)}
+    .pv2-stk .cell.neg{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.45)}
+    .pv2-stk .cell.neg b{color:#f87171}
+    .pv2-stk .op{align-self:center;color:var(--pv2-ink3);font-weight:900;font-size:14px}
+    /* [v2.43.597] opciones grandes de compartir/imprimir */
+    .pv2-share{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--pv2-panel);border:1px solid var(--pv2-line);border-radius:14px;padding:12px 14px;margin:7px 0;cursor:pointer;color:#e2e8f0;transition:border-color .15s}
+    .pv2-share:hover{border-color:var(--pv2-acc)}
+    .pv2-share .ic{font-size:24px}
+    .pv2-share b{display:block;font-size:13.5px}
+    .pv2-share small{display:block;font-size:11px;color:var(--pv2-ink3);margin-top:2px;line-height:1.35}
     .pv2-cover{display:flex;align-items:center;gap:8px;margin-top:8px}
     .pv2-cover .bar{flex:1;height:6px;border-radius:99px;background:var(--pv2-panel);overflow:hidden;max-width:210px}
     .pv2-cover .bar i{display:block;height:100%;border-radius:99px}
@@ -19732,7 +19752,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.596';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.597';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19782,7 +19802,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.596"></script>
+<script src="js/api.js?v=2.43.597"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19797,7 +19817,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.596"></script>
+<script src="js/app.js?v=2.43.597"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
