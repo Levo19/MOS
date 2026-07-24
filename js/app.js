@@ -42411,6 +42411,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   function _pv2CovColor(c) { return c == null ? 'var(--pv2-ink3)' : c < 0.6 ? '#f87171' : c < 1.2 ? '#fbbf24' : '#34d399'; }
 
+  // [v2.43.599] ROTACIÓN DE ALMACÉN según el dueño: Σ de guías de SALIDA a zonas
+  // (wh.rotacion_cache, el mismo cache del chip del catálogo), padre + equivalentes.
+  // Se muestra JUNTO a la de ventas para comparar — la sugerencia sigue usando
+  // ventas+derivados (demanda real), pero ahora ves ambas.
+  function _pv2SalidasSem(pp) {
+    try {
+      const prods = (S._rotacionSemanalCache || {}).productos || {};
+      const cbs = [String(pp.codigoBarra || '').trim().toUpperCase()];
+      (S.equivMap && S.equivMap[pp.skuBase || ''] || []).forEach(e => {
+        const u = String(e || '').trim().toUpperCase(); if (u && !cbs.includes(u)) cbs.push(u);
+      });
+      let tot = 0, nSem = 0, hay = false;
+      cbs.forEach(k => { const s = prods[k]; if (!s || !s.length) return; hay = true; nSem = s.length;
+        s.forEach(x => { tot += parseFloat(x.unidades) || 0; }); });
+      return hay && nSem ? _money(tot / nSem) : null;
+    } catch (_) { return null; }
+  }
+
   function _pv2CardProd(pp) {
     const key = _pv2Key(pp);
     const qb = _pv2QtyB(pp);
@@ -42477,10 +42495,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           ${der.map(d => `<div class="dr"><span>└ ${d.nombre}</span><b>${d.stock} (${d.stockPadreEq} eq) · ${d.ventas30}/30d</b></div>`).join('')}
           ${fam ? `<div class="hint">💡 Demanda familia ≈ ${(fam.rotFamiliaDia*7).toFixed(1)}/sem — al pedir el padre, pides también para envasar.</div>` : ''}
         </div>` : ''}
-        <div class="pv2-detbox"><h5>📈 La rotación = VENTAS EN ZONAS (30d) — el almacén no rota, repone esa Σ</h5>
-          <div class="dr b"><span>Σ demanda familia (zonas${der.length?' + derivados':''})</span><b>${(((fam&&fam.rotFamiliaDia)||parseFloat(pp.rotacionDia)||0)*30).toFixed(0)} /30d</b></div>
+        <div class="pv2-detbox"><h5>📈 Las DOS rotaciones (para comparar)</h5>
+          <div class="dr b"><span>🏪 VENTAS familia (zonas${der.length?' + derivados':''}) — la que usa la sugerencia</span><b>${(((fam&&fam.rotFamiliaDia)||parseFloat(pp.rotacionDia)||0)*30).toFixed(0)} /30d</b></div>
           ${(pp.zonas||[]).map(z => `<div class="dr"><span>🏪 ${z.nombre} vendió</span><b>${z.ventasRango ?? 0} /30d</b></div>`).join('') || '<div class="dr"><span>sin ventas registradas en zonas</span><b>—</b></div>'}
           ${der.length ? `<div class="dr"><span>📦 derivados vendieron (convertido al padre)</span><b>${(fam && fam.rotFamiliaDia != null ? ((fam.rotFamiliaDia - (parseFloat(pp.rotacionDia)||0)) * 30).toFixed(1) : '—')} /30d</b></div>` : ''}
+          ${(() => { const sal = _pv2SalidasSem(pp); return `<div class="dr b"><span>🚚 ROTACIÓN DE ALMACÉN = Σ guías de salida a zonas (padre+equiv)</span><b>${sal == null ? 'sin datos aún' : sal + ' /sem'}</b></div>`; })()}
+          <div class="hint">💡 Ventas = demanda real del cliente · Salidas por guía = lo que el almacén despachó (puede incluir sobre-stock enviado). Si difieren mucho, revisa esa zona.</div>
         </div>
         <div class="pv2-detbox"><h5>💰 Últimos costos (de tus guías)</h5>
           ${(pp.ultimosCostos||[]).map(h => `<div class="dr"><span>${h.fecha}</span><b>${fmtMoney(h.costo)}</b></div>`).join('') || '<div class="dr"><span>aún sin guías con costo</span><b>—</b></div>'}
@@ -42707,59 +42727,86 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (tipo !== 'stock' && tel) window.open('https://wa.me/51' + tel, '_blank');
     if (tipo !== 'stock') _carritoOfrecerLimpiar();
   }
-  // Impresión: 'ticket' = resumen 80mm profesional (nombres completos, ancho total) ·
-  // 'listado' = stock/pedido A4 para revisión de la jefa.
-  function _pv2Print(tipo) {
+  // [v2.43.599] Impresión = flujo REAL de MOS: abrirPrinterPicker → ESC/POS →
+  // Edge imprimir → PrintNode DIRECTO (nada de window.print/PDF — reclamo del dueño).
+  // 'ticket' = resumen del pedido 80mm · 'listado' = stock/pedido para la jefa.
+  const _PV2W = 48;   // 80mm fuente A
+  function _pv2Norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, '?'); }
+  function _pv2WrapTxt(s, w) {
+    const words = _pv2Norm(s).split(/\s+/); const out = []; let ln = '';
+    words.forEach(wd => { const t = ln ? ln + ' ' + wd : wd; if (t.length > w && ln) { out.push(ln); ln = wd; } else ln = t; });
+    if (ln) out.push(ln);
+    return out.length ? out : [''];
+  }
+  function _pv2EscposResumen(d) {
+    const W = _PV2W;
+    const rep = (c, n) => c.repeat(Math.max(0, n));
+    const pSt = (s, w) => { s = String(s); while (s.length < w) s = ' ' + s; return s; };
+    const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
+    let t = '\x1b\x40\x1b\x61\x01\x1b\x21\x30' + 'PEDIDO\n' + '\x1b\x21\x00';
+    t += '\x1b\x45\x01' + _pv2Norm(d.prov.nombre || '') + '\x1b\x45\x00\n';
+    const sub = [d.prov.ruc ? 'RUC ' + d.prov.ruc : '', d.prov.telefono || ''].filter(Boolean).join(' · ');
+    if (sub) t += _pv2Norm(sub) + '\n';
+    t += d.fecha + '\n' + '\x1b\x61\x00' + SEP;
+    d.lineas.forEach((it, i) => {
+      _pv2WrapTxt((i + 1) + '. ' + it.desc, W).forEach((l, j) => { t += (j === 0 ? '\x1b\x45\x01' : '') + l + (j === 0 ? '\x1b\x45\x00' : '') + '\n'; });
+      const det = (it.blt > 0 ? it.blt + ' blt x' + it.upb + ' = ' : '') + it.q + ' und' + (it.pr > 0 ? ' x S/' + (+it.pr).toFixed(2) : '');
+      const mon = it.sub > 0 ? 'S/' + (+it.sub).toFixed(2) : '';
+      t += det.slice(0, W - mon.length - 1) + pSt(mon, W - Math.min(det.length, W - mon.length - 1)) + '\n';
+      if (i < d.lineas.length - 1) t += SEPd;
+    });
+    t += SEP + '\x1b\x45\x01\x1b\x21\x20';
+    const totS = 'S/' + (+d.total).toFixed(2);
+    t += 'TOTAL' + pSt(totS, Math.floor(W / 2) - 5) + '\n';
+    t += '\x1b\x21\x00\x1b\x45\x00';
+    t += d.lineas.length + ' productos · ' + d.qty + ' und\n' + SEPd;
+    t += '\x1b\x61\x01Generado desde MOS · ' + new Date().toLocaleString('es-PE') + '\n';
+    t += '\n\n\n\n\x1d\x56\x00';
+    return t;
+  }
+  function _pv2EscposListado(d) {
+    const W = _PV2W;
+    const rep = (c, n) => c.repeat(Math.max(0, n));
+    const pSt = (s, w) => { s = String(s); while (s.length < w) s = ' ' + s; return s; };
+    const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
+    const items = (S.pv2.items || []).filter(pp => pp.activa !== false)
+      .sort((a, b) => String(a.descripcion || '').localeCompare(String(b.descripcion || ''), 'es'));
+    let t = '\x1b\x40\x1b\x61\x01\x1b\x21\x30' + 'STOCK / PEDIDO\n' + '\x1b\x21\x00';
+    t += '\x1b\x45\x01' + _pv2Norm(d.prov.nombre || '') + '\x1b\x45\x00\n';
+    t += d.fecha + ' · revision para jefatura\n' + '\x1b\x61\x00' + SEP;
+    t += 'ALM=almacen  ZON=zonas  FAM=familia\n' + SEPd;
+    items.forEach(pp => {
+      const qb = _pv2QtyB(pp);
+      const upb = Math.max(parseFloat(pp.unidadesPorBulto) || 1, 1);
+      const zS = _money((pp.zonas || []).reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
+      const fam = pp.familia || null;
+      const famT = fam ? fam.stockPos : _money((parseFloat(pp.stockWh) || 0) + zS);
+      _pv2WrapTxt(pp.descripcion || pp.codigoBarra || '', W - (qb > 0 ? 3 : 0)).forEach((l, j) => {
+        t += (qb > 0 ? (j === 0 ? '>> ' : '   ') : '') + (j === 0 ? '\x1b\x45\x01' : '') + l + (j === 0 ? '\x1b\x45\x00' : '') + '\n';
+      });
+      const linea = 'ALM ' + pp.stockWh + '  ZON ' + zS + '  FAM ' + famT;
+      const ped = qb > 0 ? 'PIDE ' + qb + 'blt(' + (qb * upb) + 'u)' : '';
+      t += linea.slice(0, W - ped.length - 1) + pSt(ped, W - Math.min(linea.length, W - ped.length - 1)) + '\n' + SEPd;
+    });
+    t += '\x1b\x45\x01' + _pv2Norm('PEDIDO: ' + d.lineas.length + ' productos · ' + d.qty + ' und · est. S/' + (+d.total).toFixed(2)) + '\x1b\x45\x00\n';
+    t += '\x1b\x61\x01Generado desde MOS · ' + new Date().toLocaleString('es-PE') + '\n';
+    t += '\n\n\n\n\x1d\x56\x00';
+    return t;
+  }
+  async function _pv2Print(tipo) {
     const d = _pv2PedData();
-    const win = window.open('', '_blank', 'width=460,height=760');
-    if (!win) { toast('Permite popups para imprimir', 'error'); return; }
-    if (tipo === 'ticket') {
-      win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pedido ${d.prov.nombre||''}</title><style>
-        @page{size:80mm auto;margin:0}
-        body{width:72mm;margin:0 auto;padding:3mm 0 6mm;font-family:'Segoe UI',system-ui,sans-serif;color:#000;font-size:12.5px;line-height:1.35}
-        .c{text-align:center} .b{font-weight:800} .xl{font-size:16px} .g{color:#333;font-size:11px}
-        hr{border:none;border-top:1.5px dashed #000;margin:6px 0}
-        .it{margin:5px 0} .it .nm{font-weight:700;font-size:13px;word-break:break-word}
-        .it .ln{display:flex;justify-content:space-between;font-size:12px}
-        .tot{display:flex;justify-content:space-between;font-size:15px;font-weight:900;border-top:2px solid #000;padding-top:5px;margin-top:6px}
-        @media print{body{padding:0 0 8mm}}
-      </style></head><body>
-        <div class="c b xl">PEDIDO</div>
-        <div class="c b" style="font-size:14px">${d.prov.nombre||''}</div>
-        <div class="c g">${[d.prov.ruc?'RUC '+d.prov.ruc:'',d.prov.telefono||''].filter(Boolean).join(' · ')}</div>
-        <div class="c g">${d.fecha}</div><hr>
-        ${d.lineas.map((it,i)=>`<div class="it"><div class="nm">${i+1}. ${it.desc}</div>
-          <div class="ln"><span>${it.blt>0?it.blt+' blt ×'+it.upb+' = ':''}${it.q} und${it.pr>0?' × '+fmtMoney(it.pr):''}</span><span class="b">${it.sub>0?fmtMoney(it.sub):''}</span></div></div>`).join('')}
-        <div class="tot"><span>TOTAL</span><span>${fmtMoney(d.total)}</span></div>
-        <div class="c g">${d.lineas.length} productos · ${d.qty} und</div><hr>
-        <div class="c g">Generado desde MOS · ${new Date().toLocaleString('es-PE')}</div>
-      </body></html>`);
-    } else {
-      const items = (S.pv2.items || []).filter(pp => pp.activa !== false);
-      win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Stock/Pedido ${d.prov.nombre||''}</title><style>
-        body{font-family:'Segoe UI',system-ui,sans-serif;color:#111;padding:22px;font-size:12px}
-        h1{font-size:18px;margin:0} .g{color:#555;font-size:11px}
-        table{width:100%;border-collapse:collapse;margin-top:12px}
-        th{background:#f3f4f6;text-align:left;padding:6px 8px;font-size:11px;border-bottom:2px solid #333}
-        td{padding:5px 8px;border-bottom:1px solid #ddd;vertical-align:top}
-        .r{text-align:right} .b{font-weight:800} .ped{background:#fffbeb}
-        tfoot td{border-top:2px solid #333;font-weight:800}
-        @media print{body{padding:0}}
-      </style></head><body>
-        <h1>📋 Stock / Pedido — ${d.prov.nombre||''}</h1>
-        <div class="g">${d.fecha} · revisión de cómo está el stock y qué se está pidiendo · generado desde MOS</div>
-        <table><thead><tr><th>#</th><th>Producto</th><th class="r">🏬 Almacén</th><th class="r">🏪 Zonas</th><th class="r">Σ Familia</th><th class="r">⏳ Cubre</th><th class="r">Pedido</th></tr></thead><tbody>
-        ${items.map((pp,i)=>{ const qb=_pv2QtyB(pp); const upb=Math.max(parseFloat(pp.unidadesPorBulto)||1,1);
-          const zS=_money((pp.zonas||[]).reduce((a,z)=>a+(parseFloat(z.cantidad)||0),0));
-          const fam=pp.familia||null; const cob=fam?fam.coberturaSem:null;
-          return `<tr class="${qb>0?'ped':''}"><td>${i+1}</td><td>${pp.descripcion||''}</td>
-            <td class="r b">${pp.stockWh??0}</td><td class="r">${zS}</td><td class="r">${fam?fam.stockPos:_money((parseFloat(pp.stockWh)||0)+zS)}</td>
-            <td class="r">${cob==null?'—':cob+' sem'}</td><td class="r b">${qb>0?qb+' blt ('+(qb*upb)+' un)':'—'}</td></tr>`; }).join('')}
-        </tbody><tfoot><tr><td colspan="6">PEDIDO: ${d.lineas.length} productos · ${d.qty} und</td><td class="r">est. ${fmtMoney(d.total)}</td></tr></tfoot></table>
-      </body></html>`);
-    }
-    win.document.close();
-    setTimeout(() => { win.print(); if (tipo === 'ticket') _carritoOfrecerLimpiar(); }, 450);
+    const printerId = await abrirPrinterPicker({
+      titulo: tipo === 'ticket' ? '🖨 Ticket · resumen del pedido' : '🖨 Ticket · stock/pedido (jefa)',
+      subtitulo: (d.prov.nombre || '') + ' · ' + d.lineas.length + ' producto(s)',
+      filtroTipo: 'TICKET'
+    });
+    if (!printerId) return;
+    const txt = tipo === 'ticket' ? _pv2EscposResumen(d) : _pv2EscposListado(d);
+    try {
+      await API.imprimirTicketEdge(parseInt(printerId, 10), (tipo === 'ticket' ? 'Pedido ' : 'Stock/Pedido ') + (d.prov.nombre || ''), txt);
+      toast('🖨 Enviado a la impresora', 'ok');
+      if (tipo === 'ticket') _carritoOfrecerLimpiar();
+    } catch (e) { toast('⚠ No se pudo imprimir: ' + (e.message || e), 'error'); }
   }
 
   // ── acciones ──
