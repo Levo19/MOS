@@ -42436,6 +42436,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     <div class="pv2-prod ${qb>0?'encarro':''}" id="pv2p-${key}">
       <div class="padre" style="cursor:pointer" onclick="MOS.pv2.editar('${key}')" title="Tocar para editar bulto / precio ref. / mínimo / notas">${pp.descripcion} <span style="opacity:.45;font-size:11px">✎</span><span class="famtag" title="Padre canónico: el stock suma equivalentes y derivados">FAMILIA</span></div>
       <div class="cod">${pp.codigoBarra||pp.skuBase||''}${upb>1?` · bulto ×${upb}`:''}${pp.countEquivalencias?` · ${pp.countEquivalencias} equiv.`:''}</div>
+      ${pp._pend ? '<div class="mini-note" style="color:#fbbf24">⏳ sincronizando con el servidor — el stock y la rotación aparecen en unos segundos</div>' : ''}
       <div class="costline">
         ${costo>0?`<span class="pv2-costo">💰 últ. costo <b>${fmtMoney(costo)}</b>${costoF?` <small>· guía ${costoF}</small>`:''}</span>`:'<span class="pv2-costo dim">💰 sin costo registrado aún</span>'}
         ${comp.map(cp => `<span class="pv2-comp ${costo>0&&cp.costo<costo?'mejor':'peor'}" title="También se lo compras a ${cp.proveedor}">🏷 ${cp.proveedor}: ${fmtMoney(cp.costo)}${cp.fecha?' ('+cp.fecha+')':''}${costo>0?(cp.costo<costo?' · más barato — ¿⏻ aquí?':' · más caro'):''}</span>`).join('')}
@@ -42455,7 +42456,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       <div class="pv2-cover">
         <span class="lbl">⏳ cubre <b style="color:${_pv2CovColor(cob)}">${cob==null?'—':cob+' sem'}</b></span>
         <div class="bar"><i style="width:${cob==null?0:Math.min(100, cob/2*100)}%;background:${_pv2CovColor(cob)}"></i></div>
-        <span class="lbl dim">${fam&&fam.rotFamiliaDia?`rota ${(fam.rotFamiliaDia*7).toFixed(1)}/sem`:(pp.rotacionDia?`rota ${(pp.rotacionDia*7).toFixed(1)}/sem`:'sin rotación')}</span>
+        <span class="lbl dim" title="La rotación son las VENTAS en zonas (tiendas) + lo que venden sus derivados, convertido al padre. El almacén no rota: repone.">${fam&&fam.rotFamiliaDia?`🏪 vende ${(fam.rotFamiliaDia*7).toFixed(1)}/sem${(fam.derivados||[]).length?' (zonas+derivados)':' (zonas)'}`:(pp.rotacionDia?`🏪 vende ${(pp.rotacionDia*7).toFixed(1)}/sem (zonas)`:'sin ventas en zonas (30d)')}</span>
       </div>
       <div class="foot">
         <button class="pv2-sug ${sug===0?'zero':''}" onclick="MOS.pv2.sug('${key}')" title="${razon.replace(/"/g,'&quot;')}">⚡ ${sugTxt}</button>
@@ -42476,9 +42477,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           ${der.map(d => `<div class="dr"><span>└ ${d.nombre}</span><b>${d.stock} (${d.stockPadreEq} eq) · ${d.ventas30}/30d</b></div>`).join('')}
           ${fam ? `<div class="hint">💡 Demanda familia ≈ ${(fam.rotFamiliaDia*7).toFixed(1)}/sem — al pedir el padre, pides también para envasar.</div>` : ''}
         </div>` : ''}
-        <div class="pv2-detbox"><h5>📈 Rotación 30d · almacén repone la Σ de zonas</h5>
-          <div class="dr b"><span>🏬 Almacén (Σ zonas)</span><b>${(((fam&&fam.rotFamiliaDia)||parseFloat(pp.rotacionDia)||0)*30).toFixed(0)} /30d</b></div>
-          ${(pp.zonas||[]).map(z => `<div class="dr"><span>🏪 ${z.nombre}</span><b>${z.ventasRango ?? 0} /30d</b></div>`).join('') || '<div class="dr"><span>sin ventas registradas</span><b>—</b></div>'}
+        <div class="pv2-detbox"><h5>📈 La rotación = VENTAS EN ZONAS (30d) — el almacén no rota, repone esa Σ</h5>
+          <div class="dr b"><span>Σ demanda familia (zonas${der.length?' + derivados':''})</span><b>${(((fam&&fam.rotFamiliaDia)||parseFloat(pp.rotacionDia)||0)*30).toFixed(0)} /30d</b></div>
+          ${(pp.zonas||[]).map(z => `<div class="dr"><span>🏪 ${z.nombre} vendió</span><b>${z.ventasRango ?? 0} /30d</b></div>`).join('') || '<div class="dr"><span>sin ventas registradas en zonas</span><b>—</b></div>'}
+          ${der.length ? `<div class="dr"><span>📦 derivados vendieron (convertido al padre)</span><b>${(fam && fam.rotFamiliaDia != null ? ((fam.rotFamiliaDia - (parseFloat(pp.rotacionDia)||0)) * 30).toFixed(1) : '—')} /30d</b></div>` : ''}
         </div>
         <div class="pv2-detbox"><h5>💰 Últimos costos (de tus guías)</h5>
           ${(pp.ultimosCostos||[]).map(h => `<div class="dr"><span>${h.fecha}</span><b>${fmtMoney(h.costo)}</b></div>`).join('') || '<div class="dr"><span>aún sin guías con costo</span><b>—</b></div>'}
@@ -42517,8 +42519,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _pv2RenderPedido(root) {
     const p = S.pv2.prov;
     const items = (S.pv2.items || []).filter(pp => !S.pv2.solo || _pv2QtyB(pp) > 0 || pp.activa === false && false);
-    const activos = items.filter(pp => pp.activa !== false);
-    const inactivos = (S.pv2.items || []).filter(pp => pp.activa === false);
+    // [v2.43.598] orden ALFABÉTICO (pedido del dueño: encontrar rápido)
+    const abc = (a, b) => String(a.descripcion || '').localeCompare(String(b.descripcion || ''), 'es');
+    const activos = items.filter(pp => pp.activa !== false).sort(abc);
+    const inactivos = (S.pv2.items || []).filter(pp => pp.activa === false).sort(abc);
     // [v2.43.596] Panel FLOTANTE encima de la vista (no pantalla completa): el home queda
     // visible detrás, difuminado; la cartbar es el pie del panel (jamás tapa el menú).
     // [v2.43.597] preservar scroll en re-render completo (antes saltaba arriba = "parpadeo")
@@ -43029,25 +43033,34 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         `<button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Cancelar</button>
          <button class="btn-primary text-sm flex-1" onclick="MOS.pv2.editarGuardar('${k}')">💾 Guardar</button>`);
     },
-    async editarGuardar(k) {
-      const pp = _pv2Item(k); if (!pp || !pp.idPP) { toast('Producto sin idPP', 'error'); return; }
+    // [v2.43.598] OPTIMISTA: pinta el bulto/ref/min/nota AL TOQUE (card parcial),
+    // POST en bg; si la red falla → toast + refetch que restaura la verdad del server.
+    // Antes el modal se cerraba ANTES del await: con red caída el valor "se perdía"
+    // sin que se note y al reabrir aparecía 1 (reclamo del dueño).
+    editarGuardar(k) {
+      const pp = _pv2Item(k); if (!pp) return;
+      if (!pp.idPP) { toast('⏳ Este producto aún está sincronizando — dale unos segundos y reintenta', 'error'); return; }
       const bulto = Math.max(parseInt($('pv2eBulto')?.value) || 1, 1);
       const ref   = parseFloat($('pv2eRef')?.value) || 0;
       const min   = parseFloat($('pv2eMin')?.value) || 0;
       const notas = $('pv2eNotas')?.value || '';
+      const prev  = { unidadesPorBulto: pp.unidadesPorBulto, precioReferencia: pp.precioReferencia, minimoCompra: pp.minimoCompra, notas: pp.notas };
       const bultoCambio = bulto !== Math.max(parseFloat(pp.unidadesPorBulto)||1,1);
-      pv2._mx();
-      try {
-        await API.post('actualizarProductoProveedor', { idPP: pp.idPP, idProveedor: S.pv2.prov.idProveedor, precioReferencia: ref, minimoCompra: min, notas, unidadesPorBulto: bulto });
-        if (bultoCambio && pp.skuBase) {
-          const r = await API.post('ppSetBultoGlobal', { skuBase: pp.skuBase, unidadesPorBulto: bulto }).catch(() => null);
-          const n = r && r.filas != null ? r.filas : (r && r.data && r.data.filas);
-          toast('💾 Guardado · bulto ×' + bulto + ' aplicado a ' + (n || 'todos') + ' proveedor(es) de este producto', 'ok');
-        } else toast('💾 Guardado', 'ok');
-        pp.unidadesPorBulto = bulto; pp.precioReferencia = ref; pp.minimoCompra = min; pp.notas = notas;
-        pv2Render();
-        _renderProvProductos();   // refetch fresco en bg
-      } catch (e) { toast('No se pudo guardar, reintenta', 'error'); }
+      pp.unidadesPorBulto = bulto; pp.precioReferencia = ref; pp.minimoCompra = min; pp.notas = notas;
+      pv2._mx(); _pv2RepaintCard(k); _pv2RepaintCart();
+      API.post('actualizarProductoProveedor', { idPP: pp.idPP, idProveedor: S.pv2.prov.idProveedor, precioReferencia: ref, minimoCompra: min, notas, unidadesPorBulto: bulto })
+        .then(async () => {
+          if (bultoCambio && pp.skuBase) {
+            const r = await API.post('ppSetBultoGlobal', { skuBase: pp.skuBase, unidadesPorBulto: bulto }).catch(() => null);
+            const n = r && r.filas != null ? r.filas : (r && r.data && r.data.filas);
+            toast('💾 Guardado · bulto ×' + bulto + ' aplicado a ' + (n || 'todos') + ' proveedor(es) de este producto', 'ok');
+          } else toast('💾 Guardado', 'ok');
+        })
+        .catch(() => {
+          Object.assign(pp, prev); _pv2RepaintCard(k);
+          toast('⚠ NO se guardó "' + (pp.descripcion||'').split(' ').slice(0,3).join(' ') + '" — revisa tu conexión y vuelve a intentar', 'error');
+          _renderProvProductos();
+        });
     },
     // [v2.43.597] OPTIMISTA: se marca ✓ AL TOQUE y el POST va en segundo plano
     // (antes esperaba la red → "demora mucho en marcarse"). El catálogo del
@@ -43114,8 +43127,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     __testCanvas(t) { return _pv2ImgCanvas(t); },   // hook de prueba (browsercheck)
     _mx() {
       const m = $('pv2Modal'); if (m) m.remove();
-      // [v2.43.597] los agregados del modal se reflejan AHORA (refetch diferido)
-      if (S.pv2._dirty) { S.pv2._dirty = false; _renderProvProductos(); }
+      // [v2.43.598] los agregados aparecen YA como placeholder (⏳ sincronizando) —
+      // el refetch los reemplaza con la fila real; si la red falla, siguen visibles.
+      if (S.pv2._dirty) {
+        S.pv2._dirty = false;
+        const have = new Set((S.pv2.items || []).map(x => String(x.skuBase)));
+        const pend = [];
+        (S.pv2.addAgregados || []).forEach(a => { if (!have.has(String(a.sku))) { have.add(String(a.sku)); pend.push({ skuBase: a.sku, descripcion: a.nombre, codigoBarra: '', activa: true, unidadesPorBulto: 1, zonas: [], _pend: true }); } });
+        (S.pv2.cand || []).forEach(c => { if (c._added && !have.has(String(c.skuBase))) { have.add(String(c.skuBase)); pend.push({ skuBase: c.skuBase, descripcion: c.descripcion || c.codigoBarra, codigoBarra: c.codigoBarra || '', activa: true, unidadesPorBulto: 1, zonas: [], _pend: true }); } });
+        if (pend.length) S.pv2.items = (S.pv2.items || []).concat(pend);
+        if (S.pv2.view === 'pedido') pv2Render();
+        _renderProvProductos();
+      }
     }
   };
   function _pv2Modal(titulo, bodyHtml, footHtml) {
