@@ -42372,6 +42372,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     S.pv2.prov = prov; S.pv2.view = 'pedido'; S.pv2.tab = 'cat'; S.pv2.det = {}; S.pv2.items = null; S.pv2.hist = null; S.pv2.cand = null; S.pv2.cargando = true;
     S.provSelId = id;                       // los helpers legacy (WA/print) leen esto
     S._carritoModalProvId = id;
+    // [v2.43.600] catálogo maestro para resolver derivados (ROT/SEM familia del ticket)
+    if (!(S.productos && S.productos.length)) { try { loadCatalogo().catch(() => {}); } catch (_) {} }
     pv2Render();
     try {
       const [items, hist] = await Promise.all([
@@ -42428,6 +42430,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       return hay && nSem ? _money(tot / nSem) : null;
     } catch (_) { return null; }
   }
+  // [v2.43.600] Salidas de almacén/sem de la FAMILIA completa: padre+equivalentes
+  // + derivados (su serie propia × factor de conversión al padre).
+  function _pv2SalidasSemFam(pp) {
+    let tot = _pv2SalidasSem(pp); let hay = tot != null; tot = tot || 0;
+    const der = (pp.familia && pp.familia.derivados) || [];
+    der.forEach(d => {
+      try {
+        const prod = (S.productos || []).find(x => String(x.idProducto) === String(d.sku) || String(x.skuBase || '') === String(d.sku));
+        if (!prod) return;
+        const serie = ((S._rotacionSemanalCache || {}).productos || {})[String(prod.codigoBarra || '').trim().toUpperCase()];
+        if (!serie || !serie.length) return;
+        let u = 0; serie.forEach(x => { u += parseFloat(x.unidades) || 0; });
+        tot += (u / serie.length) * (parseFloat(d.factorEq) || 0); hay = true;
+      } catch (_) {}
+    });
+    return hay ? _money(tot) : null;
+  }
 
   function _pv2CardProd(pp) {
     const key = _pv2Key(pp);
@@ -42465,9 +42484,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         const zSum = _money(zonas.reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
         const famTot = fam ? fam.stockPos : _money(alm + zSum);
         return `<div class="pv2-stk">
-        <div class="cell alm ${alm<0?'neg':''}" title="Stock del ALMACÉN — el que respalda tus pedidos"><span class="t">🏬 ALMACÉN</span><b>${pp.stockWh ?? 0}</b>${alm<0?'<small>⚠ negativo — corrígelo</small>':''}</div>
+        <div class="cell alm ${alm<0?'neg':''}" title="Stock del ALMACÉN — el que respalda tus pedidos"><span class="t">🏬 ALMACÉN</span><b>${_money(pp.stockWh)}</b>${alm<0?'<small>⚠ negativo — corrígelo</small>':''}</div>
         <span class="op">+</span>
-        <div class="cell ${zSum<0?'neg':''}" title="Σ de todas las zonas de venta"><span class="t">🏪 ZONAS</span><b>${zSum}</b><small>${zonas.map(z => `${z.nombre} ${z.cantidad}`).join(' · ') || 'sin stock en zonas'}</small></div>
+        <div class="cell ${zSum<0?'neg':''}" title="Σ de todas las zonas de venta"><span class="t">🏪 ZONAS</span><b>${zSum}</b><small>${zonas.map(z => `${z.nombre} ${_money(z.cantidad)}`).join(' · ') || 'sin stock en zonas'}</small></div>
         <span class="op">=</span>
         <div class="cell fam" title="Canónico + equivalentes + derivados. Los NEGATIVOS no suman."><span class="t">Σ FAMILIA</span><b>${famTot}</b><small>${der.length?`con ${der.length} derivado${der.length>1?'s':''}`:''}${fam&&fam.tieneNegativos?' · ⚠ hay negativos que NO suman':''}</small></div>
       </div>`; })()}
@@ -42491,8 +42510,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>
       ${open ? `<div class="pv2-det">
         ${der.length ? `<div class="pv2-detbox arbol"><h5>🌳 Árbol de la familia — los derivados nacen del padre y CUENTAN para él</h5>
-          <div class="dr b"><span>${pp.descripcion} (padre)</span><b>stock ${pp.stockTotal ?? '—'} · venta directa ${(parseFloat(pp.rotacionDia)||0*7).toFixed ? ((parseFloat(pp.rotacionDia)||0)*7).toFixed(1) : '—'}/sem</b></div>
-          ${der.map(d => `<div class="dr"><span>└ ${d.nombre}</span><b>${d.stock} (${d.stockPadreEq} eq) · ${d.ventas30}/30d</b></div>`).join('')}
+          <div class="dr b"><span>${pp.descripcion} (padre)</span><b>stock ${pp.stockTotal != null ? _money(pp.stockTotal) : '—'} · venta directa ${((parseFloat(pp.rotacionDia)||0)*7).toFixed(1)}/sem</b></div>
+          ${der.map(d => `<div class="dr"><span>└ ${d.nombre}</span><b>${_money(d.stock)} (${_money(d.stockPadreEq)} eq) · ${_money(d.ventas30)}/30d</b></div>`).join('')}
           ${fam ? `<div class="hint">💡 Demanda familia ≈ ${(fam.rotFamiliaDia*7).toFixed(1)}/sem — al pedir el padre, pides también para envasar.</div>` : ''}
         </div>` : ''}
         <div class="pv2-detbox"><h5>📈 Las DOS rotaciones (para comparar)</h5>
@@ -42669,7 +42688,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         const zS = _money((it.zonas || []).reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
         ctx.font = '700 17px system-ui'; ctx.textAlign = 'right'; ctx.fillStyle = '#334155';
         const yv = y - ((nls.length - 1) * 27) / 2;
-        ctx.fillText(String(it.stockWh ?? 0), W - PAD - 200, yv);
+        ctx.fillText(String(_money(it.stockWh)), W - PAD - 200, yv);
         ctx.fillText(String(zS), W - PAD - 120, yv);
         ctx.fillStyle = qb > 0 ? '#b45309' : '#cbd5e1'; ctx.font = '900 17px system-ui';
         ctx.fillText(qb > 0 ? qb + ' blt (' + (qb * upb) + ' un)' : '—', W - PAD, yv);
@@ -42774,17 +42793,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     let t = '\x1b\x40\x1b\x61\x01\x1b\x21\x30' + 'STOCK / PEDIDO\n' + '\x1b\x21\x00';
     t += '\x1b\x45\x01' + _pv2Norm(d.prov.nombre || '') + '\x1b\x45\x00\n';
     t += d.fecha + ' · revision para jefatura\n' + '\x1b\x61\x00' + SEP;
-    t += 'ALM=almacen  ZON=zonas  FAM=familia\n' + SEPd;
+    t += 'STOCK=total familia (con derivados)\n';
+    t += 'ROT/SEM=sale del almacen x guias, x semana\n' + SEPd;
     items.forEach(pp => {
       const qb = _pv2QtyB(pp);
       const upb = Math.max(parseFloat(pp.unidadesPorBulto) || 1, 1);
       const zS = _money((pp.zonas || []).reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
       const fam = pp.familia || null;
-      const famT = fam ? fam.stockPos : _money((parseFloat(pp.stockWh) || 0) + zS);
-      _pv2WrapTxt(pp.descripcion || pp.codigoBarra || '', W - (qb > 0 ? 3 : 0)).forEach((l, j) => {
+      const nDer = ((fam && fam.derivados) || []).length;
+      const famT = _money(fam ? fam.stockPos : (parseFloat(pp.stockWh) || 0) + zS);
+      const nom = (pp.descripcion || pp.codigoBarra || '') + (nDer ? ' [+' + nDer + ' deriv]' : '');
+      _pv2WrapTxt(nom, W - (qb > 0 ? 3 : 0)).forEach((l, j) => {
         t += (qb > 0 ? (j === 0 ? '>> ' : '   ') : '') + (j === 0 ? '\x1b\x45\x01' : '') + l + (j === 0 ? '\x1b\x45\x00' : '') + '\n';
       });
-      const linea = 'ALM ' + pp.stockWh + '  ZON ' + zS + '  FAM ' + famT;
+      const rot = _pv2SalidasSemFam(pp);
+      const rotTxt = rot != null ? rot + '/sem' : (fam && fam.rotFamiliaDia ? _money(fam.rotFamiliaDia * 7) + '/sem vta' : 'sin mov.');
+      const linea = 'STOCK ' + famT + '   ROT/SEM ' + rotTxt;
       const ped = qb > 0 ? 'PIDE ' + qb + 'blt(' + (qb * upb) + 'u)' : '';
       t += linea.slice(0, W - ped.length - 1) + pSt(ped, W - Math.min(linea.length, W - ped.length - 1)) + '\n' + SEPd;
     });
@@ -43095,7 +43119,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const bultoCambio = bulto !== Math.max(parseFloat(pp.unidadesPorBulto)||1,1);
       pp.unidadesPorBulto = bulto; pp.precioReferencia = ref; pp.minimoCompra = min; pp.notas = notas;
       pv2._mx(); _pv2RepaintCard(k); _pv2RepaintCart();
-      API.post('actualizarProductoProveedor', { idPP: pp.idPP, idProveedor: S.pv2.prov.idProveedor, precioReferencia: ref, minimoCompra: min, notas, unidadesPorBulto: bulto })
+      // [v2.43.600] idPp DUPLICADO a propósito: la RPC admin leía 'idPp' (P minúscula)
+      // y el envío con solo 'idPP' devolvía ok:false 'idPp requerido' con HTTP 200 —
+      // POR ESO "no se grababa el bulto" (SQL 549 ya acepta ambas; cinturón doble).
+      API.post('actualizarProductoProveedor', { idPP: pp.idPP, idPp: pp.idPP, idProveedor: S.pv2.prov.idProveedor, precioReferencia: ref, minimoCompra: min, notas, unidadesPorBulto: bulto })
         .then(async () => {
           if (bultoCambio && pp.skuBase) {
             const r = await API.post('ppSetBultoGlobal', { skuBase: pp.skuBase, unidadesPorBulto: bulto }).catch(() => null);
@@ -43171,7 +43198,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       } catch (e) { toast('No se pudo guardar el día, reintenta', 'error'); }
     },
     _t(m) { toast(m, 'ok'); },
-    __testCanvas(t) { return _pv2ImgCanvas(t); },   // hook de prueba (browsercheck)
+    __testCanvas(t) { return _pv2ImgCanvas(t); },   // hooks de prueba (browsercheck)
+    __testEscposListado() { return _pv2EscposListado(_pv2PedData()); },
     _mx() {
       const m = $('pv2Modal'); if (m) m.remove();
       // [v2.43.598] los agregados aparecen YA como placeholder (⏳ sincronizando) —
