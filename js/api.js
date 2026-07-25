@@ -2657,8 +2657,11 @@ const API = (() => {
     // que el catálogo NO dependa de la Hoja en NINGUNA escritura. Gate _mosCatalogoDirecto (igual que el resto
     // del catálogo). OFF (default) ⇒ recto a GAS (segmentos a la Hoja; foto a Drive) = IDÉNTICO a hoy.
     actualizarSegmentosPrecio:  _mosCatalogoDirecto,
-    subirFotoProducto:          _mosCatalogoDirecto,
-    subirImagenConfig:          _mosCatalogoDirecto,
+    // [dueño · CERO-GAS FOTOS] la foto SIEMPRE va a Supabase Storage (bucket producto-fotos), nunca a Drive/GAS.
+    // Gate always-true (aunque get_flags no cargue) + _MOS_DIRECT_REQUIRED ⇒ si el directo no puede (sin token)
+    // LANZA "reintentar", jamás cae a GAS (que está muerto en cero-GAS → "nunca sube").
+    subirFotoProducto:          () => true,
+    subirImagenConfig:          () => true,
     // [CATÁLOGO · estaciones] 100% Supabase (RPC mos.crear_estacion/actualizar_estacion, SQL 215) — sin GAS,
     // sin clasp. Gate _mosCatalogoDirecto (ON en prod). El trigger de versión (200) bumpea al escribir → WH/ME
     // refrescan. Cierra el último caso del patrón "el dato no aterriza" (antes iba GAS→Hoja + sync batch muerto).
@@ -2817,9 +2820,12 @@ const API = (() => {
     codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, historialPrecioCosto: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
-    // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS. (subirFotoProducto
-    // se deja fuera: la foto a Drive por GAS es un fallback aceptable, no es dato de dinero.)
+    // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.
+    // [dueño · CERO-GAS FOTOS] subirFotoProducto/subirImagenConfig ENTRAN acá: la foto SIEMPRE va a Supabase
+    // Storage; el viejo fallback a Drive por GAS está muerto (cero-GAS) → se traducía en "nunca sube". Ahora
+    // sin token LANZA (reintentar) en vez del limbo GAS.
     crearProducto: 1, actualizarProducto: 1, publicarPrecio: 1, crearEquivalencia: 1, actualizarEquivalencia: 1, actualizarSegmentosPrecio: 1,
+    subirFotoProducto: 1, subirImagenConfig: 1,
     // [dueño · fix "clave errónea" al eliminar presentaciones] La purga es un DELETE de datos del catálogo: el
     // GAS de purga valida la clave contra el global DESINCRONIZADO (incidente clave-global) → rechazaba la clave
     // master correcta. Fail-closed: sin token/directo → LANZA (reintentar), jamás cae al GAS con clave vieja.
