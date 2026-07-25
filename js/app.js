@@ -10631,11 +10631,13 @@ const MOS = (() => {
       .mesa-card-prov{display:flex;align-items:flex-start;gap:8px;font-weight:850;font-size:15.5px;letter-spacing:-.01em;color:#e6edf7;line-height:1.2}
       .mesa-prov-ico{font-size:15px;flex:none;line-height:1.2;filter:drop-shadow(0 1px 3px rgba(0,0,0,.4))}
       .mesa-prov-name{flex:1;min-width:0;word-break:break-word}
-      /* [D] productos con desvanecido si son muchos */
-      .mesa-card-prods{position:relative;font-size:11.5px;color:#93a4c2;line-height:1.5;max-height:48px;overflow:hidden;
-        -webkit-mask-image:linear-gradient(180deg,#000 60%,transparent);mask-image:linear-gradient(180deg,#000 60%,transparent)}
+      /* [D] productos con desvanecido si son muchos. [v2.43.614] altura FIJA (2 líneas) → las barras y el
+         botón quedan SIEMPRE a la misma altura en toda la grilla, tenga la guía 1 producto o muchos. */
+      .mesa-card-prods{position:relative;font-size:11.5px;color:#93a4c2;line-height:1.5;height:34px;overflow:hidden;
+        -webkit-mask-image:linear-gradient(180deg,#000 62%,transparent);mask-image:linear-gradient(180deg,#000 62%,transparent)}
       .mesa-prods-n{font-weight:800;color:#7cb3f0}
-      .mesa-phases{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+      /* margin-top:auto ancla barras+botón al fondo → alineados aunque el nombre del proveedor ocupe 1 o 2 líneas */
+      .mesa-phases{display:flex;flex-direction:column;gap:6px;margin-top:auto;padding-top:2px}
       .mesa-ph{position:relative;display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;color:#7b8aa6;
         background:#0a1120;border:1px solid #1e293b;border-radius:8px;padding:5px 9px;overflow:hidden}
       .mesa-ph>i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,rgba(52,211,153,.18),rgba(52,211,153,.28));transition:width .5s cubic-bezier(.22,1,.36,1)}
