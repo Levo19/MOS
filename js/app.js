@@ -10115,45 +10115,50 @@ const MOS = (() => {
     return S._prodIdxCache;
   }
 
-  // Estado de una compra: costos (Paso 1) + precios (Paso 2), derivado de Supabase.
+  // [v2.43.613] Estado HONESTO de una compra (pedido del dueño: nada de marcar "procesado"/"finalizado" falso):
+  //   • PENDIENTE  = falta costear (no todas las líneas tienen COSTO real).
+  //   • PROCESADO  = TODOS los costos hechos (Paso 1 completo) — falta algún precio.
+  //   • FINALIZADO = TODOS los costos Y TODOS los precios seteados (Paso 1 + Paso 2 completos).
+  // "Costeado" honesto por fuente:
+  //   • WH (proveedor): el costo se escribe en la línea de la guía (precio_unitario) → precioUnitario>0.
+  //   • ME (entrada libre): la línea NO trae costo (operacion_detalle devuelve precioUnitario = precio_venta,
+  //     que es el PRECIO, no un costo). Por eso se usa el costo REAL del catálogo (precioCosto del canónico);
+  //     si el producto no tiene costo (precio_costo=0), la compra queda "Falta costear" (no se marca falso).
   function _comprasEstado(op) {
-    const cost = _opsClasificarCostos(op) || { estado: 'sin', conCosto: 0, total: (op.lineas || []).length };
     const k = op.fuente + '_' + op.idGuia;
     const lineas = ((S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || []);
-    // PRECIOS: por cada línea CON costo, ¿el precio del canónico ya refleja el nuevo costo (margen objetivo)?
-    let conPrecio = 0, totalCosteados = 0;
-    const idx = _prodIndex();   // [fix P2 · eficiencia] índice O(1) en vez de .find sobre miles de productos por línea
+    const total = lineas.length;
+    const esME = String(op.fuente || '').toUpperCase() === 'ME';
+    const idx = _prodIndex();
+    let conCosto = 0, conPrecio = 0, totalCosteados = 0;
     lineas.forEach(l => {
-      const costo = parseFloat(l.precioUnitario) || (parseFloat(l.subtotal) || 0) / (parseFloat(l.cantidad) || 1);
-      if (!(costo > 0)) return;
       const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
       const p = (cod && idx.byCod.get(cod)) || idx.byId.get(String(l.idCanonico || ''));
-      if (!p) return;                 // [fix] línea sin producto resoluble → no se puede preciar; no la contamos
-      totalCosteados++;               // (antes se incrementaba antes del !p → la compra quedaba "falta precios" eterna)
+      const costo = esME ? (p ? parseFloat(p.precioCosto) || 0 : 0) : (parseFloat(l.precioUnitario) || 0);
+      if (!(costo > 0)) return;
+      conCosto++;
+      if (!p) return;                 // costeado pero sin producto resoluble → no se puede preciar
+      totalCosteados++;
       const venta = parseFloat(p.precioVenta) || 0;
       let margen = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : null;
       if (margen == null) { try { const mi = _calcularMargenInfo(p); margen = mi ? parseFloat(mi.objetivo) : null; } catch(_){} }
       if (venta <= 0 || margen == null || margen >= 100) { conPrecio++; return; } // sin objetivo → no exigimos
       const sug = _r1(costo / (1 - margen / 100));
-      if (Math.abs(venta - sug) <= 0.1) conPrecio++; // precio fresco respecto al costo nuevo
+      if (Math.abs(venta - sug) <= 0.1) conPrecio++;   // precio fresco respecto al costo
     });
-    let fase, tone, label, ico;
-    // [fix] estado null o total 0 = líneas aún no cargadas → PENDIENTE (antes caía al else "completos" y se pintaba "Procesada ✓" en verde por error).
-    if (cost.estado === 'sin' || cost.estado == null || !cost.total) { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = 'Falta costear'; }
-    else if (cost.estado === 'parcial') { fase = 'incompleta'; tone = 'amber'; ico = '⚠'; label = 'Datos incompletos · faltan ' + (cost.total - cost.conCosto) + ' costo(s)'; }
-    else { // costos completos
+    let fase, tone, ico, label;
+    if (total === 0) { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = 'Falta costear'; }
+    else if (conCosto < total) { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = conCosto > 0 ? `Falta costear · ${total - conCosto} de ${total}` : 'Falta costear'; }
+    else {                       // todos los costos hechos
       const faltanPrecio = totalCosteados - conPrecio;
-      // [fix P2] si NINGUNA línea resolvió a producto (totalCosteados===0) NO es "procesada" — falta preciar.
-      if (totalCosteados === 0 && cost.total > 0) { fase = 'precios'; tone = 'blue'; ico = '🏷'; label = 'Falta precios (Paso 2)'; }
-      else if (faltanPrecio <= 0) { fase = 'procesada'; tone = 'em'; ico = '✓'; label = 'Procesada'; }
-      else if (conPrecio > 0) { fase = 'incompleta'; tone = 'amber'; ico = '⚠'; label = 'Datos incompletos · faltan ' + faltanPrecio + ' precio(s)'; }
-      else { fase = 'precios'; tone = 'blue'; ico = '🏷'; label = 'Falta precios (Paso 2)'; }
+      if (totalCosteados > 0 && faltanPrecio <= 0) { fase = 'finalizado'; tone = 'em'; ico = '✓'; label = 'Finalizado'; }
+      else { fase = 'procesado'; tone = 'blue'; ico = '💰'; label = faltanPrecio > 0 ? `Procesado · faltan ${faltanPrecio} precio${faltanPrecio !== 1 ? 's' : ''}` : 'Procesado'; }
     }
     return { fase, tone, ico, label,
-             costos: { con: cost.conCosto, total: cost.total },
+             costos: { con: conCosto, total },
              precios: { con: conPrecio, total: totalCosteados },
-             incompleto: fase === 'incompleta',
-             pctC: cost.total ? Math.round(cost.conCosto / cost.total * 100) : 0,
+             incompleto: false,
+             pctC: total ? Math.round(conCosto / total * 100) : 0,
              pctP: totalCosteados ? Math.round(conPrecio / totalCosteados * 100) : 0 };
   }
 
@@ -10169,20 +10174,6 @@ const MOS = (() => {
       return op.idGuia && op.fuente && !tiene && !(cached && cached.error);
     }).map(op => ({ fuente: op.fuente, idGuia: op.idGuia, key: op.fuente + '_' + op.idGuia }));
     if (!faltan.length) return;
-    let _tid = null;
-    const _repintar = () => {
-      if (_tid) return;
-      _tid = setTimeout(() => {
-        _tid = null;
-        const m = document.getElementById('mesaComprasModal');
-        if (!m || !m.classList.contains('open') || S._mesaAbierta) return;   // no repintar con una guía abierta encima
-        const body = m.querySelector('.mesa-body'); if (!body) return;
-        const sc = body.scrollTop;
-        const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
-        body.innerHTML = _mesaComprasBodyHTML(compras);
-        body.scrollTop = sc;
-      }, 450);
-    };
     let idx = 0;
     const worker = async () => {
       while (idx < faltan.length) {
@@ -10194,7 +10185,7 @@ const MOS = (() => {
           S._opsDetCache[c.key] = { lineas, ts: Date.now() };
           const op = _findOpByKey(c.key);
           if (op) { op.lineas = lineas; op.lineasCount = lineas.length; if (!op.montoTotal) op.montoTotal = lineas.reduce((s, l) => s + (+l.subtotal || 0), 0); }
-          _repintar();
+          _mesaActualizarCard(c.key);   // [anti-parpadeo] actualiza SOLO esa card, no todo el body
         } catch(_){}
       }
     };
@@ -10279,23 +10270,33 @@ const MOS = (() => {
     return hay.indexOf(q) >= 0;
   }
 
-  // Body de la Mesa (grupos por día + cards). Separado para re-render aislado del buscador (mantiene foco).
+  // [v2.43.613] Zona de una compra (para el chip de filtro): Almacén (WH) o la zona (entrada libre).
+  function _mesaZonaDe(op) {
+    if (String(op.fuente || '').toUpperCase() === 'WH') return { key: 'ALM', label: '🏬 Almacén' };
+    const id = String(op.idZonaCanonId || op.idZona || '').trim().toUpperCase() || 'Z?';
+    const nom = String(op.idZonaCanonNom || op.idZona || 'Zona').trim();
+    return { key: 'Z_' + id, label: '🏪 ' + nom };
+  }
+
+  // Body de la Mesa (grupos por día + cards). Muestra TODO (pedido del dueño: siempre dar seguimiento);
+  // filtra por ZONA + buscador. Separado para re-render aislado sin perder el foco del input.
   function _mesaComprasBodyHTML(compras) {
-    const F = S._mesaFiltro || 'activas';
+    const Z = S._mesaZonaFiltro || 'todas';
     const q = String(S._mesaBusqueda || '').trim().toLowerCase();
-    const pasa = (fase) => F === 'todas' ? true : F === 'activas' ? fase !== 'procesada' : fase === F;
-    let vis = compras.filter(c => pasa(c.est.fase));
+    let vis = compras;
+    if (Z !== 'todas') vis = vis.filter(c => _mesaZonaDe(c.op).key === Z);
     if (q) vis = vis.filter(c => _mesaMatchBusqueda(c.op, q));
-    const rank = { incompleta: 0, precios: 1, pendiente: 2, procesada: 3 };
+    // dentro de cada día: pendiente primero (lo que falta), luego procesado, luego finalizado.
+    const rank = { pendiente: 0, procesado: 1, finalizado: 2 };
     const grupos = {};
     vis.forEach(c => { const k = String(c.op._dia || '').slice(0, 10) || 'z'; (grupos[k] = grupos[k] || []).push(c); });
     const dias = Object.keys(grupos).sort().reverse();
     let bodyHtml, i = 0;
     if (!vis.length) {
-      bodyHtml = `<div class="mesa-empty"><div class="mesa-empty-ic">${q ? '🔍' : (F === 'procesada' ? '✓' : '🎉')}</div><p>${q ? `Sin resultados para "${_escapeHtml(q)}"` : (F === 'activas' || F === 'todas' ? 'No hay compras que procesar. Todo al día.' : 'Nada en este filtro.')}</p></div>`;
+      bodyHtml = `<div class="mesa-empty"><div class="mesa-empty-ic">${q ? '🔍' : '🎉'}</div><p>${q ? `Sin resultados para "${_escapeHtml(q)}"` : 'Nada en esta zona.'}</p></div>`;
     } else {
       bodyHtml = dias.map(k => {
-        const arr = grupos[k].sort((a, b) => rank[a.est.fase] - rank[b.est.fase]);
+        const arr = grupos[k].sort((a, b) => (rank[a.est.fase] ?? 9) - (rank[b.est.fase] ?? 9));
         return `<div class="mesa-day"><span class="mesa-day-lbl">${_mesaDiaLabel(k)}</span><span class="mesa-day-ln"></span><span class="mesa-day-cnt">${arr.length} compra${arr.length !== 1 ? 's' : ''}</span></div>
           <div class="mesa-grid">${arr.map(c => _mesaComprasCard(c.op, c.est, i++)).join('')}</div>`;
       }).join('');
@@ -10306,36 +10307,50 @@ const MOS = (() => {
 
   function _mesaComprasHTML() {
     const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
-    const cont = { pendiente: 0, precios: 0, incompleta: 0, procesada: 0 };
-    compras.forEach(c => cont[c.est.fase]++);
-    const activas = cont.pendiente + cont.precios + cont.incompleta;
-    const F = S._mesaFiltro || 'activas';
-    const tab = (id, ico, txt, n, tone) => `<button class="mesa-tab ${F === id ? 'on' : ''} t-${tone || 'nk'}" onclick="MOS.mesaSetFiltro('${id}')">${ico} ${txt}${n != null ? ` <span class="mesa-tab-n">${n}</span>` : ''}</button>`;
+    const cont = { pendiente: 0, procesado: 0, finalizado: 0 };
+    compras.forEach(c => cont[c.est.fase] != null && cont[c.est.fase]++);
+    const porHacer = cont.pendiente + cont.procesado;
+    // chips de ZONA (Almacén + zonas presentes), con conteo
+    const zonas = new Map();
+    compras.forEach(c => { const z = _mesaZonaDe(c.op); if (!zonas.has(z.key)) zonas.set(z.key, { label: z.label, n: 0 }); zonas.get(z.key).n++; });
+    const zEntries = [...zonas.entries()].sort((a, b) => a[0] === 'ALM' ? -1 : b[0] === 'ALM' ? 1 : a[1].label.localeCompare(b[1].label));
+    const Z = S._mesaZonaFiltro || 'todas';
+    const zchip = (key, label, n) => `<button class="mesa-zchip ${Z === key ? 'on' : ''}" onclick="MOS.mesaSetZona('${key}')">${label}${n != null ? ` <span class="mesa-zchip-n">${n}</span>` : ''}</button>`;
     const q = _escapeHtml(String(S._mesaBusqueda || ''));
     return `
       <div class="mesa-sheet" onclick="event.stopPropagation()">
         <div class="mesa-head">
-          <div class="mesa-title"><span class="mesa-ic">🧾</span><div><div class="mesa-h1">Mesa de compras</div><div class="mesa-h2">${compras.length} compra(s) · <b class="mesa-em">${activas} por procesar</b> · ${S._mesaRangoDias || 45} días</div></div></div>
+          <div class="mesa-title"><span class="mesa-ic">🧾</span><div><div class="mesa-h1">Mesa de compras</div><div class="mesa-h2">${compras.length} compra(s) · <b class="mesa-em">${porHacer} por hacer</b> · <b style="color:#34d399">${cont.finalizado} finalizadas</b></div></div></div>
           <button class="mesa-x" onclick="MOS.cerrarMesaCompras()" aria-label="Cerrar">✕</button>
         </div>
-        <div class="mesa-search-wrap">
-          <span class="mesa-search-ic">🔍</span>
-          <input id="mesaSearch" class="mesa-search" type="search" autocomplete="off" placeholder="Buscar proveedor, zona o producto…" value="${q}" oninput="MOS.mesaBuscar(this.value)">
-          ${q ? `<button class="mesa-search-x" onclick="MOS.mesaBuscar('')" title="Limpiar">✕</button>` : ''}
-        </div>
-        <div class="mesa-tabs">
-          ${tab('activas', '⚡', 'Por procesar', activas, 'em')}
-          ${tab('pendiente', '⏳', 'Sin costear', cont.pendiente, 'rose')}
-          ${tab('precios', '🏷', 'Falta precios', cont.precios, 'blue')}
-          ${tab('incompleta', '⚠', 'Incompletas', cont.incompleta, 'amber')}
-          ${tab('procesada', '✓', 'Procesadas', cont.procesada, 'em')}
-          ${tab('todas', '▦', 'Todas', compras.length, 'nk')}
+        <div class="mesa-toolbar">
+          <div class="mesa-search-wrap">
+            <span class="mesa-search-ic">🔍</span>
+            <input id="mesaSearch" class="mesa-search" type="search" autocomplete="off" placeholder="Buscar proveedor o producto…" value="${q}" oninput="MOS.mesaBuscar(this.value)">
+            ${q ? `<button class="mesa-search-x" onclick="MOS.mesaBuscar('')" title="Limpiar">✕</button>` : ''}
+          </div>
+          <div class="mesa-zchips">
+            ${zchip('todas', '▦ Todas', compras.length)}
+            ${zEntries.map(([k, v]) => zchip(k, v.label, v.n)).join('')}
+          </div>
         </div>
         <div class="mesa-body">${_mesaComprasBodyHTML(compras)}</div>
       </div>`;
   }
 
-  // [v2.43.612] Buscador de la Mesa: re-render SOLO del body (mantiene foco del input) + restaura el cursor.
+  // Chip de zona: re-render aislado del body (no toca la barra de búsqueda) + marca el chip activo.
+  function mesaSetZona(key) {
+    S._mesaZonaFiltro = key;
+    const m = document.getElementById('mesaComprasModal');
+    if (!m) return;
+    m.querySelectorAll('.mesa-zchip').forEach(b => b.classList.remove('on'));
+    const btn = [...m.querySelectorAll('.mesa-zchip')].find(b => b.getAttribute('onclick')?.includes(`'${key}'`));
+    if (btn) btn.classList.add('on');
+    const body = m.querySelector('.mesa-body');
+    if (body) { const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) })); body.scrollTop = 0; body.innerHTML = _mesaComprasBodyHTML(compras); }
+  }
+
+  // [v2.43.612] Buscador de la Mesa: re-render SOLO del body (mantiene foco del input).
   function mesaBuscar(v) {
     S._mesaBusqueda = v;
     const m = document.getElementById('mesaComprasModal');
@@ -10346,7 +10361,6 @@ const MOS = (() => {
       body.scrollTop = 0;
       body.innerHTML = _mesaComprasBodyHTML(compras);
     }
-    // mostrar/ocultar la × sin perder el foco del input
     const wrap = m.querySelector('.mesa-search-wrap');
     if (wrap) {
       let x = wrap.querySelector('.mesa-search-x');
@@ -10409,18 +10423,18 @@ const MOS = (() => {
     const listaProd = nombres.length ? nombres.map(n => _escapeHtml(n)).join(' · ') : '(sin líneas)';
     const gidCorto = _escapeHtml(String(op.idGuia || '').replace(/^G_L\d+/, 'GR·').slice(-9));
     const foto = (op.foto && String(op.foto).trim()) ? '<span class="mesa-foto-ic" title="Tiene foto de factura">📄</span>' : '';
-    const ctaTxt = est.fase === 'pendiente' ? '💰 Ingresar compra →'
-                 : est.fase === 'precios' ? '🏷 Seguir a precios →'
-                 : est.fase === 'incompleta' ? '✍ Completar datos →'
-                 : '👁 Revisar';
+    const ctaTxt = est.fase === 'finalizado' ? '👁 Revisar'
+                 : est.fase === 'procesado' ? '🏷 Poner precios →'
+                 : '💰 Ingresar compra →';
     const faseBar = `
       <div class="mesa-phases">
-        <div class="mesa-ph ${est.pctC >= 100 ? 'ok' : est.pctC > 0 ? 'mid' : ''}"><span>Paso 1 · costos</span><i style="width:${est.pctC}%"></i><b>${est.costos.con}/${est.costos.total}</b></div>
-        <div class="mesa-ph ${est.pctC < 100 ? 'lock' : est.pctP >= 100 ? 'ok' : est.pctP > 0 ? 'mid' : ''}"><span>Paso 2 · precios</span><i style="width:${est.pctC < 100 ? 0 : est.pctP}%"></i><b>${est.pctC < 100 ? '—' : est.precios.con + '/' + est.precios.total}</b></div>
+        <div class="mesa-ph ${est.pctC >= 100 ? 'ok' : est.pctC > 0 ? 'mid' : ''}"><span>Costos</span><i style="width:${est.pctC}%"></i><b>${est.costos.con}/${est.costos.total}</b></div>
+        <div class="mesa-ph ${est.pctC < 100 ? 'lock' : est.pctP >= 100 ? 'ok' : est.pctP > 0 ? 'mid' : ''}"><span>Precios</span><i style="width:${est.pctC < 100 ? 0 : est.pctP}%"></i><b>${est.pctC < 100 ? '—' : est.precios.con + '/' + est.precios.total}</b></div>
       </div>`;
     return `
-      <button class="mesa-card tone-${est.tone}${est.incompleto ? ' is-incompleta' : ''}${esZona ? ' is-zona' : ''}" style="animation-delay:${Math.min(i, 16) * 40}ms"
+      <button class="mesa-card tone-${est.tone} fase-${est.fase}${esZona ? ' is-zona' : ''}" id="mesacard_${_escapeHtml(k)}" data-fase="${est.fase}" style="animation-delay:${Math.min(i, 16) * 40}ms"
               onclick="MOS._mesaComprasEntrar('${op.fuente}','${_escapeHtml(op.idGuia)}')">
+        ${est.fase === 'finalizado' ? '<span class="mesa-done-ribbon">✓</span>' : ''}
         <div class="mesa-card-top">
           <span class="mesa-state s-${est.tone}">${est.ico} ${_escapeHtml(est.label)}</span>
           <span class="mesa-gid">${esZona ? '<span class="mesa-origen-pill">🏪 EN ZONA</span>' : ''}${foto}${gidCorto}</span>
@@ -10430,6 +10444,27 @@ const MOS = (() => {
         ${faseBar}
         <div class="mesa-cta s-${est.tone}">${ctaTxt}</div>
       </button>`;
+  }
+
+  // [v2.43.613 · anti-parpadeo] Actualiza UNA card en sitio (sin re-render del body) cuando llegan sus
+  // líneas o cambia su estado. Si pasa a procesado/finalizado, dispara la animación de "hecho".
+  function _mesaActualizarCard(key) {
+    const m = document.getElementById('mesaComprasModal');
+    if (!m || !m.classList.contains('open') || S._mesaAbierta) return;
+    const el = document.getElementById('mesacard_' + key);
+    if (!el) return;
+    // respetar el filtro de zona/búsqueda: si la card ya no debería mostrarse, no la tocamos (se corrige al re-render)
+    const op = _findOpByKey(key); if (!op) return;
+    const est = _comprasEstado(op);
+    const prevFase = el.getAttribute('data-fase');
+    const tmp = document.createElement('div');
+    tmp.innerHTML = _mesaComprasCard(op, est, 0);
+    const nuevo = tmp.firstElementChild; if (!nuevo) return;
+    nuevo.style.animationDelay = '0ms';
+    if (prevFase && prevFase !== est.fase && (est.fase === 'finalizado' || est.fase === 'procesado')) {
+      nuevo.classList.add('mesa-card-flip');
+    }
+    el.replaceWith(nuevo);
   }
 
   function _mesaComprasEntrar(fuente, idGuia) {
@@ -10529,24 +10564,24 @@ const MOS = (() => {
       .mesa-h2{font-size:11.5px;color:#93a4c2;margin-top:1px} .mesa-em{color:#34d399}
       .mesa-x{margin-left:auto;width:32px;height:32px;border-radius:50%;background:#131d30;border:1px solid #28344c;color:#93a4c2;font-size:14px;cursor:pointer;transition:.15s}
       .mesa-x:hover{background:rgba(244,63,94,.25);color:#fda4af;transform:rotate(90deg)}
-      .mesa-search-wrap{flex:none;display:flex;align-items:center;gap:8px;margin:0 18px 10px;padding:0 12px;height:40px;background:#0e1626;border:1px solid #28344c;border-radius:11px;transition:.15s}
+      /* [v2.43.613] Toolbar: buscador + chips de ZONA en UNA sola fila (scroll horizontal si no cabe). */
+      .mesa-toolbar{flex:none;display:flex;align-items:center;gap:9px;padding:0 18px 12px;border-bottom:1px solid #17233b;background:#080e19;position:relative;z-index:4;overflow-x:auto;scrollbar-width:none}
+      .mesa-toolbar::-webkit-scrollbar{display:none}
+      .mesa-search-wrap{flex:1 1 150px;min-width:135px;display:flex;align-items:center;gap:8px;padding:0 11px;height:38px;background:#0e1626;border:1px solid #28344c;border-radius:10px;transition:.15s}
       .mesa-search-wrap:focus-within{border-color:#34d399;box-shadow:0 0 0 2px rgba(52,211,153,.18)}
-      .mesa-search-ic{font-size:13px;opacity:.7;flex:none}
-      .mesa-search{flex:1;min-width:0;background:transparent;border:none;outline:none;color:#e6edf7;font-size:13.5px;font-weight:600;height:100%}
+      .mesa-search-ic{font-size:12.5px;opacity:.7;flex:none}
+      .mesa-search{flex:1;min-width:0;background:transparent;border:none;outline:none;color:#e6edf7;font-size:13px;font-weight:600;height:100%}
       .mesa-search::placeholder{color:#5b6b85;font-weight:500}
       .mesa-search::-webkit-search-cancel-button{-webkit-appearance:none}
       .mesa-search-x{flex:none;width:22px;height:22px;border-radius:50%;background:#1b2740;border:none;color:#93a4c2;font-size:11px;cursor:pointer;transition:.15s}
       .mesa-search-x:hover{background:rgba(244,63,94,.25);color:#fda4af}
-      .mesa-tabs{flex:none;display:flex;gap:7px;padding:0 18px 12px;overflow-x:auto;border-bottom:1px solid #17233b;scrollbar-width:none;background:#080e19;position:relative;z-index:4}
-      .mesa-tabs::-webkit-scrollbar{display:none}
-      .mesa-tab{flex:none;display:inline-flex;align-items:center;gap:6px;height:34px;box-sizing:border-box;line-height:1;font-size:12px;font-weight:700;color:#93a4c2;
-        background:#0e1626;border:1px solid #28344c;padding:0 13px;border-radius:999px;cursor:pointer;transition:.16s;white-space:nowrap}
-      .mesa-tab:hover{border-color:#3a4a6b;color:#cdd8ec;transform:translateY(-1px)}
-      .mesa-tab-n{font-family:ui-monospace,monospace;font-size:10.5px;font-weight:800;background:#1a2740;padding:1px 6px;border-radius:999px;color:#cdd8ec}
-      .mesa-tab.on{color:#04140d;background:linear-gradient(180deg,#34d399,#059669);border-color:transparent}
-      .mesa-tab.on .mesa-tab-n{background:rgba(4,20,13,.25);color:#04140d}
-      .mesa-tab.on.t-rose{background:linear-gradient(180deg,#fb7185,#e11d48)} .mesa-tab.on.t-amber{background:linear-gradient(180deg,#fbbf24,#d97706);color:#1a1206}
-      .mesa-tab.on.t-blue{background:linear-gradient(180deg,#7cb3f0,#3b82f6);color:#06121f}
+      .mesa-zchips{flex:none;display:flex;gap:6px;align-items:center}
+      .mesa-zchip{flex:none;display:inline-flex;align-items:center;gap:5px;height:38px;box-sizing:border-box;line-height:1;font-size:12px;font-weight:750;color:#93a4c2;
+        background:#0e1626;border:1px solid #28344c;padding:0 12px;border-radius:10px;cursor:pointer;transition:.16s;white-space:nowrap}
+      .mesa-zchip:hover{border-color:#3a4a6b;color:#cdd8ec}
+      .mesa-zchip-n{font-family:ui-monospace,monospace;font-size:10px;font-weight:800;background:#1a2740;padding:1px 6px;border-radius:999px;color:#cdd8ec}
+      .mesa-zchip.on{color:#04140d;background:linear-gradient(180deg,#34d399,#059669);border-color:transparent}
+      .mesa-zchip.on .mesa-zchip-n{background:rgba(4,20,13,.25);color:#04140d}
       .mesa-body{flex:1 1 auto;min-height:0;padding:8px 18px 26px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
       /* [C] cabecera de día */
       .mesa-day{display:flex;align-items:center;gap:11px;padding:16px 2px 9px;position:sticky;top:0;z-index:3;
@@ -10574,6 +10609,16 @@ const MOS = (() => {
       .mesa-origen-pill{font-size:8.5px;font-weight:900;letter-spacing:.03em;color:#c084fc;background:rgba(168,85,247,.16);border:1px solid rgba(168,85,247,.4);border-radius:999px;padding:2px 7px}
       .mesa-card.is-zona .mesa-prov-name{color:#e9d5ff}
       .mesa-cajera{font-weight:700;font-size:12.5px;color:#c084fc}
+      /* [v2.43.613] estado honesto: color distinto por fase + animación al completarse */
+      .mesa-card{position:relative}
+      .mesa-card.fase-procesado{background:linear-gradient(180deg,#0e1626,rgba(124,179,240,.07));border-color:rgba(124,179,240,.3)}
+      .mesa-card.fase-finalizado{background:linear-gradient(180deg,#0e1626,rgba(52,211,153,.09));border-color:rgba(52,211,153,.34)}
+      .mesa-card.fase-finalizado.is-zona{background:linear-gradient(180deg,#0e1626,rgba(52,211,153,.09))}
+      .mesa-done-ribbon{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#34d399,#059669);color:#04140d;font-size:14px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px -3px rgba(52,211,153,.65);z-index:2;animation:mesaDoneIn .5s cubic-bezier(.34,1.56,.64,1) both}
+      @keyframes mesaDoneIn{from{opacity:0;transform:scale(.2) rotate(-60deg)}to{opacity:1;transform:none}}
+      .mesa-card-flip{animation:mesaCardIn .42s cubic-bezier(.22,1,.36,1) both, mesaCardFlip .8s cubic-bezier(.4,0,.2,1) both}
+      @keyframes mesaCardFlip{0%{box-shadow:0 0 0 0 rgba(52,211,153,0)}28%{box-shadow:0 0 0 3px rgba(52,211,153,.55),0 0 34px -4px rgba(52,211,153,.65);transform:translateY(-2px) scale(1.015)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0);transform:none}}
+      @media(prefers-reduced-motion:reduce){.mesa-done-ribbon{animation:none}.mesa-card-flip{animation:mesaCardIn .42s both}}
       .mesa-card-top{display:flex;align-items:center;gap:8px}
       .mesa-state{font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;letter-spacing:.01em}
       .s-rose{background:rgba(251,113,133,.14);color:#fb7185;border:1px solid rgba(251,113,133,.3)}
@@ -10621,7 +10666,7 @@ const MOS = (() => {
   // Actualiza el contador del badge del botón "Compras" (activas por procesar).
   function _mesaComprasSyncBadge() {
     try {
-      const n = _comprasFlat().reduce((a, op) => a + (_comprasEstado(op).fase !== 'procesada' ? 1 : 0), 0);
+      const n = _comprasFlat().reduce((a, op) => a + (_comprasEstado(op).fase !== 'finalizado' ? 1 : 0), 0);
       document.querySelectorAll('.btn-mesa-compras .bmc-n').forEach(el => {
         el.textContent = n; el.style.display = n > 0 ? 'grid' : 'none';
       });
@@ -44075,7 +44120,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
-    abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
+    abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaSetZona, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
