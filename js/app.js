@@ -10157,6 +10157,50 @@ const MOS = (() => {
              pctP: totalCosteados ? Math.round(conPrecio / totalCosteados * 100) : 0 };
   }
 
+  // [v2.43.612 · FIX "0 ítems"] El RPC operaciones_unificadas trae las ops SIN líneas; se cargan
+  // por guía (getOperacionDetalle) al cache. La Mesa NO disparaba esa carga → guías no visitadas
+  // salían "0 ítems / (sin líneas)". Ahora la Mesa prefetchea las líneas de SUS compras (4 workers)
+  // y re-pinta el body suavemente (debounced) conforme llegan, sin perder scroll ni tapar una guía abierta.
+  function _mesaPrefetchLineas() {
+    const faltan = _comprasFlat().filter(op => {
+      const k = op.fuente + '_' + op.idGuia;
+      const cached = S._opsDetCache && S._opsDetCache[k];
+      const tiene = (cached && cached.lineas && cached.lineas.length) || (op.lineas && op.lineas.length);
+      return op.idGuia && op.fuente && !tiene && !(cached && cached.error);
+    }).map(op => ({ fuente: op.fuente, idGuia: op.idGuia, key: op.fuente + '_' + op.idGuia }));
+    if (!faltan.length) return;
+    let _tid = null;
+    const _repintar = () => {
+      if (_tid) return;
+      _tid = setTimeout(() => {
+        _tid = null;
+        const m = document.getElementById('mesaComprasModal');
+        if (!m || !m.classList.contains('open') || S._mesaAbierta) return;   // no repintar con una guía abierta encima
+        const body = m.querySelector('.mesa-body'); if (!body) return;
+        const sc = body.scrollTop;
+        const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
+        body.innerHTML = _mesaComprasBodyHTML(compras);
+        body.scrollTop = sc;
+      }, 450);
+    };
+    let idx = 0;
+    const worker = async () => {
+      while (idx < faltan.length) {
+        const c = faltan[idx++];
+        if (S._opsDetCache[c.key] && (S._opsDetCache[c.key].lineas || []).length) continue;
+        try {
+          const r = await API.get('getOperacionDetalle', { fuente: c.fuente, idGuia: c.idGuia });
+          const lineas = (r && (r.data ? r.data.lineas : r.lineas)) || [];
+          S._opsDetCache[c.key] = { lineas, ts: Date.now() };
+          const op = _findOpByKey(c.key);
+          if (op) { op.lineas = lineas; op.lineasCount = lineas.length; if (!op.montoTotal) op.montoTotal = lineas.reduce((s, l) => s + (+l.subtotal || 0), 0); }
+          _repintar();
+        } catch(_){}
+      }
+    };
+    worker(); worker(); worker(); worker();
+  }
+
   function abrirMesaCompras(filtro) {
     _opsInyectarKeyframes();
     _mesaComprasInyectarCSS();
@@ -10172,6 +10216,8 @@ const MOS = (() => {
     if (!S._mesaRangoDias) S._mesaRangoDias = 45;
     modal.innerHTML = _mesaComprasHTML();
     requestAnimationFrame(() => modal.classList.add('open'));
+    // [v2.43.612] cargar las líneas de las compras visibles (el RPC no las trae) → sin "0 ítems".
+    try { _mesaPrefetchLineas(); } catch(_){}
     // Si no hay datos aún (ej. entré desde Catálogo sin abrir Almacén), dispara la
     // carga cero-GAS (_prefetchAlmacen → operaciones_unificadas) y re-render al llegar.
     if (!_comprasFlat().length) {
@@ -10180,7 +10226,7 @@ const MOS = (() => {
       const _poll = setInterval(() => {
         const m = document.getElementById('mesaComprasModal');
         if (!m || !m.classList.contains('open') || ++_tries > 12) { clearInterval(_poll); return; }
-        if (_comprasFlat().length) { clearInterval(_poll); m.innerHTML = _mesaComprasHTML(); }
+        if (_comprasFlat().length) { clearInterval(_poll); m.innerHTML = _mesaComprasHTML(); try { _mesaPrefetchLineas(); } catch(_){} }
       }, 700);
     }
     // [C] la Mesa quiere ventana amplia (~45 días); si la carga base fue corta, amplía en background (cero-GAS).
@@ -10196,7 +10242,8 @@ const MOS = (() => {
         } catch(_){}
         S._mesaCargando = false;
         const m = document.getElementById('mesaComprasModal');
-        if (m && m.classList.contains('open')) m.innerHTML = _mesaComprasHTML();
+        if (m && m.classList.contains('open') && !S._mesaAbierta) m.innerHTML = _mesaComprasHTML();
+        try { _mesaPrefetchLineas(); } catch(_){}
       })();
     }
   }
@@ -10221,37 +10268,60 @@ const MOS = (() => {
     return dias[d.getDay()] + ' ' + d.getDate() + '/' + (d.getMonth() + 1);
   }
 
-  function _mesaComprasHTML() {
-    const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
-    const cont = { pendiente: 0, precios: 0, incompleta: 0, procesada: 0 };
-    compras.forEach(c => cont[c.est.fase]++);
-    const activas = cont.pendiente + cont.precios + cont.incompleta;
+  // [v2.43.612] ¿la op matchea el texto del buscador? (proveedor / zona / cajera / código guía / producto)
+  function _mesaMatchBusqueda(op, q) {
+    if (!q) return true;
+    const k = op.fuente + '_' + op.idGuia;
+    const lineas = ((S._opsDetCache && S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || []);
+    const prods = lineas.map(l => String(l.descripcion || l.codigoProducto || '')).join(' ');
+    const hay = [op.nombreProveedor, op.idProveedor, op.idZonaCanonNom, op.idZona, op.usuario, op.idGuia, prods]
+      .map(x => String(x || '').toLowerCase()).join(' ');
+    return hay.indexOf(q) >= 0;
+  }
+
+  // Body de la Mesa (grupos por día + cards). Separado para re-render aislado del buscador (mantiene foco).
+  function _mesaComprasBodyHTML(compras) {
     const F = S._mesaFiltro || 'activas';
+    const q = String(S._mesaBusqueda || '').trim().toLowerCase();
     const pasa = (fase) => F === 'todas' ? true : F === 'activas' ? fase !== 'procesada' : fase === F;
     let vis = compras.filter(c => pasa(c.est.fase));
-    // [C] agrupar por DÍA (fecha desc); dentro del día, lo urgente primero
+    if (q) vis = vis.filter(c => _mesaMatchBusqueda(c.op, q));
     const rank = { incompleta: 0, precios: 1, pendiente: 2, procesada: 3 };
     const grupos = {};
     vis.forEach(c => { const k = String(c.op._dia || '').slice(0, 10) || 'z'; (grupos[k] = grupos[k] || []).push(c); });
     const dias = Object.keys(grupos).sort().reverse();
-    const tab = (id, ico, txt, n, tone) => `<button class="mesa-tab ${F === id ? 'on' : ''} t-${tone || 'nk'}" onclick="MOS.mesaSetFiltro('${id}')">${ico} ${txt}${n != null ? ` <span class="mesa-tab-n">${n}</span>` : ''}</button>`;
     let bodyHtml, i = 0;
     if (!vis.length) {
-      bodyHtml = `<div class="mesa-empty"><div class="mesa-empty-ic">${F === 'procesada' ? '✓' : '🎉'}</div><p>${F === 'activas' || F === 'todas' ? 'No hay compras que procesar. Todo al día.' : 'Nada en este filtro.'}</p></div>`;
+      bodyHtml = `<div class="mesa-empty"><div class="mesa-empty-ic">${q ? '🔍' : (F === 'procesada' ? '✓' : '🎉')}</div><p>${q ? `Sin resultados para "${_escapeHtml(q)}"` : (F === 'activas' || F === 'todas' ? 'No hay compras que procesar. Todo al día.' : 'Nada en este filtro.')}</p></div>`;
     } else {
       bodyHtml = dias.map(k => {
         const arr = grupos[k].sort((a, b) => rank[a.est.fase] - rank[b.est.fase]);
         return `<div class="mesa-day"><span class="mesa-day-lbl">${_mesaDiaLabel(k)}</span><span class="mesa-day-ln"></span><span class="mesa-day-cnt">${arr.length} compra${arr.length !== 1 ? 's' : ''}</span></div>
           <div class="mesa-grid">${arr.map(c => _mesaComprasCard(c.op, c.est, i++)).join('')}</div>`;
       }).join('');
-      // [C] cargar historial más antiguo (cero-GAS: amplía la ventana de días del RPC)
-      bodyHtml += `<div class="mesa-more"><button onclick="MOS.mesaCargarMas()" class="mesa-more-btn">${S._mesaCargando ? '⏳ Cargando…' : '↓ Ver compras más antiguas (+30 días)'}</button></div>`;
+      if (!q) bodyHtml += `<div class="mesa-more"><button onclick="MOS.mesaCargarMas()" class="mesa-more-btn">${S._mesaCargando ? '⏳ Cargando…' : '↓ Ver compras más antiguas (+30 días)'}</button></div>`;
     }
+    return bodyHtml;
+  }
+
+  function _mesaComprasHTML() {
+    const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
+    const cont = { pendiente: 0, precios: 0, incompleta: 0, procesada: 0 };
+    compras.forEach(c => cont[c.est.fase]++);
+    const activas = cont.pendiente + cont.precios + cont.incompleta;
+    const F = S._mesaFiltro || 'activas';
+    const tab = (id, ico, txt, n, tone) => `<button class="mesa-tab ${F === id ? 'on' : ''} t-${tone || 'nk'}" onclick="MOS.mesaSetFiltro('${id}')">${ico} ${txt}${n != null ? ` <span class="mesa-tab-n">${n}</span>` : ''}</button>`;
+    const q = _escapeHtml(String(S._mesaBusqueda || ''));
     return `
       <div class="mesa-sheet" onclick="event.stopPropagation()">
         <div class="mesa-head">
           <div class="mesa-title"><span class="mesa-ic">🧾</span><div><div class="mesa-h1">Mesa de compras</div><div class="mesa-h2">${compras.length} compra(s) · <b class="mesa-em">${activas} por procesar</b> · ${S._mesaRangoDias || 45} días</div></div></div>
           <button class="mesa-x" onclick="MOS.cerrarMesaCompras()" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="mesa-search-wrap">
+          <span class="mesa-search-ic">🔍</span>
+          <input id="mesaSearch" class="mesa-search" type="search" autocomplete="off" placeholder="Buscar proveedor, zona o producto…" value="${q}" oninput="MOS.mesaBuscar(this.value)">
+          ${q ? `<button class="mesa-search-x" onclick="MOS.mesaBuscar('')" title="Limpiar">✕</button>` : ''}
         </div>
         <div class="mesa-tabs">
           ${tab('activas', '⚡', 'Por procesar', activas, 'em')}
@@ -10261,8 +10331,28 @@ const MOS = (() => {
           ${tab('procesada', '✓', 'Procesadas', cont.procesada, 'em')}
           ${tab('todas', '▦', 'Todas', compras.length, 'nk')}
         </div>
-        <div class="mesa-body">${bodyHtml}</div>
+        <div class="mesa-body">${_mesaComprasBodyHTML(compras)}</div>
       </div>`;
+  }
+
+  // [v2.43.612] Buscador de la Mesa: re-render SOLO del body (mantiene foco del input) + restaura el cursor.
+  function mesaBuscar(v) {
+    S._mesaBusqueda = v;
+    const m = document.getElementById('mesaComprasModal');
+    if (!m) return;
+    const body = m.querySelector('.mesa-body');
+    if (body) {
+      const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
+      body.scrollTop = 0;
+      body.innerHTML = _mesaComprasBodyHTML(compras);
+    }
+    // mostrar/ocultar la × sin perder el foco del input
+    const wrap = m.querySelector('.mesa-search-wrap');
+    if (wrap) {
+      let x = wrap.querySelector('.mesa-search-x');
+      if (v && !x) { x = document.createElement('button'); x.className = 'mesa-search-x'; x.title = 'Limpiar'; x.textContent = '✕'; x.onclick = () => MOS.mesaBuscar(''); wrap.appendChild(x); }
+      else if (!v && x) { x.remove(); const inp = m.querySelector('#mesaSearch'); if (inp) { inp.value = ''; inp.focus(); } }
+    }
   }
 
   // [C] amplía la ventana temporal (cero-GAS) y re-renderiza
@@ -10296,6 +10386,7 @@ const MOS = (() => {
       const nbtn = m.querySelector('.mesa-more-btn');
       if (nbtn) { nbtn.textContent = '✓ No hay compras más antiguas'; nbtn.disabled = true; nbtn.style.opacity = '.5'; }
     }
+    try { _mesaPrefetchLineas(); } catch(_){}          // [v2.43.612] cargar líneas de las compras recién traídas
   }
 
   // [D] Card grande: proveedor protagonista, productos con fade, progreso 2 pasos.
@@ -10347,6 +10438,9 @@ const MOS = (() => {
     const est = _comprasEstado(op);
     // [E] La Mesa NO se cierra: queda atrás atenuada; la compra se abre ENCIMA.
     const m = document.getElementById('mesaComprasModal');
+    // [v2.43.612] recordar la posición de scroll y la guía abierta para volver ahí (no al inicio).
+    try { const b = m && m.querySelector('.mesa-body'); S._mesaScrollY = b ? b.scrollTop : 0; } catch(_) { S._mesaScrollY = 0; }
+    S._mesaUltimaGuia = fuente + '_' + idGuia;
     if (m) m.classList.add('mesa-dimmed');
     S._mesaAbierta = true;
     // Paso 1 si faltan costos; si costos completos, salta al Paso 2 (precios).
@@ -10366,6 +10460,12 @@ const MOS = (() => {
     m.classList.add('open');
     m.innerHTML = _mesaComprasHTML();
     try { _mesaComprasSyncBadge(); } catch(_){}
+    // [v2.43.612] restaurar la posición donde estaba (no saltar al inicio). Si la card de la guía
+    // que abrí sigue visible, la resalto brevemente para reorientar la vista.
+    try {
+      const body = m.querySelector('.mesa-body');
+      if (body && S._mesaScrollY != null) body.scrollTop = S._mesaScrollY;
+    } catch(_){}
   }
 
   // Cierra Paso 2. En modo compra vuelve a la Mesa; en modo catálogo solo cierra (el borrador ya se guardó).
@@ -10429,7 +10529,15 @@ const MOS = (() => {
       .mesa-h2{font-size:11.5px;color:#93a4c2;margin-top:1px} .mesa-em{color:#34d399}
       .mesa-x{margin-left:auto;width:32px;height:32px;border-radius:50%;background:#131d30;border:1px solid #28344c;color:#93a4c2;font-size:14px;cursor:pointer;transition:.15s}
       .mesa-x:hover{background:rgba(244,63,94,.25);color:#fda4af;transform:rotate(90deg)}
-      .mesa-tabs{flex:none;display:flex;gap:7px;padding:12px 18px;overflow-x:auto;border-bottom:1px solid #17233b;scrollbar-width:none;background:#080e19;position:relative;z-index:4}
+      .mesa-search-wrap{flex:none;display:flex;align-items:center;gap:8px;margin:0 18px 10px;padding:0 12px;height:40px;background:#0e1626;border:1px solid #28344c;border-radius:11px;transition:.15s}
+      .mesa-search-wrap:focus-within{border-color:#34d399;box-shadow:0 0 0 2px rgba(52,211,153,.18)}
+      .mesa-search-ic{font-size:13px;opacity:.7;flex:none}
+      .mesa-search{flex:1;min-width:0;background:transparent;border:none;outline:none;color:#e6edf7;font-size:13.5px;font-weight:600;height:100%}
+      .mesa-search::placeholder{color:#5b6b85;font-weight:500}
+      .mesa-search::-webkit-search-cancel-button{-webkit-appearance:none}
+      .mesa-search-x{flex:none;width:22px;height:22px;border-radius:50%;background:#1b2740;border:none;color:#93a4c2;font-size:11px;cursor:pointer;transition:.15s}
+      .mesa-search-x:hover{background:rgba(244,63,94,.25);color:#fda4af}
+      .mesa-tabs{flex:none;display:flex;gap:7px;padding:0 18px 12px;overflow-x:auto;border-bottom:1px solid #17233b;scrollbar-width:none;background:#080e19;position:relative;z-index:4}
       .mesa-tabs::-webkit-scrollbar{display:none}
       .mesa-tab{flex:none;display:inline-flex;align-items:center;gap:6px;height:34px;box-sizing:border-box;line-height:1;font-size:12px;font-weight:700;color:#93a4c2;
         background:#0e1626;border:1px solid #28344c;padding:0 13px;border-radius:999px;cursor:pointer;transition:.16s;white-space:nowrap}
@@ -43967,7 +44075,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
-    abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaCargarMas, _mesaComprasEntrar, _mesaComprasSyncBadge,
+    abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de

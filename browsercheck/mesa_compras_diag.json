@@ -1,0 +1,11 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 48000,
+  "viewport": { "width": 480, "height": 1600 },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906474",
+    "MOS_SESSION": "{\"idPersonal\":\"TEST-CLAUDE\",\"nombre\":\"PRUEBA CLAUDE\",\"rol\":\"MASTER\",\"idSesion\":\"testclaude1\"}"
+  },
+  "evalAfter": "(async()=>{const r={};const w=ms=>new Promise(res=>setTimeout(res,ms));const btn=[...document.querySelectorAll('button,a')].find(el=>/Entrar a MOS/i.test(el.textContent||''));if(btn)btn.click();await w(4000);try{const vj=await fetch('https://levo19.github.io/MOS/version.json?b='+Date.now()).then(x=>x.json());r.version=vj.version;}catch(_){}try{MOS.abrirMesaCompras('todas')}catch(e){r.abrirErr=String(e)}await w(2000);r.cardsIni=document.querySelectorAll('.mesa-card').length;r.sinLineasIni=[...document.querySelectorAll('.mesa-card-prods')].filter(e=>/sin lC-neas|sin líneas/i.test(e.textContent)).length;await w(22000);r.cardsFin=document.querySelectorAll('.mesa-card').length;r.sinLineasFin=[...document.querySelectorAll('.mesa-card-prods')].filter(e=>/sin lC-neas|sin líneas/i.test(e.textContent)).length;const conItems=[...document.querySelectorAll('.mesa-card-prods')].filter(e=>!/sin líneas/i.test(e.textContent)).length;r.conItemsFin=conItems;const inp=document.getElementById('mesaSearch');r.tieneBuscador=!!inp;if(inp){MOS.mesaBuscar('nestor');await w(600);r.trasBuscarNestor=document.querySelectorAll('.mesa-card').length;r.buscarNestorProvs=[...document.querySelectorAll('.mesa-prov-name')].slice(0,4).map(e=>e.textContent.trim());MOS.mesaBuscar('');await w(400);r.trasLimpiar=document.querySelectorAll('.mesa-card').length;}return r;})()",
+  "screenshot": "C:/Users/ISO/ProyectoMOS/browsercheck/shot_mesa.png"
+}
