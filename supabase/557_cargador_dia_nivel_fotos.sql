@@ -14,8 +14,9 @@ alter table wh.cargadores_log add column if not exists nivel int default 0;
 alter table wh.cargadores_log add column if not exists fotos jsonb default '[]'::jsonb;
 
 -- Helper: normaliza fecha param → date (yyyy-MM-dd) en TZ Lima.
+-- [rev 100x] STABLE (no immutable): depende de now(). Regex \d correcto (una barra).
 create or replace function wh._carg_dia(p_fecha text)
-returns date language sql immutable as $$
+returns date language sql stable as $$
   select case when p_fecha is not null and left(btrim(p_fecha),10) ~ '^\d{4}-\d{2}-\d{2}$'
               then left(btrim(p_fecha),10)::date
               else (now() at time zone 'America/Lima')::date end;
