@@ -3353,6 +3353,10 @@ const API = (() => {
       if (action === 'getProvGuiaCandidatos') {
         return _sbRpcMOS('prov_guia_candidatos', { p }, 'mos').then(r => (r && r.ok) ? (r.data || []) : null).catch(() => null);
       }
+      // [v2.43.601] Finanzas · Rentabilidad por zona EN VIVO (SQL 550) — devuelve el objeto completo
+      if (action === 'getFinRentabilidadZonas') {
+        return _sbRpcMOS('fin_rentabilidad_zonas', { p }, 'mos').then(r => (r && r.ok) ? r : null).catch(() => null);
+      }
       if (action === 'getHistoricoProveedor') {
         return _conFallbackMOS(() => _getHistoricoProveedorDirecto(p));
       }

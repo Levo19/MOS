@@ -42230,6 +42230,155 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // ── PUBLIC API ───────────────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
+  // [v2.43.601] FINANZAS · RENTABILIDAD POR ZONA — versión interactiva EN VIVO
+  // del reporte HTML que aprobó el dueño (artifact c01ce11c). RPC fin_rentabilidad_
+  // zonas (SQL 550): diario venta/costo/utilidad + cobro por método + anuladas +
+  // top productos, para TODAS las zonas. Margen sobre la VENTA; costo real del
+  // catálogo o fallback 15%. Cache 5 min (S._finRent) + botón refrescar.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const FR_MESN = { '01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Oct','11':'Nov','12':'Dic' };
+  const _frS  = n => 'S/ ' + _money(n).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const _frSk = n => 'S/ ' + (Math.round(_money(n)/100)/10).toLocaleString('es-PE') + 'k';
+  const _frMes = m => (FR_MESN[m.slice(5,7)] || m) + ' ' + m.slice(2,4);
+  function _frZonaLbl(z) { return z === 'SIN_ZONA' ? 'Sin zona (histórico)' : z === 'ZONA_MOCK_FALLBACK' ? 'Mock (pruebas)' : z; }
+
+  async function finRentAbrir(force) {
+    let lay = $('frLayout');
+    if (!lay) {
+      lay = document.createElement('div');
+      lay.id = 'frLayout'; lay.className = 'fr-layout';
+      lay.addEventListener('click', e => { if (e.target === lay) MOS.finRentCerrar(); });
+      document.body.appendChild(lay);
+    }
+    lay.innerHTML = '<div class="fr-panel"><div class="fr-body"><div class="skel h-24 rounded-xl"></div><div class="skel h-40 rounded-xl mt-3"></div><p style="color:#64748b;font-size:12px;margin-top:14px">📊 Generando rentabilidad en vivo desde la base de datos…</p></div></div>';
+    const cache = S._finRent;
+    if (!force && cache && (Date.now() - cache.ts) < 5*60*1000) { _frRender(); return; }
+    try {
+      const r = await API.get('getFinRentabilidadZonas', {});
+      if (!r) throw new Error('sin datos');
+      S._finRent = { data: r, ts: Date.now() };
+      if (!S._frZona) {
+        const rev = {}; (r.diario || []).forEach(d => { rev[d.z] = (rev[d.z]||0) + (+d.rev||0); });
+        S._frZona = Object.keys(rev).sort((a,b) => rev[b]-rev[a])[0] || 'TODAS';
+      }
+      _frRender();
+    } catch (e) {
+      lay.innerHTML = '<div class="fr-panel"><div class="fr-body"><p style="color:#f87171;font-weight:800">⚠ No se pudo generar el reporte — revisa la conexión y reintenta.</p><button class="btn-primary text-sm mt-3" onclick="MOS.finRentAbrir(true)">Reintentar</button></div></div>';
+    }
+  }
+  function _frDataZona() {
+    const D = (S._finRent || {}).data || {};
+    const z = S._frZona || 'TODAS';
+    const pick = arr => (arr || []).filter(x => z === 'TODAS' ? x.z !== 'ZONA_MOCK_FALLBACK' : x.z === z);
+    // diario colapsado por día (para TODAS suma zonas)
+    const porDia = {};
+    pick(D.diario).forEach(d => { const k = d.dia; const o = porDia[k] = porDia[k] || { dia:k, rev:0, costo:0, rcr:0, n:0 };
+      o.rev = _money(o.rev + +d.rev); o.costo = _money(o.costo + +d.costo); o.rcr = _money(o.rcr + +d.rcr); o.n += +d.n; });
+    const dias = Object.values(porDia).sort((a,b) => a.dia < b.dia ? -1 : 1).map(d => Object.assign(d, { uti: _money(d.rev - d.costo), mes: d.dia.slice(0,7) }));
+    const meses = {};
+    dias.forEach(d => { const m = meses[d.mes] = meses[d.mes] || { rev:0, uti:0, rcr:0, n:0, diasAct:0, cab:{} };
+      m.rev = _money(m.rev + d.rev); m.uti = _money(m.uti + d.uti); m.rcr = _money(m.rcr + d.rcr); m.n += d.n; m.diasAct++; });
+    pick(D.metodos).forEach(r => { const m = meses[r.mes]; if (m) m.cab[r.fp] = _money((m.cab[r.fp]||0) + +r.tot); });
+    const anul = pick(D.anuladas).reduce((a,x) => ({ n: a.n + +x.n, tot: _money(a.tot + +x.tot) }), { n:0, tot:0 });
+    const top = pick(D.top).sort((a,b) => b.uti - a.uti).slice(0, 15);
+    return { dias, meses, anul, top, gen: D.generado, zonasAll: [...new Set((D.diario||[]).map(x => x.z))] };
+  }
+  function _frBarChart(rows) {
+    const W = Math.max(560, rows.length*95), H = 220, P = { t:24, b:32, l:8, r:8 };
+    const max = Math.max(...rows.map(r => r.v1), 1); const iw = (W-P.l-P.r)/rows.length;
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">`;
+    [0.5,1].forEach(g => { const y = P.t+(H-P.t-P.b)*(1-g); s += `<line x1="${P.l}" x2="${W-P.r}" y1="${y}" y2="${y}" stroke="#1e293b"/>`; });
+    rows.forEach((r,i) => { const x = P.l+i*iw, bw = Math.min(iw*0.4, 42);
+      const h1 = (H-P.t-P.b)*(r.v1/max), h2 = (H-P.t-P.b)*(Math.max(r.v2,0)/max);
+      s += `<rect x="${x+iw/2-bw-3}" y="${H-P.b-h1}" width="${bw}" height="${h1}" rx="5" fill="#475569"><title>${r.lbl}: vendido ${_frS(r.v1)}</title></rect>`;
+      s += `<rect x="${x+iw/2+3}" y="${H-P.b-h2}" width="${bw}" height="${h2}" rx="5" fill="#34d399"><title>${r.lbl}: utilidad ${_frS(r.v2)}</title></rect>`;
+      s += `<text x="${x+iw/2}" y="${H-P.b+15}" text-anchor="middle" font-size="11" font-weight="700" fill="#94a3b8">${r.lbl}</text>`;
+      s += `<text x="${x+iw/2-bw/2-3}" y="${H-P.b-h1-5}" text-anchor="middle" font-size="10" font-weight="800" fill="#94a3b8">${_frSk(r.v1)}</text>`;
+      s += `<text x="${x+iw/2+bw/2+3}" y="${H-P.b-h2-5}" text-anchor="middle" font-size="10" font-weight="800" fill="#34d399">${_frSk(r.v2)}</text>`; });
+    return s + '</svg>';
+  }
+  function _frStack(rows, keys, colors) {
+    const W = Math.max(560, rows.length*110), H = 210, P = { t:16, b:30, l:8, r:8 };
+    const max = Math.max(...rows.map(r => keys.reduce((a,k)=>a+(r[k]||0),0)), 1); const iw = (W-P.l-P.r)/rows.length;
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">`;
+    rows.forEach((r,i) => { const x = P.l+i*iw, bw = Math.min(iw*0.5, 56); let y = H-P.b;
+      keys.forEach((k,ki) => { const v = r[k]||0; if (v<=0) return; const h = (H-P.t-P.b)*(v/max); y -= h;
+        s += `<rect x="${x+iw/2-bw/2}" y="${y}" width="${bw}" height="${Math.max(h-1.5,0)}" rx="3.5" fill="${colors[ki]}"><title>${r.lbl} · ${k}: ${_frS(v)}</title></rect>`; });
+      s += `<text x="${x+iw/2}" y="${H-P.b+15}" text-anchor="middle" font-size="11" font-weight="700" fill="#94a3b8">${r.lbl}</text>`;
+      s += `<text x="${x+iw/2}" y="${y-5}" text-anchor="middle" font-size="10" font-weight="800" fill="#cbd5e1">${_frSk(keys.reduce((a,k)=>a+(r[k]||0),0))}</text>`; });
+    return s + '</svg>';
+  }
+  function _frDaily(rows) {
+    const W = 920, H = 190, P = { t:12, b:24, l:34, r:6 };
+    const max = Math.max(...rows.map(r => r.rev), 1); const iw = (W-P.l-P.r)/rows.length;
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">`;
+    [0.5,1].forEach(g => { const y = P.t+(H-P.t-P.b)*(1-g);
+      s += `<line x1="${P.l}" x2="${W-P.r}" y1="${y}" y2="${y}" stroke="#1e293b"/><text x="${P.l-5}" y="${y+4}" text-anchor="end" font-size="9" fill="#64748b">${_frSk(max*g)}</text>`; });
+    const pts = [];
+    rows.forEach((r,i) => { const x = P.l+i*iw, bw = Math.max(iw*0.55, 2);
+      const h = (H-P.t-P.b)*(r.rev/max);
+      s += `<rect x="${x+iw/2-bw/2}" y="${H-P.b-h}" width="${bw}" height="${h}" rx="2" fill="#475569" opacity=".55"><title>${r.dia} · vendido ${_frS(r.rev)} · utilidad ${_frS(r.uti)} · ${r.n} ventas</title></rect>`;
+      pts.push([x+iw/2, H-P.b-(H-P.t-P.b)*(Math.max(r.uti,0)/max)]);
+      const dd = +r.dia.slice(8,10);
+      if (dd===1 || dd%5===0) s += `<text x="${x+iw/2}" y="${H-P.b+13}" text-anchor="middle" font-size="8.5" fill="#64748b">${dd}</text>`; });
+    s += `<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#34d399" stroke-width="2.2" stroke-linejoin="round"/>`;
+    pts.forEach((p,i) => { s += `<circle cx="${p[0]}" cy="${p[1]}" r="2.4" fill="#34d399"><title>${rows[i].dia} · utilidad ${_frS(rows[i].uti)}</title></circle>`; });
+    return s + '</svg>';
+  }
+  function _frRender() {
+    const lay = $('frLayout'); if (!lay) return;
+    const { dias, meses, anul, top, gen, zonasAll } = _frDataZona();
+    const mKeys = Object.keys(meses).sort();
+    const T = { rev:0, uti:0, rcr:0, n:0, ef:0, vi:0, mx:0, cr:0, pl:0 };
+    mKeys.forEach(k => { const m = meses[k]; T.rev=_money(T.rev+m.rev); T.uti=_money(T.uti+m.uti); T.rcr=_money(T.rcr+m.rcr); T.n+=m.n;
+      T.ef=_money(T.ef+(m.cab.EFECTIVO||0)); T.vi=_money(T.vi+(m.cab.VIRTUAL||0)); T.mx=_money(T.mx+(m.cab.MIXTO||0)); T.cr=_money(T.cr+(m.cab.CREDITO||0)); T.pl=_money(T.pl+(m.cab.PLANILLA||0)); });
+    const cobrado = _money(T.ef+T.vi+T.mx+T.pl);
+    const mg = T.rev ? T.uti/T.rev*100 : 0, pctReal = T.rev ? T.rcr/T.rev*100 : 0;
+    const utiMes = mKeys.length ? _money(T.uti/mKeys.length) : 0;
+    const zSel = S._frZona || 'TODAS';
+    const chips = ['TODAS'].concat(zonasAll.filter(z => z !== 'ZONA_MOCK_FALLBACK'))
+      .map(z => `<button class="fr-chip ${zSel===z?'on':''}" onclick="MOS.finRentZona('${z}')">${z==='TODAS'?'🌐 Todas':_frZonaLbl(z)}</button>`).join('');
+    lay.innerHTML = `<div class="fr-panel"><div class="fr-body">
+      <div class="fr-head">
+        <div><div class="fr-eyebrow">FINANZAS · RENTABILIDAD BRUTA EN VIVO</div>
+          <h2 class="fr-h1">¿Vale la pena <span>${zSel==='TODAS'?'cada zona':_frZonaLbl(zSel)}</span>?</h2></div>
+        <button class="btn-ghost text-xs" onclick="MOS.finRentAbrir(true)" title="Vuelve a consultar la base de datos">↻ Actualizar</button>
+        <button class="fr-x" onclick="MOS.finRentCerrar()">✕</button>
+      </div>
+      <div class="fr-chips">${chips}</div>
+      <div class="fr-kpis">
+        <div class="fr-kpi"><span>Vendido</span><b>${_frS(T.rev)}</b><small>${T.n.toLocaleString()} ventas · ${dias.length} días</small></div>
+        <div class="fr-kpi ok"><span>Utilidad bruta</span><b>${_frS(T.uti)}</b><small>margen ${mg.toFixed(1)}% sobre la venta</small></div>
+        <div class="fr-kpi ok"><span>Cobrado</span><b>${_frS(cobrado)}</b><small>${T.rev?(cobrado/T.rev*100).toFixed(1):0}% de lo vendido</small></div>
+        <div class="fr-kpi warn"><span>Crédito por cobrar</span><b>${_frS(T.cr)}</b><small>${T.rev?(T.cr/T.rev*100).toFixed(1):0}% de la venta</small></div>
+        <div class="fr-kpi"><span>Venta / día activo</span><b>${dias.length?_frS(T.rev/dias.length):'—'}</b><small>utilidad ≈ ${dias.length?_frS(T.uti/dias.length):'—'}/día</small></div>
+        <div class="fr-kpi bad"><span>Anuladas (fuera)</span><b>${_frS(anul.tot)}</b><small>${anul.n} tickets anulados</small></div>
+      </div>
+      <div class="fr-note">⚠ Solo el <b>${pctReal.toFixed(1)}%</b> de la venta tiene <b>precio costo registrado</b>; el resto se estima con margen fallback <b>15%</b> sobre la venta. Registra costos en el catálogo y este reporte se afina solo.</div>
+      <h3 class="fr-sec">01 · Por mes <small>vendido vs utilidad</small></h3>
+      <div class="fr-panelbox">${_frBarChart(mKeys.map(k => ({ lbl: _frMes(k), v1: meses[k].rev, v2: meses[k].uti })))}</div>
+      <div class="fr-panelbox" style="overflow-x:auto"><table class="fr-tb"><tr><th>Mes</th><th class="r">Ventas</th><th class="r">Días</th><th class="r">Vendido</th><th class="r">Vend/día</th><th class="r">Utilidad</th><th class="r">Margen</th><th class="r">Crédito</th></tr>
+        ${mKeys.map(k => { const m = meses[k]; return `<tr><td><b>${_frMes(k)}</b></td><td class="r">${m.n}</td><td class="r">${m.diasAct}</td><td class="r">${_frS(m.rev)}</td><td class="r">${_frS(m.rev/m.diasAct)}</td><td class="r ok">${_frS(m.uti)}</td><td class="r">${m.rev?(m.uti/m.rev*100).toFixed(1):0}%</td><td class="r">${_frS(m.cab.CREDITO||0)}</td></tr>`; }).join('')}
+        <tr class="tot"><td>TOTAL</td><td class="r">${T.n}</td><td class="r">${dias.length}</td><td class="r">${_frS(T.rev)}</td><td class="r">${dias.length?_frS(T.rev/dias.length):'—'}</td><td class="r ok">${_frS(T.uti)}</td><td class="r">${mg.toFixed(1)}%</td><td class="r">${_frS(T.cr)}</td></tr></table></div>
+      <h3 class="fr-sec">02 · ¿Cómo se cobró? <small>por mes</small></h3>
+      <div class="fr-panelbox">${_frStack(mKeys.map(k => ({ lbl: _frMes(k), EFECTIVO: meses[k].cab.EFECTIVO||0, VIRTUAL: meses[k].cab.VIRTUAL||0, MIXTO: meses[k].cab.MIXTO||0, CREDITO: meses[k].cab.CREDITO||0 })), ['EFECTIVO','VIRTUAL','MIXTO','CREDITO'], ['#34d399','#3b82f6','#8b5cf6','#fbbf24'])}
+        <div class="fr-leg"><span><i style="background:#34d399"></i>Efectivo</span><span><i style="background:#3b82f6"></i>Virtual</span><span><i style="background:#8b5cf6"></i>Mixto</span><span><i style="background:#fbbf24"></i>Crédito (por cobrar)</span></div></div>
+      <h3 class="fr-sec">03 · Día por día <small>barra = venta · línea verde = utilidad</small></h3>
+      ${mKeys.slice(-4).map(k => `<div class="fr-panelbox"><div class="fr-mtitle">${_frMes(k)} — vendido ${_frS(meses[k].rev)} · utilidad ${_frS(meses[k].uti)}</div>${_frDaily(dias.filter(d => d.mes===k))}</div>`).join('')}
+      <h3 class="fr-sec">04 · Top productos por utilidad</h3>
+      <div class="fr-panelbox" style="overflow-x:auto"><table class="fr-tb"><tr><th>#</th><th>Producto</th><th class="r">Und</th><th class="r">Vendido</th><th class="r">Utilidad</th><th class="r">Margen</th><th>Costo</th></tr>
+        ${top.map((p,i) => `<tr><td>${i+1}</td><td>${p.nombre}</td><td class="r">${(+p.und).toLocaleString()}</td><td class="r">${_frS(+p.rev)}</td><td class="r ok">${_frS(+p.uti)}</td><td class="r">${p.mpct}%</td><td>${p.con_costo?'<span class="fr-bdg real">real</span>':'<span class="fr-bdg est">est. 15%</span>'}</td></tr>`).join('')}</table></div>
+      <div class="fr-verdict"><b>📌 La regla de decisión:</b> ${zSel==='TODAS'?'cada zona':'esta zona'} genera <b>${_frS(utiMes)}</b> de utilidad bruta al mes en promedio. Si sus gastos fijos mensuales (alquiler + personal + servicios) son MENORES a eso, es rentable mantenerla; si son mayores, está subsidiada. Este reporte es utilidad <b>BRUTA</b>: no incluye esos gastos.
+      <div style="margin-top:6px;font-size:11px;color:#64748b">Generado en vivo: ${gen || ''} · anuladas excluidas · margen sobre la venta</div></div>
+    </div></div>`;
+  }
+  const finRent = {
+    abrir: finRentAbrir,
+    zona(z) { S._frZona = z; _frRender(); },
+    cerrar() { const l = $('frLayout'); if (l) l.remove(); }
+  };
+
   // PROVEEDORES V2 — "Pedido semanal" (diseño aprobado por el dueño 2026-07-22,
   // mockup artifact f0e3b615). Reglas: rail semanal + bucket SIN DÍA · cards
   // FAMILIA (Σ sin negativos, derivados cuentan stock+rotación al padre) ·
@@ -43373,6 +43522,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
      provAbrirCarrito,
     
     provPedidoExportar, provPedidoImprimir, provPedidoWhatsApp,
+    finRentAbrir: (f) => finRent.abrir(f), finRentZona: (z) => finRent.zona(z), finRentCerrar: () => finRent.cerrar(),
     abrirVistaCargadores, nuevoCargador, editarCargador,
     abrirModalPago, guardarPago, abrirModalPedido,
     // Config

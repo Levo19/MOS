@@ -7104,6 +7104,44 @@
     .pv2-stk .cell.neg{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.45)}
     .pv2-stk .cell.neg b{color:#f87171}
     .pv2-stk .op{align-self:center;color:var(--pv2-ink3);font-weight:900;font-size:14px}
+    /* [v2.43.601] Finanzas · Rentabilidad por zona (overlay) */
+    .fr-layout{position:fixed;inset:0;z-index:8600;background:rgba(2,8,23,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:18px}
+    .fr-panel{background:#0b1120;border:1px solid #24304a;border-radius:20px;width:min(1040px,100%);max-height:94vh;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.55);animation:frPop .25s ease}
+    @keyframes frPop{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+    .fr-body{overflow-y:auto;padding:20px 22px 26px}
+    .fr-head{display:flex;align-items:flex-start;gap:10px}
+    .fr-eyebrow{font-size:10px;letter-spacing:.15em;font-weight:900;color:#64748b}
+    .fr-h1{font-size:22px;font-weight:900;color:#f1f5f9;margin:2px 0 0;letter-spacing:-.02em;flex:1}
+    .fr-h1 span{color:#34d399}
+    .fr-head .btn-ghost{margin-left:auto}
+    .fr-x{background:#1e293b;border:none;color:#94a3b8;border-radius:10px;width:34px;height:34px;font-size:15px;cursor:pointer}
+    .fr-chips{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0 4px}
+    .fr-chip{background:#111a2e;border:1.5px solid #2c3a55;border-radius:99px;color:#94a3b8;font-size:12px;font-weight:800;padding:8px 15px;cursor:pointer}
+    .fr-chip.on{border-color:#34d399;color:#34d399;background:rgba(52,211,153,.10)}
+    .fr-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px;margin-top:12px}
+    .fr-kpi{background:#111a2e;border:1px solid #24304a;border-radius:13px;padding:11px 13px}
+    .fr-kpi span{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:900;color:#64748b;display:block}
+    .fr-kpi b{font-size:19px;color:#f1f5f9;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+    .fr-kpi small{display:block;font-size:11px;color:#94a3b8;margin-top:1px}
+    .fr-kpi.ok b{color:#34d399} .fr-kpi.warn b{color:#fbbf24} .fr-kpi.bad b{color:#f87171}
+    .fr-note{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.4);border-radius:12px;padding:11px 14px;font-size:12.5px;color:#e2e8f0;margin-top:12px}
+    .fr-sec{font-size:13px;font-weight:900;color:#cbd5e1;margin:22px 0 8px;border-bottom:2px solid #24304a;padding-bottom:6px}
+    .fr-sec small{color:#64748b;font-weight:700;margin-left:8px}
+    .fr-panelbox{background:#111a2e;border:1px solid #24304a;border-radius:14px;padding:14px 16px;margin-top:10px}
+    .fr-mtitle{font-size:12.5px;font-weight:800;color:#e2e8f0;margin-bottom:8px}
+    .fr-leg{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:#94a3b8;margin-top:8px}
+    .fr-leg span{display:flex;align-items:center;gap:5px}
+    .fr-leg i{width:10px;height:10px;border-radius:3px;display:inline-block}
+    .fr-tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:620px}
+    .fr-tb th{text-align:left;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#64748b;border-bottom:2px solid #2c3a55;padding:7px 9px;white-space:nowrap}
+    .fr-tb td{padding:8px 9px;border-bottom:1px solid #1c2941;color:#cbd5e1;font-variant-numeric:tabular-nums}
+    .fr-tb td.r,.fr-tb th.r{text-align:right}
+    .fr-tb td.ok{color:#34d399;font-weight:750}
+    .fr-tb tr.tot td{font-weight:850;color:#f1f5f9;border-top:2px solid #475569;border-bottom:none}
+    .fr-bdg{font-size:9.5px;font-weight:800;border-radius:99px;padding:2px 8px;white-space:nowrap}
+    .fr-bdg.real{background:rgba(52,211,153,.12);color:#34d399}
+    .fr-bdg.est{background:rgba(251,191,36,.12);color:#fbbf24}
+    .fr-verdict{background:#111a2e;border:1px solid #24304a;border-left:4px solid #34d399;border-radius:13px;padding:14px 17px;font-size:13px;color:#cbd5e1;margin-top:18px}
     /* [v2.43.597] opciones grandes de compartir/imprimir */
     .pv2-share{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--pv2-panel);border:1px solid var(--pv2-line);border-radius:14px;padding:12px 14px;margin:7px 0;cursor:pointer;color:#e2e8f0;transition:border-color .15s}
     .pv2-share:hover{border-color:var(--pv2-acc)}
@@ -16079,6 +16117,10 @@
             <span class="fin-action-ico">💼</span>
             <span class="fin-action-label">Liquidaciones</span>
           </button>
+          <button onclick="MOS.finRentAbrir()" class="fin-action-btn" title="Rentabilidad bruta por zona, en vivo: ventas, cobros, utilidad y top productos — para decidir si una zona vale la pena">
+            <span class="fin-action-ico">📊</span>
+            <span class="fin-action-label">Rentabilidad</span>
+          </button>
         </div>
       </div>
 
@@ -19752,7 +19794,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.600';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.601';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19802,7 +19844,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.600"></script>
+<script src="js/api.js?v=2.43.601"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19817,7 +19859,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.600"></script>
+<script src="js/app.js?v=2.43.601"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
