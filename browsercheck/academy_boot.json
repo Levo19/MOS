@@ -1,0 +1,1 @@
+{"url":"http://127.0.0.1:8130/me_academy.html","waitMs":8000,"evalAfter":"(async()=>{await new Promise(r=>setTimeout(r,600));return {hero:!!document.querySelector('.hero h1'),mods:document.querySelectorAll('.mod').length,soundBtn:!!document.getElementById('soundBtn'),voiceBtn:!!document.getElementById('voiceBtn')};})()"}

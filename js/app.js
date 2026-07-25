@@ -9318,22 +9318,52 @@ const MOS = (() => {
   //      canónicos y satélites — mismo comportamiento que tenía el modal §10. Usado por ambos flujos.
   async function _p2Publicar(jobs, source) {
     let margenFallo = 0;   // [fix P2] contamos fallos al grabar el margen de contrato para AVISAR (antes se tragaban)
-    await Promise.all(jobs.map(async j => {
+    // [v2.43.607 · FIX carrera de precios] Publicar el CANÓNICO auto-propaga su precio a las
+    // presentaciones (canónico×factor) dentro de actualizar_producto. Si eso corre EN PARALELO
+    // con el precio MANUAL de una presentación (Promise.all), gana el auto → el manual se pierde
+    // (bug real: pack EMSAL 42.2 → clobbered a 45.00 = 1.80×25). Fix: publicar CANÓNICOS primero
+    // (su cascada corre), y las PRESENTACIONES DESPUÉS y en secuencia → el manual se escribe último
+    // y PREVALECE. Además, un precio de presentación editado a mano se marca FIJO para que futuros
+    // cambios del canónico ya no lo pisen (paridad con _propagar_precio que salta FIJO/LIBRE).
+    const _factor = j => { const p = S.productos.find(x => x.idProducto === j.id); const f = parseFloat(p && p.factorConversion); return isNaN(f) ? 1 : f; };
+    const _esPres = j => _factor(j) !== 1;
+    // precio "auto" que le tocaría a una presentación por la cascada del canónico (canónico×factor).
+    // Preferimos el precio del canónico que va en ESTE batch (más fresco); si no, el de S.productos.
+    const _precioAutoDe = j => {
+      const p = S.productos.find(x => x.idProducto === j.id); if (!p) return null;
+      const jc = jobs.find(k => { const c = S.productos.find(x => x.idProducto === k.id); return c && !_esPres(k) && (c.skuBase || '').toUpperCase() === (p.skuBase || '').toUpperCase(); });
+      let canonPrecio = jc ? jc.precio : null;
+      if (canonPrecio == null) { const c = S.productos.find(x => (x.skuBase || '').toUpperCase() === (p.skuBase || '').toUpperCase() && parseFloat(x.factorConversion) === 1 && !(x.codigoProductoBase || '').trim()); canonPrecio = c ? c.precioVenta : null; }
+      const f = _factor(j);
+      return (canonPrecio != null && f) ? _money(canonPrecio * f) : null;
+    };
+    const _pub = async (j, esPres) => {
       await API.post('publicarPrecio', { _source: source || 'MOS_PASO2', idProducto: j.id, precioNuevo: j.precio, usuario: S.session?.nombre || '' });
       const p = S.productos.find(x => x.idProducto === j.id);
       if (p) p.precioVenta = j.precio;
       let m = (j.margen != null) ? j.margen : null;
       if (m == null && p) { const c = _costoDerivado(p); if (c > 0 && j.precio > 0) m = Math.round((1 - c / j.precio) * 1000) / 10; }
-      if (m != null && m > -100 && m < 100) {
-        try {
-          await API.post('actualizarProducto', { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' });
-          if (p) p.margenPct = _r1(m);
-        } catch(_) { margenFallo++; }   // el precio SÍ se publicó; solo el contrato de margen falló
+      let patch = null;
+      if (esPres) {
+        // presentación editada a un precio propio (≠ canónico×factor) = FIJO → la cascada del canónico
+        // ya NO la pisa (paridad con _propagar_precio que salta FIJO/LIBRE). Si sigue el valor auto,
+        // NO la congelamos: la dejamos seguir al canónico (contrato MARGEN si aplica).
+        const auto = _precioAutoDe(j);
+        const divergente = (auto == null) || (Math.abs(j.precio - auto) >= 0.01);
+        patch = divergente ? { idProducto: j.id, modoVenta: 'FIJO' } : (m != null && m > -100 && m < 100 ? { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' } : null);
+      } else {
+        patch = (m != null && m > -100 && m < 100) ? { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' } : null;
       }
-    }));
-    // [fix P2 · atomicidad] si el precio se publicó pero el margen-contrato NO, avisamos (antes: silencio →
-    // el contrato quedaba stale y la próxima sugerencia de costo salía desviada).
-    if (margenFallo) toast(`⚠ ${margenFallo} precio(s) se publicaron pero su MARGEN de contrato no se guardó — reabre y guarda de nuevo`, 'error', 5000);
+      if (patch) {
+        try { await API.post('actualizarProducto', Object.assign({ _noPropagar: true }, patch)); if (p && patch.margenPct != null) p.margenPct = _r1(m); if (p) p.modoVenta = patch.modoVenta; }
+        catch(_) { margenFallo++; }
+      }
+    };
+    const canon = jobs.filter(j => !_esPres(j));
+    const pres  = jobs.filter(j => _esPres(j));
+    await Promise.all(canon.map(j => _pub(j, false)));   // canónicos: su cascada corre PRIMERO
+    for (const j of pres) { await _pub(j, true); }        // presentaciones: DESPUÉS y en orden → el manual gana
+    if (margenFallo) toast(`⚠ ${margenFallo} precio(s) se publicaron pero su contrato no se guardó — reabre y guarda de nuevo`, 'error', 5000);
   }
 
   // [H8] Guardar desde el CATÁLOGO (modo catálogo del editor unificado): publica y cierra, sin Mesa.
