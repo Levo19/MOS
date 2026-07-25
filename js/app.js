@@ -10735,9 +10735,12 @@ const MOS = (() => {
   function _opsCostosInitState(op) {
     const k = op.fuente + '_' + op.idGuia;
     const cached = (S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || [];
-    // Hidratar inputValue desde precioUnitario existente
+    // [v2.43.616] En ENTRADA LIBRE (ME) la línea NO trae costo: operacion_detalle devuelve
+    // precioUnitario = precio_VENTA (no un costo). Pre-llenarlo mostraba un "monto" falso (ej. 264).
+    // Como en almacén, el campo queda VACÍO → el admin escribe el costo real desde MOS.
+    const esME = String(op.fuente || '').toUpperCase() === 'ME';
     const lineas = cached.map(l => {
-      const bruto = parseFloat(l.precioUnitario) || 0;
+      const bruto = esME ? 0 : (parseFloat(l.precioUnitario) || 0);
       return {
         ...l,
         inputValue: bruto > 0 ? +(bruto * (parseFloat(l.cantidad) || 1)).toFixed(2) : '',
