@@ -9181,8 +9181,9 @@ const MOS = (() => {
           <span style="color:#34d399">● Paso 2 · Precios (con la jefa)</span>
           <button onclick="MOS._paso2CerrarAMesa()" class="modal-close-x" style="margin-left:auto">×</button></div>
          <div class="p2-prog"><div class="p2-prog-track"><div id="p2ProgBar" class="p2-prog-fill" style="width:${pct}%"></div></div><span class="p2-prog-lbl">Precios listos <b id="p2ProgLbl">${listos}/${filas.length}</b></span></div>`;
-    // ── Filas (editor idéntico en ambos modos; en catálogo va expandido) ──
-    const filasHtml = filas.map((f, i) => {
+    // ── [v2.43.602] Builder del editor de UNA fila (lo usan: catálogo expandido y
+    //    la vista POR-PRODUCTO del secuencial — pedido del dueño: "de uno en uno") ──
+    const filaHtml = (f, i, exp) => {
       const cn = (+f.costoNuevo).toFixed(2);
       const ca = (!esCat && f.tieneCostoPrevio) ? (+parseFloat(f.x.costoAnterior).toFixed(2)) + '→' : '';
       return `
@@ -9198,8 +9199,8 @@ const MOS = (() => {
           ${kpi(esCat ? 'Precio nuevo' : (f.tieneCostoPrevio ? 'Precio sugerido' : 'Precio nuevo'), `<b id="p2pr_${i}" class="p2-hero-v">${f.precioEd != null ? 'S/ ' + f.precioEd : 'define'}</b>`, true)}
         </div>
         ${(!f.tieneCostoPrevio && !esCat) ? `<div class="p2-firstcost">⚠ Primer costo registrado — al definir el precio NACE su contrato de margen.</div>` : ''}
-        ${esCat ? '' : `<button class="p2-toggle" onclick="MOS._p2Toggle(${i})"><span>📈 Ajustar precio ↔ margen · ver curvas</span><span class="p2-chev">▾</span></button>`}
-        <div class="p2-editor" id="p2ed_${i}"${esCat ? '' : ' hidden'}>
+        ${(esCat || exp) ? '' : `<button class="p2-toggle" onclick="MOS._p2Toggle(${i})"><span>📈 Ajustar precio ↔ margen · ver curvas</span><span class="p2-chev">▾</span></button>`}
+        <div class="p2-editor" id="p2ed_${i}"${(esCat || exp) ? '' : ' hidden'}>
           <div class="p2-chart-wrap"><canvas id="p2cv_${i}" class="p2-canvas"></canvas>
             <div class="p2-chart-legend"><span><i style="background:#34d399"></i>precio</span><span><i style="background:#fbbf24;height:2px"></i>costo</span><span class="p2-chart-drag">↔ arrastra · toca un punto para ver el registro</span></div>
           </div>
@@ -9232,7 +9233,12 @@ const MOS = (() => {
           </div>` : ''}
         </div>
       </div>`;
-    }).join('');
+    };
+    S._p2FilaHtml = filaHtml;   // [v2.43.602] lo reusa la vista por-producto
+    // ── [v2.43.602] MODO COMPRA = CHECKLIST: cada producto con su propio botón de
+    //    Paso 2 ("de uno en uno sabiendo cuál falta" — pedido del dueño). El editor
+    //    largo apilado se reemplaza por lista → drill-down → guardar ESE producto. ──
+    const bodyHtml = esCat ? filaHtml(filas[0], 0, true) : _p2ListaHtml();
     const footer = esCat
       ? `<button onclick="MOS._paso2CerrarAMesa()" class="flex-1 rounded-xl py-2.5 text-xs font-bold" style="background:#131d30;border:1px solid #28344c;color:#93a4c2">Cancelar</button>
          <button onclick="MOS._p2GuardarCatalogo()" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">✓ Guardar precio y margen</button>`
@@ -9242,12 +9248,70 @@ const MOS = (() => {
     <div id="paso2Modal" class="modal-backdrop open" style="z-index:9700;display:flex" onclick="if(event.target===this)MOS._paso2CerrarAMesa()">
       <div class="modal-box p-0" style="max-width:540px;width:100%;animation:p2StepIn .42s cubic-bezier(.22,1,.36,1)">
         <div class="px-5 py-4" style="border-bottom:1px solid #1e293b">${header}</div>
-        <div class="px-5 py-4 space-y-2.5" style="max-height:62vh;overflow-y:auto">${filasHtml}</div>
-        <div class="px-5 py-4 flex gap-2" style="border-top:1px solid #1e293b">${footer}</div>
+        <div class="px-5 py-4 space-y-2.5" id="p2Body" style="max-height:62vh;overflow-y:auto">${bodyHtml}</div>
+        <div class="px-5 py-4 flex gap-2" id="p2Foot" style="border-top:1px solid #1e293b">${footer}</div>
       </div>
     </div>`);
     // catálogo: editor ya abierto → carga la curva del único producto
     if (esCat) { try { _p2CargarCurva(0); } catch(_){} }
+  }
+
+  // ── [v2.43.602] Checklist del Paso 2 (modo compra): estado por producto ──
+  function _p2ListaHtml() {
+    const filas = window._paso2Filas || [];
+    return `<div class="p2-lista">
+      ${filas.map((f, i) => {
+        const st = f._saved ? 'ok' : (f.precioEd > 0 && f._touched ? 'mid' : 'pend');
+        const ico = f._saved ? '✓' : (st === 'mid' ? '●' : (i + 1));
+        return `<div class="p2-li p2-li-${st}" onclick="MOS._p2AbrirUno(${i})">
+          <span class="p2-li-ico">${ico}</span>
+          <div class="p2-li-tx">
+            <div class="p2-li-nm">${_escapeHtml(f.p.descripcion || f.x.idCanonico)}</div>
+            <div class="p2-li-sub">🏭 S/ ${(+f.costoNuevo).toFixed(2)} · precio ${f.precioActual > 0 ? 'S/ ' + f.precioActual : '—'}${f.precioEd > 0 && f.precioEd !== f.precioActual ? ' → <b>S/ ' + f.precioEd + '</b>' : ''}${(f.satelites && f.satelites.length) ? ' · ' + f.satelites.length + ' satélite(s)' : ''}</div>
+          </div>
+          <span class="p2-li-cta">${f._saved ? 'guardado ✓' : '💰 Precio →'}</span>
+        </div>`; }).join('')}
+      <p class="p2-lista-hint">Toca un producto → ajustas precio, margen, curvas y satélites → <b>✓ Guardar</b> lo publica AL CATÁLOGO en ese momento (incluidas sus presentaciones). El check verde te dice cuál ya está.</p>
+    </div>`;
+  }
+  function _p2VolverLista() {
+    const body = document.getElementById('p2Body'), foot = document.getElementById('p2Foot');
+    if (!body) return;
+    const filas = window._paso2Filas || [];
+    const listos = filas.filter(f => f.listo).length;
+    body.innerHTML = _p2ListaHtml();
+    if (foot) foot.innerHTML = `<button onclick="MOS._paso2VolverAMontos()" class="flex-1 rounded-xl py-2.5 text-xs font-bold" style="background:#131d30;border:1px solid #28344c;color:#93a4c2">← Volver a montos</button>
+      <button id="p2FinalBtn" onclick="MOS._paso2AplicarAutos()" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">${listos < filas.length ? '✓ Aplicar (faltan ' + (filas.length - listos) + ')' : '✓ Finalizar'}</button>`;
+    _p2ProgresoUpd();
+  }
+  function _p2AbrirUno(i) {
+    const f = (window._paso2Filas || [])[i]; if (!f || !S._p2FilaHtml) return;
+    const body = document.getElementById('p2Body'), foot = document.getElementById('p2Foot');
+    if (!body) return;
+    f._chartDone = false;   // re-dibujar la curva al entrar (el canvas se recrea)
+    body.innerHTML = S._p2FilaHtml(f, i, true);
+    if (foot) foot.innerHTML = `<button onclick="MOS._p2VolverLista()" class="flex-1 rounded-xl py-2.5 text-xs font-bold" style="background:#131d30;border:1px solid #28344c;color:#93a4c2">← Lista</button>
+      <button onclick="MOS._p2GuardarUno(${i})" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">✓ Guardar este producto</button>`;
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    try { _p2CargarCurva(i); } catch(_){}
+  }
+  async function _p2GuardarUno(i) {
+    const f = (window._paso2Filas || [])[i]; if (!f) return;
+    if (!(f.precioEd > 0)) { toast('Define el precio primero', 'info'); return; }
+    const jobs = [{ id: f.x.idCanonico, precio: f.precioEd, margen: f.margenEd }];
+    (f.satelites || []).forEach(s => { if (s.incluido && s.precioEd > 0 && s.p && s.p.idProducto) jobs.push({ id: s.p.idProducto, precio: s.precioEd, margen: s.margen }); });
+    f._touched = true; f.listo = true; f._saved = true;
+    _p2VolverLista();
+    toast(jobs.length > 1 ? `Guardando precio + ${jobs.length - 1} satélite(s)…` : 'Guardando precio…', 'info');
+    try {
+      await _p2Publicar(jobs, 'MOS_PASO2');
+      toast(`✓ ${_escapeHtml((f.p.descripcion || '').split(' ').slice(0, 3).join(' '))} publicado al catálogo${jobs.length > 1 ? ' con ' + (jobs.length - 1) + ' satélite(s)' : ''}`, 'ok');
+      _p2DraftSaveDebounced();
+      try { renderCatalogo(); } catch(_){}
+    } catch (e) {
+      f._saved = false; f.listo = false; _p2VolverLista();
+      toast('⚠ NO se guardó — revisa conexión y reintenta: ' + e.message, 'error');
+    }
   }
 
   // [J] Texto del KPI de margen: margen actual (tachado si cambia) → margen nuevo coloreado.
@@ -9413,7 +9477,10 @@ const MOS = (() => {
     const vPad = (vMax - vMin) * 0.18 || vMax * 0.18 || 1;
     vMin = Math.max(0, vMin - vPad); vMax = vMax + vPad;
     const fullSpan = Math.max(tMax - tMin, DAY);
-    let span = Math.min(fullSpan, 60 * DAY); if (span < DAY) span = DAY;
+    // [v2.43.602 · "gráfico vacío"] historial corto (ej. 1er costo registrado hoy) con ventana
+    // de 60 días aplastaba todo en el borde derecho y parecía vacío → ventana adaptada al dato:
+    // mínimo 7 días, máximo 60, ajustada al rango real del historial.
+    let span = Math.min(Math.max(fullSpan * 1.3, 7 * DAY), 60 * DAY); if (span < DAY) span = DAY;
     const padT = span * 0.08;
     const view = { vs: tMax - span - padT, ve: tMax + padT }; // centrado en la ÚLTIMA fecha
     const M = { l: 42, r: 10, t: 12, b: 22 };
@@ -9439,7 +9506,7 @@ const MOS = (() => {
         const yy = M.t + g / 4 * plotH(), vv = vMax - g / 4 * (vMax - vMin);
         ctx.strokeStyle = 'rgba(40,52,76,.65)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(M.l, yy); ctx.lineTo(cssW - M.r, yy); ctx.stroke();
-        ctx.fillStyle = '#5f7192'; ctx.textAlign = 'right'; ctx.fillText('S/' + vv.toFixed(1), M.l - 4, yy);
+        ctx.fillStyle = '#5f7192'; ctx.textAlign = 'right'; ctx.fillText('S/' + vv.toFixed((vMax - vMin) < 2 ? 2 : 1), M.l - 4, yy);
       }
       // X labels (fechas)
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
@@ -9463,6 +9530,13 @@ const MOS = (() => {
           if (p.hoy || isSel) { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X, Y, isSel ? 6.5 : 4.5, 0, 7); ctx.stroke(); }
         });
       };
+      // [v2.43.602] sin historial de PRECIO todavía → línea de referencia plana con el
+      // precio vigente (así el gráfico nunca se ve "vacío": muestra dónde estás parado)
+      if (!P.length && hoyP > 0) {
+        const yP = yOf(hoyP);
+        ctx.strokeStyle = 'rgba(52,211,153,.35)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]);
+        ctx.beginPath(); ctx.moveTo(M.l, yP); ctx.lineTo(xOf(now), yP); ctx.stroke(); ctx.setLineDash([]);
+      }
       serie(C, hoyC, '#fbbf24', [5, 3], 'C');
       serie(P, hoyP, '#34d399', [], 'P');
       // línea "hoy" vertical + Δ (margen) entre costo y precio de hoy
@@ -9481,6 +9555,11 @@ const MOS = (() => {
       // etiqueta "hoy"
       ctx.fillStyle = '#93a4c2'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText('hoy', Math.min(Math.max(xh, M.l + 12), cssW - M.r - 12), M.t + 1);
+      // [v2.43.602] primer registro: explica que la curva CRECE con cada compra/cambio
+      if (P.length + C.length <= 2) {
+        ctx.fillStyle = '#7b8aa6'; ctx.font = 'italic 8.5px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('📈 primer registro — la curva crece con cada compra y cambio de precio', M.l + 4, M.t + plotH() - 10);
+      }
       // [H7] tooltip del punto seleccionado
       if (sel) _drawTip(sel);
     }
@@ -9511,6 +9590,9 @@ const MOS = (() => {
       });
     }
     resize(); draw();
+    // [v2.43.602] el canvas puede montarse antes de que el layout asiente (drill-down) →
+    // re-medir al siguiente frame para que no quede en 300px por clientWidth=0
+    requestAnimationFrame(() => { resize(); draw(); });
     // Arrastre horizontal (pan) + click a un punto (tooltip)
     let drag = null, moved = 0;
     cv.style.cursor = 'grab';
@@ -9623,6 +9705,22 @@ const MOS = (() => {
       .p2-sat-sw.on{background:linear-gradient(180deg,#34d399,#059669);border-color:transparent}
       .p2-sat-sw.on>span{transform:translateX(15px);background:#04140d}
       @media (prefers-reduced-motion:reduce){.p2-editor,.p2-chev,.p2-sat,.p2-sat-sw>span{animation:none;transition:none}}
+      /* [v2.43.602] checklist por-producto del Paso 2 */
+      .p2-lista{display:flex;flex-direction:column;gap:8px}
+      .p2-li{display:flex;align-items:center;gap:10px;background:#0e1626;border:1px solid #28344c;border-radius:13px;padding:11px 13px;cursor:pointer;transition:border-color .15s,transform .1s}
+      .p2-li:hover{border-color:#34d39966}
+      .p2-li:active{transform:scale(.985)}
+      .p2-li-ico{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:900;background:#1a2740;color:#5f7192;border:1px solid #28344c}
+      .p2-li-ok .p2-li-ico{background:linear-gradient(180deg,#34d399,#059669);color:#04140d;border-color:transparent}
+      .p2-li-mid .p2-li-ico{background:rgba(251,191,36,.15);color:#fbbf24;border-color:rgba(251,191,36,.4)}
+      .p2-li-tx{flex:1;min-width:0}
+      .p2-li-nm{font-size:12.5px;font-weight:800;color:#e6edf7;line-height:1.25}
+      .p2-li-sub{font-size:10px;color:#8ea3c4;margin-top:2px;font-family:ui-monospace,monospace}
+      .p2-li-sub b{color:#34d399}
+      .p2-li-cta{flex:none;font-size:10.5px;font-weight:800;color:#7cb3f0;white-space:nowrap}
+      .p2-li-ok .p2-li-cta{color:#34d399}
+      .p2-li-ok{border-color:rgba(52,211,153,.35);background:linear-gradient(180deg,#0e1626,rgba(52,211,153,.05))}
+      .p2-lista-hint{font-size:10px;line-height:1.5;color:#7b8aa6;padding:6px 4px 0;margin:0}
     `;
     document.head.appendChild(st);
   }
@@ -9631,11 +9729,21 @@ const MOS = (() => {
     // Publica precios de canónicos + satélites encendidos, GRABANDO su margen como contrato.
     const jobs = [];
     (window._paso2Filas || []).forEach(f => {
+      if (f._saved) return;   // [v2.43.602] ya publicado con "✓ Guardar este producto" — no re-publicar
       if (f.precioEd != null && f.precioEd > 0) jobs.push({ id: f.x.idCanonico, precio: f.precioEd, margen: f.margenEd });
       (f.satelites || []).forEach(s => {
         if (s.incluido && s.precioEd != null && s.precioEd > 0 && s.p && s.p.idProducto) jobs.push({ id: s.p.idProducto, precio: s.precioEd, margen: s.margen });
       });
     });
+    // [v2.43.602] todo ya guardado uno-a-uno → finalizar es solo cerrar
+    if (!jobs.length && (window._paso2Filas || []).some(f => f._saved)) {
+      document.getElementById('paso2Modal')?.remove();
+      document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
+      S._opsModoCostos = false; _p2DraftClear();
+      toast('✓ Precios publicados producto por producto — listo', 'ok');
+      if (S._mesaAbierta) _mesaVolver();
+      return;
+    }
     document.getElementById('paso2Modal')?.remove();
     document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
     S._opsModoCostos = false;
@@ -9964,6 +10072,12 @@ const MOS = (() => {
 
   // Cierra Paso 2. En modo compra vuelve a la Mesa; en modo catálogo solo cierra (el borrador ya se guardó).
   function _paso2CerrarAMesa() {
+    // [v2.43.602 · "puse el precio y no se guardó"] cerrar con ediciones SIN publicar ya
+    // no es silencioso: se avisa que quedaron en borrador (el draft las conserva).
+    if (S._paso2Modo !== 'catalogo') {
+      const pend = (window._paso2Filas || []).filter(f => !f._saved && f._touched && f.precioEd > 0).length;
+      if (pend) toast(`⚠ ${pend} producto(s) con precio SIN PUBLICAR — quedaron en borrador; reabre el Paso 2 y usa "✓ Guardar"`, 'error', 5000);
+    }
     document.getElementById('paso2Modal')?.remove();
     if (S._paso2Modo === 'catalogo') { S._paso2Modo = null; return; }
     document.getElementById('modalCostosGuiaUnif')?.classList.add('hidden');
@@ -43457,7 +43571,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _presSetFamilia, _presSetModelo, _presMostrarOtro, _presOtroInput, _presRecomponer, _presNombreManual, _presPrecioManual,   // [pres-v1] picker presentación
     _presCodigoSufijo, _presContenidoAuto, _presNombreCompuesto, _presDescriptorSugerido,                    // [pres-v1] helpers (test/uso)
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
-    _agTab, _agAlcance, abrirModalPrecioCurvas, guardarCostosYPaso2, _paso2AplicarAutos, _paso2Abrir, _paso2Satelites, _p2GuardarCatalogo,                                                // [catálogo v4] pestañas + chips de alcance fusionada
+    _agTab, _agAlcance, abrirModalPrecioCurvas, guardarCostosYPaso2, _paso2AplicarAutos, _paso2Abrir, _paso2Satelites, _p2GuardarCatalogo,
+    _p2AbrirUno, _p2VolverLista, _p2GuardarUno,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
     // [RONDA 5 · purga] exports equiv embebidas eliminados
     toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
