@@ -12109,6 +12109,12 @@
       60%  { box-shadow: 0 0 0 8px rgba(16,185,129,.3); }
       100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
     }
+    /* [v2.43.604] botón "Mostrar más" del catálogo (paginación anti-lag) */
+    .cat-mostrar-mas-wrap{grid-column:1/-1;display:flex;justify-content:center;padding:14px 0 4px}
+    .cat-mostrar-mas{display:flex;flex-direction:column;align-items:center;gap:2px;background:#131d30;border:1px solid #28344c;border-radius:14px;padding:12px 26px;color:#7cb3f0;font-weight:800;font-size:13px;cursor:pointer;transition:border-color .15s,transform .1s}
+    .cat-mostrar-mas:hover{border-color:#7cb3f0}
+    .cat-mostrar-mas:active{transform:scale(.98)}
+    .cat-mostrar-mas-sub{font-size:10px;font-weight:600;color:#5f7192}
     /* [v2.43.23] Marcaje de búsqueda — match exacto al 100% */
     .cat-card.cat-card-match-exacto {
       animation: catCardMatchExacto 1.4s cubic-bezier(.4,0,.2,1);
@@ -19794,7 +19800,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.603';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.604';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19844,7 +19850,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.603"></script>
+<script src="js/api.js?v=2.43.604"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19859,7 +19865,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.603"></script>
+<script src="js/app.js?v=2.43.604"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

@@ -1593,7 +1593,10 @@ const MOS = (() => {
     // Si el timer ya precargó datos frescos y no se forzó, renderizar sin fetch
     if (!force && S.productos && S.productos.length > 0) {
       populateCatFiltro();
-      renderCatalogo();
+      // [v2.43.604 PERF] Proveedores/Compras llaman loadCatalogo() SOLO para tener
+      // S.productos en memoria — NO para pintar el catálogo. Renderizar de fondo era
+      // la causa del lag en esos módulos. Solo se pinta si estás en Catálogo.
+      if (S.view === 'catalogo') renderCatalogo();
       return;
     }
 
@@ -1628,9 +1631,12 @@ const MOS = (() => {
         S.productos = productos;
         S.equivMap  = equivMap;
         _catSaveCache({ productos, equivMap });
-        if (force || changed || !cached) { populateCatFiltro(); renderCatalogo(); }
+        // [v2.43.604 PERF] renderCatalogo escribe ~cientos de KB al DOM (aun con cap).
+        // Si NO estás mirando el catálogo (llamado lazy desde Compras/Proveedores),
+        // NO tiene sentido pagar ese render de fondo → solo se re-pinta al entrar.
+        if (force || changed || !cached) { populateCatFiltro(); if (S.view === 'catalogo') renderCatalogo(); }
       } else if (force || !cached) {
-        populateCatFiltro(); renderCatalogo();   // re-pinta lo existente, sin borrar
+        populateCatFiltro(); if (S.view === 'catalogo') renderCatalogo();   // re-pinta lo existente, sin borrar
       }
     } catch(e) {
       if (!cached && !(S.productos && S.productos.length)) {
@@ -2963,7 +2969,18 @@ const MOS = (() => {
       return;
     }
 
-    container.innerHTML = result.map((g, idx) => {
+    // [v2.43.604 PERF] Cap de render: el catálogo completo son ~800 grupos ×
+    // ~10KB de HTML = 7.8 MB en un solo innerHTML → parseo/layout lento = LAG.
+    // Se pintan las primeras _CAT_PAGE (crece con "mostrar más"); al buscar se
+    // resetea (el filtro ya reduce el set). El total sigue contándose arriba.
+    const _CAT_PAGE = 60;
+    if (S._catRenderQ !== qn) { S._catRenderQ = qn; S._catRenderLimit = _CAT_PAGE; }
+    const _limit = S._catRenderLimit || _CAT_PAGE;
+    const _totalRes = result.length;
+    const _shown = result.slice(0, _limit);
+    const _hayMas = _totalRes > _limit;
+
+    container.innerHTML = _shown.map((g, idx) => {
       const { base, pres, score, __matchInfo } = g;
       const eid   = CSS.escape(base.idProducto);
       const activo = _isProdActivo(base);
@@ -3214,7 +3231,20 @@ const MOS = (() => {
         ${presHtml}
         ${derivHtml}
       </div>`;
-    }).join('');
+    }).join('') + (_hayMas ? `
+      <div class="cat-mostrar-mas-wrap">
+        <button class="cat-mostrar-mas" onclick="MOS.catMostrarMas()">
+          ▾ Mostrar ${Math.min(_CAT_PAGE, _totalRes - _limit)} más
+          <span class="cat-mostrar-mas-sub">${_limit} de ${_totalRes}${qn ? '' : ' · o escribe para buscar directo'}</span>
+        </button>
+      </div>` : '');
+  }
+
+  // [v2.43.604] "Mostrar más" del catálogo: crece la ventana y re-pinta.
+  function catMostrarMas() {
+    S._catRenderLimit = (S._catRenderLimit || 60) + 60;
+    renderCatalogo();
+    try { _catSfx && _catSfx('matchParcial'); } catch(_){}
   }
 
 
@@ -43627,7 +43657,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.85] Proyección — roadmap estratégico
     abrirProyeccion, _proyToggle, _proyResetEstado, _proyExportar,
     saveConfig, testConnection, closeModal, openEcoModal,
-    filterCatalogo, _catCardClick, _catSfx, _catRipple,
+    filterCatalogo, catMostrarMas, _catCardClick, _catSfx, _catRipple,
     verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnBuscarParaCorregir, pnSeleccionarParaCorregir,
