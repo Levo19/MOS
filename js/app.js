@@ -8844,12 +8844,14 @@ const MOS = (() => {
       <div class="cl-money">
         <label class="cl-field">
           <span class="cl-label">Monto ${placeholder.toLowerCase()}</span>
-          <span class="ci">
+          <span class="ci${brutoUnit > 0 ? ' has-val' : ''}" id="costoGuiaCi_${i}">
             <span class="ci-cur">S/</span>
             <input type="number" step="0.01" min="0" class="alm-v-costo-input"
                    value="${l.inputValue || ''}"
                    oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
                    placeholder="0.00">
+            <button type="button" class="ci-x" title="Quitar el monto · deshace retroactivamente el costo aplicado al catálogo"
+                    onclick="event.stopPropagation();event.preventDefault();MOS._costosGuiaQuitarMonto(${i})">×</button>
           </span>
         </label>
         <div class="cl-field cl-readout">
@@ -9122,6 +9124,17 @@ const MOS = (() => {
         border-radius: 10px; overflow: hidden;
       }
       #modalCostosGuiaUnif .ci:focus-within { border-color: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,.25); }
+      /* [v2.43.611] chip: cuando el monto tiene valor, el contenedor se ve "guardado" (verde) y aparece la × */
+      #modalCostosGuiaUnif .ci.has-val { border-color: #10b981; background: rgba(16,185,129,.09); }
+      #modalCostosGuiaUnif .ci .ci-x {
+        display: none; align-items: center; justify-content: center; flex: none;
+        width: 30px; border: none; background: transparent; cursor: pointer;
+        color: #6ee7b7; font-size: 20px; font-weight: 700; line-height: 1;
+        border-left: 1px solid rgba(16,185,129,.25); transition: background .15s, color .15s;
+      }
+      #modalCostosGuiaUnif .ci.has-val .ci-x { display: flex; }
+      #modalCostosGuiaUnif .ci .ci-x:hover { background: rgba(248,113,113,.15); color: #fca5a5; }
+      #modalCostosGuiaUnif .ci .ci-x:active { transform: scale(.9); }
       #modalCostosGuiaUnif .ci-cur {
         display: flex; align-items: center; padding: 0 4px 0 11px;
         color: #93a4c2; font-weight: 800; font-size: 13px; font-family: ui-monospace,monospace;
@@ -10863,6 +10876,9 @@ const MOS = (() => {
     // [v2.43.603] el botón 💰 Precio de la línea aparece/desaparece con el monto
     const acc = $('costoGuiaAcc_' + idx);
     if (acc) acc.innerHTML = _costosLineaAccionesHTML(linea, idx, brutoUnit);
+    // [v2.43.611] chip con × cuando el monto tiene valor
+    const ci = $('costoGuiaCi_' + idx);
+    if (ci) ci.classList.toggle('has-val', brutoUnit > 0);
     // Recalcular totales
     let totalBruto = 0;
     st.lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
@@ -10879,6 +10895,51 @@ const MOS = (() => {
     // que pulsar "Guardar" para que el costo persista. El backend acepta
     // upsert por idDetalle/codigoProducto, idempotente.
     _costosGuiaAutosaveDebounce(idx);
+  }
+
+  // [v2.43.611] × del chip de monto: DESHACE retroactivamente el costo.
+  // 1) limpia el input local + optimista (línea, cache, op) → la card recalcula "sin costo".
+  // 2) si ese costo ya se aplicó al catálogo (esta guía), revierte precio_costo al valor previo
+  //    (mos.quitar_costo_compra, SQL 556) y refleja el costo revertido en S.productos.
+  async function _costosGuiaQuitarMonto(idx) {
+    const st = S._costosGuiaState; if (!st) return;
+    const linea = st.lineas[idx]; if (!linea) return;
+    const cod = String(linea.codigoBarra || linea.codigoProducto || linea.codProducto || '').trim();
+    // limpiar input local (vacío, no 0) + estado optimista
+    linea.inputValue = '';
+    linea._precioListo = 0;   // si tenía precio publicado marcado, el chip vuelve a vacío
+    try {
+      const k = st.fuente + '_' + st.idGuia;
+      const cache = S._opsDetCache && S._opsDetCache[k];
+      if (cache && cache.lineas && cache.lineas[idx]) { cache.lineas[idx].precioUnitario = 0; cache.lineas[idx].subtotal = 0; }
+      const op = _findOpByKey(k);
+      if (op && op.lineas && op.lineas[idx]) { op.lineas[idx].precioUnitario = 0; op.lineas[idx].subtotal = 0; }
+    } catch(_){}
+    if (st._costosAplicados) delete st._costosAplicados[cod];
+    // re-render de la línea (input vuelve a placeholder, botón 💰 desaparece) + progreso
+    const ci = $('costoGuiaCi_' + idx); if (ci) { ci.classList.remove('has-val'); const inp = ci.querySelector('input'); if (inp) inp.value = ''; }
+    const cell = $('costoGuiaSubtot_' + idx); if (cell) cell.innerHTML = _costosGuiaHelperHTML(0, 0);
+    const acc = $('costoGuiaAcc_' + idx); if (acc) acc.innerHTML = _costosLineaAccionesHTML(linea, idx, 0);
+    _costosGuiaUpdMarca(idx); _costosGuiaUpdProgreso();
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    // revertir el costo aplicado al catálogo (retroactivo) — best-effort, no bloquea la UI
+    if (cod && st.idGuia) {
+      try {
+        const r = await API.post('quitarCostoCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: [{ codProducto: cod }] });
+        const it = r && r.data && Array.isArray(r.data.items) ? r.data.items[0] : null;
+        if (it && it.ok && !it.sinCambio) {
+          // reflejar el costo revertido en el catálogo local (para sugerencias/margen)
+          const p = (S.productos || []).find(x => String(x.idProducto) === String(it.idCanonico));
+          if (p && it.costoRestaurado != null) p.precioCosto = it.costoRestaurado;
+          toast('↩ Costo deshecho' + (it.costoRestaurado > 0 ? ` · volvió a S/ ${(+it.costoRestaurado).toFixed(2)}` : ' · sin costo'), 'ok', 3000);
+        } else {
+          toast('↩ Monto quitado', 'ok', 2000);
+        }
+      } catch (e) { toast('⚠ No se pudo deshacer el costo en el catálogo: ' + (e.message || e), 'error', 5000); }
+    }
+    // refrescar la Mesa de Compras si está abierta (recalcula "Paso 1 · costos X/Y" desde op.lineas optimista)
+    try { const m = document.getElementById('mesaComprasModal'); if (m) m.innerHTML = _mesaComprasHTML(); } catch(_){}
+    try { _mesaComprasSyncBadge && _mesaComprasSyncBadge(); } catch(_){}
   }
 
   // [v2.41.54] Marca visual ✓/⚠ por línea según si tiene costo > 0
@@ -43902,7 +43963,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.99] Filtro solo ingresos
     almToggleFiltroIngreso,
     abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay, abrirFotoOverlay,
-    _costosGuiaUpdLinea, _costosGuiaSetMode, _costosGuiaSetIgv, guardarCostosGuia,
+    _costosGuiaUpdLinea, _costosGuiaQuitarMonto, _costosGuiaSetMode, _costosGuiaSetIgv, guardarCostosGuia,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
