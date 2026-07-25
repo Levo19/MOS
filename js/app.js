@@ -3756,6 +3756,7 @@ const MOS = (() => {
     if ($('pnCorregirIdProducto'))  $('pnCorregirIdProducto').value = '';
     if ($('pnCorregirResultados'))  { $('pnCorregirResultados').style.display = 'none'; $('pnCorregirResultados').innerHTML = ''; }
     if ($('pnCorregirSeleccionado')) $('pnCorregirSeleccionado').classList.add('hidden');
+    if ($('pnCorregirConservar'))   $('pnCorregirConservar').checked = false;
 
     // Reset radio a NUEVO
     document.querySelector('input[name="pnTipo"][value="NUEVO"]').checked = true;
@@ -4753,7 +4754,10 @@ const MOS = (() => {
       if (!codigoReal) { mostrarPNError('Falta el código real entrante'); return; }
       Object.assign(params, {
         idProductoExistente: idExist,
-        codigoFinal: codigoReal
+        codigoFinal: codigoReal,
+        // [v2.43.608] default REEMPLAZO limpio; solo conserva el código viejo como
+        // equivalente si el usuario marcó el toggle (producto que cambió de empaque).
+        conservarCodigoViejo: !!$('pnCorregirConservar')?.checked
       });
     }
 
@@ -4770,7 +4774,9 @@ const MOS = (() => {
         ? '🆕 Producto creado en catálogo'
         : tipo === 'EQUIVALENTE'
         ? '🔗 Equivalencia agregada'
-        : '🔄 Código corregido · viejo guardado como equivalencia';
+        : (params.conservarCodigoViejo
+            ? '🔄 Código corregido · anterior guardado como equivalencia'
+            : '🔄 Código reemplazado · anterior descartado');
       toast(okMsg, 'ok');
       setTimeout(() => { cerrarModalPN(); }, 350);
       setTimeout(() => loadCatalogo(true), 800);
