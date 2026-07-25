@@ -3573,34 +3573,35 @@ const MOS = (() => {
       : `${['dom','lun','mar','mié','jue','vie','sáb'][d.getDay()]} ${dd} ${_PN_MESES[d.getMonth()]}`;
     return { key: d.toISOString().slice(0, 10), label, ts: d.getTime() };
   }
-  function _pnAgrupadoPorFechaHTML(lista) {
+  function _pnAgrupadoPorFechaHTML(lista, modo) {
     const grupos = {};
     lista.forEach(pn => { const f = _pnFechaKey(pn); (grupos[f.key] = grupos[f.key] || { label: f.label, ts: f.ts, items: [] }).items.push(pn); });
     return Object.values(grupos).sort((a, b) => b.ts - a.ts).map(g => `
       <div class="pn-dia">
         <div class="pn-dia-hd"><span class="pn-dia-lbl">${g.label}</span><span class="pn-dia-ln"></span><span class="pn-dia-n">${g.items.length}</span></div>
-        <div class="pn-dia-cards">${g.items.map(_pnCardHTML).join('')}</div>
+        <div class="pn-dia-cards">${g.items.map(pn => _pnCardHTML(pn, modo)).join('')}</div>
       </div>`).join('');
   }
-  function _pnCardHTML(pn) {
+  // modo: 'oculto' = vista descartados (botón Restaurar, card no abre registro); default = pendientes.
+  function _pnCardHTML(pn, modo) {
     const id = String(pn.idProductoNuevo);
-    const safeFoto = (pn.foto || '').replace(/'/g, "\\'");
-    const safeDesc = (pn.descripcion || '').replace(/'/g, "\\'");
+    const oculto = modo === 'oculto';
     const foto = pn.foto
-      ? `<img src="${pn.foto}" onclick="event.stopPropagation();MOS.openImagePreview('${safeFoto}','${safeDesc}')" class="pn-card-foto" title="Ampliar">`
+      ? `<img src="${pn.foto}" class="pn-card-foto" alt="">`
       : `<div class="pn-card-foto pn-card-nofoto">📦</div>`;
     const orig = pn.idGuia ? `🚚 ${pn.guia ? (pn.guia.tipo || 'guía').replace('INGRESO_PROVEEDOR', 'proveedor').replace('ENTRADA_LIBRE', 'zona') : 'guía'}` : '✍ manual';
-    return `<div class="pn-card" id="pncard_${id}">
-      ${foto}
+    const acts = oculto
+      ? `<button onclick="event.stopPropagation();MOS.pnRestaurar('${id}')" class="pn-btn-rest" title="Volver a pendientes">↩ Restaurar</button>`
+      : `<button onclick="event.stopPropagation();MOS.abrirModalPN('${id}')" class="pn-btn-reg" title="Registrar en el catálogo">✓ Registrar</button>
+         <button onclick="event.stopPropagation();MOS.pnDescartar('${id}')" class="pn-btn-desc" title="No registrar — se oculta. Si el operador lo vuelve a escanear, reaparece.">🚫</button>`;
+    return `<div class="pn-card" id="pncard_${id}"${oculto ? '' : ` onclick="MOS.abrirModalPN('${id}')" title="Registrar en el catálogo"`}>
+      <div class="pn-card-fotowrap">${foto}<span class="pn-card-badge">${orig}</span></div>
       <div class="pn-card-body">
         <div class="pn-card-nm">${_escapeHtml(pn.descripcion || '(sin nombre)')}</div>
         <div class="pn-card-meta"><span class="pn-card-cod">${_escapeHtml(pn.codigoBarra || 'sin código')}</span>${pn.marca ? ' · ' + _escapeHtml(pn.marca) : ''}</div>
-        <div class="pn-card-src">${orig}${pn.usuario ? ' · ' + _escapeHtml(pn.usuario) : ''}</div>
+        ${pn.usuario ? `<div class="pn-card-src">${_escapeHtml(pn.usuario)}</div>` : ''}
       </div>
-      <div class="pn-card-acts">
-        <button onclick="event.stopPropagation();MOS.abrirModalPN('${id}')" class="pn-btn-reg" title="Registrar en el catálogo">✓ Registrar</button>
-        <button onclick="event.stopPropagation();MOS.pnDescartar('${id}')" class="pn-btn-desc" title="No registrar — se oculta. Si el operador lo vuelve a escanear, reaparece.">🚫 Descartar</button>
-      </div>
+      <div class="pn-card-acts">${acts}</div>
     </div>`;
   }
   async function pnDescartar(id) {
@@ -3624,9 +3625,7 @@ const MOS = (() => {
     let ocultos = [];
     try { ocultos = await API.getProductosNuevosWH({ estado: 'DESCARTADO' }) || []; } catch(_) {}
     S._pnOcultosN = ocultos.length;
-    const body = ocultos.length ? _pnAgrupadoPorFechaHTML(ocultos).replace(/pn-btn-reg[\s\S]*?<\/button>/g, '')
-      .replace(/MOS\.pnDescartar\('([^']+)'\)/g, "MOS.pnRestaurar('$1')")
-      .replace(/🚫 Descartar/g, '↩ Restaurar').replace(/pn-btn-desc/g, 'pn-btn-rest')
+    const body = ocultos.length ? _pnAgrupadoPorFechaHTML(ocultos, 'oculto')
       : `<div class="pn-empty">No hay productos descartados.</div>`;
     _pnModal('🚫 Productos descartados', `<p class="pn-modal-sub">Ocultos de la lista de pendientes. Restaura uno para volver a registrarlo, o déjalo — reaparece solo si el operador lo re-escanea en una guía.</p>${body}`);
   }
@@ -3661,30 +3660,36 @@ const MOS = (() => {
       .pn-dia-lbl{font-size:11px;font-weight:900;letter-spacing:.02em;color:#fcd34d;text-transform:capitalize;flex:none}
       .pn-dia-ln{flex:1;height:1px;background:linear-gradient(90deg,rgba(217,119,6,.4),transparent)}
       .pn-dia-n{flex:none;font-size:9.5px;font-weight:800;color:#92400e;background:#fde68a;border-radius:99px;padding:1px 7px}
-      .pn-dia-cards{display:flex;flex-direction:column;gap:8px}
-      .pn-card{display:flex;align-items:center;gap:11px;background:#0e1626;border:1px solid #28344c;border-left:3px solid #d97706;border-radius:13px;padding:10px 12px;transition:transform .18s,box-shadow .2s,opacity .3s}
-      .pn-card:hover{border-color:#f59e0b66;box-shadow:0 8px 22px -12px rgba(245,158,11,.4)}
-      .pn-card-bye{opacity:0;transform:translateX(40px) scale(.9)}
-      .pn-card-foto{width:52px;height:52px;border-radius:10px;object-fit:cover;flex:none;cursor:zoom-in;border:1px solid #1e293b}
-      .pn-card-nofoto{display:flex;align-items:center;justify-content:center;background:#1e293b;font-size:22px;cursor:default;color:#64748b}
-      .pn-card-body{flex:1;min-width:0}
-      .pn-card-nm{font-size:13.5px;font-weight:800;color:#f1f5f9;line-height:1.3;word-break:break-word}
-      .pn-card-meta{font-size:11px;color:#94a3b8;margin-top:2px;font-family:ui-monospace,monospace}
+      .pn-dia-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:11px}
+      .pn-card{display:flex;flex-direction:column;background:#0e1626;border:1px solid #28344c;border-radius:15px;overflow:hidden;cursor:pointer;position:relative;transition:transform .2s cubic-bezier(.2,.8,.3,1),box-shadow .22s,border-color .2s,opacity .3s}
+      .pn-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#f59e0b,#d97706);opacity:.9;z-index:2}
+      .pn-card:hover{transform:translateY(-5px);border-color:#f59e0b99;box-shadow:0 16px 34px -16px rgba(245,158,11,.6)}
+      .pn-card:active{transform:translateY(-2px) scale(.99)}
+      .pn-card-bye{opacity:0;transform:translateX(36px) scale(.9)}
+      .pn-card-fotowrap{position:relative;width:100%;height:120px;overflow:hidden;background:#0a1220}
+      .pn-card-foto{width:100%;height:100%;object-fit:cover;display:block;transition:transform .38s ease}
+      .pn-card:hover .pn-card-foto{transform:scale(1.07)}
+      .pn-card-nofoto{display:flex;align-items:center;justify-content:center;font-size:40px;color:#3b4a63}
+      .pn-card-badge{position:absolute;left:8px;bottom:8px;font-size:9.5px;font-weight:800;color:#fde68a;background:rgba(4,10,20,.78);border:1px solid rgba(245,158,11,.3);border-radius:99px;padding:2px 9px;letter-spacing:.02em;z-index:2}
+      .pn-card-body{flex:1;min-width:0;padding:9px 11px 5px}
+      .pn-card-nm{font-size:13px;font-weight:800;color:#f1f5f9;line-height:1.28;word-break:break-word;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+      .pn-card-meta{font-size:10.5px;color:#94a3b8;margin-top:3px;font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .pn-card-cod{color:#cbd5e1}
-      .pn-card-src{font-size:10.5px;color:#64748b;margin-top:1px}
-      .pn-card-acts{display:flex;flex-direction:column;gap:6px;flex:none}
-      .pn-btn-reg{font-size:12px;font-weight:800;color:#04140d;background:linear-gradient(180deg,#34d399,#059669);border:none;border-radius:9px;padding:8px 13px;cursor:pointer;white-space:nowrap;transition:transform .1s}
+      .pn-card-src{font-size:10px;color:#64748b;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .pn-card-acts{display:flex;gap:6px;padding:8px 10px 10px}
+      .pn-btn-reg{flex:1;font-size:12px;font-weight:800;color:#04140d;background:linear-gradient(180deg,#34d399,#059669);border:none;border-radius:9px;padding:8px;cursor:pointer;white-space:nowrap;transition:transform .1s,filter .15s}
+      .pn-btn-reg:hover{filter:brightness(1.09)}
       .pn-btn-reg:active{transform:scale(.95)}
-      .pn-btn-desc{font-size:11px;font-weight:700;color:#94a3b8;background:#131d30;border:1px solid #28344c;border-radius:9px;padding:6px 13px;cursor:pointer;white-space:nowrap;transition:.15s}
-      .pn-btn-desc:hover{border-color:#f87171;color:#f87171}
+      .pn-btn-desc{flex:none;font-size:13px;font-weight:700;color:#94a3b8;background:#131d30;border:1px solid #28344c;border-radius:9px;padding:8px 11px;cursor:pointer;transition:.15s}
+      .pn-btn-desc:hover{border-color:#f87171;color:#f87171;background:rgba(248,113,113,.08)}
       .pn-btn-desc:active{transform:scale(.95)}
-      .pn-btn-rest{font-size:11px;font-weight:800;color:#34d399;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.35);border-radius:9px;padding:6px 13px;cursor:pointer;white-space:nowrap}
+      .pn-btn-rest{flex:1;font-size:11.5px;font-weight:800;color:#34d399;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.35);border-radius:9px;padding:8px;cursor:pointer;white-space:nowrap}
       .pn-ver-ocultos{width:100%;font-size:11px;font-weight:700;color:#7b8aa6;background:transparent;border:1px dashed #3a4a6b;border-radius:10px;padding:9px;cursor:pointer;margin-top:2px;transition:.15s}
       .pn-ver-ocultos:hover{border-color:#94a3b8;color:#cbd5e1}
       .pn-empty{text-align:center;font-size:13px;color:#94a3b8;padding:22px 10px;line-height:1.6}
       .pn-empty span{font-size:11px;color:#64748b}
       .pn-modal-sub{font-size:12px;color:#93a4c2;line-height:1.5;margin:0 0 14px;padding:9px 11px;background:rgba(217,119,6,.08);border:1px solid rgba(217,119,6,.25);border-radius:10px}
-      @media(prefers-reduced-motion:reduce){.pn-card{transition:none}}
+      @media(prefers-reduced-motion:reduce){.pn-card,.pn-card-foto{transition:none}.pn-card:hover{transform:none}.pn-card:hover .pn-card-foto{transform:none}}
     `;
     document.head.appendChild(st);
   }
