@@ -10127,7 +10127,16 @@ const MOS = (() => {
 
   // [D] Card grande: proveedor protagonista, productos con fade, progreso 2 pasos.
   function _mesaComprasCard(op, est, i) {
-    const prov = _escapeHtml(String(op.nombreProveedor || op.idProveedor || 'Proveedor —').trim());
+    // [v2.43.605] Compra EN ZONA (entrada libre) vs guía de PROVEEDOR: se distinguen
+    // visualmente. La entrada libre (tipo ENTRADA_LIBRE, fuente ME) es una compra
+    // directa que la cajera registra en su zona — no pasa por almacén → no está en
+    // guías WH. Antes salía como "🏭 Proveedor —" y confundía.
+    const esZona = String(op.tipo || '').toUpperCase() === 'ENTRADA_LIBRE' || (op.fuente && op.fuente !== 'WH' && !op.idProveedor && !op.nombreProveedor);
+    const zonaNom = _escapeHtml(String(op.idZonaCanonNom || op.idZona || 'zona').trim());
+    const cajera  = _escapeHtml(String(op.usuario || '').trim());
+    const prov = esZona
+      ? `Compra en ${zonaNom}${cajera ? ` · <span class="mesa-cajera">👤 ${cajera}</span>` : ''}`
+      : _escapeHtml(String(op.nombreProveedor || op.idProveedor || 'Proveedor —').trim());
     // [D fix] las líneas pueden venir en el cache de detalle (no siempre inline en la op) —
     // mismo origen que _comprasEstado, para que la card NO diga "0 ítems / (sin líneas)".
     const k = op.fuente + '_' + op.idGuia;
@@ -10146,13 +10155,13 @@ const MOS = (() => {
         <div class="mesa-ph ${est.pctC < 100 ? 'lock' : est.pctP >= 100 ? 'ok' : est.pctP > 0 ? 'mid' : ''}"><span>Paso 2 · precios</span><i style="width:${est.pctC < 100 ? 0 : est.pctP}%"></i><b>${est.pctC < 100 ? '—' : est.precios.con + '/' + est.precios.total}</b></div>
       </div>`;
     return `
-      <button class="mesa-card tone-${est.tone}${est.incompleto ? ' is-incompleta' : ''}" style="animation-delay:${Math.min(i, 16) * 40}ms"
+      <button class="mesa-card tone-${est.tone}${est.incompleto ? ' is-incompleta' : ''}${esZona ? ' is-zona' : ''}" style="animation-delay:${Math.min(i, 16) * 40}ms"
               onclick="MOS._mesaComprasEntrar('${op.fuente}','${_escapeHtml(op.idGuia)}')">
         <div class="mesa-card-top">
           <span class="mesa-state s-${est.tone}">${est.ico} ${_escapeHtml(est.label)}</span>
-          <span class="mesa-gid">${foto}${gidCorto}</span>
+          <span class="mesa-gid">${esZona ? '<span class="mesa-origen-pill">🏪 EN ZONA</span>' : ''}${foto}${gidCorto}</span>
         </div>
-        <div class="mesa-card-prov"><span class="mesa-prov-ico">🏭</span><span class="mesa-prov-name">${prov}</span></div>
+        <div class="mesa-card-prov"><span class="mesa-prov-ico">${esZona ? '🏪' : '🏭'}</span><span class="mesa-prov-name">${prov}</span></div>
         <div class="mesa-card-prods"><span class="mesa-prods-n">${lineas.length} ítem${lineas.length !== 1 ? 's' : ''}:</span> ${listaProd}</div>
         ${faseBar}
         <div class="mesa-cta s-${est.tone}">${ctaTxt}</div>
@@ -10278,6 +10287,12 @@ const MOS = (() => {
       .mesa-card.tone-rose{border-left-color:#fb7185} .mesa-card.tone-amber{border-left-color:#fbbf24}
       .mesa-card.tone-blue{border-left-color:#7cb3f0} .mesa-card.tone-em{border-left-color:#34d399}
       .mesa-card.is-incompleta{background:linear-gradient(180deg,#0e1626,rgba(251,191,36,.05))}
+      /* [v2.43.605] Compra EN ZONA (entrada libre) — acento violáceo + textura distinta del proveedor */
+      .mesa-card.is-zona{border-left-color:#a855f7;background:linear-gradient(180deg,#0e1626,rgba(168,85,247,.055))}
+      .mesa-card.is-zona:hover{box-shadow:0 16px 30px -14px rgba(168,85,247,.35)}
+      .mesa-origen-pill{font-size:8.5px;font-weight:900;letter-spacing:.03em;color:#c084fc;background:rgba(168,85,247,.16);border:1px solid rgba(168,85,247,.4);border-radius:999px;padding:2px 7px}
+      .mesa-card.is-zona .mesa-prov-name{color:#e9d5ff}
+      .mesa-cajera{font-weight:700;font-size:12.5px;color:#c084fc}
       .mesa-card-top{display:flex;align-items:center;gap:8px}
       .mesa-state{font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;letter-spacing:.01em}
       .s-rose{background:rgba(251,113,133,.14);color:#fb7185;border:1px solid rgba(251,113,133,.3)}
