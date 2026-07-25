@@ -3533,24 +3533,11 @@ const MOS = (() => {
       ? `<span style="background:#92400e;color:#fde68a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">N ${lista.length}</span>`
       : `<span style="background:#1e293b;color:#94a3b8;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px">✓ 0</span>`;
 
-    const listaHtml = lista.length ? lista.map(pn => {
-      const guiaLabel = pn.guia ? `Guía ${pn.guia.tipo || ''} · ${pn.guia.fecha || ''}` : `Guía ${pn.idGuia || '— manual'}`;
-      const safeFoto = (pn.foto || '').replace(/'/g, "\\'");
-      const safeDesc = (pn.descripcion || '').replace(/'/g, "\\'");
-      const fotoHtml = pn.foto
-        ? `<img src="${pn.foto}" onclick="event.stopPropagation();MOS.openImagePreview('${safeFoto}','${safeDesc}')" style="width:42px;height:42px;border-radius:8px;object-fit:cover;flex-shrink:0;cursor:zoom-in" title="Click para ampliar">`
-        : `<div style="width:42px;height:42px;border-radius:8px;background:#1e293b;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px">📦</div>`;
-      return `<div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.2);border-radius:8px;padding:8px 10px">
-        ${fotoHtml}
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:600;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${pn.descripcion || '(sin nombre)'}</div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:1px">${pn.codigoBarra || 'sin código'} · ${pn.marca || ''}</div>
-          <div style="font-size:11px;color:#64748b">${guiaLabel}</div>
-        </div>
-        <button onclick="MOS.abrirModalPN('${pn.idProductoNuevo}')" style="flex-shrink:0;background:#b45309;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Revisar</button>
-      </div>`;
-    }).join('') : (esAdmin
-      ? `<div style="font-size:12px;color:#64748b;padding:6px 4px;font-style:italic">No hay pendientes. Puedes registrar manualmente con el botón de arriba.</div>`
+    // [v2.43.606] Agrupado POR FECHA (solo ~3/semana → un listado plano no es visual).
+    // Cards modernas con foto grande, y DOS acciones: ✓ Registrar · 🚫 Descartar (ocultar).
+    _pnInyectarCSS();
+    const listaHtml = lista.length ? _pnAgrupadoPorFechaHTML(lista) : (esAdmin
+      ? `<div class="pn-empty">✨ Todo al día — sin productos por registrar.<br><span>Usa el botón de arriba para agregar uno manual.</span></div>`
       : '');
 
     banner.innerHTML = `
@@ -3561,13 +3548,145 @@ const MOS = (() => {
           <button onclick="event.stopPropagation();MOS.refreshPNManual()" title="Refrescar lista (ignora cache)" style="background:transparent;border:1px solid rgba(217,119,6,.4);color:#fbbf24;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">↺</button>
           <span style="color:#fbbf24;font-size:14px;transition:transform .2s;transform:rotate(${open ? 180 : 0}deg);display:inline-block">▾</span>
         </div>
-        <div style="overflow:hidden;transition:max-height .25s ease-out;max-height:${open ? 2000 : 0}px">
-          <div style="display:flex;flex-direction:column;gap:8px;padding-top:10px;max-height:52vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
+        <div style="overflow:hidden;transition:max-height .25s ease-out;max-height:${open ? 2600 : 0}px">
+          <div style="display:flex;flex-direction:column;gap:10px;padding-top:10px;max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch">
           ${addBtnHtml}
           ${listaHtml}
+          ${esAdmin ? `<button onclick="MOS.pnVerOcultos()" class="pn-ver-ocultos">🚫 Ver descartados${S._pnOcultosN ? ` (${S._pnOcultosN})` : ''}</button>` : ''}
           </div>
         </div>
       </div>`;
+    // conteo de ocultos en 2º plano (para el contador del botón) — sin bloquear el render
+    if (esAdmin && S._pnOcultosN == null) _pnContarOcultos();
+  }
+
+  // [v2.43.606] ── Productos Nuevos: rediseño visual + descartar/revivir ──
+  const _PN_MESES = ['ene','feb','mar','abr','may','jun','jul','ago','set','oct','nov','dic'];
+  function _pnFechaKey(pn) {
+    const raw = (pn.guia && pn.guia.fecha) || pn.fechaRegistro || pn.fechaCreacion || '';
+    const d = raw ? new Date(raw) : null;
+    if (!d || isNaN(d)) return { key: 'zsin', label: 'Sin fecha', ts: 0 };
+    const hoy = new Date(); const ayer = new Date(Date.now() - 864e5);
+    const sameDay = (a, b) => a.toDateString() === b.toDateString();
+    const dd = String(d.getDate()).padStart(2, '0');
+    const label = sameDay(d, hoy) ? 'Hoy' : sameDay(d, ayer) ? 'Ayer'
+      : `${['dom','lun','mar','mié','jue','vie','sáb'][d.getDay()]} ${dd} ${_PN_MESES[d.getMonth()]}`;
+    return { key: d.toISOString().slice(0, 10), label, ts: d.getTime() };
+  }
+  function _pnAgrupadoPorFechaHTML(lista) {
+    const grupos = {};
+    lista.forEach(pn => { const f = _pnFechaKey(pn); (grupos[f.key] = grupos[f.key] || { label: f.label, ts: f.ts, items: [] }).items.push(pn); });
+    return Object.values(grupos).sort((a, b) => b.ts - a.ts).map(g => `
+      <div class="pn-dia">
+        <div class="pn-dia-hd"><span class="pn-dia-lbl">${g.label}</span><span class="pn-dia-ln"></span><span class="pn-dia-n">${g.items.length}</span></div>
+        <div class="pn-dia-cards">${g.items.map(_pnCardHTML).join('')}</div>
+      </div>`).join('');
+  }
+  function _pnCardHTML(pn) {
+    const id = String(pn.idProductoNuevo);
+    const safeFoto = (pn.foto || '').replace(/'/g, "\\'");
+    const safeDesc = (pn.descripcion || '').replace(/'/g, "\\'");
+    const foto = pn.foto
+      ? `<img src="${pn.foto}" onclick="event.stopPropagation();MOS.openImagePreview('${safeFoto}','${safeDesc}')" class="pn-card-foto" title="Ampliar">`
+      : `<div class="pn-card-foto pn-card-nofoto">📦</div>`;
+    const orig = pn.idGuia ? `🚚 ${pn.guia ? (pn.guia.tipo || 'guía').replace('INGRESO_PROVEEDOR', 'proveedor').replace('ENTRADA_LIBRE', 'zona') : 'guía'}` : '✍ manual';
+    return `<div class="pn-card" id="pncard_${id}">
+      ${foto}
+      <div class="pn-card-body">
+        <div class="pn-card-nm">${_escapeHtml(pn.descripcion || '(sin nombre)')}</div>
+        <div class="pn-card-meta"><span class="pn-card-cod">${_escapeHtml(pn.codigoBarra || 'sin código')}</span>${pn.marca ? ' · ' + _escapeHtml(pn.marca) : ''}</div>
+        <div class="pn-card-src">${orig}${pn.usuario ? ' · ' + _escapeHtml(pn.usuario) : ''}</div>
+      </div>
+      <div class="pn-card-acts">
+        <button onclick="event.stopPropagation();MOS.abrirModalPN('${id}')" class="pn-btn-reg" title="Registrar en el catálogo">✓ Registrar</button>
+        <button onclick="event.stopPropagation();MOS.pnDescartar('${id}')" class="pn-btn-desc" title="No registrar — se oculta. Si el operador lo vuelve a escanear, reaparece.">🚫 Descartar</button>
+      </div>
+    </div>`;
+  }
+  async function pnDescartar(id) {
+    const pn = (S.pnPendientes || []).find(p => String(p.idProductoNuevo) === String(id));
+    const nombre = (pn && pn.descripcion) ? pn.descripcion.split(' ').slice(0, 3).join(' ') : 'producto';
+    if (!await _modalConfirm(`¿Descartar "${nombre}"?\n\nSe oculta de la lista (no se registra). Si el operador lo vuelve a escanear en una guía, reaparece solo.`, { titulo: '🚫 Descartar producto nuevo' })) return;
+    const card = document.getElementById('pncard_' + id);
+    if (card) { card.classList.add('pn-card-bye'); }
+    // optimista: sacarlo de la lista y re-render tras la animación
+    S.pnPendientes = (S.pnPendientes || []).filter(p => String(p.idProductoNuevo) !== String(id));
+    S._pnOcultosN = (S._pnOcultosN || 0) + 1;
+    setTimeout(() => { _updatePNBadge(); renderPNBanner(); }, 320);
+    try { await API.descartarPN({ idProductoNuevo: id }); toast('🚫 Descartado — reaparece si lo re-escanean', 'ok'); }
+    catch (e) { toast('No se pudo descartar: ' + e.message, 'error'); _refreshPNPendientes(true); }
+  }
+  async function _pnContarOcultos() {
+    try { const o = await API.getProductosNuevosWH({ estado: 'DESCARTADO' }); S._pnOcultosN = (o || []).length;
+      const b = $('pnBannerCat'); if (b && S.view === 'catalogo') renderPNBanner(); } catch(_) { S._pnOcultosN = 0; }
+  }
+  async function pnVerOcultos() {
+    let ocultos = [];
+    try { ocultos = await API.getProductosNuevosWH({ estado: 'DESCARTADO' }) || []; } catch(_) {}
+    S._pnOcultosN = ocultos.length;
+    const body = ocultos.length ? _pnAgrupadoPorFechaHTML(ocultos).replace(/pn-btn-reg[\s\S]*?<\/button>/g, '')
+      .replace(/MOS\.pnDescartar\('([^']+)'\)/g, "MOS.pnRestaurar('$1')")
+      .replace(/🚫 Descartar/g, '↩ Restaurar').replace(/pn-btn-desc/g, 'pn-btn-rest')
+      : `<div class="pn-empty">No hay productos descartados.</div>`;
+    _pnModal('🚫 Productos descartados', `<p class="pn-modal-sub">Ocultos de la lista de pendientes. Restaura uno para volver a registrarlo, o déjalo — reaparece solo si el operador lo re-escanea en una guía.</p>${body}`);
+  }
+  async function pnRestaurar(id) {
+    const card = document.getElementById('pncard_' + id);
+    if (card) card.classList.add('pn-card-bye');
+    try { await API.restaurarPN({ idProductoNuevo: id }); toast('↩ Restaurado — vuelve a pendientes', 'ok');
+      S._pnOcultosN = Math.max(0, (S._pnOcultosN || 1) - 1);
+      setTimeout(() => { const m = $('pnDescModal'); if (m) m.remove(); }, 300);
+      _refreshPNPendientes(true);
+    } catch (e) { toast('No se pudo restaurar: ' + e.message, 'error'); }
+  }
+  function _pnModal(titulo, bodyHtml) {
+    $('pnDescModal')?.remove();
+    const div = document.createElement('div');
+    div.id = 'pnDescModal'; div.className = 'modal-backdrop open';
+    div.innerHTML = `<div class="modal-box" style="max-width:520px;max-height:86vh;display:flex;flex-direction:column">
+      <div class="px-5 py-4 flex items-center gap-3" style="border-bottom:1px solid #1e293b">
+        <h2 class="font-bold text-base text-white flex-1">${titulo}</h2>
+        <button onclick="document.getElementById('pnDescModal').remove()" class="modal-close-x">×</button></div>
+      <div class="p-4 overflow-y-auto flex-1">${bodyHtml}</div></div>`;
+    div.addEventListener('click', e => { if (e.target === div) div.remove(); });
+    document.body.appendChild(div);
+    _pnInyectarCSS();
+  }
+  function _pnInyectarCSS() {
+    if (S._pnCSSInjected) return; S._pnCSSInjected = true;
+    const st = document.createElement('style'); st.id = 'pnCSS';
+    st.textContent = `
+      .pn-dia{margin-bottom:4px}
+      .pn-dia-hd{display:flex;align-items:center;gap:9px;margin:2px 2px 7px}
+      .pn-dia-lbl{font-size:11px;font-weight:900;letter-spacing:.02em;color:#fcd34d;text-transform:capitalize;flex:none}
+      .pn-dia-ln{flex:1;height:1px;background:linear-gradient(90deg,rgba(217,119,6,.4),transparent)}
+      .pn-dia-n{flex:none;font-size:9.5px;font-weight:800;color:#92400e;background:#fde68a;border-radius:99px;padding:1px 7px}
+      .pn-dia-cards{display:flex;flex-direction:column;gap:8px}
+      .pn-card{display:flex;align-items:center;gap:11px;background:#0e1626;border:1px solid #28344c;border-left:3px solid #d97706;border-radius:13px;padding:10px 12px;transition:transform .18s,box-shadow .2s,opacity .3s}
+      .pn-card:hover{border-color:#f59e0b66;box-shadow:0 8px 22px -12px rgba(245,158,11,.4)}
+      .pn-card-bye{opacity:0;transform:translateX(40px) scale(.9)}
+      .pn-card-foto{width:52px;height:52px;border-radius:10px;object-fit:cover;flex:none;cursor:zoom-in;border:1px solid #1e293b}
+      .pn-card-nofoto{display:flex;align-items:center;justify-content:center;background:#1e293b;font-size:22px;cursor:default;color:#64748b}
+      .pn-card-body{flex:1;min-width:0}
+      .pn-card-nm{font-size:13.5px;font-weight:800;color:#f1f5f9;line-height:1.3;word-break:break-word}
+      .pn-card-meta{font-size:11px;color:#94a3b8;margin-top:2px;font-family:ui-monospace,monospace}
+      .pn-card-cod{color:#cbd5e1}
+      .pn-card-src{font-size:10.5px;color:#64748b;margin-top:1px}
+      .pn-card-acts{display:flex;flex-direction:column;gap:6px;flex:none}
+      .pn-btn-reg{font-size:12px;font-weight:800;color:#04140d;background:linear-gradient(180deg,#34d399,#059669);border:none;border-radius:9px;padding:8px 13px;cursor:pointer;white-space:nowrap;transition:transform .1s}
+      .pn-btn-reg:active{transform:scale(.95)}
+      .pn-btn-desc{font-size:11px;font-weight:700;color:#94a3b8;background:#131d30;border:1px solid #28344c;border-radius:9px;padding:6px 13px;cursor:pointer;white-space:nowrap;transition:.15s}
+      .pn-btn-desc:hover{border-color:#f87171;color:#f87171}
+      .pn-btn-desc:active{transform:scale(.95)}
+      .pn-btn-rest{font-size:11px;font-weight:800;color:#34d399;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.35);border-radius:9px;padding:6px 13px;cursor:pointer;white-space:nowrap}
+      .pn-ver-ocultos{width:100%;font-size:11px;font-weight:700;color:#7b8aa6;background:transparent;border:1px dashed #3a4a6b;border-radius:10px;padding:9px;cursor:pointer;margin-top:2px;transition:.15s}
+      .pn-ver-ocultos:hover{border-color:#94a3b8;color:#cbd5e1}
+      .pn-empty{text-align:center;font-size:13px;color:#94a3b8;padding:22px 10px;line-height:1.6}
+      .pn-empty span{font-size:11px;color:#64748b}
+      .pn-modal-sub{font-size:12px;color:#93a4c2;line-height:1.5;margin:0 0 14px;padding:9px 11px;background:rgba(217,119,6,.08);border:1px solid rgba(217,119,6,.25);border-radius:10px}
+      @media(prefers-reduced-motion:reduce){.pn-card{transition:none}}
+    `;
+    document.head.appendChild(st);
   }
 
   function abrirModalPN(idProductoNuevo) {
@@ -43675,6 +43794,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     filterCatalogo, catMostrarMas, _catCardClick, _catSfx, _catRipple,
     verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
+    pnDescartar, pnVerOcultos, pnRestaurar,
     pnBuscarParaCorregir, pnSeleccionarParaCorregir,
     togglePNBanner, openImagePreview, closeImagePreview,
     // PN manual (admin/master)

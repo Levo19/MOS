@@ -3763,6 +3763,20 @@ const API = (() => {
       if (r.ok === false) throw new Error(r.error || 'Error del servidor');
       return r.data;
     },
+    // [PN descartar/revivir · SQL 552] ocultar un PN que no se registrará (bonificación única,
+    // duplicado, ya existe). Revive solo si el operador WH re-escanea ese código.
+    descartarPN:          async (p = {}) => {
+      const r = await _sbRpcMOS('pn_descartar', { p: { usuario: _mosUsuario(p), ...(p || {}) } }, 'mos');
+      if (r == null) throw new Error('Sin conexión con el servidor');
+      if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+      return r;
+    },
+    restaurarPN:          async (p = {}) => {
+      const r = await _sbRpcMOS('pn_restaurar', { p: p || {} }, 'mos');
+      if (r == null) throw new Error('Sin conexión con el servidor');
+      if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+      return r;
+    },
     // Crea un PN manualmente desde MOS (admin/master) 100% Supabase (mos.crear_pn_manual → wh.registrar_producto_nuevo).
     crearPNManual:        async (p = {}) => {
       const r = await _sbRpcMOS('crear_pn_manual', { p: { idGuia: '', ...(p || {}) } }, 'mos');
