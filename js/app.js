@@ -8708,10 +8708,7 @@ const MOS = (() => {
         <button onclick="MOS._costosGuiaSetIgv('INCLUIDO')" class="ops-tg-btn ${st.igvMode === 'INCLUIDO' ? 'is-active' : ''}">Incluido</button>
         <button onclick="MOS._costosGuiaSetIgv('SIN_IGV')"  class="ops-tg-btn ${st.igvMode === 'SIN_IGV'  ? 'is-active' : ''}">Sin</button>
       </div>
-      <label class="ops-tg-check">
-        <input type="checkbox" id="costosGuiaUpdMaster" checked>
-        <span>Actualizar catálogo</span>
-      </label>
+      <span class="ops-tg-auto" title="El costo siempre se aplica al catálogo — es obligatorio">🔄 Actualiza el catálogo</span>
     </div>`;
     return `<div class="flex flex-col gap-2">${fotoHtml}${chipOcr}${progreso}${toggles}</div>`;
   }
@@ -8752,17 +8749,22 @@ const MOS = (() => {
     const equivBadge = l.esEquivalencia ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
     const placeholder = st.inputMode === 'TOTAL' ? 'Total' : 'Unit';
     const helper = _costosGuiaHelperHTML(brutoUnit, netoUnit);
-    // [v5 §11] Sin OCR: marca simple ✓ con costo / ⚠ falta.
-    const marcaIni = brutoUnit > 0
-      ? '<span title="Costo registrado" class="alm-v-marca-ok">✓</span>'
-      : '<span title="Falta costo" class="alm-v-marca-falta">⚠</span>';
-    const faltaCls = brutoUnit > 0 ? '' : ' alm-v-costo-line--falta';
+    // [v2.43.615] producto del catálogo (para foto + estado "preciado")
+    const prodCat = (S.productos || []).find(p => String(p.codigoBarra || '').trim() === String(l.codigoBarra || l.codigoProducto || '').trim());
+    const fotoUrl = prodCat ? String(prodCat.fotoUrl || prodCat.logoUrl || '').trim() : '';
+    const fotoSafe = fotoUrl.replace(/'/g, "\\'");
+    const fotoHtml = fotoUrl
+      ? `<div class="cl-foto" onclick="event.stopPropagation();MOS.abrirFotoOverlay('${fotoSafe}')"><img src="${_escapeHtml(fotoUrl)}" loading="lazy" onerror="this.parentNode.classList.add('cl-foto-err')"></div>`
+      : `<div class="cl-foto cl-foto-empty">📦</div>`;
+    const preciada = _costoLineaPreciada(l, prodCat, brutoUnit);
+    // estado de la fila: falta costo → costo listo → precio puesto
+    const rowState = preciada ? 'is-done' : (brutoUnit > 0 ? 'is-cost' : 'is-nocost');
+    const chipHtml = _costosChipHTML(brutoUnit, preciada);
     // Bloque IMPACTO (margen actual + sugerido)
     let margenInfoHtml = '';
     try {
       const codStr = String(l.codigoBarra || l.codigoProducto || '').trim();
       if (codStr) {
-        const prodCat = (S.productos || []).find(p => String(p.codigoBarra || '').trim() === codStr);
         if (prodCat) {
           const ventaActual = parseFloat(prodCat.precioVenta) || 0;
           let margenObjetivo = null;
@@ -8833,13 +8835,15 @@ const MOS = (() => {
         }
       }
     } catch(_) {}
-    return `<div class="alm-v-costo-line${faltaCls}" style="animation-delay:${Math.min(i,12)*30}ms">
+    return `<div class="alm-v-costo-line ${rowState}" id="costoGuiaLinea_${i}" style="animation-delay:${Math.min(i,12)*30}ms">
       <div class="cl-head">
-        <span id="costoGuiaMarca_${i}" class="cl-marca">${marcaIni}</span>
+        ${fotoHtml}
+        <span id="costoGuiaMarca_${i}" class="cl-marca" hidden></span>
         <div class="cl-titles">
           <div class="cl-desc">${desc}${equivBadge}</div>
           <div class="cl-cod">▌ ${cod} · <b>${cant}u</b></div>
         </div>
+        <span class="cl-chip" id="costoGuiaChip_${i}">${chipHtml}</span>
       </div>
       <div class="cl-money">
         <label class="cl-field">
@@ -8864,16 +8868,42 @@ const MOS = (() => {
     </div>`;
   }
 
-  // [v2.43.603] Botón 💰 POR LÍNEA en el Paso 1 (pedido del dueño: sin checklist
-  // intermedia — con monto puesto aparece el botón y va DIRECTO al precio de ESE
-  // producto; sin monto, no hay botón). Estado ✓ cuando su precio ya se publicó.
+  // [v2.43.615] ¿esta línea YA tiene su precio puesto (Paso 2)? = publicado en esta sesión (_precioListo)
+  // o el precio del catálogo es FRESCO respecto al costo entrado (mismo criterio honesto que la Mesa).
+  function _costoLineaPreciada(l, p, brutoUnit) {
+    if (parseFloat(l && l._precioListo) > 0) return true;
+    if (!p || !(brutoUnit > 0)) return false;
+    const venta = parseFloat(p.precioVenta) || 0; if (!(venta > 0)) return false;
+    let margen = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : null;
+    if (margen == null) { try { const mi = _calcularMargenInfo(p); margen = mi ? parseFloat(mi.objetivo) : null; } catch(_){} }
+    if (margen == null || margen >= 100) return false;   // sin objetivo → no afirmamos "preciado"
+    return Math.abs(venta - _r1(brutoUnit / (1 - margen / 100))) <= 0.1;
+  }
+  // Chip de estado de la fila: Falta costo → Costo listo → Precio puesto.
+  function _costosChipHTML(brutoUnit, preciada) {
+    if (preciada) return '<span class="clc clc-done">✓ Precio puesto</span>';
+    if (brutoUnit > 0) return '<span class="clc clc-cost">● Costo listo</span>';
+    return '<span class="clc clc-pend">Falta costo</span>';
+  }
+
+  // [v2.43.615] Botón inteligente de precio POR LÍNEA. Sin monto → invita a escribirlo. Con costo y SIN
+  // precio → "💰 Poner precio". Con precio puesto → PINTA el precio (S/ + margen + # presentaciones) para
+  // leerlo de un vistazo; un toque = ✎ ajustar. Todo abre el editor de precio ENCIMA del modal de costos.
   function _costosLineaAccionesHTML(l, i, brutoUnit) {
-    if (l._precioListo > 0) {
-      return `<span class="cl-precio-ok">💰 ✓ precio publicado · S/ ${(+l._precioListo).toFixed(2)}</span>
-        <button class="cl-precio-btn sec" onclick="MOS.costosPrecioUno(${i})" title="Reabrir el editor de precio de este producto">✎ ajustar</button>`;
+    if (!(brutoUnit > 0)) return '<div class="cl-price-hint">✎ Escribe el monto y aparece “Poner precio”</div>';
+    const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
+    const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod) || {};
+    if (_costoLineaPreciada(l, p, brutoUnit)) {
+      const venta = parseFloat(l._precioListo) > 0 ? parseFloat(l._precioListo) : (parseFloat(p.precioVenta) || 0);
+      const margenReal = (venta > 0 && brutoUnit > 0) ? Math.round((1 - brutoUnit / venta) * 1000) / 10 : null;
+      let nSat = 0; try { nSat = _qpBuildRows(p).length; } catch(_){}
+      const meta = [margenReal != null ? 'margen ' + margenReal + '%' : '', nSat ? '+' + nSat + ' present.' : ''].filter(Boolean).join(' · ');
+      return `<button class="cl-priced" onclick="MOS.costosPrecioUno(${i})" title="Ajustar el precio de este producto">
+        <span class="clp-p">S/ ${venta.toFixed(2)}</span>
+        <span class="clp-meta"><span class="clp-m1">✓ precio puesto</span>${meta ? `<span class="clp-m2">${meta}</span>` : ''}</span>
+        <span class="clp-edit">✎ ajustar</span></button>`;
     }
-    if (!(brutoUnit > 0)) return '';
-    return `<button class="cl-precio-btn" onclick="MOS.costosPrecioUno(${i})" title="Poner el precio de venta de ESTE producto (margen, curvas y presentaciones) — se publica al catálogo al guardar">💰 Precio →</button>`;
+    return `<button class="cl-precio-btn" onclick="MOS.costosPrecioUno(${i})" title="Poner el precio de venta de ESTE producto (margen, curvas y presentaciones) — abre encima">💰 Poner precio →</button>`;
   }
 
   // [v2.43.603] Abre el Paso 2 de UN producto directo desde su línea del Paso 1.
@@ -8916,8 +8946,12 @@ const MOS = (() => {
       const st = S._costosGuiaState;
       if (st && st.lineas && st.lineas[li]) {
         st.lineas[li]._precioListo = f.precioEd;
+        const _bruto = _costosGuiaCalcularBruto(st.lineas[li], st) || 0;
         const acc = document.getElementById('costoGuiaAcc_' + li);
-        if (acc) acc.innerHTML = _costosLineaAccionesHTML(st.lineas[li], li, parseFloat(st.lineas[li].inputValue) > 0 ? 1 : 0);
+        if (acc) acc.innerHTML = _costosLineaAccionesHTML(st.lineas[li], li, _bruto);
+        // [v2.43.615] pintar el estado "Precio puesto" en la línea (chip + color)
+        const _chip = document.getElementById('costoGuiaChip_' + li); if (_chip) _chip.innerHTML = _costosChipHTML(_bruto, true);
+        const _row = document.getElementById('costoGuiaLinea_' + li); if (_row) { _row.classList.remove('is-nocost', 'is-cost'); _row.classList.add('is-done'); }
         _costosGuiaUpdPrecioProgreso();
       }
       toast(`✓ Publicado al catálogo${jobs.length > 1 ? ' con ' + (jobs.length - 1) + ' presentación(es)' : ''}`, 'ok');
@@ -9067,6 +9101,30 @@ const MOS = (() => {
         margin-left: auto;
       }
       #modalCostosGuiaUnif .ops-tg-check input { accent-color: #10b981; }
+      /* [v2.43.615] pill "actualiza catálogo" (reemplaza el check inútil — la actualización es obligatoria) */
+      #modalCostosGuiaUnif .ops-tg-auto { margin-left: auto; font-size: 10px; font-weight: 800; color: #34d399; background: rgba(52,211,153,.12); border: 1px solid rgba(52,211,153,.32); border-radius: 999px; padding: 4px 11px; white-space: nowrap; }
+      /* [v2.43.615] rediseño de la línea de costo: foto + chip de estado + botón que PINTA el precio */
+      #modalCostosGuiaUnif .cl-foto { flex: none; width: 44px; height: 44px; border-radius: 10px; overflow: hidden; background: #0a1220; border: 1px solid #28344c; display: grid; place-items: center; cursor: zoom-in; }
+      #modalCostosGuiaUnif .cl-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      #modalCostosGuiaUnif .cl-foto-empty { font-size: 20px; color: #3b4a63; cursor: default; }
+      #modalCostosGuiaUnif .cl-foto-err img { display: none; }
+      #modalCostosGuiaUnif .cl-foto-err::after { content: '📦'; font-size: 20px; color: #3b4a63; }
+      #modalCostosGuiaUnif .cl-chip { flex: none; align-self: flex-start; }
+      #modalCostosGuiaUnif .clc { font-size: 9px; font-weight: 800; letter-spacing: .02em; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+      #modalCostosGuiaUnif .clc-pend { background: rgba(148,163,184,.14); border: 1px solid rgba(148,163,184,.3); color: #93a4c2; }
+      #modalCostosGuiaUnif .clc-cost { background: rgba(251,191,36,.14); border: 1px solid rgba(251,191,36,.4); color: #fbbf24; }
+      #modalCostosGuiaUnif .clc-done { background: rgba(52,211,153,.15); border: 1px solid rgba(52,211,153,.45); color: #34d399; }
+      #modalCostosGuiaUnif .alm-v-costo-line.is-nocost { border-style: dashed; border-color: rgba(148,163,184,.3); }
+      #modalCostosGuiaUnif .alm-v-costo-line.is-cost { border-color: rgba(251,191,36,.32); background: linear-gradient(180deg,rgba(30,41,59,.65),rgba(251,191,36,.05)); }
+      #modalCostosGuiaUnif .alm-v-costo-line.is-done { border-color: rgba(52,211,153,.34); background: linear-gradient(180deg,rgba(30,41,59,.65),rgba(52,211,153,.06)); }
+      #modalCostosGuiaUnif .cl-price-hint { flex: 1; font-size: 11px; font-weight: 700; color: #5f7192; background: transparent; border: 1px dashed #3a4a6b; border-radius: 10px; padding: 9px 13px; text-align: center; }
+      #modalCostosGuiaUnif .cl-priced { flex: 1; display: flex; align-items: center; gap: 11px; background: linear-gradient(180deg,rgba(52,211,153,.16),rgba(52,211,153,.07)); border: 1px solid rgba(52,211,153,.45); border-radius: 11px; padding: 8px 13px; cursor: pointer; transition: .15s; }
+      #modalCostosGuiaUnif .cl-priced:hover { border-color: #34d399; box-shadow: 0 4px 14px -6px rgba(52,211,153,.5); }
+      #modalCostosGuiaUnif .clp-p { font-size: 17px; font-weight: 900; color: #34d399; font-family: ui-monospace,monospace; line-height: 1; }
+      #modalCostosGuiaUnif .clp-meta { display: flex; flex-direction: column; gap: 1px; line-height: 1.1; min-width: 0; }
+      #modalCostosGuiaUnif .clp-m1 { font-size: 9px; font-weight: 800; color: #34d399; text-transform: uppercase; letter-spacing: .03em; }
+      #modalCostosGuiaUnif .clp-m2 { font-size: 9.5px; color: #93a4c2; font-family: ui-monospace,monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #modalCostosGuiaUnif .clp-edit { margin-left: auto; flex: none; font-size: 10px; font-weight: 800; color: #93a4c2; background: #0e1626; border: 1px solid #28344c; border-radius: 8px; padding: 5px 10px; }
 
       /* Líneas de costo (cards) */
       #modalCostosGuiaUnif .alm-v-costo-line {
@@ -10478,12 +10536,10 @@ const MOS = (() => {
     S._mesaUltimaGuia = fuente + '_' + idGuia;
     if (m) m.classList.add('mesa-dimmed');
     S._mesaAbierta = true;
-    // Paso 1 si faltan costos; si costos completos, salta al Paso 2 (precios).
-    if (est.costos.con < est.costos.total || est.costos.total === 0) {
-      opsEntrarModoCostos(fuente, idGuia);
-    } else {
-      try { _paso2DesdeGuia(op); } catch(_) { opsEntrarModoCostos(fuente, idGuia); }
-    }
+    // [v2.43.615 · pedido del dueño] Costos / Precios / Revisar → SIEMPRE abre el Modal 1 (costos).
+    // Se eliminó el salto al checklist del Paso 2: los precios se ponen desde el botón de CADA producto
+    // (overlay encima del Modal 1), y ese botón PINTA el precio cuando ya está puesto.
+    opsEntrarModoCostos(fuente, idGuia);
   }
 
   // [L] Vuelve a la Mesa: des-atenúa + refresca (para ver el estado nuevo). Si se cerró, la reabre.
@@ -11034,6 +11090,11 @@ const MOS = (() => {
     // [v2.43.611] chip con × cuando el monto tiene valor
     const ci = $('costoGuiaCi_' + idx);
     if (ci) ci.classList.toggle('has-val', brutoUnit > 0);
+    // [v2.43.615] chip de estado + color de fila (Falta costo → Costo listo → Precio puesto)
+    const _pCat = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === String(linea.codigoBarra || linea.codigoProducto || '').trim());
+    const _prec = _costoLineaPreciada(linea, _pCat, brutoUnit);
+    const _chip = $('costoGuiaChip_' + idx); if (_chip) _chip.innerHTML = _costosChipHTML(brutoUnit, _prec);
+    const _row = $('costoGuiaLinea_' + idx); if (_row) { _row.classList.remove('is-nocost', 'is-cost', 'is-done'); _row.classList.add(_prec ? 'is-done' : (brutoUnit > 0 ? 'is-cost' : 'is-nocost')); }
     // Recalcular totales
     let totalBruto = 0;
     st.lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
@@ -11075,6 +11136,8 @@ const MOS = (() => {
     const ci = $('costoGuiaCi_' + idx); if (ci) { ci.classList.remove('has-val'); const inp = ci.querySelector('input'); if (inp) inp.value = ''; }
     const cell = $('costoGuiaSubtot_' + idx); if (cell) cell.innerHTML = _costosGuiaHelperHTML(0, 0);
     const acc = $('costoGuiaAcc_' + idx); if (acc) acc.innerHTML = _costosLineaAccionesHTML(linea, idx, 0);
+    const _chip = $('costoGuiaChip_' + idx); if (_chip) _chip.innerHTML = _costosChipHTML(0, false);
+    const _row = $('costoGuiaLinea_' + idx); if (_row) { _row.classList.remove('is-cost', 'is-done'); _row.classList.add('is-nocost'); }
     _costosGuiaUpdMarca(idx); _costosGuiaUpdProgreso();
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     // revertir el costo aplicado al catálogo (retroactivo) — best-effort, no bloquea la UI
@@ -11187,17 +11250,9 @@ const MOS = (() => {
       toast('No hay precios para guardar', 'error');
       return;
     }
-    // [fix dinero · rev 500x anteayer] El voucher inline (id costosGuiaUpdMasterV) y el modal Paso 1 (id
-    // costosGuiaUpdMaster) coexisten en el DOM (el modal se oculta con .hidden, no se remueve) → un
-    // getElementById genérico devolvía el PRIMERO (el del voucher) aunque el usuario guardara desde el modal,
-    // escribiendo/omitiendo precioCosto al catálogo contra su intención. Ahora leemos el checkbox VISIBLE.
-    const updateMaster = (function () {
-      const els = document.querySelectorAll('#costosGuiaUpdMaster, #costosGuiaUpdMasterV');
-      let vis = null;
-      els.forEach(function (el) { if (!vis) { const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) vis = el; } });
-      const el = vis || els[els.length - 1] || null;
-      return !!(el && el.checked);
-    })();
+    // [v2.43.615] La actualización del catálogo es OBLIGATORIA (pedido del dueño: el check era inútil).
+    // El costo de una compra SIEMPRE se aplica al catálogo. Antes había un checkbox opcional.
+    const updateMaster = true;
 
     // [v41.20] Capturar sugerencias inline marcadas para aplicar
     const sugerenciasInline = lineas
