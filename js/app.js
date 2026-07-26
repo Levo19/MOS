@@ -8744,13 +8744,20 @@ const MOS = (() => {
     const cant = parseFloat(l.cantidad) || 0;
     const brutoUnit = _costosGuiaCalcularBruto(l, st);
     const netoUnit  = brutoUnit / (1 + _IGV_RATE);
-    const desc = _escapeHtml(String(l.descripcion || l.codigoProducto || l.codigoBarra || ''));
-    const cod  = _escapeHtml(String(l.codigoBarra || l.codigoProducto || ''));
-    const equivBadge = l.esEquivalencia ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
+    const cod0 = String(l.codigoBarra || l.codigoProducto || '').trim();
+    // [v2.43.617] resolver el producto del catálogo INCLUYENDO equivalencias (antes solo por codigoBarra →
+    // los códigos equivalentes salían "sin catálogo", sin foto ni margen, y con la descripción cruda).
+    const prodCat = (typeof _resolverCodigoAProducto === 'function' ? _resolverCodigoAProducto(cod0, true) : null)
+                    || (S.productos || []).find(p => String(p.codigoBarra || '').trim() === cod0);
+    // si la descripción cacheada es el marcador "(no en catálogo)" pero el código SÍ resuelve por
+    // equivalencia, usar el nombre real del catálogo (robusto ante cache viejo).
+    const descRaw  = String(l.descripcion || '');
+    const descBad  = !descRaw || /\(no en cat[aá]logo\)|no existe en cat/i.test(descRaw);
+    const desc = _escapeHtml(String((descBad && prodCat) ? prodCat.descripcion : (descRaw || (prodCat && prodCat.descripcion) || l.codigoProducto || l.codigoBarra || '')));
+    const cod  = _escapeHtml(cod0);
+    const equivBadge = (l.esEquivalencia || (prodCat && String(prodCat.codigoBarra || '').trim() !== cod0)) ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
     const placeholder = st.inputMode === 'TOTAL' ? 'Total' : 'Unit';
     const helper = _costosGuiaHelperHTML(brutoUnit, netoUnit);
-    // [v2.43.615] producto del catálogo (para foto + estado "preciado")
-    const prodCat = (S.productos || []).find(p => String(p.codigoBarra || '').trim() === String(l.codigoBarra || l.codigoProducto || '').trim());
     const fotoUrl = prodCat ? String(prodCat.fotoUrl || prodCat.logoUrl || '').trim() : '';
     const fotoSafe = fotoUrl.replace(/'/g, "\\'");
     const fotoHtml = fotoUrl
