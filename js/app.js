@@ -33164,6 +33164,17 @@ const MOS = (() => {
           descDia = Math.round(descDia * 100) / 100;
           const netoDia = Math.round((mJor - descDia) * 100) / 100;
           out += dosCol('  Subneto del dia', (netoDia < 0 ? '-S/' : 'S/') + num(Math.abs(netoDia))) + '\n';
+        } else if (d) {
+          // [572] fallback comprobante: si el modal de créditos no cargó sus tickets pero el
+          // día tiene consumo, el servidor igual lo descuenta AUTO (autoConsumos) → reflejarlo
+          // para que el ticket cuadre EXACTO con lo que sale de caja (evita comprobante que miente).
+          const _cd = Math.round((parseFloat(d.consumoDia && d.consumoDia.total) || 0) * 100) / 100;
+          if (_cd > 0) {
+            descTotal += _cd;
+            out += compLine('Consumo a credito del dia', _cd, '-');
+            const netoDia = Math.round((mJor - _cd) * 100) / 100;
+            out += dosCol('  Subneto del dia', (netoDia < 0 ? '-S/' : 'S/') + num(Math.abs(netoDia))) + '\n';
+          }
         }
       });
       // créditos de días FUERA del rango pagado (no caen en ningún día del ticket) → bloque residual
@@ -33181,7 +33192,7 @@ const MOS = (() => {
         const pad = Math.max(0, Math.floor((half - s.length) / 2));
         return '\x1b\x21\x30' + ' '.repeat(pad) + s.slice(0, half) + '\x1b\x21\x00\n';
       };
-      if (!_marcados.length) {
+      if (descTotal <= 0) {
         out += bigLine('TOTAL A PAGAR', subtotal);
       } else {
         out += dosCol('Total jornal', fmtMon(subtotal)) + '\n';
