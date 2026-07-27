@@ -32797,17 +32797,7 @@ const MOS = (() => {
     // Render desglose
     $('liqConfirmSubtitle').textContent = `${items.length} persona(s) · 1 batch por persona`;
     $('liqConfirmTotal').textContent = _liqMoney(total);
-    $('liqConfirmDetalle').innerHTML = items.map(it => `
-      <div class="rounded-lg p-2" style="background:rgba(51,65,85,.4);border:1px solid #3a4b63">
-        <div class="flex items-center justify-between mb-1">
-          <div class="text-sm font-semibold text-slate-200">${_liqRolIco(it.rol)} ${it.nombre}</div>
-          <div class="text-sm font-bold text-amber-400">${_liqMoney(it.subtotal)}</div>
-        </div>
-        <div class="text-[10px] text-slate-500">
-          ${it.dias.map(d => `${_liqFmtFechaLarga(d.fecha)} ${_liqMoney(d.totalDia)}`).join(' · ')}
-        </div>
-      </div>
-    `).join('');
+    $('liqConfirmDetalle').innerHTML = items.map(it => _liqComprobanteCard(it)).join('');
     $('liqConfirmComentario').value = '';
     // [419] 🧾 notas de crédito: fetch async por persona (no bloquea abrir el modal);
     // checks default MARCADOS (regla del dueño: al liquidar se descuenta la deuda).
@@ -32889,23 +32879,15 @@ const MOS = (() => {
         <span class="text-slate-500 font-mono shrink-0">${_escapeHtml(String(t.fecha||'').slice(0,10))}</span>
         <span class="text-slate-400 flex-1 truncate">${_escapeHtml(t.correlativo || t.idVenta)}</span>
         <span class="text-rose-300 shrink-0">−S/ ${(parseFloat(t.total)||0).toFixed(2)}</span></label>`).join('');
-      return `<div class="rounded-xl p-3 mt-2" style="background:rgba(51,65,85,.4);border:1px solid #3a4b63">
-        <div class="flex items-center justify-between mb-1.5">
-          <div class="text-[11px] font-bold text-slate-300">🧾 Consumos de los días · ${_escapeHtml((per&&per.nombre)||idP)}</div>
-          <span class="text-[9px] font-bold px-2 py-0.5 rounded" style="background:rgba(59,130,246,.18);color:#93c5fd">🤖 AUTO</span>
-        </div>
-        <button type="button" onclick="MOS._liqTogglePeriodo('${idP}')" class="w-full flex items-center justify-between text-[11px] py-1">
-          <span class="text-slate-400">${delPeriodo.length>0 ? delPeriodo.length+' consumo(s) del período · ya descontado' : 'Sin consumo en estos días'}</span>
-          <span class="flex items-center gap-2"><b class="text-rose-300">−S/ ${periodoTot.toFixed(2)}</b>${delPeriodo.length>0?`<span class="text-slate-500">${_liqState.credPerOpen[idP]?'▾':'▸'}</span>`:''}</span>
+      // El comprobante ya muestra el consumo del período por día. Acá solo la
+      // opción de cobrar TAMBIÉN deuda vieja (otras fechas). Sin otras → nada.
+      if (!anteriores.length) return '';
+      return `<div class="rounded-xl p-2.5 mt-2" style="background:rgba(51,65,85,.35);border:1px solid #3a4b63">
+        <button type="button" onclick="MOS._liqToggleOtras('${idP}')" class="w-full flex items-center justify-between text-[10px] font-bold text-slate-400 hover:text-slate-200">
+          <span>⏳ ${_escapeHtml((per&&per.nombre)||idP)} · cobrar también deuda de otras fechas (opcional · ${anteriores.length} · S/${antTot.toFixed(2)})</span><span>${abierto?'▾':'▸'}</span>
         </button>
-        ${(_liqState.credPerOpen[idP] && delPeriodo.length) ? `<div class="pt-1 mt-1 border-t border-slate-800">${rowsPer}</div>` : ''}
-        ${anteriores.length ? `
-          <button type="button" onclick="MOS._liqToggleOtras('${idP}')" class="w-full flex items-center justify-between text-[10px] font-bold text-slate-500 hover:text-slate-300 mt-2 pt-2 border-t border-slate-800">
-            <span>⏳ Deuda de otras fechas · opcional (${anteriores.length} tk · S/${antTot.toFixed(2)})</span><span>${abierto?'▾':'▸'}</span>
-          </button>
-          ${abierto ? `<div class="mt-1" title="Márcalos solo si querés cobrar deuda vieja en este pago">${rowsAnt}</div>` : ''}
-          ${antSelTot>0 ? `<div class="flex items-center justify-between text-[11px] mt-1 text-amber-300"><span>+ deuda vieja marcada</span><b>−S/ ${antSelTot.toFixed(2)}</b></div>` : ''}
-        ` : ''}
+        ${abierto ? `<div class="mt-1" title="Márcalos solo si querés cobrar deuda vieja en este pago">${rowsAnt}</div>` : ''}
+        ${antSelTot>0 ? `<div class="flex items-center justify-between text-[11px] mt-1 text-amber-300"><span>+ deuda vieja marcada</span><b>−S/ ${antSelTot.toFixed(2)}</b></div>` : ''}
       </div>`;
     }).join('');
     descGlobal = Math.round(descGlobal * 100) / 100;
@@ -32944,6 +32926,42 @@ const MOS = (() => {
     _liqState.credPerOpen[idP] = !_liqState.credPerOpen[idP];
     _liqRenderCreditos();
     _liqSfx(_liqState.credPerOpen[idP] ? 'expand' : 'collapse');
+  }
+  // [2.43.625] Comprobante ELEGANTE (tipo imagen, estilo guía WH) para el preview de pago.
+  // Calcula el neto al vuelo desde consumoDia de los días — coincide con lo que paga el server.
+  function _liqComprobanteCard(it) {
+    const dd = it.dias || [];
+    const M = _liqMoney;
+    const fCorta = f => { const s = String(f || ''); return s.slice(8) + '/' + s.slice(5, 7); };
+    let jornal = 0, consumo = 0;
+    const rows = dd.map(d => {
+      const t = parseFloat(d.totalDia) || 0;
+      const c = parseFloat(d.consumoDia && d.consumoDia.total) || 0;
+      jornal += t; consumo += c;
+      const nd = Math.round((t - c) * 100) / 100;
+      const parts = [];
+      if ((d.montoBase || 0) > 0) parts.push('base ' + Number(d.montoBase).toFixed(2));
+      if ((d.pagoEnvasado || 0) > 0) parts.push('env ' + Number(d.pagoEnvasado).toFixed(2) + ((parseFloat(d.pagoEnvasadoColab) || 0) > 0 ? ' 🤝' : ''));
+      if ((d.bonoMeta || 0) > 0) parts.push('meta ' + Number(d.bonoMeta).toFixed(2));
+      if ((d.bonificacion || 0) > 0) parts.push('bono ' + Number(d.bonificacion).toFixed(2));
+      if ((d.sancion || 0) > 0) parts.push('−san ' + Number(d.sancion).toFixed(2));
+      const cons = c > 0 ? ' · <span style="color:#c2410c">cons −' + c.toFixed(2) + '</span>' : '';
+      return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:5px 0;border-bottom:1px dashed rgba(15,23,42,.1)"><div style="min-width:0"><b style="color:#0f172a">' + _liqFmtFechaLarga(d.fecha) + '</b> <span style="color:#64748b">' + parts.join(' · ') + cons + '</span></div><b style="color:#0f766e;white-space:nowrap;margin-left:8px">' + M(nd) + '</b></div>';
+    }).join('');
+    jornal = Math.round(jornal * 100) / 100; consumo = Math.round(consumo * 100) / 100;
+    const neto = Math.round((jornal - consumo) * 100) / 100;
+    const f0 = dd.length ? fCorta(dd[0].fecha) : '';
+    const f1 = dd.length ? fCorta(dd[dd.length - 1].fecha) : '';
+    return '<div style="background:linear-gradient(160deg,#ffffff,#f0fdf9);border-radius:16px;padding:18px;color:#1e293b;margin-bottom:12px;box-shadow:0 6px 22px rgba(0,0,0,.28)">'
+      + '<div style="text-align:center;border-bottom:2px solid #0f766e;padding-bottom:10px;margin-bottom:10px"><div style="font-size:15px;font-weight:900;color:#0f766e;letter-spacing:.5px">INVERSIONES MOS</div><div style="font-size:10px;color:#64748b;font-weight:600">Comprobante de liquidación</div></div>'
+      + '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:10px"><div><div style="font-weight:800;font-size:13px">' + _escapeHtml(it.nombre || '') + '</div><div style="color:#64748b;text-transform:capitalize">' + _escapeHtml(String(it.rol || '').toLowerCase()) + '</div></div><div style="text-align:right"><div style="color:#64748b">' + f0 + ' – ' + f1 + '</div><div style="font-weight:700">' + dd.length + ' día(s)</div></div></div>'
+      + rows
+      + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #cbd5e1;font-size:11px">'
+      + '<div style="display:flex;justify-content:space-between;padding:1px 0"><span style="color:#64748b">Jornal + bonos + envasado</span><b>' + M(jornal) + '</b></div>'
+      + (consumo > 0 ? '<div style="display:flex;justify-content:space-between;padding:1px 0"><span style="color:#c2410c">− Consumos a crédito (auto)</span><b style="color:#c2410c">−' + M(consumo) + '</b></div>' : '')
+      + '</div>'
+      + '<div style="margin-top:8px;background:#0f766e;border-radius:11px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;color:#fff"><div style="font-size:10px;font-weight:700;opacity:.85">NETO A PAGAR</div><div style="font-size:22px;font-weight:900">' + M(neto) + '</div></div>'
+      + '</div>';
   }
 
   // [v2.41.72-B11] Lock anti-doble-click: si ya se está procesando un pago,
