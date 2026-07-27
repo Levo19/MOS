@@ -32392,12 +32392,13 @@ const MOS = (() => {
             : `<div class="text-sm font-bold text-amber-400">${_liqMoney(d.totalDia)}</div>`}
         </div>
         <button onclick="event.stopPropagation();MOS._liqEditarDia('${idPersonal}', '${d.fecha}')"
-                class="text-xs px-2 py-1 rounded transition-all hover:scale-110 liq-btn-edit-tip"
-                style="background:rgba(99,102,241,.1);color:#a5b4fc;border:1px solid rgba(99,102,241,.3)"
-                aria-label="Auditar y recomputar este día">✏</button>
+                class="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-80 shrink-0"
+                style="background:#3f8cff;color:#fff;border:none"
+                aria-label="Auditar: registrar bonos y descuentos, ver progreso">Auditar</button>
         <button onclick="event.stopPropagation();MOS._liqConfirmarVetar('${idPersonal}', '${d.fecha}')"
-                class="liq-btn-vetar"
-                title="Vetar: quita este día de pendientes (no paga, no computa). Reversible.">💸</button>
+                class="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-80 shrink-0"
+                style="background:transparent;color:#f87171;border:1px solid rgba(248,113,113,.45)"
+                title="Vetar: marca este día NO pagable (reversible con Desvetar)">Vetar</button>
       </div>`;
   }
 
@@ -32797,7 +32798,7 @@ const MOS = (() => {
     $('liqConfirmSubtitle').textContent = `${items.length} persona(s) · 1 batch por persona`;
     $('liqConfirmTotal').textContent = _liqMoney(total);
     $('liqConfirmDetalle').innerHTML = items.map(it => `
-      <div class="rounded-lg p-2" style="background:rgba(15,23,42,.5);border:1px solid #1e293b">
+      <div class="rounded-lg p-2" style="background:rgba(51,65,85,.4);border:1px solid #3a4b63">
         <div class="flex items-center justify-between mb-1">
           <div class="text-sm font-semibold text-slate-200">${_liqRolIco(it.rol)} ${it.nombre}</div>
           <div class="text-sm font-bold text-amber-400">${_liqMoney(it.subtotal)}</div>
@@ -32888,7 +32889,7 @@ const MOS = (() => {
         <span class="text-slate-500 font-mono shrink-0">${_escapeHtml(String(t.fecha||'').slice(0,10))}</span>
         <span class="text-slate-400 flex-1 truncate">${_escapeHtml(t.correlativo || t.idVenta)}</span>
         <span class="text-rose-300 shrink-0">−S/ ${(parseFloat(t.total)||0).toFixed(2)}</span></label>`).join('');
-      return `<div class="rounded-xl p-3 mt-2" style="background:rgba(15,23,42,.6);border:1px solid #1e293b">
+      return `<div class="rounded-xl p-3 mt-2" style="background:rgba(51,65,85,.4);border:1px solid #3a4b63">
         <div class="flex items-center justify-between mb-1.5">
           <div class="text-[11px] font-bold text-slate-300">🧾 Consumos de los días · ${_escapeHtml((per&&per.nombre)||idP)}</div>
           <span class="text-[9px] font-bold px-2 py-0.5 rounded" style="background:rgba(59,130,246,.18);color:#93c5fd">🤖 AUTO</span>
