@@ -31782,8 +31782,11 @@ const MOS = (() => {
 
   async function liqOpen() {
     _liqState.tab = 'pendientes';
-    // [B2 + B7] Restaurar selección y filtro persistente del usuario
-    _liqState.seleccion = _liqLoadSeleccion();
+    // [dueño 2.43.632] SIEMPRE entra LIMPIO: no restaurar la selección persistida (evita
+    // que al reabrir/refrescar quede marcado lo último y se cruce con datos viejos). La
+    // selección vive solo en memoria durante la sesión (sobrevive el polling, no el reopen).
+    _liqState.seleccion = {};
+    try { localStorage.removeItem('mos_liq_seleccion'); } catch(_){}
     _liqState.filtroPersonas = _liqLoadFiltroPersonas();
     _liqState.expandidos = {};
     // ⚡ Materializado: backend lee directo de LIQUIDACIONES_DIA, podemos
@@ -32295,7 +32298,9 @@ const MOS = (() => {
   function _liqCardPersona(p, idx) {
     const expandido = _liqState.expandidos[p.idPersonal] !== false; // default abierto
     const sel = _liqState.seleccion[p.idPersonal] || new Set();
-    const selDias = sel.size || 0;
+    // [dueño 2.43.632] contar SOLO los días válidos (que existen en pendientes), no la
+    // selección cruda → si un día se pagó/cambió, el conteo no queda inflado.
+    const selDias = p.dias.filter(d => sel.has(d.fecha)).length;
     const todoSelec = selDias === p.dias.length && selDias > 0;
     const subtotalSel = p.dias.filter(d => sel.has(d.fecha)).reduce((s,d) => s + d.totalDia, 0);
     // [422] consumo a crédito de los días SELECCIONADOS (o de todos si no hay selección)
@@ -32796,6 +32801,7 @@ const MOS = (() => {
       const p = _liqState.pendientes.find(x => x.idPersonal === idP);
       if (!p) return;
       const dias = p.dias.filter(d => sel.has(d.fecha));
+      if (!dias.length) return;   // [dueño 2.43.632] sin días válidos (selección vieja) → NO incluir (evita fantasma S/0.00)
       const subtotal = dias.reduce((s,d) => s + d.totalDia, 0);
       items.push({ idPersonal: idP, nombre: p.nombre, rol: p.rol, dias, subtotal });
       total += subtotal;
@@ -33279,14 +33285,12 @@ const MOS = (() => {
 
   // ── Elegir impresora — reusa el modal modalSelPrinterLiq del audit ──
   function _liqElegirImpresora() {
+    // [dueño 2.43.632] SIEMPRE deja elegir la impresora (no reusar la última). El único
+    // paso que se quitó es el preview ASCII (el comprobante del modal ya es el preview).
     return abrirPrinterPicker({
       titulo: '🖨 Imprimir liquidación',
       subtitulo: `Pago de liquidación · ${(_liqState.tab === 'pendientes' ? 'pendientes' : 'reimpresión')}`,
-      filtroTipo: 'TICKET',
-      // [dueño 2.43.631] memoria de impresora: si ya elegiste una y sigue ONLINE, imprime
-      // DIRECTO (sin volver a abrir el picker). Solo la 1ª vez / si se desconecta pide elegir.
-      flowKey: 'liq',
-      autoUsarUltima: true
+      filtroTipo: 'TICKET'
     });
   }
 
