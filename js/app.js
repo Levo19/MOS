@@ -32852,59 +32852,80 @@ const MOS = (() => {
     const data = _liqState.creditosData || {};
     const ids = Object.keys(data);
     if (!ids.length) { sec.innerHTML = ''; return; }
-    let desc = 0;
+    _liqState.credOtrasOpen = _liqState.credOtrasOpen || {};
+    let descGlobal = 0;
     const bloques = ids.map(idP => {
       const per = _liqState.pendientes.find(x => x.idPersonal === idP);
-      const sel = _liqState.creditosSel[idP] || new Set();
+      const sel = _liqState.creditosSel[idP] || (_liqState.creditosSel[idP] = new Set());
       const fechasSel = _liqState.creditosFechas?.[idP] || new Set();
-      // [572] consumo del PERÍODO = AUTOMÁTICO (server-truth, no deseleccionable →
-      // no se puede evadir la deuda del día). Deuda de OTRAS fechas = opcional (checkbox).
-      const fila = (t, auto) => {
-        const on = auto || sel.has(t.idVenta);
-        if (on) desc += parseFloat(t.total) || 0;
-        if (auto) {
-          return `<div class="flex items-center gap-2 text-[11px] py-0.5">
-            <span class="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background:rgba(59,130,246,.18);color:#93c5fd">🤖 AUTO</span>
-            <span class="text-slate-400 font-mono">${_escapeHtml(t.fecha || '')}</span>
-            <span class="text-slate-300 flex-1 truncate">${_escapeHtml(t.correlativo || t.idVenta)}</span>
-            <span class="font-bold text-rose-300">−S/ ${(parseFloat(t.total) || 0).toFixed(2)}</span>
-          </div>`;
-        }
-        return `<label class="flex items-center gap-2 text-[11px] py-0.5 cursor-pointer">
-          <input type="checkbox" data-cred="1" data-idp="${idP}" data-venta="${t.idVenta}" ${sel.has(t.idVenta) ? 'checked' : ''} class="w-3.5 h-3.5">
-          <span class="text-slate-400 font-mono">${_escapeHtml(t.fecha || '')}</span>
-          <span class="text-slate-300 flex-1 truncate">${_escapeHtml(t.correlativo || t.idVenta)}</span>
-          <span class="font-bold text-rose-300">−S/ ${(parseFloat(t.total) || 0).toFixed(2)}</span>
-        </label>`;
-      };
-      // [421b/572] dos grupos: consumo de LOS DÍAS que se liquidan (AUTO) vs deuda de
-      // otras fechas (opcional, checkbox — días ya liquidados antes u otros períodos).
+      // [572] consumo del PERÍODO = AUTOMÁTICO y mandatorio (server-truth). Deuda de
+      // OTRAS fechas = opcional y COLAPSADA por defecto (no confunde, no se pre-cobra).
       const delPeriodo = data[idP].filter(t => fechasSel.has(String(t.fecha || '')));
       const anteriores = data[idP].filter(t => !fechasSel.has(String(t.fecha || '')));
-      const fDel = delPeriodo.map(t => fila(t, true)).join('');
-      const fAnt = anteriores.map(t => fila(t, false)).join('');
-      return `<div class="rounded-lg p-2 mt-2" style="background:rgba(120,53,15,.18);border:1px solid rgba(245,158,11,.3)">
-        <div class="text-[11px] font-bold text-amber-300 mb-1">🧾 Consumos de los días a liquidar · ${_escapeHtml((per && per.nombre) || idP)} <span class="text-[9px] font-normal" style="color:#93c5fd">· automático</span></div>
-        ${fDel || '<p class="text-[10px] text-slate-500">Sin consumo a crédito en los días seleccionados</p>'}
-        ${fAnt ? `<div class="text-[10px] font-bold text-slate-500 mt-2 mb-0.5" title="Tickets de fechas fuera de esta liquidación (p.ej. días ya pagados antes). Márcalos solo si quieres cobrarlos en este pago.">⏳ Deuda de otras fechas (opcional)</div>${fAnt}` : ''}
+      const periodoTot = Math.round(delPeriodo.reduce((s,t) => s + (parseFloat(t.total)||0), 0) * 100) / 100;
+      const antSel     = anteriores.filter(t => sel.has(t.idVenta));
+      const antSelTot  = Math.round(antSel.reduce((s,t) => s + (parseFloat(t.total)||0), 0) * 100) / 100;
+      const antTot     = Math.round(anteriores.reduce((s,t) => s + (parseFloat(t.total)||0), 0) * 100) / 100;
+      descGlobal += periodoTot + antSelTot;
+      const abierto = !!_liqState.credOtrasOpen[idP];
+      const rowsPer = delPeriodo.length
+        ? delPeriodo.map(t => `<div class="flex items-center gap-2 text-[11px] py-0.5">
+            <span class="text-slate-500 font-mono shrink-0">${_escapeHtml(String(t.fecha||'').slice(5))}</span>
+            <span class="text-slate-400 flex-1 truncate">${_escapeHtml(t.correlativo || t.idVenta)}</span>
+            <span class="text-rose-300 shrink-0">−S/ ${(parseFloat(t.total)||0).toFixed(2)}</span></div>`).join('')
+        : '<p class="text-[10px] text-slate-500">Sin consumo a crédito en los días seleccionados</p>';
+      const rowsAnt = anteriores.map(t => `<label class="flex items-center gap-2 text-[11px] py-0.5 cursor-pointer">
+        <input type="checkbox" data-cred="1" data-idp="${idP}" data-venta="${t.idVenta}" ${sel.has(t.idVenta)?'checked':''} class="w-3.5 h-3.5 shrink-0">
+        <span class="text-slate-500 font-mono shrink-0">${_escapeHtml(String(t.fecha||'').slice(0,10))}</span>
+        <span class="text-slate-400 flex-1 truncate">${_escapeHtml(t.correlativo || t.idVenta)}</span>
+        <span class="text-rose-300 shrink-0">−S/ ${(parseFloat(t.total)||0).toFixed(2)}</span></label>`).join('');
+      return `<div class="rounded-xl p-3 mt-2" style="background:rgba(15,23,42,.6);border:1px solid #1e293b">
+        <div class="flex items-center justify-between mb-1.5">
+          <div class="text-[11px] font-bold text-slate-300">🧾 Consumos de los días · ${_escapeHtml((per&&per.nombre)||idP)}</div>
+          <span class="text-[9px] font-bold px-2 py-0.5 rounded" style="background:rgba(59,130,246,.18);color:#93c5fd">🤖 AUTO</span>
+        </div>
+        ${rowsPer}
+        <div class="flex items-center justify-between text-[11px] mt-1.5 pt-1.5 border-t border-slate-800">
+          <span class="text-slate-400">Se descuenta automático</span><b class="text-rose-300">−S/ ${periodoTot.toFixed(2)}</b>
+        </div>
+        ${anteriores.length ? `
+          <button type="button" onclick="MOS._liqToggleOtras('${idP}')" class="w-full flex items-center justify-between text-[10px] font-bold text-slate-500 hover:text-slate-300 mt-2 pt-2 border-t border-slate-800">
+            <span>⏳ Deuda de otras fechas · opcional (${anteriores.length} tk · S/${antTot.toFixed(2)})</span><span>${abierto?'▾':'▸'}</span>
+          </button>
+          ${abierto ? `<div class="mt-1" title="Márcalos solo si querés cobrar deuda vieja en este pago">${rowsAnt}</div>` : ''}
+          ${antSelTot>0 ? `<div class="flex items-center justify-between text-[11px] mt-1 text-amber-300"><span>+ deuda vieja marcada</span><b>−S/ ${antSelTot.toFixed(2)}</b></div>` : ''}
+        ` : ''}
       </div>`;
     }).join('');
-    desc = Math.round(desc * 100) / 100;
-    const neto = Math.round(((_liqState.confirmTotal || 0) - desc) * 100) / 100;
+    descGlobal = Math.round(descGlobal * 100) / 100;
+    const bruto = _liqState.confirmTotal || 0;
+    const neto = Math.round((bruto - descGlobal) * 100) / 100;
     sec.innerHTML = bloques + `
-      <div class="flex items-center justify-between mt-2 px-1 text-sm">
-        <span class="text-slate-400 font-semibold">Descuento créditos: <b class="text-rose-300">−S/ ${desc.toFixed(2)}</b></span>
-        <span class="font-black ${neto < 0 ? 'text-rose-400' : 'text-emerald-400'}">NETO: S/ ${neto.toFixed(2)}</span>
+      <div class="flex items-center justify-between mt-3 p-3 rounded-xl" style="background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(15,23,42,.6));border:1px solid rgba(16,185,129,.25)">
+        <div><div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Neto a pagar</div>
+             <div class="text-[10px] text-slate-500">${_liqMoney(bruto)} jornal − ${_liqMoney(descGlobal)} consumos</div></div>
+        <span class="text-2xl font-black ${neto<0?'text-rose-400':'text-emerald-400'}">${_liqMoney(neto)}</span>
       </div>`;
+    const totalEl = document.getElementById('liqConfirmTotal');
+    if (totalEl) totalEl.innerHTML = descGlobal>0
+      ? `${_liqMoney(neto)} <span style="font-size:.5em;color:#64748b;font-weight:600">neto · de ${_liqMoney(bruto)}</span>`
+      : _liqMoney(bruto);
     sec.querySelectorAll('input[data-cred]').forEach(chk => {
       chk.addEventListener('change', () => {
         const idP = chk.getAttribute('data-idp'), idV = chk.getAttribute('data-venta');
-        const sel = _liqState.creditosSel[idP] || (_liqState.creditosSel[idP] = new Set());
-        if (chk.checked) sel.add(idV); else sel.delete(idV);
+        const s = _liqState.creditosSel[idP] || (_liqState.creditosSel[idP] = new Set());
+        if (chk.checked) s.add(idV); else s.delete(idV);
         _liqRenderCreditos();
         _liqSfx('open');
       });
     });
+  }
+  // [572] colapsar/expandir la deuda de otras fechas (opcional) por persona.
+  function _liqToggleOtras(idP) {
+    _liqState.credOtrasOpen = _liqState.credOtrasOpen || {};
+    _liqState.credOtrasOpen[idP] = !_liqState.credOtrasOpen[idP];
+    _liqRenderCreditos();
+    _liqSfx(_liqState.credOtrasOpen[idP] ? 'expand' : 'collapse');
   }
 
   // [v2.41.72-B11] Lock anti-doble-click: si ya se está procesando un pago,
@@ -44369,7 +44390,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     liqOpen, liqClose, liqSetTab, liqRefresh, liqAbrirConfirmacion, liqConfirmarPago,
     liqReimprimirPago, liqAnularPago,
     _liqCerrarModalAnular, _liqConfirmarAnular,
-    _liqTogglePersona, _liqToggleDia, _liqToggleAll,
+    _liqTogglePersona, _liqToggleDia, _liqToggleAll, _liqToggleOtras,
     _liqEditarDia, _liqAbrirPagoDet, _liqBackfillDia,
     // [v2.41.31] Vetar/desvetar inline
     _liqVetarDia, _liqDesvetarDia, _liqToggleVetadasPanel,
