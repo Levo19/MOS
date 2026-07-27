@@ -32353,16 +32353,20 @@ const MOS = (() => {
     const audCls = d.auditado ? 'aud-ok' : 'no-aud';
     const sel = isSelected ? ' selected' : '';
     // Línea sub: componentes del totalDia
-    // [572] desglose claro: ingresos (jornal/envasar/meta) − descuentos (sanción/consumo) = neto
-    const partes = [];
-    if (d.montoBase    > 0) partes.push(`<span style="color:#94a3b8">jornal ${d.montoBase.toFixed(2)}</span>`);
-    if (d.pagoEnvasado > 0) partes.push(`<span style="color:#a78bfa">+envasar ${d.pagoEnvasado.toFixed(2)}</span>`);
-    if (d.bonoMeta     > 0) partes.push(`<span style="color:#34d399">+meta ${d.bonoMeta.toFixed(2)}</span>`);
-    if (d.sancion      > 0) partes.push(`<span style="color:#f87171">−sanción ${d.sancion.toFixed(2)}</span>`);
-    // [422/572] consumo a crédito de ESE día → el admin ve el neto real ANTES de pagar.
-    // Se descuenta AUTOMÁTICO al confirmar (server-truth, autoConsumos).
+    // [572] CADA CONCEPTO en su propio chip, separado en ingresos (+) y descuentos (−).
+    // Incluye la bonificación manual (antes NO se mostraba en la fila).
+    const _chip = (txt, col, bg) => `<span style="display:inline-block;padding:1px 6px;border-radius:5px;font-size:9.5px;font-weight:600;color:${col};background:${bg};white-space:nowrap">${txt}</span>`;
+    const _ing = [], _des = [];
+    if (d.montoBase    > 0) _ing.push(_chip(`jornal ${d.montoBase.toFixed(2)}`,      '#93c5fd', 'rgba(59,130,246,.12)'));
+    if (d.pagoEnvasado > 0) _ing.push(_chip(`+envasar ${d.pagoEnvasado.toFixed(2)}`, '#c4b5fd', 'rgba(139,92,246,.14)'));
+    if (d.bonoMeta     > 0) _ing.push(_chip(`+meta ${d.bonoMeta.toFixed(2)}`,        '#6ee7b7', 'rgba(16,185,129,.14)'));
+    if (d.bonificacion > 0) _ing.push(_chip(`+bono ${d.bonificacion.toFixed(2)}`,    '#6ee7b7', 'rgba(16,185,129,.14)'));
+    if (d.sancion      > 0) _des.push(_chip(`−sanción ${d.sancion.toFixed(2)}`,      '#fca5a5', 'rgba(239,68,68,.14)'));
+    // [422/572] consumo a crédito de ESE día → se descuenta AUTOMÁTICO al confirmar (server-truth, autoConsumos).
     const _cons = parseFloat(d.consumoDia && d.consumoDia.total) || 0;
-    if (_cons > 0) partes.push(`<span style="color:#fbbf24">−consumo ${_cons.toFixed(2)} 🤖</span>`);
+    if (_cons > 0) _des.push(_chip(`−consumo ${_cons.toFixed(2)} 🤖`, '#fcd34d', 'rgba(245,158,11,.14)'));
+    const _netoDia = Math.round((d.totalDia - _cons) * 100) / 100;
+    const _chips = _ing.concat(_des);
     return `
       <div class="liq-dia-row ${audCls}${sel}" data-row-key="${idPersonal}|${d.fecha}">
         <input type="checkbox" class="liq-check" ${isSelected ? 'checked' : ''}
@@ -32371,11 +32375,13 @@ const MOS = (() => {
           <div class="text-xs text-slate-200 font-medium">${fechaCorta}
             ${d.auditado ? '<span class="text-[9px] text-emerald-400 ml-1">✓ auditado</span>' : '<span class="text-[9px] text-amber-400 ml-1">⚠ sin auditar</span>'}
           </div>
-          ${partes.length ? `<div class="text-[10px] text-slate-500 mt-0.5">${partes.join(' · ')}</div>` : ''}
+          ${_chips.length ? `<div class="mt-1 flex flex-wrap gap-1">${_chips.join('')}</div>` : ''}
         </div>
         <div class="text-right shrink-0">
-          <div class="text-sm font-bold text-amber-400">${_liqMoney(d.totalDia)}</div>
-          ${_cons > 0 ? `<div class="text-[9px]" style="color:#fbbf24" title="Jornal − consumo a crédito de este día (se descuenta al pagar)">neto ${_liqMoney(Math.round((d.totalDia - _cons) * 100) / 100)}</div>` : ''}
+          ${_des.length
+            ? `<div class="text-sm font-bold" style="color:#34d399">${_liqMoney(_netoDia)}</div>
+               <div class="text-[9px] text-slate-500" title="Total del día antes de descuentos">de ${_liqMoney(d.totalDia)}</div>`
+            : `<div class="text-sm font-bold text-amber-400">${_liqMoney(d.totalDia)}</div>`}
         </div>
         <button onclick="event.stopPropagation();MOS._liqEditarDia('${idPersonal}', '${d.fecha}')"
                 class="text-xs px-2 py-1 rounded transition-all hover:scale-110 liq-btn-edit-tip"
