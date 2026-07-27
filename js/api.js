@@ -2274,14 +2274,17 @@ const API = (() => {
         pagadoPor: p.pagadoPor != null ? p.pagadoPor : _mosUsuario(p), comentario: p.comentario,
         // [419] 🧾 notas de crédito a descontar por planilla (ids de me.ventas elegidos por el
         // admin). La RPC valida doc+estado y descuenta EN LA MISMA TX del pago (todo o nada).
-        creditos: Array.isArray(p.creditos) && p.creditos.length ? p.creditos : undefined
+        creditos: Array.isArray(p.creditos) && p.creditos.length ? p.creditos : undefined,
+        // [572] 🤖 CONSUMOS AUTOMÁTICOS: el servidor descuenta TODOS los créditos vivos de los
+        // días que se pagan (server-truth). Con esto la lista `creditos` es opcional (extras).
+        autoConsumos: p.autoConsumos === true ? true : undefined
       } });
       if (out == null) {
         // [419 · review MED7] Si hay créditos que descontar, NO caer a GAS: el GAS no
         // conoce el parámetro → pagaría SIN descontar y el ticket impreso ya dice
         // "NETO A PAGAR" con descuento → comprobante que miente el monto entregado.
         // Mejor fallar visible para que el admin reintente cuando haya token/directo.
-        if (Array.isArray(p.creditos) && p.creditos.length) {
+        if ((Array.isArray(p.creditos) && p.creditos.length) || p.autoConsumos === true) {
           throw new Error('No se pudo aplicar el descuento de créditos (sin conexión directa) — reintenta en un momento.');
         }
         return null;                           // sin créditos y sin token → GAS (comportamiento normal)

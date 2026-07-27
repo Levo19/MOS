@@ -32353,15 +32353,16 @@ const MOS = (() => {
     const audCls = d.auditado ? 'aud-ok' : 'no-aud';
     const sel = isSelected ? ' selected' : '';
     // Línea sub: componentes del totalDia
+    // [572] desglose claro: ingresos (jornal/envasar/meta) − descuentos (sanción/consumo) = neto
     const partes = [];
-    if (d.montoBase    > 0) partes.push(`base ${d.montoBase.toFixed(2)}`);
-    if (d.pagoEnvasado > 0) partes.push(`env ${d.pagoEnvasado.toFixed(2)}`);
+    if (d.montoBase    > 0) partes.push(`<span style="color:#94a3b8">jornal ${d.montoBase.toFixed(2)}</span>`);
+    if (d.pagoEnvasado > 0) partes.push(`<span style="color:#a78bfa">+envasar ${d.pagoEnvasado.toFixed(2)}</span>`);
     if (d.bonoMeta     > 0) partes.push(`<span style="color:#34d399">+meta ${d.bonoMeta.toFixed(2)}</span>`);
-    if (d.sancion      > 0) partes.push(`<span style="color:#f87171">−san ${d.sancion.toFixed(2)}</span>`);
-    // [422] consumo a crédito de ESE día → el admin ve el neto real ANTES de pagar
-    // (al confirmar, estos tickets van marcados por defecto y el gasto sale por el neto)
+    if (d.sancion      > 0) partes.push(`<span style="color:#f87171">−sanción ${d.sancion.toFixed(2)}</span>`);
+    // [422/572] consumo a crédito de ESE día → el admin ve el neto real ANTES de pagar.
+    // Se descuenta AUTOMÁTICO al confirmar (server-truth, autoConsumos).
     const _cons = parseFloat(d.consumoDia && d.consumoDia.total) || 0;
-    if (_cons > 0) partes.push(`<span style="color:#fbbf24">🧾 consumo −${_cons.toFixed(2)}</span>`);
+    if (_cons > 0) partes.push(`<span style="color:#fbbf24">−consumo ${_cons.toFixed(2)} 🤖</span>`);
     return `
       <div class="liq-dia-row ${audCls}${sel}" data-row-key="${idPersonal}|${d.fecha}">
         <input type="checkbox" class="liq-check" ${isSelected ? 'checked' : ''}
@@ -32850,26 +32851,36 @@ const MOS = (() => {
       const per = _liqState.pendientes.find(x => x.idPersonal === idP);
       const sel = _liqState.creditosSel[idP] || new Set();
       const fechasSel = _liqState.creditosFechas?.[idP] || new Set();
-      const fila = (t) => {
-        const on = sel.has(t.idVenta);
+      // [572] consumo del PERÍODO = AUTOMÁTICO (server-truth, no deseleccionable →
+      // no se puede evadir la deuda del día). Deuda de OTRAS fechas = opcional (checkbox).
+      const fila = (t, auto) => {
+        const on = auto || sel.has(t.idVenta);
         if (on) desc += parseFloat(t.total) || 0;
+        if (auto) {
+          return `<div class="flex items-center gap-2 text-[11px] py-0.5">
+            <span class="text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background:rgba(59,130,246,.18);color:#93c5fd">🤖 AUTO</span>
+            <span class="text-slate-400 font-mono">${_escapeHtml(t.fecha || '')}</span>
+            <span class="text-slate-300 flex-1 truncate">${_escapeHtml(t.correlativo || t.idVenta)}</span>
+            <span class="font-bold text-rose-300">−S/ ${(parseFloat(t.total) || 0).toFixed(2)}</span>
+          </div>`;
+        }
         return `<label class="flex items-center gap-2 text-[11px] py-0.5 cursor-pointer">
-          <input type="checkbox" data-cred="1" data-idp="${idP}" data-venta="${t.idVenta}" ${on ? 'checked' : ''} class="w-3.5 h-3.5">
+          <input type="checkbox" data-cred="1" data-idp="${idP}" data-venta="${t.idVenta}" ${sel.has(t.idVenta) ? 'checked' : ''} class="w-3.5 h-3.5">
           <span class="text-slate-400 font-mono">${_escapeHtml(t.fecha || '')}</span>
           <span class="text-slate-300 flex-1 truncate">${_escapeHtml(t.correlativo || t.idVenta)}</span>
           <span class="font-bold text-rose-300">−S/ ${(parseFloat(t.total) || 0).toFixed(2)}</span>
         </label>`;
       };
-      // [421b] dos grupos: consumo de LOS DÍAS que se liquidan (marcado) vs deuda de
-      // otras fechas (desmarcado, opcional — días ya liquidados antes u otros períodos).
+      // [421b/572] dos grupos: consumo de LOS DÍAS que se liquidan (AUTO) vs deuda de
+      // otras fechas (opcional, checkbox — días ya liquidados antes u otros períodos).
       const delPeriodo = data[idP].filter(t => fechasSel.has(String(t.fecha || '')));
       const anteriores = data[idP].filter(t => !fechasSel.has(String(t.fecha || '')));
-      const fDel = delPeriodo.map(fila).join('');
-      const fAnt = anteriores.map(fila).join('');
+      const fDel = delPeriodo.map(t => fila(t, true)).join('');
+      const fAnt = anteriores.map(t => fila(t, false)).join('');
       return `<div class="rounded-lg p-2 mt-2" style="background:rgba(120,53,15,.18);border:1px solid rgba(245,158,11,.3)">
-        <div class="text-[11px] font-bold text-amber-300 mb-1">🧾 Créditos de los días a liquidar · ${_escapeHtml((per && per.nombre) || idP)}</div>
+        <div class="text-[11px] font-bold text-amber-300 mb-1">🧾 Consumos de los días a liquidar · ${_escapeHtml((per && per.nombre) || idP)} <span class="text-[9px] font-normal" style="color:#93c5fd">· automático</span></div>
         ${fDel || '<p class="text-[10px] text-slate-500">Sin consumo a crédito en los días seleccionados</p>'}
-        ${fAnt ? `<div class="text-[10px] font-bold text-slate-500 mt-2 mb-0.5" title="Tickets de fechas fuera de esta liquidación (p.ej. días ya pagados antes). Márcalos solo si quieres cobrarlos en este pago.">⏳ Deuda de otras fechas (opcional, desmarcada)</div>${fAnt}` : ''}
+        ${fAnt ? `<div class="text-[10px] font-bold text-slate-500 mt-2 mb-0.5" title="Tickets de fechas fuera de esta liquidación (p.ej. días ya pagados antes). Márcalos solo si quieres cobrarlos en este pago.">⏳ Deuda de otras fechas (opcional)</div>${fAnt}` : ''}
       </div>`;
     }).join('');
     desc = Math.round(desc * 100) / 100;
@@ -32984,7 +32995,8 @@ const MOS = (() => {
         nombre: persona.nombre,
         rol: persona.rol,
         appOrigen: persona.appOrigen,
-        creditos: persona.creditos,   // [419] descuento por planilla (atómico con el pago)
+        creditos: persona.creditos,   // [419] extras opcionales (deuda de otras fechas) que el admin marcó
+        autoConsumos: true,           // [572] 🤖 el servidor descuenta AUTO todos los consumos de los días pagados
         pagadoPor,
         comentario,
         // [v2.43.377] El front imprime por la Edge `imprimir` (cero-GAS, preview==print).
