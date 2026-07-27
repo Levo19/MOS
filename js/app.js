@@ -32861,6 +32861,7 @@ const MOS = (() => {
     const ids = Object.keys(data);
     if (!ids.length) { sec.innerHTML = ''; return; }
     _liqState.credOtrasOpen = _liqState.credOtrasOpen || {};
+    _liqState.credPerOpen = _liqState.credPerOpen || {};
     let descGlobal = 0;
     const bloques = ids.map(idP => {
       const per = _liqState.pendientes.find(x => x.idPersonal === idP);
@@ -32892,10 +32893,11 @@ const MOS = (() => {
           <div class="text-[11px] font-bold text-slate-300">🧾 Consumos de los días · ${_escapeHtml((per&&per.nombre)||idP)}</div>
           <span class="text-[9px] font-bold px-2 py-0.5 rounded" style="background:rgba(59,130,246,.18);color:#93c5fd">🤖 AUTO</span>
         </div>
-        ${rowsPer}
-        <div class="flex items-center justify-between text-[11px] mt-1.5 pt-1.5 border-t border-slate-800">
-          <span class="text-slate-400">Se descuenta automático</span><b class="text-rose-300">−S/ ${periodoTot.toFixed(2)}</b>
-        </div>
+        <button type="button" onclick="MOS._liqTogglePeriodo('${idP}')" class="w-full flex items-center justify-between text-[11px] py-1">
+          <span class="text-slate-400">${delPeriodo.length>0 ? delPeriodo.length+' consumo(s) del período · ya descontado' : 'Sin consumo en estos días'}</span>
+          <span class="flex items-center gap-2"><b class="text-rose-300">−S/ ${periodoTot.toFixed(2)}</b>${delPeriodo.length>0?`<span class="text-slate-500">${_liqState.credPerOpen[idP]?'▾':'▸'}</span>`:''}</span>
+        </button>
+        ${(_liqState.credPerOpen[idP] && delPeriodo.length) ? `<div class="pt-1 mt-1 border-t border-slate-800">${rowsPer}</div>` : ''}
         ${anteriores.length ? `
           <button type="button" onclick="MOS._liqToggleOtras('${idP}')" class="w-full flex items-center justify-between text-[10px] font-bold text-slate-500 hover:text-slate-300 mt-2 pt-2 border-t border-slate-800">
             <span>⏳ Deuda de otras fechas · opcional (${anteriores.length} tk · S/${antTot.toFixed(2)})</span><span>${abierto?'▾':'▸'}</span>
@@ -32908,7 +32910,7 @@ const MOS = (() => {
     descGlobal = Math.round(descGlobal * 100) / 100;
     const bruto = _liqState.confirmTotal || 0;
     const neto = Math.round((bruto - descGlobal) * 100) / 100;
-    sec.innerHTML = bloques + `
+    sec.innerHTML = `<div class="text-[10.5px] mt-2 mb-1 px-1" style="color:#6ee7b7">✓ Ya está todo calculado — el consumo se descuenta solo. Solo confirmá el pago.</div>` + bloques + `
       <div class="flex items-center justify-between mt-3 p-3 rounded-xl" style="background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(15,23,42,.6));border:1px solid rgba(16,185,129,.25)">
         <div><div class="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Neto a pagar</div>
              <div class="text-[10px] text-slate-500">${_liqMoney(bruto)} jornal − ${_liqMoney(descGlobal)} consumos</div></div>
@@ -32934,6 +32936,13 @@ const MOS = (() => {
     _liqState.credOtrasOpen[idP] = !_liqState.credOtrasOpen[idP];
     _liqRenderCreditos();
     _liqSfx(_liqState.credOtrasOpen[idP] ? 'expand' : 'collapse');
+  }
+  // [572] ver/ocultar el detalle de los consumos del período (colapsado = modal limpio).
+  function _liqTogglePeriodo(idP) {
+    _liqState.credPerOpen = _liqState.credPerOpen || {};
+    _liqState.credPerOpen[idP] = !_liqState.credPerOpen[idP];
+    _liqRenderCreditos();
+    _liqSfx(_liqState.credPerOpen[idP] ? 'expand' : 'collapse');
   }
 
   // [v2.41.72-B11] Lock anti-doble-click: si ya se está procesando un pago,
@@ -44429,7 +44438,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     liqOpen, liqClose, liqSetTab, liqRefresh, liqAbrirConfirmacion, liqConfirmarPago,
     liqReimprimirPago, liqAnularPago,
     _liqCerrarModalAnular, _liqConfirmarAnular,
-    _liqTogglePersona, _liqToggleDia, _liqToggleAll, _liqToggleOtras,
+    _liqTogglePersona, _liqToggleDia, _liqToggleAll, _liqToggleOtras, _liqTogglePeriodo,
     _liqEditarDia, _liqAbrirPagoDet, _liqBackfillDia,
     // [v2.41.31] Vetar/desvetar inline
     _liqVetarDia, _liqDesvetarDia, _liqToggleVetadasPanel,
