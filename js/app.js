@@ -33282,7 +33282,11 @@ const MOS = (() => {
     return abrirPrinterPicker({
       titulo: '🖨 Imprimir liquidación',
       subtitulo: `Pago de liquidación · ${(_liqState.tab === 'pendientes' ? 'pendientes' : 'reimpresión')}`,
-      filtroTipo: 'TICKET'
+      filtroTipo: 'TICKET',
+      // [dueño 2.43.631] memoria de impresora: si ya elegiste una y sigue ONLINE, imprime
+      // DIRECTO (sin volver a abrir el picker). Solo la 1ª vez / si se desconecta pide elegir.
+      flowKey: 'liq',
+      autoUsarUltima: true
     });
   }
 
