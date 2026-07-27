@@ -32131,6 +32131,9 @@ const MOS = (() => {
     }
     const totalGeneral = list.reduce((s, p) => s + p.total, 0);
     const totalDias = list.reduce((s, p) => s + p.cantidadDias, 0);
+    // [dueño] adeudado NETO = bruto − consumo de todos los días pendientes (líquido real)
+    const consGeneral = Math.round(list.reduce((s, p) => s + (p.dias || []).reduce((a, d) => a + (parseFloat(d.consumoDia && d.consumoDia.total) || 0), 0), 0) * 100) / 100;
+    const netoGeneral = Math.round((totalGeneral - consGeneral) * 100) / 100;
     // [v2.41.74] Estado de selección global → botón ☑ TODOS / ✕ Limpiar
     let totalSel = 0;
     list.forEach(p => {
@@ -32149,8 +32152,9 @@ const MOS = (() => {
         </div>
         ${btnGlobal}
         <div class="text-right ml-auto">
-          <div class="text-[10px] uppercase text-slate-500 tracking-wider">Adeudado total</div>
-          <div class="text-lg font-bold" style="color:#fbbf24">${_liqMoney(totalGeneral)}</div>
+          <div class="text-[10px] uppercase text-slate-400 tracking-wider">Adeudado neto</div>
+          <div class="text-lg font-black" style="color:#34d399">${_liqMoney(netoGeneral)}</div>
+          ${consGeneral > 0 ? `<div class="text-[9px] font-bold text-amber-400" title="Consumo a crédito de todo lo pendiente, ya descontado">−${_liqMoney(consGeneral)} consumo · de ${_liqMoney(totalGeneral)}</div>` : ''}
         </div>
       </div>
       ${list.map((p, i) => _liqCardPersona(p, i)).join('')}
@@ -32325,12 +32329,12 @@ const MOS = (() => {
           </div>
           <div class="text-right">
             ${selDias > 0
-              ? `<div class="text-[10px] uppercase text-emerald-400 font-bold tracking-wider">Seleccionado</div>
-                 <div class="text-base font-bold" style="color:#34d399">${_liqMoney(subtotalSel)}</div>
-                 ${_consR > 0 ? `<div class="text-[9px] font-bold" style="color:#fbbf24" title="Consumo a crédito de los días seleccionados">−${_liqMoney(_consR)} → neto ${_liqMoney(Math.round((subtotalSel - _consR) * 100) / 100)}</div>` : `<div class="text-[10px] text-slate-500">de ${_liqMoney(p.total)}</div>`}`
-              : `<div class="text-[10px] uppercase text-slate-500 font-bold tracking-wider">Total</div>
-                 <div class="text-base font-bold" style="color:#fbbf24">${_liqMoney(p.total)}</div>
-                 ${_consR > 0 ? `<div class="text-[9px] font-bold" style="color:#fbbf24" title="Consumo a crédito del período (se descuenta al pagar)">−${_liqMoney(_consR)} → neto ${_liqMoney(Math.round((p.total - _consR) * 100) / 100)}</div>` : ''}`
+              ? `<div class="text-[10px] uppercase text-emerald-400 font-bold tracking-wider">Neto a pagar</div>
+                 <div class="text-lg font-black" style="color:#34d399">${_liqMoney(Math.round((subtotalSel - _consR) * 100) / 100)}</div>
+                 ${_consR > 0 ? `<div class="text-[9px] font-bold" style="color:#fbbf24" title="Consumo a crédito de los días seleccionados, ya descontado del neto">−${_liqMoney(_consR)} consumo · de ${_liqMoney(subtotalSel)}</div>` : `<div class="text-[9px] text-slate-400">${selDias} día(s)</div>`}`
+              : `<div class="text-[10px] uppercase ${_consR > 0 ? 'text-emerald-400' : 'text-slate-400'} font-bold tracking-wider">${_consR > 0 ? 'Neto' : 'Total'}</div>
+                 <div class="text-lg font-black" style="color:${_consR > 0 ? '#34d399' : '#fbbf24'}">${_liqMoney(Math.round((p.total - _consR) * 100) / 100)}</div>
+                 ${_consR > 0 ? `<div class="text-[9px] font-bold" style="color:#fbbf24" title="Consumo a crédito del período, ya descontado del neto">−${_liqMoney(_consR)} consumo · de ${_liqMoney(p.total)}</div>` : ''}`
             }
           </div>
           <span style="color:#64748b;font-size:14px;transition:transform .25s">${expandido ? '▾' : '▸'}</span>
@@ -33233,17 +33237,13 @@ const MOS = (() => {
       }
       descTotal = Math.round(descTotal * 100) / 100;
       out += linea('=') + '\n';
-      // TOTAL FINAL prominente (doble alto + ancho, centrado). Sin créditos = TOTAL A PAGAR; con créditos = jornal/desc/NETO.
-      const bigLine = (label, monto, neg) => {
-        const s = label + '  ' + (neg ? '-' : '') + fmtMon(Math.abs(monto));
-        const half = Math.floor(W / 2);
-        const pad = Math.max(0, Math.floor((half - s.length) / 2));
-        return '\x1b\x21\x30' + ' '.repeat(pad) + s.slice(0, half) + '\x1b\x21\x00\n';
-      };
-      // [dueño 2.43.627] El consumo ya va restado en el subneto de CADA día → el cierre
-      // solo muestra el NETO final (= suma de subnetos). Sin línea de descuento satélite.
+      // [dueño 2.43.628] NETO FINAL bien RESALTADO: etiqueta centrada + el monto solo, en
+      // DOBLE tamaño, en su propia línea. El consumo ya va restado en el subneto de cada día.
       const netoFinal = Math.round((subtotal - descTotal) * 100) / 100;
-      out += bigLine(descTotal > 0 ? 'NETO A PAGAR' : 'TOTAL A PAGAR', netoFinal, netoFinal < 0);
+      out += centrar(descTotal > 0 ? '>>> NETO A PAGAR (liquido) <<<' : '>>> TOTAL A PAGAR <<<') + '\n';
+      const _amt = (netoFinal < 0 ? '-' : '') + fmtMon(Math.abs(netoFinal));
+      const _half = Math.floor(W / 2);
+      out += '\x1b\x21\x30' + ' '.repeat(Math.max(0, Math.floor((_half - _amt.length) / 2))) + _amt.slice(0, _half) + '\x1b\x21\x00\n';
       if (comentario) {
         out += linea('-') + '\n' + 'Comentario:\n';
         const words = String(comentario).split(/\s+/); let buf = '  ';
