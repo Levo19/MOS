@@ -52,6 +52,34 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json().catch(() => ({}));
+
+    // [watch-job] Consulta READ-ONLY del estado de un printjob para detectar jobs que mueren en 'error'
+    // (equipo "Connected" en PrintNode pero microcorte de red al descargar el PDF → "Could not resolve host").
+    // El semáforo de conexión no ve esto: conectado ≠ imprimió. Devuelve done/error + último estado.
+    if (String(body.op || '') === 'states') {
+      const jobId = parseInt(String(body.jobId), 10);
+      if (!jobId || jobId <= 0) return json({ status: 'error', mensaje: 'jobId inválido' }, 400);
+      const keyS = Deno.env.get('PRINTNODE_API_KEY');
+      if (!keyS) return json({ status: 'error', mensaje: 'PRINTNODE_API_KEY no configurada (secret)' }, 500);
+      const st = await fetch('https://api.printnode.com/printjobs/' + jobId + '/states', {
+        headers: { 'Authorization': 'Basic ' + btoa(keyS + ':') },
+      });
+      const stTxt = await st.text();
+      if (!st.ok) return json({ status: 'error', mensaje: 'PrintNode ' + st.status + ': ' + stTxt }, 502);
+      let parsed: unknown = [];
+      try { parsed = JSON.parse(stTxt); } catch { parsed = []; }
+      // PrintNode devuelve un array (por printjob) de arrays de estados {state,message,timestamp,...}.
+      const flat = (Array.isArray(parsed) ? (parsed as unknown[]).flat() : []) as Array<Record<string, unknown>>;
+      const estados = flat.map((s) => String(s.state || ''));
+      const done = estados.includes('done');
+      const error = estados.includes('error');
+      const last = flat.length ? flat[flat.length - 1] : null;
+      return json({
+        status: 'success', jobId, estados, done, error, terminal: done || error,
+        last: last ? { state: String(last.state || ''), message: String(last.message || '') } : null,
+      });
+    }
+
     const printerId = parseInt(String(body.printerId), 10);
     const content = body.content;
     const title = String(body.title || 'MOSexpress');

@@ -41427,6 +41427,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ? `<button class="zpk-act zpk-act-print" onclick="MOS.zonaImprimirRezagado()">🖨 Imprimir</button>
          <button class="zpk-act" onclick="MOS.zonaAbrirPickup()">↩ Esta semana</button>`
       : `<button class="zpk-act zpk-act-rez" onclick="MOS.zonaAbrirRezagado('${_esc(zona)}')">📦 Rezagado semana pasada</button>`;
+    // [no-se-entiende] renglones que el IA nunca identificó (skuBase=''): SOLO constancia
+    // del pedido (jamás despachado · no suma deuda). Sección aparte, ámbar, para el admin.
+    const sinId = (r && r.sinIdentificar) || [];
+    const sinBody = (!showKpis || !sinId.length) ? '' :
+      `<div style="margin-top:10px;padding:10px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.3);border-radius:12px">
+         <div style="font-size:12px;font-weight:800;color:#f59e0b;margin-bottom:6px">❓ No se entiende
+           <span style="font-weight:600;color:#94a3b8;font-size:10px">· pedido que el IA no identificó · solo constancia (no suma deuda)</span></div>
+         ${sinId.map(s => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-top:1px solid rgba(148,163,184,0.12)">
+             <span style="font-size:12px;color:#e2e8f0;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(s.nombre || '—')}</span>
+             <span style="font-size:11px;color:#fbbf24;font-weight:700;white-space:nowrap">pidió ${_zpkNum(parseFloat(s.solicitado) || 0)} · ${_zpkDiaLbl(s.fecha)}</span>
+           </div>`).join('')}
+       </div>`;
     ov.innerHTML = `<div class="zpk-card${esRez ? ' zpk-rez-mode' : ''}" onclick="event.stopPropagation()">
         <div class="zpk-top">
           <div><div class="zpk-zona">${titulo}</div><div class="zpk-subt">${subt}</div></div>
@@ -41436,6 +41448,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${showKpis ? `<div class="zpk-actions">${accion}</div>` : ''}
         ${showKpis && !(r && r.sin_rezagado) ? `<input class="zpk-search" placeholder="🔎 Buscar producto…" oninput="MOS.zonaPickupFiltrar(this.value)" autocomplete="off">` : ''}
         <div class="zpk-list">${body}</div>
+        ${sinBody}
       </div>`;
   }
   // [v2.43.379] Imprime el rezagado (80mm, todo el ancho) por la Edge `imprimir` (cero-GAS).

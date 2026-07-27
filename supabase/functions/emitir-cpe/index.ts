@@ -87,9 +87,18 @@ Deno.serve(async (req: Request) => {
     // [Lote2-B · C1] Kill-switch server-side ANTES de tocar NubeFact.
     if (!(await cpeDirectoOn())) return json({ ok: false, error: 'CPE_DIRECTO_DESACTIVADO' }, 403);
 
-    const token = Deno.env.get('NUBEFACT_TOKEN');
+    // [go-live prod] TOKEN POR LOCAL: NubeFact da un token por establecimiento; la RUTA es la
+    // misma (cuenta/RUC). NUBEFACT_TOKENS = JSON { "<serie>": "<token>", ... } — p.ej.
+    // {"BM01":"...","FM01":"...","BM02":"...","FM02":"..."}. pickToken(serie) elige el correcto.
+    // Fallback a NUBEFACT_TOKEN (un solo token) → retrocompat demo, no rompe nada.
     const ruta = Deno.env.get('NUBEFACT_RUTA');   // URL dedicada NubeFact (api/v1/<UUID>), en SECRET
-    if (!token || !ruta) return json({ ok: false, error: 'NubeFact no configurado (secrets NUBEFACT_TOKEN/NUBEFACT_RUTA)' }, 500);
+    let tokensMap: Record<string, string> = {};
+    try { tokensMap = JSON.parse(Deno.env.get('NUBEFACT_TOKENS') || '{}'); } catch { tokensMap = {}; }
+    const fallbackTok = Deno.env.get('NUBEFACT_TOKEN') || '';
+    const pickToken = (serie: string): string => tokensMap[String(serie || '').toUpperCase()] || fallbackTok;
+    if (!ruta || (!fallbackTok && Object.keys(tokensMap).length === 0)) {
+      return json({ ok: false, error: 'NubeFact no configurado (secrets NUBEFACT_RUTA + NUBEFACT_TOKENS o NUBEFACT_TOKEN)' }, 500);
+    }
 
     const inp = await req.json().catch(() => ({}));
     const data = inp.data || {};
@@ -108,7 +117,9 @@ Deno.serve(async (req: Request) => {
       const sNum = parseInt(ps[ps.length - 1], 10);
       if (!sNum || sNum < 1) return json({ ok: false, error: 'número de correlativo inválido' }, 400);
       const tc = (tipoDoc === 'FACTURA') ? 1 : 2;
-      const cons = await consultar(ps[0], sNum, tc, ruta, token);
+      const tok = pickToken(ps[0]);
+      if (!tok) return json({ ok: false, error: 'sin token NubeFact para la serie ' + ps[0] }, 500);
+      const cons = await consultar(ps[0], sNum, tc, ruta, tok);
       if (!cons.ok) return json({ ok: false, ...cons }, cons.noExiste ? 404 : 502);
       const estC = cons.aceptada ? 'EMITIDO' : (cons.rechazado ? 'RECHAZADO' : 'PENDIENTE');
       return json({ ok: true, consultado: true, estado: estC, ...cons });
@@ -156,8 +167,10 @@ Deno.serve(async (req: Request) => {
         const pb = corr.split('-'); if (pb.length < 2) return json({ status: 'error', error: 'Correlativo inválido: ' + corr }, 400);
         const bSerie = pb[0]; const bNum = parseInt(pb[pb.length - 1], 10);
         if (!bNum || bNum < 1) return json({ status: 'error', error: 'número de correlativo inválido' }, 400);
+        const bTok = pickToken(bSerie);
+        if (!bTok) return json({ status: 'error', error: 'sin token NubeFact para la serie ' + bSerie }, 500);
         const bResp = await fetch(ruta, { method: 'POST',
-          headers: { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' },
+          headers: { 'Authorization': 'Token ' + bTok, 'Content-Type': 'application/json' },
           body: JSON.stringify({ operacion: 'generar_anulacion', tipo_de_comprobante: (td === 'FACTURA') ? 1 : 2, serie: bSerie, numero: bNum, motivo: motivo.substring(0, 250) }) });
         const bBody = await bResp.json().catch(() => ({}));
         const bOk = (bResp.status === 200 || bResp.status === 201);
@@ -247,9 +260,11 @@ Deno.serve(async (req: Request) => {
     };
 
     const endpoint = ruta;   // ruta dedicada NubeFact — el body lleva tipo_de_comprobante (1=factura,2=boleta)
+    const tok = pickToken(serie);   // [go-live] token del local segun la serie (BM01/FM01=Z1, BM02/FM02=Z2)
+    if (!tok) return json({ ok: false, error: 'sin token NubeFact para la serie ' + serie }, 500);
     const resp = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': 'Token ' + tok, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const body = await resp.json().catch(() => ({}));
@@ -282,7 +297,7 @@ Deno.serve(async (req: Request) => {
     // Duplicado (HTTP 400 "ya fue informado") → consultar el existente y devolver como éxito (idempotencia)
     const errMsg = String(body.errors || body.message || '');
     if (/ya\s+fue\s+informado|duplicad|comprobante\s+ya\s+existe|already\s+exists/i.test(errMsg)) {
-      const cons = await consultar(serie, numero, tipoComprobante, ruta, token);
+      const cons = await consultar(serie, numero, tipoComprobante, ruta, tok);
       if (cons.ok) {
         // [500x-2b] si el duplicado fue RECHAZADO por SUNAT, propagar el rechazo (no degradar a PENDIENTE)
         if (cons.rechazado) return json({ ok: false, rechazadoPorSunat: true, dedupNubeFact: true, error: 'SUNAT rechazó: ' + (cons.sunatDescription || ('código ' + cons.sunat_code)), ...cons });
