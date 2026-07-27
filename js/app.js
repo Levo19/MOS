@@ -32994,15 +32994,10 @@ const MOS = (() => {
     let printerId = null;
     if (imprimir) {
       closeModal('modalLiqConfirmar');
-      // [v2.41.74] Preview ASCII antes de elegir impresora
-      const seguir = await _liqAbrirPreviewTicket(personas, comentario, pagadoPor);
-      if (!seguir) {
-        // User canceló desde preview → no liberar lock todavía: igual proceder con pago sin imprimir
-        toast('Pago se registrará sin imprimir', 'info', 3000);
-      } else {
-        printerId = await _liqElegirImpresora();
-        if (!printerId) toast('Pago se registró sin imprimir', 'info');
-      }
+      // [dueño 2.43.630] El comprobante del modal YA es el preview → SIN paso extra de
+      // preview ASCII 80mm. Va directo a elegir impresora (luego imprime 2 copias jefa+empleado).
+      printerId = await _liqElegirImpresora();
+      if (!printerId) toast('Pago se registró sin imprimir', 'info');
     }
     // [dueño 2026-07-14] Snapshot POR PERSONA del ticket (pendientes AÚN intactos = montos correctos): se GUARDA
     // tras el pago (guardarTicketPago) para que Reimprimir sea IDÉNTICO, y se imprime en 2 copias (jefa+empleado).
