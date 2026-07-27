@@ -32355,10 +32355,18 @@ const MOS = (() => {
     // Línea sub: componentes del totalDia
     // [572] CADA CONCEPTO en su propio chip, separado en ingresos (+) y descuentos (−).
     // Incluye la bonificación manual (antes NO se mostraba en la fila).
-    const _chip = (txt, col, bg) => `<span style="display:inline-block;padding:1px 6px;border-radius:5px;font-size:9.5px;font-weight:600;color:${col};background:${bg};white-space:nowrap">${txt}</span>`;
+    const _chip = (txt, col, bg, title) => `<span ${title ? `title="${_escapeHtml(title)}"` : ''} style="display:inline-block;padding:1px 6px;border-radius:5px;font-size:9.5px;font-weight:600;color:${col};background:${bg};white-space:nowrap">${txt}</span>`;
     const _ing = [], _des = [];
     if (d.montoBase    > 0) _ing.push(_chip(`jornal ${d.montoBase.toFixed(2)}`,      '#93c5fd', 'rgba(59,130,246,.12)'));
-    if (d.pagoEnvasado > 0) _ing.push(_chip(`+envasar ${d.pagoEnvasado.toFixed(2)}`, '#c4b5fd', 'rgba(139,92,246,.14)'));
+    if (d.pagoEnvasado > 0) {
+      // [572] 🤝 si hay parte colaborativa (pago_envasado_colab>0) el envasado es COMPARTIDO
+      // (colaboración 50/50). Tooltip con el/los nombre(s) del colaborador si el backend los trae.
+      const _envColab = parseFloat(d.pagoEnvasadoColab) || 0;
+      const _colabNom = Array.isArray(d.envasadoColaboradores) ? d.envasadoColaboradores.filter(Boolean) : [];
+      const _envTxt = _envColab > 0 ? `+envasar ${d.pagoEnvasado.toFixed(2)} 🤝` : `+envasar ${d.pagoEnvasado.toFixed(2)}`;
+      const _envTit = _envColab > 0 ? ('Envasado compartido (colaboración 50/50)' + (_colabNom.length ? ' · con ' + _colabNom.join(', ') : '')) : '';
+      _ing.push(_chip(_envTxt, '#c4b5fd', 'rgba(139,92,246,.14)', _envTit));
+    }
     if (d.bonoMeta     > 0) _ing.push(_chip(`+meta ${d.bonoMeta.toFixed(2)}`,        '#6ee7b7', 'rgba(16,185,129,.14)'));
     if (d.bonificacion > 0) _ing.push(_chip(`+bono ${d.bonificacion.toFixed(2)}`,    '#6ee7b7', 'rgba(16,185,129,.14)'));
     if (d.sancion      > 0) _des.push(_chip(`−sanción ${d.sancion.toFixed(2)}`,      '#fca5a5', 'rgba(239,68,68,.14)'));
@@ -37440,6 +37448,33 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
+  // [572] explicación corta de cada criterio (qué mirar) → debajo del título, para
+  // que quien audita sepa exactamente qué evaluar. Key = texto exacto del criterio.
+  const _evalCritDesc = {
+    'Buen uso del sistema (registra todo en WH)': 'Registra TODO en warehouseMos: ingresos, envasados, movimientos de stock y mermas. Nada "por fuera".',
+    'Buen uso del sistema (registra cada envasado)': 'Registra cada envasado en el sistema (cantidad, producto y colaborador) apenas lo hace.',
+    'Productos bien acomodados en sus zonas': 'Cada producto en su zona/estante; sin mezclar ni obstruir pasillos.',
+    'Productos bien rotulados (lote, fecha, código)': 'Etiquetas visibles y correctas: lote, fecha de vencimiento y código.',
+    'Stock organizado y FIFO respetada': 'Lo que vence primero va adelante; rotación correcta, sin vencidos escondidos.',
+    'Recibe mercadería con cuidado y verificación': 'Cuenta y revisa lo que llega (cantidad, estado, vencimiento) antes de aceptarlo.',
+    'Equipos de seguridad usados': 'Usa faja, guantes, calzado, etc. según la tarea.',
+    'Reporta mermas y anomalías': 'Avisa y registra productos dañados, vencidos o faltantes; no los oculta.',
+    'Reporta mermas': 'Registra y avisa las mermas del envasado (producto perdido o dañado).',
+    'Puntualidad de entrada/salida': 'Marca entrada y salida a tiempo; sin llegar tarde ni irse antes.',
+    'Vende con amabilidad y trato cordial': 'Atiende con buena actitud: saluda, ayuda y orienta al cliente.',
+    'Cobra correctamente (sin manipular tickets)': 'Cobra el monto real y emite el ticket correcto; sin anular ni alterar para quedarse la diferencia.',
+    'Hace guías de ingreso bien (productos + cantidades + precios)': 'Registra las guías de ingreso completas y correctas: producto, cantidad y precio.',
+    'Rellena/repone productos del exhibidor durante el turno': 'Mantiene las góndolas surtidas; repone lo que se va vendiendo.',
+    'Conoce los precios y promociones vigentes': 'Sabe los precios y las promos del día; no improvisa.',
+    'Maneja efectivo sin diferencias en el cuadre': 'Al cerrar caja, el efectivo cuadra con lo vendido (sin sobrantes ni faltantes).',
+    'Reporta incidencias y anomalías': 'Avisa problemas: fallas, faltantes, clientes conflictivos, etc.',
+    'Uniforme y puntualidad correctos': 'Uniforme completo y limpio; entrada y salida puntuales.',
+    'Envasado uniforme (peso/volumen)': 'Cada bolsa/envase con el peso o volumen correcto y parejo.',
+    'Sellado correcto (sin fugas)': 'Sellos firmes; no se abren ni gotean.',
+    'Etiquetado completo (lote, fecha, código)': 'Cada envase etiquetado con lote, fecha y código.',
+    'Preservación e higiene de insumos': 'Insumos limpios, tapados y bien conservados; manos y mesa limpias.',
+    'Limpieza tras cada envasado': 'Deja la estación limpia después de cada envasado.'
+  };
   function _renderAuditChecklist(rol) {
     const cont = $('auditControlList');
     if (!cont) return;
@@ -37447,10 +37482,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     cont.innerHTML = items.map((txt, i) => {
       const key = 'c' + i;
       const checked = !!_evalState.auditChecks[key];
+      const desc = _evalCritDesc[txt] || '';
       return `
         <div class="audit-check-row${checked ? ' checked' : ''}" data-key="${key}" onclick="MOS.auditToggleCheck('${key}')">
           <div class="audit-check-box"></div>
-          <span>${txt}</span>
+          <div style="flex:1;min-width:0">
+            <span>${txt}</span>
+            ${desc ? `<div style="font-size:9.5px;color:#64748b;line-height:1.3;margin-top:2px;font-weight:400">${desc}</div>` : ''}
+          </div>
         </div>`;
     }).join('');
   }
