@@ -32844,7 +32844,7 @@ const MOS = (() => {
       // DESMARCADA (opcional) — sin ella, los tickets de días ya liquidados antes
       // quedarían huérfanos para siempre (nunca descontables por planilla).
       const fechasSel = _liqState.creditosFechas?.[idP] || new Set();
-      _liqState.creditosSel[idP] = new Set(r.tickets.filter(t => fechasSel.has(String(t.fecha || ''))).map(t => t.idVenta));
+      _liqState.creditosSel[idP] = new Set(r.tickets.filter(t => fechasSel.has(String(t.fecha || '').slice(0, 10))).map(t => t.idVenta));
     });
     if (btn) { btn.disabled = false; delete btn.dataset.credLoading; }
     _liqRenderCreditos();
@@ -32865,9 +32865,9 @@ const MOS = (() => {
     if (detEl && items.length) {
       detEl.innerHTML = items.map(it => {
         const fechasSel = (_liqState.creditosFechas && _liqState.creditosFechas[it.idPersonal]) || new Set((it.dias || []).map(d => d.fecha));
-        const tks = (data[it.idPersonal] || []).filter(t => fechasSel.has(String(t.fecha || '')));
+        const tks = (data[it.idPersonal] || []).filter(t => fechasSel.has(String(t.fecha || '').slice(0, 10)));
         const byF = {};
-        tks.forEach(t => { const f = String(t.fecha || ''); (byF[f] = byF[f] || []).push(t); });
+        tks.forEach(t => { const f = String(t.fecha || '').slice(0, 10); (byF[f] = byF[f] || []).push(t); });
         return _liqComprobanteCard(it, Object.keys(byF).length ? byF : null);
       }).join('');
     }
@@ -32914,10 +32914,15 @@ const MOS = (() => {
       const san  = parseFloat(d.sancion) || 0;
       const colab = (parseFloat(d.pagoEnvasadoColab) || 0) > 0;
       const tks = (ticketsByFecha && ticketsByFecha[d.fecha]) || null;
-      const cons = (tks && tks.length)
-        ? Math.round(tks.reduce((s, x) => s + (parseFloat(x.total) || 0), 0) * 100) / 100
-        : (parseFloat(d.consumoDia && d.consumoDia.total) || 0);
-      const nd = Math.round((base + env + meta + bono - san - cons) * 100) / 100;
+      const consDia = parseFloat(d.consumoDia && d.consumoDia.total) || 0;
+      const tksSum = (tks && tks.length) ? Math.round(tks.reduce((s, x) => s + (parseFloat(x.total) || 0), 0) * 100) / 100 : null;
+      // [50x] CANÓNICO: el consumo del día = consumoDia (= barra/header/server). El detalle
+      // por ticket SOLO se muestra si RECONCILIA con consumoDia (nunca 2 netos distintos).
+      const cons = consDia;
+      const showTks = (tksSum !== null) && Math.abs(tksSum - consDia) < 0.005;
+      // neto del día = totalDia − consumo (IDÉNTICO a la barra/header/server; totalDia ya
+      // aplica greatest(0, base+env+meta+bono−san), así no diverge si la sanción supera lo ganado).
+      const nd = Math.round(((parseFloat(d.totalDia) || 0) - cons) * 100) / 100;
       neto += nd;
       const lines = [];
       if (base > 0) lines.push(sub('Jornal base', base, false));
@@ -32926,7 +32931,7 @@ const MOS = (() => {
       if (bono > 0) lines.push(sub('Bonificación', bono, false));
       if (san  > 0) lines.push(sub('Sanción', san, true));
       if (cons > 0) {
-        if (tks && tks.length) tks.forEach(x => lines.push(sub('Consumo · ' + _escapeHtml(x.correlativo || x.idVenta || ''), parseFloat(x.total) || 0, true)));
+        if (showTks) tks.forEach(x => lines.push(sub('Consumo · ' + _escapeHtml(x.correlativo || x.idVenta || ''), parseFloat(x.total) || 0, true)));
         else lines.push(sub('Consumo a crédito', cons, true));
       }
       return '<div style="padding:6px 0;border-bottom:1px dashed rgba(15,23,42,.1)">'
