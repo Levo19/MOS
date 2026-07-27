@@ -32458,7 +32458,8 @@ const MOS = (() => {
     const bar = $('liqPayBar');
     if (!bar) return;
     if (_liqState.tab !== 'pendientes') { bar.classList.add('hidden'); return; }
-    let totalSel = 0;
+    let totalSel = 0;   // bruto (jornal + bonos + envasado)
+    let netoSel = 0;    // [dueño] NETO = suma de subnetos (bruto − consumo del día)
     let personasSel = 0;
     let diasSel = 0;
     Object.keys(_liqState.seleccion).forEach(idP => {
@@ -32467,12 +32468,14 @@ const MOS = (() => {
       const p = _liqState.pendientes.find(x => x.idPersonal === idP);
       if (!p) return;
       personasSel++;
-      p.dias.forEach(d => { if (sel.has(d.fecha)) { totalSel += d.totalDia; diasSel++; } });
+      p.dias.forEach(d => { if (sel.has(d.fecha)) { const cc = parseFloat(d.consumoDia && d.consumoDia.total) || 0; totalSel += d.totalDia; netoSel += (d.totalDia - cc); diasSel++; } });
     });
     if (diasSel === 0) { bar.classList.add('hidden'); return; }
     bar.classList.remove('hidden');
-    $('liqPaySubtitle').textContent = `${diasSel} día(s) · ${personasSel} persona(s)`;
-    $('liqPayTotal').textContent = _liqMoney(totalSel);
+    totalSel = Math.round(totalSel * 100) / 100; netoSel = Math.round(netoSel * 100) / 100;
+    const consSel = Math.round((totalSel - netoSel) * 100) / 100;
+    $('liqPaySubtitle').textContent = `${diasSel} día(s) · ${personasSel} persona(s)` + (consSel > 0 ? ` · −${_liqMoney(consSel)} consumo` : '');
+    $('liqPayTotal').textContent = _liqMoney(netoSel);
   }
 
   // ── Editar día (re-auditar) ──
@@ -32898,46 +32901,46 @@ const MOS = (() => {
     const dd = it.dias || [];
     const M = _liqMoney;
     const fCorta = f => { const s = String(f || ''); return s.slice(8) + '/' + s.slice(5, 7); };
-    let jornal = 0, consumo = 0;
+    // [dueño] cada día = CARPETA con TODOS sus conceptos como sub-líneas (ingresos +
+    // verde, descuentos − rojo). El consumo va acá adentro, por ticket. El neto del día
+    // = suma de sus conceptos. El neto final = suma de netos diarios (NO hay resumen aparte).
+    const sub = (lbl, amt, neg) => '<div style="display:flex;justify-content:space-between;font-size:10px;padding:1.5px 0 1.5px 14px"><span style="color:#64748b">' + lbl + '</span><span style="color:' + (neg ? '#c2410c' : '#0f766e') + ';font-weight:600">' + (neg ? '−' : '+') + M(amt) + '</span></div>';
+    let neto = 0;
     const rows = dd.map(d => {
-      const t = parseFloat(d.totalDia) || 0;
-      // consumo del día: por ticket si el fetch los trajo, si no el total de consumoDia.
+      const base = parseFloat(d.montoBase) || 0;
+      const env  = parseFloat(d.pagoEnvasado) || 0;
+      const meta = parseFloat(d.bonoMeta) || 0;
+      const bono = parseFloat(d.bonificacion) || 0;
+      const san  = parseFloat(d.sancion) || 0;
+      const colab = (parseFloat(d.pagoEnvasadoColab) || 0) > 0;
       const tks = (ticketsByFecha && ticketsByFecha[d.fecha]) || null;
-      const c = (tks && tks.length)
+      const cons = (tks && tks.length)
         ? Math.round(tks.reduce((s, x) => s + (parseFloat(x.total) || 0), 0) * 100) / 100
         : (parseFloat(d.consumoDia && d.consumoDia.total) || 0);
-      jornal += t; consumo += c;
-      const nd = Math.round((t - c) * 100) / 100;   // el neto del día YA tiene el consumo restado
-      const parts = [];
-      if ((d.montoBase || 0) > 0) parts.push('base ' + Number(d.montoBase).toFixed(2));
-      if ((d.pagoEnvasado || 0) > 0) parts.push('env ' + Number(d.pagoEnvasado).toFixed(2) + ((parseFloat(d.pagoEnvasadoColab) || 0) > 0 ? ' 🤝' : ''));
-      if ((d.bonoMeta || 0) > 0) parts.push('meta ' + Number(d.bonoMeta).toFixed(2));
-      if ((d.bonificacion || 0) > 0) parts.push('bono ' + Number(d.bonificacion).toFixed(2));
-      if ((d.sancion || 0) > 0) parts.push('−san ' + Number(d.sancion).toFixed(2));
-      // consumo como sub-líneas del día (detalle por ticket si hay), en rojo, indentado
-      let consHtml = '';
-      if (c > 0) {
-        consHtml = (tks && tks.length)
-          ? tks.map(x => '<div style="display:flex;justify-content:space-between;font-size:9.5px;color:#c2410c;padding:1px 0 1px 12px"><span>🧾 consumo · ' + _escapeHtml(x.correlativo || x.idVenta || '') + '</span><span>−' + M(parseFloat(x.total) || 0) + '</span></div>').join('')
-          : '<div style="display:flex;justify-content:space-between;font-size:9.5px;color:#c2410c;padding:1px 0 1px 12px"><span>🧾 consumo del día</span><span>−' + M(c) + '</span></div>';
+      const nd = Math.round((base + env + meta + bono - san - cons) * 100) / 100;
+      neto += nd;
+      const lines = [];
+      if (base > 0) lines.push(sub('Jornal base', base, false));
+      if (meta > 0) lines.push(sub('Comisión por ventas', meta, false));
+      if (env  > 0) lines.push(sub('Envasado' + (colab ? ' 🤝 (compartido)' : ''), env, false));
+      if (bono > 0) lines.push(sub('Bonificación', bono, false));
+      if (san  > 0) lines.push(sub('Sanción', san, true));
+      if (cons > 0) {
+        if (tks && tks.length) tks.forEach(x => lines.push(sub('Consumo · ' + _escapeHtml(x.correlativo || x.idVenta || ''), parseFloat(x.total) || 0, true)));
+        else lines.push(sub('Consumo a crédito', cons, true));
       }
-      return '<div style="padding:5px 0;border-bottom:1px dashed rgba(15,23,42,.1)">'
-        + '<div style="display:flex;justify-content:space-between;font-size:11px"><div style="min-width:0"><b style="color:#0f172a">' + _liqFmtFechaLarga(d.fecha) + '</b> <span style="color:#64748b">' + parts.join(' · ') + '</span></div><b style="color:#0f766e;white-space:nowrap;margin-left:8px">' + M(nd) + '</b></div>'
-        + consHtml + '</div>';
+      return '<div style="padding:6px 0;border-bottom:1px dashed rgba(15,23,42,.1)">'
+        + '<div style="display:flex;justify-content:space-between;font-size:11.5px"><b style="color:#0f172a;text-transform:capitalize">' + _liqFmtFechaLarga(d.fecha) + '</b><b style="color:#0f766e">' + M(nd) + '</b></div>'
+        + lines.join('') + '</div>';
     }).join('');
-    jornal = Math.round(jornal * 100) / 100; consumo = Math.round(consumo * 100) / 100;
-    const neto = Math.round((jornal - consumo) * 100) / 100;
+    neto = Math.round(neto * 100) / 100;
     const f0 = dd.length ? fCorta(dd[0].fecha) : '';
     const f1 = dd.length ? fCorta(dd[dd.length - 1].fecha) : '';
     return '<div style="background:linear-gradient(160deg,#ffffff,#f0fdf9);border-radius:16px;padding:18px;color:#1e293b;margin-bottom:12px;box-shadow:0 6px 22px rgba(0,0,0,.28)">'
       + '<div style="text-align:center;border-bottom:2px solid #0f766e;padding-bottom:10px;margin-bottom:10px"><div style="font-size:15px;font-weight:900;color:#0f766e;letter-spacing:.5px">INVERSIONES MOS</div><div style="font-size:10px;color:#64748b;font-weight:600">Comprobante de liquidación</div></div>'
       + '<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:10px"><div><div style="font-weight:800;font-size:13px">' + _escapeHtml(it.nombre || '') + '</div><div style="color:#64748b;text-transform:capitalize">' + _escapeHtml(String(it.rol || '').toLowerCase()) + '</div></div><div style="text-align:right"><div style="color:#64748b">' + f0 + ' – ' + f1 + '</div><div style="font-weight:700">' + dd.length + ' día(s)</div></div></div>'
       + rows
-      + '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #cbd5e1;font-size:11px">'
-      + '<div style="display:flex;justify-content:space-between;padding:1px 0"><span style="color:#64748b">Jornal + bonos + envasado</span><b>' + M(jornal) + '</b></div>'
-      + (consumo > 0 ? '<div style="display:flex;justify-content:space-between;padding:1px 0"><span style="color:#c2410c">− Consumos a crédito (auto)</span><b style="color:#c2410c">−' + M(consumo) + '</b></div>' : '')
-      + '</div>'
-      + '<div style="margin-top:8px;background:#0f766e;border-radius:11px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;color:#fff"><div style="font-size:10px;font-weight:700;opacity:.85">NETO A PAGAR</div><div style="font-size:22px;font-weight:900">' + M(neto) + '</div></div>'
+      + '<div style="margin-top:10px;background:#0f766e;border-radius:11px;padding:11px 14px;display:flex;justify-content:space-between;align-items:center;color:#fff"><div><div style="font-size:10px;font-weight:700;opacity:.85">NETO A PAGAR</div><div style="font-size:9px;opacity:.7">' + dd.length + ' día(s) · suma de netos diarios</div></div><div style="font-size:23px;font-weight:900">' + M(neto) + '</div></div>'
       + '</div>';
   }
 
@@ -33232,15 +33235,10 @@ const MOS = (() => {
         const pad = Math.max(0, Math.floor((half - s.length) / 2));
         return '\x1b\x21\x30' + ' '.repeat(pad) + s.slice(0, half) + '\x1b\x21\x00\n';
       };
-      if (descTotal <= 0) {
-        out += bigLine('TOTAL A PAGAR', subtotal);
-      } else {
-        out += dosCol('Total jornal', fmtMon(subtotal)) + '\n';
-        out += dosCol('Descuento creditos', '-S/' + num(descTotal)) + '\n';
-        out += linea('-') + '\n';
-        const neto = Math.round((subtotal - descTotal) * 100) / 100;
-        out += bigLine('NETO A PAGAR', neto, neto < 0);
-      }
+      // [dueño 2.43.627] El consumo ya va restado en el subneto de CADA día → el cierre
+      // solo muestra el NETO final (= suma de subnetos). Sin línea de descuento satélite.
+      const netoFinal = Math.round((subtotal - descTotal) * 100) / 100;
+      out += bigLine(descTotal > 0 ? 'NETO A PAGAR' : 'TOTAL A PAGAR', netoFinal, netoFinal < 0);
       if (comentario) {
         out += linea('-') + '\n' + 'Comentario:\n';
         const words = String(comentario).split(/\s+/); let buf = '  ';
