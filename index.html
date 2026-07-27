@@ -19807,7 +19807,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.625';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.626';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -19857,7 +19857,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.625"></script>
+<script src="js/api.js?v=2.43.626"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19872,7 +19872,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="./assets/editor-adhesivos/iconos.js?v=1.0.0"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.1"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=1.0.4"></script>
-<script src="js/app.js?v=2.43.625"></script>
+<script src="js/app.js?v=2.43.626"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
@@ -21521,6 +21521,8 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     transition: all .15s ease;
     margin-top: 6px;
   }
+  /* [50x·UX] en móvil la fila envuelve → los botones Auditar/Vetar no aplastan el contenido */
+  @media (max-width: 640px) { .liq-dia-row { flex-wrap: wrap; } }
   .liq-dia-row:hover { border-color: rgba(251,191,36,.3); background: rgba(251,191,36,.04); }
   .liq-dia-row.selected {
     border-color: rgba(251,191,36,.55); background: rgba(251,191,36,.06);
@@ -22041,7 +22043,7 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
 
 <!-- ═══ MODAL CONFIRMACIÓN DE PAGO ═══ -->
 <div id="modalLiqConfirmar" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalLiqConfirmar')">
-  <div class="modal-box p-0 max-w-md w-full" style="max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,8,23,.98));backdrop-filter:blur(14px);box-shadow:0 24px 60px -10px rgba(251,191,36,.22),0 0 0 1px rgba(251,191,36,.08);">
+  <div class="modal-box p-0 max-w-md w-full" style="max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(180deg,#1e2a3d,#18222f);backdrop-filter:blur(14px);box-shadow:0 24px 60px -10px rgba(251,191,36,.22),0 0 0 1px rgba(251,191,36,.08);">
     <div class="px-5 pt-5 pb-3 flex items-center justify-between border-b border-slate-800">
       <div>
         <h3 class="font-semibold text-white text-base">💰 Confirmar pago</h3>
