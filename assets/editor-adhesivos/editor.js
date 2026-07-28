@@ -479,12 +479,15 @@
              +   '</div>'
              + '</div>';
       }
+      // [protegida] plantilla base: 🔒, imprimible + duplicable, pero SIN 🗑 (no se elimina).
+      var esProt = !!(p.json && p.json.metadata && p.json.metadata.protegida);
       return '<div class="eda-plantilla-item' + sel + '" onclick="EditorAdhesivos._cargarPlantilla(\'' + idEsc + '\')">'
-           +   '<span class="eda-plantilla-icon">📋</span>'
+           +   '<span class="eda-plantilla-icon">' + (esProt ? '🔒' : '📋') + '</span>'
            +   '<span class="eda-plantilla-name" title="' + _esc(p.descripcion || p.nombre) + '">' + _esc(p.nombre) + '</span>'
            +   '<div class="eda-capa-actions">'
+           +     '<button onclick="event.stopPropagation();EditorAdhesivos._imprimirPlantillaLista(\'' + idEsc + '\')" title="Imprimir esta plantilla">🖨</button>'
            +     '<button onclick="event.stopPropagation();EditorAdhesivos._duplicarPlantilla(\'' + idEsc + '\')" title="Duplicar como nueva">⎘</button>'
-           +     '<button onclick="event.stopPropagation();EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')" title="Eliminar (soft-delete)">🗑</button>'
+           +     (esProt ? '' : '<button onclick="event.stopPropagation();EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')" title="Eliminar (soft-delete)">🗑</button>')
            +   '</div>'
            + '</div>';
     }).join('');
@@ -1094,6 +1097,13 @@
     _ejecutarTestImpresion();
   }
 
+  // [botón 🖨 en la lista] carga la plantilla (setea _idPlantillaActual) y abre el modal de cantidad.
+  function _imprimirPlantillaLista(id) {
+    _cargarPlantilla(id);
+    if (_idPlantillaActual !== id) return;   // abortó (cambios sin guardar / corrupta)
+    _abrirModalImprimir();
+  }
+
   function _ejecutarTestImpresion() {
     _apiPost('testImpresionAdhesivoPlantilla', { idPlantilla: _idPlantillaActual }, function(err, r) {
       if (err || !r || !r.ok) {
@@ -1270,6 +1280,7 @@
     // [v1.0.3] Pulido senior — 9 mejoras UX
     _duplicarPlantilla: _duplicarPlantilla,
     _eliminarPlantilla: _eliminarPlantilla,
+    _imprimirPlantillaLista: _imprimirPlantillaLista,
     _setBusquedaIconos: _setBusquedaIconos
   };
 })();
