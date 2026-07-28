@@ -10058,7 +10058,7 @@ const MOS = (() => {
       if (rec.g) rows.push('<div class="cov-det-row"><span class="cov-det-k">Guía</span><span class="cov-det-guia">🧾 ' + _escapeHtml(String(rec.g)) + '</span></div>');
     }
     // [Fase 3] costo con guía → slot para el mini-preview (se carga async al seleccionar)
-    const slot = (!esP && rec.g) ? '<div class="cov-guia" id="covGuiaSlot"><div class="cov-guia-load">🧾 cargando guía…</div></div>' : '';
+    const slot = (!esP && rec.g) ? '<div class="cov-guia" id="covGuiaSlot" data-guia="' + _escapeHtml(String(rec.g)) + '"><div class="cov-guia-load">🧾 cargando guía…</div></div>' : '';
     return '<div class="cov-det-card ' + cls + '"><div class="cov-det-top">' +
       '<span class="cov-det-tag">' + (esP ? '💚 Cambio de precio' : '🟡 Costo de compra') + '</span>' +
       '<b class="cov-det-val">S/ ' + (+rec.v).toFixed(2) + '</b></div>' + rows.join('') + slot + '</div>';
@@ -10069,6 +10069,7 @@ const MOS = (() => {
     let d = null;
     try { const r = await API.post('guiaPreview', { idGuia }); d = r && (r.data || r); } catch(_){}
     const slot = document.getElementById('covGuiaSlot'); if (!slot) return;   // el usuario pudo cambiar de punto
+    if (slot.getAttribute('data-guia') !== String(idGuia)) return;   // [100x] ya está mostrando OTRO punto → no pisar
     if (!d || d.ok === false || !d.proveedor) {
       slot.innerHTML = '<div class="cov-guia-load">🧾 Guía ' + _escapeHtml(String(idGuia).slice(-8)) + ' · sin detalle disponible</div>';
       return;
