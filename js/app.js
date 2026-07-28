@@ -9547,7 +9547,8 @@ const MOS = (() => {
         ${(esCat || exp) ? '' : `<button class="p2-toggle" onclick="MOS._p2Toggle(${i})"><span>📈 Ajustar precio ↔ margen · ver curvas</span><span class="p2-chev">▾</span></button>`}
         <div class="p2-editor" id="p2ed_${i}"${(esCat || exp) ? '' : ' hidden'}>
           <div class="p2-chart-wrap"><canvas id="p2cv_${i}" class="p2-canvas"></canvas>
-            <div class="p2-chart-legend"><span><i style="background:#34d399"></i>precio</span><span><i style="background:#fbbf24;height:2px"></i>costo</span><span class="p2-chart-drag">↔ arrastra · toca un punto para ver el registro</span></div>
+            <button type="button" class="p2-chart-exp" onclick="MOS.curvaOverlay(${i})" title="Ver en grande · historial detallado" aria-label="Ampliar">⤢</button>
+            <div class="p2-chart-legend"><span><i style="background:#34d399"></i>precio</span><span><i style="background:#fbbf24;height:2px"></i>costo</span><span class="p2-chart-drag">↔ arrastra · toca un punto · <b style="color:#7cb3f0">⤢ ampliar</b></span></div>
           </div>
           <div class="p2-edit-grid">
             <label class="p2-field"><span>Precio venta S/</span>
@@ -9800,8 +9801,8 @@ const MOS = (() => {
     try {
       const r = await API.post('historialPrecioCosto', { idProducto: f.x.idCanonico });
       const d = r && (r.data || r);
-      hist.P = (d && d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, m: x.motivo })).filter(x => x.v > 0 && !isNaN(x.t));
-      hist.C = (d && d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia })).filter(x => x.v > 0 && !isNaN(x.t));
+      hist.P = (d && d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, m: x.motivo, s: x.source, ao: x.appOrigen })).filter(x => x.v > 0 && !isNaN(x.t));
+      hist.C = (d && d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, s: x.source })).filter(x => x.v > 0 && !isNaN(x.t));
     } catch(_){}
     f._hist = hist;
     if (cv) _p2ChartInit(cv, hist, f.precioEd || f.precioActual || 0, parseFloat(f.x.costoNuevo) || 0);
@@ -9810,7 +9811,9 @@ const MOS = (() => {
   // [N] Gráfico cartesiano (X=tiempo real · Y=S/) con costo (─ ─) y precio (──), línea "hoy"
   //     vertical que cruza ambos (Δ = margen), centrado en la última fecha y ARRASTRABLE para
   //     ver fechas anteriores (cursor o dedo). Canvas 2D, cero dependencias.
-  function _p2ChartInit(cv, hist, nowPrecio, nowCosto) {
+  function _p2ChartInit(cv, hist, nowPrecio, nowCosto, opts) {
+    opts = opts || {};
+    const BG = opts.big ? 1.7 : 1;   // [Fase 2] puntos/líneas más grandes en el overlay
     const ctx = cv.getContext('2d'); if (!ctx) return;
     const DAY = 86400000, now = Date.now();
     const P = (hist.P || []).slice().sort((a, b) => a.t - b.t);
@@ -9867,15 +9870,15 @@ const MOS = (() => {
       const serie = (arr, hoyV, color, dash, tipo) => {
         const pts = arr.slice(); if (hoyV > 0) pts.push({ t: now, v: hoyV, hoy: true });
         if (!pts.length) return;
-        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash(dash);
+        ctx.strokeStyle = color; ctx.lineWidth = 2 * BG; ctx.setLineDash(dash.map(d => d * BG));
         ctx.beginPath(); pts.forEach((p, i) => { const X = xOf(p.t), Y = yOf(p.v); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); ctx.stroke();
         ctx.setLineDash([]);
         pts.forEach(p => {
           const X = xOf(p.t), Y = yOf(p.v);
           drawnPts.push({ x: X, y: Y, rec: p, tipo });   // [H7]
           const isSel = sel && sel.rec === p;
-          ctx.fillStyle = p.hoy ? '#fff' : color; ctx.beginPath(); ctx.arc(X, Y, p.hoy ? 4 : (isSel ? 4.5 : 2.6), 0, 7); ctx.fill();
-          if (p.hoy || isSel) { ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X, Y, isSel ? 6.5 : 4.5, 0, 7); ctx.stroke(); }
+          ctx.fillStyle = p.hoy ? '#fff' : color; ctx.beginPath(); ctx.arc(X, Y, (p.hoy ? 4 : (isSel ? 4.5 : 2.6)) * BG, 0, 7); ctx.fill();
+          if (p.hoy || isSel) { ctx.strokeStyle = color; ctx.lineWidth = 2 * BG; ctx.beginPath(); ctx.arc(X, Y, (isSel ? 6.5 : 4.5) * BG, 0, 7); ctx.stroke(); }
         });
       };
       // [v2.43.602] sin historial de PRECIO todavía → línea de referencia plana con el
@@ -9966,10 +9969,141 @@ const MOS = (() => {
       drawnPts.forEach(dp => { const d = (dp.x - cx) * (dp.x - cx) + (dp.y - cy) * (dp.y - cy); if (d < bd) { bd = d; best = dp; } });
       sel = (best && (!sel || sel.rec !== best.rec)) ? best : null;
       draw();
+      if (opts.onSelect) { try { opts.onSelect(sel ? sel.rec : null, sel ? sel.tipo : null); } catch(_){} }
     };
     cv.onpointerup = up; cv.onpointercancel = () => { drag = null; cv.style.cursor = 'grab'; };
     // hook para actualizar el punto "hoy" del precio cuando el admin edita
     cv._setHoyPrecio = v => { hoyP = v > 0 ? v : 0; draw(); };
+  }
+
+  // ═══════════════ [Fase 2] OVERLAY grande interactivo de la curva ═══════════════
+  // Reusa el motor _p2ChartInit en un canvas grande + un panel de detalle (quién/cuándo/
+  // medio para precio · fecha/quién/guía para costo) al tocar un punto. Táctil y responsive.
+  function curvaOverlay(i) {
+    const f = (window._paso2Filas || [])[i];
+    if (!f) { toast('Curva no disponible', 'warn'); return; }
+    const hist = f._hist || { P: [], C: [] };
+    const nowP = f.precioEd != null ? (parseFloat(f.precioEd) || 0) : (parseFloat(f.precioActual) || 0);
+    const nowC = parseFloat(f.x && f.x.costoNuevo) || parseFloat(f.x && f.x.costoAnterior) || 0;
+    const nombre = f.nombre || (f.x && f.x.descripcion) || (f.x && f.x.idCanonico) || 'Producto';
+    _curvaOvInyectarCSS();
+    const prev = document.getElementById('curvaOverlay'); if (prev) prev.remove();
+    const ov = document.createElement('div');
+    ov.id = 'curvaOverlay'; ov.className = 'cov-back';
+    ov.onpointerdown = e => { if (e.target === ov) _curvaOverlayCerrar(); };
+    const mg = (nowP > 0 && nowC > 0) ? ((1 - nowC / nowP) * 100).toFixed(0) + '%' : '—';
+    ov.innerHTML =
+      '<div class="cov-card" role="dialog" aria-label="Analítica de precio y costo">' +
+        '<div class="cov-head"><div class="cov-tit"><span class="cov-ico">📈</span>' +
+          '<div class="cov-tit-txt"><b>' + _escapeHtml(nombre) + '</b><span>Historial de precio y costo</span></div></div>' +
+          '<button class="cov-x" onclick="MOS._curvaOverlayCerrar()" aria-label="Cerrar">✕</button></div>' +
+        '<div class="cov-chips">' +
+          '<div class="cov-chip cov-chip-p"><span>Precio</span><b>S/ ' + nowP.toFixed(2) + '</b></div>' +
+          '<div class="cov-chip cov-chip-c"><span>Costo</span><b>S/ ' + nowC.toFixed(2) + '</b></div>' +
+          '<div class="cov-chip cov-chip-m"><span>Margen</span><b>' + mg + '</b></div></div>' +
+        '<div class="cov-chart"><canvas id="covCanvas"></canvas></div>' +
+        '<div class="cov-legend"><span><i class="dot-p"></i>precio</span><span><i class="dot-c"></i>costo</span>' +
+          '<span class="cov-hint">↔ arrastrá · tocá un punto</span></div>' +
+        '<div class="cov-det" id="covDet">' + _curvaDetVacio() + '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    requestAnimationFrame(() => ov.classList.add('cov-in'));
+    const cv = document.getElementById('covCanvas');
+    if (cv) _p2ChartInit(cv, hist, nowP, nowC, { big: true, onSelect: (rec, tipo) => {
+      const det = document.getElementById('covDet');
+      if (det) det.innerHTML = rec ? _curvaDetalle(rec, tipo) : _curvaDetVacio();
+      if (rec) { try { _opsBeep && _opsBeep('tac'); } catch(_){} }
+    } });
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
+  function _curvaOverlayCerrar() {
+    const ov = document.getElementById('curvaOverlay'); if (!ov) return;
+    ov.classList.remove('cov-in');
+    setTimeout(() => { try { ov.remove(); } catch(_){} }, 220);
+  }
+  function _curvaDetVacio() {
+    return '<div class="cov-det-empty">👆 Tocá un punto de la curva para ver <b>quién</b>, <b>cuándo</b> y <b>por qué medio</b> se registró.</div>';
+  }
+  function _curvaMedio(s) {
+    s = String(s || '').toUpperCase();
+    if (s.indexOf('PASO2') >= 0 || s.indexOf('COMPRA') >= 0) return '🛒 Compras (Paso 2)';
+    if (s.indexOf('CATALOGO') >= 0) return '🏷 Catálogo';
+    return s ? _escapeHtml(s) : '🏷 Catálogo';
+  }
+  function _curvaDetalle(rec, tipo) {
+    const esP = tipo === 'P';
+    const cls = esP ? 'is-p' : 'is-c';
+    if (rec.hoy) {
+      return '<div class="cov-det-card ' + cls + '"><div class="cov-det-top">' +
+        '<span class="cov-det-tag">' + (esP ? '💚 Precio' : '🟡 Costo') + ' actual</span>' +
+        '<b class="cov-det-val">S/ ' + (+rec.v).toFixed(2) + '</b></div>' +
+        '<div class="cov-det-row"><span class="cov-det-k">Estado</span><span>Valor vigente ahora</span></div></div>';
+    }
+    let fecha = '', hora = '';
+    try { const d = new Date(rec.t);
+      fecha = d.toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' });
+      hora = d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+    } catch(_){}
+    const rows = [];
+    if (esP) {
+      rows.push('<div class="cov-det-row"><span class="cov-det-k">Cuándo</span><span>' + fecha + ' · ' + hora + '</span></div>');
+      if (rec.u) rows.push('<div class="cov-det-row"><span class="cov-det-k">Quién</span><span>' + _escapeHtml(rec.u) + '</span></div>');
+      rows.push('<div class="cov-det-row"><span class="cov-det-k">Vía</span><span>' + _curvaMedio(rec.s) + '</span></div>');
+      if (rec.m) rows.push('<div class="cov-det-row"><span class="cov-det-k">Motivo</span><span>' + _escapeHtml(rec.m) + '</span></div>');
+    } else {
+      rows.push('<div class="cov-det-row"><span class="cov-det-k">Fecha de compra</span><span>' + fecha + '</span></div>');
+      if (rec.u) rows.push('<div class="cov-det-row"><span class="cov-det-k">Quién registró</span><span>' + _escapeHtml(rec.u) + '</span></div>');
+      if (rec.g) rows.push('<div class="cov-det-row"><span class="cov-det-k">Guía</span><span class="cov-det-guia">🧾 ' + _escapeHtml(String(rec.g)) + '</span></div>');
+    }
+    return '<div class="cov-det-card ' + cls + '"><div class="cov-det-top">' +
+      '<span class="cov-det-tag">' + (esP ? '💚 Cambio de precio' : '🟡 Costo de compra') + '</span>' +
+      '<b class="cov-det-val">S/ ' + (+rec.v).toFixed(2) + '</b></div>' + rows.join('') + '</div>';
+  }
+  function _curvaOvInyectarCSS() {
+    if (S._covCSS) return; S._covCSS = true;
+    const st = document.createElement('style'); st.id = 'curvaOvCSS';
+    st.textContent =
+      '.p2-chart-wrap{position:relative}' +
+      '.p2-chart-exp{position:absolute;top:6px;right:6px;z-index:2;width:26px;height:26px;border-radius:8px;border:1px solid #26344c;background:rgba(10,17,32,.82);color:#9fb2d4;font-size:14px;line-height:1;cursor:pointer;display:grid;place-items:center;transition:.15s;backdrop-filter:blur(3px)}' +
+      '.p2-chart-exp:hover{background:#152036;color:#cfe0ff;border-color:#3a4d70}' +
+      '.cov-back{position:fixed;inset:0;z-index:9998;background:rgba(4,8,16,.66);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:16px;opacity:0;transition:opacity .22s ease}' +
+      '.cov-back.cov-in{opacity:1}' +
+      '.cov-card{width:min(680px,100%);max-height:92vh;overflow:auto;background:linear-gradient(180deg,#0f1a2c,#0b1220);border:1px solid #223049;border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.6);padding:16px 16px 18px;transform:translateY(14px) scale(.985);opacity:0;transition:transform .26s cubic-bezier(.22,1,.36,1),opacity .26s}' +
+      '.cov-back.cov-in .cov-card{transform:none;opacity:1}' +
+      '.cov-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}' +
+      '.cov-tit{display:flex;align-items:center;gap:10px;min-width:0}.cov-ico{font-size:20px;flex:none}' +
+      '.cov-tit-txt{display:flex;flex-direction:column;min-width:0}' +
+      '.cov-tit-txt b{font-size:15px;font-weight:800;color:#eaf1fb;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.cov-tit-txt span{font-size:11px;color:#6b7d9c;font-weight:600}' +
+      '.cov-x{flex:none;width:34px;height:34px;border-radius:10px;border:1px solid #26344c;background:#0c1626;color:#8296b5;font-size:15px;cursor:pointer;transition:.15s}' +
+      '.cov-x:hover{background:#152036;color:#dbe4f3}' +
+      '.cov-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}' +
+      '.cov-chip{border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:1px;border:1px solid #1d2942;background:#0a1120}' +
+      '.cov-chip span{font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192}' +
+      '.cov-chip b{font-size:15px;font-weight:800;font-family:ui-monospace,monospace}' +
+      '.cov-chip-p{border-color:rgba(52,211,153,.28);background:linear-gradient(180deg,rgba(52,211,153,.09),transparent)}.cov-chip-p b{color:#34d399}' +
+      '.cov-chip-c{border-color:rgba(251,191,36,.26);background:linear-gradient(180deg,rgba(251,191,36,.08),transparent)}.cov-chip-c b{color:#fbbf24}' +
+      '.cov-chip-m b{color:#93a4c2}' +
+      '.cov-chart{position:relative;height:clamp(200px,42vh,340px);border:1px solid #1a2740;border-radius:14px;background:radial-gradient(120% 100% at 50% 0,#0c1626,#0a1120);padding:4px}' +
+      '.cov-chart canvas{width:100%;height:100%;display:block;touch-action:none;cursor:grab}' +
+      '.cov-legend{display:flex;align-items:center;gap:14px;margin:9px 2px 12px;font-size:10.5px;color:#7488a6;font-weight:700}' +
+      '.cov-legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}' +
+      '.cov-legend .dot-p{background:#34d399}.cov-legend .dot-c{background:#fbbf24;height:3px;border-radius:2px}' +
+      '.cov-hint{margin-left:auto;color:#5f7192;font-weight:600}' +
+      '.cov-det{min-height:80px}' +
+      '.cov-det-empty{border:1px dashed #26344c;border-radius:12px;padding:16px;text-align:center;font-size:12px;color:#7488a6;line-height:1.55}.cov-det-empty b{color:#aebbd2}' +
+      '.cov-det-card{border:1px solid #223049;border-radius:12px;padding:12px 13px;background:#0c1626;animation:covPop .22s cubic-bezier(.22,1,.36,1)}' +
+      '.cov-det-card.is-p{border-left:3px solid #34d399}.cov-det-card.is-c{border-left:3px solid #fbbf24}' +
+      '@keyframes covPop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}' +
+      '.cov-det-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1a2740}' +
+      '.cov-det-tag{font-size:11px;font-weight:800;color:#aebbd2}' +
+      '.cov-det-val{font-size:18px;font-weight:800;font-family:ui-monospace,monospace;color:#eaf1fb}' +
+      '.cov-det-card.is-p .cov-det-val{color:#34d399}.cov-det-card.is-c .cov-det-val{color:#fbbf24}' +
+      '.cov-det-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:#c3cee0;padding:3px 0}' +
+      '.cov-det-k{font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#5f7192;flex:none}' +
+      '.cov-det-guia{color:#fbbf24;font-weight:700;font-family:ui-monospace,monospace}' +
+      '@media(max-width:560px){.cov-card{width:100%;max-height:94vh;border-radius:16px}.cov-chips{gap:6px}.cov-chip b{font-size:13.5px}}';
+    document.head.appendChild(st);
   }
 
   function _p2InyectarCSS() {
@@ -44302,6 +44436,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaSetZona, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
+    curvaOverlay, _curvaOverlayCerrar,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
