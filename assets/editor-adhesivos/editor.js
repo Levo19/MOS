@@ -85,7 +85,7 @@
   // [v1.0.4] CSS_VERSION constante — bumpear cuando cambie styles.css.
   // Antes era hardcoded inline '?v=1.0.0' → al actualizar estilos el cache
   // viejo se quedaba pegado en navegadores.
-  var CSS_VERSION = '1.0.4';
+  var CSS_VERSION = '1.0.5';
   function _inyectarCss() {
     if (CSS_INYECTADO) return;
     var l = document.createElement('link');
@@ -459,6 +459,8 @@
   //  - Duplicar (⎘) y Eliminar (🗑) por plantilla
   //  - Indicador ⚠ + click-disabled para plantillas con JSON corrupto
   //    (detectado en backend `jsonCorrupto: true` en listarAdhesivosPlantillas)
+  // [v1.0.6] Cards modernos: miniatura FIEL (json2svg + dibujarBarcodes, mismo motor que el editor)
+  //   + botones con etiqueta clara. Contenedor scrolleable si hay muchas. Protegidas: 🔒 sin borrar.
   function _renderListaPlantillas() {
     var cont = document.getElementById('edaPlantillas');
     if (!cont) return;
@@ -469,28 +471,36 @@
     cont.innerHTML = _plantillasGuardadas.map(function(p) {
       var sel = (_idPlantillaActual === p.idPlantilla) ? ' active' : '';
       var idEsc = String(p.idPlantilla || '').replace(/'/g, "\\'");
-      // [v1.0.4] Plantilla corrupta: no clickeable + indicador rojo
       if (p.jsonCorrupto) {
-        return '<div class="eda-plantilla-item" style="opacity:.55;cursor:not-allowed" title="Plantilla con JSON corrupto — revisar en Sheets">'
-             +   '<span class="eda-plantilla-icon" style="color:#f87171">⚠</span>'
-             +   '<span class="eda-plantilla-name" style="color:#f87171">' + _esc(p.nombre) + ' (corrupta)</span>'
-             +   '<div class="eda-capa-actions">'
-             +     '<button onclick="event.stopPropagation();EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')" title="Eliminar (soft-delete)">🗑</button>'
+        return '<div class="eda-pcard" style="opacity:.6">'
+             +   '<div class="eda-pcard-body">'
+             +     '<div class="eda-pcard-name" style="color:#f87171">⚠ ' + _esc(p.nombre) + ' (corrupta)</div>'
+             +     '<div class="eda-pcard-actions"><button class="eda-pbtn eda-pbtn-del" onclick="EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')">🗑 Borrar</button></div>'
              +   '</div>'
              + '</div>';
       }
-      // [protegida] plantilla base: 🔒, imprimible + duplicable, pero SIN 🗑 (no se elimina).
       var esProt = !!(p.json && p.json.metadata && p.json.metadata.protegida);
-      return '<div class="eda-plantilla-item' + sel + '" onclick="EditorAdhesivos._cargarPlantilla(\'' + idEsc + '\')">'
-           +   '<span class="eda-plantilla-icon">' + (esProt ? '🔒' : '📋') + '</span>'
-           +   '<span class="eda-plantilla-name" title="' + _esc(p.descripcion || p.nombre) + '">' + _esc(p.nombre) + '</span>'
-           +   '<div class="eda-capa-actions">'
-           +     '<button onclick="event.stopPropagation();EditorAdhesivos._imprimirPlantillaLista(\'' + idEsc + '\')" title="Imprimir esta plantilla">🖨</button>'
-           +     '<button onclick="event.stopPropagation();EditorAdhesivos._duplicarPlantilla(\'' + idEsc + '\')" title="Duplicar como nueva">⎘</button>'
-           +     (esProt ? '' : '<button onclick="event.stopPropagation();EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')" title="Eliminar (soft-delete)">🗑</button>')
+      // miniatura fiel: json2svg (los QR/barcodes los pinta dibujarBarcodes al final)
+      var thumb = '';
+      try {
+        var pj = (typeof p.json === 'string') ? JSON.parse(p.json) : p.json;
+        if (window.EditorAdhesivosConverter && pj) thumb = EditorAdhesivosConverter.json2svg(pj, { grid: false });
+      } catch(_) {}
+      return '<div class="eda-pcard' + sel + '">'
+           +   '<div class="eda-pcard-thumb" onclick="EditorAdhesivos._cargarPlantilla(\'' + idEsc + '\')" title="Abrir para editar en el centro">'
+           +     (thumb || '<span style="color:#94a3b8;font-size:11px">sin preview</span>') + '</div>'
+           +   '<div class="eda-pcard-body">'
+           +     '<div class="eda-pcard-name" title="' + _esc(p.descripcion || p.nombre) + '">' + (esProt ? '<span title="Plantilla base protegida (no se borra)">🔒</span>' : '') + _esc(p.nombre) + '</div>'
+           +     '<div class="eda-pcard-actions">'
+           +       '<button class="eda-pbtn eda-pbtn-print" onclick="EditorAdhesivos._imprimirPlantillaLista(\'' + idEsc + '\')" title="Ver el adhesivo, poner la cantidad e imprimir">🖨 Imprimir</button>'
+           +       '<button class="eda-pbtn eda-pbtn-dup" onclick="EditorAdhesivos._duplicarPlantilla(\'' + idEsc + '\')" title="Crear una copia editable a partir de esta">📄 Duplicar</button>'
+           +       (esProt ? '' : '<button class="eda-pbtn eda-pbtn-del" onclick="EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')" title="Borrar esta plantilla">🗑</button>')
+           +     '</div>'
            +   '</div>'
            + '</div>';
     }).join('');
+    // pintar los QR/barcodes de TODAS las miniaturas (mismo motor que el preview del editor)
+    try { if (window.EditorAdhesivosConverter) EditorAdhesivosConverter.dibujarBarcodes(cont); } catch(_) {}
   }
 
   // ── Wiring de eventos ───────────────────────────────────────────

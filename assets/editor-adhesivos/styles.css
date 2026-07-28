@@ -254,8 +254,56 @@
 }
 .eda-capa-actions button:hover { background: rgba(255,255,255,.1); }
 
-/* Plantillas (lista) */
+/* Plantillas — cards modernos con miniatura (v1.0.5) */
 .eda-plantillas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.eda-plantillas::-webkit-scrollbar { width: 8px; }
+.eda-plantillas::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+.eda-pcard {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.eda-pcard:hover { border-color: #6366f1; transform: translateY(-1px); }
+.eda-pcard.active { border-color: #10b981; box-shadow: 0 0 0 1px #10b981; }
+.eda-pcard-thumb {
+  background: #ffffff;
+  padding: 10px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  min-height: 58px;
+}
+.eda-pcard-thumb svg { width: 100%; height: auto; max-height: 100px; display: block; }
+.eda-pcard-body { padding: 9px 10px 11px; }
+.eda-pcard-name {
+  font-weight: 700; font-size: 12px; color: #e2e8f0;
+  display: flex; align-items: center; gap: 5px; margin-bottom: 9px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.eda-pcard-actions { display: flex; gap: 6px; }
+.eda-pbtn {
+  border: none; border-radius: 8px; padding: 8px 9px; font-size: 11px; font-weight: 700;
+  cursor: pointer; transition: filter .12s, transform .1s; display: flex; align-items: center;
+  justify-content: center; gap: 4px; white-space: nowrap;
+}
+.eda-pbtn:hover { filter: brightness(1.15); }
+.eda-pbtn:active { transform: scale(.96); }
+.eda-pbtn-print { flex: 1; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; }
+.eda-pbtn-dup { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
+.eda-pbtn-del { background: rgba(239,68,68,.12); color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+
+/* Plantillas (lista antigua — compat) */
+.eda-plantillas-legacy {
   display: flex;
   flex-direction: column;
   gap: 4px;

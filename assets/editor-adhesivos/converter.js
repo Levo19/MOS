@@ -240,6 +240,24 @@
     var grid = 21;  // QR v1 = 21×21 módulos
     var cellSz = sz / grid;
     var codigo = String(c.codigo || '');
+    // [v1.0.2] QR REAL (idéntica data que imprime el TSPL: comando QRCODE con este `codigo`).
+    // Usa la librería global `qrcode` (qrcode-generator). Si no está cargada → cae al patrón
+    // decorativo de abajo (respaldo NO escaneable). Así el preview es 100% fiel a lo que se imprime.
+    if (typeof window !== 'undefined' && typeof window.qrcode === 'function' && codigo) {
+      try {
+        var _qr = window.qrcode(0, 'M'); _qr.addData(codigo); _qr.make();
+        var _n = _qr.getModuleCount(), _cell = sz / _n;
+        var _out = ['<rect x="' + x + '" y="' + y + '" width="' + sz + '" height="' + sz + '" fill="#fff"/>'];
+        for (var _r = 0; _r < _n; _r++) {
+          for (var _co = 0; _co < _n; _co++) {
+            if (_qr.isDark(_r, _co)) {
+              _out.push('<rect x="' + (x + _co * _cell) + '" y="' + (y + _r * _cell) + '" width="' + _cell + '" height="' + _cell + '" fill="#000"/>');
+            }
+          }
+        }
+        return '<g class="eda-qr-preview" data-contenido="' + _esc(codigo.substring(0, 40)) + '">' + _out.join('') + '</g>';
+      } catch (_) { /* si algo falla, cae al patrón decorativo de respaldo */ }
+    }
     // Hash determinístico del contenido para que SIEMPRE se vea igual al
     // mismo input (no random — sería confuso si parpadea al re-render).
     var hash = 0;
