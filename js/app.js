@@ -9983,8 +9983,9 @@ const MOS = (() => {
     const f = (window._paso2Filas || [])[i];
     if (!f) { toast('Curva no disponible', 'warn'); return; }
     const hist = f._hist || { P: [], C: [] };
-    const nowP = f.precioEd != null ? (parseFloat(f.precioEd) || 0) : (parseFloat(f.precioActual) || 0);
-    const nowC = parseFloat(f.x && f.x.costoNuevo) || parseFloat(f.x && f.x.costoAnterior) || 0;
+    // [50x] mismo cálculo que el mini-chart (_p2CargarCurva) para que ambas vistas coincidan
+    const nowP = parseFloat(f.precioEd) || parseFloat(f.precioActual) || 0;
+    const nowC = parseFloat(f.x && f.x.costoNuevo) || 0;
     const nombre = f.nombre || (f.x && f.x.descripcion) || (f.x && f.x.idCanonico) || 'Producto';
     _curvaOvInyectarCSS();
     const prev = document.getElementById('curvaOverlay'); if (prev) prev.remove();
@@ -10013,6 +10014,7 @@ const MOS = (() => {
       const det = document.getElementById('covDet');
       if (det) det.innerHTML = rec ? _curvaDetalle(rec, tipo) : _curvaDetVacio();
       if (rec) { try { _opsBeep && _opsBeep('tac'); } catch(_){} }
+      if (rec && tipo === 'C' && rec.g && !rec.hoy) _curvaCargarGuia(rec.g);   // [Fase 3] mini-preview de la guía
     } });
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
@@ -10055,17 +10057,36 @@ const MOS = (() => {
       if (rec.u) rows.push('<div class="cov-det-row"><span class="cov-det-k">Quién registró</span><span>' + _escapeHtml(rec.u) + '</span></div>');
       if (rec.g) rows.push('<div class="cov-det-row"><span class="cov-det-k">Guía</span><span class="cov-det-guia">🧾 ' + _escapeHtml(String(rec.g)) + '</span></div>');
     }
+    // [Fase 3] costo con guía → slot para el mini-preview (se carga async al seleccionar)
+    const slot = (!esP && rec.g) ? '<div class="cov-guia" id="covGuiaSlot"><div class="cov-guia-load">🧾 cargando guía…</div></div>' : '';
     return '<div class="cov-det-card ' + cls + '"><div class="cov-det-top">' +
       '<span class="cov-det-tag">' + (esP ? '💚 Cambio de precio' : '🟡 Costo de compra') + '</span>' +
-      '<b class="cov-det-val">S/ ' + (+rec.v).toFixed(2) + '</b></div>' + rows.join('') + '</div>';
+      '<b class="cov-det-val">S/ ' + (+rec.v).toFixed(2) + '</b></div>' + rows.join('') + slot + '</div>';
+  }
+  // [Fase 3] Carga el mini-preview de la guía en el slot del panel de detalle (proveedor, monto, ítems).
+  async function _curvaCargarGuia(idGuia) {
+    if (!document.getElementById('covGuiaSlot')) return;
+    let d = null;
+    try { const r = await API.post('guiaPreview', { idGuia }); d = r && (r.data || r); } catch(_){}
+    const slot = document.getElementById('covGuiaSlot'); if (!slot) return;   // el usuario pudo cambiar de punto
+    if (!d || d.ok === false || !d.proveedor) {
+      slot.innerHTML = '<div class="cov-guia-load">🧾 Guía ' + _escapeHtml(String(idGuia).slice(-8)) + ' · sin detalle disponible</div>';
+      return;
+    }
+    const its = (d.items || []);
+    const itemsHtml = its.map(it => '<div class="cov-guia-it"><span>' + _escapeHtml(String(it.nombre || '')) + '</span><b>×' + (parseFloat(it.cantidad) || 0) + '</b></div>').join('');
+    const restantes = (parseInt(d.nItems, 10) || its.length) - its.length;
+    const mas = restantes > 0 ? '<div class="cov-guia-mas">+' + restantes + ' ítem(s) más</div>' : '';
+    slot.innerHTML =
+      '<div class="cov-guia-head"><span class="cov-guia-prov">🧾 ' + _escapeHtml(String(d.proveedor)) + '</span>' +
+        (d.monto != null ? '<b class="cov-guia-monto">S/ ' + (parseFloat(d.monto) || 0).toFixed(2) + '</b>' : '') + '</div>' +
+      '<div class="cov-guia-doc">' + (d.documento ? _escapeHtml(String(d.documento)) + ' · ' : '') + _escapeHtml(String(d.fecha || '')) + '</div>' +
+      '<div class="cov-guia-items">' + itemsHtml + mas + '</div>';
   }
   function _curvaOvInyectarCSS() {
     if (S._covCSS) return; S._covCSS = true;
     const st = document.createElement('style'); st.id = 'curvaOvCSS';
     st.textContent =
-      '.p2-chart-wrap{position:relative}' +
-      '.p2-chart-exp{position:absolute;top:6px;right:6px;z-index:2;width:26px;height:26px;border-radius:8px;border:1px solid #26344c;background:rgba(10,17,32,.82);color:#9fb2d4;font-size:14px;line-height:1;cursor:pointer;display:grid;place-items:center;transition:.15s;backdrop-filter:blur(3px)}' +
-      '.p2-chart-exp:hover{background:#152036;color:#cfe0ff;border-color:#3a4d70}' +
       '.cov-back{position:fixed;inset:0;z-index:9998;background:rgba(4,8,16,.66);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:16px;opacity:0;transition:opacity .22s ease}' +
       '.cov-back.cov-in{opacity:1}' +
       '.cov-card{width:min(680px,100%);max-height:92vh;overflow:auto;background:linear-gradient(180deg,#0f1a2c,#0b1220);border:1px solid #223049;border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.6);padding:16px 16px 18px;transform:translateY(14px) scale(.985);opacity:0;transition:transform .26s cubic-bezier(.22,1,.36,1),opacity .26s}' +
@@ -10102,6 +10123,16 @@ const MOS = (() => {
       '.cov-det-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:#c3cee0;padding:3px 0}' +
       '.cov-det-k{font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#5f7192;flex:none}' +
       '.cov-det-guia{color:#fbbf24;font-weight:700;font-family:ui-monospace,monospace}' +
+      '.cov-guia{margin-top:10px;padding-top:10px;border-top:1px dashed #26344c;animation:covPop .2s ease}' +
+      '.cov-guia-load{font-size:11px;color:#7488a6;text-align:center;padding:6px}' +
+      '.cov-guia-head{display:flex;align-items:center;justify-content:space-between;gap:8px}' +
+      '.cov-guia-prov{font-size:12px;font-weight:800;color:#eaf1fb;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.cov-guia-monto{font-size:14px;font-weight:800;color:#fbbf24;font-family:ui-monospace,monospace;flex:none}' +
+      '.cov-guia-doc{font-size:10px;color:#6b7d9c;font-weight:600;margin:2px 0 7px}' +
+      '.cov-guia-items{display:flex;flex-direction:column;gap:3px}' +
+      '.cov-guia-it{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;color:#c3cee0;background:#0a1120;border:1px solid #182338;border-radius:7px;padding:5px 8px}' +
+      '.cov-guia-it span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cov-guia-it b{flex:none;color:#93a4c2;font-family:ui-monospace,monospace}' +
+      '.cov-guia-mas{font-size:10px;color:#6b7d9c;text-align:center;padding:3px;font-weight:600}' +
       '@media(max-width:560px){.cov-card{width:100%;max-height:94vh;border-radius:16px}.cov-chips{gap:6px}.cov-chip b{font-size:13.5px}}';
     document.head.appendChild(st);
   }
@@ -10139,7 +10170,9 @@ const MOS = (() => {
       .p2-editor{display:flex;flex-direction:column;gap:10px;animation:p2EdIn .28s ease}
       @keyframes p2EdIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
       @keyframes p2StepIn{from{opacity:0;transform:translateX(38px)}to{opacity:1;transform:none}}
-      .p2-chart-wrap{background:#0a1120;border:1px solid #1e293b;border-radius:11px;padding:8px 8px 4px}
+      .p2-chart-wrap{position:relative;background:#0a1120;border:1px solid #1e293b;border-radius:11px;padding:8px 8px 4px}
+      .p2-chart-exp{position:absolute;top:6px;right:6px;z-index:2;width:26px;height:26px;border-radius:8px;border:1px solid #26344c;background:rgba(10,17,32,.82);color:#9fb2d4;font-size:14px;line-height:1;cursor:pointer;display:grid;place-items:center;transition:.15s;backdrop-filter:blur(3px)}
+      .p2-chart-exp:hover{background:#152036;color:#cfe0ff;border-color:#3a4d70}
       .p2-canvas{width:100%;height:150px;display:block;touch-action:none}
       .p2-chart-legend{display:flex;align-items:center;gap:12px;font-size:9px;color:#93a4c2;padding:5px 4px 2px}
       .p2-chart-legend i{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
