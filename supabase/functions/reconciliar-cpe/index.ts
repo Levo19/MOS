@@ -80,12 +80,20 @@ Deno.serve(async (req: Request) => {
   try {
     const url = Deno.env.get('SUPABASE_URL');
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const token = Deno.env.get('NUBEFACT_TOKEN');
     const ruta = Deno.env.get('NUBEFACT_RUTA');
     const cronSecret = Deno.env.get('CPE_CRON_SECRET');
+    // [fix go-live] TOKEN POR LOCAL: NubeFact da un token por establecimiento (por serie). El go-live
+    // usa NUBEFACT_TOKENS = JSON { "<serie>": "<token>" }, con fallback a NUBEFACT_TOKEN (demo/único).
+    // Antes este Edge leía SOLO NUBEFACT_TOKEN → al pasar al mapa por local ese secret quedó vacío y
+    // TODA reconciliación moría en "NubeFact no configurado" (500) → las boletas jamás salían de
+    // PENDIENTE aunque SUNAT ya las aceptara por resumen. Ahora idéntico a emitir-cpe: token por serie.
+    let tokensMap: Record<string, string> = {};
+    try { tokensMap = JSON.parse(Deno.env.get('NUBEFACT_TOKENS') || '{}'); } catch { tokensMap = {}; }
+    const fallbackTok = Deno.env.get('NUBEFACT_TOKEN') || '';
+    const pickToken = (serie: string): string => tokensMap[String(serie || '').toUpperCase()] || fallbackTok;
     if (!url || !key) return json({ ok: false, error: 'plataforma no configurada' }, 500);
     if (!cronSecret || req.headers.get('x-cpe-cron') !== cronSecret) return json({ ok: false, error: 'no autorizado (cron secret)' }, 401);
-    if (!token || !ruta) return json({ ok: false, error: 'NubeFact no configurado' }, 500);
+    if (!ruta || (!fallbackTok && Object.keys(tokensMap).length === 0)) return json({ ok: false, error: 'NubeFact no configurado (NUBEFACT_RUTA + NUBEFACT_TOKENS o NUBEFACT_TOKEN)' }, 500);
     if (!(await cpeDirectoOn(url, key))) return json({ ok: false, error: 'CPE_DIRECTO_DESACTIVADO' }, 403);
 
     const inp = await req.json().catch(() => ({}));
@@ -119,7 +127,9 @@ Deno.serve(async (req: Request) => {
       if (!m) { detalle.push({ correlativo: corr, accion: 'correlativo_malformado' }); continue; }
       const tipoComprobante = (row.tipo_doc === 'FACTURA') ? 1 : 2;
       const anulada = row.anulada === true;
-      const cons = await consultar(m[1], parseInt(m[2], 10), tipoComprobante, ruta, token);
+      const tok = pickToken(m[1]);   // [fix] token por serie/local
+      if (!tok) { sinCambio++; detalle.push({ correlativo: corr, accion: 'sin_token_para_serie_' + m[1] }); continue; }
+      const cons = await consultar(m[1], parseInt(m[2], 10), tipoComprobante, ruta, tok);
       if (!cons.ok) {
         // La consulta falló (red, o NubeFact dice "no existe"). Si la venta está ANULADA, dejarla en
         // ANULADO_PEND_BAJA (visible + se reintenta el próximo ciclo) en vez de terminal: "no existe" puede
@@ -134,7 +144,7 @@ Deno.serve(async (req: Request) => {
       if (anulada) {
         if (cons.aceptada) {
           // SUNAT lo aceptó → comunicar la baja YA (auto-baja).
-          const b = await generarBaja(m[1], parseInt(m[2], 10), tipoComprobante, ruta, token);
+          const b = await generarBaja(m[1], parseInt(m[2], 10), tipoComprobante, ruta, tok);
           const sp = await setEstado(row.ref_local, { nf_estado: b.estado, aceptada: true, consultado: true,
             sunat_desc: cons.sunatDescription, sunat_code: cons.sunat_code });
           if (sp.ok && (b.estado === 'BAJA_ACEPTADA' || b.estado === 'BAJA_SOLICITADA')) { bajas++; detalle.push({ correlativo: corr, accion: 'auto_baja_' + b.estado }); }
