@@ -9965,11 +9965,19 @@ const MOS = (() => {
       // [H7] hit-test: punto más cercano al click
       const r = cv.getBoundingClientRect();
       const cx = e.clientX - r.left, cy = e.clientY - r.top;
-      let best = null, bd = 16 * 16;
-      drawnPts.forEach(dp => { const d = (dp.x - cx) * (dp.x - cx) + (dp.y - cy) * (dp.y - cy); if (d < bd) { bd = d; best = dp; } });
+      let best = null, bd = 16 * 16; const CLR = 15 * 15; const cluster = [];
+      drawnPts.forEach(dp => {
+        const d = (dp.x - cx) * (dp.x - cx) + (dp.y - cy) * (dp.y - cy);
+        if (d < bd) { bd = d; best = dp; }
+        if (d < CLR) cluster.push({ rec: dp.rec, tipo: dp.tipo });   // [feedback] puntos superpuestos
+      });
       sel = (best && (!sel || sel.rec !== best.rec)) ? best : null;
       draw();
-      if (opts.onSelect) { try { opts.onSelect(sel ? sel.rec : null, sel ? sel.tipo : null); } catch(_){} }
+      if (opts.onSelect) {
+        // [feedback] pasar TODO el cluster (puntos apelmazados) ordenado por fecha desc
+        const cl = sel ? cluster.slice().sort((a, b) => (b.rec.t || Infinity) - (a.rec.t || Infinity)) : [];
+        try { opts.onSelect(sel ? sel.rec : null, sel ? sel.tipo : null, cl); } catch(_){}
+      }
     };
     cv.onpointerup = up; cv.onpointercancel = () => { drag = null; cv.style.cursor = 'grab'; };
     // hook para actualizar el punto "hoy" del precio cuando el admin edita
@@ -10033,15 +10041,51 @@ const MOS = (() => {
       (dominio ? '<div class="cov-dom">' + dominio + '</div>' : '') +
       '<div class="cov-chart"><canvas id="covCanvas"></canvas></div>' +
       '<div class="cov-legend"><span><i class="dot-p"></i>precio</span><span><i class="dot-c"></i>costo</span>' +
-        '<span class="cov-hint">↔ arrastrá · tocá un punto</span></div>' +
+        '<span class="cov-hint">↔ arrastrá · tocá un punto o un registro</span></div>' +
+      '<div class="cov-regs-tit">📋 Registros</div>' +
+      '<div class="cov-regs" id="covRegs">' + _curvaListaRegistros(hist) + '</div>' +
       '<div class="cov-det" id="covDet">' + _curvaDetVacio() + '</div>';
     const cv = document.getElementById('covCanvas');
-    if (cv) _p2ChartInit(cv, hist, nowP, nowC, { big: true, onSelect: (rec, tipo) => {
+    if (cv) _p2ChartInit(cv, hist, nowP, nowC, { big: true, onSelect: (rec, tipo, cluster) => {
       const det = document.getElementById('covDet');
-      if (det) det.innerHTML = rec ? _curvaDetalle(rec, tipo) : _curvaDetVacio();
-      if (rec) { try { _opsBeep && _opsBeep('tac'); } catch(_){} }
-      if (rec && tipo === 'C' && rec.g && !rec.hoy) _curvaCargarGuia(rec.g);   // preview de guía
+      if (!det) return;
+      if (!rec) { det.innerHTML = _curvaDetVacio(); return; }
+      // [feedback] si el punto tiene varios cambios superpuestos, mostrarlos TODOS (último primero)
+      const grupo = (cluster && cluster.length > 1) ? cluster : [{ rec: rec, tipo: tipo }];
+      det.innerHTML = (grupo.length > 1 ? '<div class="cov-det-multi">📌 ' + grupo.length + ' cambios en este punto · último primero</div>' : '') +
+                      grupo.map((g, gi) => _curvaDetalle(g.rec, g.tipo, gi)).join('');
+      grupo.forEach((g, gi) => { if (g.tipo === 'C' && g.rec.g && !g.rec.hoy) _curvaCargarGuia(g.rec.g, gi); });
+      try { _opsBeep && _opsBeep('tac'); } catch(_){}
     } });
+  }
+  // [feedback] Lista de registros (precio+costo, más reciente primero) — SIEMPRE visible,
+  // aunque el gráfico apelmace puntos cercanos en el tiempo. Cada fila abre su detalle.
+  let _covRecs = [];
+  function _curvaListaRegistros(hist) {
+    const recs = [];
+    (hist.P || []).forEach(p => recs.push({ rec: p, tipo: 'P' }));
+    (hist.C || []).forEach(p => recs.push({ rec: p, tipo: 'C' }));
+    recs.sort((a, b) => (b.rec.t || 0) - (a.rec.t || 0));
+    _covRecs = recs;
+    if (!recs.length) return '<div class="cov-reg-empty">Sin cambios registrados todavía — al próximo cambio de precio o compra aparece acá.</div>';
+    return recs.map((r, i) => {
+      const esP = r.tipo === 'P';
+      let fh = '';
+      try { const dt = new Date(r.rec.t); fh = dt.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }) + ' · ' + dt.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }); } catch(_){}
+      return '<div class="cov-reg ' + (esP ? 'is-p' : 'is-c') + '" onclick="MOS._curvaSelReg(' + i + ')">' +
+        '<span class="cov-reg-ic">' + (esP ? '💚' : '🟡') + '</span>' +
+        '<span class="cov-reg-v">S/ ' + (+r.rec.v).toFixed(2) + '</span>' +
+        '<span class="cov-reg-f">' + fh + '</span>' +
+        '<span class="cov-reg-u">' + _escapeHtml(String(r.rec.u || '')) + '</span></div>';
+    }).join('');
+  }
+  function _curvaSelReg(n) {
+    const r = _covRecs[n]; if (!r) return;
+    const det = document.getElementById('covDet');
+    if (det) det.innerHTML = _curvaDetalle(r.rec, r.tipo);
+    if (r.tipo === 'C' && r.rec.g && !r.rec.hoy) _curvaCargarGuia(r.rec.g);
+    try { document.querySelectorAll('#curvaOverlay .cov-reg').forEach((el, i) => el.classList.toggle('on', i === n)); } catch(_){}
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
   function _curvaOverlayCerrar() {
     const ov = document.getElementById('curvaOverlay'); if (!ov) return;
@@ -10057,7 +10101,8 @@ const MOS = (() => {
     if (s.indexOf('CATALOGO') >= 0) return '🏷 Catálogo';
     return s ? _escapeHtml(s) : '🏷 Catálogo';
   }
-  function _curvaDetalle(rec, tipo) {
+  function _curvaDetalle(rec, tipo, idx) {
+    idx = idx || 0;
     const esP = tipo === 'P';
     const cls = esP ? 'is-p' : 'is-c';
     if (rec.hoy) {
@@ -10083,17 +10128,18 @@ const MOS = (() => {
       if (rec.g) rows.push('<div class="cov-det-row"><span class="cov-det-k">Guía</span><span class="cov-det-guia">🧾 ' + _escapeHtml(String(rec.g)) + '</span></div>');
     }
     // [Fase 3] costo con guía → slot para el mini-preview (se carga async al seleccionar)
-    const slot = (!esP && rec.g) ? '<div class="cov-guia" id="covGuiaSlot" data-guia="' + _escapeHtml(String(rec.g)) + '"><div class="cov-guia-load">🧾 cargando guía…</div></div>' : '';
+    const slot = (!esP && rec.g) ? '<div class="cov-guia" id="covGuiaSlot' + idx + '" data-guia="' + _escapeHtml(String(rec.g)) + '"><div class="cov-guia-load">🧾 cargando guía…</div></div>' : '';
     return '<div class="cov-det-card ' + cls + '"><div class="cov-det-top">' +
       '<span class="cov-det-tag">' + (esP ? '💚 Cambio de precio' : '🟡 Costo de compra') + '</span>' +
       '<b class="cov-det-val">S/ ' + (+rec.v).toFixed(2) + '</b></div>' + rows.join('') + slot + '</div>';
   }
   // [Fase 3] Carga el mini-preview de la guía en el slot del panel de detalle (proveedor, monto, ítems).
-  async function _curvaCargarGuia(idGuia) {
-    if (!document.getElementById('covGuiaSlot')) return;
+  async function _curvaCargarGuia(idGuia, idx) {
+    const sid = 'covGuiaSlot' + (idx || 0);
+    if (!document.getElementById(sid)) return;
     let d = null;
     try { const r = await API.post('guiaPreview', { idGuia }); d = r && (r.data || r); } catch(_){}
-    const slot = document.getElementById('covGuiaSlot'); if (!slot) return;   // el usuario pudo cambiar de punto
+    const slot = document.getElementById(sid); if (!slot) return;   // el usuario pudo cambiar de punto
     if (slot.getAttribute('data-guia') !== String(idGuia)) return;   // [100x] ya está mostrando OTRO punto → no pisar
     if (!d || d.ok === false || !d.proveedor) {
       slot.innerHTML = '<div class="cov-guia-load">🧾 Guía ' + _escapeHtml(String(idGuia).slice(-8)) + ' · sin detalle disponible</div>';
@@ -10155,6 +10201,8 @@ const MOS = (() => {
       '.cov-det-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;color:#c3cee0;padding:3px 0}' +
       '.cov-det-k{font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#5f7192;flex:none}' +
       '.cov-det-guia{color:#fbbf24;font-weight:700;font-family:ui-monospace,monospace}' +
+      '.cov-det-multi{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#93a4c2;margin:0 2px 7px;padding:5px 9px;background:rgba(124,179,240,.08);border:1px solid rgba(124,179,240,.2);border-radius:8px;text-align:center}' +
+      '.cov-det .cov-det-card + .cov-det-card{margin-top:8px}' +
       '.cov-guia{margin-top:10px;padding-top:10px;border-top:1px dashed #26344c;animation:covPop .2s ease}' +
       '.cov-guia-load{font-size:11px;color:#7488a6;text-align:center;padding:6px}' +
       '.cov-guia-head{display:flex;align-items:center;justify-content:space-between;gap:8px}' +
@@ -10172,7 +10220,18 @@ const MOS = (() => {
       '.cov-guia-body{display:flex;gap:9px;align-items:flex-start}.cov-guia-body .cov-guia-items{flex:1;min-width:0}' +
       '.cov-guia-foto{width:66px;height:66px;flex:none;object-fit:cover;border-radius:9px;border:1px solid #26344c;cursor:pointer;transition:.15s}.cov-guia-foto:hover{border-color:#3a4d70;transform:scale(1.03)}' +
       '.cov-guia-nofoto{width:66px;height:66px;flex:none;border-radius:9px;border:1px dashed #2a3a56;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:18px;color:#5f7192}.cov-guia-nofoto span{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}' +
-      '@media(max-width:560px){.cov-card{width:100%;max-height:94vh;border-radius:16px}.cov-chips{gap:6px}.cov-chip b{font-size:13.5px}}';
+      '.cov-regs-tit{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192;margin:2px 2px 6px}' +
+      '.cov-regs{display:flex;flex-direction:column;gap:4px;max-height:170px;overflow:auto;margin-bottom:12px}' +
+      '.cov-reg{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:9px;background:#0a1120;border:1px solid #182338;cursor:pointer;transition:.13s}' +
+      '.cov-reg:hover{background:#0e1830;border-color:#26344c}.cov-reg.on{border-color:#3a5170;background:#111d34}' +
+      '.cov-reg.is-p{border-left:3px solid #34d399}.cov-reg.is-c{border-left:3px solid #fbbf24}' +
+      '.cov-reg-ic{font-size:12px;flex:none}' +
+      '.cov-reg-v{font-size:13px;font-weight:800;font-family:ui-monospace,monospace;color:#eaf1fb;flex:none;min-width:64px}' +
+      '.cov-reg.is-p .cov-reg-v{color:#34d399}.cov-reg.is-c .cov-reg-v{color:#fbbf24}' +
+      '.cov-reg-f{font-size:11px;color:#7488a6;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.cov-reg-u{font-size:11px;color:#93a4c2;font-weight:700;flex:none;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.cov-reg-empty{border:1px dashed #26344c;border-radius:10px;padding:14px;text-align:center;font-size:11.5px;color:#7488a6}' +
+      '@media(max-width:560px){.cov-card{width:100%;max-height:94vh;border-radius:16px}.cov-chips{gap:6px}.cov-chip b{font-size:13.5px}.cov-reg-u{max-width:64px}}';
     document.head.appendChild(st);
   }
 
@@ -44508,7 +44567,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaSetZona, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
-    curvaOverlay, _curvaOverlayCerrar,
+    curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
