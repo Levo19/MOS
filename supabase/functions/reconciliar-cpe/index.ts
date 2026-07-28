@@ -88,9 +88,18 @@ Deno.serve(async (req: Request) => {
     // TODA reconciliación moría en "NubeFact no configurado" (500) → las boletas jamás salían de
     // PENDIENTE aunque SUNAT ya las aceptara por resumen. Ahora idéntico a emitir-cpe: token por serie.
     let tokensMap: Record<string, string> = {};
-    try { tokensMap = JSON.parse(Deno.env.get('NUBEFACT_TOKENS') || '{}'); } catch { tokensMap = {}; }
+    try {
+      const raw = JSON.parse(Deno.env.get('NUBEFACT_TOKENS') || '{}');
+      // [hardening fiscal] normalizar claves (trim + UPPER) — igual que emitir-cpe.
+      tokensMap = Object.fromEntries(Object.entries(raw).map(([k, v]) => [String(k).trim().toUpperCase(), v as string]));
+    } catch { tokensMap = {}; }
     const fallbackTok = Deno.env.get('NUBEFACT_TOKEN') || '';
-    const pickToken = (serie: string): string => tokensMap[String(serie || '').toUpperCase()] || fallbackTok;
+    // [hardening fiscal] MULTI-LOCAL: serie no mapeada → FALLAR CERRADO (''), nunca al fallback único
+    // (evita reconciliar/comunicar baja contra el local equivocado). Fallback solo en modo un-token.
+    const pickToken = (serie: string): string => {
+      const s = String(serie || '').trim().toUpperCase();
+      return Object.keys(tokensMap).length ? (tokensMap[s] || '') : fallbackTok;
+    };
     if (!url || !key) return json({ ok: false, error: 'plataforma no configurada' }, 500);
     if (!cronSecret || req.headers.get('x-cpe-cron') !== cronSecret) return json({ ok: false, error: 'no autorizado (cron secret)' }, 401);
     if (!ruta || (!fallbackTok && Object.keys(tokensMap).length === 0)) return json({ ok: false, error: 'NubeFact no configurado (NUBEFACT_RUTA + NUBEFACT_TOKENS o NUBEFACT_TOKEN)' }, 500);

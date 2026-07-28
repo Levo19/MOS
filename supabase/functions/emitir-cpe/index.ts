@@ -93,9 +93,20 @@ Deno.serve(async (req: Request) => {
     // Fallback a NUBEFACT_TOKEN (un solo token) → retrocompat demo, no rompe nada.
     const ruta = Deno.env.get('NUBEFACT_RUTA');   // URL dedicada NubeFact (api/v1/<UUID>), en SECRET
     let tokensMap: Record<string, string> = {};
-    try { tokensMap = JSON.parse(Deno.env.get('NUBEFACT_TOKENS') || '{}'); } catch { tokensMap = {}; }
+    try {
+      const raw = JSON.parse(Deno.env.get('NUBEFACT_TOKENS') || '{}');
+      // [hardening fiscal] normalizar claves (trim + UPPER): un typo de mayúsculas/espacio en el
+      // secret ({"bm02":…} o {"FM02 ":…}) haría fallar el match y caer al local equivocado.
+      tokensMap = Object.fromEntries(Object.entries(raw).map(([k, v]) => [String(k).trim().toUpperCase(), v as string]));
+    } catch { tokensMap = {}; }
     const fallbackTok = Deno.env.get('NUBEFACT_TOKEN') || '';
-    const pickToken = (serie: string): string => tokensMap[String(serie || '').toUpperCase()] || fallbackTok;
+    // [hardening fiscal] MULTI-LOCAL: si hay mapa poblado, una serie NO mapeada debe FALLAR CERRADO
+    // (devuelve '') — jamás caer al fallback único, que emitiría en el LOCAL EQUIVOCADO en silencio.
+    // El fallback único solo aplica en modo un-solo-token (mapa vacío / demo).
+    const pickToken = (serie: string): string => {
+      const s = String(serie || '').trim().toUpperCase();
+      return Object.keys(tokensMap).length ? (tokensMap[s] || '') : fallbackTok;
+    };
     if (!ruta || (!fallbackTok && Object.keys(tokensMap).length === 0)) {
       return json({ ok: false, error: 'NubeFact no configurado (secrets NUBEFACT_RUTA + NUBEFACT_TOKENS o NUBEFACT_TOKEN)' }, 500);
     }
@@ -207,6 +218,23 @@ Deno.serve(async (req: Request) => {
     const numero = parseInt(partes[partes.length - 1], 10);
     if (!numero || numero < 1) return json({ ok: false, error: 'número de correlativo inválido' }, 400);
     const tipoComprobante = (tipoDoc === 'FACTURA') ? 1 : 2;
+
+    // [F1 · review 100x · defensa-en-profundidad] La emisión es el ÚNICO punto fiscal que confía en el
+    // caller (el frontend ya bloquea, y convertir_nv_cpe tiene el guard fuerte). Guard server-side extra:
+    // NO emitir un CPE de una venta ANULADA. Best-effort: si figura ANULADO% → 409; si no se puede leer
+    // (no encontrada / error de red) NO bloquea (fail-open) para no romper emisiones legítimas.
+    try {
+      const sbUrl = Deno.env.get('SUPABASE_URL'); const sbKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (sbUrl && sbKey) {
+        const q = await fetch(`${sbUrl}/rest/v1/ventas?select=forma_pago&correlativo=eq.${encodeURIComponent(correlativo)}&limit=1`,
+          { headers: { 'apikey': sbKey, 'Authorization': 'Bearer ' + sbKey, 'Accept-Profile': 'me' } });
+        const rows = await q.json().catch(() => null);
+        const fp = Array.isArray(rows) && rows[0] ? String(rows[0].forma_pago || '').toUpperCase() : '';
+        if (fp.startsWith('ANULADO')) {
+          return json({ ok: false, error: 'VENTA_ANULADA: no se emite CPE de una venta anulada (' + correlativo + ')' }, 409);
+        }
+      }
+    } catch (_) { /* fail-open: la protección primaria vive en el RPC/frontend */ }
 
     // ── Cálculo de totales por tipo de IGV (Catálogo 07 SUNAT) — FIEL a emitirNubeFact ──
     let totalGravada = 0, totalIVAP = 0, totalImpIVAP = 0, totalExonerada = 0, totalInafecta = 0;
