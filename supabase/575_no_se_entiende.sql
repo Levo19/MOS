@@ -3,7 +3,7 @@
 -- sin código de barra no hay escaneo) y las vistas de zona los devuelven en una
 -- sección aparte 'sinIdentificar' (constancia: qué se pidió mal, cuándo, cuánto).
 -- consolidar_pickup_zona los saltea (skuBase='') → NUNCA suman deuda de reposición.
--- Base exacta: 540 (cerrar) + 219 (pickup actual) + 295 (rezagado), patch quirúrgico.
+-- Base exacta: 541 (cerrar, con resurrección de vencidas) + 219 (pickup actual) + 295 (rezagado).
 
 create or replace function wh.cerrar_lista_sombra(p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $fn$
@@ -26,17 +26,23 @@ begin
 
   select * into v_row from wh.listas_sombra where id_lista = v_id for update;
   if not found then return jsonb_build_object('ok',false,'error','NO_ENCONTRADA'); end if;
-  -- Idempotencia: un retry sobre una lista ya cerrada NO re-contabiliza.
-  if upper(coalesce(v_row.estado,'')) in ('COMPLETADA','ANULADA') then
+  -- Idempotencia: COMPLETADA no se re-contabiliza. ANULADA manual tampoco.
+  -- [541] ANULADA por VENCIMIENTO ('[vencida') + llega el cierre real → RESUCITAR:
+  -- la guía física existió, la contabilidad debe entrar.
+  if upper(coalesce(v_row.estado,'')) = 'COMPLETADA' then
     return jsonb_build_object('ok',true,'idempotente',true); end if;
+  if upper(coalesce(v_row.estado,'')) = 'ANULADA' and position('[vencida' in coalesce(v_row.nota,'')) = 0 then
+    return jsonb_build_object('ok',true,'idempotente',true,'anuladaManual',true); end if;
 
   v_final := case when v_items is not null and jsonb_typeof(v_items)='array' then v_items else v_row.items end;
   update wh.listas_sombra
-     set items = coalesce(v_final, items), estado='COMPLETADA', fecha_completada=v_now
+     set items = coalesce(v_final, items), estado='COMPLETADA', fecha_completada=v_now,
+         nota = case when upper(coalesce(v_row.estado,''))='ANULADA'
+                     then coalesce(v_row.nota,'') || ' [541: resucitada por cierre tardío]'
+                     else nota end
    where id_lista = v_id;
 
-  -- [540] deuda_nueva = max(0, deuda + pedido − despachado): se materializa vía
-  -- pickup PCK-LSC (sol=pedido, desp=escaneado) que el consolidador mergea.
+  -- [540] deuda_nueva = max(0, deuda + pedido − despachado) vía pickup PCK-LSC.
   if coalesce(btrim(v_row.zona),'') <> '' and v_final is not null and jsonb_typeof(v_final)='array' then
     begin
       select coalesce(jsonb_agg(jsonb_build_object(
@@ -70,7 +76,7 @@ begin
                 'Cierre lista IA '||v_id||' · pedido−despachado → acumulado', coalesce(v_row.usuario_tomada, v_row.usuario_creador, 'sistema'), v_now, v_now)
         on conflict (id_pickup) do nothing;
       end if;
-    exception when others then null;  -- la contabilidad jamás rompe el cierre (cron repara)
+    exception when others then null;
     end;
   end if;
   return jsonb_build_object('ok',true);

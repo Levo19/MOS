@@ -1800,6 +1800,8 @@ const API = (() => {
         codigoBarra: p.codigoBarra != null ? String(p.codigoBarra) : undefined,
         skuBase: p.skuBase != null ? String(p.skuBase) : undefined,
         motivo: p.motivo, usuario: _mosUsuario(p),
+        // [576 analítica] provenance del cambio de precio (CATALOGO por defecto en la RPC · COMPRA_PASO2 desde compras)
+        source: (p._source || p.source) != null ? String(p._source || p.source) : undefined,
         // [catálogo v4 · fix rev] ANTES se descartaba → el toggle 🖨 del modal era no-op.
         // El hook 427 lo lee (default true si ausente = paridad con los demás callers).
         imprimirMembretes: (p.imprimirMembretes === true || p.imprimirMembretes === 'true')
