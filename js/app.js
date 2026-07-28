@@ -853,6 +853,18 @@ const MOS = (() => {
     });
   }
 
+  // [fix carrera] Muestra/oculta "Configuración" (sidebar + menú avatar) según el rol.
+  // Idempotente: se puede llamar en cualquier momento (init tardío, apertura del menú avatar).
+  // .trim() por si el rol quedó guardado con espacios. Solo MASTER ve Config.
+  function _aplicarVisibilidadConfig() {
+    const esMaster = String(S.session?.rol || '').trim().toLowerCase() === 'master';
+    document.querySelectorAll('[data-view="config"]').forEach(b => {
+      b.style.display = esMaster ? '' : 'none';
+    });
+    const btnAvCfg = document.getElementById('btnAvatarConfig');
+    if (btnAvCfg) btnAvCfg.classList.toggle('hidden', !esMaster);
+  }
+
   function _applySession() {
     if (!S.session) return;
     const isMaster = (S.session.rol || '').toLowerCase() === 'master';
@@ -914,12 +926,12 @@ const MOS = (() => {
     if (avMob) { avMob.textContent = initial; avMob.style.background = S.session.color || '#6366f1'; }
     // Init SVG traveling border on sidebar avatar
     requestAnimationFrame(() => _initAvatarTrigSvg());
-    // Hide Config for admin role (sidebar + bottom nav + avatar menu)
-    document.querySelectorAll('[data-view="config"]').forEach(b => {
-      b.style.display = isMaster ? '' : 'none';
-    });
-    const btnAvCfg = $('btnAvatarConfig');
-    if (btnAvCfg) btnAvCfg.classList.toggle('hidden', !isMaster);
+    // Hide Config for admin role (sidebar + bottom nav + avatar menu). Idempotente y
+    // re-aplicable: init() puede correr desde el .finally() del registro del SW ANTES de que
+    // #btnAvatarConfig (casi al final del index) esté parseado → el gate se saltaba y Config
+    // quedaba oculto en el menú avatar hasta reiniciar. _aplicarVisibilidadConfig se vuelve a
+    // llamar al abrir el menú avatar (DOM ya completo, S.session.rol listo).
+    _aplicarVisibilidadConfig();
     // [v2.43.53] Kebab Master con dropdown Purgar+Log (reemplaza btnLogProductos)
     const btnKeb = $('btnMasterKebab');
     if (btnKeb) {
@@ -29635,10 +29647,10 @@ const MOS = (() => {
     // con focus en slot vacío (race entre RenderModal y AsignarTrack).
     _espiaV2AutoFocus();
     const html = `<div id="espiaV2Modal" style="position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(10px);z-index:2147483646;display:flex;align-items:center;justify-content:center;padding:24px;animation:espiaV2In .35s cubic-bezier(.34,1.56,.64,1)">
-      <div style="width:100%;max-width:1280px;height:88vh;background:linear-gradient(180deg,#0a1424,#070d18);border:1px solid rgba(99,102,241,.4);border-radius:18px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 70px -10px rgba(99,102,241,.4),0 0 0 1px rgba(99,102,241,.15) inset"
+      <div class="espiaV2-card" style="width:100%;max-width:1280px;height:88vh;background:linear-gradient(180deg,#0a1424,#070d18);border:1px solid rgba(99,102,241,.4);border-radius:18px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 70px -10px rgba(99,102,241,.4),0 0 0 1px rgba(99,102,241,.15) inset"
         onclick="event.stopPropagation()">
         <!-- HEADER -->
-        <div style="padding:14px 20px;border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(99,102,241,.03));display:flex;align-items:center;gap:14px;flex-shrink:0">
+        <div class="espiaV2-header" style="padding:14px 20px;border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(99,102,241,.03));display:flex;align-items:center;gap:14px;flex-shrink:0">
           <div id="espiaV2Live" class="espia-live-dot" style="display:flex;align-items:center;gap:8px">
             <span style="width:10px;height:10px;border-radius:50%;background:${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'};animation:espiaBreath 2s ease-in-out infinite;box-shadow:0 0 10px ${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'}"></span>
             <span style="font-size:11px;font-weight:900;color:${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'};letter-spacing:.5px">${_espiaV2.estado === 'live' ? 'EN VIVO' : 'CONECTANDO'}</span>
@@ -29667,7 +29679,7 @@ const MOS = (() => {
           <button onclick="MOS.cerrarEspiaV2()" style="background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.4);color:#fca5a5;border-radius:8px;padding:6px 12px;font-size:14px;font-weight:900;cursor:pointer">✕</button>
         </div>
         <!-- BODY -->
-        <div style="flex:1;display:flex;gap:14px;padding:14px;overflow:hidden">
+        <div class="espiaV2-body" style="flex:1;display:flex;gap:14px;padding:14px;overflow:hidden">
           <!-- Stream grande -->
           ${(() => {
             // [v2.43.97] Label dinámico según focus actual
@@ -29714,7 +29726,7 @@ const MOS = (() => {
             })()}
           </div>
           <!-- Sidebar -->
-          <div style="width:260px;display:flex;flex-direction:column;gap:10px;flex-shrink:0">
+          <div class="espiaV2-side" style="width:260px;display:flex;flex-direction:column;gap:10px;flex-shrink:0">
             <!-- Audio card -->
             <div id="espiaV2AudioCard" style="background:#0f172a;border:1px solid rgba(34,211,238,.3);border-radius:10px;padding:11px;box-shadow:0 0 18px -8px #22d3ee44">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -29829,6 +29841,33 @@ const MOS = (() => {
         @keyframes espiaBreath { 0%,100% { transform:scale(1);opacity:.85 } 50% { transform:scale(1.3);opacity:1 } }
         @keyframes espiaSpin { to { transform:rotate(360deg) } }
         #espiaV2Modal .espia-live-dot { transition:all .3s }
+        /* [responsive] Móvil / tablet vertical: modal a pantalla completa, cuerpo en columna,
+           video protagonista arriba y sidebar full-width con scroll. Sin vh/dvh (usa height:100%
+           sobre el overlay fixed inset:0). Solo overrides bajo el breakpoint → escritorio intacto. */
+        @media (max-width: 860px) {
+          #espiaV2Modal { padding:0 !important; }
+          #espiaV2Modal .espiaV2-card {
+            max-width:100% !important; width:100% !important; height:100% !important;
+            border-radius:0 !important; border:0 !important;
+          }
+          #espiaV2Modal .espiaV2-header {
+            flex-wrap:wrap !important; gap:8px !important; padding:10px 12px !important;
+            padding-top:calc(10px + env(safe-area-inset-top,0px)) !important;
+          }
+          #espiaV2Modal .espiaV2-body {
+            flex-direction:column !important; overflow-y:auto !important; overflow-x:hidden !important;
+            padding:10px !important; gap:10px !important; -webkit-overflow-scrolling:touch;
+            padding-bottom:calc(14px + env(safe-area-inset-bottom,0px)) !important;
+          }
+          #espiaV2Modal #espiaV2Big {
+            flex:none !important; width:100% !important; height:42vh !important; min-height:220px !important;
+          }
+          #espiaV2Modal .espiaV2-side { width:100% !important; }
+        }
+        /* Landscape muy bajo (móvil horizontal): bajar el video para que la sidebar respire. */
+        @media (max-width: 860px) and (max-height: 520px) {
+          #espiaV2Modal #espiaV2Big { height:60vh !important; min-height:180px !important; }
+        }
       </style>
     </div>`;
     const old = document.getElementById('espiaV2Modal');
@@ -30944,6 +30983,10 @@ const MOS = (() => {
     }
     // Pintar clave global si aplica
     _segPintarEnAvatarMenu();
+    // [fix carrera] Re-aplicar visibilidad de Config: si init() corrió antes de que
+    // #btnAvatarConfig existiera, el gate se saltó y quedó oculto. Al abrir el menú el DOM
+    // ya está completo → se corrige aquí, siempre.
+    try { _aplicarVisibilidadConfig(); } catch (_) {}
     // Buscar trigger visible: sidebar en desktop, botón mobile en móvil
     let trigger = document.querySelector('.avatar-trigger');
     if (!trigger || trigger.getBoundingClientRect().width === 0) {
