@@ -9979,44 +9979,69 @@ const MOS = (() => {
   // ═══════════════ [Fase 2] OVERLAY grande interactivo de la curva ═══════════════
   // Reusa el motor _p2ChartInit en un canvas grande + un panel de detalle (quién/cuándo/
   // medio para precio · fecha/quién/guía para costo) al tocar un punto. Táctil y responsive.
-  function curvaOverlay(i) {
+  async function curvaOverlay(i) {
     const f = (window._paso2Filas || [])[i];
     if (!f) { toast('Curva no disponible', 'warn'); return; }
-    const hist = f._hist || { P: [], C: [] };
-    // [50x] mismo cálculo que el mini-chart (_p2CargarCurva) para que ambas vistas coincidan
-    const nowP = parseFloat(f.precioEd) || parseFloat(f.precioActual) || 0;
-    const nowC = parseFloat(f.x && f.x.costoNuevo) || 0;
-    const nombre = f.nombre || (f.x && f.x.descripcion) || (f.x && f.x.idCanonico) || 'Producto';
+    const idp = (f.x && f.x.idCanonico) || '';
     _curvaOvInyectarCSS();
     const prev = document.getElementById('curvaOverlay'); if (prev) prev.remove();
     const ov = document.createElement('div');
     ov.id = 'curvaOverlay'; ov.className = 'cov-back';
     ov.onpointerdown = e => { if (e.target === ov) _curvaOverlayCerrar(); };
-    const mg = (nowP > 0 && nowC > 0) ? ((1 - nowC / nowP) * 100).toFixed(0) + '%' : '—';
     ov.innerHTML =
       '<div class="cov-card" role="dialog" aria-label="Analítica de precio y costo">' +
         '<div class="cov-head"><div class="cov-tit"><span class="cov-ico">📈</span>' +
-          '<div class="cov-tit-txt"><b>' + _escapeHtml(nombre) + '</b><span>Historial de precio y costo</span></div></div>' +
+          '<div class="cov-tit-txt" id="covTit"><b>Cargando…</b><span>Historial de precio y costo</span></div></div>' +
           '<button class="cov-x" onclick="MOS._curvaOverlayCerrar()" aria-label="Cerrar">✕</button></div>' +
-        '<div class="cov-chips">' +
-          '<div class="cov-chip cov-chip-p"><span>Precio</span><b>S/ ' + nowP.toFixed(2) + '</b></div>' +
-          '<div class="cov-chip cov-chip-c"><span>Costo</span><b>S/ ' + nowC.toFixed(2) + '</b></div>' +
-          '<div class="cov-chip cov-chip-m"><span>Margen</span><b>' + mg + '</b></div></div>' +
-        '<div class="cov-chart"><canvas id="covCanvas"></canvas></div>' +
-        '<div class="cov-legend"><span><i class="dot-p"></i>precio</span><span><i class="dot-c"></i>costo</span>' +
-          '<span class="cov-hint">↔ arrastrá · tocá un punto</span></div>' +
-        '<div class="cov-det" id="covDet">' + _curvaDetVacio() + '</div>' +
+        '<div id="covBody"><div class="cov-loading">Cargando historial…</div></div>' +
       '</div>';
     document.body.appendChild(ov);
     requestAnimationFrame(() => ov.classList.add('cov-in'));
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    // [feedback] fetch FRESCO (no el f._hist cacheado, que puede ser viejo tras un cambio de precio)
+    let d = null;
+    try { const r = await API.post('historialPrecioCosto', { idProducto: idp }); d = r && (r.data || r); } catch(_){}
+    if (!document.getElementById('curvaOverlay')) return;   // cerraron mientras cargaba
+    _curvaOverlayRender(d, f);
+  }
+  function _curvaOverlayRender(d, f) {
+    const hist = d ? {
+      P: (d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, m: x.motivo, s: x.source, ao: x.appOrigen })).filter(x => x.v > 0 && !isNaN(x.t)),
+      C: (d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, s: x.source })).filter(x => x.v > 0 && !isNaN(x.t))
+    } : (f._hist || { P: [], C: [] });
+    const nowP = parseFloat(f.precioEd) || (d && parseFloat(d.precioActual)) || parseFloat(f.precioActual) || 0;
+    const nowC = parseFloat(f.x && f.x.costoNuevo) || (d && parseFloat(d.costoActual)) || 0;
+    const nombre = (d && d.nombre) || f.nombre || (f.x && f.x.descripcion) || 'Producto';
+    const cb = (d && d.codigoBarra) || '';
+    const sku = (d && d.skuBase) || '';
+    const mg = (nowP > 0 && nowC > 0) ? ((1 - nowC / nowP) * 100).toFixed(0) + '%' : '—';
+    const sub = [cb, sku].filter(Boolean).map(_escapeHtml).join(' · ') || 'Historial de precio y costo';
+    // dominio: canónico padre (si es hijo) + códigos equivalentes que comparten este precio
+    let dominio = '';
+    if (d && d.canonicoNombre) dominio += '<div class="cov-dom-row">↳ de <b>' + _escapeHtml(String(d.canonicoNombre)) + '</b>' + (d.canonicoCodigoBarra ? ' · <span class="cov-dom-cb">' + _escapeHtml(String(d.canonicoCodigoBarra)) + '</span>' : '') + '</div>';
+    const eqs = (d && d.equivalentes) || [];
+    if (eqs.length) dominio += '<div class="cov-dom-row">🔁 también escanea: ' + eqs.slice(0, 6).map(x => '<span class="cov-dom-cb">' + _escapeHtml(String(x)) + '</span>').join(' ') + (eqs.length > 6 ? ' +' + (eqs.length - 6) : '') + '</div>';
+    const tit = document.getElementById('covTit');
+    if (tit) tit.innerHTML = '<b>' + _escapeHtml(nombre) + '</b><span>' + sub + '</span>';
+    const body = document.getElementById('covBody');
+    if (!body) return;
+    body.innerHTML =
+      '<div class="cov-chips">' +
+        '<div class="cov-chip cov-chip-p"><span>Precio</span><b>S/ ' + nowP.toFixed(2) + '</b></div>' +
+        '<div class="cov-chip cov-chip-c"><span>Costo</span><b>S/ ' + nowC.toFixed(2) + '</b></div>' +
+        '<div class="cov-chip cov-chip-m"><span>Margen</span><b>' + mg + '</b></div></div>' +
+      (dominio ? '<div class="cov-dom">' + dominio + '</div>' : '') +
+      '<div class="cov-chart"><canvas id="covCanvas"></canvas></div>' +
+      '<div class="cov-legend"><span><i class="dot-p"></i>precio</span><span><i class="dot-c"></i>costo</span>' +
+        '<span class="cov-hint">↔ arrastrá · tocá un punto</span></div>' +
+      '<div class="cov-det" id="covDet">' + _curvaDetVacio() + '</div>';
     const cv = document.getElementById('covCanvas');
     if (cv) _p2ChartInit(cv, hist, nowP, nowC, { big: true, onSelect: (rec, tipo) => {
       const det = document.getElementById('covDet');
       if (det) det.innerHTML = rec ? _curvaDetalle(rec, tipo) : _curvaDetVacio();
       if (rec) { try { _opsBeep && _opsBeep('tac'); } catch(_){} }
-      if (rec && tipo === 'C' && rec.g && !rec.hoy) _curvaCargarGuia(rec.g);   // [Fase 3] mini-preview de la guía
+      if (rec && tipo === 'C' && rec.g && !rec.hoy) _curvaCargarGuia(rec.g);   // preview de guía
     } });
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
   function _curvaOverlayCerrar() {
     const ov = document.getElementById('curvaOverlay'); if (!ov) return;
@@ -10078,11 +10103,17 @@ const MOS = (() => {
     const itemsHtml = its.map(it => '<div class="cov-guia-it"><span>' + _escapeHtml(String(it.nombre || '')) + '</span><b>×' + (parseFloat(it.cantidad) || 0) + '</b></div>').join('');
     const restantes = (parseInt(d.nItems, 10) || its.length) - its.length;
     const mas = restantes > 0 ? '<div class="cov-guia-mas">+' + restantes + ' ítem(s) más</div>' : '';
+    // [feedback] foto del comprobante (o "sin comprobante"); click → abre la imagen grande
+    const tieneFoto = d.foto && /^https?:/i.test(String(d.foto));
+    const foto = tieneFoto
+      ? '<img class="cov-guia-foto" src="' + _escapeHtml(String(d.foto)) + '" alt="comprobante" loading="lazy" title="Ver comprobante">'
+      : '<div class="cov-guia-nofoto">📷<span>sin comprobante</span></div>';
     slot.innerHTML =
       '<div class="cov-guia-head"><span class="cov-guia-prov">🧾 ' + _escapeHtml(String(d.proveedor)) + '</span>' +
         (d.monto != null ? '<b class="cov-guia-monto">S/ ' + (parseFloat(d.monto) || 0).toFixed(2) + '</b>' : '') + '</div>' +
       '<div class="cov-guia-doc">' + (d.documento ? _escapeHtml(String(d.documento)) + ' · ' : '') + _escapeHtml(String(d.fecha || '')) + '</div>' +
-      '<div class="cov-guia-items">' + itemsHtml + mas + '</div>';
+      '<div class="cov-guia-body">' + foto + '<div class="cov-guia-items">' + itemsHtml + mas + '</div></div>';
+    if (tieneFoto) { const img = slot.querySelector('.cov-guia-foto'); if (img) img.addEventListener('click', () => { try { window.open(String(d.foto), '_blank'); } catch(_){} }); }
   }
   function _curvaOvInyectarCSS() {
     if (S._covCSS) return; S._covCSS = true;
@@ -10134,6 +10165,13 @@ const MOS = (() => {
       '.cov-guia-it{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;color:#c3cee0;background:#0a1120;border:1px solid #182338;border-radius:7px;padding:5px 8px}' +
       '.cov-guia-it span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cov-guia-it b{flex:none;color:#93a4c2;font-family:ui-monospace,monospace}' +
       '.cov-guia-mas{font-size:10px;color:#6b7d9c;text-align:center;padding:3px;font-weight:600}' +
+      '.cov-loading{padding:40px 16px;text-align:center;font-size:12px;color:#7488a6;font-weight:600}' +
+      '.cov-dom{margin:-4px 0 12px;padding:8px 10px;background:#0a1120;border:1px solid #182338;border-radius:10px;display:flex;flex-direction:column;gap:3px}' +
+      '.cov-dom-row{font-size:11px;color:#93a4c2;font-weight:600}.cov-dom-row b{color:#cfd9ea}' +
+      '.cov-dom-cb{font-family:ui-monospace,monospace;font-size:10px;color:#7cb3f0;background:rgba(124,179,240,.1);border-radius:5px;padding:1px 6px}' +
+      '.cov-guia-body{display:flex;gap:9px;align-items:flex-start}.cov-guia-body .cov-guia-items{flex:1;min-width:0}' +
+      '.cov-guia-foto{width:66px;height:66px;flex:none;object-fit:cover;border-radius:9px;border:1px solid #26344c;cursor:pointer;transition:.15s}.cov-guia-foto:hover{border-color:#3a4d70;transform:scale(1.03)}' +
+      '.cov-guia-nofoto{width:66px;height:66px;flex:none;border-radius:9px;border:1px dashed #2a3a56;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:18px;color:#5f7192}.cov-guia-nofoto span{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}' +
       '@media(max-width:560px){.cov-card{width:100%;max-height:94vh;border-radius:16px}.cov-chips{gap:6px}.cov-chip b{font-size:13.5px}}';
     document.head.appendChild(st);
   }
