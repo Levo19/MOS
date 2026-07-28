@@ -9987,10 +9987,12 @@ const MOS = (() => {
   // ═══════════════ [Fase 2] OVERLAY grande interactivo de la curva ═══════════════
   // Reusa el motor _p2ChartInit en un canvas grande + un panel de detalle (quién/cuándo/
   // medio para precio · fecha/quién/guía para costo) al tocar un punto. Táctil y responsive.
+  let _covSeq = 0;   // [1000x] token de generación: invalida un fetch viejo si se re-abre/cierra el overlay
   async function curvaOverlay(i) {
     const f = (window._paso2Filas || [])[i];
     if (!f) { toast('Curva no disponible', 'warn'); return; }
     const idp = (f.x && f.x.idCanonico) || '';
+    const myGen = ++_covSeq;
     _curvaOvInyectarCSS();
     const prev = document.getElementById('curvaOverlay'); if (prev) prev.remove();
     const ov = document.createElement('div');
@@ -10009,7 +10011,8 @@ const MOS = (() => {
     // [feedback] fetch FRESCO (no el f._hist cacheado, que puede ser viejo tras un cambio de precio)
     let d = null;
     try { const r = await API.post('historialPrecioCosto', { idProducto: idp }); d = r && (r.data || r); } catch(_){}
-    if (!document.getElementById('curvaOverlay')) return;   // cerraron mientras cargaba
+    // [1000x] si otra apertura/cierre ocurrió durante el fetch, NO pintar (evita mostrar el producto equivocado)
+    if (myGen !== _covSeq || !document.getElementById('curvaOverlay')) return;
     _curvaOverlayRender(d, f);
   }
   function _curvaOverlayRender(d, f) {
@@ -10088,6 +10091,7 @@ const MOS = (() => {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
   function _curvaOverlayCerrar() {
+    _covSeq++;   // [1000x] invalida cualquier fetch en vuelo (no pintar tras cerrar)
     const ov = document.getElementById('curvaOverlay'); if (!ov) return;
     ov.classList.remove('cov-in');
     setTimeout(() => { try { ov.remove(); } catch(_){} }, 220);
@@ -10171,6 +10175,7 @@ const MOS = (() => {
   // [feedback] Lightbox del comprobante: imagen grande encima, click para cerrar. Táctil.
   function _curvaVerFoto(url) {
     if (!url) return;
+    const old = document.querySelector('.cov-lb'); if (old) old.remove();   // [1000x] no apilar lightboxes
     const lb = document.createElement('div');
     lb.className = 'cov-lb';
     lb.onclick = () => { lb.classList.remove('in'); setTimeout(() => { try { lb.remove(); } catch(_){} }, 180); };
