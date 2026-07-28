@@ -10146,20 +10146,37 @@ const MOS = (() => {
       return;
     }
     const its = (d.items || []);
-    const itemsHtml = its.map(it => '<div class="cov-guia-it"><span>' + _escapeHtml(String(it.nombre || '')) + '</span><b>×' + (parseFloat(it.cantidad) || 0) + '</b></div>').join('');
+    // [feedback] monto POR LÍNEA (cantidad × precio) inline en cada ítem; si no hay precio, solo la cantidad
+    const itemsHtml = its.map(it => {
+      const q = parseFloat(it.cantidad) || 0, pu = parseFloat(it.precio) || 0;
+      const lt = pu > 0 ? ' · <span class="cov-guia-lt">S/ ' + (q * pu).toFixed(2) + '</span>' : '';
+      return '<div class="cov-guia-it"><span>' + _escapeHtml(String(it.nombre || '')) + '</span><b>×' + q + lt + '</b></div>';
+    }).join('');
     const restantes = (parseInt(d.nItems, 10) || its.length) - its.length;
     const mas = restantes > 0 ? '<div class="cov-guia-mas">+' + restantes + ' ítem(s) más</div>' : '';
-    // [feedback] foto del comprobante (o "sin comprobante"); click → abre la imagen grande
     const tieneFoto = d.foto && /^https?:/i.test(String(d.foto));
     const foto = tieneFoto
       ? '<img class="cov-guia-foto" src="' + _escapeHtml(String(d.foto)) + '" alt="comprobante" loading="lazy" title="Ver comprobante">'
       : '<div class="cov-guia-nofoto">📷<span>sin comprobante</span></div>';
+    // [feedback] header: SOLO el total real de la guía (si existe); nada de un total inventado
+    const montoReal = (d.monto != null && parseFloat(d.monto) > 0) ? parseFloat(d.monto) : null;
     slot.innerHTML =
       '<div class="cov-guia-head"><span class="cov-guia-prov">🧾 ' + _escapeHtml(String(d.proveedor)) + '</span>' +
-        (d.monto != null ? '<b class="cov-guia-monto">S/ ' + (parseFloat(d.monto) || 0).toFixed(2) + '</b>' : '') + '</div>' +
+        (montoReal != null ? '<b class="cov-guia-monto">S/ ' + montoReal.toFixed(2) + '</b>' : '') + '</div>' +
       '<div class="cov-guia-doc">' + (d.documento ? _escapeHtml(String(d.documento)) + ' · ' : '') + _escapeHtml(String(d.fecha || '')) + '</div>' +
       '<div class="cov-guia-body">' + foto + '<div class="cov-guia-items">' + itemsHtml + mas + '</div></div>';
-    if (tieneFoto) { const img = slot.querySelector('.cov-guia-foto'); if (img) img.addEventListener('click', () => { try { window.open(String(d.foto), '_blank'); } catch(_){} }); }
+    // [feedback] la foto se ve en LIGHTBOX (encima), no en pestaña nueva — reojo rápido
+    if (tieneFoto) { const img = slot.querySelector('.cov-guia-foto'); if (img) img.addEventListener('click', () => _curvaVerFoto(String(d.foto))); }
+  }
+  // [feedback] Lightbox del comprobante: imagen grande encima, click para cerrar. Táctil.
+  function _curvaVerFoto(url) {
+    if (!url) return;
+    const lb = document.createElement('div');
+    lb.className = 'cov-lb';
+    lb.onclick = () => { lb.classList.remove('in'); setTimeout(() => { try { lb.remove(); } catch(_){} }, 180); };
+    lb.innerHTML = '<button class="cov-lb-x" aria-label="Cerrar">✕</button><img src="' + _escapeHtml(String(url)) + '" alt="comprobante">';
+    document.body.appendChild(lb);
+    requestAnimationFrame(() => lb.classList.add('in'));
   }
   function _curvaOvInyectarCSS() {
     if (S._covCSS) return; S._covCSS = true;
@@ -10220,6 +10237,10 @@ const MOS = (() => {
       '.cov-guia-body{display:flex;gap:9px;align-items:flex-start}.cov-guia-body .cov-guia-items{flex:1;min-width:0}' +
       '.cov-guia-foto{width:66px;height:66px;flex:none;object-fit:cover;border-radius:9px;border:1px solid #26344c;cursor:pointer;transition:.15s}.cov-guia-foto:hover{border-color:#3a4d70;transform:scale(1.03)}' +
       '.cov-guia-nofoto{width:66px;height:66px;flex:none;border-radius:9px;border:1px dashed #2a3a56;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:18px;color:#5f7192}.cov-guia-nofoto span{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}' +
+      '.cov-guia-lt{color:#fbbf24;font-family:ui-monospace,monospace}' +
+      '.cov-lb{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.86);display:grid;place-items:center;padding:18px;opacity:0;transition:opacity .18s ease;cursor:zoom-out}.cov-lb.in{opacity:1}' +
+      '.cov-lb img{max-width:100%;max-height:100%;border-radius:12px;box-shadow:0 12px 50px rgba(0,0,0,.7);transform:scale(.97);transition:transform .2s cubic-bezier(.22,1,.36,1)}.cov-lb.in img{transform:none}' +
+      '.cov-lb-x{position:absolute;top:14px;right:16px;width:40px;height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.45);color:#fff;font-size:16px;cursor:pointer;z-index:2}' +
       '.cov-regs-tit{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192;margin:2px 2px 6px}' +
       '.cov-regs{display:flex;flex-direction:column;gap:4px;max-height:170px;overflow:auto;margin-bottom:12px}' +
       '.cov-reg{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:9px;background:#0a1120;border:1px solid #182338;cursor:pointer;transition:.13s}' +
