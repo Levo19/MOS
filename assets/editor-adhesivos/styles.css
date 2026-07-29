@@ -240,6 +240,22 @@
 .ed2-flt button.on { background: linear-gradient(135deg, #6366f1, #4f46e5); border-color: #4f46e5; color: #fff }
 .ed2-flt button.del { color: #fca5a5 }
 
+/* manijas de esquina para redimensionar jalando (v2.1) */
+.ed2-hnd {
+  position: absolute; width: 26px; height: 26px; pointer-events: auto;
+  touch-action: none; display: flex; align-items: center; justify-content: center;
+}
+.ed2-hnd::after {
+  content: ''; width: 13px; height: 13px; border-radius: 4px;
+  background: #fff; border: 2.5px solid #6366f1; box-shadow: 0 2px 8px rgba(0, 0, 0, .5);
+  transition: transform .12s;
+}
+.ed2-hnd:hover::after, .ed2-hnd:active::after { transform: scale(1.25); background: #eef 0% }
+.ed2-hnd.tl { left: -16px; top: -16px; cursor: nwse-resize }
+.ed2-hnd.tr { right: -16px; top: -16px; cursor: nesw-resize }
+.ed2-hnd.bl { left: -16px; bottom: -16px; cursor: nesw-resize }
+.ed2-hnd.br { right: -16px; bottom: -16px; cursor: nwse-resize }
+
 /* zoom */
 .ed2-zoom {
   position: absolute; top: 12px; right: max(12px, env(safe-area-inset-right));

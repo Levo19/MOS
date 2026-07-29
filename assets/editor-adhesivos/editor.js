@@ -21,7 +21,7 @@
 (function() {
   'use strict';
 
-  var CSS_VERSION = '2.0.0';
+  var CSS_VERSION = '2.1.0';
   var STORAGE_BORRADOR = 'eda2_borrador';
   var CSS_INYECTADO = false;
   var POST_URL_FALLBACK = null;
@@ -35,7 +35,6 @@
   var _selId = null;
   var _historial = [], _histIdx = -1;
   var _zoom = 1, _zoomAuto = true;
-  var _autosaveTimer = null;
   var _ultimoGuardado = null;
   var _imprimiendo = false;
   var _printCtx = null;               // { idPlantilla, nombre, cantidad }
@@ -166,22 +165,6 @@
     document.addEventListener('keydown', _keyHandler);
     _render();
     _refrescarCatalogo();
-    // ¿Hay un borrador del Estudio? (solo si tiene contenido más allá del membrete)
-    var b = _cargarBorrador();
-    if (b && b.plantilla && (b.plantilla.capas || []).some(function(c) { return !_esFija(c); })) {
-      var mins = Math.max(1, Math.round((Date.now() - b.ts) / 60000));
-      _dlg({
-        titulo: 'Borrador sin guardar',
-        cuerpo: 'Hay una creación de hace <b>' + mins + ' min</b> que no se guardó al catálogo. ¿Quieres continuarla?',
-        botones: [
-          { txt: 'Descartar', cls: 'ed2-btn-ghost', val: 'no' },
-          { txt: '✨ Continuar creación', cls: 'ed2-btn-primary', val: 'si' }
-        ]
-      }, function(val) {
-        if (val === 'si') { _plantilla = _asegurarMembrete(b.plantilla); _irEstudio(false); }
-        else if (val === 'no') _limpiarBorrador();
-      });
-    }
   }
 
   function _cerrar() {
@@ -471,7 +454,7 @@
       +   '<div class="ed2-est-top">'
       +     '<button class="ed2-btn ed2-btn-ghost" onclick="EditorAdhesivos._volverCatalogo()">◀ Catálogo</button>'
       +     '<div class="ed2-est-name">✨ <input type="text" id="ed2Nombre" maxlength="50" value="' + _esc(nombre) + '" onchange="EditorAdhesivos._setNombre(this.value)">'
-      +       '<span class="ed2-estado ' + (modif ? 'mod' : '') + '" id="ed2Estado">' + (modif ? '● borrador' : '· listo') + '</span></div>'
+      +       '<span class="ed2-estado ' + (modif ? 'mod' : '') + '" id="ed2Estado">' + (modif ? '● sin guardar' : '· listo') + '</span></div>'
       +     '<button class="ed2-btn ed2-btn-ghost ed2-undo" onclick="EditorAdhesivos._undo()" title="Deshacer (Ctrl+Z)">↶</button>'
       +     '<button class="ed2-btn ed2-btn-ghost ed2-undo" onclick="EditorAdhesivos._redo()" title="Rehacer (Ctrl+Y)">↷</button>'
       +     '<button class="ed2-btn ed2-btn-go" onclick="EditorAdhesivos._guardarAlCatalogo()">📌 Guardar al catálogo</button>'
@@ -510,7 +493,6 @@
     if (!_plantilla) return;
     _plantilla.metadata = _plantilla.metadata || {};
     _plantilla.metadata.nombre = String(v || '').trim() || 'Nueva creación';
-    _autosave();
   }
 
   function _volverCatalogo() {
@@ -519,15 +501,21 @@
     _render();
     _refrescarCatalogo();
   }
+  // [regla del dueño] Sin borradores: al salir se pregunta si guardar; si no se guarda,
+  // la creación se ELIMINA automáticamente.
   function _confirmarSalidaEstudio(continuar) {
     _dlg({
-      titulo: '¿Salir sin guardar?',
-      cuerpo: 'Tu creación no está guardada en el catálogo. Si sales, queda como borrador (24 h).',
+      titulo: '¿Guardar antes de salir?',
+      cuerpo: 'Tu creación no está en el catálogo. Si sales sin guardar, <b>se elimina</b>.',
       botones: [
-        { txt: 'Seguir editando', cls: 'ed2-btn-ghost', val: 'no' },
-        { txt: 'Salir', cls: 'ed2-btn-primary', val: 'si' }
+        { txt: 'Salir sin guardar', cls: 'ed2-btn-ghost', val: 'descartar' },
+        { txt: '📌 Guardar', cls: 'ed2-btn-go', val: 'guardar' }
       ]
-    }, function(val) { if (val === 'si') continuar(); });
+    }, function(val) {
+      if (val === 'descartar') { _plantilla = null; _historial = []; _histIdx = -1; continuar(); }
+      else if (val === 'guardar') _guardarAlCatalogo();
+      // clic fuera del diálogo = seguir editando
+    });
   }
 
   // ── lienzo ──────────────────────────────────────────────────────
@@ -548,7 +536,7 @@
     var e = document.getElementById('ed2Estado');
     if (!e) return;
     var m = _hayCambios();
-    e.textContent = m ? '● borrador' : '· listo';
+    e.textContent = m ? '● sin guardar' : '· listo';
     e.className = 'ed2-estado' + (m ? ' mod' : '');
   }
 
@@ -588,19 +576,22 @@
       if (!hit) { _seleccionar(null); return; }
       var id = hit.getAttribute('data-id');
       _seleccionar(id);
-      _dragStart(e, id, hit);
+      _dragStart(e, id);
     };
   }
 
   // ── drag (Pointer Events → mouse + touch + pen) ─────────────────
-  function _dragStart(e, id, el) {
+  // [v2.1 fix] La captura y los listeners van en el DOCUMENT, no en el hit: el drag
+  // re-renderiza el lienzo (innerHTML) y destruía el elemento capturado → el arrastre
+  // moría al primer paso. Con listeners globales el jalón es continuo y natural.
+  function _dragStart(e, id) {
     var capa = _plantilla.capas.find(function(c) { return c.id === id; });
     if (!capa || _esFija(capa)) return;
     e.preventDefault();
-    try { el.setPointerCapture(e.pointerId); } catch (_) {}
     _dragState = { id: id, capa: capa, x0: e.clientX, y0: e.clientY, mm: { x: capa.x_mm, y: capa.y_mm }, moved: false };
-    el.onpointermove = _dragMove;
-    el.onpointerup = el.onpointercancel = _dragEnd;
+    document.addEventListener('pointermove', _dragMove);
+    document.addEventListener('pointerup', _dragEnd);
+    document.addEventListener('pointercancel', _dragEnd);
   }
   function _dragMove(e) {
     if (!_dragState) return;
@@ -617,10 +608,99 @@
     }
   }
   function _dragEnd() {
+    document.removeEventListener('pointermove', _dragMove);
+    document.removeEventListener('pointerup', _dragEnd);
+    document.removeEventListener('pointercancel', _dragEnd);
     if (!_dragState) return;
     var movio = _dragState.moved;
     _dragState = null;
     if (movio) { _snapshot(); _renderCanvas(); }
+  }
+
+  // ── resize jalando ESQUINAS (v2.1 — sin botones +/−) ────────────
+  // Manijas en las 4 esquinas de la selección: jalas con el dedo/mouse y el elemento
+  // crece o se achica según su tipo (texto→tamaño de fuente; QR/icono→lado; recuadro→
+  // ancho/alto; línea→largo/grosor; barras→alto). Las esquinas izq./sup. también
+  // reubican el recuadro (se estira desde la esquina opuesta).
+  var _rszState = null;
+  var FONT_PX_MAP = { 1: 12, 2: 20, 3: 24, 4: 32, 5: 48 };
+  function _resizeStart(e, corner) {
+    var c = _capaSel();
+    if (!c || _esFija(c)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var b = _boundsCapa(c);
+    _rszState = {
+      capa: c, corner: corner, x0: e.clientX, y0: e.clientY,
+      w0: b.w, h0: b.h,
+      mm0: { x: c.x_mm, y: c.y_mm, w: c.ancho_mm || 0, h: c.alto_mm || 0 },
+      dots0: c.tamano_dots || 0, altoDots0: c.alto_dots || 48, font0: c.font || 3,
+      changed: false
+    };
+    document.addEventListener('pointermove', _resizeMove);
+    document.addEventListener('pointerup', _resizeEnd);
+    document.addEventListener('pointercancel', _resizeEnd);
+  }
+  function _resizeMove(e) {
+    var st = _rszState;
+    if (!st) return;
+    e.preventDefault();
+    var sx = (st.corner === 'tl' || st.corner === 'bl') ? -1 : 1;   // izquierda invierte
+    var sy = (st.corner === 'tl' || st.corner === 'tr') ? -1 : 1;   // arriba invierte
+    var dxPx = (e.clientX - st.x0) * sx / _zoom;                     // px del svg (sin zoom)
+    var dyPx = (e.clientY - st.y0) * sy / _zoom;
+    var c = st.capa;
+    var PXMM = 12;                                                   // 1mm = 12px svg
+    if (c.tipo === 'qr' || c.tipo === 'icono') {
+      var d = Math.max(dxPx, dyPx);
+      var dots = Math.round((st.w0 + d) / 1.5);                      // px→dots (1 dot = 1.5px)
+      if (c.tipo === 'icono') {
+        var opciones = [32, 48, 64, 96];
+        var mejor = opciones[0];
+        opciones.forEach(function(o) { if (Math.abs(o - dots) < Math.abs(mejor - dots)) mejor = o; });
+        if (mejor !== c.tamano_dots) { c.tamano_dots = mejor; st.changed = true; _renderCanvasLigero(); }
+      } else {
+        dots = Math.max(32, Math.min(200, Math.round(dots / 8) * 8));
+        if (dots !== c.tamano_dots) { c.tamano_dots = dots; st.changed = true; _renderCanvasLigero(); }
+      }
+    } else if (c.tipo === 'texto') {
+      var hPx = st.h0 + dyPx;
+      var fuentes = [1, 2, 3, 4, 5], fSel = st.font0;
+      var mejorDif = 1e9;
+      fuentes.forEach(function(f) {
+        var dif = Math.abs(FONT_PX_MAP[f] - hPx);
+        if (dif < mejorDif) { mejorDif = dif; fSel = f; }
+      });
+      if (fSel !== c.font) { c.font = fSel; st.changed = true; _renderCanvasLigero(); }
+    } else if (c.tipo === 'rectangulo') {
+      var nw = Math.max(2, Math.round((st.mm0.w + dxPx / PXMM) * 2) / 2);
+      var nh = Math.max(2, Math.round((st.mm0.h + dyPx / PXMM) * 2) / 2);
+      nw = Math.min(nw, _plantilla.tamano.ancho_mm);
+      nh = Math.min(nh, _plantilla.tamano.alto_mm);
+      var cambio = (nw !== c.ancho_mm || nh !== c.alto_mm);
+      c.ancho_mm = nw; c.alto_mm = nh;
+      // esquinas izq./sup.: la esquina opuesta queda fija (se reubica el origen)
+      if (sx < 0) c.x_mm = Math.max(0, Math.round((st.mm0.x + st.mm0.w - nw) * 2) / 2);
+      if (sy < 0) c.y_mm = Math.max(0, Math.round((st.mm0.y + st.mm0.h - nh) * 2) / 2);
+      if (cambio) { st.changed = true; _renderCanvasLigero(); }
+    } else if (c.tipo === 'linea') {
+      var nl = Math.max(2, Math.round((st.mm0.w + dxPx / PXMM) * 2) / 2);
+      nl = Math.min(nl, _plantilla.tamano.ancho_mm);
+      var ng = Math.max(0.2, Math.min(3, Math.round((st.mm0.h + dyPx / PXMM) * 10) / 10));
+      if (nl !== c.ancho_mm || ng !== c.alto_mm) { c.ancho_mm = nl; c.alto_mm = ng; st.changed = true; _renderCanvasLigero(); }
+    } else if (c.tipo === 'barcode') {
+      var na = Math.max(24, Math.min(96, Math.round((st.altoDots0 + dyPx / 1.5) / 8) * 8));
+      if (na !== c.alto_dots) { c.alto_dots = na; st.changed = true; _renderCanvasLigero(); }
+    }
+  }
+  function _resizeEnd() {
+    document.removeEventListener('pointermove', _resizeMove);
+    document.removeEventListener('pointerup', _resizeEnd);
+    document.removeEventListener('pointercancel', _resizeEnd);
+    if (!_rszState) return;
+    var cambio = _rszState.changed;
+    _rszState = null;
+    if (cambio) { _snapshot(); _renderCanvas(); }
   }
   function _renderCanvasLigero() {
     // re-render SVG + hits sin tocar bandeja (fluidez del drag)
@@ -656,25 +736,25 @@
     box.style.top = (cv.offsetTop + b.y * _zoom) + 'px';
     box.style.width = (b.w * _zoom) + 'px';
     box.style.height = (b.h * _zoom) + 'px';
-    box.innerHTML = '<div class="ed2-flt">' + _botonesFlt(c) + '</div>';
+    box.innerHTML = '<div class="ed2-flt">' + _botonesFlt(c) + '</div>'
+      + ['tl', 'tr', 'bl', 'br'].map(function(k) { return '<span class="ed2-hnd ' + k + '" data-h="' + k + '"></span>'; }).join('');
     stage.appendChild(box);
     box.querySelectorAll('button[data-act]').forEach(function(btn) {
       btn.onclick = function(e) { e.stopPropagation(); _accionFlt(btn.getAttribute('data-act')); };
     });
+    // [v2.1] manijas de esquina: jalar para agrandar/achicar (sin botones +/−)
+    box.querySelectorAll('.ed2-hnd').forEach(function(hnd) {
+      hnd.onpointerdown = function(e) { _resizeStart(e, hnd.getAttribute('data-h')); };
+    });
   }
   function _botonesFlt(c) {
     var extra = '';
-    if (c.tipo === 'texto') extra = '<button data-act="fmenos">A−</button><button data-act="fmas">A＋</button><button data-act="bold"' + (c.negrita ? ' class="on"' : '') + '><b>B</b></button>';
-    if (c.tipo === 'qr' || c.tipo === 'icono') extra = '<button data-act="smenos">−</button><button data-act="smas">＋</button>';
-    if (c.tipo === 'barcode') extra = '<button data-act="hmenos">▁−</button><button data-act="hmas">▁＋</button>';
-    return extra + '<button data-act="dup">⧉</button><button data-act="del" class="del">🗑</button>';
+    if (c.tipo === 'texto') extra = '<button data-act="bold"' + (c.negrita ? ' class="on"' : '') + ' title="Negrita"><b>B</b></button>';
+    return extra + '<button data-act="dup" title="Duplicar">⧉</button><button data-act="del" class="del" title="Eliminar">🗑</button>';
   }
   function _accionFlt(act) {
     var c = _capaSel();
     if (!c) return;
-    var FONTS = [1, 2, 3, 4, 5];
-    var QRS = [40, 56, 72, 96, 120, 168];
-    var ICS = [32, 48, 64, 96];
     if (act === 'del') { _eliminarSel(); return; }
     if (act === 'dup') {
       var copia = JSON.parse(JSON.stringify(c));
@@ -683,20 +763,6 @@
       _selId = copia.id;
     }
     else if (act === 'bold') c.negrita = !c.negrita;
-    else if (act === 'fmas' || act === 'fmenos') {
-      var fi = FONTS.indexOf(c.font || 3);
-      c.font = FONTS[Math.max(0, Math.min(FONTS.length - 1, fi + (act === 'fmas' ? 1 : -1)))];
-    }
-    else if (act === 'smas' || act === 'smenos') {
-      var arr = c.tipo === 'qr' ? QRS : ICS;
-      var cur = c.tamano_dots || (c.tipo === 'qr' ? 64 : 48);
-      var si = 0, best = 1e9;
-      arr.forEach(function(v, i) { if (Math.abs(v - cur) < best) { best = Math.abs(v - cur); si = i; } });
-      c.tamano_dots = arr[Math.max(0, Math.min(arr.length - 1, si + (act === 'smas' ? 1 : -1)))];
-    }
-    else if (act === 'hmas' || act === 'hmenos') {
-      c.alto_dots = Math.max(24, Math.min(96, (c.alto_dots || 48) + (act === 'hmas' ? 8 : -8)));
-    }
     _snapshot();
     _renderCanvas();
   }
@@ -887,7 +953,6 @@
     _historial.push(snap);
     if (_historial.length > 50) _historial.shift();
     _histIdx = _historial.length - 1;
-    _autosave();
   }
   function _hayCambios() {
     if (_vista !== 'estudio' || !_plantilla) return false;
@@ -909,22 +974,9 @@
     _selId = null;
     _renderCanvas();
   }
-  function _autosave() {
-    clearTimeout(_autosaveTimer);
-    _autosaveTimer = setTimeout(function() {
-      try { localStorage.setItem(STORAGE_BORRADOR, JSON.stringify({ plantilla: _plantilla, ts: Date.now() })); } catch (_) {}
-    }, 700);
-  }
-  function _cargarBorrador() {
-    try {
-      var raw = localStorage.getItem(STORAGE_BORRADOR);
-      if (!raw) return null;
-      var obj = JSON.parse(raw);
-      if (Date.now() - obj.ts > 24 * 3600 * 1000) { localStorage.removeItem(STORAGE_BORRADOR); return null; }
-      return obj;
-    } catch (_) { return null; }
-  }
-  function _limpiarBorrador() { try { localStorage.removeItem(STORAGE_BORRADOR); } catch (_) {} }
+  // [regla del dueño] Sin sistema de borradores: lo no guardado se descarta al salir
+  // (previa pregunta). Limpieza defensiva del borrador viejo de versiones anteriores.
+  try { localStorage.removeItem(STORAGE_BORRADOR); localStorage.removeItem('eda_borrador'); } catch (_) {}
 
   // ── teclado (desktop) ───────────────────────────────────────────
   function _keyHandler(e) {
@@ -988,7 +1040,6 @@
           _toast('No se pudo guardar: ' + ((err && err.message) || (r && r.error) || 'desconocido'), 'error');
           return;
         }
-        _limpiarBorrador();
         _historial = []; _histIdx = -1; _plantilla = null;
         _toast('📌 "' + nombre + '" guardado al catálogo ✓', 'ok');
         _vista = 'catalogo';

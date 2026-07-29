@@ -222,11 +222,13 @@
     var narrow = c.narrow || 2;
     var widthPx = _dots2px(modules * narrow);
     var svgId = 'edBcSVG_' + Math.random().toString(36).slice(2, 8);
-    // Mientras JsBarcode lo dibuja después, mostramos placeholder visual
+    // [v1.0.3 fix posición] La posición vive en un <g transform> ENVOLVENTE y el svg anidado
+    // queda en 0,0: JsBarcode reescribe atributos del svg al dibujar (podía perder x/y → las
+    // barras aparecían clavadas en la esquina superior izquierda aunque movieras la capa).
     return ''
-      + '<g class="bc-placeholder">'
-      +   '<svg id="' + svgId + '" data-codigo="' + _esc(c.codigo) + '" x="' + x + '" y="' + y + '" width="' + widthPx + '" height="' + altoPx + '"></svg>'
-      +   '<text x="' + (x + widthPx/2) + '" y="' + (y + altoPx + 14) + '" font-family="Consolas,monospace" font-size="11" text-anchor="middle" fill="#333">' + _esc(c.codigo) + '</text>'
+      + '<g class="bc-placeholder" transform="translate(' + x + ',' + y + ')">'
+      +   '<svg id="' + svgId + '" data-codigo="' + _esc(c.codigo) + '" x="0" y="0" width="' + widthPx + '" height="' + altoPx + '" preserveAspectRatio="none"></svg>'
+      +   '<text x="' + (widthPx / 2) + '" y="' + (altoPx + 14) + '" font-family="Consolas,monospace" font-size="11" text-anchor="middle" fill="#333">' + _esc(c.codigo) + '</text>'
       + '</g>';
   }
 
