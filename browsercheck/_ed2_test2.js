@@ -37,7 +37,7 @@ const { chromium } = require('playwright');
   await p.waitForTimeout(300);
   const salida = await p.evaluate(()=>({dlgPropio: !!document.getElementById('ed2Dlg')}));
   console.log('SALIDA con cambios:', JSON.stringify(salida));
-  await p.click('#ed2Dlg .ed2-btn-primary'); // Salir
+  await p.click('#ed2Dlg .ed2-btn-ghost'); // Salir sin guardar (v2.1: se elimina)
   await p.waitForTimeout(400);
   const fin = await p.evaluate(()=>({catalogo: !!document.querySelector('.ed2-cat'), overflowX: document.documentElement.scrollWidth > window.innerWidth}));
   console.log('TABLET final:', JSON.stringify(fin));
