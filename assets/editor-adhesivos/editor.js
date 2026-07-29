@@ -555,7 +555,7 @@
     }
     else if (c.tipo === 'barcode') {
       var modules = 11 * String(c.codigo || '').length + 35;
-      w = conv.dots2px(modules * (c.narrow || 2)); h = conv.dots2px(c.alto_dots || 48) + 16;
+      w = conv.dots2px(modules * (c.narrow || 2)); h = conv.dots2px(c.alto_dots || 48);
     }
     return { x: x, y: y, w: w, h: h };
   }

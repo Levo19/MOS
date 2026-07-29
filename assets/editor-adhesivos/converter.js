@@ -225,10 +225,11 @@
     // [v1.0.3 fix posición] La posición vive en un <g transform> ENVOLVENTE y el svg anidado
     // queda en 0,0: JsBarcode reescribe atributos del svg al dibujar (podía perder x/y → las
     // barras aparecían clavadas en la esquina superior izquierda aunque movieras la capa).
+    // [v1.0.4 fidelidad] SIN <text> debajo: el TSPL imprime con readable=0 (sin texto humano),
+    // el preview debe ser fiel. data-w/data-h = caja declarada (dibujarBarcodes normaliza a esto).
     return ''
       + '<g class="bc-placeholder" transform="translate(' + x + ',' + y + ')">'
-      +   '<svg id="' + svgId + '" data-codigo="' + _esc(c.codigo) + '" x="0" y="0" width="' + widthPx + '" height="' + altoPx + '" preserveAspectRatio="none"></svg>'
-      +   '<text x="' + (widthPx / 2) + '" y="' + (altoPx + 14) + '" font-family="Consolas,monospace" font-size="11" text-anchor="middle" fill="#333">' + _esc(c.codigo) + '</text>'
+      +   '<svg id="' + svgId + '" data-codigo="' + _esc(c.codigo) + '" data-w="' + widthPx + '" data-h="' + altoPx + '" x="0" y="0" width="' + widthPx + '" height="' + altoPx + '" preserveAspectRatio="none"></svg>'
       + '</g>';
   }
 
@@ -311,20 +312,29 @@
       var codigo = svgEl.getAttribute('data-codigo');
       if (!codigo) return;
       try {
-        // narrow adaptativo (mismo helper que backend)
-        var bcLen = codigo.length;
-        var modules = 11 * bcLen + 35;
-        var bcWidth = 2.1, bcMargin = 20;
-        if (modules * 3 <= 340) { bcWidth = 2.1; bcMargin = 30; }
-        else                     { bcWidth = 1.4; bcMargin = 12; }
         JsBarcode(svgEl, codigo, {
           format: 'CODE128',
-          width: bcWidth,
-          height: parseInt(svgEl.getAttribute('height')) || 72,
+          width: 2,
+          height: 100,
           displayValue: false,
-          margin: bcMargin,
+          margin: 0,                 // [v1.0.4] la impresión TSPL no tiene margen interno
           background: '#ffffff', lineColor: '#000000'
         });
+        // [v1.0.4 fix desborde] JsBarcode reescribe width/height del svg con su tamaño NATURAL
+        // (y su margen interno empujaba las barras abajo/derecha → se veían medio cortadas fuera
+        // de la caja). Normalizamos: viewBox = tamaño natural de JsBarcode, width/height = la caja
+        // DECLARADA (data-w/data-h) con preserveAspectRatio none → las barras llenan EXACTAMENTE
+        // la caja de la capa, alineadas con el hit/selección y fiel al TSPL (sin margen ni texto).
+        var natW = parseFloat(svgEl.getAttribute('width')) || 0;
+        var natH = parseFloat(svgEl.getAttribute('height')) || 0;
+        var wantW = parseFloat(svgEl.getAttribute('data-w')) || natW;
+        var wantH = parseFloat(svgEl.getAttribute('data-h')) || natH;
+        if (natW > 0 && natH > 0) {
+          svgEl.setAttribute('viewBox', '0 0 ' + natW + ' ' + natH);
+          svgEl.setAttribute('width', wantW);
+          svgEl.setAttribute('height', wantH);
+          svgEl.setAttribute('preserveAspectRatio', 'none');
+        }
       } catch(e) {
         console.warn('[Converter] barcode fail', e.message);
       }
