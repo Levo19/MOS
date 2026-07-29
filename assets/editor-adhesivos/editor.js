@@ -1,91 +1,142 @@
 // ════════════════════════════════════════════════════════════════════
-// EditorAdhesivos — UI motor del editor de avisos
-// v1.0.4 — 2026-06-05 — Audit profundo + fix printerId desde tabla:
-//   • printerId leído desde IMPRESORAS tipo=ADHESIVO+ALMACEN (no Properties)
-//   • Backend devuelve json YA parseado + flag jsonCorrupto
-//   • UI marca plantillas corruptas con ⚠ rojo (no clickeable, solo borrar)
-//   • Debounce impresión: _imprimiendo flag impide double-click x2 batches
-//   • _undo/_redo cancela _dragState para evitar escritura a ref muerta
-//   • CSS_VERSION constante (bumpear cuando cambie styles.css)
-//   • Backend title PrintNode incluye nombre plantilla
-//   • Backend defensa ancho_mm NaN/undefined en alineación
-//   • Backend valida bytes.length > 0 antes de PrintNode
-// v1.0.3 — 2026-06-05 — Pulido senior 9 items:
-//   1) Auto-guardar antes de test si hay cambios sin guardar
-//   2) Modal imprimir con preview SVG + advertencia + cantidad editable
-//   3) Tooltips en todas las herramientas
-//   4) Buscador de iconos (filtra por id o label, ignora tabs)
-//   5) Indicador * + dot rojo en Guardar cuando hay cambios
-//   6) Detectar cambios sin guardar al cargar otra plantilla / cerrar
-//   7) Ctrl+S = abrir modal Guardar
-//   8) Botón Duplicar plantilla (clona con sufijo "(copia)")
-//   9) Botón Eliminar plantilla en lista (soft-delete)
-//   + Helpers _hayCambiosSinGuardar() y _marcarGuardado() para tracking
-//     limpio del estado dirty.
-// v1.0.2 — 2026-06-05 — Wizard QR con 6 presets + tip educativo
-// v1.0.1 — 2026-06-05 — Senior audit fixes (38 findings · 8 críticos):
-//   #16 CRÍTICO  _apiPost enviaba `accion` pero backend lee `action`
-//                → ABSOLUTAMENTE NADA llegaba al backend (bloqueante total)
-//   #20 leak     canvas.onclick acumulaba listeners cada render
-//                → 10 renders = 10 ejecuciones por click
-//   #29 edge     clamp drag impedía poner capas en x=0/y=0 (borde)
-//   #31 UX       errores sin .message mostraban "[object Object]"
-//   #14 sync     consistencia line height con backend
-// v1.0.0 — 2026-06-05
+// EditorAdhesivos v2.0.0 — "Estudio de Avisos" (reescritura total, 2026-07-28)
 //
-// Overlay fullscreen vanilla JS (sin Vue). Expone window.EditorAdhesivos.abrir().
-// Depende de: IconosAdhesivo, EditorAdhesivosConverter, JsBarcode, MOS_API.
+// NUEVA LÓGICA (decisión del dueño):
+//   • CATÁLOGO (inicio): las plantillas son archivos FIJOS — se imprimen, no se
+//     editan ni se borran. Tocar un card = imprimir (modal con imagen PNG + cantidad).
+//   • ESTUDIO (crear): mini-paint — lienzo protagonista, dock de herramientas,
+//     selección con barra flotante contextual, bandeja de propiedades.
+//     "Guardar al catálogo" congela la creación como plantilla fija.
+//   • MEMBRETE OBLIGATORIO: toda creación nace con la franja "INVERSIONES MOS ──"
+//     (capas texto+linea con flag fija:true — el TSPL las imprime como capas
+//     normales; el editor las bloquea: ni mover, ni borrar, ni seleccionar).
 //
-// Estado en memoria mientras está abierto:
-//   _plantilla       JSON estructura activa
-//   _idPlantillaActual  null = borrador / ID = guardada
-//   _seleccionadaId  capa con outline
-//   _historial[]     stack snapshots para undo
-//   _historialIdx    posición actual en el stack
+// Compatibilidad: mismo JSON de plantilla {tamano, metadata, capas[]} — la
+// impresión (Edge print-adhesivo-plantilla/tspl.mjs) y las RPCs no cambian.
+// Depende de: EditorAdhesivosConverter (json2svg/dibujarBarcodes/validar),
+// IconosAdhesivo, window.MOS_API.post (adaptador Supabase), JsBarcode (CDN).
+// Reglas del sistema: español neutral, sin confirm()/prompt() nativos,
+// full responsive (PC/tablet/móvil · Android/iOS/Windows).
 // ════════════════════════════════════════════════════════════════════
 (function() {
   'use strict';
-  if (window.EditorAdhesivos) return;
 
+  var CSS_VERSION = '2.0.0';
+  var STORAGE_BORRADOR = 'eda2_borrador';
   var CSS_INYECTADO = false;
-  var _plantilla = null;
-  var _idPlantillaActual = null;
-  var _seleccionadaId = null;
-  var _historial = [];
-  var _historialIdx = -1;
-  var _plantillasGuardadas = [];
+  var POST_URL_FALLBACK = null;
+
+  // ── Estado ──────────────────────────────────────────────────────
+  var _vista = 'catalogo';            // 'catalogo' | 'estudio'
+  var _plantillas = [];               // catálogo (RAW del backend)
+  var _catCargando = false;
+  var _busqueda = '';
+  var _plantilla = null;              // la creación viva del Estudio
+  var _selId = null;
+  var _historial = [], _histIdx = -1;
+  var _zoom = 1, _zoomAuto = true;
   var _autosaveTimer = null;
-  var _catActiva = 'comercial';
-  var _zoom = 1;
+  var _ultimoGuardado = null;
+  var _imprimiendo = false;
+  var _printCtx = null;               // { idPlantilla, nombre, cantidad }
+  var _iconCat = 'comercial';
+  var _iconBusca = '';
+  var _dragState = null;
+  var _thumbCache = {};               // idPlantilla → dataURL (miniaturas PNG)
 
-  var STORAGE_BORRADOR = 'eda_borrador_v1';
-  var POST_URL_FALLBACK = null;  // se setea desde abrir()
-  var _ultimoGuardado = null;    // [v1.0.3] JSON.stringify del estado guardado
-  var _busquedaIconos = '';      // [v1.0.3] filtro buscador de iconos
-
-  // ── Helpers utilitarios ──────────────────────────────────────────
+  // ── Utilidades ──────────────────────────────────────────────────
   function _esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
-      return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
-  function _uuid() {
-    return 'c-' + Math.random().toString(36).substring(2, 6) + Math.random().toString(36).substring(2, 4);
-  }
+  function _uuid() { return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function _conv() { return window.EditorAdhesivosConverter || null; }
+  function _movil() { return window.matchMedia && window.matchMedia('(max-width: 860px)').matches; }
+
   function _toast(msg, tipo) {
     var t = document.createElement('div');
-    t.className = 'eda-toast' + (tipo ? ' ' + tipo : '');
+    t.className = 'ed2-toast' + (tipo === 'error' ? ' err' : tipo === 'ok' ? ' ok' : '');
     t.textContent = msg;
     document.body.appendChild(t);
-    setTimeout(function() {
-      t.style.animation = 'edaFadeIn .2s reverse';
-      setTimeout(function() { t.remove(); }, 220);
-    }, 2400);
+    setTimeout(function() { t.classList.add('out'); setTimeout(function() { t.remove(); }, 350); }, 2600);
   }
-  // [v1.0.4] CSS_VERSION constante — bumpear cuando cambie styles.css.
-  // Antes era hardcoded inline '?v=1.0.0' → al actualizar estilos el cache
-  // viejo se quedaba pegado en navegadores.
-  var CSS_VERSION = '1.0.5';
+
+  // Diálogo propio (sin confirm/prompt nativos). botones=[{txt,cls,val}]
+  function _dlg(opts, cb) {
+    _cerrarDlg();
+    var html = ''
+      + '<div class="ed2-dlg-back" id="ed2Dlg">'
+      +   '<div class="ed2-dlg">'
+      +     (opts.titulo ? '<h3>' + _esc(opts.titulo) + '</h3>' : '')
+      +     (opts.cuerpo ? '<p>' + opts.cuerpo + '</p>' : '')
+      +     (opts.input != null ? '<input type="text" id="ed2DlgInput" maxlength="' + (opts.maxlength || 50) + '" value="' + _esc(opts.input) + '" placeholder="' + _esc(opts.placeholder || '') + '">' : '')
+      +     '<div class="ed2-dlg-acts">'
+      +       opts.botones.map(function(b, i) {
+                return '<button class="ed2-btn ' + (b.cls || '') + '" data-val="' + i + '">' + b.txt + '</button>';
+              }).join('')
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+    var back = document.getElementById('ed2Dlg');
+    back.addEventListener('click', function(e) { if (e.target === back && opts.cerrable !== false) { _cerrarDlg(); cb(null); } });
+    back.querySelectorAll('button[data-val]').forEach(function(btn) {
+      btn.onclick = function() {
+        var inp = document.getElementById('ed2DlgInput');
+        var val = opts.botones[parseInt(btn.getAttribute('data-val'), 10)].val;
+        var txt = inp ? inp.value : null;
+        _cerrarDlg();
+        cb(val, txt);
+      };
+    });
+    var inp0 = document.getElementById('ed2DlgInput');
+    if (inp0) { inp0.focus(); inp0.select(); }
+  }
+  function _cerrarDlg() { var d = document.getElementById('ed2Dlg'); if (d) d.remove(); }
+
+  // ── Backend (mismo adaptador de siempre) ────────────────────────
+  function _apiPost(action, params, cb) {
+    var done = false;
+    function safeCb(err, r) { if (done) return; done = true; if (cb) cb(err, r); }
+    if (typeof window.MOS_API !== 'undefined' && window.MOS_API.post) {
+      return window.MOS_API.post(action, params)
+        .then(function(r) { safeCb(null, r); })
+        .catch(function(e) { safeCb(e); });
+    }
+    safeCb(new Error('Backend no disponible (MOS_API)'));
+  }
+
+  // ── MEMBRETE obligatorio ────────────────────────────────────────
+  // Capas normales para el TSPL (texto + linea) con flag fija:true para el editor.
+  function _capasMembrete(anchoMm) {
+    return [
+      { id: 'memb-txt', tipo: 'texto', fija: true, x_mm: 1.5, y_mm: 0.8,
+        texto: 'INVERSIONES MOS', font: 1, alineacion: 'left', negrita: true, rotacion: 0 },
+      { id: 'memb-lin', tipo: 'linea', fija: true, x_mm: 33, y_mm: 2.4,
+        ancho_mm: Math.max(4, (anchoMm || 50) - 34.5), alto_mm: 0.4 }
+    ];
+  }
+  function _esFija(c) { return !!(c && c.fija); }
+  function _tieneMembrete(p) {
+    return (p.capas || []).some(function(c) { return c.id === 'memb-txt' && _esFija(c); });
+  }
+  function _asegurarMembrete(p) {
+    if (_tieneMembrete(p)) return p;
+    p.capas = _capasMembrete(p.tamano && p.tamano.ancho_mm).concat(p.capas || []);
+    return p;
+  }
+  function _plantillaNueva() {
+    var p = {
+      version: 2,
+      tamano: { ancho_mm: 50, alto_mm: 25, tipo: 'adhesivo' },
+      metadata: { nombre: 'Nueva creación', membrete: true },
+      capas: []
+    };
+    return _asegurarMembrete(p);
+  }
+
+  // ── CSS ─────────────────────────────────────────────────────────
   function _inyectarCss() {
     if (CSS_INYECTADO) return;
     var l = document.createElement('link');
@@ -96,1201 +147,880 @@
     CSS_INYECTADO = true;
   }
 
-  // ── Plantilla en blanco ─────────────────────────────────────────
-  function _plantillaVacia() {
-    return {
-      version: 1,
-      tamano: { ancho_mm: 50, alto_mm: 25, tipo: 'adhesivo' },
-      metadata: { nombre: 'Nueva plantilla', fechaCreado: new Date().toISOString().slice(0, 10) },
-      capas: []
+  // ════════════════════════════════════════════════════════════════
+  // ABRIR / CERRAR
+  // ════════════════════════════════════════════════════════════════
+  function abrir(opts) {
+    opts = opts || {};
+    _inyectarCss();
+    POST_URL_FALLBACK = opts.backendUrl || window.EDITOR_BACKEND_URL || null;
+    _vista = 'catalogo';
+    _selId = null;
+    var ov = document.getElementById('ed2Overlay');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'ed2Overlay';
+      ov.className = 'ed2-overlay';
+      document.body.appendChild(ov);
+    }
+    document.addEventListener('keydown', _keyHandler);
+    _render();
+    _refrescarCatalogo();
+    // ¿Hay un borrador del Estudio? (solo si tiene contenido más allá del membrete)
+    var b = _cargarBorrador();
+    if (b && b.plantilla && (b.plantilla.capas || []).some(function(c) { return !_esFija(c); })) {
+      var mins = Math.max(1, Math.round((Date.now() - b.ts) / 60000));
+      _dlg({
+        titulo: 'Borrador sin guardar',
+        cuerpo: 'Hay una creación de hace <b>' + mins + ' min</b> que no se guardó al catálogo. ¿Quieres continuarla?',
+        botones: [
+          { txt: 'Descartar', cls: 'ed2-btn-ghost', val: 'no' },
+          { txt: '✨ Continuar creación', cls: 'ed2-btn-primary', val: 'si' }
+        ]
+      }, function(val) {
+        if (val === 'si') { _plantilla = _asegurarMembrete(b.plantilla); _irEstudio(false); }
+        else if (val === 'no') _limpiarBorrador();
+      });
+    }
+  }
+
+  function _cerrar() {
+    if (_vista === 'estudio' && _hayCambios()) { _confirmarSalidaEstudio(function() { _cerrarYa(); }); return; }
+    _cerrarYa();
+  }
+  function _cerrarYa() {
+    document.removeEventListener('keydown', _keyHandler);
+    var ov = document.getElementById('ed2Overlay');
+    if (ov) ov.remove();
+    _cerrarDlg();
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // RENDER RAÍZ
+  // ════════════════════════════════════════════════════════════════
+  function _render() {
+    var ov = document.getElementById('ed2Overlay');
+    if (!ov) return;
+    ov.innerHTML = (_vista === 'catalogo') ? _htmlCatalogo() : _htmlEstudio();
+    if (_vista === 'catalogo') _pintarGrid();
+    else _montarEstudio();
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // CATÁLOGO
+  // ════════════════════════════════════════════════════════════════
+  function _htmlCatalogo() {
+    return ''
+      + '<div class="ed2-cat">'
+      +   '<div class="ed2-cat-top">'
+      +     '<button class="ed2-btn ed2-btn-ghost" onclick="EditorAdhesivos._cerrar()">✕ Salir</button>'
+      +     '<div class="ed2-cat-title">🗂 Catálogo de Avisos</div>'
+      +     '<div class="ed2-search"><span>🔍</span><input type="text" placeholder="Buscar plantilla…" value="' + _esc(_busqueda) + '" oninput="EditorAdhesivos._setBusqueda(this.value)"></div>'
+      +     '<button class="ed2-btn ed2-btn-primary ed2-crear" onclick="EditorAdhesivos._crearNuevo()">✨ Crear nuevo</button>'
+      +   '</div>'
+      +   '<div class="ed2-cat-nota">🔒 Las plantillas del catálogo son fijas: se imprimen, no se editan ni se borran. Toca una para imprimirla.</div>'
+      +   '<div class="ed2-grid" id="ed2Grid"><div class="ed2-vacio">Cargando catálogo…</div></div>'
+      + '</div>';
+  }
+
+  function _setBusqueda(v) {
+    _busqueda = String(v || '');
+    _pintarGrid();
+    // devolver el foco al input (re-render lo pierde) — solo repintamos el grid, el input queda
+  }
+
+  function _refrescarCatalogo() {
+    if (_catCargando) return;
+    _catCargando = true;
+    _apiPost('listarAdhesivosPlantillas', {}, function(err, r) {
+      _catCargando = false;
+      if (err || !r || !r.ok) {
+        var g = document.getElementById('ed2Grid');
+        if (g) g.innerHTML = '<div class="ed2-vacio">⚠ No se pudo cargar el catálogo' + (err ? ': ' + _esc(err.message || '') : '') + '<br><button class="ed2-btn ed2-btn-ghost" style="margin-top:10px" onclick="EditorAdhesivos._reintentarCat()">Reintentar</button></div>';
+        return;
+      }
+      _plantillas = r.plantillas || [];
+      _pintarGrid();
+    });
+  }
+  function _reintentarCat() {
+    var g = document.getElementById('ed2Grid');
+    if (g) g.innerHTML = '<div class="ed2-vacio">Cargando catálogo…</div>';
+    _refrescarCatalogo();
+  }
+
+  function _pintarGrid() {
+    var g = document.getElementById('ed2Grid');
+    if (!g) return;
+    var q = _busqueda.trim().toLowerCase();
+    var lista = _plantillas.filter(function(p) {
+      if (p.jsonCorrupto) return false;
+      if (!q) return true;
+      return String(p.nombre || '').toLowerCase().indexOf(q) >= 0
+          || String(p.descripcion || '').toLowerCase().indexOf(q) >= 0;
+    });
+    if (!lista.length) {
+      g.innerHTML = '<div class="ed2-vacio">' + (q ? 'Sin resultados para "' + _esc(_busqueda) + '"' : 'El catálogo está vacío.<br>Crea el primer aviso con <b>✨ Crear nuevo</b>.') + '</div>';
+      return;
+    }
+    g.innerHTML = lista.map(function(p, i) {
+      var idEsc = _esc(String(p.idPlantilla || ''));
+      var tam = _esc(p.tamanoCanvas || '50x25');
+      return '<div class="ed2-card" style="animation-delay:' + Math.min(i * 55, 500) + 'ms">'
+        +   '<div class="ed2-card-th" data-print="' + idEsc + '" title="Imprimir este aviso"><div class="ed2-th-holder" id="ed2Th_' + idEsc + '"><span class="ed2-th-spin"></span></div></div>'
+        +   '<div class="ed2-card-body">'
+        +     '<div class="ed2-card-name" title="' + _esc(p.descripcion || p.nombre) + '">' + _esc(p.nombre) + '</div>'
+        +     '<div class="ed2-card-meta"><span>' + tam + ' mm</span><span class="ed2-chip-fija">🔒 FIJA</span></div>'
+        +     '<div class="ed2-card-acts">'
+        +       '<button class="ed2-btn-print" data-print="' + idEsc + '">🖨 Imprimir</button>'
+        +       '<button class="ed2-btn-base" data-base="' + idEsc + '" title="Partir de esta: crea una copia editable en el Estudio (el original no se toca)">⧉</button>'
+        +     '</div>'
+        +   '</div>'
+        + '</div>';
+    }).join('');
+    // wiring (sin onclicks inline con ids — más robusto con ids raros)
+    g.querySelectorAll('[data-print]').forEach(function(el) {
+      el.onclick = function() { _abrirImprimir(el.getAttribute('data-print')); };
+    });
+    g.querySelectorAll('[data-base]').forEach(function(el) {
+      el.onclick = function(e) { e.stopPropagation(); _partirDe(el.getAttribute('data-base')); };
+    });
+    // miniaturas fieles (SVG con QR real + barcodes)
+    lista.forEach(function(p) { _pintarThumb(p); });
+  }
+
+  function _jsonDe(p) {
+    try { return (typeof p.json === 'string') ? JSON.parse(p.json) : JSON.parse(JSON.stringify(p.json)); }
+    catch (_) { return null; }
+  }
+
+  function _pintarThumb(p) {
+    var holder = document.getElementById('ed2Th_' + String(p.idPlantilla || ''));
+    if (!holder) return;
+    var pj = _jsonDe(p);
+    var conv = _conv();
+    if (!pj || !conv) { holder.innerHTML = '<span class="ed2-th-err">sin preview</span>'; return; }
+    holder.innerHTML = conv.json2svg(pj, { grid: false });
+    var svg = holder.querySelector('svg');
+    if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); }
+    try { conv.dibujarBarcodes(holder); } catch (_) {}
+  }
+
+  // ── acciones catálogo ──
+  function _crearNuevo() {
+    _plantilla = _plantillaNueva();
+    _irEstudio(true);
+  }
+  function _partirDe(id) {
+    var p = _plantillas.find(function(x) { return String(x.idPlantilla) === String(id); });
+    if (!p) return;
+    var pj = _jsonDe(p);
+    if (!pj) { _toast('No se pudo leer la plantilla', 'error'); return; }
+    pj.metadata = pj.metadata || {};
+    pj.metadata.nombre = 'Copia de ' + (p.nombre || 'aviso');
+    _plantilla = _asegurarMembrete(pj);
+    // ids nuevos para las capas no fijas (evita colisiones raras)
+    _plantilla.capas.forEach(function(c) { if (!_esFija(c)) c.id = _uuid(); });
+    _irEstudio(true);
+    _toast('Copia creada — el original del catálogo no se toca', 'ok');
+  }
+  function _irEstudio(resetHist) {
+    _vista = 'estudio';
+    _selId = null;
+    _zoomAuto = true;
+    if (resetHist !== false) { _historial = []; _histIdx = -1; _ultimoGuardado = null; _snapshot(); }
+    _render();
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // IMPRIMIR (modal con imagen PNG + cantidad)
+  // ════════════════════════════════════════════════════════════════
+  function _abrirImprimir(id) {
+    var p = _plantillas.find(function(x) { return String(x.idPlantilla) === String(id); });
+    if (!p) return;
+    _printCtx = { idPlantilla: p.idPlantilla, nombre: p.nombre, cantidad: 10 };
+    var imp = _impresoraAdhesivo();
+    var html = ''
+      + '<div class="ed2-dlg-back" id="ed2Print">'
+      +   '<div class="ed2-print">'
+      +     '<div class="ed2-print-h">🖨 <b>Imprimir · ' + _esc(p.nombre) + '</b><button class="ed2-x" onclick="EditorAdhesivos._cerrarImprimir()">✕</button></div>'
+      +     '<div class="ed2-print-sub">Así saldrá la etiqueta (' + _esc(p.tamanoCanvas || '50x25') + ' mm)</div>'
+      +     '<div class="ed2-paper"><div class="ed2-shot" id="ed2Shot"><span class="ed2-th-spin"></span></div></div>'
+      +     '<div class="ed2-print-cap">Imagen generada — fiel a la impresión térmica (B/N, QR real)</div>'
+      +     '<div class="ed2-qty">'
+      +       '<button onclick="EditorAdhesivos._qty(-1)" aria-label="Menos">−</button>'
+      +       '<div class="ed2-qty-val" id="ed2QtyVal">10</div>'
+      +       '<button onclick="EditorAdhesivos._qty(1)" aria-label="Más">＋</button>'
+      +     '</div>'
+      +     '<div class="ed2-qty-l">cantidad de etiquetas</div>'
+      +     (imp ? '<div class="ed2-prn"><span class="ed2-dot ' + (imp.ok ? 'ok' : 'bad') + '"></span>' + _esc(imp.nombre) + ' · ' + (imp.ok ? 'en línea' : 'sin señal') + '</div>' : '')
+      +     '<div class="ed2-print-acts">'
+      +       '<button class="ed2-btn ed2-btn-ghost" onclick="EditorAdhesivos._imprimir(1)">Imprimir 1 de prueba</button>'
+      +       '<button class="ed2-btn ed2-btn-go" id="ed2GoBtn" onclick="EditorAdhesivos._imprimir(0)">🖨 Imprimir 10</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+    document.body.insertAdjacentHTML('beforeend', html);
+    var back = document.getElementById('ed2Print');
+    back.addEventListener('click', function(e) { if (e.target === back) _cerrarImprimir(); });
+    // PNG (con caché por id)
+    var pj = _jsonDe(p);
+    if (_thumbCache[p.idPlantilla]) _ponShot(_thumbCache[p.idPlantilla]);
+    else if (pj) _plantillaAPng(pj, 2, function(url) {
+      if (url) { _thumbCache[p.idPlantilla] = url; _ponShot(url); }
+      else _ponShotSvg(pj);
+    });
+  }
+  function _ponShot(url) {
+    var s = document.getElementById('ed2Shot');
+    if (s) s.innerHTML = '<img src="' + url + '" alt="Preview de la etiqueta">';
+  }
+  function _ponShotSvg(pj) {
+    // Respaldo si el PNG falla: SVG directo (igual de fiel, solo que no es "foto")
+    var s = document.getElementById('ed2Shot');
+    var conv = _conv();
+    if (!s || !conv) return;
+    s.innerHTML = conv.json2svg(pj, { grid: false });
+    var svg = s.querySelector('svg');
+    if (svg) { svg.removeAttribute('width'); svg.removeAttribute('height'); }
+    try { conv.dibujarBarcodes(s); } catch (_) {}
+  }
+  function _cerrarImprimir() { var d = document.getElementById('ed2Print'); if (d) d.remove(); _printCtx = null; }
+
+  function _qty(delta) {
+    if (!_printCtx) return;
+    _printCtx.cantidad = Math.max(1, Math.min(100, _printCtx.cantidad + delta));
+    var v = document.getElementById('ed2QtyVal');
+    if (v) v.textContent = _printCtx.cantidad;
+    var go = document.getElementById('ed2GoBtn');
+    if (go) go.innerHTML = '🖨 Imprimir ' + _printCtx.cantidad;
+  }
+
+  function _imprimir(cantFija) {
+    if (!_printCtx || _imprimiendo) { if (_imprimiendo) _toast('Espera — ya hay una impresión en curso', 'error'); return; }
+    var cant = cantFija > 0 ? cantFija : _printCtx.cantidad;
+    _imprimiendo = true;
+    var modal = document.getElementById('ed2Print');
+    if (modal) modal.querySelectorAll('button').forEach(function(b) { b.disabled = true; b.style.opacity = '.55'; });
+    _apiPost('imprimirAdhesivoPlantilla', { idPlantilla: _printCtx.idPlantilla, cantidad: cant }, function(err, r) {
+      _imprimiendo = false;
+      if (modal) modal.querySelectorAll('button').forEach(function(b) { b.disabled = false; b.style.opacity = ''; });
+      if (err || !r || !r.ok) {
+        _toast('Error al imprimir: ' + ((err && err.message) || (r && r.error) || 'desconocido'), 'error');
+        return;
+      }
+      _toast(cant + (cant === 1 ? ' etiqueta enviada' : ' etiquetas enviadas') + ' a la impresora ✓', 'ok');
+      if (cantFija === 0) _cerrarImprimir();
+    });
+  }
+
+  // Estado de la impresora de adhesivos (best-effort desde el caché que MOS ya llena)
+  function _impresoraAdhesivo() {
+    try {
+      var raw = localStorage.getItem('mos_printers_cache');
+      if (!raw) return null;
+      var arr = (JSON.parse(raw) || {}).data || [];
+      var p = arr.find(function(x) { return String(x.tipo || x.uso || '').toUpperCase().indexOf('ADHESIVO') >= 0; });
+      if (!p) return null;
+      var ok = (p.state === 'ONLINE') || (p.online === true);
+      return { nombre: p.nombre || p.printerName || 'Impresora de etiquetas', ok: ok };
+    } catch (_) { return null; }
+  }
+
+  // ── SVG → PNG (imagen fiel; barcodes dibujados primero) ─────────
+  function _plantillaAPng(pj, escala, cb) {
+    var conv = _conv();
+    if (!conv) { cb(null); return; }
+    var host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff';
+    try { host.innerHTML = conv.json2svg(pj, { grid: false }); } catch (_) { cb(null); return; }
+    document.body.appendChild(host);
+    try { conv.dibujarBarcodes(host); } catch (_) {}
+    setTimeout(function() {
+      try {
+        var svg = host.querySelector('svg');
+        var w = parseInt(svg.getAttribute('width'), 10), h = parseInt(svg.getAttribute('height'), 10);
+        var xml = new XMLSerializer().serializeToString(svg);
+        var img = new Image();
+        img.onload = function() {
+          try {
+            var cv = document.createElement('canvas');
+            cv.width = w * escala; cv.height = h * escala;
+            var ctx = cv.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(img, 0, 0, cv.width, cv.height);
+            host.remove();
+            cb(cv.toDataURL('image/png'));
+          } catch (e) { host.remove(); cb(null); }
+        };
+        img.onerror = function() { host.remove(); cb(null); };
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+      } catch (e) { host.remove(); cb(null); }
+    }, 80);
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // ESTUDIO (mini-paint)
+  // ════════════════════════════════════════════════════════════════
+  function _htmlEstudio() {
+    var nombre = (_plantilla && _plantilla.metadata && _plantilla.metadata.nombre) || 'Nueva creación';
+    var modif = _hayCambios();
+    return ''
+      + '<div class="ed2-est">'
+      +   '<div class="ed2-est-top">'
+      +     '<button class="ed2-btn ed2-btn-ghost" onclick="EditorAdhesivos._volverCatalogo()">◀ Catálogo</button>'
+      +     '<div class="ed2-est-name">✨ <input type="text" id="ed2Nombre" maxlength="50" value="' + _esc(nombre) + '" onchange="EditorAdhesivos._setNombre(this.value)">'
+      +       '<span class="ed2-estado ' + (modif ? 'mod' : '') + '" id="ed2Estado">' + (modif ? '● borrador' : '· listo') + '</span></div>'
+      +     '<button class="ed2-btn ed2-btn-ghost ed2-undo" onclick="EditorAdhesivos._undo()" title="Deshacer (Ctrl+Z)">↶</button>'
+      +     '<button class="ed2-btn ed2-btn-ghost ed2-undo" onclick="EditorAdhesivos._redo()" title="Rehacer (Ctrl+Y)">↷</button>'
+      +     '<button class="ed2-btn ed2-btn-go" onclick="EditorAdhesivos._guardarAlCatalogo()">📌 Guardar al catálogo</button>'
+      +   '</div>'
+      +   '<div class="ed2-studio" id="ed2Studio">'
+      +     '<div class="ed2-stage" id="ed2Stage">'
+      +       '<div class="ed2-membtag">🔒 membrete fijo</div>'
+      +       '<div class="ed2-canvas" id="ed2Canvas"></div>'
+      +     '</div>'
+      +     '<div class="ed2-zoom">'
+      +       '<button onclick="EditorAdhesivos._zoomDelta(-0.25)" aria-label="Alejar">−</button>'
+      +       '<span id="ed2ZoomLbl">auto</span>'
+      +       '<button onclick="EditorAdhesivos._zoomDelta(0.25)" aria-label="Acercar">＋</button>'
+      +       '<button onclick="EditorAdhesivos._zoomFit()" title="Ajustar a la vista">⤢</button>'
+      +       '<span class="ed2-zoom-info">' + _plantilla.tamano.ancho_mm + '×' + _plantilla.tamano.alto_mm + ' mm</span>'
+      +     '</div>'
+      +     '<div class="ed2-tray" id="ed2Tray"></div>'
+      +     '<div class="ed2-dock" id="ed2Dock">'
+      +       '<button class="ed2-dtool" onclick="EditorAdhesivos._addTexto()"><span class="dg gT">T</span>Texto</button>'
+      +       '<button class="ed2-dtool" onclick="EditorAdhesivos._abrirIconos()"><span class="dg">💰</span>Icono</button>'
+      +       '<button class="ed2-dtool" onclick="EditorAdhesivos._addQR()"><span class="dg"><span class="gQ"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>QR</button>'
+      +       '<button class="ed2-dtool" onclick="EditorAdhesivos._addBarcode()"><span class="dg"><span class="gB"></span></span>Barras</button>'
+      +       '<button class="ed2-dtool" onclick="EditorAdhesivos._addLinea()"><span class="dg"><span class="gL"></span></span>Línea</button>'
+      +       '<button class="ed2-dtool" onclick="EditorAdhesivos._addRect()"><span class="dg"><span class="gR"></span></span>Recuadro</button>'
+      +     '</div>'
+      +   '</div>'
+      + '</div>';
+  }
+
+  function _montarEstudio() {
+    _renderCanvas();
+    _zoomFit();
+  }
+
+  function _setNombre(v) {
+    if (!_plantilla) return;
+    _plantilla.metadata = _plantilla.metadata || {};
+    _plantilla.metadata.nombre = String(v || '').trim() || 'Nueva creación';
+    _autosave();
+  }
+
+  function _volverCatalogo() {
+    if (_hayCambios()) { _confirmarSalidaEstudio(function() { _vista = 'catalogo'; _render(); _refrescarCatalogo(); }); return; }
+    _vista = 'catalogo';
+    _render();
+    _refrescarCatalogo();
+  }
+  function _confirmarSalidaEstudio(continuar) {
+    _dlg({
+      titulo: '¿Salir sin guardar?',
+      cuerpo: 'Tu creación no está guardada en el catálogo. Si sales, queda como borrador (24 h).',
+      botones: [
+        { txt: 'Seguir editando', cls: 'ed2-btn-ghost', val: 'no' },
+        { txt: 'Salir', cls: 'ed2-btn-primary', val: 'si' }
+      ]
+    }, function(val) { if (val === 'si') continuar(); });
+  }
+
+  // ── lienzo ──────────────────────────────────────────────────────
+  function _renderCanvas() {
+    var cv = document.getElementById('ed2Canvas');
+    var conv = _conv();
+    if (!cv || !conv || !_plantilla) return;
+    cv.innerHTML = conv.json2svg(_plantilla, { grid: true, gridMm: 5 }) + _htmlHits();
+    try { conv.dibujarBarcodes(cv); } catch (_) {}
+    _wireHits();
+    _aplicarZoom();
+    _renderSel();
+    _renderTray();
+    _refrescarEstado();
+  }
+
+  function _refrescarEstado() {
+    var e = document.getElementById('ed2Estado');
+    if (!e) return;
+    var m = _hayCambios();
+    e.textContent = m ? '● borrador' : '· listo';
+    e.className = 'ed2-estado' + (m ? ' mod' : '');
+  }
+
+  function _boundsCapa(c) {
+    var conv = _conv();
+    var x = conv.mm2px(c.x_mm), y = conv.mm2px(c.y_mm);
+    var w = 40, h = 24;
+    if (c.tipo === 'icono' || c.tipo === 'qr') { w = conv.dots2px(c.tamano_dots || (c.tipo === 'qr' ? 64 : 48)); h = w; }
+    else if (c.tipo === 'rectangulo') { w = conv.mm2px(c.ancho_mm || 5); h = conv.mm2px(c.alto_mm || 5); }
+    else if (c.tipo === 'linea') { w = conv.mm2px(c.ancho_mm || 0); h = Math.max(10, conv.mm2px(c.alto_mm || 0.5)); }
+    else if (c.tipo === 'texto') {
+      var fpx = conv.fontPx(c.font || 3) * (c.negrita ? 1.15 : 1);
+      var lineas = String(c.texto || '').split('\n');
+      var maxLen = lineas.reduce(function(m, l) { return Math.max(m, l.length); }, 1);
+      w = maxLen * fpx * 0.58; h = fpx * 1.08 * lineas.length;
+    }
+    else if (c.tipo === 'barcode') {
+      var modules = 11 * String(c.codigo || '').length + 35;
+      w = conv.dots2px(modules * (c.narrow || 2)); h = conv.dots2px(c.alto_dots || 48) + 16;
+    }
+    return { x: x, y: y, w: w, h: h };
+  }
+
+  function _htmlHits() {
+    return (_plantilla.capas || []).map(function(c) {
+      if (_esFija(c)) return '';
+      var b = _boundsCapa(c);
+      return '<div class="ed2-hit" data-id="' + c.id + '" style="left:' + b.x + 'px;top:' + b.y + 'px;width:' + b.w + 'px;height:' + b.h + 'px"></div>';
+    }).join('');
+  }
+
+  function _wireHits() {
+    var cv = document.getElementById('ed2Canvas');
+    if (!cv) return;
+    cv.onpointerdown = function(e) {
+      var hit = e.target.closest ? e.target.closest('.ed2-hit') : null;
+      if (!hit) { _seleccionar(null); return; }
+      var id = hit.getAttribute('data-id');
+      _seleccionar(id);
+      _dragStart(e, id, hit);
     };
   }
 
-  // [v1.0.3] Detector de cambios sin guardar. Si _ultimoGuardado == null
-  // (plantilla nueva nunca guardada) → hay cambios solo si tiene capas.
-  // Si != null → compara JSON. Ignora la metadata.nombre/desc para que
-  // editar solo el título no marque como "modificado".
-  function _hayCambiosSinGuardar() {
-    if (_ultimoGuardado === null) {
-      return _plantilla.capas.length > 0;
+  // ── drag (Pointer Events → mouse + touch + pen) ─────────────────
+  function _dragStart(e, id, el) {
+    var capa = _plantilla.capas.find(function(c) { return c.id === id; });
+    if (!capa || _esFija(capa)) return;
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+    _dragState = { id: id, capa: capa, x0: e.clientX, y0: e.clientY, mm: { x: capa.x_mm, y: capa.y_mm }, moved: false };
+    el.onpointermove = _dragMove;
+    el.onpointerup = el.onpointercancel = _dragEnd;
+  }
+  function _dragMove(e) {
+    if (!_dragState) return;
+    e.preventDefault();
+    var PX_POR_MM = 12 * _zoom;
+    var nx = _dragState.mm.x + (e.clientX - _dragState.x0) / PX_POR_MM;
+    var ny = _dragState.mm.y + (e.clientY - _dragState.y0) / PX_POR_MM;
+    nx = Math.round(nx * 2) / 2; ny = Math.round(ny * 2) / 2;
+    nx = Math.max(0, Math.min(_plantilla.tamano.ancho_mm, nx));
+    ny = Math.max(0, Math.min(_plantilla.tamano.alto_mm, ny));
+    if (nx !== _dragState.capa.x_mm || ny !== _dragState.capa.y_mm) {
+      _dragState.capa.x_mm = nx; _dragState.capa.y_mm = ny; _dragState.moved = true;
+      _renderCanvasLigero();
     }
-    var snapActual = JSON.stringify({
-      tamano: _plantilla.tamano,
-      capas: _plantilla.capas
-    });
-    return snapActual !== _ultimoGuardado;
+  }
+  function _dragEnd() {
+    if (!_dragState) return;
+    var movio = _dragState.moved;
+    _dragState = null;
+    if (movio) { _snapshot(); _renderCanvas(); }
+  }
+  function _renderCanvasLigero() {
+    // re-render SVG + hits sin tocar bandeja (fluidez del drag)
+    var cv = document.getElementById('ed2Canvas');
+    var conv = _conv();
+    if (!cv || !conv) return;
+    cv.innerHTML = conv.json2svg(_plantilla, { grid: true, gridMm: 5 }) + _htmlHits();
+    try { conv.dibujarBarcodes(cv); } catch (_) {}
+    _wireHits();
+    _renderSel();
   }
 
-  function _marcarGuardado() {
-    _ultimoGuardado = JSON.stringify({
-      tamano: _plantilla.tamano,
-      capas: _plantilla.capas
+  // ── selección (hormigas marchando + barra flotante) ─────────────
+  function _seleccionar(id) {
+    _selId = id;
+    _renderSel();
+    _renderTray();
+  }
+  function _capaSel() { return _selId ? _plantilla.capas.find(function(c) { return c.id === _selId; }) : null; }
+
+  function _renderSel() {
+    var stage = document.getElementById('ed2Stage');
+    if (!stage) return;
+    var old = stage.querySelector('.ed2-selbox'); if (old) old.remove();
+    var c = _capaSel();
+    if (!c) return;
+    var b = _boundsCapa(c);
+    var cv = document.getElementById('ed2Canvas');
+    var box = document.createElement('div');
+    box.className = 'ed2-selbox';
+    // coordenadas en el sistema del canvas escalado
+    box.style.left = (cv.offsetLeft + b.x * _zoom) + 'px';
+    box.style.top = (cv.offsetTop + b.y * _zoom) + 'px';
+    box.style.width = (b.w * _zoom) + 'px';
+    box.style.height = (b.h * _zoom) + 'px';
+    box.innerHTML = '<div class="ed2-flt">' + _botonesFlt(c) + '</div>';
+    stage.appendChild(box);
+    box.querySelectorAll('button[data-act]').forEach(function(btn) {
+      btn.onclick = function(e) { e.stopPropagation(); _accionFlt(btn.getAttribute('data-act')); };
+    });
+  }
+  function _botonesFlt(c) {
+    var extra = '';
+    if (c.tipo === 'texto') extra = '<button data-act="fmenos">A−</button><button data-act="fmas">A＋</button><button data-act="bold"' + (c.negrita ? ' class="on"' : '') + '><b>B</b></button>';
+    if (c.tipo === 'qr' || c.tipo === 'icono') extra = '<button data-act="smenos">−</button><button data-act="smas">＋</button>';
+    if (c.tipo === 'barcode') extra = '<button data-act="hmenos">▁−</button><button data-act="hmas">▁＋</button>';
+    return extra + '<button data-act="dup">⧉</button><button data-act="del" class="del">🗑</button>';
+  }
+  function _accionFlt(act) {
+    var c = _capaSel();
+    if (!c) return;
+    var FONTS = [1, 2, 3, 4, 5];
+    var QRS = [40, 56, 72, 96, 120, 168];
+    var ICS = [32, 48, 64, 96];
+    if (act === 'del') { _eliminarSel(); return; }
+    if (act === 'dup') {
+      var copia = JSON.parse(JSON.stringify(c));
+      copia.id = _uuid(); copia.x_mm = Math.min(_plantilla.tamano.ancho_mm - 2, copia.x_mm + 2); copia.y_mm = Math.min(_plantilla.tamano.alto_mm - 2, copia.y_mm + 2);
+      _plantilla.capas.push(copia);
+      _selId = copia.id;
+    }
+    else if (act === 'bold') c.negrita = !c.negrita;
+    else if (act === 'fmas' || act === 'fmenos') {
+      var fi = FONTS.indexOf(c.font || 3);
+      c.font = FONTS[Math.max(0, Math.min(FONTS.length - 1, fi + (act === 'fmas' ? 1 : -1)))];
+    }
+    else if (act === 'smas' || act === 'smenos') {
+      var arr = c.tipo === 'qr' ? QRS : ICS;
+      var cur = c.tamano_dots || (c.tipo === 'qr' ? 64 : 48);
+      var si = 0, best = 1e9;
+      arr.forEach(function(v, i) { if (Math.abs(v - cur) < best) { best = Math.abs(v - cur); si = i; } });
+      c.tamano_dots = arr[Math.max(0, Math.min(arr.length - 1, si + (act === 'smas' ? 1 : -1)))];
+    }
+    else if (act === 'hmas' || act === 'hmenos') {
+      c.alto_dots = Math.max(24, Math.min(96, (c.alto_dots || 48) + (act === 'hmas' ? 8 : -8)));
+    }
+    _snapshot();
+    _renderCanvas();
+  }
+  function _eliminarSel() {
+    var c = _capaSel();
+    if (!c || _esFija(c)) return;
+    _plantilla.capas = _plantilla.capas.filter(function(x) { return x.id !== c.id; });
+    _selId = null;
+    _snapshot();
+    _renderCanvas();
+  }
+
+  // ── bandeja contextual ──────────────────────────────────────────
+  function _renderTray() {
+    var tray = document.getElementById('ed2Tray');
+    if (!tray) return;
+    var c = _capaSel();
+    if (!c) { tray.className = 'ed2-tray'; tray.innerHTML = ''; return; }
+    tray.className = 'ed2-tray abierta';
+    var h = '<div class="ed2-tray-h">' + _iconoTipo(c.tipo) + ' ' + _labelTipo(c.tipo) + '<button class="ed2-x" onclick="EditorAdhesivos._seleccionar(null)">✕</button></div>';
+    if (c.tipo === 'texto') {
+      h += '<textarea class="ed2-in" id="ed2TxTexto" rows="2" placeholder="Escribe el texto…">' + _esc(c.texto || '') + '</textarea>';
+      h += '<div class="ed2-sizes">' + [1, 2, 3, 4, 5].map(function(f) {
+        return '<button class="ed2-size s' + f + (c.font === f ? ' on' : '') + '" data-font="' + f + '">Aa</button>';
+      }).join('') + '</div>';
+      h += '<div class="ed2-row3">'
+        + '<button class="ed2-mini' + (c.negrita ? ' on' : '') + '" data-p="negrita"><b>B</b> Negrita</button>'
+        + '<button class="ed2-mini' + (c.alineacion === 'left' || !c.alineacion ? ' on' : '') + '" data-al="left">⯇ Izq.</button>'
+        + '<button class="ed2-mini' + (c.alineacion === 'center' ? ' on' : '') + '" data-al="center">▣ Centro</button>'
+        + '</div>';
+    } else if (c.tipo === 'qr') {
+      h += '<input class="ed2-in" id="ed2QrCod" type="text" placeholder="Contenido del QR (link, texto, WIFI:…)" value="' + _esc(c.codigo || '') + '">';
+      h += '<div class="ed2-hintline">Al escanear: un link abre la página; un WIFI: conecta a la red.</div>';
+    } else if (c.tipo === 'barcode') {
+      h += '<input class="ed2-in" id="ed2BcCod" type="text" maxlength="14" placeholder="Código (máx 14)" value="' + _esc(c.codigo || '') + '">';
+    } else if (c.tipo === 'linea') {
+      h += _sliderRow('Largo', 'ancho_mm', c.ancho_mm || 10, 2, _plantilla.tamano.ancho_mm, 0.5, 'mm');
+      h += _sliderRow('Grosor', 'alto_mm', c.alto_mm || 0.5, 0.2, 3, 0.1, 'mm');
+    } else if (c.tipo === 'rectangulo') {
+      h += _sliderRow('Ancho', 'ancho_mm', c.ancho_mm || 10, 2, _plantilla.tamano.ancho_mm, 0.5, 'mm');
+      h += _sliderRow('Alto', 'alto_mm', c.alto_mm || 6, 2, _plantilla.tamano.alto_mm, 0.5, 'mm');
+      h += '<div class="ed2-row3"><button class="ed2-mini' + (c.relleno ? ' on' : '') + '" data-p="relleno">◼ Relleno</button></div>';
+    } else if (c.tipo === 'icono') {
+      h += '<button class="ed2-mini" onclick="EditorAdhesivos._abrirIconos(true)">🔁 Cambiar icono</button>';
+    }
+    tray.innerHTML = h;
+    // wiring
+    var tx = document.getElementById('ed2TxTexto');
+    if (tx) {
+      tx.oninput = function() { c.texto = tx.value; _renderCanvasLigero(); };
+      tx.onchange = function() { _snapshot(); _refrescarEstado(); };
+    }
+    var qr = document.getElementById('ed2QrCod');
+    if (qr) { qr.onchange = function() { c.codigo = qr.value.trim(); _snapshot(); _renderCanvas(); }; }
+    var bc = document.getElementById('ed2BcCod');
+    if (bc) { bc.onchange = function() { c.codigo = bc.value.trim(); _snapshot(); _renderCanvas(); }; }
+    tray.querySelectorAll('[data-font]').forEach(function(b) {
+      b.onclick = function() { c.font = parseInt(b.getAttribute('data-font'), 10); _snapshot(); _renderCanvas(); };
+    });
+    tray.querySelectorAll('[data-al]').forEach(function(b) {
+      b.onclick = function() { c.alineacion = b.getAttribute('data-al'); _snapshot(); _renderCanvas(); };
+    });
+    tray.querySelectorAll('[data-p]').forEach(function(b) {
+      b.onclick = function() { var k = b.getAttribute('data-p'); c[k] = !c[k]; _snapshot(); _renderCanvas(); };
+    });
+    tray.querySelectorAll('input[type="range"][data-k]').forEach(function(r) {
+      r.oninput = function() {
+        c[r.getAttribute('data-k')] = parseFloat(r.value);
+        var lbl = tray.querySelector('[data-lbl="' + r.getAttribute('data-k') + '"]');
+        if (lbl) lbl.textContent = r.value + ' mm';
+        _renderCanvasLigero();
+      };
+      r.onchange = function() { _snapshot(); _refrescarEstado(); };
+    });
+  }
+  function _sliderRow(label, key, val, min, max, step, unidad) {
+    return '<div class="ed2-slider"><label>' + label + ' <span data-lbl="' + key + '">' + val + ' ' + unidad + '</span></label>'
+      + '<input type="range" data-k="' + key + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + val + '"></div>';
+  }
+  function _iconoTipo(t) { return { texto: '✏️', icono: '💰', qr: '⬚', barcode: '▮▯▮', linea: '━', rectangulo: '▭' }[t] || '◆'; }
+  function _labelTipo(t) { return { texto: 'Texto', icono: 'Icono', qr: 'Código QR', barcode: 'Código de barras', linea: 'Línea', rectangulo: 'Recuadro' }[t] || t; }
+
+  // ── dock: agregar elementos ─────────────────────────────────────
+  function _zonaLibreY() {
+    // coloca el elemento nuevo debajo del membrete, en zona con menos capas
+    return Math.min(_plantilla.tamano.alto_mm - 6, 6 + (_plantilla.capas.filter(function(c) { return !_esFija(c); }).length % 4) * 4);
+  }
+  function _addCapa(c) {
+    c.id = _uuid();
+    _plantilla.capas.push(c);
+    _selId = c.id;
+    _snapshot();
+    _renderCanvas();
+  }
+  function _addTexto() {
+    _addCapa({ tipo: 'texto', x_mm: 20, y_mm: _zonaLibreY(), texto: 'TEXTO', font: 3, alineacion: 'left', negrita: false, rotacion: 0 });
+  }
+  function _addLinea() { _addCapa({ tipo: 'linea', x_mm: 4, y_mm: _zonaLibreY() + 2, ancho_mm: Math.min(40, _plantilla.tamano.ancho_mm - 8), alto_mm: 0.5 }); }
+  function _addRect() { _addCapa({ tipo: 'rectangulo', x_mm: 6, y_mm: _zonaLibreY(), ancho_mm: 18, alto_mm: 8, grosor: 2, relleno: false }); }
+  function _addBarcode() { _addCapa({ tipo: 'barcode', x_mm: 4, y_mm: Math.max(8, _zonaLibreY()), codigo: 'MOS001', formato: '128', alto_dots: 48, narrow: 2 }); }
+  function _addQR() {
+    _addCapa({ tipo: 'qr', x_mm: 2, y_mm: 4.5, codigo: 'https://levo19.github.io/MOS/', tamano_dots: 120 });
+    _toast('QR agregado — edita el contenido en la bandeja', 'ok');
+  }
+
+  // picker de iconos (bandeja)
+  function _abrirIconos(cambiar) {
+    var tray = document.getElementById('ed2Tray');
+    if (!tray || !window.IconosAdhesivo) return;
+    _iconMode = cambiar === true ? 'cambiar' : 'agregar';
+    tray.className = 'ed2-tray abierta';
+    _pintarIconos();
+  }
+  var _iconMode = 'agregar';
+  function _pintarIconos() {
+    var tray = document.getElementById('ed2Tray');
+    if (!tray) return;
+    var todos = IconosAdhesivo.listar();
+    var q = _iconBusca.trim().toLowerCase();
+    var lista = q
+      ? todos.filter(function(i) { return i.id.toLowerCase().indexOf(q) >= 0 || i.label.toLowerCase().indexOf(q) >= 0; })
+      : todos.filter(function(i) { return i.categoria === _iconCat; });
+    var cats = [['comercial', '💰'], ['alerta', '⚠'], ['operativo', '🏪'], ['destaque', '🎯']];
+    tray.innerHTML = ''
+      + '<div class="ed2-tray-h">💰 Iconos<button class="ed2-x" onclick="EditorAdhesivos._seleccionar(null)">✕</button></div>'
+      + '<input class="ed2-in" type="text" id="ed2IconQ" placeholder="🔍 Buscar icono…" value="' + _esc(_iconBusca) + '">'
+      + (q ? '' : '<div class="ed2-cats">' + cats.map(function(cc) {
+          return '<button class="ed2-catb' + (cc[0] === _iconCat ? ' on' : '') + '" data-cat="' + cc[0] + '">' + cc[1] + '</button>';
+        }).join('') + '</div>')
+      + '<div class="ed2-icongrid">' + (lista.length ? lista.map(function(i) {
+          return '<button class="ed2-icb" data-ic="' + i.id + '" title="' + _esc(i.label) + '"><img src="' + IconosAdhesivo.dataUri(i.id) + '" alt=""></button>';
+        }).join('') : '<div class="ed2-hintline">Sin iconos para esa búsqueda</div>') + '</div>';
+    var qEl = document.getElementById('ed2IconQ');
+    if (qEl) { qEl.oninput = function() { _iconBusca = qEl.value; _pintarIconos(); var el2 = document.getElementById('ed2IconQ'); if (el2) { el2.focus(); el2.setSelectionRange(el2.value.length, el2.value.length); } }; }
+    tray.querySelectorAll('[data-cat]').forEach(function(b) { b.onclick = function() { _iconCat = b.getAttribute('data-cat'); _pintarIconos(); }; });
+    tray.querySelectorAll('[data-ic]').forEach(function(b) {
+      b.onclick = function() {
+        var idIc = b.getAttribute('data-ic');
+        if (_iconMode === 'cambiar') {
+          var c = _capaSel();
+          if (c && c.tipo === 'icono') { c.idIcono = idIc; _snapshot(); _renderCanvas(); return; }
+        }
+        _addCapa({ tipo: 'icono', x_mm: 4, y_mm: _zonaLibreY(), idIcono: idIc, tamano_dots: 48 });
+      };
     });
   }
 
-  // ── Snapshot/historial ──────────────────────────────────────────
+  // ── zoom ────────────────────────────────────────────────────────
+  function _zoomFit() {
+    var st = document.getElementById('ed2Studio');
+    var cv = document.getElementById('ed2Canvas');
+    var svg = cv && cv.querySelector('svg');
+    if (!st || !svg) return;
+    var w = parseInt(svg.getAttribute('width') || svg.viewBox.baseVal.width, 10) || 600;
+    var availW = st.clientWidth - (_movil() ? 28 : 90);
+    var availH = st.clientHeight - (_movil() ? 210 : 200);
+    _zoom = Math.max(0.4, Math.min(availW / w, availH / Math.max(1, parseInt(svg.getAttribute('height'), 10) || 300), 1.8));
+    _zoom = Math.round(_zoom * 100) / 100;
+    _zoomAuto = true;
+    _aplicarZoom();
+    _renderSel();
+  }
+  function _zoomDelta(d) {
+    _zoom = Math.max(0.4, Math.min(2.5, Math.round((_zoom + d) * 100) / 100));
+    _zoomAuto = false;
+    _aplicarZoom();
+    _renderSel();
+  }
+  function _aplicarZoom() {
+    var cv = document.getElementById('ed2Canvas');
+    if (cv) { cv.style.transform = 'scale(' + _zoom + ')'; cv.style.transformOrigin = 'top left'; }
+    var svg = cv && cv.querySelector('svg');
+    if (cv && svg) {
+      // reservar el espacio real (transform no afecta layout)
+      var w = parseInt(svg.getAttribute('width'), 10) || 600, h = parseInt(svg.getAttribute('height'), 10) || 300;
+      cv.style.width = w + 'px'; cv.style.height = h + 'px';
+      var stage = document.getElementById('ed2Stage');
+      if (stage) { stage.style.width = (w * _zoom) + 'px'; stage.style.height = (h * _zoom) + 'px'; }
+    }
+    var lbl = document.getElementById('ed2ZoomLbl');
+    if (lbl) lbl.textContent = (_zoomAuto ? 'auto ' : '') + Math.round(_zoom * 100) + '%';
+  }
+
+  // ── historial / borrador ────────────────────────────────────────
   function _snapshot() {
     var snap = JSON.stringify(_plantilla);
-    // Truncar historial si estoy en el medio (rama nueva)
-    _historial = _historial.slice(0, _historialIdx + 1);
+    _historial = _historial.slice(0, _histIdx + 1);
     _historial.push(snap);
     if (_historial.length > 50) _historial.shift();
-    _historialIdx = _historial.length - 1;
-    _autosaveBorrador();
+    _histIdx = _historial.length - 1;
+    _autosave();
+  }
+  function _hayCambios() {
+    if (_vista !== 'estudio' || !_plantilla) return false;
+    return (_plantilla.capas || []).some(function(c) { return !_esFija(c); });
   }
   function _undo() {
-    if (_historialIdx <= 0) { _toast('Nada para deshacer', 'error'); return; }
-    // [v1.0.4 fix] Si hay drag en curso, _dragState.capa apunta a un
-    // objeto que ya no estará en _plantilla.capas después del JSON.parse.
-    // Cancelar el drag para evitar escrituras a referencia muerta.
+    if (_histIdx <= 0) { _toast('Nada para deshacer'); return; }
     _dragState = null;
-    _historialIdx--;
-    _plantilla = JSON.parse(_historial[_historialIdx]);
-    _seleccionadaId = null;
-    _render();
+    _histIdx--;
+    _plantilla = JSON.parse(_historial[_histIdx]);
+    _selId = null;
+    _renderCanvas();
   }
   function _redo() {
-    if (_historialIdx >= _historial.length - 1) { _toast('Nada para rehacer', 'error'); return; }
-    _dragState = null;  // [v1.0.4] mismo motivo que _undo
-    _historialIdx++;
-    _plantilla = JSON.parse(_historial[_historialIdx]);
-    _seleccionadaId = null;
-    _render();
+    if (_histIdx >= _historial.length - 1) { _toast('Nada para rehacer'); return; }
+    _dragState = null;
+    _histIdx++;
+    _plantilla = JSON.parse(_historial[_histIdx]);
+    _selId = null;
+    _renderCanvas();
   }
-
-  function _autosaveBorrador() {
+  function _autosave() {
     clearTimeout(_autosaveTimer);
     _autosaveTimer = setTimeout(function() {
-      try { localStorage.setItem(STORAGE_BORRADOR, JSON.stringify({
-        plantilla: _plantilla,
-        idPlantillaActual: _idPlantillaActual,
-        ts: Date.now()
-      })); } catch(_) {}
-    }, 800);
+      try { localStorage.setItem(STORAGE_BORRADOR, JSON.stringify({ plantilla: _plantilla, ts: Date.now() })); } catch (_) {}
+    }, 700);
   }
   function _cargarBorrador() {
     try {
       var raw = localStorage.getItem(STORAGE_BORRADOR);
       if (!raw) return null;
       var obj = JSON.parse(raw);
-      // Borrador vence a las 24h
-      if (Date.now() - obj.ts > 24 * 3600 * 1000) {
-        localStorage.removeItem(STORAGE_BORRADOR);
-        return null;
-      }
+      if (Date.now() - obj.ts > 24 * 3600 * 1000) { localStorage.removeItem(STORAGE_BORRADOR); return null; }
       return obj;
-    } catch(_) { return null; }
+    } catch (_) { return null; }
   }
-  function _limpiarBorrador() {
-    try { localStorage.removeItem(STORAGE_BORRADOR); } catch(_) {}
-  }
+  function _limpiarBorrador() { try { localStorage.removeItem(STORAGE_BORRADOR); } catch (_) {} }
 
-  // ── Render principal del editor ─────────────────────────────────
-  function _render() {
-    var ov = document.getElementById('edaOverlay');
-    if (!ov) return;
-    ov.innerHTML = _htmlToolbar() + _htmlBody();
-    _wireToolbar();
-    _wireSidebars();
-    _wireCanvas();
-    _renderListaCapas();
-    _renderListaPlantillas();
-    _renderPropiedades();
-    setTimeout(function() {
-      if (window.EditorAdhesivosConverter) {
-        EditorAdhesivosConverter.dibujarBarcodes(document.getElementById('edaCanvas') || ov);
-      }
-    }, 30);
-  }
-
-  // [v1.0.3] Toolbar con:
-  //  - Asterisco visible si hay cambios sin guardar
-  //  - Punto rojo palpitante en botón Guardar cuando hay cambios
-  //  - Subtítulo dinámico (borrador / modificada / guardada)
-  function _htmlToolbar() {
-    var nombre = (_plantilla && _plantilla.metadata && _plantilla.metadata.nombre) || 'Sin nombre';
-    var modif = _hayCambiosSinGuardar();
-    var estado = !_idPlantillaActual ? ' <small style="color:#fbbf24">• borrador nuevo</small>'
-              : modif                  ? ' <small style="color:#f87171">* con cambios sin guardar</small>'
-              :                          ' <small style="color:#10b981">✓ guardada</small>';
-    var asterisco = modif ? '<span style="color:#f87171;font-weight:900">*</span> ' : '';
-    var dotGuardar = modif
-      ? '<span style="display:inline-block;width:8px;height:8px;background:#f87171;border-radius:50%;margin-right:6px;animation:edaFadeIn 1s ease-in-out infinite alternate"></span>'
-      : '';
-    return ''
-      + '<div class="eda-toolbar">'
-      +   '<button class="eda-btn" onclick="EditorAdhesivos._cerrar()">◀ Volver</button>'
-      +   '<div class="eda-toolbar-title">🎨 ' + asterisco + 'Plantilla: ' + _esc(nombre) + estado + '</div>'
-      +   '<button class="eda-btn" onclick="EditorAdhesivos._undo()" title="Ctrl+Z">↶ Undo</button>'
-      +   '<button class="eda-btn" onclick="EditorAdhesivos._redo()" title="Ctrl+Y">↷ Redo</button>'
-      +   '<button class="eda-btn eda-btn-warn" onclick="EditorAdhesivos._testImpresion()" title="Imprime 1 etiqueta de prueba">👁 Test impresión</button>'
-      +   '<button class="eda-btn eda-btn-primary" onclick="EditorAdhesivos._abrirModalGuardar()" title="Ctrl+S">' + dotGuardar + '💾 Guardar</button>'
-      +   '<button class="eda-btn eda-btn-info" onclick="EditorAdhesivos._abrirModalImprimir()">🖨 Imprimir</button>'
-      + '</div>';
-  }
-
-  function _htmlBody() {
-    return ''
-      + '<div class="eda-body">'
-      +   _htmlSidebarIzq()
-      +   _htmlCanvasArea()
-      +   _htmlSidebarDer()
-      + '</div>';
-  }
-
-  // [v1.0.3] Sidebar izq con:
-  //  - Buscador de iconos (filtra por label o id)
-  //  - Categoria tabs (si búsqueda activa, ignora tab — busca en TODOS)
-  function _htmlSidebarIzq() {
-    var iconos = (window.IconosAdhesivo ? IconosAdhesivo.listar() : []);
-    var qLc = _busquedaIconos.toLowerCase().trim();
-    var iconosFiltrados;
-    if (qLc) {
-      // Búsqueda activa: filtrar en TODAS las categorías
-      iconosFiltrados = iconos.filter(function(i) {
-        return i.id.toLowerCase().indexOf(qLc) >= 0
-            || i.label.toLowerCase().indexOf(qLc) >= 0;
-      });
-    } else {
-      iconosFiltrados = iconos.filter(function(i) { return i.categoria === _catActiva; });
-    }
-    var iconosHtml = iconosFiltrados.map(function(i) {
-      var dataUri = IconosAdhesivo.dataUri(i.id);
-      return '<div class="eda-icono-thumb" title="' + _esc(i.label) + '" onclick="EditorAdhesivos._agregarIcono(\'' + i.id + '\')">'
-           +   '<img src="' + dataUri + '" alt="' + _esc(i.label) + '">'
-           + '</div>';
-    }).join('');
-    if (iconosHtml === '' && qLc) {
-      iconosHtml = '<div class="eda-prop-empty" style="grid-column:1/-1">Sin iconos para "' + _esc(_busquedaIconos) + '"</div>';
-    }
-
-    return ''
-      + '<div class="eda-sidebar left">'
-      +   '<h3>Herramientas</h3>'
-      +   '<div class="eda-tools-grid">'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarTexto()" title="Capa de texto"><span class="eda-tool-icon">✏</span>Texto</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarLinea()" title="Línea horizontal o divisor"><span class="eda-tool-icon">─</span>Línea</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarRect()" title="Rectángulo con borde o relleno"><span class="eda-tool-icon">▢</span>Borde</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarBarcode()" title="Código de barras Code128"><span class="eda-tool-icon">▌</span>Barcode</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._agregarQR()" title="Wizard QR con presets"><span class="eda-tool-icon">▢</span>QR</button>'
-      +     '<button class="eda-tool" onclick="EditorAdhesivos._nuevaPlantilla()" title="Empezar plantilla en blanco"><span class="eda-tool-icon">＋</span>Nueva</button>'
-      +   '</div>'
-      +   '<h3>Iconos</h3>'
-      +   '<input type="text" class="eda-input" placeholder="🔍 Buscar icono..." value="' + _esc(_busquedaIconos) + '"'
-      +     ' oninput="EditorAdhesivos._setBusquedaIconos(this.value)" style="width:100%;box-sizing:border-box;margin-bottom:8px">'
-      +   (qLc ? '' : (''
-      +   '<div class="eda-cat-tabs">'
-      +     ['comercial', 'alerta', 'operativo', 'destaque'].map(function(c) {
-              return '<div class="eda-cat-tab' + (c === _catActiva ? ' active' : '') + '" onclick="EditorAdhesivos._setCategoria(\'' + c + '\')" title="' + c + '">'
-                   + (c === 'comercial' ? '💰' : c === 'alerta' ? '⚠' : c === 'operativo' ? '🏪' : '🎯')
-                   + '</div>';
-            }).join('')
-      +   '</div>'))
-      +   '<div class="eda-iconos-grid">' + iconosHtml + '</div>'
-      +   '<h3>Plantillas</h3>'
-      +   '<div class="eda-plantillas" id="edaPlantillas"></div>'
-      + '</div>';
-  }
-
-  function _htmlCanvasArea() {
-    var anchoMm = _plantilla.tamano.ancho_mm;
-    var altoMm  = _plantilla.tamano.alto_mm;
-    var svg = window.EditorAdhesivosConverter
-      ? EditorAdhesivosConverter.json2svg(_plantilla, { grid: true, gridMm: 5 })
-      : '<div>Falta EditorAdhesivosConverter</div>';
-    return ''
-      + '<div class="eda-canvas-wrap">'
-      +   '<div class="eda-canvas-info">Lienzo ' + anchoMm + ' × ' + altoMm + ' mm · TSC adhesivo · zoom ' + Math.round(_zoom * 100) + '%</div>'
-      +   '<div class="eda-canvas" id="edaCanvas" style="transform:scale(' + _zoom + ');transform-origin:center">' + svg + _htmlOverlayCapas() + '</div>'
-      +   '<div class="eda-canvas-controls">'
-      +     '<label style="font-size:12px">Cantidad: </label>'
-      +     '<input type="number" id="edaCantidad" class="eda-input" min="1" max="100" value="10" style="width:70px">'
-      +     '<label style="font-size:12px;margin-left:12px">Zoom: </label>'
-      +     '<select class="eda-select" onchange="EditorAdhesivos._setZoom(parseFloat(this.value))">'
-      +       ['0.5', '0.75', '1', '1.25', '1.5', '2'].map(function(z) {
-              return '<option value="' + z + '"' + (parseFloat(z) === _zoom ? ' selected' : '') + '>' + Math.round(z * 100) + '%</option>';
-            }).join('')
-      +     '</select>'
-      +   '</div>'
-      +   '<div style="font-size:11px;color:#94a3b8">⚠ Vista aproximada — usá "Test impresión" antes de imprimir N copias.</div>'
-      + '</div>';
-  }
-
-  // Overlay con divs invisibles para capturar click/drag por capa
-  function _htmlOverlayCapas() {
-    if (!_plantilla) return '';
-    var conv = window.EditorAdhesivosConverter;
-    if (!conv) return '';
-    return _plantilla.capas.map(function(c) {
-      var x = conv.mm2px(c.x_mm), y = conv.mm2px(c.y_mm);
-      var w = 40, h = 30;  // tamaño bounding mínimo
-      if (c.tipo === 'icono') {
-        w = conv.dots2px(c.tamano_dots || 48);
-        h = w;
-      } else if (c.tipo === 'rectangulo') {
-        w = conv.mm2px(c.ancho_mm || 5);
-        h = conv.mm2px(c.alto_mm || 5);
-      } else if (c.tipo === 'linea') {
-        w = conv.mm2px(c.ancho_mm || 0);
-        h = Math.max(8, conv.mm2px(c.alto_mm || 0.5));
-      } else if (c.tipo === 'texto') {
-        var fpx = conv.fontPx(c.font || 3);
-        w = String(c.texto || '').length * fpx * 0.55;
-        h = fpx;
-      } else if (c.tipo === 'barcode') {
-        var bcLen = String(c.codigo || '').length;
-        var modules = 11 * bcLen + 35;
-        w = conv.dots2px(modules * (c.narrow || 2));
-        h = conv.dots2px(c.alto_dots || 48);
-      } else if (c.tipo === 'qr') {
-        w = conv.dots2px(c.tamano_dots || 64);
-        h = w;
-      }
-      var sel = (_seleccionadaId === c.id) ? ' selected' : '';
-      return '<div class="eda-capa-hit' + sel + '" data-id="' + c.id + '" style="position:absolute;left:' + x + 'px;top:' + y + 'px;width:' + w + 'px;height:' + h + 'px;cursor:move;outline:' + (sel ? '2px dashed #6366f1' : 'none') + ';outline-offset:2px"></div>';
-    }).join('');
-  }
-
-  function _htmlSidebarDer() {
-    return ''
-      + '<div class="eda-sidebar right">'
-      +   '<h3>Propiedades</h3>'
-      +   '<div id="edaPropiedades"></div>'
-      +   '<h3 style="margin-top:14px">Capas</h3>'
-      +   '<div class="eda-capas" id="edaCapas"></div>'
-      + '</div>';
-  }
-
-  // ── Render dinámico de propiedades de la capa seleccionada ──────
-  function _renderPropiedades() {
-    var cont = document.getElementById('edaPropiedades');
-    if (!cont) return;
-    if (!_seleccionadaId) {
-      cont.innerHTML = '<div class="eda-prop-empty">Seleccioná una capa<br>(clickeá en el lienzo o en la lista)</div>';
-      return;
-    }
-    var capa = _plantilla.capas.find(function(c) { return c.id === _seleccionadaId; });
-    if (!capa) {
-      cont.innerHTML = '<div class="eda-prop-empty">Capa no encontrada</div>';
-      _seleccionadaId = null;
-      return;
-    }
-    var html = ''
-      + _propRow('X (mm)',  '<input type="number" step="0.5" value="' + capa.x_mm + '" onchange="EditorAdhesivos._setProp(\'x_mm\', parseFloat(this.value))">')
-      + _propRow('Y (mm)',  '<input type="number" step="0.5" value="' + capa.y_mm + '" onchange="EditorAdhesivos._setProp(\'y_mm\', parseFloat(this.value))">');
-
-    if (capa.tipo === 'texto') {
-      var textoEsc = _esc(capa.texto || '');
-      html += _propRow('Texto', '<textarea onchange="EditorAdhesivos._setProp(\'texto\', this.value)">' + textoEsc + '</textarea>');
-      html += _propRow('Font',  '<select onchange="EditorAdhesivos._setProp(\'font\', parseInt(this.value))">'
-                              + [1,2,3,4,5].map(function(f) { return '<option value="' + f + '"' + (capa.font === f ? ' selected' : '') + '>Font ' + f + ' ' + ['chico','pequeño','medio','grande','MEGA'][f-1] + '</option>'; }).join('')
-                              + '</select>');
-      html += _propRow('Alineación', '<select onchange="EditorAdhesivos._setProp(\'alineacion\', this.value)">'
-                              + ['left', 'center', 'right'].map(function(a) { return '<option value="' + a + '"' + (capa.alineacion === a ? ' selected' : '') + '>' + a + '</option>'; }).join('')
-                              + '</select>');
-      html += _propRow('Negrita', '<label><input type="checkbox"' + (capa.negrita ? ' checked' : '') + ' onchange="EditorAdhesivos._setProp(\'negrita\', this.checked)"> Bold</label>');
-    }
-    else if (capa.tipo === 'icono') {
-      html += _propRow('Ícono', '<select onchange="EditorAdhesivos._setProp(\'idIcono\', this.value)">'
-                              + (window.IconosAdhesivo ? IconosAdhesivo.listar().map(function(i) {
-                                  return '<option value="' + i.id + '"' + (capa.idIcono === i.id ? ' selected' : '') + '>' + i.label + '</option>';
-                                }).join('') : '')
-                              + '</select>');
-      html += _propRow('Tamaño (dots)', '<select onchange="EditorAdhesivos._setProp(\'tamano_dots\', parseInt(this.value))">'
-                              + [32, 48, 64, 96].map(function(t) { return '<option value="' + t + '"' + (capa.tamano_dots === t ? ' selected' : '') + '>' + t + ' dots (' + (t/8).toFixed(1) + ' mm)</option>'; }).join('')
-                              + '</select>');
-    }
-    else if (capa.tipo === 'linea') {
-      html += _propRow('Ancho (mm)', '<input type="number" step="0.5" value="' + (capa.ancho_mm || 10) + '" onchange="EditorAdhesivos._setProp(\'ancho_mm\', parseFloat(this.value))">');
-      html += _propRow('Grosor (mm)', '<input type="number" step="0.1" value="' + (capa.alto_mm || 0.5) + '" onchange="EditorAdhesivos._setProp(\'alto_mm\', parseFloat(this.value))">');
-    }
-    else if (capa.tipo === 'rectangulo') {
-      html += _propRow('Ancho (mm)', '<input type="number" step="0.5" value="' + (capa.ancho_mm || 5) + '" onchange="EditorAdhesivos._setProp(\'ancho_mm\', parseFloat(this.value))">');
-      html += _propRow('Alto (mm)',  '<input type="number" step="0.5" value="' + (capa.alto_mm || 5) + '" onchange="EditorAdhesivos._setProp(\'alto_mm\', parseFloat(this.value))">');
-      html += _propRow('Grosor borde (px)', '<input type="number" min="1" max="5" value="' + (capa.grosor || 1) + '" onchange="EditorAdhesivos._setProp(\'grosor\', parseInt(this.value))">');
-      html += _propRow('Relleno', '<label><input type="checkbox"' + (capa.relleno ? ' checked' : '') + ' onchange="EditorAdhesivos._setProp(\'relleno\', this.checked)"> Sólido</label>');
-    }
-    else if (capa.tipo === 'barcode') {
-      html += _propRow('Código', '<input type="text" value="' + _esc(capa.codigo || '') + '" maxlength="14" onchange="EditorAdhesivos._setProp(\'codigo\', this.value)">');
-      html += _propRow('Alto (dots)', '<input type="number" min="24" max="96" value="' + (capa.alto_dots || 48) + '" onchange="EditorAdhesivos._setProp(\'alto_dots\', parseInt(this.value))">');
-    }
-    else if (capa.tipo === 'qr') {
-      html += _propRow('Contenido', '<input type="text" value="' + _esc(capa.codigo || '') + '" onchange="EditorAdhesivos._setProp(\'codigo\', this.value)">');
-      html += _propRow('Tamaño (dots)', '<select onchange="EditorAdhesivos._setProp(\'tamano_dots\', parseInt(this.value))">'
-                              + [40, 56, 72, 96].map(function(t) { return '<option value="' + t + '"' + (capa.tamano_dots === t ? ' selected' : '') + '>' + t + ' dots</option>'; }).join('')
-                              + '</select>');
-    }
-
-    html += '<button class="eda-btn eda-btn-danger" style="width:100%;margin-top:8px" onclick="EditorAdhesivos._eliminarCapa()">🗑 Eliminar capa</button>';
-    cont.innerHTML = html;
-  }
-
-  function _propRow(label, control) {
-    return '<div class="eda-prop-row"><label>' + label + '</label>' + control + '</div>';
-  }
-
-  // ── Render lista de capas ───────────────────────────────────────
-  function _renderListaCapas() {
-    var cont = document.getElementById('edaCapas');
-    if (!cont) return;
-    if (!_plantilla.capas.length) {
-      cont.innerHTML = '<div class="eda-prop-empty">Sin capas — agregá una desde herramientas</div>';
-      return;
-    }
-    var TIPOS_ICON = { texto: '✏', icono: '◆', linea: '─', rectangulo: '▢', barcode: '▌', qr: '▢' };
-    cont.innerHTML = _plantilla.capas.map(function(c, idx) {
-      var sel = (_seleccionadaId === c.id) ? ' selected' : '';
-      var label = c.tipo === 'texto' ? (c.texto || '(vacío)').substring(0, 18)
-                : c.tipo === 'icono' ? (c.idIcono || '?')
-                : c.tipo + ' ' + (c.ancho_mm || '')
-                ;
-      return '<div class="eda-capa-item' + sel + '" onclick="EditorAdhesivos._seleccionar(\'' + c.id + '\')">'
-           +   '<span class="eda-capa-tipo">' + (TIPOS_ICON[c.tipo] || '?') + '</span>'
-           +   '<span class="eda-capa-label">' + _esc(label) + '</span>'
-           +   '<div class="eda-capa-actions">'
-           +     '<button onclick="event.stopPropagation();EditorAdhesivos._subirCapa(\'' + c.id + '\')" title="Subir">↑</button>'
-           +     '<button onclick="event.stopPropagation();EditorAdhesivos._bajarCapa(\'' + c.id + '\')" title="Bajar">↓</button>'
-           +   '</div>'
-           + '</div>';
-    }).join('');
-  }
-
-  // [v1.0.3+v1.0.4] Lista de plantillas con:
-  //  - Duplicar (⎘) y Eliminar (🗑) por plantilla
-  //  - Indicador ⚠ + click-disabled para plantillas con JSON corrupto
-  //    (detectado en backend `jsonCorrupto: true` en listarAdhesivosPlantillas)
-  // [v1.0.6] Cards modernos: miniatura FIEL (json2svg + dibujarBarcodes, mismo motor que el editor)
-  //   + botones con etiqueta clara. Contenedor scrolleable si hay muchas. Protegidas: 🔒 sin borrar.
-  function _renderListaPlantillas() {
-    var cont = document.getElementById('edaPlantillas');
-    if (!cont) return;
-    if (!_plantillasGuardadas.length) {
-      cont.innerHTML = '<div class="eda-prop-empty">Sin plantillas guardadas</div>';
-      return;
-    }
-    cont.innerHTML = _plantillasGuardadas.map(function(p) {
-      var sel = (_idPlantillaActual === p.idPlantilla) ? ' active' : '';
-      var idEsc = String(p.idPlantilla || '').replace(/'/g, "\\'");
-      if (p.jsonCorrupto) {
-        return '<div class="eda-pcard" style="opacity:.6">'
-             +   '<div class="eda-pcard-body">'
-             +     '<div class="eda-pcard-name" style="color:#f87171">⚠ ' + _esc(p.nombre) + ' (corrupta)</div>'
-             +     '<div class="eda-pcard-actions"><button class="eda-pbtn eda-pbtn-del" onclick="EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')">🗑 Borrar</button></div>'
-             +   '</div>'
-             + '</div>';
-      }
-      var esProt = !!(p.json && p.json.metadata && p.json.metadata.protegida);
-      // miniatura fiel: json2svg (los QR/barcodes los pinta dibujarBarcodes al final)
-      var thumb = '';
-      try {
-        var pj = (typeof p.json === 'string') ? JSON.parse(p.json) : p.json;
-        if (window.EditorAdhesivosConverter && pj) thumb = EditorAdhesivosConverter.json2svg(pj, { grid: false });
-      } catch(_) {}
-      return '<div class="eda-pcard' + sel + '">'
-           +   '<div class="eda-pcard-thumb" onclick="EditorAdhesivos._cargarPlantilla(\'' + idEsc + '\')" title="Abrir para editar en el centro">'
-           +     (thumb || '<span style="color:#94a3b8;font-size:11px">sin preview</span>') + '</div>'
-           +   '<div class="eda-pcard-body">'
-           +     '<div class="eda-pcard-name" title="' + _esc(p.descripcion || p.nombre) + '">' + (esProt ? '<span title="Plantilla base protegida (no se borra)">🔒</span>' : '') + _esc(p.nombre) + '</div>'
-           +     '<div class="eda-pcard-actions">'
-           +       '<button class="eda-pbtn eda-pbtn-print" onclick="EditorAdhesivos._imprimirPlantillaLista(\'' + idEsc + '\')" title="Ver el adhesivo, poner la cantidad e imprimir">🖨 Imprimir</button>'
-           +       '<button class="eda-pbtn eda-pbtn-dup" onclick="EditorAdhesivos._duplicarPlantilla(\'' + idEsc + '\')" title="Crear una copia editable a partir de esta">📄 Duplicar</button>'
-           +       (esProt ? '' : '<button class="eda-pbtn eda-pbtn-del" onclick="EditorAdhesivos._eliminarPlantilla(\'' + idEsc + '\')" title="Borrar esta plantilla">🗑</button>')
-           +     '</div>'
-           +   '</div>'
-           + '</div>';
-    }).join('');
-    // pintar los QR/barcodes de TODAS las miniaturas (mismo motor que el preview del editor)
-    try { if (window.EditorAdhesivosConverter) EditorAdhesivosConverter.dibujarBarcodes(cont); } catch(_) {}
-  }
-
-  // ── Wiring de eventos ───────────────────────────────────────────
-  function _wireToolbar() { /* botones inline en onclick */ }
-  function _wireSidebars() { /* idem */ }
-
-  // [v1.0.1 SENIOR AUDIT] Memory leak fix: el listener de click del canvas
-  // se acumulaba en cada render (no había cleanup). Ahora se reemplaza el
-  // contenedor canvas para limpiar todos sus listeners de un golpe.
-  // Antes: 10 renders → 10 listeners → 10 ejecuciones por click.
-  function _wireCanvas() {
-    var canvas = document.getElementById('edaCanvas');
-    if (!canvas) return;
-    // Para el click de fondo: usar onclick directo (sobrescribe, no acumula)
-    canvas.onclick = function(e) {
-      var tg = e.target;
-      if (tg === canvas || (tg.tagName && (tg.tagName === 'svg' || tg.tagName === 'SVG'))) {
-        _seleccionar(null);
-      }
-    };
-    var hits = canvas.querySelectorAll('.eda-capa-hit');
-    hits.forEach(function(h) {
-      // Listeners en el div hit son nuevos en cada render (el div es nuevo
-      // tras innerHTML), así que no leak — son liberados al borrar el div.
-      h.addEventListener('mousedown', _onDragStart);
-      h.addEventListener('touchstart', _onDragStart, { passive: false });
-      h.onclick = function(e) {
-        e.stopPropagation();
-        _seleccionar(h.getAttribute('data-id'));
-      };
-    });
-  }
-
-  // ── Drag para mover capas ───────────────────────────────────────
-  var _dragState = null;
-  function _onDragStart(e) {
-    e.preventDefault();
-    var id = this.getAttribute('data-id');
-    _seleccionar(id);
-    var capa = _plantilla.capas.find(function(c) { return c.id === id; });
-    if (!capa) return;
-    var touch = e.touches ? e.touches[0] : e;
-    _dragState = {
-      id: id,
-      capa: capa,
-      startMouseX: touch.clientX,
-      startMouseY: touch.clientY,
-      startMm: { x: capa.x_mm, y: capa.y_mm }
-    };
-    document.addEventListener('mousemove', _onDragMove);
-    document.addEventListener('mouseup', _onDragEnd);
-    document.addEventListener('touchmove', _onDragMove, { passive: false });
-    document.addEventListener('touchend', _onDragEnd);
-  }
-  function _onDragMove(e) {
-    if (!_dragState) return;
-    e.preventDefault();
-    var touch = e.touches ? e.touches[0] : e;
-    var dx = touch.clientX - _dragState.startMouseX;
-    var dy = touch.clientY - _dragState.startMouseY;
-    // px → mm. 1 dot = 1.5 px; 1 mm = 8 dots = 12 px (sin zoom)
-    var PX_POR_MM = 12 * _zoom;
-    var newX = _dragState.startMm.x + dx / PX_POR_MM;
-    var newY = _dragState.startMm.y + dy / PX_POR_MM;
-    // Snap a 0.5mm
-    newX = Math.round(newX * 2) / 2;
-    newY = Math.round(newY * 2) / 2;
-    // [v1.0.1 SENIOR AUDIT] Clamp: permitir capa en x=0 (borde izq) y hasta
-    // anchoCanvas (no anchoCanvas-1). Antes restaba 1mm → no se podía
-    // poner rectángulo borde que necesita x=0 con ancho=50mm.
-    newX = Math.max(0, Math.min(_plantilla.tamano.ancho_mm, newX));
-    newY = Math.max(0, Math.min(_plantilla.tamano.alto_mm, newY));
-    _dragState.capa.x_mm = newX;
-    _dragState.capa.y_mm = newY;
-    _renderSoloPosicionCapa(_dragState.id);
-  }
-  function _onDragEnd() {
-    if (!_dragState) return;
-    _dragState = null;
-    document.removeEventListener('mousemove', _onDragMove);
-    document.removeEventListener('mouseup', _onDragEnd);
-    document.removeEventListener('touchmove', _onDragMove);
-    document.removeEventListener('touchend', _onDragEnd);
-    _snapshot();
-    _render();
-  }
-
-  function _renderSoloPosicionCapa(id) {
-    // Solo actualiza el div de hit + re-render del SVG completo (más simple)
-    var canvas = document.getElementById('edaCanvas');
-    if (!canvas) return;
-    var conv = window.EditorAdhesivosConverter;
-    if (!conv) return;
-    var svgHtml = conv.json2svg(_plantilla, { grid: true, gridMm: 5 });
-    canvas.innerHTML = svgHtml + _htmlOverlayCapas();
-    _wireCanvas();
-    if (conv.dibujarBarcodes) conv.dibujarBarcodes(canvas);
-    _renderPropiedades();
-  }
-
-  // ── Acciones públicas ───────────────────────────────────────────
-  function _agregarTexto() {
-    _plantilla.capas.push({
-      id: _uuid(), tipo: 'texto', x_mm: 10, y_mm: 10,
-      texto: 'TEXTO', font: 3, alineacion: 'left', negrita: false, rotacion: 0
-    });
-    _seleccionadaId = _plantilla.capas[_plantilla.capas.length - 1].id;
-    _snapshot();
-    _render();
-  }
-  function _agregarIcono(idIcono) {
-    _plantilla.capas.push({
-      id: _uuid(), tipo: 'icono', x_mm: 5, y_mm: 5, idIcono: idIcono, tamano_dots: 48
-    });
-    _seleccionadaId = _plantilla.capas[_plantilla.capas.length - 1].id;
-    _snapshot();
-    _render();
-  }
-  function _agregarLinea() {
-    _plantilla.capas.push({
-      id: _uuid(), tipo: 'linea', x_mm: 5, y_mm: 12, ancho_mm: 40, alto_mm: 0.5
-    });
-    _seleccionadaId = _plantilla.capas[_plantilla.capas.length - 1].id;
-    _snapshot();
-    _render();
-  }
-  function _agregarRect() {
-    _plantilla.capas.push({
-      id: _uuid(), tipo: 'rectangulo', x_mm: 5, y_mm: 5, ancho_mm: 20, alto_mm: 10,
-      grosor: 2, relleno: false
-    });
-    _seleccionadaId = _plantilla.capas[_plantilla.capas.length - 1].id;
-    _snapshot();
-    _render();
-  }
-  function _agregarBarcode() {
-    _plantilla.capas.push({
-      id: _uuid(), tipo: 'barcode', x_mm: 5, y_mm: 15, codigo: 'AVISO001',
-      formato: '128', alto_dots: 48, narrow: 2
-    });
-    _seleccionadaId = _plantilla.capas[_plantilla.capas.length - 1].id;
-    _snapshot();
-    _render();
-  }
-  // [v1.0.2] Wizard QR — antes inserte un QR vacío y obligaba al admin a
-  // editar propiedades manualmente. Ahora abre modal con presets del
-  // ecosistema + textarea + tamaño. UX guiado para casos comunes.
-  function _agregarQR() {
-    _abrirWizardQR();
-  }
-
-  function _abrirWizardQR() {
-    if (document.getElementById('edaModalQR')) return;
-    var presets = [
-      { label: '🎯 MOS Admin',     url: 'https://levo19.github.io/MOS/' },
-      { label: '📦 Warehouse',     url: 'https://levo19.github.io/warehouseMos-/' },
-      { label: '⚡ MosExpress',    url: 'https://levo19.github.io/MosExpress/' },
-      { label: '📧 Email',         url: 'mailto:luisvo.19@gmail.com' },
-      { label: '📞 WhatsApp',      url: 'https://wa.me/51999999999' },
-      { label: '🌐 URL libre',     url: 'https://' }
-    ];
-    var presetBtns = presets.map(function(p, i) {
-      return '<button class="eda-btn" style="font-size:11px;padding:6px 10px"'
-           + ' onclick="EditorAdhesivos._qrPreset(\'' + _esc(p.url) + '\')">'
-           +   _esc(p.label)
-           + '</button>';
-    }).join('');
-    var html = ''
-      + '<div class="eda-modal-overlay" id="edaModalQR" onclick="if(event.target===this)EditorAdhesivos._cerrarModal()">'
-      +   '<div class="eda-modal" style="max-width:560px">'
-      +     '<h2>▢ Generar código QR</h2>'
-      +     '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">'
-      +       'El QR puede codificar una URL, texto, número de teléfono, email, o cualquier dato.'
-      +     '</p>'
-      +     '<div class="eda-prop-row">'
-      +       '<label>Contenido del QR</label>'
-      +       '<textarea id="edaQRTexto" placeholder="https://... o cualquier texto" rows="3" style="font-family:Consolas,monospace">https://</textarea>'
-      +     '</div>'
-      +     '<div style="margin:10px 0">'
-      +       '<label style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:1px">Atajos del ecosistema</label>'
-      +       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">' + presetBtns + '</div>'
-      +     '</div>'
-      +     '<div class="eda-prop-row">'
-      +       '<label>Tamaño del QR</label>'
-      +       '<select id="edaQRTamano">'
-      +         '<option value="40">40 dots · 5 mm — chico (test rápido)</option>'
-      +         '<option value="56">56 dots · 7 mm — mediano</option>'
-      +         '<option value="80" selected>80 dots · 10 mm — grande (recomendado)</option>'
-      +         '<option value="96">96 dots · 12 mm — extra grande</option>'
-      +       '</select>'
-      +     '</div>'
-      +     '<div style="background:rgba(99,102,241,.1);border-left:3px solid #6366f1;padding:8px 12px;border-radius:4px;margin-top:10px;font-size:12px;color:#a5b4fc">'
-      +       '<strong>Tip:</strong> los QR más grandes son más fáciles de escanear desde lejos. '
-      +       'Para distancias mayores a 30 cm, usá 80 dots o más.'
-      +     '</div>'
-      +     '<div class="eda-modal-actions">'
-      +       '<button class="eda-btn" onclick="EditorAdhesivos._cerrarModal()">Cancelar</button>'
-      +       '<button class="eda-btn eda-btn-primary" onclick="EditorAdhesivos._confirmarWizardQR()">▢ Insertar QR</button>'
-      +     '</div>'
-      +   '</div>'
-      + '</div>';
-    document.body.insertAdjacentHTML('beforeend', html);
-    // Focus textarea y seleccionar contenido al abrir
-    setTimeout(function() {
-      var ta = document.getElementById('edaQRTexto');
-      if (ta) { ta.focus(); ta.select(); }
-    }, 50);
-  }
-
-  function _qrPreset(url) {
-    var ta = document.getElementById('edaQRTexto');
-    if (!ta) return;
-    ta.value = url;
-    ta.focus();
-    // Seleccionar todo para que el admin pueda editar rápido si quiere
-    setTimeout(function() { ta.select(); }, 0);
-  }
-
-  function _confirmarWizardQR() {
-    var ta = document.getElementById('edaQRTexto');
-    var sel = document.getElementById('edaQRTamano');
-    if (!ta || !sel) return;
-    var contenido = String(ta.value || '').trim();
-    var tamano = parseInt(sel.value) || 80;
-    if (!contenido) {
-      _toast('Pone algún contenido en el QR', 'error');
-      ta.focus();
-      return;
-    }
-    // QR Code 128 chars suele ser el límite práctico para legibilidad
-    if (contenido.length > 200) {
-      if (!confirm('El QR tiene ' + contenido.length + ' caracteres — puede ser difícil de escanear. ¿Insertar igual?')) return;
-    }
-    _plantilla.capas.push({
-      id: _uuid(), tipo: 'qr',
-      x_mm: 10, y_mm: 5,
-      codigo: contenido,
-      tamano_dots: tamano
-    });
-    _seleccionadaId = _plantilla.capas[_plantilla.capas.length - 1].id;
-    _snapshot();
-    _cerrarModal();
-    _render();
-    var resumen = contenido.length > 30 ? contenido.substring(0, 27) + '...' : contenido;
-    _toast('QR insertado · ' + resumen, 'success');
-  }
-
-  function _setCategoria(cat) {
-    _catActiva = cat;
-    _render();
-  }
-
-  function _setZoom(z) {
-    _zoom = z;
-    _render();
-  }
-
-  function _seleccionar(id) {
-    _seleccionadaId = id;
-    _renderPropiedades();
-    _renderListaCapas();
-    // Actualizar outline en overlay sin re-render completo
-    var canvas = document.getElementById('edaCanvas');
-    if (canvas) {
-      canvas.querySelectorAll('.eda-capa-hit').forEach(function(h) {
-        if (h.getAttribute('data-id') === id) h.style.outline = '2px dashed #6366f1';
-        else h.style.outline = 'none';
-      });
-    }
-  }
-
-  function _setProp(prop, val) {
-    var capa = _plantilla.capas.find(function(c) { return c.id === _seleccionadaId; });
-    if (!capa) return;
-    capa[prop] = val;
-    _snapshot();
-    _render();
-  }
-
-  function _eliminarCapa() {
-    if (!_seleccionadaId) return;
-    if (!confirm('¿Eliminar la capa seleccionada?')) return;
-    _plantilla.capas = _plantilla.capas.filter(function(c) { return c.id !== _seleccionadaId; });
-    _seleccionadaId = null;
-    _snapshot();
-    _render();
-  }
-
-  function _subirCapa(id) {
-    var idx = _plantilla.capas.findIndex(function(c) { return c.id === id; });
-    if (idx < 0 || idx >= _plantilla.capas.length - 1) return;
-    var temp = _plantilla.capas[idx + 1];
-    _plantilla.capas[idx + 1] = _plantilla.capas[idx];
-    _plantilla.capas[idx] = temp;
-    _snapshot();
-    _render();
-  }
-  function _bajarCapa(id) {
-    var idx = _plantilla.capas.findIndex(function(c) { return c.id === id; });
-    if (idx <= 0) return;
-    var temp = _plantilla.capas[idx - 1];
-    _plantilla.capas[idx - 1] = _plantilla.capas[idx];
-    _plantilla.capas[idx] = temp;
-    _snapshot();
-    _render();
-  }
-
-  function _nuevaPlantilla() {
-    // [v1.0.3] _hayCambiosSinGuardar también detecta plantillas guardadas modificadas
-    if (_hayCambiosSinGuardar()) {
-      if (!confirm('Hay cambios sin guardar. ¿Crear plantilla nueva descartando?')) return;
-    }
-    _plantilla = _plantillaVacia();
-    _idPlantillaActual = null;
-    _ultimoGuardado = null;
-    _seleccionadaId = null;
-    _historial = [];
-    _historialIdx = -1;
-    _snapshot();
-    _limpiarBorrador();
-    _render();
-    _toast('Plantilla nueva creada', 'success');
-  }
-
-  // ── Modales internos ────────────────────────────────────────────
-  function _abrirModalGuardar() {
-    var nombreActual = _plantilla.metadata && _plantilla.metadata.nombre || 'Sin nombre';
-    var descActual = _plantilla.metadata && _plantilla.metadata.descripcion || '';
-    var html = ''
-      + '<div class="eda-modal-overlay" id="edaModalGuardar" onclick="if(event.target===this)EditorAdhesivos._cerrarModal()">'
-      +   '<div class="eda-modal">'
-      +     '<h2>💾 Guardar plantilla</h2>'
-      +     '<div class="eda-prop-row">'
-      +       '<label>Nombre (único)</label>'
-      +       '<input type="text" id="edaGNombre" value="' + _esc(nombreActual) + '" maxlength="50">'
-      +     '</div>'
-      +     '<div class="eda-prop-row">'
-      +       '<label>Descripción</label>'
-      +       '<textarea id="edaGDesc">' + _esc(descActual) + '</textarea>'
-      +     '</div>'
-      +     '<div class="eda-modal-actions">'
-      +       '<button class="eda-btn" onclick="EditorAdhesivos._cerrarModal()">Cancelar</button>'
-      +       '<button class="eda-btn eda-btn-primary" onclick="EditorAdhesivos._guardar()">💾 Guardar</button>'
-      +     '</div>'
-      +   '</div>'
-      + '</div>';
-    document.body.insertAdjacentHTML('beforeend', html);
-  }
-
-  // [v1.0.3] Modal de imprimir con PREVIEW visual del adhesivo + advertencia
-  // si hay cambios sin guardar. Antes era solo un confirm seco.
-  function _abrirModalImprimir() {
-    if (!_idPlantillaActual) {
-      _toast('Guarda la plantilla antes de imprimir N copias', 'error');
-      return;
-    }
-    var cant = (document.getElementById('edaCantidad') && parseInt(document.getElementById('edaCantidad').value)) || 10;
-    var hayCambios = _hayCambiosSinGuardar();
-
-    // Preview SVG escalado al 60% para mostrar en modal compacto
-    var svgPreview = '';
-    if (window.EditorAdhesivosConverter) {
-      var svg = EditorAdhesivosConverter.json2svg(_plantilla, { grid: false });
-      svgPreview = '<div style="transform:scale(.6);transform-origin:top center;width:600px;height:300px;margin:0 auto -120px">' + svg + '</div>';
-    }
-
-    var warnHtml = hayCambios
-      ? '<div style="background:rgba(239,68,68,.15);border-left:3px solid #f87171;padding:10px 14px;border-radius:4px;margin:10px 0;font-size:13px;color:#fca5a5">'
-      +   '⚠ <strong>Atención:</strong> hay cambios sin guardar. La impresión usa la versión GUARDADA en el backend, no lo que ves arriba. '
-      +   '<button class="eda-btn" style="margin-left:6px;font-size:11px;padding:4px 8px" onclick="EditorAdhesivos._cerrarModal();EditorAdhesivos._abrirModalGuardar()">💾 Guardar primero</button>'
-      + '</div>'
-      : '';
-
-    var html = ''
-      + '<div class="eda-modal-overlay" id="edaModalImprimir" onclick="if(event.target===this)EditorAdhesivos._cerrarModal()">'
-      +   '<div class="eda-modal" style="max-width:680px">'
-      +     '<h2>🖨 Imprimir plantilla</h2>'
-      +     '<p style="color:#94a3b8;font-size:13px;margin-bottom:14px"><strong>' + _esc(_plantilla.metadata.nombre || 'Sin nombre') + '</strong></p>'
-      +     svgPreview
-      +     warnHtml
-      +     '<div class="eda-prop-row">'
-      +       '<label>Cantidad de etiquetas</label>'
-      +       '<input type="number" id="edaImprCant" min="1" max="100" value="' + cant + '" style="font-size:24px;font-weight:900;text-align:center">'
-      +     '</div>'
-      +     '<div style="font-size:12px;color:#94a3b8;margin-top:6px">Drift incremental compensado en BATCH. PrintNode procesa todo en 1 job.</div>'
-      +     '<div class="eda-modal-actions">'
-      +       '<button class="eda-btn" onclick="EditorAdhesivos._cerrarModal()">Cancelar</button>'
-      +       '<button class="eda-btn eda-btn-info" onclick="EditorAdhesivos._confirmarImprimirDesdeModal()">🖨 Imprimir</button>'
-      +     '</div>'
-      +   '</div>'
-      + '</div>';
-    document.body.insertAdjacentHTML('beforeend', html);
-    // Dibujar barcodes del SVG preview
-    setTimeout(function() {
-      var modal = document.getElementById('edaModalImprimir');
-      if (modal && window.EditorAdhesivosConverter) {
-        EditorAdhesivosConverter.dibujarBarcodes(modal);
-      }
-    }, 30);
-  }
-
-  function _confirmarImprimirDesdeModal() {
-    var inp = document.getElementById('edaImprCant');
-    var cant = parseInt(inp && inp.value) || 1;
-    if (cant < 1 || cant > 100) {
-      _toast('Cantidad fuera de rango (1-100)', 'error');
-      return;
-    }
-    _confirmarImprimir(cant);
-  }
-
-  function _cerrarModal() {
-    // [v1.0.2] Incluye edaModalQR (wizard QR nuevo)
-    ['edaModalGuardar', 'edaModalImprimir', 'edaModalQR'].forEach(function(id) {
-      var m = document.getElementById(id);
-      if (m) m.remove();
-    });
-  }
-
-  // ── Acciones backend ────────────────────────────────────────────
-  // [v1.0.1 SENIOR AUDIT FIX BLOQUEANTE] action vs accion: el backend MOS
-  // (Code.gs _route) lee `params.action`, NO `params.accion`. La versión
-  // previa enviaba `accion` y absolutamente NADA llegaba al backend.
-  // También: mejor manejo de errores (no devolver objetos sin .message
-  // que rompen el toast con "[object Object]").
-  function _apiPost(action, params, cb) {
-    function safeCb(err, res) {
-      // Normalizar error para que siempre tenga .message
-      if (err && typeof err === 'object' && !err.message) {
-        err = new Error(String(err.error || err.toString() || 'error desconocido'));
-      }
-      cb(err, res);
-    }
-    var url = POST_URL_FALLBACK;
-    if (typeof window.MOS_API !== 'undefined' && window.MOS_API.post) {
-      return window.MOS_API.post(action, params)
-        .then(function(r) { safeCb(null, r); })
-        .catch(function(e) { safeCb(e); });
-    }
-    if (!url) { safeCb(new Error('Falta URL backend (MOS_API o EDITOR_BACKEND_URL)')); return; }
-    // POST simple — la KEY correcta es "action", NO "accion"
-    var body = Object.assign({}, params || {}, { action: action });
-    fetch(url, {
-      method: 'POST', mode: 'cors', redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(body)
-    })
-    .then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function(j) { safeCb(null, j); })
-    .catch(function(e) { safeCb(e); });
-  }
-
-  // [v1.0.3] _guardar acepta callback opcional (para chainear con
-  // testImpresion → guardar y luego testear). También marca el estado
-  // como "guardado" (limpia el flag de cambios sin guardar).
-  function _guardar(cb) {
-    var nombreInp = document.getElementById('edaGNombre');
-    var nombre = nombreInp ? nombreInp.value.trim() : (_plantilla.metadata && _plantilla.metadata.nombre) || '';
-    var descInp = document.getElementById('edaGDesc');
-    var desc = descInp ? descInp.value.trim() : (_plantilla.metadata && _plantilla.metadata.descripcion) || '';
-    if (!nombre) {
-      _toast('Ponle un nombre', 'error');
-      if (cb) cb(false);
-      return;
-    }
-
-    if (!_plantilla.metadata) _plantilla.metadata = {};
-    _plantilla.metadata.nombre = nombre;
-    _plantilla.metadata.descripcion = desc;
-
-    // Validar antes de mandar
-    var errores = window.EditorAdhesivosConverter
-      ? EditorAdhesivosConverter.validar(_plantilla)
-      : [];
-    if (errores.length > 0) {
-      _toast('Plantilla inválida: ' + errores[0], 'error');
-      console.warn('[EditorAdhesivos] errores:', errores);
-      if (cb) cb(false);
-      return;
-    }
-
-    _apiPost('guardarAdhesivoPlantilla', {
-      nombre: nombre,
-      descripcion: desc,
-      json: _plantilla,
-      idPlantilla: _idPlantillaActual || null
-    }, function(err, r) {
-      if (err || !r || !r.ok) {
-        _toast('Error guardando: ' + (err && err.message || (r && r.error) || 'desconocido'), 'error');
-        if (cb) cb(false);
-        return;
-      }
-      _idPlantillaActual = r.idPlantilla;
-      _marcarGuardado();  // [v1.0.3] limpia flag de cambios sin guardar
-      _toast(r.creado ? 'Plantilla creada' : 'Plantilla actualizada', 'success');
-      _cerrarModal();
-      _refrescarPlantillas();
-      _render();
-      if (cb) cb(true);
-    });
-  }
-
-  // [v1.0.3] Duplicar plantilla — clona el JSON, agrega "(copia)" al
-  // nombre, limpia _idPlantillaActual para que sea nueva, abre el modal
-  // de guardar para que el admin confirme el nuevo nombre.
-  function _duplicarPlantilla(id) {
-    var p = _plantillasGuardadas.find(function(x) { return x.idPlantilla === id; });
-    if (!p) { _toast('Plantilla no encontrada', 'error'); return; }
-    if (_hayCambiosSinGuardar()) {
-      if (!confirm('Hay cambios sin guardar en la plantilla actual. ¿Descartar y duplicar "' + p.nombre + '"?')) return;
-    }
-    var clon;
-    try {
-      clon = typeof p.json === 'string' ? JSON.parse(p.json) : JSON.parse(JSON.stringify(p.json));
-    } catch(e) {
-      _toast('Plantilla origen corrupta', 'error');
-      return;
-    }
-    if (!clon.metadata) clon.metadata = {};
-    clon.metadata.nombre = (p.nombre + ' (copia)').substring(0, 50);
-    clon.metadata.descripcion = p.descripcion || '';
-    _plantilla = clon;
-    _idPlantillaActual = null;       // marca como NUEVA (no actualizar la original)
-    _ultimoGuardado = null;          // sin guardar todavía
-    _seleccionadaId = null;
-    _historial = [];
-    _historialIdx = -1;
-    _snapshot();
-    _render();
-    _toast('Duplicada como "' + clon.metadata.nombre + '" — guarda para confirmar', 'success');
-    setTimeout(_abrirModalGuardar, 200);
-  }
-
-  // [v1.0.3] Eliminar plantilla (soft-delete en backend).
-  function _eliminarPlantilla(id) {
-    var p = _plantillasGuardadas.find(function(x) { return x.idPlantilla === id; });
-    if (!p) return;
-    if (!confirm('¿Eliminar la plantilla "' + p.nombre + '"?\n\nEs soft-delete (recuperable desde Sheets cambiando activo=TRUE).')) return;
-    _apiPost('eliminarAdhesivoPlantilla', { idPlantilla: id }, function(err, r) {
-      if (err || !r || !r.ok) {
-        _toast('Error: ' + (err && err.message || (r && r.error) || '?'), 'error');
-        return;
-      }
-      _toast('Plantilla eliminada', 'success');
-      // Si era la actualmente cargada, limpiar editor
-      if (_idPlantillaActual === id) {
-        _plantilla = _plantillaVacia();
-        _idPlantillaActual = null;
-        _ultimoGuardado = null;
-        _historial = [];
-        _historialIdx = -1;
-        _snapshot();
-      }
-      _refrescarPlantillas();
-      _render();
-    });
-  }
-
-  // [v1.0.3] Setear búsqueda de iconos sin perder el foco del input.
-  // _render() recrea todo el DOM, perdiendo cursor del search. Por eso
-  // re-renderizamos solo el sidebar izq y restauramos el foco.
-  function _setBusquedaIconos(val) {
-    _busquedaIconos = String(val || '');
-    var sidebar = document.querySelector('.eda-sidebar.left');
-    if (sidebar) {
-      sidebar.outerHTML = _htmlSidebarIzq();
-      // Reasignar foco al input de búsqueda y poner cursor al final
-      setTimeout(function() {
-        var nuevoInp = document.querySelector('.eda-sidebar.left input.eda-input');
-        if (nuevoInp) {
-          nuevoInp.focus();
-          nuevoInp.setSelectionRange(_busquedaIconos.length, _busquedaIconos.length);
-        }
-      }, 0);
-      _renderListaPlantillas();
-    }
-  }
-
-  // [v1.0.3 SENIOR FIX] Auto-guardar antes de test si hay cambios.
-  // ANTES: test imprimía la plantilla del BACKEND (lo guardado), pero el
-  // admin veía lo del EDITOR (lo modificado) → frustración "imprimió mal,
-  // no lo que veo". AHORA: detecta cambios y ofrece auto-guardar.
-  function _testImpresion() {
-    if (!_idPlantillaActual) {
-      if (!confirm('Plantilla nueva sin guardar. ¿Querés guardarla primero para hacer el test?')) return;
-      _abrirModalGuardar();
-      return;
-    }
-    if (_hayCambiosSinGuardar()) {
-      if (!confirm('Hay cambios sin guardar.\n\nEl test imprimirá la versión GUARDADA en el backend, no lo que ves en pantalla.\n\n¿Guardar primero?')) {
-        // Si dice "No" → testea la versión guardada igual
-        _ejecutarTestImpresion();
-        return;
-      }
-      // Auto-guardar y luego testear
-      _guardar(function(ok) {
-        if (ok) _ejecutarTestImpresion();
-      });
-      return;
-    }
-    _ejecutarTestImpresion();
-  }
-
-  // [botón 🖨 en la lista] carga la plantilla (setea _idPlantillaActual) y abre el modal de cantidad.
-  function _imprimirPlantillaLista(id) {
-    _cargarPlantilla(id);
-    if (_idPlantillaActual !== id) return;   // abortó (cambios sin guardar / corrupta)
-    _abrirModalImprimir();
-  }
-
-  function _ejecutarTestImpresion() {
-    _apiPost('testImpresionAdhesivoPlantilla', { idPlantilla: _idPlantillaActual }, function(err, r) {
-      if (err || !r || !r.ok) {
-        _toast('Error: ' + (err && err.message || (r && r.error) || '?'), 'error');
-        return;
-      }
-      _toast('1 etiqueta de test enviada', 'success');
-    });
-  }
-
-  // [v1.0.4] Debounce contra double-click: bloquea reentradas mientras
-  // hay impresión en curso. Antes 2 clicks rápidos = 2 batches (20 etiquetas
-  // en lugar de 10).
-  var _imprimiendo = false;
-  function _confirmarImprimir(cant) {
-    if (_imprimiendo) { _toast('Espera, ya hay una impresión en curso', 'error'); return; }
-    _imprimiendo = true;
-    // Deshabilitar visualmente el botón en el modal
-    var modalImpr = document.getElementById('edaModalImprimir');
-    if (modalImpr) {
-      modalImpr.querySelectorAll('button').forEach(function(b) { b.disabled = true; b.style.opacity = '.5'; });
-    }
-    _apiPost('imprimirAdhesivoPlantilla', { idPlantilla: _idPlantillaActual, cantidad: cant }, function(err, r) {
-      _imprimiendo = false;
-      _cerrarModal();
-      if (err || !r || !r.ok) {
-        _toast('Error: ' + (err && err.message || (r && r.error) || '?'), 'error');
-        return;
-      }
-      _toast(cant + ' etiquetas enviadas a la impresora', 'success');
-    });
-  }
-
-  function _refrescarPlantillas() {
-    _apiPost('listarAdhesivosPlantillas', {}, function(err, r) {
-      if (err || !r || !r.ok) return;
-      _plantillasGuardadas = r.plantillas || [];
-      _renderListaPlantillas();
-    });
-  }
-
-  function _cargarPlantilla(id) {
-    var p = _plantillasGuardadas.find(function(x) { return x.idPlantilla === id; });
-    if (!p) return;
-    // [v1.0.3] Detectar cambios sin guardar tanto en plantilla nueva como
-    // en plantilla cargada y modificada. Antes solo chequeaba si era nueva.
-    if (_hayCambiosSinGuardar() && _idPlantillaActual !== id) {
-      if (!confirm('Hay cambios sin guardar en la plantilla actual. ¿Descartar y cargar "' + p.nombre + '"?')) return;
-    }
-    try {
-      _plantilla = typeof p.json === 'string' ? JSON.parse(p.json) : JSON.parse(JSON.stringify(p.json));
-    } catch(e) {
-      _toast('Plantilla corrupta', 'error');
-      return;
-    }
-    if (!_plantilla.metadata) _plantilla.metadata = {};
-    _plantilla.metadata.nombre = p.nombre;
-    _plantilla.metadata.descripcion = p.descripcion;
-    _idPlantillaActual = id;
-    _seleccionadaId = null;
-    _historial = [];
-    _historialIdx = -1;
-    _snapshot();
-    _marcarGuardado();  // [v1.0.3] recién cargada = sin cambios pendientes
-    _render();
-    _toast('Plantilla cargada: ' + p.nombre, 'success');
-  }
-
-  // [v1.0.3] Cerrar editor con detección de cambios robusta.
-  // ANTES: solo verificaba plantillas NUEVAS sin guardar (ignoraba
-  // modificaciones sobre plantillas ya guardadas). AHORA: usa
-  // _hayCambiosSinGuardar() que cubre ambos casos.
-  function _cerrar() {
-    if (_hayCambiosSinGuardar()) {
-      var msg = _idPlantillaActual
-        ? 'La plantilla tiene cambios sin guardar. ¿Salir descartando?'
-        : 'Tienes una plantilla nueva sin guardar. ¿Salir descartando?';
-      if (!confirm(msg)) return;
-    }
-    var ov = document.getElementById('edaOverlay');
-    if (ov) ov.remove();
-    document.removeEventListener('keydown', _keyHandler);
-  }
-
+  // ── teclado (desktop) ───────────────────────────────────────────
   function _keyHandler(e) {
-    // No interceptar atajos cuando el foco está en un input/textarea
-    // (sino Ctrl+Z dentro del textarea no funciona).
-    var tag = e.target && e.target.tagName;
-    var enInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      // [v1.0.3] Ctrl+S → guardar
+    if (document.getElementById('ed2Dlg') || document.getElementById('ed2Print')) return;
+    var enInput = /INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || '');
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); if (_vista === 'estudio') _undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); if (_vista === 'estudio') _redo(); return; }
+    if (e.key === 'Escape') { if (_selId) { _seleccionar(null); } return; }
+    if (_vista !== 'estudio' || enInput) return;
+    var c = _capaSel();
+    if (!c || _esFija(c)) return;
+    var paso = e.shiftKey ? 2 : 0.5;
+    var mapa = { ArrowLeft: [-paso, 0], ArrowRight: [paso, 0], ArrowUp: [0, -paso], ArrowDown: [0, paso] };
+    if (mapa[e.key]) {
       e.preventDefault();
-      _abrirModalGuardar();
+      c.x_mm = Math.max(0, Math.min(_plantilla.tamano.ancho_mm, c.x_mm + mapa[e.key][0]));
+      c.y_mm = Math.max(0, Math.min(_plantilla.tamano.alto_mm, c.y_mm + mapa[e.key][1]));
+      _snapshot();
+      _renderCanvas();
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      _eliminarSel();
+    }
+  }
+
+  // ── guardar al catálogo ─────────────────────────────────────────
+  function _guardarAlCatalogo() {
+    if (!_plantilla) return;
+    _asegurarMembrete(_plantilla);
+    var conv = _conv();
+    var errores = conv ? conv.validar(_plantilla) : [];
+    if (!(_plantilla.capas || []).some(function(c) { return !_esFija(c); })) {
+      _toast('El aviso está vacío — agrega texto, un QR o un icono', 'error');
       return;
     }
-    if (enInput) return;
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); _undo(); }
-    else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); _redo(); }
-    else if (e.key === 'Escape' && _seleccionadaId) { _seleccionar(null); }
-    else if (e.key === 'Delete' && _seleccionadaId) { _eliminarCapa(); }
-  }
-
-  // ── Entry point público ─────────────────────────────────────────
-  function abrir(opts) {
-    opts = opts || {};
-    _inyectarCss();
-    POST_URL_FALLBACK = opts.backendUrl || window.EDITOR_BACKEND_URL || null;
-
-    // Cargar borrador si existe
-    var borrador = _cargarBorrador();
-    if (borrador && borrador.plantilla && borrador.plantilla.capas && borrador.plantilla.capas.length > 0) {
-      if (confirm('Hay un borrador guardado de hace ' + Math.round((Date.now() - borrador.ts) / 60000) + ' min. ¿Recuperarlo?')) {
-        _plantilla = borrador.plantilla;
-        _idPlantillaActual = borrador.idPlantillaActual;
-      } else {
-        _plantilla = _plantillaVacia();
-        _idPlantillaActual = null;
+    if (errores.length) { _toast('Revisa el diseño: ' + errores[0], 'error'); return; }
+    var nombreActual = (_plantilla.metadata && _plantilla.metadata.nombre) || '';
+    _dlg({
+      titulo: '📌 Guardar al catálogo',
+      cuerpo: 'La creación se guardará como <b>plantilla fija</b>: quedará en el catálogo lista para imprimir (con el membrete de la empresa).',
+      input: nombreActual === 'Nueva creación' ? '' : nombreActual,
+      placeholder: 'Nombre del aviso (ej. Oferta 2x1 sábados)',
+      maxlength: 50,
+      botones: [
+        { txt: 'Cancelar', cls: 'ed2-btn-ghost', val: 'no' },
+        { txt: '📌 Guardar', cls: 'ed2-btn-go', val: 'si' }
+      ]
+    }, function(val, txt) {
+      if (val !== 'si') return;
+      var nombre = String(txt || '').trim();
+      if (!nombre) { _toast('Ponle un nombre al aviso', 'error'); return; }
+      _plantilla.metadata = _plantilla.metadata || {};
+      _plantilla.metadata.nombre = nombre;
+      _plantilla.metadata.membrete = true;
+      _apiPost('guardarAdhesivoPlantilla', {
+        nombre: nombre,
+        descripcion: 'Creado en el Estudio de Avisos',
+        json: _plantilla
+      }, function(err, r) {
+        if (err || !r || !r.ok) {
+          _toast('No se pudo guardar: ' + ((err && err.message) || (r && r.error) || 'desconocido'), 'error');
+          return;
+        }
         _limpiarBorrador();
-      }
-    } else {
-      _plantilla = _plantillaVacia();
-      _idPlantillaActual = null;
-    }
-    _seleccionadaId = null;
-    _historial = [];
-    _historialIdx = -1;
-    _ultimoGuardado = null;  // [v1.0.3] al abrir, no hay nada "guardado" aún
-    _busquedaIconos = '';
-    _snapshot();
-
-    // Crear overlay
-    var ov = document.createElement('div');
-    ov.className = 'eda-overlay';
-    ov.id = 'edaOverlay';
-    document.body.appendChild(ov);
-
-    document.addEventListener('keydown', _keyHandler);
-
-    _render();
-    _refrescarPlantillas();
+        _historial = []; _histIdx = -1; _plantilla = null;
+        _toast('📌 "' + nombre + '" guardado al catálogo ✓', 'ok');
+        _vista = 'catalogo';
+        _render();
+        _refrescarCatalogo();
+      });
+    });
   }
 
+  // ── API pública ─────────────────────────────────────────────────
   window.EditorAdhesivos = {
     abrir: abrir,
     _cerrar: _cerrar,
+    _setBusqueda: _setBusqueda,
+    _reintentarCat: _reintentarCat,
+    _crearNuevo: _crearNuevo,
+    _volverCatalogo: _volverCatalogo,
+    _cerrarImprimir: _cerrarImprimir,
+    _qty: _qty,
+    _imprimir: _imprimir,
     _undo: _undo,
     _redo: _redo,
-    _agregarTexto: _agregarTexto,
-    _agregarIcono: _agregarIcono,
-    _agregarLinea: _agregarLinea,
-    _agregarRect: _agregarRect,
-    _agregarBarcode: _agregarBarcode,
-    _agregarQR: _agregarQR,
-    // [v1.0.2] Wizard QR
-    _abrirWizardQR: _abrirWizardQR,
-    _qrPreset: _qrPreset,
-    _confirmarWizardQR: _confirmarWizardQR,
-    _setCategoria: _setCategoria,
-    _setZoom: _setZoom,
+    _setNombre: _setNombre,
     _seleccionar: _seleccionar,
-    _setProp: _setProp,
-    _eliminarCapa: _eliminarCapa,
-    _subirCapa: _subirCapa,
-    _bajarCapa: _bajarCapa,
-    _nuevaPlantilla: _nuevaPlantilla,
-    _abrirModalGuardar: _abrirModalGuardar,
-    _abrirModalImprimir: _abrirModalImprimir,
-    _cerrarModal: _cerrarModal,
-    _guardar: _guardar,
-    _testImpresion: _testImpresion,
-    _confirmarImprimir: _confirmarImprimir,
-    _confirmarImprimirDesdeModal: _confirmarImprimirDesdeModal,
-    _cargarPlantilla: _cargarPlantilla,
-    // [v1.0.3] Pulido senior — 9 mejoras UX
-    _duplicarPlantilla: _duplicarPlantilla,
-    _eliminarPlantilla: _eliminarPlantilla,
-    _imprimirPlantillaLista: _imprimirPlantillaLista,
-    _setBusquedaIconos: _setBusquedaIconos
+    _addTexto: _addTexto,
+    _addQR: _addQR,
+    _addBarcode: _addBarcode,
+    _addLinea: _addLinea,
+    _addRect: _addRect,
+    _abrirIconos: _abrirIconos,
+    _zoomDelta: _zoomDelta,
+    _zoomFit: _zoomFit,
+    _guardarAlCatalogo: _guardarAlCatalogo
   };
 })();

@@ -1,0 +1,36 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>harness ed2</title></head>
+<body style="margin:0;background:#111">
+<button onclick="EditorAdhesivos.abrir({})" id="abrirBtn">abrir</button>
+<script src="../js/qrcode-generator.js"></script>
+<script src="../assets/editor-adhesivos/iconos.js"></script>
+<script src="../assets/editor-adhesivos/converter.js"></script>
+<script>
+window.EDITOR_ADHESIVOS_BASE = '../assets/editor-adhesivos/';
+var MEMB = [
+  { id:'memb-txt', tipo:'texto', fija:true, x_mm:1.5, y_mm:0.8, texto:'INVERSIONES MOS', font:1, alineacion:'left', negrita:true, rotacion:0 },
+  { id:'memb-lin', tipo:'linea', fija:true, x_mm:33, y_mm:2.4, ancho_mm:15.5, alto_mm:0.4 }
+];
+var FAKE = [
+  { idPlantilla:'ADH-TEST1', nombre:'WiFi Zona02 - 5G', descripcion:'test', tamanoCanvas:'50x25',
+    json:{ version:2, metadata:{nombre:'WiFi Zona02 - 5G', protegida:true, membrete:true},
+      tamano:{ancho_mm:50,alto_mm:25,tipo:'adhesivo'},
+      capas: MEMB.concat([
+        {id:'qr',tipo:'qr',x_mm:1.5,y_mm:4.5,codigo:'WIFI:T:WPA;S:RedZona025G;P:iMOSZona02;H:true;;',tamano_dots:152},
+        {id:'t1',tipo:'texto',x_mm:22,y_mm:5.5,texto:'WiFi Zona02 5G',font:2,alineacion:'left',negrita:false,rotacion:0}
+      ]) } },
+  { idPlantilla:'ADH-TEST2', nombre:'App MOS', descripcion:'test2', tamanoCanvas:'50x25',
+    json:{ version:2, metadata:{nombre:'App MOS', protegida:true, membrete:true},
+      tamano:{ancho_mm:50,alto_mm:25,tipo:'adhesivo'},
+      capas: MEMB.concat([{id:'qr2',tipo:'qr',x_mm:1.5,y_mm:4.5,codigo:'https://levo19.github.io/MOS/',tamano_dots:152}]) } }
+];
+window.__llamadas = [];
+window.MOS_API = { post: function(action, params){
+  window.__llamadas.push({action:action, params:params});
+  if (action==='listarAdhesivosPlantillas') return Promise.resolve({ok:true, plantillas:FAKE});
+  if (action==='imprimirAdhesivoPlantilla') return Promise.resolve({ok:true, jobId:'J1'});
+  if (action==='guardarAdhesivoPlantilla') return Promise.resolve({ok:true, idPlantilla:'ADH-NUEVA', creado:true});
+  return Promise.resolve({ok:false,error:'accion desconocida '+action});
+}};
+</script>
+<script src="../assets/editor-adhesivos/editor.js"></script>
+</body></html>
