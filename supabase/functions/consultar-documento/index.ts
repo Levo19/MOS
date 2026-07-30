@@ -64,7 +64,10 @@ async function intentar(url: string, doc: string, tipo: string, esRetry: boolean
     if (code === 401 || code === 403) {
       return { _ko: true, status: 'error', codigo: 'TOKEN_RECHAZADO', message: `Token APISPeru inválido o expirado (HTTP ${code}). Renovar.` };
     }
-    if (code === 402 || /sin saldo|limit|excedid/i.test(body)) {
+    // [FIX falso SIN_SALDO] SOLO por HTTP 402 acá. El heurístico por TEXTO se movió DESPUÉS de intentar
+    // extraer datos, porque el regex `/limit/` matcheaba "LIMITADA" (S.R.L. = Sociedad de Responsabilidad
+    // LIMITADA) → un RUC VÁLIDO de una S.R.L. salía como "cuota agotada". Ahora: si hay datos, es éxito.
+    if (code === 402) {
       return { _ko: true, status: 'error', codigo: 'SIN_SALDO', message: 'Token APISPeru sin saldo o cuota agotada. Renovar plan.' };
     }
     if (code === 404) {
@@ -81,12 +84,8 @@ async function intentar(url: string, doc: string, tipo: string, esRetry: boolean
     try { j = JSON.parse(body); }
     catch { return { _ko: true, status: 'error', codigo: 'PARSE_FAIL', message: `APISPeru devolvió texto inválido: ${body.substring(0, 100)}` }; }
 
-    // APISPeru a veces devuelve 200 con {success:false} en vez de 404.
-    if (j && j.success === false) {
-      return { _ko: true, status: 'not_found', codigo: 'DOC_NO_ENCONTRADO',
-               message: `Documento ${doc} no figura en ${tipo === 'ruc' ? 'SUNAT' : 'RENIEC'}${j.message ? ` (${j.message})` : ''}` };
-    }
-
+    // 1) Intentar extraer los DATOS primero. Si vienen, es ÉXITO — sin importar que el nombre/razón social
+    //    contenga palabras como "LIMITADA" (que antes gatillaban un falso SIN_SALDO).
     let nombre = '';
     let direccion = '';
     if (tipo === 'dni') {
@@ -102,10 +101,22 @@ async function intentar(url: string, doc: string, tipo: string, esRetry: boolean
       // basura en la factura (para persona natural la dirección es opcional; para empresa se pedirá real).
       if (/^[-.\s]*$/.test(direccion) || /^SIN\s+DIRECCION$/i.test(direccion)) direccion = '';
     }
-    if (!nombre) {
-      return { _ko: true, status: 'not_found', codigo: 'NOMBRE_VACIO', message: `APISPeru no devolvió nombre para ${doc}.` };
+    if (nombre) {
+      return { _ok: true, status: 'success', nombre, documento: doc, tipo: tipo === 'ruc' ? 'RUC' : 'DNI', fuente: 'api', direccion };
     }
-    return { _ok: true, status: 'success', nombre, documento: doc, tipo: tipo === 'ruc' ? 'RUC' : 'DNI', fuente: 'api', direccion };
+
+    // 2) No hubo datos → recién acá distinguimos cuota agotada vs no encontrado, mirando SOLO el mensaje
+    //    de error de la API con frases ESPECÍFICAS (nunca el bare "limit", que colisiona con "LIMITADA").
+    const errMsg = String((j.message as string) || (j.error as string) || '');
+    if (/sin\s+saldo|cuota|cr[eé]dito|excedid|l[ií]mite\s+de\s+consultas|no\s+tiene\s+saldo|agotad/i.test(errMsg)) {
+      return { _ko: true, status: 'error', codigo: 'SIN_SALDO', message: 'Token APISPeru sin saldo o cuota agotada. Renovar plan.' };
+    }
+    // APISPeru a veces devuelve 200 con {success:false} en vez de 404.
+    if (j && j.success === false) {
+      return { _ko: true, status: 'not_found', codigo: 'DOC_NO_ENCONTRADO',
+               message: `Documento ${doc} no figura en ${tipo === 'ruc' ? 'SUNAT' : 'RENIEC'}${j.message ? ` (${j.message})` : ''}` };
+    }
+    return { _ko: true, status: 'not_found', codigo: 'NOMBRE_VACIO', message: `APISPeru no devolvió nombre para ${doc}.` };
   } catch (e) {
     if (!esRetry) return { _retry: true };
     return { _ko: true, status: 'error', codigo: 'NET_ERROR', message: `Error de red: ${(e as Error).message}` };
