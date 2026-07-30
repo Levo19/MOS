@@ -8,6 +8,20 @@ const DOTS_POR_MM = 8;
 const FONT_W = { '1': 8,  '2': 12, '3': 16, '4': 24, '5': 32 };
 const FONT_PX = { '1': 12, '2': 20, '3': 24, '4': 32, '5': 48 };
 
+// Capacidad en BYTES por versión de QR con ECC nivel L (el comando QRCODE usa "L").
+// Índice = versión (1..). El comando elige la versión menor que quepa la data.
+const QR_CAP_L = [0, 17, 32, 53, 78, 106, 134, 154, 192, 230, 271, 321, 367, 425, 458, 520, 586, 644, 718, 792, 858];
+// Nº de MÓDULOS (cuadritos por lado) del QR que imprimirá el comando para `data` en ECC L.
+// modules(v) = 17 + 4*v (v1=21, v2=25, v3=29…). Se usa para elegir la magnificación (dots/módulo)
+// que hace caber el QR en `tamano_dots`. Sin esto, el QR salía a cell=10 y desbordaba el adhesivo.
+function qrModules(data) {
+  let bytes = 0;
+  for (const ch of String(data || '')) { const cp = ch.codePointAt(0); bytes += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4; }
+  let v = 1;
+  while (v < QR_CAP_L.length - 1 && QR_CAP_L[v] < bytes) v++;
+  return 17 + 4 * v;
+}
+
 export function adhJson2tspl(jsonObj, offsetY, iconosMap, calib) {
   const gapMm = calib.gapMm, density = calib.density, speed = calib.speed;
   const lines = [
@@ -81,7 +95,14 @@ export function adhJson2tspl(jsonObj, offsetY, iconosMap, calib) {
       lines.push(`BARCODE ${x},${y},"128",${alto},0,0,${narrow},${narrow},"${codigo}"`);
     } else if (c.tipo === 'qr') {
       const qrCod = String(c.codigo || '').replace(/"/g, '');
-      const qrSize = Math.max(2, Math.min(10, Math.round((c.tamano_dots || 64) / 8)));
+      // [FIX tamaño QR] El 4º parámetro de QRCODE es la MAGNIFICACIÓN (dots por módulo), NO el total.
+      // El tamaño real = módulos × cell, y los módulos dependen de la data. Antes se hacía
+      // round(tamano_dots/8) saturado a 10 → con ~45 chars el QR salía a 29×10=290 dots (36mm) y
+      // desbordaba el adhesivo de 25mm. Ahora: cell = tamano_dots / módulos → el QR llena EXACTO
+      // el tamaño diseñado (tamano_dots) sin desbordar. Clamp [2,16] (mín. escaneable / máx. sano).
+      const targetDots = (isFinite(c.tamano_dots) && c.tamano_dots > 0) ? c.tamano_dots : 64;
+      const mods = qrModules(qrCod);
+      const qrSize = Math.max(2, Math.min(16, Math.floor(targetDots / mods)));
       lines.push(`QRCODE ${x},${y},L,${qrSize},A,0,"${qrCod}"`);
     }
   }
