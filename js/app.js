@@ -26321,6 +26321,7 @@ const MOS = (() => {
 
     if (esAnulado) {
       btn('', '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/><circle cx="18" cy="11.5" r="1" fill="currentColor"/></svg>', 'Imprimir ticket', 'Reimprime el comprobante en la impresora que elijas', 'imprimir');
+      if (esCPE) btn('', '📄', 'Ver / compartir PDF', 'Comprobante fiscal (aunque esté de baja)', 'pdf');
       btn('', '📜', 'Ver historial', 'Ver todos los cambios del ticket', 'historial');
       body.innerHTML = `<p class="text-[11px] text-slate-500 italic px-2 py-2">Ticket anulado · solo lectura.</p>${btns.join('')}${_tkDetalleContainerHtml()}`;
       return;
@@ -26370,6 +26371,12 @@ const MOS = (() => {
     btn('tk-acc-btn-danger', '❌', 'Anular venta',
         'Marca el ticket como anulado internamente', 'anular');
 
+    // 📄 PDF del comprobante fiscal — SOLO boleta/factura (las que tienen PDF de NubeFact)
+    if (esCPE) {
+      btn('', '📄', 'Ver / compartir PDF',
+          'Boleta o factura · previsualiza, comparte por WhatsApp o imprime', 'pdf');
+    }
+
     // 🖨 Imprimir ticket — siempre (reimpresión por la impresora que elija el admin)
     btn('tk-acc-btn-ok', '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/><circle cx="18" cy="11.5" r="1" fill="currentColor"/></svg>', 'Imprimir ticket',
         'Reimprime el comprobante en la impresora que elijas', 'imprimir');
@@ -26413,6 +26420,7 @@ const MOS = (() => {
       return;
     }
     if (accion === 'anular')          return _tkAnularSimple(t);
+    if (accion === 'pdf')             return _tkPdfOpen(t);
     if (accion === 'historial')       return _tkHistorialOpen(t);
     if (accion === 'historialCli')    return _tkHistorialClienteOpen(t);
     if (accion === 'imprimir')        return _tkImprimir(t);
@@ -26468,6 +26476,71 @@ const MOS = (() => {
       try { _opsBeep && _opsBeep('error'); } catch (_) {}
       toast('No se pudo imprimir: ' + (e && (e.message || e)), 'error');
     }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // PDF DEL COMPROBANTE FISCAL (boleta/factura NubeFact)
+  // Jala nf_enlace (PDF ya guardado en me.ventas) vía RPC de lectura
+  // mos.me_cpe_pdf_por_venta (SQL 591). Preview + compartir WhatsApp + imprimir.
+  // NO genera nada, NO escribe: es on-demand y solo-lectura.
+  // ──────────────────────────────────────────────────────────
+  async function _tkPdfOpen(t) {
+    _tkAcc.pdf = null;
+    const tit = $('tkPdfTitulo'), sub = $('tkPdfSub'), body = $('tkPdfBody'), acc = $('tkPdfAcciones');
+    if (tit)  tit.textContent = (t.correlativo || t.idVenta);
+    if (sub)  sub.textContent = (t.tipoDoc || '') + ' · ' + (t.cliente || t.clienteDoc || '— sin cliente —');
+    if (acc)  acc.classList.add('hidden');
+    if (body) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:34px 16px">Cargando comprobante…</div>';
+    openModal('modalTkPdf');
+    try {
+      const r = await _facRpc('me_cpe_pdf_por_venta', { id_venta: t.idVenta, correlativo: t.correlativo });
+      const d = (r && r.status === 'success') ? r : {};
+      const pdf = (d && d.encontrado) ? d.pdf : null;
+      if (!pdf) {
+        if (body) body.innerHTML = `<div style="text-align:center;padding:30px 16px;color:#94a3b8">
+          <div style="font-size:40px;margin-bottom:8px">📄</div>
+          <div style="font-weight:700;color:#cbd5e1">Este ticket no tiene comprobante fiscal con PDF.</div>
+          <div style="font-size:12px;margin-top:6px">Solo las boletas/facturas emitidas a SUNAT tienen PDF de NubeFact.${d && d.estado ? ' · Estado: ' + _escapeHtml(String(d.estado)) : ''}</div>
+        </div>`;
+        return;
+      }
+      _tkAcc.pdf = { url: pdf, correlativo: d.correlativo || t.correlativo, estado: d.estado, t };
+      const est = String(d.estado || '').toUpperCase();
+      const chip = (est === 'EMITIDO' || d.aceptada === true)
+        ? '<span style="font-size:11px;font-weight:800;color:#052e1c;background:#10b981;padding:3px 9px;border-radius:8px">🟢 Aceptado</span>'
+        : est === 'BAJA' ? '<span style="font-size:11px;font-weight:800;color:#fff;background:#64748b;padding:3px 9px;border-radius:8px">Dado de baja</span>'
+        : est === 'RECHAZADO' ? '<span style="font-size:11px;font-weight:800;color:#fff;background:#ef4444;padding:3px 9px;border-radius:8px">✖ Rechazado por SUNAT</span>'
+        : '<span style="font-size:11px;font-weight:800;color:#2a1c02;background:#f59e0b;padding:3px 9px;border-radius:8px">🟡 ' + _escapeHtml(String(d.estado || 'Pendiente SUNAT')) + '</span>';
+      const url = _escapeHtml(String(pdf));
+      if (body) body.innerHTML =
+        `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">${chip}<span style="font-size:11px;color:#64748b;font-family:ui-monospace,monospace">${_escapeHtml(String(d.correlativo || ''))}</span></div>
+         <iframe src="${url}#toolbar=0&navpanes=0" title="Comprobante" style="width:100%;height:52vh;border:1px solid #1e293b;border-radius:12px;background:#0b1120"></iframe>
+         <div style="text-align:center;margin-top:8px"><a href="${url}" target="_blank" rel="noopener" style="font-size:12px;color:#818cf8;font-weight:700">¿No se ve? Abrir en pestaña ↗</a></div>`;
+      if (acc) acc.classList.remove('hidden');
+    } catch (e) {
+      if (body) body.innerHTML = '<div style="text-align:center;color:#fca5a5;padding:30px 16px">No se pudo cargar el comprobante.<br><span style="font-size:12px;color:#94a3b8">' + _escapeHtml(String(e && (e.message || e))) + '</span></div>';
+    }
+  }
+
+  // Compartir el PDF por WhatsApp. Lo más confiable = el ENLACE (el cliente lo abre y
+  // descarga; evita CORS al bajar un PDF de otro dominio). Web Share en móvil ofrece
+  // WhatsApp entre las apps; fallback wa.me en PC.
+  async function _tkPdfCompartir() {
+    const p = _tkAcc.pdf; if (!p || !p.url) return;
+    const texto = 'Comprobante ' + (p.correlativo || '') + '\n' + p.url;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Comprobante ' + (p.correlativo || ''), text: texto, url: p.url }); return; }
+      catch (err) { if (err && err.name === 'AbortError') return; }
+    }
+    window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+  }
+
+  // Imprimir = mismo camino que Reimprimir (selector de impresora + comprobante
+  // centralizado por Edge, que ES la representación impresa fiscal con QR/leyenda).
+  function _tkPdfImprimir() {
+    const p = _tkAcc.pdf; if (!p || !p.t) return;
+    closeModal('modalTkPdf');
+    _tkImprimir(p.t);
   }
 
   // [Review R1] _tkBuildEscPos ELIMINADO — código muerto. La impresión del ticket va por API.imprimirComprobante
@@ -44768,7 +44841,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.98] Atajo desde card
     
     // F2 — Acciones editables sobre tickets
-    cjAbrirAccionesTicket, _tkAccion,
+    cjAbrirAccionesTicket, _tkAccion, _tkPdfCompartir, _tkPdfImprimir,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
     _tkCambiarFPSel, _tkCambiarFPConfirmar, _tkCambiarFPValidar,
     _tkAprobarCredConfirmar,
