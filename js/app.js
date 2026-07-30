@@ -26480,9 +26480,11 @@ const MOS = (() => {
 
   // ──────────────────────────────────────────────────────────
   // PDF DEL COMPROBANTE FISCAL (boleta/factura NubeFact)
-  // Jala nf_enlace (PDF ya guardado en me.ventas) vía RPC de lectura
-  // mos.me_cpe_pdf_por_venta (SQL 591). Preview + compartir WhatsApp + imprimir.
-  // NO genera nada, NO escribe: es on-demand y solo-lectura.
+  // Sin preview embebido: NubeFact bloquea el iframe (X-Frame-Options) y el fetch
+  // directo (sin CORS). El PDF REAL se baja por el Edge proxy `cpe-pdf` (server-side)
+  // → se DESCARGA como archivo y se ENVÍA por WhatsApp como archivo adjunto.
+  // La RPC mos.me_cpe_pdf_por_venta (SQL 591) solo da metadata (estado/correlativo/enlace
+  // oficial). On-demand, 0 generación, 0 escritura.
   // ──────────────────────────────────────────────────────────
   async function _tkPdfOpen(t) {
     _tkAcc.pdf = null;
@@ -26490,7 +26492,7 @@ const MOS = (() => {
     if (tit)  tit.textContent = (t.correlativo || t.idVenta);
     if (sub)  sub.textContent = (t.tipoDoc || '') + ' · ' + (t.cliente || t.clienteDoc || '— sin cliente —');
     if (acc)  acc.classList.add('hidden');
-    if (body) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:34px 16px">Cargando comprobante…</div>';
+    if (body) body.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:34px 16px">Buscando comprobante…</div>';
     openModal('modalTkPdf');
     try {
       const r = await _facRpc('me_cpe_pdf_por_venta', { id_venta: t.idVenta, correlativo: t.correlativo });
@@ -26504,35 +26506,71 @@ const MOS = (() => {
         </div>`;
         return;
       }
-      _tkAcc.pdf = { url: pdf, correlativo: d.correlativo || t.correlativo, estado: d.estado, t };
+      _tkAcc.pdf = { url: pdf, correlativo: d.correlativo || t.correlativo, estado: d.estado, idVenta: t.idVenta, t: t, blob: null, fname: null };
       const est = String(d.estado || '').toUpperCase();
       const chip = (est === 'EMITIDO' || d.aceptada === true)
-        ? '<span style="font-size:11px;font-weight:800;color:#052e1c;background:#10b981;padding:3px 9px;border-radius:8px">🟢 Aceptado</span>'
-        : est === 'BAJA' ? '<span style="font-size:11px;font-weight:800;color:#fff;background:#64748b;padding:3px 9px;border-radius:8px">Dado de baja</span>'
-        : est === 'RECHAZADO' ? '<span style="font-size:11px;font-weight:800;color:#fff;background:#ef4444;padding:3px 9px;border-radius:8px">✖ Rechazado por SUNAT</span>'
-        : '<span style="font-size:11px;font-weight:800;color:#2a1c02;background:#f59e0b;padding:3px 9px;border-radius:8px">🟡 ' + _escapeHtml(String(d.estado || 'Pendiente SUNAT')) + '</span>';
+        ? '<span style="font-size:12px;font-weight:800;color:#052e1c;background:#10b981;padding:3px 10px;border-radius:8px">🟢 Aceptado</span>'
+        : est === 'BAJA' ? '<span style="font-size:12px;font-weight:800;color:#fff;background:#64748b;padding:3px 10px;border-radius:8px">Dado de baja</span>'
+        : est === 'RECHAZADO' ? '<span style="font-size:12px;font-weight:800;color:#fff;background:#ef4444;padding:3px 10px;border-radius:8px">✖ Rechazado por SUNAT</span>'
+        : '<span style="font-size:12px;font-weight:800;color:#2a1c02;background:#f59e0b;padding:3px 10px;border-radius:8px">🟡 ' + _escapeHtml(String(d.estado || 'Pendiente SUNAT')) + '</span>';
       const url = _escapeHtml(String(pdf));
       if (body) body.innerHTML =
-        `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">${chip}<span style="font-size:11px;color:#64748b;font-family:ui-monospace,monospace">${_escapeHtml(String(d.correlativo || ''))}</span></div>
-         <iframe src="${url}#toolbar=0&navpanes=0" title="Comprobante" style="width:100%;height:52vh;border:1px solid #1e293b;border-radius:12px;background:#0b1120"></iframe>
-         <div style="text-align:center;margin-top:8px"><a href="${url}" target="_blank" rel="noopener" style="font-size:12px;color:#818cf8;font-weight:700">¿No se ve? Abrir en pestaña ↗</a></div>`;
+        `<div style="text-align:center;padding:6px 4px 2px">
+           <div style="font-size:46px;line-height:1">🧾</div>
+           <div style="margin:8px 0">${chip}</div>
+           <div style="font-family:ui-monospace,monospace;font-size:16px;font-weight:800;color:#e2e8f0">${_escapeHtml(String(d.correlativo || t.correlativo || ''))}</div>
+           <div style="font-size:12px;color:#64748b;margin-top:4px">${_escapeHtml(String(t.tipoDoc || ''))} · ${_escapeHtml(String(t.cliente || t.clienteDoc || '—'))}</div>
+           <div style="font-size:11.5px;color:#64748b;margin-top:14px;line-height:1.6">El PDF oficial lo emite NubeFact.<br>Descárgalo o envíaselo al cliente como archivo 📎</div>
+           <a href="${url}" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;font-size:12px;color:#818cf8;font-weight:700">Abrir el oficial en pestaña ↗</a>
+         </div>`;
       if (acc) acc.classList.remove('hidden');
     } catch (e) {
       if (body) body.innerHTML = '<div style="text-align:center;color:#fca5a5;padding:30px 16px">No se pudo cargar el comprobante.<br><span style="font-size:12px;color:#94a3b8">' + _escapeHtml(String(e && (e.message || e))) + '</span></div>';
     }
   }
 
-  // Compartir el PDF por WhatsApp. Lo más confiable = el ENLACE (el cliente lo abre y
-  // descarga; evita CORS al bajar un PDF de otro dominio). Web Share en móvil ofrece
-  // WhatsApp entre las apps; fallback wa.me en PC.
+  // Baja el PDF real (Edge cpe-pdf) UNA sola vez y lo cachea en _tkAcc.pdf.blob.
+  async function _tkPdfBlob() {
+    const p = _tkAcc.pdf; if (!p) return null;
+    if (p.blob) return p;
+    const r = await API.descargarCpePdf(p.idVenta);
+    p.blob = r.blob; p.fname = r.filename;
+    return p;
+  }
+  function _descargarBlob(blob, fname) {
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = u; a.download = fname || 'comprobante.pdf';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 5000);
+  }
+
+  async function _tkPdfDescargar() {
+    if (!_tkAcc.pdf) return;
+    try {
+      toast('⏳ Descargando PDF…', 'info', 2000);
+      const b = await _tkPdfBlob();
+      _descargarBlob(b.blob, b.fname);
+      toast('📥 PDF descargado', 'success');
+    } catch (e) { toast('No se pudo descargar: ' + (e && (e.message || e)), 'error', 6000); }
+  }
+
+  // Enviar el ARCHIVO PDF real por WhatsApp (Web Share con archivo). Si el equipo no soporta
+  // compartir archivos, descarga el PDF y abre WhatsApp con el enlace como respaldo.
   async function _tkPdfCompartir() {
-    const p = _tkAcc.pdf; if (!p || !p.url) return;
-    const texto = 'Comprobante ' + (p.correlativo || '') + '\n' + p.url;
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Comprobante ' + (p.correlativo || ''), text: texto, url: p.url }); return; }
-      catch (err) { if (err && err.name === 'AbortError') return; }
-    }
-    window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+    const p = _tkAcc.pdf; if (!p) return;
+    try {
+      toast('⏳ Preparando PDF…', 'info', 2000);
+      const b = await _tkPdfBlob();
+      const file = new File([b.blob], b.fname, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: p.correlativo || 'Comprobante', text: 'Comprobante ' + (p.correlativo || '') }); return; }
+        catch (err) { if (err && err.name === 'AbortError') return; }
+      }
+      _descargarBlob(b.blob, b.fname);
+      window.open('https://wa.me/?text=' + encodeURIComponent('Comprobante ' + (p.correlativo || '') + '\n' + p.url), '_blank');
+      toast('📥 PDF descargado · adjúntalo en el chat', 'info', 6000);
+    } catch (e) { toast('No se pudo compartir: ' + (e && (e.message || e)), 'error', 6000); }
   }
 
   // Imprimir = mismo camino que Reimprimir (selector de impresora + comprobante
@@ -44841,7 +44879,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.41.98] Atajo desde card
     
     // F2 — Acciones editables sobre tickets
-    cjAbrirAccionesTicket, _tkAccion, _tkPdfCompartir, _tkPdfImprimir,
+    cjAbrirAccionesTicket, _tkAccion, _tkPdfCompartir, _tkPdfImprimir, _tkPdfDescargar,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
     _tkCambiarFPSel, _tkCambiarFPConfirmar, _tkCambiarFPValidar,
     _tkAprobarCredConfirmar,

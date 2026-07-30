@@ -60,3 +60,9 @@ verify_jwt = true
 # antes del handler → la reconciliación nunca correría. [500x-2b · BLOQUEANTE del cutover]
 [functions.reconciliar-cpe]
 verify_jwt = false
+
+# Edge Function `cpe-pdf`: proxy de SOLO LECTURA del PDF de un CPE (NubeFact bloquea embed/CORS). verify_jwt=true
+# (firma verificada) + claim app ∈ (MOS, mosExpress) en código. Resuelve nf_enlace por id_venta (service role),
+# baja el PDF de *.nubefact.com (SSRF-guard) y lo re-sirve con CORS. Sin escritura, sin secrets extra.
+[functions.cpe-pdf]
+verify_jwt = true

@@ -1142,6 +1142,28 @@ const API = (() => {
     return d;
   }
 
+  // Descarga el PDF del comprobante (boleta/factura) como Blob vía el Edge proxy `cpe-pdf`.
+  // NubeFact no permite embeber ni leer su PDF desde el navegador (X-Frame-Options + sin CORS); el Edge lo
+  // baja server-side y lo re-sirve con CORS. Devuelve { blob, filename }. Lanza si no hay PDF (DEMO/no emitido).
+  async function _descargarCpePdf(idVenta) {
+    const token = await _mintTokenMOS();
+    if (!token) throw new Error('sin token (Edge mint-mos caída)');
+    const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/cpe-pdf`, {
+      method: 'POST',
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_venta: String(idVenta) })
+    }, 25000);
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status;
+      try { const j = await res.json(); if (j && (j.error || j.detalle)) msg = (j.error === 'PDF_NO_DISPONIBLE') ? 'El comprobante no tiene PDF disponible (demo o no publicado en SUNAT)' : (j.detalle || j.error); } catch (_) {}
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    return { blob, filename: (m && m[1]) || (String(idVenta) + '.pdf') };
+  }
+
   // ── [#5 Editor de Adhesivos · Supabase] Adaptador para EditorAdhesivos (se cablea como window.MOS_API.post).
   // ⚠️ El editor consume el shape RAW del GAS ({ok,plantillas}/{ok,idPlantilla}/{ok,jobId}); por eso NO se rutea
   // por API.post (que hace `return d.data` + throw si !ok → rompería el editor). Este adaptador devuelve SIEMPRE
@@ -3756,6 +3778,7 @@ const API = (() => {
     printerPrincipal:  async (p) => _sbRpcMOS('printer_principal',      { p: p || {} }, 'mos'),
     // [Reparación #9] Imprime el comprobante CENTRALIZADO (NV/Boleta/Factura) por la Edge ticket-comprobante.
     imprimirComprobante:  _imprimirComprobanteEdge,
+    descargarCpePdf:      _descargarCpePdf,
     // [#5 Editor Adhesivos] backend del editor (se cablea como window.MOS_API.post). Shape RAW, gateado.
     adhesivoEditorBackend: _adhesivoEditorBackend,
     // [Realtime catálogo] Suscripción WebSocket a mos.catalogo_meta (UPDATE) → propagación ~0s.
