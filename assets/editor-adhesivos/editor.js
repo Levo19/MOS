@@ -111,7 +111,7 @@
   function _capasMembrete(anchoMm) {
     return [
       { id: 'memb-txt', tipo: 'texto', fija: true, x_mm: 1.5, y_mm: 0.8,
-        texto: 'INVERSIONES MOS', font: 1, alineacion: 'left', negrita: true, rotacion: 0 },
+        texto: 'INVERSIONES MOS', font: 1, alineacion: 'left', negrita: false, rotacion: 0 },
       { id: 'memb-lin', tipo: 'linea', fija: true, x_mm: 33, y_mm: 2.4,
         ancho_mm: Math.max(4, (anchoMm || 50) - 34.5), alto_mm: 0.4 }
     ];
@@ -548,7 +548,7 @@
     else if (c.tipo === 'rectangulo') { w = conv.mm2px(c.ancho_mm || 5); h = conv.mm2px(c.alto_mm || 5); }
     else if (c.tipo === 'linea') { w = conv.mm2px(c.ancho_mm || 0); h = Math.max(10, conv.mm2px(c.alto_mm || 0.5)); }
     else if (c.tipo === 'texto') {
-      var fpx = conv.fontPx(c.font || 3) * (c.negrita ? 1.15 : 1);
+      var fpx = conv.fontPx(c.font || 3) * (c.negrita ? 2 : 1);   // [fidelidad] negrita = ×2 (igual que TSPL), no 1.15
       var lineas = String(c.texto || '').split('\n');
       var maxLen = lineas.reduce(function(m, l) { return Math.max(m, l.length); }, 1);
       w = maxLen * fpx * 0.58; h = fpx * 1.08 * lineas.length;

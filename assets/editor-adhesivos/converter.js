@@ -173,7 +173,10 @@
   }
 
   function _svgTexto(c, x, y) {
-    var fpx = _fontPx(c.font || 3);
+    // [FIDELIDAD] En TSPL `negrita` = escala ×2 (TEXT ...,2,2,...), NO un simple bold del mismo tamaño.
+    // El preview debe reflejar ESE tamaño para ser fiel a lo que imprime (antes solo cambiaba el weight
+    // → preview chico, impresión grande). fpx ×2 cuando hay negrita.
+    var fpx = _fontPx(c.font || 3) * (c.negrita ? 2 : 1);
     var anchor = c.alineacion === 'center' ? 'middle' : (c.alineacion === 'right' ? 'end' : 'start');
     var anchoCanvasPx = c._anchoCanvasPx || 9999;
     // Para alineación: middle/end necesitan X de referencia
