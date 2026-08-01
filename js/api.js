@@ -334,7 +334,9 @@ const API = (() => {
     ['precio_tope','precioTope','num'], ['foto_url','fotoUrl','text'],
     ['historial_cambios','historialCambios','json'], ['segmentos_precio','segmentos_precio','json'],
     // tipo_producto es derivado en el backfill (post()) pero existe como columna en la sombra → exponerlo igual.
-    ['tipo_producto','tipoProducto','text']
+    ['tipo_producto','tipoProducto','text'],
+    // [597] envase del derivado (sku_base del insumo · 'SIN_ENVASE' = no lleva) + toggle insumo de envasado
+    ['envase_sku','envaseSku','text'], ['es_insumo','esInsumo','bool10']
   ];
 
   // Convierte un valor crudo de PostgREST al tipo del shape-hoja.
@@ -1769,6 +1771,9 @@ const API = (() => {
         marca: p.marca, idCategoria: p.idCategoria, unidad: p.unidad, Unidad_Medida: p.Unidad_Medida,
         Cod_Tributo: p.Cod_Tributo, IGV_Porcentaje: p.IGV_Porcentaje, Cod_SUNAT: p.Cod_SUNAT, Tipo_IGV: p.Tipo_IGV,
         esEnvasable: p.esEnvasable,
+        // [597] envase del derivado + toggle insumo (la RPC los ignora si vienen undefined)
+        envaseSku: p.envaseSku != null ? String(p.envaseSku) : undefined,
+        esInsumo: p.esInsumo,
         codigoProductoBase: p.codigoProductoBase != null ? String(p.codigoProductoBase) : undefined,
         factorConversion: p.factorConversion, factorConversionBase: p.factorConversionBase,
         mermaEsperadaPct: p.mermaEsperadaPct, stockMinimo: p.stockMinimo, stockMaximo: p.stockMaximo,
@@ -1796,6 +1801,7 @@ const API = (() => {
       });
       ['descripcion','marca','idCategoria','unidad','Unidad_Medida','precioVenta','precioCosto',
        'Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV','estado','esEnvasable',
+       'envaseSku','esInsumo',   // [597] envase del derivado (vaciable) + toggle insumo
        'factorConversion','factorConversionBase','mermaEsperadaPct','stockMinimo','stockMaximo',
        'zona','modoVenta','margenPct','precioTope','motivoPrecio'].forEach(k => {
         if (k in p && p[k] !== undefined) a[k] = p[k];

@@ -3012,6 +3012,8 @@ const MOS = (() => {
       // Badges
       const badgeCat  = base.idCategoria ? `<span class="badge badge-gray text-xs">${base.idCategoria}</span>` : '';
       const badgeEnv  = base.esEnvasable == '1' ? `<span class="badge badge-yellow text-xs">⚗️ Envasable</span>` : '';
+      // [597] insumo de envasado (celofán/descartable) — lo consumen los derivados al envasarse
+      const badgeIns  = base.esInsumo == '1' ? `<span class="badge text-xs" style="background:rgba(56,189,248,.12);color:#38bdf8">🧷 Insumo</span>` : '';
       const badgePres = pres.length ? `<span class="badge badge-blue text-xs">🧱 ${pres.length} presentacion${pres.length !== 1 ? 'es' : ''}</span>` : '';
       const badgeInac = activo ? '' : `<span class="badge badge-gray text-xs">Inactivo</span>`;
       // [RONDA 5 · gap] badge de derivados en la fila de badges (como el de presentaciones)
@@ -3182,9 +3184,10 @@ const MOS = (() => {
                 <button class="cat-btn cat-btn-printx sm" onclick="event.stopPropagation();MOS.abrirMembreteCard('${d.idProducto}')" title="Imprimir (membrete / adhesivo envasado)">${_svgIcon('printer')}</button>
                 <button class="cat-btn cat-btn-plusctx sm" onclick="event.stopPropagation();MOS.abrirPlusContextual('${d.idProducto}', event)" title="Agregar satélite">＋</button>
               </div>
-              <div class="flex items-center gap-2 mt-1" style="font-size:10px;color:#64748b">
+              <div class="flex items-center gap-2 mt-1 flex-wrap" style="font-size:10px;color:#64748b">
                 <span>1 u = ${porcion} kg del granel</span>
                 ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
+                ${_envaseChipHtml(d)}
               </div>
               ${packs}
             </div>`;
@@ -3198,7 +3201,7 @@ const MOS = (() => {
           <div class="flex items-start gap-3">
             ${_renderFotoMini(base)}
             <div class="flex-1 min-w-0">
-              <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgePres}${badgeDeriv}${badgeInac}</div>
+              <div class="flex flex-wrap gap-1 mb-2">${badgeCat}${badgeEnv}${badgeIns}${badgePres}${badgeDeriv}${badgeInac}</div>
               <!-- [catálogo v4] nombre tocable = editar (el lápiz desaparece de la botonera) -->
               <div class="font-semibold text-slate-100 text-sm leading-snug mb-2"><span class="cat-nombre-edit"
                    onclick="event.stopPropagation();MOS.abrirModalProducto('${base.idProducto}')"
@@ -3250,6 +3253,25 @@ const MOS = (() => {
           <span class="cat-mostrar-mas-sub">${_limit} de ${_totalRes}${qn ? '' : ' · o escribe para buscar directo'}</span>
         </button>
       </div>` : '');
+  }
+
+  // [597] Chip de ENVASE del derivado (regla visual del dueño): con envase → chip verde con el
+  // nombre del insumo; SIN_ENVASE → chip gris discreto; null → chip punteado "elegir bolsa…"
+  // (tocarlo abre el editor del derivado, donde vive el selector 🛍).
+  function _envaseChipHtml(d) {
+    const sku = String(d.envaseSku || '').trim();
+    if (sku === 'SIN_ENVASE') {
+      return `<span title="Este derivado no consume bolsa (decisión explícita)"
+        style="font-size:9px;padding:1px 6px;border-radius:5px;background:rgba(148,163,184,.10);color:#64748b">∅ sin envase</span>`;
+    }
+    if (sku) {
+      const ins = _envaseInsumoDe(sku);
+      return `<span title="Envase que consume al envasarse (${_escapeHtml(sku)})"
+        style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:5px;background:rgba(52,211,153,.12);color:#34d399">🛍 ${_escapeHtml((ins && ins.descripcion) || sku)}</span>`;
+    }
+    return `<button type="button" onclick="event.stopPropagation();MOS.abrirEditarProducto('${d.idProducto}')"
+      title="Falta elegir la bolsa de este derivado — tocar para asignarla"
+      style="font-size:9px;padding:1px 8px;border-radius:5px;background:transparent;border:1px dashed rgba(251,191,36,.5);color:#fbbf24;cursor:pointer">🛍 elegir bolsa…</button>`;
   }
 
   // [v2.43.604] "Mostrar más" del catálogo: crece la ventana y re-pinta.
@@ -16249,6 +16271,9 @@ const MOS = (() => {
     $('prodTipoBar')?.classList.toggle('hidden', !id);
     $('prodEnvasableRow')?.classList.toggle('hidden', !!id);
     $('prodEnvasableSw')?.classList.remove('on');
+    // [597] toggle insumo: visible al crear (como envasable); en edición se decide más abajo por tipo
+    $('prodInsumoRow')?.classList.toggle('hidden', !!id);
+    $('prodInsumoSw')?.classList.remove('on');
 
     if (id) {
       const p = S.productos.find(x => x.idProducto === id);
@@ -16324,6 +16349,9 @@ const MOS = (() => {
       const _envConvertible = (tipo === 'normal' || tipo === 'envasable');
       $('prodEnvasableRow')?.classList.toggle('hidden', !_envConvertible);
       $('prodEnvasableSw')?.classList.toggle('on', tipo === 'envasable');
+      // [597] insumo: editable en canónico/granel (un derivado/presentación no es insumo de otros)
+      $('prodInsumoRow')?.classList.toggle('hidden', !_envConvertible);
+      $('prodInsumoSw')?.classList.toggle('on', String(p.esInsumo) === '1');
 
       if (tipo === 'derivado') {
         $('prodCodigoProductoBase').value = p.codigoProductoBase || '';
@@ -16807,7 +16835,15 @@ const MOS = (() => {
           <div><label class="lbl">Código <span class="text-[9px]" style="color:#34d399">auto WH-</span></label>
             <div class="flex gap-1.5"><input id="satCodigo" class="inp flex-1 font-mono text-xs" oninput="MOS._satValidarCodigo()">
             ${_SAT_CAM('satCodigo')}</div><div id="satCodigoFb" class="text-[10px] mt-1"></div></div>
-        </div>`;
+        </div>
+        <div><label class="lbl">🛍 Envase <span class="text-[9px] text-slate-500 font-normal">bolsa/insumo que consume al envasarse · opcional</span></label>
+          <div class="relative">
+            <input id="satEnvase" class="inp w-full" placeholder="Escribe para filtrar… ej 4.5*5 o celofan" autocomplete="off"
+                   oninput="MOS._satEnvaseFiltra()" onfocus="MOS._satEnvaseFiltra()" onblur="MOS._satEnvaseCierra()">
+            <div id="satEnvaseOps" class="hidden absolute z-50 left-0 right-0 mt-1 rounded-lg overflow-auto"
+                 style="max-height:180px;background:#0e1626;border:1px solid #28344c;box-shadow:0 12px 28px rgba(0,0,0,.5)"></div>
+          </div>
+          <div id="satEnvaseHint" class="text-[10px] mt-1"></div></div>`;
       // [RONDA 3] modo EDICIÓN: prellenar + guardar cambios (sin autogenerar código)
       if (editarProd) {
         tit.textContent = '🥄 Editar derivado';
@@ -16822,11 +16858,13 @@ const MOS = (() => {
         // [dueño 2026-07-14] EDICIÓN: la porción y el precio ya vienen del producto → NO auto-sugerir encima
         // (pero los avisos "precio bajo / peso no coincide" sí se muestran).
         _satPorcionManual = true; _satPrecioManual = true;
+        _satEnvaseInit(editarProd.envaseSku || '');   // [597] envase actual del derivado
         _satDerivadoPreview();
         return;
       }
       btn.textContent = 'Crear derivado';
       openModal('modalSatelite');
+      _satEnvaseInit('');   // [597] envase: nace pendiente (el hint avisa)
       // [dueño 2026-07-14] B: pre-llenar el nombre con la FAMILIA del padre (sin "GRANEL"), cursor al final,
       // para que el usuario solo agregue el gramaje (250GR / 5KG). C+A (peso→porción→precio) se auto-sugieren
       // vía _satDerivadoPreview a medida que escribe. Flags manuales en false: aún no tocó porción/precio.
@@ -17348,6 +17386,7 @@ const MOS = (() => {
           const porcion = parseFloat($('satPorcion')?.value) || 0;
           if (!_satPorcionValida(porcion)) return;   // sin tope superior: cualquier tamaño de envasado
           patch.factorConversionBase = porcion;
+          patch.envaseSku = _satEnvaseSel;   // [597] '' = pendiente (la RPC lo vacía a null) · 'SIN_ENVASE' · sku
         } else {
           const f = parseFloat(_satState.presFactor) || 0;
           if (!(f > 0) || f === 1) { toast('⚠ Elige un tipo: pack ×N o fracción ÷N', 'error'); return; }
@@ -17386,6 +17425,7 @@ const MOS = (() => {
         params.codigoProductoBase   = skuPadre;
         params.factorConversionBase = porcion;
         params.factorConversion = ''; params.mermaEsperadaPct = '';
+        if (_satEnvaseSel) params.envaseSku = _satEnvaseSel;   // [597] envase elegido ('' pendiente = no mandar)
       } else {
         const f = parseFloat(_satState.presFactor) || 0;
         if (!(f > 0) || f === 1) { toast('⚠ Elige un tipo: pack ×N o fracción ÷N', 'error'); return; }
@@ -17464,12 +17504,76 @@ const MOS = (() => {
     }
   }
 
+  // ═══ [597] SELECTOR DE ENVASE del modal derivado (insumo que consume al envasarse) ═══
+  // _satEnvaseSel: '' = pendiente · 'SIN_ENVASE' = no lleva · 'LEVxxxx' = sku_base del insumo.
+  // Se guarda el sku_base (el codigo de barras / nombre pueden cambiar; el sku_base jamás).
+  let _satEnvaseSel = '';
+  function _envaseInsumoDe(sku) {
+    const U = s => String(s || '').trim().toUpperCase();
+    return (S.productos || []).find(x => U(x.skuBase) === U(sku) && String(x.esInsumo) === '1')
+        || (S.productos || []).find(x => U(x.skuBase) === U(sku)
+              && !(x.codigoProductoBase && String(x.codigoProductoBase).trim())
+              && (parseFloat(x.factorConversion) || 1) === 1);
+  }
+  function _satEnvaseInit(valor) {
+    _satEnvaseSel = String(valor || '').trim();
+    const inp = $('satEnvase'); if (!inp) return;
+    if (_satEnvaseSel === 'SIN_ENVASE') inp.value = 'Sin envase (no usa)';
+    else if (_satEnvaseSel) { const i = _envaseInsumoDe(_satEnvaseSel); inp.value = i ? (i.descripcion || _satEnvaseSel) : _satEnvaseSel; }
+    else inp.value = '';
+    _satEnvaseHint();
+  }
+  function _satEnvaseFiltra() {
+    const inp = $('satEnvase'), ops = $('satEnvaseOps'); if (!inp || !ops) return;
+    // si el texto ya no coincide con la selección → queda sin seleccionar (el hint lo dice)
+    const selTxt = _satEnvaseSel === 'SIN_ENVASE' ? 'Sin envase (no usa)'
+      : _satEnvaseSel ? ((_envaseInsumoDe(_satEnvaseSel) || {}).descripcion || _satEnvaseSel) : '';
+    if ((inp.value || '').trim() !== String(selTxt).trim()) _satEnvaseSel = '';
+    const q = (inp.value || '').trim().toUpperCase().replace(/X/g, '*');
+    const insumos = (S.productos || [])
+      .filter(p => String(p.esInsumo) === '1' && _isProdActivo(p))
+      .sort((a, b) => String(a.descripcion || '').localeCompare(String(b.descripcion || ''), 'es', { numeric: true }));
+    const li = insumos.filter(p => !q
+      || String(p.descripcion || '').toUpperCase().replace(/X/g, '*').indexOf(q) >= 0
+      || String(p.skuBase || '').toUpperCase().indexOf(q) >= 0);
+    let html = '';
+    if (!q) html += `
+      <button type="button" class="w-full text-left px-3 py-2 text-xs text-slate-500 italic hover:bg-slate-800/60" style="border-bottom:1px solid #16223a"
+              onmousedown="event.preventDefault();MOS._satEnvaseSet('')">— dejar pendiente (elegir después) —</button>
+      <button type="button" class="w-full text-left px-3 py-2 text-xs text-slate-400 hover:bg-slate-800/60" style="border-bottom:1px solid #16223a"
+              onmousedown="event.preventDefault();MOS._satEnvaseSet('SIN_ENVASE')">🚫 Sin envase (no usa bolsa)</button>`;
+    html += li.map(p => `
+      <button type="button" class="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-800/60 flex justify-between gap-2"
+              onmousedown="event.preventDefault();MOS._satEnvaseSet('${_escapeHtml(String(p.skuBase || ''))}')">
+        <span>🛍 ${_escapeHtml(p.descripcion || p.skuBase || '')}</span>
+        <span class="text-slate-500 font-mono text-[10px]">${_escapeHtml(String(p.skuBase || ''))}</span></button>`).join('');
+    if (!li.length && q) html += `<div class="px-3 py-2 text-xs text-slate-500">Sin insumos que coincidan — márcalos con 🧷 Insumo al editar el producto</div>`;
+    ops.innerHTML = html;
+    ops.classList.remove('hidden');
+    _satEnvaseHint();
+  }
+  function _satEnvaseSet(sku) { _satEnvaseInit(sku); $('satEnvaseOps')?.classList.add('hidden'); }
+  function _satEnvaseCierra() { setTimeout(() => $('satEnvaseOps')?.classList.add('hidden'), 150); _satEnvaseHint(); }
+  function _satEnvaseHint() {
+    const h = $('satEnvaseHint'); if (!h) return;
+    if (_satEnvaseSel === 'SIN_ENVASE') h.innerHTML = '<span class="text-slate-400">Guardará: sin envase (no consume bolsa al envasarse)</span>';
+    else if (_satEnvaseSel) { const i = _envaseInsumoDe(_satEnvaseSel);
+      h.innerHTML = '<span style="color:#34d399">✓ ' + _escapeHtml((i && i.descripcion) || _satEnvaseSel) + ' · ' + _escapeHtml(_satEnvaseSel) + '</span>'; }
+    else h.innerHTML = '<span class="text-amber-400">Pendiente — el catálogo mostrará "🛍 elegir bolsa…"</span>';
+  }
+
   // Toggle "es granel envasable" del modal +producto EN CREACIÓN (dibujo §04)
   function prodToggleEnvasable() {
     const sw = $('prodEnvasableSw');
     const on = !sw?.classList.contains('on');
     sw?.classList.toggle('on', on);
     setProdTipo(on ? 'envasable' : 'normal', true);
+  }
+
+  // [597] Toggle "insumo de envasado" — independiente del tipo (no cambia el tipo del producto)
+  function prodToggleInsumo() {
+    const sw = $('prodInsumoSw');
+    sw?.classList.toggle('on', !sw?.classList.contains('on'));
   }
 
   async function guardarProducto() {
@@ -17545,6 +17649,13 @@ const MOS = (() => {
       params.esEnvasable = '0'; params.codigoProductoBase = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
       // Solo asignar factorConversion=1 al CREAR (sin idProducto). En edición no se toca para no romper data.
       if (!params.idProducto) params.factorConversion = 1;
+    }
+
+    // [597] insumo de envasado: solo se manda si el toggle está visible (derivado/presentación
+    // en edición lo ocultan → no mandar la clave = la RPC conserva el valor actual, sin clobber)
+    const _insRow = $('prodInsumoRow');
+    if (_insRow && !_insRow.classList.contains('hidden')) {
+      params.esInsumo = $('prodInsumoSw')?.classList.contains('on') ? '1' : '0';
     }
 
     // BLOQUEO: si codigoBarra duplicado, no permitir guardar
@@ -44708,6 +44819,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _presSetFamilia, _presSetModelo, _presMostrarOtro, _presOtroInput, _presRecomponer, _presNombreManual, _presPrecioManual,   // [pres-v1] picker presentación
     _presCodigoSufijo, _presContenidoAuto, _presNombreCompuesto, _presDescriptorSugerido,                    // [pres-v1] helpers (test/uso)
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación
+    prodToggleInsumo,                                                  // [597] toggle insumo de envasado
+    _satEnvaseFiltra, _satEnvaseSet, _satEnvaseCierra,                 // [597] selector de envase del modal derivado
     _agTab, _agAlcance, abrirModalPrecioCurvas, guardarCostosYPaso2, _paso2AplicarAutos, _paso2Abrir, _paso2Satelites, _p2GuardarCatalogo,
     _p2AbrirUno, _p2VolverLista, _p2GuardarUno, costosPrecioUno, _p2CerrarUno, _p2GuardarUnoDirecto,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,

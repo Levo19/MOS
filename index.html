@@ -18235,6 +18235,16 @@
         <span class="toggle-sw" id="prodEnvasableSw"><span class="toggle-sw-knob"></span></span>
       </button>
     </div>
+    <!-- [597] toggle insumo de envasado (celofanes/descartables) — cualquier producto puede serlo -->
+    <div id="prodInsumoRow" class="hidden px-5 pt-3">
+      <button type="button" id="prodInsumoToggle" onclick="MOS.prodToggleInsumo()"
+              class="w-full flex items-center justify-between rounded-xl px-4 py-3"
+              style="background:#0e1626;border:1px solid #28344c">
+        <span class="text-sm font-bold text-slate-200">🧷 Insumo de envasado
+          <span class="text-[10px] text-slate-500 font-normal ml-1">(bolsa/descartable que consumen los derivados 🛍)</span></span>
+        <span class="toggle-sw" id="prodInsumoSw"><span class="toggle-sw-knob"></span></span>
+      </button>
+    </div>
 
     <!-- Contenido scrollable -->
     <div class="overflow-y-auto flex-1 px-5 py-4 space-y-5">
@@ -19881,7 +19891,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.651"></script>
+<script src="js/api.js?v=2.43.652"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19897,7 +19907,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.1.2"></script>
-<script src="js/app.js?v=2.43.651"></script>
+<script src="js/app.js?v=2.43.652"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

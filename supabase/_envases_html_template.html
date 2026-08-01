@@ -1,0 +1,327 @@
+<title>Envases por derivado — revisión</title>
+<style>
+  :root{
+    --bg:#FAF8F4; --surface:#FFFFFF; --surface2:#F3EFE8; --ink:#2A241C; --muted:#756D60;
+    --line:#E4DDD1; --accent:#9A4419; --accent-ink:#FFFFFF;
+    --ok-bg:#E4F0E6; --ok-fg:#2A6B3E; --info-bg:#E3ECF7; --info-fg:#2B5E9E;
+    --warn-bg:#F7ECD4; --warn-fg:#8A5F10; --off-bg:#ECE8E1; --off-fg:#6E675D;
+    --mod-bg:#F3E3DA; --mod-fg:#9A4419;
+    --shadow:0 8px 24px rgba(42,36,28,.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#171410; --surface:#201C16; --surface2:#28231C; --ink:#EDE7DD; --muted:#A79C8C;
+      --line:#383126; --accent:#D9814E; --accent-ink:#1D130C;
+      --ok-bg:#22352A; --ok-fg:#8FCBA3; --info-bg:#22303F; --info-fg:#8FB8E8;
+      --warn-bg:#3A3016; --warn-fg:#E3B85E;
+      --off-bg:#2C2820; --off-fg:#A79C8C; --mod-bg:#3C2A20; --mod-fg:#E59A6B;
+      --shadow:0 8px 24px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#FAF8F4; --surface:#FFFFFF; --surface2:#F3EFE8; --ink:#2A241C; --muted:#756D60;
+    --line:#E4DDD1; --accent:#9A4419; --accent-ink:#FFFFFF;
+    --ok-bg:#E4F0E6; --ok-fg:#2A6B3E; --info-bg:#E3ECF7; --info-fg:#2B5E9E;
+    --warn-bg:#F7ECD4; --warn-fg:#8A5F10; --off-bg:#ECE8E1; --off-fg:#6E675D;
+    --mod-bg:#F3E3DA; --mod-fg:#9A4419;
+    --shadow:0 8px 24px rgba(42,36,28,.12);
+  }
+  :root[data-theme="dark"]{
+    --bg:#171410; --surface:#201C16; --surface2:#28231C; --ink:#EDE7DD; --muted:#A79C8C;
+    --line:#383126; --accent:#D9814E; --accent-ink:#1D130C;
+    --ok-bg:#22352A; --ok-fg:#8FCBA3; --info-bg:#22303F; --info-fg:#8FB8E8;
+    --warn-bg:#3A3016; --warn-fg:#E3B85E;
+    --off-bg:#2C2820; --off-fg:#A79C8C; --mod-bg:#3C2A20; --mod-fg:#E59A6B;
+    --shadow:0 8px 24px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  code,.mono{font-family:Consolas,ui-monospace,Menlo,monospace; font-variant-numeric:tabular-nums}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 16px 80px}
+
+  header.top{
+    position:sticky;top:0;z-index:30;background:var(--bg);
+    border-bottom:1px solid var(--line); padding:14px 0 10px; margin-bottom:14px;
+  }
+  .titulo{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .titulo h1{font-size:19px;font-weight:700;margin:0;letter-spacing:-.01em}
+  .titulo .sub{color:var(--muted);font-size:13px}
+  .barra{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .busca{
+    flex:1 1 220px;min-width:180px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;
+    background:var(--surface);color:var(--ink);font-size:14px;outline:none;
+  }
+  .busca:focus{border-color:var(--accent)}
+  .chip{
+    border:1px solid var(--line);background:var(--surface);color:var(--muted);
+    padding:6px 12px;border-radius:999px;font-size:13px;cursor:pointer;white-space:nowrap;
+  }
+  .chip .n{font-weight:700;color:var(--ink)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .chip.on .n{color:var(--accent-ink)}
+  .chip:focus-visible,.busca:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .acciones{display:flex;gap:8px;margin:12px 0 4px;flex-wrap:wrap}
+  .btn{
+    border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    padding:8px 14px;border-radius:8px;font-size:13.5px;font-weight:600;cursor:pointer;
+  }
+  .btn.primario{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .btn:active{transform:translateY(1px)}
+  .aviso-copiado{font-size:13px;color:var(--ok-fg);align-self:center;display:none}
+
+  /* filas */
+  .lista{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+  .fila{
+    display:grid;grid-template-columns:minmax(0,1fr) 150px 230px;gap:10px;align-items:center;
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 12px;
+  }
+  .fila.oculta{display:none}
+  .prod{min-width:0}
+  .prod .nom{font-weight:600;font-size:14.5px;line-height:1.3;overflow-wrap:anywhere}
+  .prod .cod{color:var(--muted);font-size:12px;margin-top:2px}
+  .prod .cod code{font-size:12px}
+  .meta{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+  .badge{font-size:11.5px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;text-transform:uppercase}
+  .b-codigo{background:var(--ok-bg);color:var(--ok-fg)}
+  .b-nombre{background:var(--info-bg);color:var(--info-fg)}
+  .b-elige{background:var(--warn-bg);color:var(--warn-fg)}
+  .b-sin{background:var(--off-bg);color:var(--off-fg)}
+  .b-mod{background:var(--mod-bg);color:var(--mod-fg)}
+  .empaque{color:var(--muted);font-size:12px}
+
+  /* selector */
+  .sel{position:relative;min-width:0}
+  .sel-btn{
+    width:100%;text-align:left;border:1px solid var(--line);background:var(--surface2);
+    color:var(--ink);border-radius:8px;padding:8px 30px 8px 10px;font-size:13.5px;cursor:pointer;
+    position:relative;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .sel-btn::after{content:"▾";position:absolute;right:10px;color:var(--muted)}
+  .sel-btn.vacio{color:var(--warn-fg);border-color:var(--warn-fg);border-style:dashed}
+  .sel-btn.ninguno{color:var(--muted)}
+  .panel{
+    position:absolute;right:0;top:calc(100% + 4px);z-index:40;width:min(300px,86vw);
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);
+    padding:8px;display:none;
+  }
+  .panel.abierto{display:block}
+  .panel input{
+    width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:7px;
+    background:var(--bg);color:var(--ink);font-size:13.5px;margin-bottom:6px;outline:none;
+  }
+  .panel input:focus{border-color:var(--accent)}
+  .ops{max-height:250px;overflow:auto;display:flex;flex-direction:column}
+  .op{
+    text-align:left;border:0;background:none;color:var(--ink);padding:7px 9px;border-radius:6px;
+    font-size:13.5px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;align-items:center;
+  }
+  .op:hover{background:var(--surface2)}
+  .op .sku{color:var(--muted);font-size:12px}
+  .op.activo{background:var(--accent);color:var(--accent-ink)}
+  .op.activo .sku{color:var(--accent-ink);opacity:.8}
+  .op.especial{color:var(--muted);font-style:italic}
+
+  details.extra{margin-top:26px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+  details.extra summary{padding:12px 14px;font-weight:600;cursor:pointer;font-size:14px}
+  details.extra .cuerpo{padding:0 14px 12px;color:var(--muted);font-size:13px}
+  details.extra table{border-collapse:collapse;width:100%;font-size:13px}
+  details.extra td,details.extra th{padding:5px 8px;border-top:1px solid var(--line);text-align:left;white-space:nowrap}
+  details.extra .tw{overflow-x:auto}
+
+  .pie{margin-top:20px;color:var(--muted);font-size:12.5px}
+  @media (max-width:720px){
+    .fila{grid-template-columns:1fr;gap:8px}
+    .meta{flex-direction:row;flex-wrap:wrap;align-items:center}
+    .panel{right:auto;left:0}
+  }
+  @media (prefers-reduced-motion: reduce){ *{transition:none!important;animation:none!important} }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="titulo">
+      <h1>Envases por derivado</h1>
+      <span class="sub">revisa el celofán sugerido y corrige donde haga falta · tus cambios se guardan en este navegador</span>
+    </div>
+    <div class="barra">
+      <input class="busca" id="q" type="search" placeholder="Buscar producto o código…" aria-label="Buscar producto">
+      <button class="chip" data-f="todos">Todos <span class="n" id="nTodos"></span></button>
+      <button class="chip" data-f="sugerido">Sugeridos <span class="n" id="nSug"></span></button>
+      <button class="chip" data-f="revisar">Por elegir <span class="n" id="nRev"></span></button>
+      <button class="chip" data-f="sin">Sin envase <span class="n" id="nSin"></span></button>
+      <button class="chip" data-f="mod">Modificados <span class="n" id="nMod"></span></button>
+    </div>
+  </header>
+
+  <div class="acciones">
+    <button class="btn primario" id="btnJson">Copiar JSON final</button>
+    <button class="btn" id="btnCsv">Descargar CSV</button>
+    <button class="btn" id="btnReset">Restaurar sugerencias</button>
+    <span class="aviso-copiado" id="avisoCopiado">Copiado ✓</span>
+  </div>
+
+  <div class="lista" id="lista"></div>
+
+  <details class="extra">
+    <summary>Filas de tu tabla original que ya no existen como derivados en el catálogo (<span id="nHuerf"></span>)</summary>
+    <div class="cuerpo">
+      <p>Solo informativo: sobrecitos WA/WZ (hoy son presentaciones, no derivados), productos renombrados y las excepciones sin celofán. No necesitan envase aquí.</p>
+      <div class="tw"><table id="tHuerf"><tr><th>Código</th><th>Producto</th><th>Empaque</th></tr></table></div>
+    </div>
+  </details>
+
+  <p class="pie">Verde = matcheado por código exacto · Azul = matcheado por nombre · Ámbar = no estaba en tu tabla, elige tú · Gris = sin envase (excepción). Cuando termines, usa <b>Copiar JSON final</b> y pégamelo en el chat para aplicar el campo <code>envase</code> al catálogo.</p>
+</div>
+
+<script>
+const DATA = __DATA__;
+const KEY = 'envases_rev_v1';
+
+const celos = DATA.celofanes.slice().sort((a,b)=>{
+  const d = s=>s.desc.replace('CELOFAN ','').split('*').map(Number);
+  const [aw,ah]=d(a),[bw,bh]=d(b); return aw-bw||ah-bh;
+});
+const celoDesc = Object.fromEntries(celos.map(c=>[c.sku,c.desc]));
+
+let edits = {};
+try{ edits = JSON.parse(localStorage.getItem(KEY)||'{}'); }catch(e){ edits={}; }
+const guardar = ()=>localStorage.setItem(KEY, JSON.stringify(edits));
+
+const filas = DATA.match.slice().sort((a,b)=>a.descripcion.localeCompare(b.descripcion,'es'));
+let filtro='todos', q='';
+
+const valorDe = f => (f.codigo_barra in edits) ? edits[f.codigo_barra] : f.envase_sku;
+const esMod = f => (f.codigo_barra in edits) && edits[f.codigo_barra] !== f.envase_sku;
+
+const lista = document.getElementById('lista');
+function etiqueta(v){
+  if(v===null||v===undefined||v==='') return '— elegir envase —';
+  if(v==='SIN_ENVASE') return 'Sin envase (no usa celofán)';
+  return (celoDesc[v]||v)+'  ·  '+v;
+}
+function pintar(){
+  lista.innerHTML='';
+  let nSug=0,nRev=0,nSin=0,nMod=0;
+  for(const f of filas){
+    const v = valorDe(f);
+    if(v===null) nRev++; else if(v==='SIN_ENVASE') nSin++; else nSug++;
+    if(esMod(f)) nMod++;
+  }
+  document.getElementById('nTodos').textContent=filas.length;
+  document.getElementById('nSug').textContent=nSug;
+  document.getElementById('nRev').textContent=nRev;
+  document.getElementById('nSin').textContent=nSin;
+  document.getElementById('nMod').textContent=nMod;
+
+  const qq = q.toUpperCase();
+  for(const f of filas){
+    const v = valorDe(f), mod = esMod(f);
+    let visible = true;
+    if(filtro==='sugerido') visible = v!==null && v!=='SIN_ENVASE';
+    else if(filtro==='revisar') visible = v===null;
+    else if(filtro==='sin') visible = v==='SIN_ENVASE';
+    else if(filtro==='mod') visible = mod;
+    if(visible && qq) visible = (f.descripcion+' '+f.codigo_barra+' '+f.sku_base+' '+(v||'')+' '+(celoDesc[v]||'')).toUpperCase().includes(qq);
+    if(!visible) continue;
+
+    const div=document.createElement('div'); div.className='fila';
+    let badge;
+    if(mod) badge='<span class="badge b-mod">editado</span>';
+    else if(f.confianza==='codigo') badge='<span class="badge b-codigo">código</span>';
+    else if(f.confianza==='nombre') badge='<span class="badge b-nombre">nombre</span>';
+    else if(f.confianza==='excepcion') badge='<span class="badge b-sin">sin envase</span>';
+    else badge='<span class="badge b-elige">elige</span>';
+    const emp = f.prim_empaque ? '<span class="empaque">bolsa original: '+f.prim_empaque+'</span>' : '<span class="empaque">no estaba en tu tabla</span>';
+    div.innerHTML =
+      '<div class="prod"><div class="nom">'+f.descripcion+'</div>'+
+      '<div class="cod"><code>'+f.codigo_barra+'</code> · '+f.sku_base+'</div></div>'+
+      '<div class="meta">'+badge+emp+'</div>'+
+      '<div class="sel"><button class="sel-btn '+(v===null?'vacio':(v==='SIN_ENVASE'?'ninguno':''))+'" data-cb="'+f.codigo_barra+'">'+etiqueta(v)+'</button></div>';
+    lista.appendChild(div);
+  }
+}
+
+let panelAbierto=null;
+function cerrarPanel(){ if(panelAbierto){panelAbierto.remove();panelAbierto=null;} }
+document.addEventListener('click',e=>{
+  const btn = e.target.closest('.sel-btn');
+  if(!btn){ if(!e.target.closest('.panel')) cerrarPanel(); return; }
+  e.preventDefault();
+  if(panelAbierto && panelAbierto.dataset.cb===btn.dataset.cb){ cerrarPanel(); return; }
+  cerrarPanel();
+  const cb=btn.dataset.cb;
+  const f = filas.find(x=>x.codigo_barra===cb);
+  const v = valorDe(f);
+  const p=document.createElement('div'); p.className='panel abierto'; p.dataset.cb=cb;
+  p.innerHTML='<input type="search" placeholder="Filtrar… ej 4.5 o 6*8" aria-label="Filtrar envases"><div class="ops"></div>';
+  const ops=p.querySelector('.ops');
+  function pintarOps(fx){
+    ops.innerHTML='';
+    const mk=(val,txt,sku,esp)=>{
+      const b=document.createElement('button'); b.className='op'+(esp?' especial':'')+((val===v||(val===null&&v===null))?' activo':'');
+      b.innerHTML='<span>'+txt+'</span>'+(sku?'<span class="sku">'+sku+'</span>':'');
+      b.onclick=()=>{ edits[cb]=val; if(edits[cb]===f.envase_sku) delete edits[cb]; guardar(); cerrarPanel(); pintar(); };
+      ops.appendChild(b);
+    };
+    const fq=(fx||'').toUpperCase().replace(/X/g,'*');
+    if(!fq){ mk(null,'— dejar pendiente —',null,true); mk('SIN_ENVASE','Sin envase (no usa celofán)',null,true); }
+    for(const c of celos){
+      if(fq && !(c.desc+' '+c.sku).toUpperCase().includes(fq)) continue;
+      mk(c.sku,c.desc,c.sku,false);
+    }
+  }
+  pintarOps('');
+  p.querySelector('input').addEventListener('input',ev=>pintarOps(ev.target.value));
+  btn.parentElement.appendChild(p);
+  panelAbierto=p;
+  p.querySelector('input').focus();
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarPanel(); });
+
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+  filtro=c.dataset.f;
+  document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('on',x===c));
+  pintar();
+}));
+document.querySelector('.chip[data-f="todos"]').classList.add('on');
+document.getElementById('q').addEventListener('input',e=>{q=e.target.value;pintar();});
+
+function exportar(){
+  return filas.map(f=>({codigo_barra:f.codigo_barra, sku_base:f.sku_base, descripcion:f.descripcion, envase_sku:valorDe(f)}));
+}
+document.getElementById('btnJson').addEventListener('click',()=>{
+  const txt=JSON.stringify(exportar(),null,1);
+  navigator.clipboard.writeText(txt).then(()=>{
+    const a=document.getElementById('avisoCopiado'); a.style.display='inline';
+    setTimeout(()=>a.style.display='none',2000);
+  });
+});
+document.getElementById('btnCsv').addEventListener('click',()=>{
+  const sep=';';
+  const csv=['codigo_barra;sku_base;descripcion;envase_sku;envase_nombre']
+    .concat(exportar().map(r=>[r.codigo_barra,r.sku_base,'"'+r.descripcion+'"',r.envase_sku||'',r.envase_sku&&r.envase_sku!=='SIN_ENVASE'?'"'+(celoDesc[r.envase_sku]||'')+'"':(r.envase_sku==='SIN_ENVASE'?'SIN ENVASE':'')].join(sep)))
+    .join('\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='envases_derivados.csv'; a.click();
+  URL.revokeObjectURL(a.href);
+});
+document.getElementById('btnReset').addEventListener('click',()=>{
+  edits={}; guardar(); pintar();
+});
+
+const tH=document.getElementById('tHuerf');
+for(const r of DATA.primigenia_sin_catalogo){
+  const tr=document.createElement('tr');
+  tr.innerHTML='<td><code>'+r.codigo+'</code></td><td>'+r.presentacion+'</td><td>'+(r.empaqueRaw||'—')+'</td>';
+  tH.appendChild(tr);
+}
+document.getElementById('nHuerf').textContent=DATA.primigenia_sin_catalogo.length;
+
+pintar();
+</script>
