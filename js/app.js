@@ -3773,7 +3773,7 @@ const MOS = (() => {
     $('pnMarca').value        = pn.marca || '';
     $('pnCodigoFinal').value  = pn.codigoBarra || '';
     $('pnPrecioVenta').value  = '';
-    $('pnPrecioCosto').value  = '';
+    // [601] pnPrecioCosto ELIMINADO del modal: el costo entra por COMPRAS (con procedencia)
     $('pnIGV').value          = '1';
     populateCatFiltro();
     const catSel = $('pnCategoria');
@@ -4761,20 +4761,26 @@ const MOS = (() => {
       const unidad     = $('pnUnidad')?.value;
       const catId      = $('pnCategoria')?.value;
       const pVenta     = parseFloat($('pnPrecioVenta')?.value || '0') || 0;
-      const pCosto     = parseFloat($('pnPrecioCosto')?.value || '0') || 0;
       const igv        = $('pnIGV')?.value || '1';
 
       if (!desc)        { mostrarPNError('La descripción es obligatoria'); return; }
       if (!codigoFinal) { mostrarPNError('El código de barras es obligatorio'); return; }
       if (!catId)       { mostrarPNError('Selecciona una categoría'); return; }
-      if (!pVenta || pVenta <= 0) { mostrarPNError('El precio de venta es obligatorio y debe ser mayor a 0'); return; }
-
+      // [601] precio OPCIONAL (registro rápido). Sin precio → confirmar: nace con sello
+      // ⛔ SIN PRECIO y ME bloquea su venta hasta que alguien se lo ponga en el catálogo.
+      if (!(pVenta > 0)) {
+        const sigue = await _modalConfirm(
+          'Vas a aprobar "' + desc + '" SIN precio de venta.\n\nSe moverá en stock normal, pero en ME aparecerá con el sello ⛔ SIN PRECIO y NO se podrá vender hasta que le pongas precio en el catálogo.\n\n¿Aprobar así?',
+          { warning: true, titulo: '⛔ Producto sin precio' });
+        if (!sigue) { $('pnPrecioVenta')?.focus(); return; }
+      }
+      // [601] costo: JAMÁS desde PN (la RPC igual lo fuerza a 0) — entra por Compras con procedencia.
       Object.assign(params, {
         codigoFinal, descripcion: desc, marca,
         idCategoria: catId,
         unidad,             // legacy
         Unidad_Medida: unidad, // sincronizado (mismo valor SUNAT)
-        precioVenta: pVenta, precioCosto: pCosto, Tipo_IGV: igv
+        precioVenta: pVenta, Tipo_IGV: igv
       });
     } else if (tipo === 'EQUIVALENTE') {
       const skuBase   = $('pnEquivSkuBase')?.value;
@@ -10145,6 +10151,7 @@ const MOS = (() => {
   }
   function _curvaMedio(s) {
     s = String(s || '').toUpperCase();
+    if (s.indexOf('REGISTRO_PN') >= 0) return '📦 Registro de PN (producto nuevo)';   // [601]
     if (s.indexOf('PASO2') >= 0 || s.indexOf('COMPRA') >= 0) return '🛒 Compras (Paso 2)';
     if (s.indexOf('CATALOGO') >= 0) return '🏷 Catálogo';
     return s ? _escapeHtml(s) : '🏷 Catálogo';

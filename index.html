@@ -17584,15 +17584,14 @@
             </select>
           </div>
           <div>
-            <label class="lbl">Precio venta * <span class="text-rose-400">(&gt; 0)</span></label>
-            <input id="pnPrecioVenta" type="number" step="0.01" min="0.01" class="inp" placeholder="0.00" required oninput="MOS._pnRecalcularMargen()">
-          </div>
-          <div>
-            <label class="lbl">Precio costo</label>
-            <input id="pnPrecioCosto" type="number" step="0.01" min="0" class="inp" placeholder="0.00" oninput="MOS._pnRecalcularMargen()">
+            <label class="lbl">Precio venta <span class="text-[9px] text-slate-500 font-normal">opcional · vacío = SIN PRECIO</span></label>
+            <input id="pnPrecioVenta" type="number" step="0.01" min="0" class="inp" placeholder="0.00">
+            <!-- [601] costo ELIMINADO del registro rápido: entra por COMPRAS (con guía y procedencia).
+                 El precio es opcional: sin precio, ME lo muestra con sello ⛔ SIN PRECIO y bloquea la venta. -->
+            <div class="text-[10px] mt-1 text-slate-500">Sin precio: se mueve en stock, pero ME lo <b class="text-amber-400">bloquea con sello ⛔</b> hasta ponerle precio. El costo entra por Compras.</div>
           </div>
         </div>
-        <div id="pnMargenInfo" class="text-xs"></div>
+        <div id="pnMargenInfo" class="text-xs hidden"></div>
       </div>
 
       <!-- Sección EQUIVALENTE -->
@@ -19891,7 +19890,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.653"></script>
+<script src="js/api.js?v=2.43.654"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19907,7 +19906,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.1.2"></script>
-<script src="js/app.js?v=2.43.653"></script>
+<script src="js/app.js?v=2.43.654"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
