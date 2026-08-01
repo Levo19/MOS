@@ -41877,6 +41877,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // lo pendiente + el desglose por día (cuánto pidió cada cierre). En vivo.
   function _zpkNum(n){ n = parseFloat(n) || 0; return Number.isInteger(n) ? (''+n) : (''+(Math.round(n*1000)/1000)); }
   function _zpkDiaLbl(f){ try { const d = new Date(String(f).slice(0,10)+'T12:00:00'); return d.toLocaleDateString('es-PE',{weekday:'short',day:'2-digit',timeZone:'America/Lima'}); } catch(_) { return String(f||''); } }
+  // [607] día + HORA cuando el evento la trae (el backend ahora manda "YYYY-MM-DDTHH:MM" hora Lima)
+  function _zpkFechaLbl(f){
+    const s = String(f || '');
+    const dia = _zpkDiaLbl(s);
+    return (s.length >= 16 && s.charAt(10) === 'T') ? dia + ' · ' + s.slice(11, 16) : dia;
+  }
   let _zpkLast = { zona: '', modo: 'pickup', data: null };   // [v2.43.379] para imprimir el rezagado
   async function zonaAbrirPickup(){
     const zona = S.zonaActual;
@@ -41964,7 +41970,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           const esDesp = h.tipo === 'despacho';
           const cant = (h.cant != null ? h.cant : h.pedido);   // compat con shape viejo
           return `<div class="zpk-hrow ${esDesp ? 'is-desp' : 'is-ped'}">
-              <span class="zpk-hdate">${_zpkDiaLbl(h.fecha)}</span>
+              <span class="zpk-hdate">${_zpkFechaLbl(h.fecha)}</span>
               <span class="zpk-hsrc">${esDesp ? '🏭 despachó a zona' : '🛒 pidió (cierre)'}</span>
               <span class="zpk-hped">${esDesp ? '−' : '+'}${_zpkNum(cant)}</span>
             </div>`;
@@ -42009,7 +42015,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
            <span style="font-weight:600;color:#94a3b8;font-size:10px">· pedido que el IA no identificó · solo constancia (no suma deuda)</span></div>
          ${sinId.map(s => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-top:1px solid rgba(148,163,184,0.12)">
              <span style="font-size:12px;color:#e2e8f0;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(s.nombre || '—')}</span>
-             <span style="font-size:11px;color:#fbbf24;font-weight:700;white-space:nowrap">pidió ${_zpkNum(parseFloat(s.solicitado) || 0)} · ${_zpkDiaLbl(s.fecha)}</span>
+             <span style="font-size:11px;color:#fbbf24;font-weight:700;white-space:nowrap">pidió ${_zpkNum(parseFloat(s.solicitado) || 0)} · ${_zpkFechaLbl(s.fecha)}</span>
            </div>`).join('')}
        </div>`;
     ov.innerHTML = `<div class="zpk-card${esRez ? ' zpk-rez-mode' : ''}" onclick="event.stopPropagation()">
