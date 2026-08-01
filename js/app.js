@@ -6071,7 +6071,7 @@ const MOS = (() => {
       { label: `Vendidas (${dias}D)`, value: _fmt(d.ventas.totalUnidades, 1), sub: `${p.unidad} · ${d.ventas.promDia.toFixed(1)}/día`, color: '#6366f1', icon: '📦' },
       { label: `Ingresos (${dias}D)`, value: fmtMoney(d.ventas.totalImporte), sub: `S/. ${prom} precio prom.`, color: '#f59e0b', icon: '💵' },
       { label: 'Utilidad bruta',      value: fmtMoney(d.financiero.utilidadBruta), sub: `${d.financiero.margenPct.toFixed(1)}% margen`, color: margenColor, icon: '📊' },
-      { label: 'Stock actual',         value: _fmt(d.stock.total, 1), sub: `Min ${d.stock.minimo} · Max ${d.stock.maximo}`, color: stockColor, icon: '🏭' },
+      { label: 'Stock actual',         value: _fmtQty(d.stock.total), sub: `Min ${d.stock.minimo} · Max ${d.stock.maximo}`, color: stockColor, icon: '🏭' },
       { label: 'Cobertura',            value: d.proyeccion.coberturaDias !== null ? d.proyeccion.coberturaDias + 'd' : 'N/D', sub: `Proyección ${_fmt(d.proyeccion.unidades30dias,0)} uds/30D`, color: cobColor, icon: '📅' }
     ].map(k => `
       <div class="an-kpi" style="--kpi-color:${k.color}">
@@ -6130,7 +6130,7 @@ const MOS = (() => {
     const fillEl  = $('anGaugeFill');
     const numEl   = $('anStockNum');
     if (fillEl)   { fillEl.style.width = fill + '%'; fillEl.style.background = stockColor; }
-    if (numEl)    { numEl.textContent = _fmt(d.stock.total, 1); numEl.style.color = stockColor; }
+    if (numEl)    { numEl.textContent = _fmtQty(d.stock.total); numEl.style.color = stockColor; }
     const undEl = $('anStockUnd'); if (undEl) undEl.textContent = p.unidad;
     const zEl   = $('anStockZonas'); if (zEl) zEl.textContent = d.stock.zonas.length ? `${d.stock.zonas.length} zona${d.stock.zonas.length > 1 ? 's' : ''}` : 'Sin datos de WH';
     const minM  = $('anGaugeMin'); if (minM) { minM.style.left = minPct + '%'; $('anGaugeMinLbl').textContent = 'Mín ' + d.stock.minimo; }
@@ -6143,7 +6143,7 @@ const MOS = (() => {
         ? d.stock.zonas.map(z => `
             <div class="flex justify-between items-center text-xs py-1 border-b border-slate-800/60">
               <span class="text-slate-400">${z.idZona || 'Zona'}</span>
-              <span class="font-bold text-slate-200">${_fmt(z.cantidadDisponible, 1)} ${p.unidad}</span>
+              <span class="font-bold text-slate-200">${_fmtQty(z.cantidadDisponible)} ${p.unidad}</span>
             </div>`).join('')
         : '<div class="text-xs text-slate-600 italic">warehouseMos no conectado</div>';
     }
@@ -6174,7 +6174,7 @@ const MOS = (() => {
     $('anProyRows').innerHTML = [
       { label: 'Promedio diario',    value: proy.promDia.toFixed(1) + ' ' + p.unidad + '/día' },
       { label: 'Proyección 30 días', value: _fmt(proy.unidades30dias, 0) + ' ' + p.unidad, bold: true },
-      { label: 'Stock hoy',          value: _fmt(d.stock.total, 1) + ' ' + p.unidad },
+      { label: 'Stock hoy',          value: _fmtQty(d.stock.total) + ' ' + p.unidad },
       { label: 'Sugerir comprar',    value: _fmt(proy.sugerirComprar, 0) + ' ' + p.unidad, cls: sugerClass, bold: true },
       { label: 'Cobertura estimada', value: proy.coberturaDias !== null ? proy.coberturaDias + ' días' : 'Sin ventas', cls: cobColor === '#ef4444' ? 'danger' : cobColor === '#f59e0b' ? 'highlight' : 'ok' }
     ].map(r => `
@@ -6328,6 +6328,16 @@ const MOS = (() => {
     const n = parseFloat(val || 0);
     if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
     return n.toFixed(decimals);
+  }
+
+  // [522] Cantidades de STOCK con decimales reales — los insumos van por MILLAR (celofanes:
+  // 3.16 MIL) y el redondeo los aplastaba. Hasta 3 decimales SOLO si existen: 3→"3" · 3.16→"3.16".
+  function _fmtQty(n) {
+    const v = Math.round((parseFloat(n) || 0) * 1000) / 1000;
+    const s = v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+    const parts = s.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return parts.join('.');
   }
 
   // ── ALMACÉN: cache localStorage + auto-refresh background ──
@@ -6631,7 +6641,7 @@ const MOS = (() => {
   }
   function _fmtNum(n) {
     const v = parseFloat(n) || 0;
-    return v.toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    return v.toLocaleString('es-PE', { minimumFractionDigits: 0, maximumFractionDigits: 3 });   // [522] 3 dec (insumos por millar)
   }
   async function saludReconciliarUno(codigoBarra, idAlerta, btnEl) {
     if (btnEl) { btnEl.disabled = true; btnEl.textContent = '⏳ Aplicando…'; }
@@ -39959,12 +39969,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   // Redondea/formatea un número crudo: granel → hasta 2 decimales sin ceros sobrantes; entero → redondeo.
   function _zonaFmtNumRaw(valor, esGranel) {
+    // [522] También los NO-granel pueden tener fracción real (insumos por MILLAR: celofán 3.16).
+    // Antes Math.round() los aplastaba a entero y el kardex/stock de zona mentía. Ahora ambos
+    // caminos muestran hasta 3 decimales, solo si existen (entero se ve entero).
     const n = _zonaNum(valor);
-    if (esGranel) {
-      const r = Math.round(n * 100) / 100;
-      return (Math.abs(r % 1) < 1e-9) ? String(Math.round(r)) : String(r);
-    }
-    return String(Math.round(n));
+    const r = Math.round(n * 1000) / 1000;
+    return (Math.abs(r % 1) < 1e-9) ? String(Math.round(r)) : String(r);
   }
   // Devuelve "valor unidad" (ej. "12.5 kg" / "12 un"). soloNum=true → solo el número formateado.
   function _zonaFmtCant(valor, item, soloNum) {
@@ -43994,11 +44004,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         const zSum = _money(zonas.reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
         const famTot = fam ? fam.stockPos : _money(alm + zSum);
         return `<div class="pv2-stk">
-        <div class="cell alm ${alm<0?'neg':''}" title="Stock del ALMACÉN — el que respalda tus pedidos"><span class="t">🏬 ALMACÉN</span><b>${_money(pp.stockWh)}</b>${alm<0?'<small>⚠ negativo — corrígelo</small>':''}</div>
+        <div class="cell alm ${alm<0?'neg':''}" title="Stock del ALMACÉN — el que respalda tus pedidos"><span class="t">🏬 ALMACÉN</span><b>${_fmtQty(pp.stockWh)}</b>${alm<0?'<small>⚠ negativo — corrígelo</small>':''}</div>
         <span class="op">+</span>
-        <div class="cell ${zSum<0?'neg':''}" title="Σ de todas las zonas de venta"><span class="t">🏪 ZONAS</span><b>${zSum}</b><small>${zonas.map(z => `${z.nombre} ${_money(z.cantidad)}`).join(' · ') || 'sin stock en zonas'}</small></div>
+        <div class="cell ${zSum<0?'neg':''}" title="Σ de todas las zonas de venta"><span class="t">🏪 ZONAS</span><b>${_fmtQty(zSum)}</b><small>${zonas.map(z => `${z.nombre} ${_fmtQty(z.cantidad)}`).join(' · ') || 'sin stock en zonas'}</small></div>
         <span class="op">=</span>
-        <div class="cell fam" title="Canónico + equivalentes + derivados. Los NEGATIVOS no suman."><span class="t">Σ FAMILIA</span><b>${famTot}</b><small>${der.length?`con ${der.length} derivado${der.length>1?'s':''}`:''}${fam&&fam.tieneNegativos?' · ⚠ hay negativos que NO suman':''}</small></div>
+        <div class="cell fam" title="Canónico + equivalentes + derivados. Los NEGATIVOS no suman."><span class="t">Σ FAMILIA</span><b>${_fmtQty(famTot)}</b><small>${der.length?`con ${der.length} derivado${der.length>1?'s':''}`:''}${fam&&fam.tieneNegativos?' · ⚠ hay negativos que NO suman':''}</small></div>
       </div>`; })()}
       <div class="pv2-cover">
         <span class="lbl">⏳ cubre <b style="color:${_pv2CovColor(cob)}">${cob==null?'—':cob+' sem'}</b></span>
@@ -44020,8 +44030,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>
       ${open ? `<div class="pv2-det">
         ${der.length ? `<div class="pv2-detbox arbol"><h5>🌳 Árbol de la familia — los derivados nacen del padre y CUENTAN para él</h5>
-          <div class="dr b"><span>${pp.descripcion} (padre)</span><b>stock ${pp.stockTotal != null ? _money(pp.stockTotal) : '—'} · venta directa ${((parseFloat(pp.rotacionDia)||0)*7).toFixed(1)}/sem</b></div>
-          ${der.map(d => `<div class="dr"><span>└ ${d.nombre}</span><b>${_money(d.stock)} (${_money(d.stockPadreEq)} eq) · ${_money(d.ventas30)}/30d</b></div>`).join('')}
+          <div class="dr b"><span>${pp.descripcion} (padre)</span><b>stock ${pp.stockTotal != null ? _fmtQty(pp.stockTotal) : '—'} · venta directa ${((parseFloat(pp.rotacionDia)||0)*7).toFixed(1)}/sem</b></div>
+          ${der.map(d => `<div class="dr"><span>└ ${d.nombre}</span><b>${_fmtQty(d.stock)} (${_fmtQty(d.stockPadreEq)} eq) · ${_money(d.ventas30)}/30d</b></div>`).join('')}
           ${fam ? `<div class="hint">💡 Demanda familia ≈ ${(fam.rotFamiliaDia*7).toFixed(1)}/sem — al pedir el padre, pides también para envasar.</div>` : ''}
         </div>` : ''}
         <div class="pv2-detbox"><h5>📈 Las DOS rotaciones (para comparar)</h5>
