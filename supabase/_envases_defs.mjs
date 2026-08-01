@@ -6,11 +6,12 @@ const url = fs.readFileSync('C:/Users/ISO/.sb_db.url', 'utf8').trim();
 const c = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
 await c.connect();
 const fns = process.argv.slice(2);
-for (const fn of fns) {
+for (const raw of fns) {
+  const [sch, fn] = raw.includes('.') ? raw.split('.') : ['mos', raw];
   const r = await c.query(
     `select p.proname, pg_get_functiondef(p.oid) def
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-      where n.nspname = 'mos' and p.proname = $1`, [fn]);
+      where n.nspname = $2 and p.proname = $1`, [fn, sch]);
   for (const row of r.rows) {
     fs.writeFileSync(`./_def_${row.proname}.sql`, row.def);
     console.log('OK', row.proname, '→ _def_' + row.proname + '.sql (' + row.def.length + ' chars)');
