@@ -1,1 +1,1 @@
-{"version":"2.43.655","build":"2.43.655 Zonas/pickup con HORA por producto (par de WH 2.13.524, SQL 607). El historial de cada producto en MOS->Zonas->pickup ahora muestra dia + HORA de cada evento (antes solo dia) e incluye las filas de DESPACHO (guias de salida de la zona, hora real por linea) que la UI ya tenia dibujadas pero el backend nunca enviaba. Tambien hora en la seccion no-se-entiende."}
+{"version":"2.43.656","build":"2.43.656 Mesa de creditos: saldados con sello COBRADO (caja/liquidacion) + saneamiento Jorgenis 609/610"}

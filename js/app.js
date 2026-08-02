@@ -25253,7 +25253,11 @@ const MOS = (() => {
     const mano = $('cjCreditosMano');
     if (!mano) return;
 
-    if (!grupo || !grupo.tickets || !grupo.tickets.length) {
+    // [610] La baraja solo baraja VIVOS. Los saldados (CAJA/PLANILLA) viven en
+    // la mesa con sello ✓ COBRADO, pero no giran en la mano ni suman pendiente.
+    const vivos = grupo ? (grupo.tickets || []).filter(t => !t.estadoCobro || t.estadoCobro === 'VIVO') : [];
+
+    if (!grupo || !vivos.length) {
       _cjCreditosState.ticketsActivos = [];
       _cjCreditosState.fechaActiva = null;
       _cjStopShuffle();
@@ -25270,10 +25274,10 @@ const MOS = (() => {
     // refresh (mismo día, nuevos tickets), preservar el progreso del shuffle.
     const fechaCambia = _cjCreditosState.fechaActiva !== fechaActiva;
     _cjCreditosState.fechaActiva = fechaActiva;
-    _cjCreditosState.ticketsActivos = grupo.tickets;
+    _cjCreditosState.ticketsActivos = vivos;
     if (fechaCambia) _cjCreditosState.shuffleIdx = 0;
     // Si el idx quedó fuera de rango (porque desaparecieron cartas), normalizar
-    if (_cjCreditosState.shuffleIdx >= grupo.tickets.length) {
+    if (_cjCreditosState.shuffleIdx >= vivos.length) {
       _cjCreditosState.shuffleIdx = 0;
     }
 
@@ -25282,7 +25286,7 @@ const MOS = (() => {
 
     // Arrancar shuffle automático cada 4s (solo si hay >= 2 cartas)
     _cjStopShuffle();
-    if (grupo.tickets.length >= 2) {
+    if (vivos.length >= 2) {
       _cjCreditosState.shuffleTimer = setInterval(_cjShuffleStep, 4000);
     }
   }
@@ -25394,11 +25398,13 @@ const MOS = (() => {
     try { _finBeep?.('click'); } catch(_){}
 
     const hoyStr = today();
-    const totalTickets = grupos.reduce((s, g) => s + (g.tickets ? g.tickets.length : 0), 0);
+    // [610] cuenta/total del backend = SOLO vivos; los saldados van aparte con sello
+    const totalTickets = grupos.reduce((s, g) => s + (g.cuenta != null ? (parseInt(g.cuenta, 10) || 0) : (g.tickets ? g.tickets.length : 0)), 0);
     const totalMonto = grupos.reduce((s, g) => s + (parseFloat(g.total) || 0), 0);
+    const totalPagados = grupos.reduce((s, g) => s + (parseInt(g.cuentaPagados, 10) || 0), 0);
 
     const lblF = $('cjMesaFechaLabel');
-    if (lblF) lblF.textContent = `Todos · ${totalTickets} ticket${totalTickets === 1 ? '' : 's'}`;
+    if (lblF) lblF.textContent = `Todos · ${totalTickets} pendiente${totalTickets === 1 ? '' : 's'}${totalPagados ? ` · ✓${totalPagados} cobrados` : ''}`;
     const lblS = $('cjMesaSubtitulo');
     if (lblS) lblS.textContent = `S/ ${totalMonto.toFixed(2)} pendientes en ${grupos.length} día${grupos.length === 1 ? '' : 's'} · toca una carta para ver detalle`;
 
@@ -25452,15 +25458,20 @@ const MOS = (() => {
         // clase cobrada (fondo verde + sello) en su lugar original sin
         // separarlo del grupo. _cjCobradosHoyIdsVenta es Set poblado por
         // _cjCargarEnVuelo a partir de los recientes COBRADO de últimas 4h.
-        const esCobrado = cobradosIds.has(String(t.idVenta));
-        const cobrInfo = esCobrado ? cobradosData[String(t.idVenta)] : null;
+        // [610] Y ADEMÁS (permanente, verdad del server): estadoCobro CAJA /
+        // PLANILLA → el ticket saldado sigue en la mesa con sello y su vía.
+        const esCobradoSrv = !!(t.estadoCobro && t.estadoCobro !== 'VIVO');
+        const esCobrado = esCobradoSrv || cobradosIds.has(String(t.idVenta));
+        const cobrInfo = (!esCobradoSrv && esCobrado) ? cobradosData[String(t.idVenta)] : null;
         const cobradoClass = esCobrado ? 'cj-mesa-carta-cobrada' : '';
         const selloCobrado = esCobrado
           ? `<div class="cj-carta-sello-cobrado">✓ COBRADO</div>`
           : '';
-        const metaCobrado = esCobrado && cobrInfo
-          ? ` · 👤 ${_esc(cobrInfo.cajero || '—')} · 🕐 ${_esc(cobrInfo.horaTxt || '')}`
-          : '';
+        const metaCobrado = esCobradoSrv
+          ? ` · ${t.estadoCobro === 'PLANILLA' ? '🧾' : '💼'} ${_esc(t.cobradoDetalle || (t.estadoCobro === 'PLANILLA' ? 'Liquidación' : 'Caja'))}`
+          : (esCobrado && cobrInfo
+              ? ` · 👤 ${_esc(cobrInfo.cajero || '—')} · 🕐 ${_esc(cobrInfo.horaTxt || '')}`
+              : '');
         return `<div class="cj-mesa-carta ${asigClass} ${cobradoClass}"
                      style="animation-delay: ${delay}ms"
                      onclick="MOS.cjAbrirDetalleCarta('${_esc(t.idVenta)}')">
@@ -25486,7 +25497,11 @@ const MOS = (() => {
             <span class="cj-mesa-grupo-sub">${subFecha}</span>
           </div>
           <div class="cj-mesa-grupo-stats">
-            <span class="cj-mesa-grupo-cuenta">${tickets.length} ticket${tickets.length === 1 ? '' : 's'}</span>
+            <span class="cj-mesa-grupo-cuenta">${(() => {
+              const pag = tickets.filter(x => x.estadoCobro && x.estadoCobro !== 'VIVO').length;
+              const viv = tickets.length - pag;
+              return `${viv} pend${pag ? ` · ✓${pag}` : ''}`;
+            })()}</span>
             <span class="cj-mesa-grupo-monto">S/ ${totalDia.toFixed(2)}</span>
           </div>
         </header>
@@ -25578,15 +25593,18 @@ const MOS = (() => {
         </div>
         ${itemsHtml}
         ${t.obs ? `<div class="cj-det-obs">📝 ${_esc(t.obs)}</div>` : ''}
+        ${(t.estadoCobro && t.estadoCobro !== 'VIVO') ? `<div class="cj-det-asignado-banner" style="background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.45);color:#6ee7b7">
+          ✅ Saldado — ${t.estadoCobro === 'PLANILLA' ? '🧾 descuento en ' : '💼 cobrado por '}<strong>${_esc(t.cobradoDetalle || (t.estadoCobro === 'PLANILLA' ? 'Liquidación' : 'Caja'))}</strong>
+        </div>` : ''}
         ${t.asignado ? `<div class="cj-det-asignado-banner">
           ✈ Ya asignado a <strong>${_esc(t.asignado.vendedorDest)}</strong>
           (${_esc(t.asignado.cajaDestino)}) — esperando confirmación
         </div>` : ''}
       `;
     }
-    // El botón FAB se oculta si ya está asignado
+    // El botón FAB se oculta si ya está asignado — o si el ticket ya fue saldado [610]
     const fab = $('cjDetalleFloating');
-    if (fab) fab.style.display = t.asignado ? 'none' : '';
+    if (fab) fab.style.display = (t.asignado || (t.estadoCobro && t.estadoCobro !== 'VIVO')) ? 'none' : '';
     const modal = $('modalDetalleCarta');
     if (modal) modal.classList.remove('hidden');
   }
@@ -25616,6 +25634,12 @@ const MOS = (() => {
     }
     if (!ticket) { toast('Ticket no encontrado', 'error'); return; }
     if (ticket.asignado) { toast('Este ticket ya está asignado', 'warn'); return; }
+    // [610] Un ticket saldado (caja o liquidación) no puede mandarse a cobrar.
+    // El server también lo bloquea (asignar_cobro_cajero exige CREDITO/POR_COBRAR).
+    if (ticket.estadoCobro && ticket.estadoCobro !== 'VIVO') {
+      toast(`✅ Este ticket ya fue cobrado (${ticket.cobradoDetalle || (ticket.estadoCobro === 'PLANILLA' ? 'liquidación' : 'caja')})`, 'warn');
+      return;
+    }
 
     _cjCreditosState.asignarCtx = ticket;
     _cjCreditosState.asignarCaja = null;
