@@ -2598,12 +2598,13 @@
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
       gap: 20px;
     }
-    /* [v2.41.96] Carta COBRADA — sello dorado, fondo verde sutil, no interactiva */
+    /* [v2.43.657] Carta COBRADA — sigue siendo PAPEL (no verde: se camuflaba con
+       el paño de la mesa). Papel apagado/desaturado + borde y sello verdes. */
     .cj-mesa-carta-cobrada {
-      background: linear-gradient(135deg, rgba(16,185,129,.18), rgba(5,150,105,.10)) !important;
-      border: 2px solid #34d399 !important;
-      color: #064e3b !important;
-      box-shadow: 0 8px 18px -6px rgba(16,185,129,.5), 0 0 0 1px rgba(52,211,153,.3) !important;
+      background: linear-gradient(135deg, #efede1, #ddd9c8) !important;
+      border: 2px solid #10b981 !important;
+      color: #57534e !important;
+      box-shadow: 0 6px 14px -6px rgba(0,0,0,.5), 0 0 0 1px rgba(16,185,129,.25) !important;
       cursor: default !important;
       position: relative;
       overflow: visible;
@@ -2627,9 +2628,12 @@
       0%, 100% { transform: rotate(8deg) scale(1); }
       50%      { transform: rotate(8deg) scale(1.05); box-shadow: 0 4px 18px rgba(16,185,129,.7); }
     }
-    .cj-mesa-carta-cobrada .cj-carta-cliente { color: #064e3b; }
-    .cj-mesa-carta-cobrada .cj-carta-monto   { color: #047857; }
-    .cj-mesa-carta-cobrada .cj-carta-meta    { color: #065f46; opacity: .85; }
+    .cj-mesa-carta-cobrada .cj-carta-cliente { color: #44403c; }
+    .cj-mesa-carta-cobrada .cj-carta-monto   { color: #047857; text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: rgba(4,120,87,.55); }
+    .cj-mesa-carta-cobrada .cj-carta-meta    { color: #065f46; opacity: .95; }
+    .cj-mesa-carta-cobrada .cj-carta-doc,
+    .cj-mesa-carta-cobrada .cj-carta-items-item,
+    .cj-mesa-carta-cobrada .cj-carta-items-mas { color: #6b6459; }
     /* [v2.42.09] Sección separada "Cobrados hoy" removida — la carta cobrada
        ahora vive en su grupo original con clase .cj-mesa-carta-cobrada que
        le pone fondo verde + sello. CSS de .cj-mesa-grupo-cobrados ya no se usa. */
