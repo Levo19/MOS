@@ -14513,7 +14513,17 @@ const MOS = (() => {
         API.get('getProductosProveedorConStockV2', { idProveedor: S.pv2.prov.idProveedor, rangoDias: 30 })
           // [v2.43.597] con un modal pv2 abierto SOLO se actualiza la data (repintar
           // detrás hacía parpadear el overlay); al cerrarse, _mx() repinta si hace falta
-          .then(r => { if (r) { S.pv2.items = Array.isArray(r) ? r : (r.data || []);
+          .then(r => { if (r) {
+            const _prev = S.pv2.items || [];
+            S.pv2.items = Array.isArray(r) ? r : (r.data || []);
+            // [616] Preservar los recién agregados que el servidor TODAVÍA no devuelve:
+            // esta recarga reemplaza la lista y borraba el placeholder ⏳, así que el
+            // producto recién agregado desaparecía hasta salir y volver a entrar al pedido.
+            try {
+              const _hay = new Set(S.pv2.items.map(x => String(x.skuBase)));
+              const _huerfanos = _prev.filter(x => x._pend && !_hay.has(String(x.skuBase)));
+              if (_huerfanos.length) S.pv2.items = S.pv2.items.concat(_huerfanos);
+            } catch (_) {}
             // [614] esta recarga REEMPLAZA los items → sin esto se perderían las
             // `ubicaciones` y las cards volverían al render clásico tras editar un producto.
             try { _pv2MergeUbicaciones(S.pv2.items, S.pv2.ubis); } catch (_) {}
@@ -44807,14 +44817,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const p = fm.padre || fm;
       const sku = String(p.skuBase || p.idProducto);
       if ((S.pv2.addAgregados || []).some(a => a.sku === sku)) return;
-      (S.pv2.addAgregados = S.pv2.addAgregados || []).push({ sku, nombre: p.descripcion });
+      // [616] El código de barras viaja con el agregado: el placeholder de la lista lo
+      // necesita para verse completo (antes quedaba vacío hasta el refetch).
+      (S.pv2.addAgregados = S.pv2.addAgregados || []).push({ sku, nombre: p.descripcion, codigoBarra: p.codigoBarra || '' });
+      // [616 · CARRERA] `_dirty` se marca YA, no en el .then: el cajero cierra el modal en
+      // ~1s y antes se cerraba con _dirty=false → el producto NO se insertaba, y cuando el
+      // servidor respondía ya nadie miraba (había que salir del pedido y volver a entrar).
+      S.pv2._dirty = true;
       pv2.addBuscar(S.pv2.addQ); pv2._addPaintAgregados();
       toast('✓ ' + p.descripcion.split(' ').slice(0, 3).join(' ') + ' agregado', 'ok');
       API.post('agregarProductoProveedor', { idProveedor: S.pv2.prov.idProveedor, skuBase: sku, codigoBarra: p.codigoBarra || '', descripcion: p.descripcion || '' })
-        .then(() => { S.pv2._dirty = true; })
         .catch(() => {
           S.pv2.addAgregados = (S.pv2.addAgregados || []).filter(a => a.sku !== sku);
+          // rollback también de la lista: si ya se pintó el placeholder, sacarlo
+          S.pv2.items = (S.pv2.items || []).filter(x => !(x._pend && String(x.skuBase) === sku));
           pv2.addBuscar(S.pv2.addQ); pv2._addPaintAgregados();
+          if (S.pv2.view === 'pedido') pv2Render();
           toast('No se pudo agregar "' + p.descripcion.split(' ').slice(0,3).join(' ') + '" — reintenta', 'error');
         });
     },
@@ -44973,10 +44991,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     addGuia(i) {
       const c = (S.pv2.cand || [])[i]; if (!c || c._added || c.yaAgregado) return;
       c._added = true; pv2._addPaint();
+      S.pv2._dirty = true;   // [616] misma carrera que addPick: marcar YA, no en el .then
       toast('✓ Agregado al catálogo (con su costo aprendido de la guía)', 'ok');
       API.post('agregarProductoProveedor', { idProveedor: S.pv2.prov.idProveedor, skuBase: c.skuBase, codigoBarra: c.codigoBarra || '', descripcion: c.descripcion || '' })
-        .then(() => { S.pv2._dirty = true; })
-        .catch(() => { c._added = false; pv2._addPaint(); toast('No se pudo agregar "' + (c.descripcion||'').split(' ').slice(0,3).join(' ') + '" — reintenta', 'error'); });
+        .catch(() => {
+          c._added = false; pv2._addPaint();
+          S.pv2.items = (S.pv2.items || []).filter(x => !(x._pend && String(x.skuBase) === String(c.skuBase)));
+          if (S.pv2.view === 'pedido') pv2Render();
+          toast('No se pudo agregar "' + (c.descripcion||'').split(' ').slice(0,3).join(' ') + '" — reintenta', 'error');
+        });
     },
     // [v2.43.597] WhatsApp = selector: imagen resumen (proveedor) · imagen stock/pedido
     // (jefa) · texto clásico. Imprimir = selector: ticket 80mm · listado completo.
@@ -45038,7 +45061,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         S.pv2._dirty = false;
         const have = new Set((S.pv2.items || []).map(x => String(x.skuBase)));
         const pend = [];
-        (S.pv2.addAgregados || []).forEach(a => { if (!have.has(String(a.sku))) { have.add(String(a.sku)); pend.push({ skuBase: a.sku, descripcion: a.nombre, codigoBarra: '', activa: true, unidadesPorBulto: 1, zonas: [], _pend: true }); } });
+        (S.pv2.addAgregados || []).forEach(a => { if (!have.has(String(a.sku))) { have.add(String(a.sku)); pend.push({ skuBase: a.sku, descripcion: a.nombre, codigoBarra: a.codigoBarra || '', activa: true, unidadesPorBulto: 1, zonas: [], _pend: true }); } });
         (S.pv2.cand || []).forEach(c => { if (c._added && !have.has(String(c.skuBase))) { have.add(String(c.skuBase)); pend.push({ skuBase: c.skuBase, descripcion: c.descripcion || c.codigoBarra, codigoBarra: c.codigoBarra || '', activa: true, unidadesPorBulto: 1, zonas: [], _pend: true }); } });
         if (pend.length) S.pv2.items = (S.pv2.items || []).concat(pend);
         if (S.pv2.view === 'pedido') pv2Render();
