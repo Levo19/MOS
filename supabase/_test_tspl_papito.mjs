@@ -31,7 +31,7 @@ const checks = [
   ['Postres Papito segunda línea', txt.includes('Postres Papito')],
   ['BITMAP cupcake 96', /BITMAP \d+,\d+,12,96,/.test(txt)],
   ['BITMAP teléfono 32 (4 bytes ancho)', /BITMAP \d+,\d+,4,32,/.test(txt)],
-  ['Número 972 225 28 font 3 normal (sin ×2)', /TEXT \d+,\d+,"3",0,1,1,"972 225 28"/.test(txt)],
+  ['Número 972 222 528 (9 dígitos) font 3 normal', /TEXT \d+,\d+,"3",0,1,1,"972 222 528"/.test(txt)],
   ['Título en font 4 nativo (grueso, sin ×2 que desborda)', /TEXT \d+,\d+,"4",0,1,1,"Dulce"/.test(txt)],
   ['Todos los textos con fin teórico seguro (≤46mm con colchón)', anchosOk],
   ['SIN membrete', !txt.includes('INVERSIONES')]
