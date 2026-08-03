@@ -45,7 +45,8 @@ const t = (n, cond, extra) => { if (cond) { ok++; console.log('  ✅', n); } els
 console.log('── CUADROS');
 const nBotones = (out.cuadros.match(/<button[^>]*class="pv2-ubi /g) || []).length;
 t('3 cuadros cliqueables (almacén + 2 zonas)', nBotones === 3, 'botones=' + nBotones);
-t('Σ TOTAL presente y NO cliqueable', out.cuadros.includes('pv2-ubi tot') && !/<button[^>]*pv2-ubi tot/.test(out.cuadros));
+// [616] Luis: "el cuadro de suma total ya no sirve, limpia eso" → card más limpio.
+t('Σ TOTAL eliminado del card', !out.cuadros.includes('pv2-ubi tot') && !out.cuadros.includes('Σ TOTAL'));
 t('almacén muestra 66.55 (ya no 0)', out.cuadros.includes('>66.55<'));
 t('nombre bonito de zona ("Zona 02", no "ZONA-02")', out.cuadros.includes('Zona 02') && !out.cuadros.includes('>🏪 ZONA-02<'));
 t('cuadros llaman a MOS.pv2.ubi', (out.cuadros.match(/MOS\.pv2\.ubi\(/g) || []).length === 3);

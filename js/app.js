@@ -43968,15 +43968,26 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const lista = (ubisResp && ubisResp.productos) || (Array.isArray(ubisResp) ? ubisResp : null);
     if (!Array.isArray(lista) || !lista.length) return;
     const norm = s => String(s == null ? '' : s).trim().toUpperCase();
+    // [616] Los códigos son TEXTO y algunos llegaron sin sus ceros ('247' vs '00247').
+    // Se indexa por el canónico, por el que tiene el proveedor y por la forma sin ceros,
+    // para que el cruce no dependa de cuál de las dos grafías traiga cada lado.
     const mapa = new Map();
-    for (const p of lista) if (p && p.codigoBarra) mapa.set(norm(p.codigoBarra), p);
+    const idx = (k, v) => { const n = norm(k); if (n && !mapa.has(n)) mapa.set(n, v); };
+    for (const p of lista) {
+      if (!p) continue;
+      idx(p.codigoBarra, p); idx(p.codigoProv, p);
+      if (p.codigoBarra) idx(String(p.codigoBarra).replace(/^0+/, ''), p);
+    }
     for (const it of items) {
-      const p = mapa.get(norm(it.codigoBarra));
+      const p = mapa.get(norm(it.codigoBarra)) ||
+                mapa.get(norm(String(it.codigoBarra || '').replace(/^0+/, '')));
       if (p && (p.ubicaciones || []).length) {
         it.ubicaciones = p.ubicaciones;
         // [615·H3] La UNIDAD viaja en la misma RPC y hay que pegarla: sin esto el front
         // caía al default 'und' y un producto en KILOS mostraba "66.55 und".
         if (p.unidad) it.unidad = p.unidad;
+        // [616] mostrar SIEMPRE el código canónico del catálogo (con sus ceros)
+        if (p.codigoBarra) it.codigoBarra = p.codigoBarra;
       }
     }
   }
@@ -44102,8 +44113,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Cuadros: uno por ubicación (cliqueable) + Σ TOTAL (informativo).
   function _pv2UbiCuadrosHtml(pp, key) {
     const ubis = _pv2Ubis(pp); if (!ubis) return '';
-    const tot = ubis.reduce((a, u) => a + (parseFloat(u.totalEq) || 0), 0);
-    const nZ = ubis.filter(u => !_pv2EsAlm(u)).length;
     const cel = ubis.map(u => {
       const nom = _pv2UbiNom(pp, u);
       const teq = parseFloat(u.totalEq) || 0;
@@ -44120,10 +44129,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <small class="${falta > 0 ? 'falta' : ''}">${falta > 0 ? `falta ${_fmtQty(falta)} ${uni}` : `${nP} presentaci${nP === 1 ? 'ón' : 'ones'}`}</small>
         <span class="ver">ver ▾</span></button>`;
     }).join('');
-    return `<div class="pv2-ubis">${cel}
-      <div class="pv2-ubi tot" title="Suma de todas las ubicaciones, en unidades del padre">
-        <span class="t">Σ TOTAL</span><b>${_fmtQty(tot)}</b>
-        <small>almacén + ${nZ} zona${nZ === 1 ? '' : 's'}</small></div></div>`;
+    // [616] Sin cuadro "Σ TOTAL": no aporta a la decisión de compra (la que manda es la
+    // del almacén) y ensuciaba la card. Orden de Luis: card más limpio.
+    return `<div class="pv2-ubis">${cel}</div>`;
   }
 
   // Cobertura de la card = la del ALMACÉN (es la que decide la compra) + el faltante.
@@ -44247,6 +44255,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     document.addEventListener('keydown', _pv2UbiEsc);
   }
 
+  // [616] Toggle activo/inactivo al extremo del nombre (reemplaza los botones
+  // "⏻ Desactivar aquí" / "🗑 Quitar" que vivían enterrados en el detalle).
+  // Encendido = verde con ✓. Al apagarlo se pone rojo y RECIÉN ahí aparece el 🗑
+  // para quitarlo del catálogo — borrar exige dos gestos, nunca uno solo.
+  function _pv2TogHtml(key, activo) {
+    const k = _pv2EscJs(key);
+    return `<div class="pv2-tog-wrap">
+      ${activo ? '' : `<button type="button" class="pv2-tog-del" onclick="event.stopPropagation();MOS.pv2.quitar('${k}')" title="Quitar del catálogo de este proveedor" aria-label="Quitar del catálogo">🗑</button>`}
+      <button type="button" class="pv2-tog ${activo ? 'on' : 'off'}" role="switch" aria-checked="${activo}"
+              onclick="event.stopPropagation();MOS.pv2.activo('${k}', ${activo ? 'false' : 'true'})"
+              title="${activo ? 'Activo — tócalo para desactivarlo (deja de sugerirse)' : 'Desactivado — tócalo para reactivarlo'}">
+        <span class="ico">${activo ? '✓' : '⏻'}</span><span class="knob"></span>
+      </button></div>`;
+  }
+
   function _pv2CardProd(pp) {
     const key = _pv2Key(pp);
     const qb = _pv2QtyB(pp);
@@ -44263,16 +44286,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const comp = (pp.competencia || []).filter(x => x.costo != null);
     const der = (fam && fam.derivados) || [];
     const cob = fam ? fam.coberturaSem : null;
+    // [616] Producto DESACTIVADO: el toggle en rojo lo reactiva y, ya apagado, aparece
+    // el 🗑 para sacarlo del catálogo del proveedor. Un solo control, dos pasos.
     if (pp.activa === false) return `
       <div class="pv2-prod pv2-off">
-        <div class="r"><div class="l"><span class="tach">${pp.descripcion}</span>
-          <div class="mini-note">⏻ desactivado — no se sugiere ni entra a los pedidos de este proveedor</div></div>
-          <button class="pv2-detbtn" onclick="MOS.pv2.activo('${key}', true)">Reactivar</button>
-          <button class="pv2-detbtn bad" onclick="MOS.pv2.quitar('${key}')">🗑 Quitar</button>
+        <div class="pv2-titrow">
+          <div class="l"><span class="tach">${_esc(pp.descripcion)}</span>
+            <div class="mini-note">⏻ desactivado — no se sugiere ni entra a los pedidos de este proveedor</div></div>
+          ${_pv2TogHtml(key, false)}
         </div></div>`;
     return `
     <div class="pv2-prod ${qb>0?'encarro':''}" id="pv2p-${key}">
-      <div class="padre" style="cursor:pointer" onclick="MOS.pv2.editar('${key}')" title="Tocar para editar bulto / precio ref. / mínimo / notas">${pp.descripcion} <span style="opacity:.45;font-size:11px">✎</span><span class="famtag" title="Padre canónico: el stock suma equivalentes y derivados">FAMILIA</span></div>
+      <div class="pv2-titrow">
+        <div class="padre" style="cursor:pointer" onclick="MOS.pv2.editar('${key}')" title="Tocar para editar bulto / precio ref. / mínimo / notas">${pp.descripcion} <span style="opacity:.45;font-size:11px">✎</span><span class="famtag" title="Padre canónico: el stock suma equivalentes y derivados">FAMILIA</span></div>
+        ${_pv2TogHtml(key, true)}
+      </div>
       <div class="cod">${pp.codigoBarra||pp.skuBase||''}${upb>1?` · bulto ×${upb}`:''}${pp.countEquivalencias?` · ${pp.countEquivalencias} equiv.`:''}</div>
       ${pp._pend ? '<div class="mini-note" style="color:#fbbf24">⏳ sincronizando con el servidor — el stock y la rotación aparecen en unos segundos</div>' : ''}
       <div class="costline">
@@ -44326,9 +44354,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           ${(pp.ultimosCostos||[]).map(h => `<div class="dr"><span>${h.fecha}</span><b>${fmtMoney(h.costo)}</b></div>`).join('') || '<div class="dr"><span>aún sin guías con costo</span><b>—</b></div>'}
         </div>
         <div class="pv2-ciclo">
-          <button class="pv2-detbtn" onclick="MOS.pv2.activo('${key}', false)">⏻ Desactivar aquí</button>
-          <button class="pv2-detbtn bad" onclick="MOS.pv2.quitar('${key}')">🗑 Quitar del catálogo</button>
-          <span>⏻ = visible pero no se sugiere · 🗑 = sale de este proveedor; si vuelve en una guía suya se ofrece de nuevo en ➕</span>
+          <span>Para desactivarlo o quitarlo usa el <b>interruptor</b> que está al lado del nombre: apagado = visible pero no se sugiere; ya apagado aparece el 🗑 para sacarlo de este proveedor (si vuelve en una guía suya, se ofrece de nuevo en ➕).</span>
         </div>
       </div>` : ''}
     </div>`;
