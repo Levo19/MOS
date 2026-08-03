@@ -3404,6 +3404,12 @@ const API = (() => {
       if (action === 'getProductosProveedorConStockV2') {
         return _sbRpcMOS('productos_proveedor_stock_v2', { p }, 'mos').then(r => (r && r.ok) ? (r.data || []) : null).catch(() => null);
       }
+      // [614] Stock + cobertura + FALTANTE por UBICACIÓN (almacén y cada zona) y por
+      // presentación. Demanda = promedio semanal de las 4 semanas COMPLETAS anteriores.
+      // Se pide en paralelo al catálogo v2 y el front hace merge por codigoBarra.
+      if (action === 'getProvStockUbicaciones') {
+        return _sbRpcMOS('prov_stock_ubicaciones', { p }, 'mos').then(r => (r && r.ok) ? (r.data || null) : null).catch(() => null);
+      }
       // [Proveedores v2 · 542] productos que llegaron en guías del proveedor y NO están
       // en su catálogo (alta selectiva con evidencia — nunca bulk).
       if (action === 'getProvGuiaCandidatos') {

@@ -14511,6 +14511,9 @@ const MOS = (() => {
           // [v2.43.597] con un modal pv2 abierto SOLO se actualiza la data (repintar
           // detrás hacía parpadear el overlay); al cerrarse, _mx() repinta si hace falta
           .then(r => { if (r) { S.pv2.items = Array.isArray(r) ? r : (r.data || []);
+            // [614] esta recarga REEMPLAZA los items → sin esto se perderían las
+            // `ubicaciones` y las cards volverían al render clásico tras editar un producto.
+            try { _pv2MergeUbicaciones(S.pv2.items, S.pv2.ubis); } catch (_) {}
             if ($('pv2Modal')) { S.pv2._dirty = true; return; }
             if (S.view === 'proveedores') pv2Render(); } })
           .catch(() => {});
@@ -43933,17 +43936,38 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!(S.productos && S.productos.length)) { try { loadCatalogo().catch(() => {}); } catch (_) {} }
     pv2Render();
     try {
-      const [items, hist] = await Promise.all([
+      const [items, hist, ubis] = await Promise.all([
         API.get('getProductosProveedorConStockV2', { idProveedor: id, rangoDias: 30 })
           .catch(() => null)
           .then(r => r || API.get('getProductosProveedorConStock', { idProveedor: id, rangoDias: 30 })),
-        API.get('getHistoricoProveedor', { idProveedor: id }).catch(() => null)
+        API.get('getHistoricoProveedor', { idProveedor: id }).catch(() => null),
+        // [614] stock/cobertura/faltante por ubicación — en PARALELO (no bloquea la lista:
+        // si falla, las cards caen al render clásico sin cuadros cliqueables).
+        API.get('getProvStockUbicaciones', { idProveedor: id }).catch(() => null)
       ]);
       S.pv2.items = Array.isArray(items) ? items : (items && items.data) || [];
       S.pv2.hist = hist || null;
+      S.pv2.ubis = ubis || null;             // cache: el shim de recarga vuelve a mergear
+      _pv2MergeUbicaciones(S.pv2.items, ubis);
     } catch (e) { S.pv2.items = []; }
     S.pv2.cargando = false;
     pv2Render();
+  }
+
+  // [614] Pega `ubicaciones` (RPC prov_stock_ubicaciones) sobre cada producto por
+  // codigoBarra normalizado. Tolerante: si la RPC falló o el producto no vino, el item
+  // queda sin `ubicaciones` y la card se pinta con el render clásico.
+  function _pv2MergeUbicaciones(items, ubisResp) {
+    if (!Array.isArray(items) || !items.length) return;
+    const lista = (ubisResp && ubisResp.productos) || (Array.isArray(ubisResp) ? ubisResp : null);
+    if (!Array.isArray(lista) || !lista.length) return;
+    const norm = s => String(s == null ? '' : s).trim().toUpperCase();
+    const mapa = new Map();
+    for (const p of lista) if (p && p.codigoBarra) mapa.set(norm(p.codigoBarra), p.ubicaciones || []);
+    for (const it of items) {
+      const u = mapa.get(norm(it.codigoBarra));
+      if (u && u.length) it.ubicaciones = u;
+    }
   }
 
   function _pv2CostoDe(pp) {
@@ -44005,6 +44029,179 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return hay ? _money(tot) : null;
   }
 
+  // ══════════ UBICACIONES: un cuadro por almacén/zona + overlay de detalle ══════════
+  // pp.ubicaciones = [{ id, tipo:'ALMACEN'|'ZONA', totalEq, demandaEqSem, cubreSem,
+  //   faltaEq, nPresentaciones, nNegativos, lineas:[{ cod, nombre, esPadre, factor,
+  //   stock, stockEq, demandaSem, cubreSem, faltaUnd, faltaEq }] }]
+  // cubreSem = null → sin rotación (no dividir entre cero) · puede ser NEGATIVO.
+  // Si pp.ubicaciones no llegó todavía (undefined) → se pinta el render clásico intacto.
+  function _pv2EsAlm(u) { return String((u && u.tipo) || '').toUpperCase() === 'ALMACEN'; }
+  function _pv2Ubis(pp) {
+    const arr = pp && pp.ubicaciones;
+    if (!Array.isArray(arr) || !arr.length) return null;
+    return arr.slice().sort((a, b) => {          // ALMACÉN primero, luego zonas A→Z
+      const d = (_pv2EsAlm(a) ? 0 : 1) - (_pv2EsAlm(b) ? 0 : 1);
+      return d || String(a.id || '').localeCompare(String(b.id || ''), 'es');
+    });
+  }
+  function _pv2UbiAlm(pp) { const u = _pv2Ubis(pp); return u ? (u.find(_pv2EsAlm) || null) : null; }
+  function _pv2UbiFind(pp, idUbi) {
+    const u = _pv2Ubis(pp);
+    return u ? (u.find(x => String(x.id) === String(idUbi)) || null) : null;
+  }
+  // Nombre bonito: el de pp.zonas si hay match por idZona; si no, el id crudo.
+  function _pv2UbiNom(pp, u) {
+    if (_pv2EsAlm(u)) return 'ALMACÉN';
+    const norm = s => String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const t = norm(u && u.id);
+    const z = t && (pp.zonas || []).find(x => norm(x.idZona) === t || norm(x.id) === t || norm(x.nombre) === t);
+    return String((z && z.nombre) || (u && u.id) || '');
+  }
+  function _pv2UbiIco(u) { return _pv2EsAlm(u) ? '🏬' : '🏪'; }
+  // Barra de cobertura: 2 semanas = 100%. Negativo → 0% (y _pv2CovColor ya lo pinta rojo).
+  function _pv2CovPct(c) { return c == null ? 0 : Math.max(0, Math.min(100, (parseFloat(c) || 0) / 2 * 100)); }
+  function _pv2CovTxt(c) { return c == null ? 'sin rotación' : (parseFloat(c) || 0).toFixed(1) + ' sem'; }
+  function _pv2CovMini(c) {
+    return `<span class="pv2-covmini${c == null ? ' nulo' : ''}">` +
+           `<span class="bar"><i style="width:${_pv2CovPct(c)}%;background:${_pv2CovColor(c)}"></i></span>` +
+           `<em style="color:${_pv2CovColor(c)}">${_pv2CovTxt(c)}</em></span>`;
+  }
+  // "AJONJOLI ... 250GR" → "250GR" · "AJONJOLI ... GRANEL EXO" → "GRANEL"
+  function _pv2LinCorta(nm) {
+    const s = String(nm == null ? '' : nm).toUpperCase().trim();
+    const m = s.match(/\b\d+(?:[.,]\d+)?\s?(?:GR|GRS|KG|ML|LT|MIL|UND|UN)\b/);
+    if (m) return m[0].replace(/\s+/g, '');
+    if (/\bGRANEL\b/.test(s)) return 'GRANEL';
+    const w = s.split(/\s+/).filter(Boolean);
+    return w.slice(-2).join(' ') || s;
+  }
+
+  // Cuadros: uno por ubicación (cliqueable) + Σ TOTAL (informativo).
+  function _pv2UbiCuadrosHtml(pp, key) {
+    const ubis = _pv2Ubis(pp); if (!ubis) return '';
+    const tot = ubis.reduce((a, u) => a + (parseFloat(u.totalEq) || 0), 0);
+    const nZ = ubis.filter(u => !_pv2EsAlm(u)).length;
+    const cel = ubis.map(u => {
+      const nom = _pv2UbiNom(pp, u);
+      const teq = parseFloat(u.totalEq) || 0;
+      const falta = parseFloat(u.faltaEq) || 0;
+      const neg = teq < 0 || (parseFloat(u.nNegativos) || 0) > 0;
+      const nP = parseFloat(u.nPresentaciones) || (u.lineas || []).length;
+      return `<button type="button" class="pv2-ubi ${_pv2EsAlm(u) ? 'alm' : 'zona'}${neg ? ' neg' : ''}" onclick="MOS.pv2.ubi('${key}','${_esc(u.id)}')" title="Ver ${_esc(nom)} presentación por presentación">
+        <span class="t">${_pv2UbiIco(u)} ${_esc(nom)}</span>
+        <b>${_fmtQty(teq)}</b>
+        ${_pv2CovMini(u.cubreSem)}
+        <small class="${falta > 0 ? 'falta' : ''}">${falta > 0 ? `falta ${_fmtQty(falta)} kg` : `${_fmtQty(nP)} presentaci${nP === 1 ? 'ón' : 'ones'}`}</small>
+        <span class="ver">ver ▾</span></button>`;
+    }).join('');
+    return `<div class="pv2-ubis">${cel}
+      <div class="pv2-ubi tot" title="Suma de todas las ubicaciones, en unidades del padre">
+        <span class="t">Σ TOTAL</span><b>${_fmtQty(tot)}</b>
+        <small>almacén + ${nZ} zona${nZ === 1 ? '' : 's'}</small></div></div>`;
+  }
+
+  // Cobertura de la card = la del ALMACÉN (es la que decide la compra) + el faltante.
+  function _pv2UbiCoverHtml(pp, key) {
+    const alm = _pv2UbiAlm(pp); if (!alm) return '';
+    const cob = alm.cubreSem == null ? null : (parseFloat(alm.cubreSem) || 0);
+    const dem = parseFloat(alm.demandaEqSem) || 0;
+    const falta = parseFloat(alm.faltaEq) || 0;
+    const top = (alm.lineas || []).filter(l => (parseFloat(l.faltaUnd) || 0) > 0)
+      .sort((a, b) => (parseFloat(b.faltaEq) || 0) - (parseFloat(a.faltaEq) || 0)).slice(0, 3);
+    return `<div class="pv2-cover">
+        <span class="lbl">⏳ el almacén cubre <b style="color:${_pv2CovColor(cob)}">${_pv2CovTxt(cob)}</b></span>
+        <div class="bar"><i style="width:${_pv2CovPct(cob)}%;background:${_pv2CovColor(cob)}"></i></div>
+        <span class="lbl dim" title="Promedio semanal de las últimas 4 semanas completas: lo que el almacén despachó a zonas por guía, sin contar el envasado.">🚚 sale ${_fmtQty(dem)} kg/sem</span>
+      </div>${falta > 0 ? `
+      <button type="button" class="pv2-ubifalta" onclick="MOS.pv2.ubi('${key}','${_esc(alm.id)}')" title="Ver el detalle del almacén presentación por presentación">
+        <span class="ttl">FALTA PARA CUBRIR LA SEMANA — <b>${_fmtQty(falta)} kg</b></span>
+        ${top.length ? `<span class="brk">${top.map(l => `${_esc(_pv2LinCorta(l.nombre))} ${_fmtQty(l.faltaUnd)} und`).join(' · ')}</span>` : ''}
+        <span class="ver">ver ▾</span></button>` : ''}`;
+  }
+
+  // ── Overlay (fixed + backdrop): bottom-sheet en móvil, modal centrado en PC ──
+  function _pv2UbiOvlHtml(pp, u) {
+    const esAlm = _pv2EsAlm(u);
+    const nom = _pv2UbiNom(pp, u);
+    const colDem = esAlm ? 'Sale' : 'Vende';
+    const tipDem = 'Promedio semanal de las últimas 4 semanas completas';
+    const lineas = u.lineas || [];
+    const falta = parseFloat(u.faltaEq) || 0;
+    const nP = parseFloat(u.nPresentaciones) || lineas.length;
+    const rows = lineas.map(l => {
+      const st = parseFloat(l.stock) || 0;
+      const dem = parseFloat(l.demandaSem) || 0;
+      const cob = l.cubreSem == null ? null : (parseFloat(l.cubreSem) || 0);
+      const fu = parseFloat(l.faltaUnd) || 0;
+      const alerta = st < 0 || (cob != null && cob < 1);
+      return `<tr class="${l.esPadre ? 'padre' : ''}${alerta ? ' alerta' : ''}">
+        <td class="nm"><span>${_esc(l.nombre)}</span><small>${_esc(l.cod)}</small></td>
+        <td class="r${st < 0 ? ' neg' : ''}">${_fmtQty(st)}</td>
+        <td class="r">${dem > 0 ? `${_fmtQty(dem)}<small>/sem</small>` : `<span class="dim">sin ${esAlm ? 'salidas' : 'ventas'}</span>`}</td>
+        <td class="r">${_pv2CovMini(cob)}</td>
+        <td class="r">${fu > 0 ? `<b>${_fmtQty(fu)}</b><small> und</small><em>= ${_fmtQty(l.faltaEq)} kg</em>` : '<span class="dim">—</span>'}</td>
+      </tr>`;
+    }).join('');
+    const call = falta > 0
+      ? (esAlm
+          ? `<div class="pv2-ovlcall bad"><span class="k">PARA CUBRIR 1 SEMANA FALTAN</span><b>${_fmtQty(falta)} kg</b><small>se le compra al proveedor</small></div>`
+          : `<div class="pv2-ovlcall warn"><span class="k">${_esc(nom)} NECESITA ESTA SEMANA</span><b>${_fmtQty(falta)} kg</b><small>lo despacha el almacén — no es una compra</small></div>`)
+      : `<div class="pv2-ovlcall ok"><span class="k">${esAlm ? 'EL ALMACÉN CUBRE LA SEMANA' : _esc(nom) + ' CUBRE LA SEMANA'}</span><b>no falta nada</b><small>${esAlm ? 'no hay que comprarle al proveedor' : 'no necesita despacho esta semana'}</small></div>`;
+    return `<div class="pv2-ovlbox" role="dialog" aria-modal="true" aria-label="Detalle de ${_esc(nom)}">
+      <div class="pv2-ovlhead">
+        <span class="ic">${_pv2UbiIco(u)}</span>
+        <div class="tt"><b>${_esc(nom)}</b><small>${_esc(pp.descripcion || pp.codigoBarra || pp.skuBase || '')}</small></div>
+        <button type="button" class="pv2-ovlx" onclick="MOS.pv2.ubiX()" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="pv2-ovlbody">
+        <div class="pv2-ovltot">
+          <span>Total en ${_esc(nom)}</span>
+          <b>${_fmtQty(u.totalEq)} kg</b>
+          <em>${_fmtQty(nP)} presentaci${nP === 1 ? 'ón' : 'ones'}${(parseFloat(u.nNegativos) || 0) > 0 ? ` · ⚠ ${_fmtQty(u.nNegativos)} en negativo` : ''}</em>
+        </div>
+        <div class="pv2-ovlscroll">
+          <table class="pv2-ovltb">
+            <thead><tr>
+              <th>Presentación</th>
+              <th class="r">Stock</th>
+              <th class="r" title="${tipDem}">${colDem}<span class="q">?</span></th>
+              <th class="r">Cubre</th>
+              <th class="r">Falta</th>
+            </tr></thead>
+            <tbody>${rows || '<tr><td colspan="5" class="dim">Sin presentaciones en esta ubicación</td></tr>'}</tbody>
+            <tfoot><tr>
+              <td>TOTAL <small>(equivalente al padre)</small></td>
+              <td class="r">${_fmtQty(u.totalEq)}</td>
+              <td class="r">${_fmtQty(u.demandaEqSem)}<small>/sem</small></td>
+              <td class="r">${_pv2CovMini(u.cubreSem)}</td>
+              <td class="r">${falta > 0 ? `<b>${_fmtQty(falta)}</b><small> kg</small>` : '<span class="dim">—</span>'}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+        ${call}
+        <p class="pv2-ovlnota">💡 <b>${colDem}</b> = ${tipDem.toLowerCase()}${esAlm
+          ? ' de lo despachado a zonas por guía, sin contar el envasado.'
+          : ' de las ventas al cliente en esa zona.'} <b>Cubre</b> = cuántas semanas alcanza el stock a ese ritmo.</p>
+      </div></div>`;
+  }
+  function _pv2UbiEsc(e) { if (e.key === 'Escape' || e.key === 'Esc') _pv2UbiCerrar(); }
+  function _pv2UbiCerrar() {
+    const el = document.getElementById('pv2UbiOvl'); if (el) el.remove();
+    document.removeEventListener('keydown', _pv2UbiEsc);
+  }
+  function pv2Ubi(key, idUbi) {
+    const pp = _pv2Item(key); if (!pp) return;
+    const u = _pv2UbiFind(pp, idUbi);
+    if (!u) { toast('Todavía no hay detalle de esa ubicación', 'error'); return; }
+    _pv2UbiCerrar();
+    const div = document.createElement('div');
+    div.id = 'pv2UbiOvl'; div.className = 'pv2-ovl';
+    div.innerHTML = _pv2UbiOvlHtml(pp, u);
+    div.addEventListener('click', e => { if (e.target === div) _pv2UbiCerrar(); });
+    document.body.appendChild(div);
+    document.addEventListener('keydown', _pv2UbiEsc);
+  }
+
   function _pv2CardProd(pp) {
     const key = _pv2Key(pp);
     const qb = _pv2QtyB(pp);
@@ -44015,7 +44212,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const razon = (pp.sugerenciaV2 && pp.sugerenciaV2.razon) || (pp.razonSugerencia || '');
     const costo = _pv2CostoDe(pp);
     const costoF = pp.ultimosCostos && pp.ultimosCostos[0] ? pp.ultimosCostos[0].fecha : null;
-    const open = S.pv2.det[key];
+    // Con ubicaciones el panel 🌳/📊 ya no aporta (y su botón desaparece del foot):
+    // si quedó abierto de antes, no se pinta — si no, quedaría sin forma de cerrarlo.
+    const open = S.pv2.det[key] && !_pv2Ubis(pp);
     const comp = (pp.competencia || []).filter(x => x.costo != null);
     const der = (fam && fam.derivados) || [];
     const cob = fam ? fam.coberturaSem : null;
@@ -44035,7 +44234,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${costo>0?`<span class="pv2-costo">💰 últ. costo <b>${fmtMoney(costo)}</b>${costoF?` <small>· guía ${costoF}</small>`:''}</span>`:'<span class="pv2-costo dim">💰 sin costo registrado aún</span>'}
         ${comp.map(cp => `<span class="pv2-comp ${costo>0&&cp.costo<costo?'mejor':'peor'}" title="También se lo compras a ${cp.proveedor}">🏷 ${cp.proveedor}: ${fmtMoney(cp.costo)}${cp.fecha?' ('+cp.fecha+')':''}${costo>0?(cp.costo<costo?' · más barato — ¿⏻ aquí?':' · más caro'):''}</span>`).join('')}
       </div>
-      ${(() => {   // [v2.43.597] stock como SUMA ordenada: ALMACÉN destacado + zonas + Σ familia
+      ${_pv2Ubis(pp) ? _pv2UbiCuadrosHtml(pp, key) : (() => {   // [v2.43.597] stock como SUMA ordenada: ALMACÉN destacado + zonas + Σ familia
         const alm = parseFloat(pp.stockWh) || 0;
         const zonas = pp.zonas || [];
         const zSum = _money(zonas.reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
@@ -44047,16 +44246,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <span class="op">=</span>
         <div class="cell fam" title="Canónico + equivalentes + derivados. Los NEGATIVOS no suman."><span class="t">Σ FAMILIA</span><b>${_fmtQty(famTot)}</b><small>${der.length?`con ${der.length} derivado${der.length>1?'s':''}`:''}${fam&&fam.tieneNegativos?' · ⚠ hay negativos que NO suman':''}</small></div>
       </div>`; })()}
-      <div class="pv2-cover">
+      ${_pv2UbiAlm(pp) ? _pv2UbiCoverHtml(pp, key) : `<div class="pv2-cover">
         <span class="lbl">⏳ cubre <b style="color:${_pv2CovColor(cob)}">${cob==null?'—':cob+' sem'}</b></span>
         <div class="bar"><i style="width:${cob==null?0:Math.min(100, cob/2*100)}%;background:${_pv2CovColor(cob)}"></i></div>
         <span class="lbl dim" title="La rotación son las VENTAS en zonas (tiendas) + lo que venden sus derivados, convertido al padre. El almacén no rota: repone.">${fam&&fam.rotFamiliaDia?`🏪 vende ${(fam.rotFamiliaDia*7).toFixed(1)}/sem${(fam.derivados||[]).length?' (zonas+derivados)':' (zonas)'}`:(pp.rotacionDia?`🏪 vende ${(pp.rotacionDia*7).toFixed(1)}/sem (zonas)`:'sin ventas en zonas (30d)')}</span>
-      </div>
+      </div>`}
       <div class="foot">
         <button class="pv2-sug ${sug===0?'zero':''}" onclick="MOS.pv2.sug('${key}')" title="${razon.replace(/"/g,'&quot;')}">⚡ ${sugTxt}</button>
         <button class="pv2-chip ${upb>1?'on':'dot'}" onclick="MOS.pv2.editar('${key}')" title="${upb>1?('Bulto ×'+upb+' — tocar para editar'):'Falta el bulto de este producto — tocar para llenarlo'}">📦 ${upb>1?('×'+upb):'bulto?'}</button>
         <button class="pv2-chip nota ${pp.notas?'on':'dot'}" onclick="MOS.pv2.editar('${key}')" title="${pp.notas?String(pp.notas).replace(/"/g,'&quot;'):'Sin nota — tocar para escribir una (ej. solo pedidos > S/100)'}">📝${pp.notas?'':''}</button>
-        <button class="pv2-detbtn" onclick="MOS.pv2.det('${key}')">${open?'▴ ocultar':(der.length?'🌳 familia':'📊 detalle')}</button>
+        ${_pv2Ubis(pp) ? '' : `<button class="pv2-detbtn" onclick="MOS.pv2.det('${key}')">${open?'▴ ocultar':(der.length?'🌳 familia':'📊 detalle')}</button>`}
         <div class="lt">${qb>0&&costo>0?`<b>${fmtMoney(qb*upb*costo)}</b>`:''}</div>
         <div class="pv2-step">
           <button onclick="MOS.pv2.chg('${key}',-1)">−</button>
@@ -44399,12 +44598,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     buscar(v){ S.pv2.q = String(v||'').trim().toLowerCase();
       const b = $('pv2HomeBody'); if (b) b.innerHTML = _pv2HomeListaHtml(); else pv2Render(); },
     abrir(id){ _pv2Abrir(id); },
-    volver() { S.pv2.view = 'home'; S.pv2.prov = null; pv2Render(); },
+    volver() { _pv2UbiCerrar(); S.pv2.view = 'home'; S.pv2.prov = null; pv2Render(); },
     tab(t)   { S.pv2.tab = t; pv2Render(); },
     solo()   { S.pv2.solo = !S.pv2.solo; pv2Render(); },
     showOff(){ S.pv2.off = !S.pv2.off; pv2Render(); },
     // [v2.43.597] acciones de card = render PARCIAL (solo la card + cartbar): sin parpadeo
     det(k)   { S.pv2.det[k] = !S.pv2.det[k]; _pv2RepaintCard(k); },
+    // Cuadro de ubicación (almacén / zona) → overlay con el detalle por presentación
+    ubi(k, id) { pv2Ubi(k, id); },
+    ubiX()   { _pv2UbiCerrar(); },
     chg(k,d) { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, _pv2QtyB(pp) + d); _pv2RepaintCard(k); _pv2RepaintCart(); },
     setq(k,v){ const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, parseInt(v)||0); _pv2RepaintCard(k); _pv2RepaintCart(); },
     sug(k)   { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0); _pv2RepaintCard(k); _pv2RepaintCart(); },

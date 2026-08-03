@@ -7108,6 +7108,116 @@
     .pv2-stk .cell.neg{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.45)}
     .pv2-stk .cell.neg b{color:#f87171}
     .pv2-stk .op{align-self:center;color:var(--pv2-ink3);font-weight:900;font-size:14px}
+    /* ══ UBICACIONES: un cuadro por almacén/zona (cliqueable) + Σ TOTAL ══ */
+    .pv2-ubis{display:flex;align-items:stretch;gap:6px;margin-top:8px;flex-wrap:wrap}
+    .pv2-ubi{position:relative;flex:1 1 132px;min-width:126px;max-width:210px;text-align:left;
+      background:var(--pv2-panel);border:1px solid var(--pv2-line);border-radius:12px;padding:7px 10px 8px;
+      display:flex;flex-direction:column;gap:3px;color:#e2e8f0;font:inherit;cursor:pointer;transition:.14s}
+    .pv2-ubi:hover{border-color:var(--pv2-acc);transform:translateY(-1px)}
+    .pv2-ubi:active{transform:scale(.985)}
+    .pv2-ubi .t{font-size:9px;letter-spacing:.07em;font-weight:900;color:var(--pv2-ink3);
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:26px}
+    .pv2-ubi>b{font-size:17px;line-height:1.15;color:#e2e8f0;font-variant-numeric:tabular-nums}
+    .pv2-ubi small{font-size:9.5px;color:var(--pv2-ink3);font-weight:600;font-variant-numeric:tabular-nums;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pv2-ubi small.falta{color:#f87171;font-weight:800}
+    .pv2-ubi .ver{position:absolute;top:6px;right:8px;font-size:8.5px;font-weight:800;color:var(--pv2-ink3);
+      background:rgba(148,163,184,.10);border-radius:99px;padding:1.5px 6px;letter-spacing:.03em}
+    .pv2-ubi:hover .ver{color:var(--pv2-acc2);background:var(--pv2-accbg)}
+    .pv2-ubi.alm{background:rgba(245,158,11,.10);border-color:rgba(245,158,11,.45)}
+    .pv2-ubi.alm .t{color:#fbbf24}
+    .pv2-ubi.alm>b{color:#fbbf24;font-size:19px}
+    .pv2-ubi.neg{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.45)}
+    .pv2-ubi.neg>b{color:#f87171}
+    .pv2-ubi.tot{background:var(--pv2-accbg);border-color:rgba(99,102,241,.4);cursor:default}
+    .pv2-ubi.tot:hover{transform:none;border-color:rgba(99,102,241,.4)}
+    .pv2-ubi.tot .t,.pv2-ubi.tot>b{color:var(--pv2-acc2)}
+    /* mini-barra de cobertura reutilizable (cuadros + tabla del overlay) */
+    .pv2-covmini{display:inline-flex;align-items:center;gap:5px;min-width:0}
+    .pv2-covmini .bar{flex:1 1 auto;min-width:22px;max-width:64px;height:4px;border-radius:99px;
+      background:rgba(148,163,184,.16);overflow:hidden}
+    .pv2-covmini .bar i{display:block;height:100%;border-radius:99px}
+    .pv2-covmini em{font-style:normal;font-size:10px;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .pv2-covmini.nulo em{font-weight:600;opacity:.75}
+    /* bloque rojo compacto "falta para cubrir la semana" bajo la cobertura */
+    .pv2-ubifalta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;width:100%;text-align:left;position:relative;
+      margin-top:7px;padding:7px 34px 7px 11px;border-radius:11px;cursor:pointer;font:inherit;
+      background:rgba(248,113,113,.10);border:1px solid rgba(248,113,113,.42);transition:.14s}
+    .pv2-ubifalta:hover{background:rgba(248,113,113,.16);border-color:rgba(248,113,113,.7)}
+    .pv2-ubifalta .ttl{font-size:10.5px;font-weight:900;letter-spacing:.03em;color:#f87171}
+    .pv2-ubifalta .ttl b{font-size:13px;font-variant-numeric:tabular-nums}
+    .pv2-ubifalta .brk{font-size:10.5px;font-weight:700;color:var(--pv2-ink2);font-variant-numeric:tabular-nums}
+    .pv2-ubifalta .ver{position:absolute;top:50%;right:9px;transform:translateY(-50%);font-size:8.5px;
+      font-weight:800;color:#f87171;opacity:.8}
+    /* ══ OVERLAY de ubicación — bottom-sheet en móvil · modal centrado en PC ══ */
+    .pv2-ovl{position:fixed;inset:0;z-index:8700;background:rgba(2,8,23,.74);backdrop-filter:blur(4px);
+      display:flex;align-items:center;justify-content:center;padding:18px}
+    .pv2-ovlbox{background:#0b1120;border:1px solid #24304a;border-radius:18px;width:100%;max-width:560px;
+      max-height:90vh;display:flex;flex-direction:column;overflow:hidden;
+      box-shadow:0 28px 70px rgba(0,0,0,.6);animation:pv2OvlPop .2s ease}
+    @keyframes pv2OvlPop{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+    .pv2-ovlhead{display:flex;align-items:center;gap:11px;padding:13px 14px;border-bottom:1px solid #1e293b;flex-shrink:0}
+    .pv2-ovlhead .ic{font-size:22px;line-height:1}
+    .pv2-ovlhead .tt{flex:1;min-width:0}
+    .pv2-ovlhead .tt b{display:block;font-size:14.5px;font-weight:900;color:#f1f5f9;letter-spacing:-.01em;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pv2-ovlhead .tt small{display:block;font-size:11px;color:var(--pv2-ink2);margin-top:1px;line-height:1.3}
+    .pv2-ovlx{background:#1e293b;border:0;color:#94a3b8;border-radius:10px;width:32px;height:32px;
+      font-size:14px;cursor:pointer;flex-shrink:0}
+    .pv2-ovlx:hover{background:#2b3a56;color:#e2e8f0}
+    .pv2-ovlbody{overflow-y:auto;overscroll-behavior:contain;padding:13px 14px 18px;
+      padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+    .pv2-ovltot{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;background:var(--pv2-panel);
+      border:1px solid var(--pv2-line);border-radius:12px;padding:9px 12px;margin-bottom:11px}
+    .pv2-ovltot span{font-size:10px;letter-spacing:.07em;font-weight:900;color:var(--pv2-ink3);text-transform:uppercase}
+    .pv2-ovltot b{font-size:19px;font-weight:900;color:#e2e8f0;font-variant-numeric:tabular-nums}
+    .pv2-ovltot em{font-style:normal;font-size:11px;color:var(--pv2-ink2);font-weight:700;margin-left:auto;
+      font-variant-numeric:tabular-nums}
+    .pv2-ovlscroll{overflow-x:auto;border:1px solid var(--pv2-line);border-radius:12px}
+    .pv2-ovltb{width:100%;border-collapse:collapse;font-size:12px;min-width:430px}
+    .pv2-ovltb th{text-align:left;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--pv2-ink3);
+      font-weight:900;background:var(--pv2-panel);border-bottom:1px solid #24304a;padding:7px 9px;white-space:nowrap}
+    .pv2-ovltb th .q{display:inline-block;margin-left:4px;font-size:8px;border:1px solid var(--pv2-ink3);
+      border-radius:99px;width:11px;height:11px;line-height:10px;text-align:center;cursor:help}
+    .pv2-ovltb td{padding:7px 9px;border-bottom:1px solid #172136;color:#cbd5e1;
+      font-variant-numeric:tabular-nums;vertical-align:middle}
+    .pv2-ovltb td.r,.pv2-ovltb th.r{text-align:right}
+    .pv2-ovltb td.r .pv2-covmini{justify-content:flex-end}
+    .pv2-ovltb td.nm{min-width:150px}
+    .pv2-ovltb td.nm span{display:block;font-weight:750;color:#e2e8f0;font-size:12px;line-height:1.25}
+    .pv2-ovltb td.nm small{display:block;font-size:9.5px;color:var(--pv2-ink3);
+      font-family:ui-monospace,Menlo,monospace;margin-top:1px}
+    .pv2-ovltb td b{font-weight:850;color:#f1f5f9}
+    .pv2-ovltb td small{font-size:9.5px;color:var(--pv2-ink3);font-weight:600}
+    .pv2-ovltb td em{display:block;font-style:normal;font-size:9.5px;color:#f87171;font-weight:700;margin-top:1px}
+    .pv2-ovltb td.neg,.pv2-ovltb td.neg b{color:#f87171;font-weight:850}
+    .pv2-ovltb .dim{color:var(--pv2-ink3);font-weight:600}
+    .pv2-ovltb tr.padre td{background:rgba(99,102,241,.08)}
+    .pv2-ovltb tr.alerta td{background:rgba(248,113,113,.09)}
+    .pv2-ovltb tr.padre.alerta td{background:rgba(248,113,113,.13)}
+    .pv2-ovltb tfoot td{background:var(--pv2-panel);border-top:2px solid #2c3a55;border-bottom:none;
+      font-weight:850;color:#e2e8f0}
+    .pv2-ovlcall{display:flex;flex-direction:column;gap:2px;border-radius:13px;padding:12px 14px;margin-top:13px;
+      border:1px solid;border-left-width:4px}
+    .pv2-ovlcall .k{font-size:10px;letter-spacing:.08em;font-weight:900;text-transform:uppercase}
+    .pv2-ovlcall b{font-size:22px;font-weight:900;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+    .pv2-ovlcall small{font-size:11px;color:var(--pv2-ink2);font-weight:600}
+    .pv2-ovlcall.bad{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.45)}
+    .pv2-ovlcall.bad .k,.pv2-ovlcall.bad b{color:#f87171}
+    .pv2-ovlcall.warn{background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.45)}
+    .pv2-ovlcall.warn .k,.pv2-ovlcall.warn b{color:#fbbf24}
+    .pv2-ovlcall.ok{background:rgba(52,211,153,.10);border-color:rgba(52,211,153,.42)}
+    .pv2-ovlcall.ok .k,.pv2-ovlcall.ok b{color:#34d399}
+    .pv2-ovlnota{margin:12px 0 0;font-size:11px;line-height:1.45;color:var(--pv2-ink2);
+      background:var(--pv2-panel);border:1px solid var(--pv2-line);border-radius:11px;padding:9px 11px}
+    .pv2-ovlnota b{color:#e2e8f0}
+    @media(max-width:620px){
+      .pv2-ovl{align-items:flex-end;padding:0}
+      .pv2-ovlbox{max-width:none;max-height:88vh;border-radius:18px 18px 0 0;border-bottom:0;animation:pv2OvlUp .22s ease}
+      .pv2-ubi{flex:1 1 46%;min-width:0;max-width:none}
+      .pv2-ovltot em{margin-left:0;width:100%}
+    }
+    @keyframes pv2OvlUp{from{transform:translateY(18px);opacity:0}to{transform:translateY(0);opacity:1}}
     /* [v2.43.601] Finanzas · Rentabilidad por zona (overlay) */
     .fr-layout{position:fixed;inset:0;z-index:8600;background:rgba(2,8,23,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:18px}
     .fr-panel{background:#0b1120;border:1px solid #24304a;border-radius:20px;width:min(1040px,100%);max-height:94vh;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.55);animation:frPop .25s ease}
@@ -19894,7 +20004,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.655"></script>
+<script src="js/api.js?v=2.43.660"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -19910,7 +20020,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.1.2"></script>
-<script src="js/app.js?v=2.43.656"></script>
+<script src="js/app.js?v=2.43.660"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
