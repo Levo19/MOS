@@ -19,8 +19,8 @@ values (
       { "id": "ic", "tipo": "icono", "x_mm": 2,  "y_mm": 6,    "idIcono": "postre", "tamano_dots": 96 },
       { "id": "t1", "tipo": "texto", "x_mm": 16, "y_mm": 2.5,  "texto": "POSTRES", "font": 3, "negrita": true,  "rotacion": 0, "alineacion": "left" },
       { "id": "t2", "tipo": "texto", "x_mm": 16, "y_mm": 9,    "texto": "PAPITO",  "font": 3, "negrita": true,  "rotacion": 0, "alineacion": "left" },
-      { "id": "t3", "tipo": "texto", "x_mm": 16, "y_mm": 15.6, "texto": "Dulzura hecha en casa", "font": 1, "negrita": false, "rotacion": 0, "alineacion": "left" },
-      { "id": "ln", "tipo": "linea", "x_mm": 16, "y_mm": 18.6, "ancho_mm": 30, "alto_mm": 0.4 },
+      { "id": "t3", "tipo": "texto", "x_mm": 16, "y_mm": 15.2, "texto": "Dulzura hecha en casa", "font": 2, "negrita": false, "rotacion": 0, "alineacion": "left" },
+      { "id": "ln", "tipo": "linea", "x_mm": 16, "y_mm": 18.4, "ancho_mm": 30, "alto_mm": 0.4 },
       { "id": "t4", "tipo": "texto", "x_mm": 16, "y_mm": 19.8, "texto": "972 225 28", "font": 2, "negrita": true, "rotacion": 0, "alineacion": "left" }
     ],
     "tamano": { "tipo": "adhesivo", "alto_mm": 25, "ancho_mm": 50 },
