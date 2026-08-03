@@ -1,5 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
-// IconosAdhesivo — catálogo de 24 iconos pixel-art para Editor de Avisos
+// IconosAdhesivo — catálogo de 25 iconos pixel-art para Editor de Avisos
+// v1.1.0 — 2026-08-03 — +postre (cupcake · marca Postres Papito); hex 48+96 en
+//          mos.adhesivo_iconos vía _seed_icono_postre.mjs (imprime el Edge).
 // v1.0.0 — 2026-06-05
 //
 // Cada icono se diseña como matriz 48×48 bits (0/1). Helpers de dibujo
@@ -503,10 +505,37 @@
     return m;
   }
 
+  // [v1.1.0] Cupcake con cereza — marca "Postres Papito" (adhesivo mini-tarjeta).
+  // ⚠ MISMO dibujo replicado en supabase/_seed_icono_postre.mjs (siembra el hex
+  // 48+96 en mos.adhesivo_iconos para la impresión). Si cambias esto, re-siembra.
+  function _postre() {
+    var m = _crearMatriz();
+    // cereza + tallito
+    _lineaH(m, 22, 25, 2, 4);
+    _lineaH(m, 24, 27, 0, 2);
+    // frosting: 3 ondas
+    _lineaH(m, 10, 15, 10, 2);
+    _lineaH(m, 20, 27, 8, 4);
+    _lineaH(m, 32, 37, 10, 2);
+    _lineaH(m, 12, 35, 12, 4);
+    _lineaH(m, 8, 39, 16, 4);
+    // borde de la copa
+    _lineaH(m, 6, 41, 20, 4);
+    // pirotín: rayas verticales
+    _lineaV(m, 10, 24, 41, 4);
+    _lineaV(m, 18, 24, 41, 4);
+    _lineaV(m, 26, 24, 41, 4);
+    _lineaV(m, 34, 24, 41, 4);
+    // base
+    _lineaH(m, 12, 35, 42, 4);
+    return m;
+  }
+
   // ── REGISTRO maestro ─────────────────────────────────────────────
   var CATALOGO = {
     // Comerciales
     estrella:   { label: '★ Estrella',     categoria: 'comercial', factory: _estrella },
+    postre:     { label: '🧁 Postre',      categoria: 'comercial', factory: _postre },
     porcentaje: { label: '% Porcentaje',   categoria: 'comercial', factory: _porcentaje },
     dos_por_uno:{ label: '2×1',            categoria: 'comercial', factory: _dosPorUno },
     sale:       { label: 'SALE',           categoria: 'comercial', factory: _sale },
