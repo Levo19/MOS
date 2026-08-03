@@ -7112,7 +7112,9 @@
     .pv2-ubis{display:flex;align-items:stretch;gap:6px;margin-top:8px;flex-wrap:wrap}
     .pv2-ubi{position:relative;flex:1 1 132px;min-width:126px;max-width:210px;text-align:left;
       background:var(--pv2-panel);border:1px solid var(--pv2-line);border-radius:12px;padding:7px 10px 8px;
-      display:flex;flex-direction:column;gap:3px;color:#e2e8f0;font:inherit;cursor:pointer;transition:.14s}
+      display:flex;flex-direction:column;gap:3px;color:#e2e8f0;font:inherit;cursor:pointer;transition:.14s;
+      /* [614 táctil] sin delay de 300ms ni destello gris al tocar (iOS/Android) */
+      touch-action:manipulation;-webkit-tap-highlight-color:transparent}
     .pv2-ubi:hover{border-color:var(--pv2-acc);transform:translateY(-1px)}
     .pv2-ubi:active{transform:scale(.985)}
     .pv2-ubi .t{font-size:9px;letter-spacing:.07em;font-weight:900;color:var(--pv2-ink3);
@@ -7162,10 +7164,15 @@
     .pv2-ovlhead .tt b{display:block;font-size:14.5px;font-weight:900;color:#f1f5f9;letter-spacing:-.01em;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .pv2-ovlhead .tt small{display:block;font-size:11px;color:var(--pv2-ink2);margin-top:1px;line-height:1.3}
-    .pv2-ovlx{background:#1e293b;border:0;color:#94a3b8;border-radius:10px;width:32px;height:32px;
-      font-size:14px;cursor:pointer;flex-shrink:0}
+    /* [614 táctil] 40px = tap target cómodo en iOS/Android (32 quedaba corto);
+       tap-highlight fuera para que no destelle gris al tocar. */
+    .pv2-ovlx{background:#1e293b;border:0;color:#94a3b8;border-radius:10px;width:40px;height:40px;
+      font-size:15px;cursor:pointer;flex-shrink:0;touch-action:manipulation;
+      -webkit-tap-highlight-color:transparent}
     .pv2-ovlx:hover{background:#2b3a56;color:#e2e8f0}
-    .pv2-ovlbody{overflow-y:auto;overscroll-behavior:contain;padding:13px 14px 18px;
+    .pv2-ovlx:active{background:#334155}
+    .pv2-ovlbody{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+      padding:13px 14px 18px;
       padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
     .pv2-ovltot{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;background:var(--pv2-panel);
       border:1px solid var(--pv2-line);border-radius:12px;padding:9px 12px;margin-bottom:11px}
@@ -7173,8 +7180,8 @@
     .pv2-ovltot b{font-size:19px;font-weight:900;color:#e2e8f0;font-variant-numeric:tabular-nums}
     .pv2-ovltot em{font-style:normal;font-size:11px;color:var(--pv2-ink2);font-weight:700;margin-left:auto;
       font-variant-numeric:tabular-nums}
-    .pv2-ovlscroll{overflow-x:auto;border:1px solid var(--pv2-line);border-radius:12px}
-    .pv2-ovltb{width:100%;border-collapse:collapse;font-size:12px;min-width:430px}
+    .pv2-ovlscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--pv2-line);border-radius:12px}
+    .pv2-ovltb{width:100%;border-collapse:collapse;font-size:12px;min-width:352px}
     .pv2-ovltb th{text-align:left;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--pv2-ink3);
       font-weight:900;background:var(--pv2-panel);border-bottom:1px solid #24304a;padding:7px 9px;white-space:nowrap}
     .pv2-ovltb th .q{display:inline-block;margin-left:4px;font-size:8px;border:1px solid var(--pv2-ink3);
@@ -7183,7 +7190,10 @@
       font-variant-numeric:tabular-nums;vertical-align:middle}
     .pv2-ovltb td.r,.pv2-ovltb th.r{text-align:right}
     .pv2-ovltb td.r .pv2-covmini{justify-content:flex-end}
-    .pv2-ovltb td.nm{min-width:150px}
+    /* [614 fix móvil] La presentación va CORTA ("250GR", "GRANEL"): el nombre completo del
+       producto ya está en la cabecera del overlay, repetirlo 5 veces empujaba la columna
+       "Falta" fuera de pantalla en 430px. min-width chico + nombre corto = entra todo. */
+    .pv2-ovltb td.nm{min-width:74px;max-width:104px}
     .pv2-ovltb td.nm span{display:block;font-weight:750;color:#e2e8f0;font-size:12px;line-height:1.25}
     .pv2-ovltb td.nm small{display:block;font-size:9.5px;color:var(--pv2-ink3);
       font-family:ui-monospace,Menlo,monospace;margin-top:1px}
@@ -20004,7 +20014,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.660"></script>
+<script src="js/api.js?v=2.43.661"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20020,7 +20030,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.1.2"></script>
-<script src="js/app.js?v=2.43.660"></script>
+<script src="js/app.js?v=2.43.661"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

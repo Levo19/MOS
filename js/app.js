@@ -44135,7 +44135,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const fu = parseFloat(l.faltaUnd) || 0;
       const alerta = st < 0 || (cob != null && cob < 1);
       return `<tr class="${l.esPadre ? 'padre' : ''}${alerta ? ' alerta' : ''}">
-        <td class="nm"><span>${_esc(l.nombre)}</span><small>${_esc(l.cod)}</small></td>
+        <td class="nm" title="${_esc(l.nombre)}"><span>${_esc(_pv2LinCorta(l.nombre))}</span><small>${_esc(l.cod)}</small></td>
         <td class="r${st < 0 ? ' neg' : ''}">${_fmtQty(st)}</td>
         <td class="r">${dem > 0 ? `${_fmtQty(dem)}<small>/sem</small>` : `<span class="dim">sin ${esAlm ? 'salidas' : 'ventas'}</span>`}</td>
         <td class="r">${_pv2CovMini(cob)}</td>
