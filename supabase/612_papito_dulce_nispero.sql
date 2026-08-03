@@ -21,7 +21,7 @@ update mos.adhesivo_plantillas set
       { "id": "t3", "tipo": "texto", "x_mm": 15,   "y_mm": 13.2, "texto": "Postres Papito", "font": 2, "negrita": false, "rotacion": 0, "alineacion": "left" },
       { "id": "ln", "tipo": "linea", "x_mm": 15,   "y_mm": 16.8, "ancho_mm": 26, "alto_mm": 0.4 },
       { "id": "tf", "tipo": "icono", "x_mm": 14.5, "y_mm": 18.6, "idIcono": "telefono", "tamano_dots": 32 },
-      { "id": "t4", "tipo": "texto", "x_mm": 18.8, "y_mm": 19.2, "texto": "972 222 528", "font": 3, "negrita": false, "rotacion": 0, "alineacion": "left" }
+      { "id": "t4", "tipo": "texto", "x_mm": 18.8, "y_mm": 19.2, "texto": "976 222 528", "font": 3, "negrita": false, "rotacion": 0, "alineacion": "left" }
     ],
     "tamano": { "tipo": "adhesivo", "alto_mm": 25, "ancho_mm": 50 },
     "version": 2,
