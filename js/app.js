@@ -43969,10 +43969,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!Array.isArray(lista) || !lista.length) return;
     const norm = s => String(s == null ? '' : s).trim().toUpperCase();
     const mapa = new Map();
-    for (const p of lista) if (p && p.codigoBarra) mapa.set(norm(p.codigoBarra), p.ubicaciones || []);
+    for (const p of lista) if (p && p.codigoBarra) mapa.set(norm(p.codigoBarra), p);
     for (const it of items) {
-      const u = mapa.get(norm(it.codigoBarra));
-      if (u && u.length) it.ubicaciones = u;
+      const p = mapa.get(norm(it.codigoBarra));
+      if (p && (p.ubicaciones || []).length) {
+        it.ubicaciones = p.ubicaciones;
+        // [615·H3] La UNIDAD viaja en la misma RPC y hay que pegarla: sin esto el front
+        // caía al default 'und' y un producto en KILOS mostraba "66.55 und".
+        if (p.unidad) it.unidad = p.unidad;
+      }
     }
   }
 

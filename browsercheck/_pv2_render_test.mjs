@@ -25,11 +25,14 @@ const stubs = `
   const _pv2Item = () => PP; const toast = () => {};
   const document = { getElementById: () => null, createElement: () => ({ addEventListener(){}, }), body:{appendChild(){}}, addEventListener(){}, removeEventListener(){} };
 `;
+// [615·H3] La unidad NO se pasa a mano: se obtiene con el MISMO merge que usa la app.
+// (Un test que inyectaba `unidad` a mano ocultó el bug de que el merge no la pegaba.)
+const mergeSrc = src.slice(src.indexOf('function _pv2MergeUbicaciones'), src.indexOf('function _pv2CostoDe'));
 const PP = { descripcion: 'AJONJOLI BLANCO PREMIUM GRANEL EXO', codigoBarra: 'WHAJARUM',
-             unidad: prod.unidad,                       // [615·H3] kg vs und
-             zonas: [{ idZona: 'ZONA-01', nombre: 'Zona 01' }, { idZona: 'ZONA-02', nombre: 'Zona 02' }],
-             ubicaciones: prod.ubicaciones };
-console.log('unidad del producto:', prod.unidad);
+             zonas: [{ idZona: 'ZONA-01', nombre: 'Zona 01' }, { idZona: 'ZONA-02', nombre: 'Zona 02' }] };
+new Function('items', 'resp', mergeSrc + 'return _pv2MergeUbicaciones(items, resp);')([PP], r.data);
+console.log('unidad tras el merge REAL:', PP.unidad, '· ubicaciones:', (PP.ubicaciones || []).length);
+if (PP.unidad !== 'KGM') { console.log('  ❌ el merge NO pegó la unidad (el ajonjolí es KGM)'); process.exit(1); }
 const f = new Function('PP', stubs + bloque + `
   return { cuadros: _pv2UbiCuadrosHtml(PP,'K1'), cover: _pv2UbiCoverHtml(PP,'K1'),
            ovlAlm: _pv2UbiOvlHtml(PP, _pv2UbiFind(PP,'ALMACEN')),

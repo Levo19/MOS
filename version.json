@@ -1,1 +1,1 @@
-{"version":"2.43.663","build":"2.43.663 Revision adversarial: unidad real (no kg fijo), comprar vs envasar, +26% productos, tope stock corrupto"}
+{"version":"2.43.664","build":"2.43.664 fix: el merge no pegaba la unidad (kilos se veian como und)"}

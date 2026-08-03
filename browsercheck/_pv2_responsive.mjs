@@ -13,8 +13,12 @@ const browser = await chromium.launch();
 let fail = 0;
 
 for (const v of VIEWS) {
-  const ctx = await browser.newContext({ viewport: { width: v.w, height: v.h },
-    ...(v.m ? devices['iPhone 13'] : {}), viewport2: undefined });
+  // Móvil/tablet: touch + isMobile reales. (Antes se aplicaba el perfil de iPhone
+  // también a Android y a la tablet, lo que mezclaba UA y daba falsos negativos.)
+  const ctx = await browser.newContext({
+    viewport: { width: v.w, height: v.h },
+    hasTouch: v.m, isMobile: v.m, deviceScaleFactor: v.m ? 2 : 1
+  });
   const page = await ctx.newPage();
   await page.addInitScript(([s]) => {
     localStorage.setItem('mos_device_id', '7e57c1a0-de1c-4a7e-b0de-c47a10906474');
