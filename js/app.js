@@ -14510,10 +14510,14 @@ const MOS = (() => {
     // guardar — refresca el catálogo del pedido v2 en vez de la lista v1 (eliminada).
     try {
       if (S.pv2 && S.pv2.prov) {
-        API.get('getProductosProveedorConStockV2', { idProveedor: S.pv2.prov.idProveedor, rangoDias: 30 })
+        // [616·rev] Guardia de proveedor: esta recarga ahora se dispara en cada alta, y sin
+        // el guard una respuesta lenta del proveedor A se pintaba como catálogo del B.
+        const _pidReq = S.pv2.prov.idProveedor;
+        API.get('getProductosProveedorConStockV2', { idProveedor: _pidReq, rangoDias: 30 })
           // [v2.43.597] con un modal pv2 abierto SOLO se actualiza la data (repintar
           // detrás hacía parpadear el overlay); al cerrarse, _mx() repinta si hace falta
           .then(r => { if (r) {
+            if (!S.pv2.prov || S.pv2.prov.idProveedor !== _pidReq) return;   // cambió de proveedor
             const _prev = S.pv2.items || [];
             S.pv2.items = Array.isArray(r) ? r : (r.data || []);
             // [616] Preservar los recién agregados que el servidor TODAVÍA no devuelve:
@@ -14523,6 +14527,23 @@ const MOS = (() => {
               const _hay = new Set(S.pv2.items.map(x => String(x.skuBase)));
               const _huerfanos = _prev.filter(x => x._pend && !_hay.has(String(x.skuBase)));
               if (_huerfanos.length) S.pv2.items = S.pv2.items.concat(_huerfanos);
+            } catch (_) {}
+            // [616·rev] RECLAVAR EL CARRITO: el placeholder se cotiza bajo `skuBase` (no tiene
+            // idPP todavía) y la fila real llega con `idPP` → eran DOS claves distintas y el
+            // pedido salía con la línea DUPLICADA (doble cantidad y doble plata al proveedor).
+            try {
+              const _c = S.provCarritos[_pidReq];
+              if (_c && _c.items) {
+                let _movio = false;
+                S.pv2.items.forEach(x => {
+                  const kSku = String(x.skuBase || ''), kPP = String(x.idPP || '');
+                  if (kPP && kSku && kPP !== kSku && _c.items[kSku]) {
+                    _c.items[kPP] = Object.assign({}, _c.items[kSku], _c.items[kPP] || {});
+                    delete _c.items[kSku]; _movio = true;
+                  }
+                });
+                if (_movio) { _provCarritosSave(); try { _provFabRender(); } catch (_) {} }
+              }
             } catch (_) {}
             // [614] esta recarga REEMPLAZA los items → sin esto se perderían las
             // `ubicaciones` y las cards volverían al render clásico tras editar un producto.
@@ -43945,7 +43966,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [615·L3] `ubis` DEBE resetearse: si la carga del proveedor nuevo falla, el shim de
     // recarga mergearía las ubicaciones del proveedor ANTERIOR sobre productos que
     // compartan código → cifras de otro proveedor en esta pantalla.
-    S.pv2.prov = prov; S.pv2.view = 'pedido'; S.pv2.tab = 'cat'; S.pv2.det = {}; S.pv2.items = null; S.pv2.hist = null; S.pv2.cand = null; S.pv2.ubis = null; S.pv2.cargando = true;
+    // [616·rev] `addAgregados` TAMPOCO puede sobrevivir al cambio de proveedor: _mx() lo
+    // recorre entero y pintaba un producto agregado en PROV-A dentro del catálogo de PROV-B
+    // (y desde el fix de `_huerfanos` ese fantasma ya no se limpiaba con el refetch: quedaba
+    // fijo, sin idPP para poder quitarlo, y podía colarse en el WhatsApp del pedido).
+    S.pv2.prov = prov; S.pv2.view = 'pedido'; S.pv2.tab = 'cat'; S.pv2.det = {}; S.pv2.items = null; S.pv2.hist = null; S.pv2.cand = null; S.pv2.ubis = null; S.pv2.addAgregados = []; S.pv2.cargando = true;
     S.provSelId = id;                       // los helpers legacy (WA/print) leen esto
     S._carritoModalProvId = id;
     // [v2.43.600] catálogo maestro para resolver derivados (ROT/SEM familia del ticket)

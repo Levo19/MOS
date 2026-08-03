@@ -20,7 +20,10 @@ t('todos los scripts inline parsean', errores === 0, errores);
 
 console.log('── 2. El fix del envío de ticket');
 t('existe la función de envío con reintento', html.includes('const _enviarTicket = (intento)'));
-t('reintenta 1 vez antes de rendirse', /if \(intento === 0\)[\s\S]{0,400}_enviarTicket\(1\)/.test(html));
+// [v2.8.246] El reintento es CONDICIONAL a propósito: solo cuando sabemos que el job NO
+// se creó. Ante timeout/abort no se reintenta (el ticket pudo haber salido → doble papel).
+t('reintenta 1 vez SOLO si el fallo es seguro (no timeout)', /if \(intento === 0 && !_incierto\(e\)\)[\s\S]{0,300}_enviarTicket\(1\)/.test(html));
+t('un envío que llega tarde cancela la alarma', html.includes('if (_yaSalio) return true;'));
 t('el fallo definitivo entra al banner persistente', /_enviarTicket[\s\S]{0,900}_meFalloDuroImpresion\(titulo, _pnId, _contenido/.test(html));
 // El flujo de VENTA ya no puede terminar en un toast que se desvanece. (Los otros dos
 // `catch` con toast son de reimpresión manual y aviso de sesión: ahí el usuario está mirando.)
@@ -30,7 +33,7 @@ t('sigue siendo fire-and-forget (no bloquea la venta)', html.includes('_enviarTi
 
 console.log('── 3. El banner de fallo sabe reimprimir esto');
 t('reimprimirUltimoTicket reenvía con printerId+contenido de la cola',
-  /reimprimirUltimoTicket[\s\S]{0,700}mandarImpresionPrintNode\(printerId, titulo, contenido/.test(html));
+  /reimprimirUltimoTicket[\s\S]{0,1200}mandarImpresionPrintNode\(printerId, titulo, contenido/.test(html));
 t('el fallo guarda el contenido para poder reimprimir', /meImpFallos\.value\.push\(\{[^}]*contenido: contenido/.test(html));
 
 console.log('── 3b. Voz: precalentado del motor');
