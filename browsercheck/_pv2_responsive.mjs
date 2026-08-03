@@ -1,6 +1,6 @@
 // Verifica el módulo nuevo en 3 viewports reales (móvil iPhone / tablet / PC).
 // Mide DESBORDE horizontal — el defecto clásico de una tabla de 5 columnas en 375px.
-import { chromium, devices } from 'playwright';
+import { chromium } from 'playwright';
 
 const VIEWS = [
   { n: 'MÓVIL iPhone SE', w: 375, h: 667, m: true },
@@ -28,7 +28,17 @@ for (const v of VIEWS) {
   await page.evaluate(() => { try { MOS.nav('proveedores'); } catch(_){} });
   await page.waitForTimeout(5000);
   await page.evaluate(() => { try { MOS.pv2.abrir('PROV070'); } catch(_){} });
-  await page.waitForTimeout(11000);
+  // espera ACTIVA a que la card exista (la red de Pages/Supabase varía por corrida;
+  // un timeout fijo daba falsos negativos con la lista aún cargando)
+  try {
+    await page.waitForFunction(() => [...document.querySelectorAll('.pv2-prod')]
+      .some(c => /AJONJOLI BLANCO PREMIUM GRANEL/i.test(c.textContent || '')), { timeout: 45000 });
+  } catch (_) { console.log('     ⚠ la card no apareció en 45s (reintentando abrir)');
+    await page.evaluate(() => { try { MOS.pv2.abrir('PROV070'); } catch(_){} });
+    try { await page.waitForFunction(() => [...document.querySelectorAll('.pv2-prod')]
+      .some(c => /AJONJOLI BLANCO PREMIUM GRANEL/i.test(c.textContent || '')), { timeout: 30000 }); } catch (_) {}
+  }
+  await page.waitForTimeout(1200);
 
   const r = await page.evaluate(() => {
     const out = {};

@@ -256,6 +256,9 @@ const MOS = (() => {
     if (S.view === 'proveedores' && viewName !== 'proveedores' && S.pv2) {
       S.pv2.view = 'home';
       const _lay = $('pv2Layout'); if (_lay) _lay.remove();
+      // [615·M2] El overlay de ubicación vive en <body> (fixed, z-index 8700): sin esto
+      // quedaba tapando Caja/Finanzas al cambiar de módulo, con su listener de Escape vivo.
+      const _ovl = $('pv2UbiOvl'); if (_ovl) { try { MOS.pv2.ubiX(); } catch (_) { _ovl.remove(); } }
     }
 
     // Config: show first panel
@@ -43929,7 +43932,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   async function _pv2Abrir(id) {
     const prov = (S.proveedores || []).find(p => p.idProveedor === id);
     if (!prov) { toast('Proveedor no encontrado', 'error'); return; }
-    S.pv2.prov = prov; S.pv2.view = 'pedido'; S.pv2.tab = 'cat'; S.pv2.det = {}; S.pv2.items = null; S.pv2.hist = null; S.pv2.cand = null; S.pv2.cargando = true;
+    // [615·L3] `ubis` DEBE resetearse: si la carga del proveedor nuevo falla, el shim de
+    // recarga mergearía las ubicaciones del proveedor ANTERIOR sobre productos que
+    // compartan código → cifras de otro proveedor en esta pantalla.
+    S.pv2.prov = prov; S.pv2.view = 'pedido'; S.pv2.tab = 'cat'; S.pv2.det = {}; S.pv2.items = null; S.pv2.hist = null; S.pv2.cand = null; S.pv2.ubis = null; S.pv2.cargando = true;
     S.provSelId = id;                       // los helpers legacy (WA/print) leen esto
     S._carritoModalProvId = id;
     // [v2.43.600] catálogo maestro para resolver derivados (ROT/SEM familia del ticket)
@@ -44058,9 +44064,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return String((z && z.nombre) || (u && u.id) || '');
   }
   function _pv2UbiIco(u) { return _pv2EsAlm(u) ? '🏬' : '🏪'; }
+  // [615·H3] La unidad NO es siempre kg: 267 de 341 productos son NIU (unidades).
+  // La RPC ahora manda `unidad` del padre ('KGM'|'NIU'); default seguro = 'und'.
+  function _pv2Uni(pp) { return String((pp && pp.unidad) || '').toUpperCase() === 'KGM' ? 'kg' : 'und'; }
+  // [615·L1] El `_esc` vigente en este scope NO escapa la comilla simple → un producto
+  // con apóstrofo rompería el onclick. Para argumentos dentro de '...' de un onclick.
+  function _pv2EscJs(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
   // Barra de cobertura: 2 semanas = 100%. Negativo → 0% (y _pv2CovColor ya lo pinta rojo).
   function _pv2CovPct(c) { return c == null ? 0 : Math.max(0, Math.min(100, (parseFloat(c) || 0) / 2 * 100)); }
-  function _pv2CovTxt(c) { return c == null ? 'sin rotación' : (parseFloat(c) || 0).toFixed(1) + ' sem'; }
+  // [615·L4] Una cobertura muy negativa ("-10357.5 sem") reventaba el ancho del cuadro.
+  // Un negativo no es "cuántas semanas alcanza": es que el stock está en rojo.
+  function _pv2CovTxt(c) {
+    if (c == null) return 'sin rotación';
+    const v = parseFloat(c) || 0;
+    return v < 0 ? 'en negativo' : v.toFixed(1) + ' sem';
+  }
   function _pv2CovMini(c) {
     return `<span class="pv2-covmini${c == null ? ' nulo' : ''}">` +
            `<span class="bar"><i style="width:${_pv2CovPct(c)}%;background:${_pv2CovColor(c)}"></i></span>` +
@@ -44086,12 +44104,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const teq = parseFloat(u.totalEq) || 0;
       const falta = parseFloat(u.faltaEq) || 0;
       const neg = teq < 0 || (parseFloat(u.nNegativos) || 0) > 0;
-      const nP = parseFloat(u.nPresentaciones) || (u.lineas || []).length;
-      return `<button type="button" class="pv2-ubi ${_pv2EsAlm(u) ? 'alm' : 'zona'}${neg ? ' neg' : ''}" onclick="MOS.pv2.ubi('${key}','${_esc(u.id)}')" title="Ver ${_esc(nom)} presentación por presentación">
+      // [615·L2] nPresentaciones = 0 es un valor VÁLIDO (ubicación sin stock); con `||`
+      // caía a lineas.length y mostraba "3 presentaciones" en un lugar vacío.
+      const nP = u.nPresentaciones == null ? (u.lineas || []).length : (parseFloat(u.nPresentaciones) || 0);
+      const uni = _pv2Uni(pp);
+      return `<button type="button" class="pv2-ubi ${_pv2EsAlm(u) ? 'alm' : 'zona'}${neg ? ' neg' : ''}" onclick="MOS.pv2.ubi('${_pv2EscJs(key)}','${_pv2EscJs(u.id)}')" title="Ver ${_esc(nom)} presentación por presentación">
         <span class="t">${_pv2UbiIco(u)} ${_esc(nom)}</span>
         <b>${_fmtQty(teq)}</b>
         ${_pv2CovMini(u.cubreSem)}
-        <small class="${falta > 0 ? 'falta' : ''}">${falta > 0 ? `falta ${_fmtQty(falta)} kg` : `${_fmtQty(nP)} presentaci${nP === 1 ? 'ón' : 'ones'}`}</small>
+        <small class="${falta > 0 ? 'falta' : ''}">${falta > 0 ? `falta ${_fmtQty(falta)} ${uni}` : `${nP} presentaci${nP === 1 ? 'ón' : 'ones'}`}</small>
         <span class="ver">ver ▾</span></button>`;
     }).join('');
     return `<div class="pv2-ubis">${cel}
@@ -44105,18 +44126,26 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const alm = _pv2UbiAlm(pp); if (!alm) return '';
     const cob = alm.cubreSem == null ? null : (parseFloat(alm.cubreSem) || 0);
     const dem = parseFloat(alm.demandaEqSem) || 0;
-    const falta = parseFloat(alm.faltaEq) || 0;
+    const uni = _pv2Uni(pp);
+    // [615·H2] El faltante se parte en dos: lo que sale del GRANEL propio se ENVASA,
+    // solo el resto se COMPRA. Antes se mandaba a comprar algo que ya estaba en casa.
+    const comprar = parseFloat(alm.faltaComprarEq) || 0;
+    const envasar = parseFloat(alm.faltaEnvasarEq) || 0;
     const top = (alm.lineas || []).filter(l => (parseFloat(l.faltaUnd) || 0) > 0)
       .sort((a, b) => (parseFloat(b.faltaEq) || 0) - (parseFloat(a.faltaEq) || 0)).slice(0, 3);
+    const brk = top.length ? `<span class="brk">${top.map(l => `${_esc(_pv2LinCorta(l.nombre))} ${_fmtQty(l.faltaUnd)}`).join(' · ')}</span>` : '';
+    const onclick = `onclick="MOS.pv2.ubi('${_pv2EscJs(key)}','${_pv2EscJs(alm.id)}')"`;
     return `<div class="pv2-cover">
         <span class="lbl">⏳ el almacén cubre <b style="color:${_pv2CovColor(cob)}">${_pv2CovTxt(cob)}</b></span>
         <div class="bar"><i style="width:${_pv2CovPct(cob)}%;background:${_pv2CovColor(cob)}"></i></div>
-        <span class="lbl dim" title="Promedio semanal de las últimas 4 semanas completas: lo que el almacén despachó a zonas por guía, sin contar el envasado.">🚚 sale ${_fmtQty(dem)} kg/sem</span>
-      </div>${falta > 0 ? `
-      <button type="button" class="pv2-ubifalta" onclick="MOS.pv2.ubi('${key}','${_esc(alm.id)}')" title="Ver el detalle del almacén presentación por presentación">
-        <span class="ttl">FALTA PARA CUBRIR LA SEMANA — <b>${_fmtQty(falta)} kg</b></span>
-        ${top.length ? `<span class="brk">${top.map(l => `${_esc(_pv2LinCorta(l.nombre))} ${_fmtQty(l.faltaUnd)} und`).join(' · ')}</span>` : ''}
-        <span class="ver">ver ▾</span></button>` : ''}`;
+        <span class="lbl dim" title="Promedio semanal de las últimas 4 semanas completas: lo despachado a zonas por guía (menos devoluciones), sin contar el envasado.">🚚 sale ${_fmtQty(dem)} ${uni}/sem</span>
+      </div>${comprar > 0 ? `
+      <button type="button" class="pv2-ubifalta" ${onclick} title="Ver el detalle del almacén presentación por presentación">
+        <span class="ttl">🛒 COMPRAR PARA LA SEMANA — <b>${_fmtQty(comprar)} ${uni}</b></span>
+        ${brk}<span class="ver">ver ▾</span></button>` : ''}${envasar > 0 ? `
+      <button type="button" class="pv2-ubifalta envasar" ${onclick} title="El granel ya está en el almacén: hay que envasarlo, no comprarlo">
+        <span class="ttl">🔄 ENVASAR — <b>${_fmtQty(envasar)} ${uni}</b> <small>ya tienes el granel</small></span>
+        ${comprar > 0 ? '' : brk}<span class="ver">ver ▾</span></button>` : ''}`;
   }
 
   // ── Overlay (fixed + backdrop): bottom-sheet en móvil, modal centrado en PC ──
@@ -44125,6 +44154,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const nom = _pv2UbiNom(pp, u);
     const colDem = esAlm ? 'Sale' : 'Vende';
     const tipDem = 'Promedio semanal de las últimas 4 semanas completas';
+    const uni = _pv2Uni(pp);
     const lineas = u.lineas || [];
     const falta = parseFloat(u.faltaEq) || 0;
     const nP = parseFloat(u.nPresentaciones) || lineas.length;
@@ -44139,14 +44169,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <td class="r${st < 0 ? ' neg' : ''}">${_fmtQty(st)}</td>
         <td class="r">${dem > 0 ? `${_fmtQty(dem)}<small>/sem</small>` : `<span class="dim">sin ${esAlm ? 'salidas' : 'ventas'}</span>`}</td>
         <td class="r">${_pv2CovMini(cob)}</td>
-        <td class="r">${fu > 0 ? `<b>${_fmtQty(fu)}</b><small> und</small><em>= ${_fmtQty(l.faltaEq)} kg</em>` : '<span class="dim">—</span>'}</td>
+        <td class="r">${fu > 0 ? `<b>${_fmtQty(fu)}</b><small> und</small>${l.esPadre ? '' : `<em>= ${_fmtQty(l.faltaEq)} ${uni}</em>`}` : '<span class="dim">—</span>'}</td>
       </tr>`;
     }).join('');
-    const call = falta > 0
-      ? (esAlm
-          ? `<div class="pv2-ovlcall bad"><span class="k">PARA CUBRIR 1 SEMANA FALTAN</span><b>${_fmtQty(falta)} kg</b><small>se le compra al proveedor</small></div>`
-          : `<div class="pv2-ovlcall warn"><span class="k">${_esc(nom)} NECESITA ESTA SEMANA</span><b>${_fmtQty(falta)} kg</b><small>lo despacha el almacén — no es una compra</small></div>`)
-      : `<div class="pv2-ovlcall ok"><span class="k">${esAlm ? 'EL ALMACÉN CUBRE LA SEMANA' : _esc(nom) + ' CUBRE LA SEMANA'}</span><b>no falta nada</b><small>${esAlm ? 'no hay que comprarle al proveedor' : 'no necesita despacho esta semana'}</small></div>`;
+    // [615·H2/H3] En almacén se separa COMPRAR (al proveedor) de ENVASAR (granel propio);
+    // la unidad sale del producto, no es "kg" fijo. [H4] si hay stock corrupto se avisa.
+    const comprar = parseFloat(u.faltaComprarEq) || 0;
+    const envasar = parseFloat(u.faltaEnvasarEq) || 0;
+    const avisoCorrupto = u.hayCorrupto
+      ? `<div class="pv2-ovlnota" style="border-color:rgba(248,113,113,.45);color:#fca5a5">⚠ Hay stock <b>muy negativo</b> en esta ubicación: el faltante está topado a 8 semanas. Primero <b>corrige el stock</b> (ajuste) — ese número no es una necesidad real.</div>`
+      : '';
+    const call = (esAlm
+      ? (comprar > 0 || envasar > 0
+          ? `${comprar > 0 ? `<div class="pv2-ovlcall bad"><span class="k">🛒 COMPRAR AL PROVEEDOR</span><b>${_fmtQty(comprar)} ${uni}</b><small>para cubrir 1 semana</small></div>` : ''}
+             ${envasar > 0 ? `<div class="pv2-ovlcall warn"><span class="k">🔄 ENVASAR (no comprar)</span><b>${_fmtQty(envasar)} ${uni}</b><small>el granel ya está en el almacén — solo hay que envasarlo</small></div>` : ''}`
+          : `<div class="pv2-ovlcall ok"><span class="k">EL ALMACÉN CUBRE LA SEMANA</span><b>no falta nada</b><small>no hay que comprarle al proveedor</small></div>`)
+      : (falta > 0
+          ? `<div class="pv2-ovlcall warn"><span class="k">${_esc(nom)} NECESITA ESTA SEMANA</span><b>${_fmtQty(falta)} ${uni}</b><small>lo despacha el almacén — no es una compra</small></div>`
+          : `<div class="pv2-ovlcall ok"><span class="k">${_esc(nom)} CUBRE LA SEMANA</span><b>no falta nada</b><small>no necesita despacho esta semana</small></div>`)) + avisoCorrupto;
     return `<div class="pv2-ovlbox" role="dialog" aria-modal="true" aria-label="Detalle de ${_esc(nom)}">
       <div class="pv2-ovlhead">
         <span class="ic">${_pv2UbiIco(u)}</span>
@@ -44156,7 +44196,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       <div class="pv2-ovlbody">
         <div class="pv2-ovltot">
           <span>Total en ${_esc(nom)}</span>
-          <b>${_fmtQty(u.totalEq)} kg</b>
+          <b>${_fmtQty(u.totalEq)} ${uni}</b>
           <em>${_fmtQty(nP)} presentaci${nP === 1 ? 'ón' : 'ones'}${(parseFloat(u.nNegativos) || 0) > 0 ? ` · ⚠ ${_fmtQty(u.nNegativos)} en negativo` : ''}</em>
         </div>
         <div class="pv2-ovlscroll">
@@ -44174,7 +44214,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               <td class="r">${_fmtQty(u.totalEq)}</td>
               <td class="r">${_fmtQty(u.demandaEqSem)}<small>/sem</small></td>
               <td class="r">${_pv2CovMini(u.cubreSem)}</td>
-              <td class="r">${falta > 0 ? `<b>${_fmtQty(falta)}</b><small> kg</small>` : '<span class="dim">—</span>'}</td>
+              <td class="r">${falta > 0 ? `<b>${_fmtQty(falta)}</b><small> ${uni}</small>` : '<span class="dim">—</span>'}</td>
             </tr></tfoot>
           </table>
         </div>
