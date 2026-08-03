@@ -1,5 +1,6 @@
 // ════════════════════════════════════════════════════════════════════
-// IconosAdhesivo — catálogo de 25 iconos pixel-art para Editor de Avisos
+// IconosAdhesivo — catálogo de 26 iconos pixel-art para Editor de Avisos
+// v1.2.0 — 2026-08-03 — +telefono (auricular · contacto en adhesivos); hex 48+32.
 // v1.1.0 — 2026-08-03 — +postre (cupcake · marca Postres Papito); hex 48+96 en
 //          mos.adhesivo_iconos vía _seed_icono_postre.mjs (imprime el Edge).
 // v1.0.0 — 2026-06-05
@@ -531,11 +532,22 @@
     return m;
   }
 
+  // [v1.2.0] Auricular de teléfono (diagonal clásica) — para adhesivos con
+  // número de contacto. ⚠ Replicado en _seed_icono_postre.mjs (hex 48+32 en BD).
+  function _telefono() {
+    var m = _crearMatriz();
+    _circulo(m, 11, 37, 8, true);
+    _circulo(m, 37, 11, 8, true);
+    _linea(m, 12, 34, 34, 12, 9);
+    return m;
+  }
+
   // ── REGISTRO maestro ─────────────────────────────────────────────
   var CATALOGO = {
     // Comerciales
     estrella:   { label: '★ Estrella',     categoria: 'comercial', factory: _estrella },
     postre:     { label: '🧁 Postre',      categoria: 'comercial', factory: _postre },
+    telefono:   { label: '📞 Teléfono',    categoria: 'comercial', factory: _telefono },
     porcentaje: { label: '% Porcentaje',   categoria: 'comercial', factory: _porcentaje },
     dos_por_uno:{ label: '2×1',            categoria: 'comercial', factory: _dosPorUno },
     sale:       { label: 'SALE',           categoria: 'comercial', factory: _sale },

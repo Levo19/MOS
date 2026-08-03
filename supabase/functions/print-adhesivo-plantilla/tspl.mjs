@@ -127,9 +127,23 @@ function linesToBytes(lines) {
   return bytes;
 }
 
+// [v tilde] La TSC arranca en CODEPAGE 437: los bytes latin1 de á/é/í/ó/ú/ñ
+// imprimían basura. Transliteramos a CP437 (donde SÍ existen en otra posición).
+// Mayúsculas acentuadas sin glifo CP437 (Á Í Ó Ú) caen a la letra sin tilde.
+// Solo afecta chars >0x7F (antes salían corruptos igual) — ASCII intacto.
+const CP437 = {
+  0xE1: 0xA0, 0xE9: 0x82, 0xED: 0xA1, 0xF3: 0xA2, 0xFA: 0xA3,  // á é í ó ú
+  0xF1: 0xA4, 0xD1: 0xA5, 0xFC: 0x81, 0xC9: 0x90, 0xDC: 0x9A,  // ñ Ñ ü É Ü
+  0xC1: 0x41, 0xCD: 0x49, 0xD3: 0x4F, 0xDA: 0x55,              // Á→A Í→I Ó→O Ú→U
+  0xB0: 0xF8, 0xBF: 0xA8, 0xA1: 0xAD                            // ° ¿ ¡
+};
 function strToBytes(s) {
   const b = [];
-  for (let i = 0; i < s.length; i++) b.push(s.charCodeAt(i) & 0xFF);
+  for (let i = 0; i < s.length; i++) {
+    const cp = s.charCodeAt(i);
+    if (cp < 0x80) b.push(cp);
+    else b.push(CP437[cp] !== undefined ? CP437[cp] : 0x3F);   // sin mapa → '?'
+  }
   return b;
 }
 

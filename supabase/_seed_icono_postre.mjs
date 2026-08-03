@@ -30,6 +30,39 @@ function postre() {
   return m;
 }
 
+function circulo(m, cx, cy, r) {
+  for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++)
+    if (x * x + y * y <= r * r) set(m, cx + x, cy + y);
+}
+function linea(m, x1, y1, x2, y2, g = 1) {
+  const dx = Math.abs(x2 - x1), dy = Math.abs(y2 - y1);
+  const sx = x1 < x2 ? 1 : -1, sy = y1 < y2 ? 1 : -1;
+  let err = dx - dy;
+  while (true) {
+    for (let g1 = 0; g1 < g; g1++) for (let g2 = 0; g2 < g; g2++) set(m, x1 + g1, y1 + g2);
+    if (x1 === x2 && y1 === y2) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x1 += sx; }
+    if (e2 < dx)  { err += dx; y1 += sy; }
+  }
+}
+
+// Auricular — réplica de _telefono() en iconos.js (48) + dibujo propio a 32
+function telefono48() {
+  const m = crearMatriz(48);
+  circulo(m, 11, 37, 8);
+  circulo(m, 37, 11, 8);
+  linea(m, 12, 34, 34, 12, 9);
+  return m;
+}
+function telefono32() {
+  const m = crearMatriz(32);
+  circulo(m, 7, 25, 5);
+  circulo(m, 25, 7, 5);
+  linea(m, 8, 22, 22, 8, 6);
+  return m;
+}
+
 function upscale2(m) {
   const n = m.length, r = crearMatriz(n * 2);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (m[y][x]) {
@@ -50,18 +83,22 @@ function toHex(m) {
 }
 
 const m48 = postre(), m96 = upscale2(m48);
-console.log('── preview 48×48 (█ = tinta):');
+const t48 = telefono48(), t32 = telefono32();
+console.log('── preview postre 48 (█ = tinta):');
 console.log(m48.map(f => f.map(b => b ? '█' : ' ').join('')).join('\n'));
+console.log('── preview telefono 32:');
+console.log(t32.map(f => f.map(b => b ? '█' : ' ').join('')).join('\n'));
 
 const url = fs.readFileSync('C:/Users/ISO/.sb_db.url', 'utf8').trim();
 const c = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
 await c.connect();
-for (const [dots, m] of [[48, m48], [96, m96]]) {
+const seeds = [['postre', 48, m48], ['postre', 96, m96], ['telefono', 48, t48], ['telefono', 32, t32]];
+for (const [id, dots, m] of seeds) {
   const hex = toHex(m);
   await c.query(`insert into mos.adhesivo_iconos (id_icono, tamano_dots, hex)
-    values ('postre', $1, $2)
-    on conflict (id_icono, tamano_dots) do update set hex = excluded.hex`, [dots, hex]);
-  console.log(`sembrado postre__${dots} · hex ${hex.length} chars`);
+    values ($1, $2, $3)
+    on conflict (id_icono, tamano_dots) do update set hex = excluded.hex`, [id, dots, hex]);
+  console.log(`sembrado ${id}__${dots} · hex ${hex.length} chars`);
 }
-console.table((await c.query(`select id_icono, tamano_dots, length(hex) len from mos.adhesivo_iconos where id_icono='postre'`)).rows);
+console.table((await c.query(`select id_icono, tamano_dots, length(hex) len from mos.adhesivo_iconos where id_icono in ('postre','telefono') order by 1,2`)).rows);
 await c.end();
