@@ -1742,6 +1742,16 @@ const API = (() => {
       return _desempacarME(out);
     }
 
+    if (action === 'aprobarExtensionHorario' || action === 'rechazarExtensionHorario') {
+      // [635] aprobar/rechazar extensión de horario desde Infraestructura (misma RPC que
+      // usa el modal de Seguridad de ME/WH). Sin fallback GAS.
+      const fn = action === 'aprobarExtensionHorario' ? 'aprobar_extension_horario' : 'rechazar_extension_horario';
+      const out = await _sbRpcMOSWrite(fn, { p: { idAlerta: String(p.idAlerta || ''), aprobadoPor: _mosUsuario(p), rechazadoPor: _mosUsuario(p) } });
+      if (out == null) throw new Error('Sin conexión con Supabase');
+      if (out.ok === false) throw new Error(out.error || 'no se pudo');
+      return out;
+    }
+
     if (action === 'toggleMosgo') {
       // [628] Interruptor 🛵 del canal MosGo (solo MASTER — el guard real vive en la RPC).
       // ON  → enciende canal_mayoreo Y estado (todo lo de MosGo se vende también en ME).
@@ -2740,6 +2750,9 @@ const API = (() => {
     // server-side). GAS no lo conoce → gate always-true; sin token, el branch LANZA (no cae
     // a GAS, que respondería "Acción no reconocida" — el bug que reportó el dueño).
     toggleMosgo:                () => true,
+    // [635] extensión de horario desde Infraestructura — 100% Supabase, GAS no las conoce
+    aprobarExtensionHorario:    () => true,
+    rechazarExtensionHorario:   () => true,
     // [AUTH] verificación de clave admin: Supabase-first SIEMPRE (RPC central bcrypt+cascada+auditoría);
     // si no hay token → null → GAS kill-switch. La validación no es "dinero directo", es auth central.
     verificarClaveAdmin:        () => true,
@@ -3467,6 +3480,12 @@ const API = (() => {
       // [Optimización · portables 114/115/116]
       if (action === 'getConfig')              { return _conFallbackMOS(() => _getConfigDirecto(p)); }
       if (action === 'getDispositivos')        { return _conFallbackMOS(() => _getDispositivosDirecto(p)); }
+      // [635] solicitudes de extensión de horario PENDIENTES (para la sección A de Infraestructura)
+      if (action === 'getAlertasExtensionHorario') {
+        return _sbRpcMOS('seguridad_alertas', { p: { tipo: 'EXTENSION_HORARIO_PENDIENTE' } })
+          .then(r => (r && r.ok !== false) ? (r.items || r.alertas || (r.data && r.data.items) || []) : [])
+          .catch(() => []);
+      }
       // [cero-GAS G2] GPS tracking — gate _mosLecturaDirecta (ON prod) + el RPC checa GPS_DIRECTO (OFF→null→caché local).
       if (action === 'getUltimaUbicacionDispositivo') { return _conFallbackMOS(() => _getUltimaUbicacionDispositivoDirecto(p)); }
       if (action === 'getUbicacionesDispositivo')     { return _conFallbackMOS(() => _getUbicacionesDispositivoDirecto(p)); }

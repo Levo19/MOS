@@ -18228,6 +18228,8 @@ const MOS = (() => {
         API.get('getVendedoresMEBloqueados', {}).then(r => { if (r) { cfgData.bloqueosME = r; _cfgSaveCache('bloqueosME', r); } }).catch(() => {}),
         API.get('getSeries', {}).then(r => { if (r) { cfgData.series = r; _cfgSaveCache('series', r); } }).catch(() => {}),
         API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = _dispAplicarShield(r); _cfgSaveCache('dispositivos', cfgData.dispositivos); } }).catch(() => {}),
+        // [635] solicitudes de extensión de horario → sección A de Infraestructura
+        API.get('getAlertasExtensionHorario', {}).then(r => { if (r) cfgData.alertasHorario = r; }).catch(() => {}),
         API.get('getCategorias', {}).then(r => { if (r) { cfgData.categorias = r; _cfgSaveCache('categorias', r); } }).catch(() => {}),
         API.get('getConfig', {}).then(r => { if (r) { cfgData.config = r; _cfgSaveCache('config', r); } }).catch(() => {})
       ];
@@ -18266,6 +18268,7 @@ const MOS = (() => {
       if (tab === 'infra') {
         tasks.push(API.get('getImpresoras', {}).then(r => { if (r) { cfgData.impresoras = r; _cfgSaveCache('impresoras', r); } }).catch(() => {}));
         tasks.push(API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = _dispAplicarShield(r); _cfgSaveCache('dispositivos', cfgData.dispositivos); } }).catch(() => {}));
+        tasks.push(API.get('getAlertasExtensionHorario', {}).then(r => { if (r) cfgData.alertasHorario = r; }).catch(() => {}));   // [635]
         tasks.push(API.get('getSeries', {}).then(r => { if (r) { cfgData.series = r; _cfgSaveCache('series', r); } }).catch(() => {}));
       }
       if (tab === 'personal') {
@@ -19539,12 +19542,18 @@ const MOS = (() => {
   function _dispVisibleFleet(d) {
     const est = String(d.Estado || '').toUpperCase();
     if (est === 'ACTIVO') return true;
-    if (est === 'SUSPENDIDO') {
-      if (_cfgVerTodos) return true;
-      return _dispActividad(d.Ultima_Conexion).minutos <= _CFG_7D_MIN;
-    }
+    // [635 · decisión dueño] un SUSPENDIDO jamás vive en una zona (VIP incluido):
+    // ≤7 días → sección ⏸ Suspendidos · >7 días → Archivados. Las zonas quedan limpias.
+    if (est === 'SUSPENDIDO') return _cfgVerTodos;
     if (est === 'INACTIVO') return _cfgVerTodos;
     return false; // PENDIENTE va en su sección · CANCELADO* en Archivados
+  }
+  // [635] suspendidos "frescos" (≤7 días) — sección propia con su duración
+  function _dispSuspendidosFrescos() {
+    return (cfgData.dispositivos || []).filter(d => {
+      if (String(d.Estado || '').toUpperCase() !== 'SUSPENDIDO') return false;
+      return _dispActividad(d.Ultima_Conexion).minutos <= _CFG_7D_MIN;
+    });
   }
   function _fleetDe(devs) {
     return (devs || []).filter(_dispVisibleFleet).filter(d => {
@@ -19886,6 +19895,38 @@ const MOS = (() => {
   }
 
   // ── cajeros SIN zona asignada (bloqueados / sin sesión) — sección del mockup ──
+  // [635] ⏸ Suspendidos (≤7 días) — fuera de TODAS las zonas, con su duración y reactivar.
+  function _cfgSuspendidos() {
+    const susp = _dispSuspendidosFrescos().filter(d => !_cfgQ || (String(d.Nombre_Equipo || '') + String(d.Ultima_Sesion || '')).toLowerCase().includes(_cfgQ));
+    if (!susp.length) return '';
+    const rows = susp.map(d => {
+      const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
+      const t = _dispSuspTxt(d) || _fmtHace(d.Ultima_Conexion).replace('hace ', '');
+      return `<div class="printer" style="border-left:3px solid #f97316">
+        <span class="pic" style="filter:grayscale(.35)">${_dispIcono(d.Nombre_Equipo)}</span>
+        <div style="flex:1;min-width:0"><div class="pn">${d.Nombre_Equipo || 'Dispositivo'} ${_appBadge(d.App)}</div>
+        <div class="pmeta" style="color:#fb923c">⏸ suspendido ${t ? 'hace ' + t : ''}${d.Ultima_Sesion ? ' · 👤 último: ' + d.Ultima_Sesion : ''}</div></div>
+        <span class="act ghost" style="color:#34d399;border-color:#065f46" onclick="MOS.aprobarDispositivo('${idAttr}')">↺ Reactivar</span>
+      </div>`;
+    }).join('');
+    return _cfgEyebrow('⏸', 'Suspendidos (2 días sin conectar · a los 7 pasan a Archivados)') + `<div class="pend">${rows}</div>`;
+  }
+
+  // [635] 🛵 Grupo MosGo — los equipos cuya última app es la ruta (no tienen zona física).
+  function _cfgZonaGo() {
+    const devs = _fleetDe((cfgData.dispositivos || []).filter(d => String(d.App || '').toLowerCase() === 'mosgo'));
+    if (!devs.length) return '';
+    const rows = devs.map(d => {
+      const act = _dispActividad(d.Ultima_Conexion);
+      return `<div class="printer" style="border-left:3px solid #8f7aff">
+        <span class="pic">🛵</span>
+        <div style="flex:1;min-width:0"><div class="pn">${d.Nombre_Equipo || 'Equipo ruta'} ${_appBadge(d.App)}</div>
+        <div class="pmeta" style="color:${act.color}">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div></div>
+      </div>`;
+    }).join('');
+    return _cfgEyebrow('GO', 'MosGo · venta en ruta') + `<div class="pend" style="border-left:2px solid rgba(143,122,255,.35)">${rows}</div>`;
+  }
+
   function _cfgSinZona() {
     const { grupos, dispPorCajero, bloqMap } = _cfgCajerosData();
     const zonasNorm = (cfgData.zonas || []).flatMap(z => [_normNombre(z.idZona), _normNombre(z.nombre)]);
@@ -19902,24 +19943,72 @@ const MOS = (() => {
 
   // ── pendientes de aprobación (.pend) ──
   function _cfgPend() {
+    // [635 · decisión dueño] Sección A agrupada por TIPO de solicitud, ambas con TTL 1 h:
+    //   📱 acceso de dispositivo (UUID) · 🕐 extensión de horario. Cada fila dice hace
+    //   cuánto se pidió y, si el equipo venía suspendido, hace cuánto lo estaba.
     const pendientes = _dispPendientes().filter(d => !_cfgQ || (String(d.Nombre_Equipo || '') + String(d.Ultima_Sesion || '')).toLowerCase().includes(_cfgQ));
-    if (!pendientes.length) return '';
-    const rows = pendientes.map(d => {
+    const horario = (cfgData.alertasHorario || []).filter(a =>
+      String(a.estado || '').toUpperCase() === 'PENDIENTE'
+      && (Date.now() - (Date.parse(a.fecha || '') || 0)) <= 3600e3
+      && (!_cfgQ || String(a.descripcion || '').toLowerCase().includes(_cfgQ)));
+    if (!pendientes.length && !horario.length) return '';
+
+    const rowsDisp = pendientes.map(d => {
       const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
-      const act = _dispActividad(d.Ultima_Conexion);
       const appL = String(d.App || '').toLowerCase();
-      const appTxt = appL.indexOf('warehouse') >= 0 ? 'warehouseMos' : (appL === 'mos' ? 'MOS' : 'mosExpress');
+      const appTxt = appL.indexOf('warehouse') >= 0 ? 'warehouseMos' : (appL === 'mos' ? 'MOS' : (appL === 'mosgo' ? 'MosGo 🛵' : 'mosExpress'));
+      const hace = _fmtHace(d.Pendiente_Desde || d.Ultima_Conexion);
+      const susp = _dispSuspTxt(d);
       return `<div class="pend-row" data-pend-card="${idAttr}">
         <div class="devt phone susp" style="transform:scale(.55);margin:-22px -10px -22px -14px"><div class="face"><div class="avatar" style="background:#4a5a75">${(d.Ultima_Sesion || d.Nombre_Equipo || '?')[0].toUpperCase()}</div></div></div>
         <div style="flex:1;min-width:0"><div class="nm">${d.Nombre_Equipo || 'Dispositivo nuevo'}</div>
-          <div class="mt">nº ${String(d.ID_Dispositivo).slice(0, 8)} · ${appTxt}</div>
-          <div class="rq">👤 solicita: ${d.Ultima_Sesion || 'sin identificar'} · ${act.label}</div></div>
+          <div class="mt">nº ${String(d.ID_Dispositivo).slice(0, 8)} · ${appTxt}${hace ? ' · 📨 ' + hace : ''}</div>
+          <div class="rq">👤 solicita: ${d.Ultima_Sesion || 'sin identificar'}${susp ? ` · <span style="color:#fb923c">⏸ venía suspendido ${susp}</span>` : ''}</div></div>
         <span class="act ok" onclick="MOS.aprobarDispositivo('${idAttr}')">✓ Aprobar</span>
         <span class="act ghost" onclick="MOS.aprobarDispositivoConNombre('${idAttr}')" title="Renombrar antes de aprobar">✎</span>
         <span class="act warn" onclick="MOS.rechazarDispositivo('${idAttr}')">✕</span>
       </div>`;
     }).join('');
-    return _cfgEyebrow('A', 'Esperando aprobación') + `<div class="pend">${rows}</div>`;
+
+    const rowsHor = horario.map(a => {
+      const idAttr = String(a.idAlerta).replace(/'/g, '&#39;');
+      const susp = (() => {
+        const dev = (cfgData.dispositivos || []).find(d => d.ID_Dispositivo === a.idDispositivo);
+        return dev ? _dispSuspTxt(dev) : '';
+      })();
+      return `<div class="pend-row" data-pend-card="${idAttr}" style="border-left:3px solid #f5b849">
+        <span style="font-size:20px;margin:0 4px">🕐</span>
+        <div style="flex:1;min-width:0"><div class="nm">Extensión de horario · 1 h</div>
+          <div class="mt">📨 ${_fmtHace(a.fecha) || 'ahora'}${a.idDispositivo ? ' · nº ' + String(a.idDispositivo).slice(0, 8) : ''}${susp ? ` · <span style="color:#fb923c">⏸ venía suspendido ${susp}</span>` : ''}</div>
+          <div class="rq" style="white-space:normal">${_escapeHtml(String(a.descripcion || '').slice(0, 160))}</div></div>
+        <span class="act ok" onclick="MOS.aprobarExtHorario('${idAttr}')">✓ Dar 1 h</span>
+        <span class="act warn" onclick="MOS.rechazarExtHorario('${idAttr}')">✕</span>
+      </div>`;
+    }).join('');
+
+    const sub = (ic, txt, n) => `<div style="font-size:10.5px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;color:#93a4c2;margin:10px 2px 4px;display:flex;align-items:center;gap:6px">${ic} ${txt} <span style="opacity:.6">(${n})</span></div>`;
+    return _cfgEyebrow('A', 'Solicitudes de permiso · vencen a la hora') + `<div class="pend">
+      ${pendientes.length ? sub('📱', 'Acceso de dispositivo (UUID)', pendientes.length) + rowsDisp : ''}
+      ${horario.length ? sub('🕐', 'Extensión de horario', horario.length) + rowsHor : ''}
+    </div>`;
+  }
+
+  // [635] aprobar/rechazar extensión de horario desde Infraestructura
+  async function aprobarExtHorario(idAlerta) {
+    try {
+      await API.post('aprobarExtensionHorario', { idAlerta });
+      toast('✅ Extensión de 1 h concedida', 'ok');
+    } catch (e) { toast('⚠ ' + (e.message || e), 'error'); }
+    cfgData.alertasHorario = (cfgData.alertasHorario || []).filter(a => a.idAlerta !== idAlerta);
+    renderInfra();
+  }
+  async function rechazarExtHorario(idAlerta) {
+    try {
+      await API.post('rechazarExtensionHorario', { idAlerta });
+      toast('⛔ Extensión rechazada', 'ok');
+    } catch (e) { toast('⚠ ' + (e.message || e), 'error'); }
+    cfgData.alertasHorario = (cfgData.alertasHorario || []).filter(a => a.idAlerta !== idAlerta);
+    renderInfra();
   }
 
   // ── ciclo de vida (informativo, del mockup) ──
@@ -19928,8 +20017,8 @@ const MOS = (() => {
     <div class="life"><div class="flow">
       <div class="step"><div class="db" style="background:#10b981;box-shadow:0 0 10px rgba(16,185,129,.55)"></div><h4>En línea</h4><div class="whh">&lt;5 min</div><p>Opera ahora. Brillo verde + quién está.</p></div>
       <div class="step"><div class="db" style="background:#f5b849"></div><h4>Inactivo</h4><div class="whh">&lt;2 días</div><p>Chip "último: X · hace Yh". Visible.</p></div>
-      <div class="step"><div class="db" style="background:#f97316"></div><h4>Suspendido</h4><div class="whh">2 días →</div><p>Auto (cron 9am). Gris + reactivable 1 toque.</p></div>
-      <div class="step"><div class="db" style="background:#64748b"></div><h4>Archivado</h4><div class="whh">7 días →</div><p>Sale de la vista. Reaparece si vuelve a conectar.</p></div>
+      <div class="step"><div class="db" style="background:#f97316"></div><h4>Suspendido</h4><div class="whh">2 días →</div><p>Sale de TODAS las zonas → vive en ⏸ Suspendidos con su duración. Reactivable 1 toque.</p></div>
+      <div class="step"><div class="db" style="background:#64748b"></div><h4>Archivado</h4><div class="whh">7 días →</div><p>Sigue suspendido, pero lejos: vive en 🗄️ Archivados con su duración.</p></div>
     </div><div class="lifenote">🔑 <b>Archivado ≠ bloqueado.</b> El equipo real reconecta y vuelve a pedir acceso solo; el abandonado queda archivado sin ensuciar la vista.</div></div>`;
   }
 
@@ -19940,10 +20029,11 @@ const MOS = (() => {
     const rows = arch.map(d => {
       const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
       const act = _dispActividad(d.Ultima_Conexion);
+      const _suspT = String(d.Estado || '').toUpperCase() === 'SUSPENDIDO' ? _dispSuspTxt(d) : '';
       return `<div class="printer" style="opacity:.8">
         <span class="pic" style="filter:grayscale(.6)">${_dispIcono(d.Nombre_Equipo)}</span>
         <div style="flex:1;min-width:0"><div class="pn">${d.Nombre_Equipo || 'Dispositivo'} ${_appBadge(d.App)}</div>
-        <div class="pmeta" style="color:${act.color}">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div></div>
+        <div class="pmeta" style="color:${act.color}">${act.dot} ${act.label}${_suspT ? ' · <span style="color:#fb923c">⏸ suspendido hace ' + _suspT + '</span>' : ''}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div></div>
         <span class="act ghost" style="color:#34d399;border-color:#065f46" onclick="MOS.aprobarDispositivo('${idAttr}')">↺ Reactivar</span>
       </div>`;
     }).join('');
@@ -19968,9 +20058,11 @@ const MOS = (() => {
       : '';
     cont.innerHTML =
       _cfgCmdBar() +
-      _cfgZonaVip() +
       _cfgPend() +
+      _cfgZonaVip() +
+      _cfgZonaGo() +
       zonasHTML +
+      _cfgSuspendidos() +
       _cfgSinZona() +
       `<span class="addln" style="margin-top:14px;padding:13px;font-size:12px" onclick="MOS.abrirModalZona(null)">🏬 + agregar nueva zona</span>` +
       _cfgLife() +
@@ -22692,6 +22784,8 @@ const MOS = (() => {
       icon = '🛒'; label = 'MosExpress'; bg = 'rgba(16,185,129,0.15)'; border = '#10b981'; fg = '#6ee7b7';
     } else if (app === 'warehousemos' || app === 'wh' || app.indexOf('warehouse') >= 0) {
       icon = '📦'; label = 'warehouseMos'; bg = 'rgba(251,146,60,0.15)'; border = '#fb923c'; fg = '#fdba74';
+    } else if (app === 'mosgo') {
+      icon = '🛵'; label = 'MosGo'; bg = 'rgba(110,86,207,0.18)'; border = '#8f7aff'; fg = '#c4b5fd';
     } else if (app === 'mos') {
       icon = '👑'; label = 'MOS panel'; bg = 'rgba(168,85,247,0.15)'; border = '#a855f7'; fg = '#d8b4fe';
     } else if (!app || app === '') {
@@ -22784,9 +22878,31 @@ const MOS = (() => {
   }
 
   function _dispPendientes() {
-    return (cfgData.dispositivos || []).filter(d =>
-      String(d.Estado).toUpperCase() === 'PENDIENTE_APROBACION'
-    );
+    return (cfgData.dispositivos || []).filter(d => {
+      if (String(d.Estado).toUpperCase() !== 'PENDIENTE_APROBACION') return false;
+      // [635 · decisión dueño] la solicitud VENCE a la 1 hora: no aparece más. Si el
+      // equipo la reenvía (cooldown 5 min server-side), pendiente_desde se renueva y
+      // vuelve a aparecer fresca.
+      const pd = Date.parse(d.Pendiente_Desde || '') || Date.parse(d.Ultima_Conexion || '') || 0;
+      return !pd || (Date.now() - pd) <= 3600e3;
+    });
+  }
+
+  // "hace 4 min" / "hace 3 h" / "hace 2 d" — para solicitudes y suspensiones
+  function _fmtHace(ts) {
+    const ms = Date.now() - (Date.parse(ts || '') || 0);
+    if (!isFinite(ms) || ms < 0 || !ts) return '';
+    const m = Math.floor(ms / 60000);
+    if (m < 60) return 'hace ' + Math.max(0, m) + ' min';
+    const h = Math.floor(m / 60);
+    if (h < 48) return 'hace ' + h + ' h';
+    return 'hace ' + Math.floor(h / 24) + ' d';
+  }
+  // [635] ¿cuánto lleva/llevaba suspendido este equipo? '' si nunca.
+  function _dispSuspTxt(d) {
+    const sd = Date.parse(d.Suspendido_Desde || '');
+    if (!sd) return '';
+    return _fmtHace(d.Suspendido_Desde).replace('hace ', '');
   }
 
   // [Fase1] Archivados: equipos auto-cancelados por +7 días sin conectar.
@@ -45429,6 +45545,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     av_consultarClaveDesdeMenu,
     toggleVendedorME,
     abrirModalDispositivo, cerrarModalDispositivo, guardarDispositivo, eliminarDispositivo, aprobarDispositivo, aprobarDispositivoConNombre, rechazarDispositivo, dispCopiarUUID, _dispActualizarPreview, _dispZonaCambio,
+    aprobarExtHorario, rechazarExtHorario,   // [635] extensión de horario desde Infraestructura
     abrirDetalleDispositivo, cerrarDetalleDispositivo, revocarDispositivoUUID, forzarWizardRemoto, forzarPushRemoto, verUltimaUbicacionDispositivo,
     abrirModalAudio, audioRefrescarEstado, audioIniciar, audioDetener, audioListarSesiones, audioReproducir, audioCerrarReproductor,
     abrirModalAudioRouted, _audioLiveIniciar, _audioLiveDetener,
