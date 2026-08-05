@@ -20517,10 +20517,45 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
       }
       return 0;
     }
+    // [2.43.669] ACTUALIZACIÓN FORZADA. El banner se podía posponer de a 5 min para
+    // siempre, así que un equipo podía quedarse días con la versión vieja. Ahora, si
+    // hay versión nueva publicada y pasan MOS_UPD_LIMITE_MS sin que se aplique, se
+    // recarga sola. Salvaguarda: nunca en medio de trabajo (modal//overlay abierto o
+    // un campo en edición) — en ese caso espera al siguiente tick.
+    const MOS_UPD_LIMITE_MS = 10 * 60 * 1000;
+    let _mosUpdPendienteDesde = 0;
+
+    function _mosHayTrabajoAbierto() {
+      try {
+        const a = document.activeElement;
+        if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+        // cualquier modal/overlay/sheet visible del sistema
+        const sel = '.modal:not(.hidden), .modal-overlay:not(.hidden), .sheet.is-open, ' +
+                    '#pv2Modal, #provProductoModal, [data-modal-abierto="1"]';
+        return !!document.querySelector(sel);
+      } catch (_) { return true; }   // ante la duda, NO recargar
+    }
+
+    function _mosForzarSiVencio() {
+      if (!_mosUpdPendienteDesde) return;
+      if (Date.now() - _mosUpdPendienteDesde < MOS_UPD_LIMITE_MS) return;
+      if (_mosHayTrabajoAbierto()) return;                 // reintenta en el próximo tick
+      try { localStorage.removeItem('mos_upd_snooze_until'); } catch (_) {}
+      try { localStorage.setItem('mos_force_resync', '1'); } catch (_) {}
+      location.reload(true);
+    }
+    setInterval(_mosForzarSiVencio, 30 * 1000);
+
     async function _watchVersionJson() {
       let remoteVer = null;
       try {
-        const r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
+        // [2.43.669] con timeout: `fetch` no lo trae, y con red a medias este chequeo
+        // quedaba pendiente para siempre y la app no se enteraba de la versión nueva.
+        const _ac = new AbortController();
+        const _to = setTimeout(() => { try { _ac.abort(); } catch (_) {} }, 4000);
+        let r;
+        try { r = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store', signal: _ac.signal }); }
+        finally { clearTimeout(_to); }
         const j = await r.json();
         remoteVer = j && j.version;
       } catch (_) { return; }
@@ -20528,6 +20563,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
       if (_baselineVer === null) { _baselineVer = remoteVer; return; } // 1ra lectura = línea base
       if (_cmpVer(remoteVer, _baselineVer) > 0) {
         // Hay versión más nueva publicada → forzar SW y, si no aparece waiting, banner.
+        if (!_mosUpdPendienteDesde) _mosUpdPendienteDesde = Date.now();   // [2.43.669] arranca el plazo
         try { await _reg.update(); } catch (_) {}
         setTimeout(() => {
           if (_reg && _reg.waiting) {
