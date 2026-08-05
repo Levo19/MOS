@@ -15318,7 +15318,10 @@ const MOS = (() => {
   function _presContenidoAuto(padreDesc, factor) {
     var f = parseFloat(factor) || 0;
     if (f <= 0) return '';
-    if (f > 1) return (Number.isInteger(f) ? f : (Math.round(f * 100) / 100)) + ' un';
+    // [632 · feedback dueño con el chuño] pack sobre un GRANEL: el contenido son KILOS,
+    // no unidades — "Pack x25 (25 kg)", jamás "(25 un)".
+    var esGranelPadre = !!(_satState && _satState.padreGranel);
+    if (f > 1) return (Number.isInteger(f) ? f : (Math.round(f * 100) / 100)) + (esGranelPadre ? ' kg' : ' un');
     var kgBase = _pesoDesdeNombre(padreDesc);
     if (!kgBase) return '';
     return _presFmtContenidoKg(kgBase * f);
@@ -16666,18 +16669,15 @@ const MOS = (() => {
     const cb = String(p.codigoBarra || '').trim();
     if (!cb) { toast('⚠ Este ítem no tiene código de barras — MosGo vende por código', 'error'); return; }
     const on = String(p.canalMayoreo) !== '1';
-    if (!on && !await _modalConfirm(
-        `Quitar "${(p.descripcion || cb).substring(0, 40)}" de MosGo también lo APAGA en el catálogo (ME) — así lo decidiste: un solo gesto apaga ambos.\n\n¿Continuar?`,
-        { warning: true, titulo: '🛵 Quitar de MosGo' })) return;
-
     const estadoPrevio = p.estado, goPrevio = p.canalMayoreo;
-    // Optimista: cascada visual inmediata (ON prende el producto; OFF lo apaga)
+    // Optimista. ON enciende también el producto (decisión 1: todo lo GO se vende en ME).
+    // [632] OFF solo lo saca del canal — la cascada de apagado se DESCARTÓ: el dueño la
+    // vio en acción (la familia entera "en mallas" y el granel fuera de la caja de ME).
     p.canalMayoreo = on ? '1' : '0';
-    p.estado = on ? '1' : '0';
-    _actualizarVisualProducto(idProducto, on);
+    if (on && !_isProdActivo(p)) { p.estado = '1'; _actualizarVisualProducto(idProducto, true); }
     _togglesEnVuelo.add(idProducto);
     try { renderCatalogo(); } catch (_) {}
-    toast(on ? '🛵 Ahora se vende en MosGo (y sigue en ME)' : '⚫ Quitado de MosGo y apagado en ME', 'ok', 2500);
+    toast(on ? '🚀 GO: ahora se vende en MosGo (y sigue en ME)' : '⚪ Fuera de MosGo — en ME sigue a la venta', 'ok', 2200);
     try {
       await API.post('toggleMosgo', { codigoBarra: cb, on });
       _marcarToggleReciente(idProducto);

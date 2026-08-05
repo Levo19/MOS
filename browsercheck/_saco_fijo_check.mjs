@@ -37,7 +37,7 @@ t('el 🛵 aparece en los 4 renders (base, presentación, pack, derivado)',
   (app.match(/_togglesMosgoHtml\(/g) || []).length === 5, (app.match(/_togglesMosgoHtml\(/g) || []).length + ' usos (4 renders + def)');
 t('el toggle de ESTADO también quedó solo-MASTER en los 4 renders',
   (app.match(/\$\{_esMasterSession\(\) \? `<button type="button" class="toggle-sw/g) || []).length === 4);
-t('toggleMosgo confirma la cascada antes de apagar', /Quitar[\s\S]{0,80}de MosGo también lo APAGA en el catálogo/.test(app));
+t('[632] apagar GO ya NO apaga el producto en ME', app.includes('Fuera de MosGo — en ME sigue a la venta') && !app.includes('lo APAGA en el catálogo (ME)'));
 t('toggleMosgo exportado en MOS', app.includes('toggleProductoActivo, toggleMosgo,'));
 
 console.log('── api.js: el canal viaja completo');
