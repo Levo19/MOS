@@ -3135,7 +3135,7 @@ const MOS = (() => {
                             onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
                             title="${presActivo ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>` : ''}${_togglesMosgoHtml(d, true)}
                     <button class="cat-btn cat-btn-printx sm" onclick="event.stopPropagation();MOS.abrirMembreteCard('${d.idProducto}')" title="Imprimir">${_svgIcon('printer')}</button>
-                    <button class="cat-btn cat-btn-plusctx sm" onclick="event.stopPropagation();MOS.abrirPlusContextual('${d.idProducto}', event)" title="Agregar satélite">＋</button>
+                    <!-- [decisión dueño] una presentación es TERMINAL: no genera satélites → sin ＋ -->
                   </div>
                 </div>`;
               }).join('')}
@@ -16809,10 +16809,11 @@ const MOS = (() => {
     const tipo = _prodTipoDe(p);
     const ops = [];
     if (tipo === 'envasable') {
-      // [pres-v1] Un GRANEL NO lleva presentación (KGM ignora el precio propio de la presentación y cobra
-      // por kg + tramos). El descuento por volumen se hace con TRAMOS; para un pack con precio propio, primero
-      // se crea el DERIVADO (envasado) y a ESE se le cuelga la presentación.
+      // [629 · regla del saco] El granel AHORA sí lleva presentación — siempre de PRECIO
+      // FIJO (se cobra la etiqueta; el stock descuenta factor × kg del canónico). El
+      // candado viejo del menú quedó obsoleto junto con el del modal.
       ops.push({ k:'derivado',     ic:'🥄', t:'Derivado',     d:'fracción envasada del granel (250gr, 500gr…)' });
+      ops.push({ k:'presentacion', ic:'📦', t:'Presentación FIJA', d:'saco/pack con precio de etiqueta (descuenta factor × kg)' });
       ops.push({ k:'tramo',        ic:'📊', t:'Tramo',        d:'precio por rango de peso (descuento por volumen)' });
       ops.push({ k:'equivalente',  ic:'🏷️', t:'Equivalente',  d:'otro código de barra del mismo producto' });
     } else if (tipo === 'presentacion') {
