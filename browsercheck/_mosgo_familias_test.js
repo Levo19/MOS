@@ -122,6 +122,19 @@ const FAMILIAS = [
     return { fecha: St.fechaEntrega, chip: chip ? chip.innerText : '' }; });
   t('elegir un día vuelve al carrito con el chip actualizado',
     /\d{4}-\d{2}-\d{2}/.test(pick.fecha) && /📅 .+ ▾/.test(pick.chip), JSON.stringify(pick));
+  // [v0.5.3] vaciar discreto con confirmación
+  const vac = await p.evaluate(() => { UI.openCart();
+    const btn = [...document.querySelectorAll('#sheet button')].find(b => /vaciar carrito/.test(b.innerText));
+    if (btn) btn.click();
+    return { boton: !!btn, confirmacion: !!document.getElementById('vacConf'),
+             sigueCart: Object.keys(St.cart).length > 0 };
+  });
+  t('hay botón discreto de vaciar y pide confirmación (no borra al primer toque)',
+    vac.boton && vac.confirmacion && vac.sigueCart, JSON.stringify(vac));
+  const vac2 = await p.evaluate(() => { UI.vaciarCartSi();
+    return { cart: Object.keys(St.cart).length, cli: St.cliDoc, persistido: localStorage.getItem('mosgo_venta') }; });
+  t('confirmar vacía el carrito pero CONSERVA el cliente elegido',
+    vac2.cart === 0 && vac2.cli === '20601234567', JSON.stringify(vac2).slice(0, 100));
   await p.evaluate(() => { Venta.clear(); UI.close(); });
 
   // familias vacías → mensaje de "activa con 🛵"
