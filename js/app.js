@@ -16639,17 +16639,21 @@ const MOS = (() => {
   }
 
   // [628 · decisión 5] Los DOS interruptores de cada ítem del catálogo — apagar producto
-  // y canal 🛵 MosGo — son EXCLUSIVOS del MASTER: los demás admins no los ven siquiera.
+  // y canal GO (MosGo) — son EXCLUSIVOS del MASTER: los demás admins no los ven siquiera.
+  // [2.43.674 · feedback dueño] Nada de moto ni fondo multicolor: pill sobria "GO" —
+  // encendida: violeta sólido MosGo con texto blanco; apagada: borde punteado gris.
   function _togglesMosgoHtml(prod, sm) {
     if (!_esMasterSession() || !prod) return '';
     const go = String(prod.canalMayoreo) === '1';
-    return `<button type="button" class="cat-btn${sm ? ' sm' : ''}" data-go="${prod.idProducto}"
-              style="font-size:${sm ? 12 : 14}px;line-height:1;${go
-                ? 'background:linear-gradient(120deg,#6e56cf,#e93d82);border-color:transparent;filter:none'
-                : 'opacity:.45;filter:grayscale(1)'}"
+    return `<button type="button" data-go="${prod.idProducto}"
+              style="font-size:${sm ? 9 : 10.5}px;font-weight:800;letter-spacing:.6px;line-height:1;
+                     padding:${sm ? '4px 7px' : '6px 9px'};border-radius:7px;cursor:pointer;flex-shrink:0;
+                     font-family:inherit;transition:all .15s;${go
+                ? 'background:#6e56cf;border:1px solid #8f7aff;color:#fff;box-shadow:0 1px 6px rgba(110,86,207,.45)'
+                : 'background:transparent;border:1px dashed #475569;color:#64748b'}"
               onclick="event.stopPropagation();MOS.toggleMosgo('${prod.idProducto}')"
-              title="${go ? 'Se vende en MosGo — tocar para QUITARLO (lo apaga también en ME)'
-                          : 'Vender en MosGo 🛵 (lo enciende también en el catálogo/ME)'}">🛵</button>`;
+              title="${go ? 'Se vende en MosGo (GO) — tocar para QUITARLO (lo apaga también en ME)'
+                          : 'Vender en MosGo (GO) — lo enciende también en el catálogo/ME'}">GO</button>`;
   }
 
   // [628] Interruptor del canal MosGo. ON enciende también el catálogo (todo lo de MosGo
