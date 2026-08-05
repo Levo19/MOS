@@ -1,0 +1,10 @@
+import fs from 'fs';
+import pkg from 'pg';
+const { Client } = pkg;
+const c = new Client({ connectionString: fs.readFileSync('C:/Users/ISO/.sb_db.url', 'utf8').trim(), ssl: { rejectUnauthorized: false } });
+await c.connect();
+const r = (await c.query(`select id_plantilla, nombre, descripcion, tamano_canvas, json, activo from mos.adhesivo_plantillas where activo order by nombre`)).rows;
+const plantillas = r.map(x => ({ idPlantilla: x.id_plantilla, nombre: x.nombre, descripcion: x.descripcion, tamanoCanvas: x.tamano_canvas, json: x.json }));
+fs.writeFileSync('../browsercheck/_plantillas_dump.json', JSON.stringify(plantillas));
+console.log('dump:', plantillas.length, 'plantillas');
+await c.end();

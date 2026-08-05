@@ -30,6 +30,7 @@
 .ed2-btn-ghost { background: rgba(28, 39, 64, .6) }
 .ed2-btn-primary { background: linear-gradient(135deg, #6366f1, #4f46e5); border-color: #4338ca }
 .ed2-btn-go { background: linear-gradient(135deg, #10b981, #059669); border-color: #047857 }
+.ed2-btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); border-color: #b91c1c }
 .ed2-x {
   margin-left: auto; background: transparent; border: 0; color: #7c8aa0;
   font-size: 15px; cursor: pointer; padding: 6px 8px; border-radius: 8px; min-height: 36px;
@@ -99,6 +100,11 @@
 .ed2-grid {
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(225px, 1fr));
+  /* [v2.2 · fix dueño] max-content: SIN esto las filas se comprimían para caber en el alto
+     visible y las cards salían aplastadas (botones amontonados, previews cortados). Con
+     filas a contenido, la lista larga SE DESPLAZA (overflow-y de arriba) en vez de achicarse.
+     Verificado en móvil 390 / tablet 768 / PC 1366. */
+  grid-auto-rows: max-content;
   gap: 14px; padding: 16px; align-content: start;
   padding-bottom: max(20px, env(safe-area-inset-bottom));
 }

@@ -21,7 +21,7 @@
 (function() {
   'use strict';
 
-  var CSS_VERSION = '2.1.0';
+  var CSS_VERSION = '2.2.0';
   var STORAGE_BORRADOR = 'eda2_borrador';
   var CSS_INYECTADO = false;
   var POST_URL_FALLBACK = null;
@@ -277,14 +277,22 @@
           var idEsc = _esc(String(p.idPlantilla || ''));
           var tam = _esc(p.tamanoCanvas || '50x25');
           var d = Math.min((idx++) * 55, 500);
+          // [v2.3 · decisión dueño] Solo las plantillas DE SISTEMA (metadata.protegida,
+          // las fabricadas por encargo) llevan candado. Las creaciones humanas del
+          // Estudio SÍ se pueden eliminar (con confirmación; el server re-verifica).
+          var pj = _jsonDe(p);
+          var prot = !!(pj && pj.metadata && pj.metadata.protegida === true);
           return '<div class="ed2-card" style="animation-delay:' + d + 'ms">'
             +   '<div class="ed2-card-th" data-print="' + idEsc + '" title="Imprimir este aviso"><div class="ed2-th-holder" id="ed2Th_' + idEsc + '"><span class="ed2-th-spin"></span></div></div>'
             +   '<div class="ed2-card-body">'
             +     '<div class="ed2-card-name" title="' + _esc(p.descripcion || p.nombre) + '">' + _esc(p.nombre) + '</div>'
-            +     '<div class="ed2-card-meta"><span>' + tam + ' mm</span><span class="ed2-chip-fija">🔒 FIJA</span></div>'
+            +     '<div class="ed2-card-meta"><span>' + tam + ' mm</span>'
+            +       (prot ? '<span class="ed2-chip-fija">🔒 FIJA</span>' : '<span class="ed2-chip-fija" style="background:rgba(52,211,153,.12);color:#6ee7b7;border-color:rgba(52,211,153,.35)">✍ PROPIA</span>')
+            +     '</div>'
             +     '<div class="ed2-card-acts">'
             +       '<button class="ed2-btn-print" data-print="' + idEsc + '">🖨 Imprimir</button>'
             +       '<button class="ed2-btn-base" data-base="' + idEsc + '" title="Partir de esta: crea una copia editable en el Estudio (el original no se toca)">⧉</button>'
+            +       (prot ? '' : '<button class="ed2-btn-base" data-del="' + idEsc + '" title="Eliminar esta plantilla (creación propia)" style="color:#fca5a5;border-color:rgba(252,165,165,.4)">🗑</button>')
             +     '</div>'
             +   '</div>'
             + '</div>';
@@ -299,6 +307,10 @@
     g.querySelectorAll('[data-base]').forEach(function(el) {
       el.onclick = function(e) { e.stopPropagation(); _partirDe(el.getAttribute('data-base')); };
     });
+    // [v2.3] eliminar creación propia (confirmación + server re-verifica que no sea protegida)
+    g.querySelectorAll('[data-del]').forEach(function(el) {
+      el.onclick = function(e) { e.stopPropagation(); _eliminarPropia(el.getAttribute('data-del')); };
+    });
     // miniaturas fieles (SVG con QR real + barcodes)
     lista.forEach(function(p) { _pintarThumb(p); });
   }
@@ -306,6 +318,28 @@
   function _jsonDe(p) {
     try { return (typeof p.json === 'string') ? JSON.parse(p.json) : JSON.parse(JSON.stringify(p.json)); }
     catch (_) { return null; }
+  }
+
+  // [v2.3] Eliminar una creación PROPIA del Estudio (las protegidas ni muestran el botón,
+  // y el backend además las rechaza — candado real, no solo visual).
+  function _eliminarPropia(id) {
+    var p = _plantillas.filter(function(x) { return String(x.idPlantilla) === String(id); })[0];
+    if (!p) return;
+    _dlg({
+      titulo: '🗑 Eliminar plantilla',
+      cuerpo: 'Se eliminará <b>' + _esc(p.nombre || id) + '</b> del catálogo.<br>No afecta lo ya impreso, pero no se puede deshacer.',
+      botones: [
+        { txt: 'Cancelar', cls: 'ed2-btn-ghost' },
+        { txt: 'Sí, eliminar', cls: 'ed2-btn-danger' }
+      ]
+    }, function(v) {
+      if (v !== 1) return;
+      _apiPost('eliminarAdhesivoPlantilla', { idPlantilla: id }, function(err, r) {
+        if (err || !r || r.ok === false) { _toast('⚠ No se pudo eliminar' + (err ? ': ' + (err.message || '') : (r && r.error ? ': ' + r.error : '')), 'error'); return; }
+        _toast('🗑 Plantilla eliminada', 'ok');
+        _refrescarCatalogo();
+      });
+    });
   }
 
   function _pintarThumb(p) {
