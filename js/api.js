@@ -336,7 +336,9 @@ const API = (() => {
     // tipo_producto es derivado en el backfill (post()) pero existe como columna en la sombra → exponerlo igual.
     ['tipo_producto','tipoProducto','text'],
     // [597] envase del derivado (sku_base del insumo · 'SIN_ENVASE' = no lleva) + toggle insumo de envasado
-    ['envase_sku','envaseSku','text'], ['es_insumo','esInsumo','bool10']
+    ['envase_sku','envaseSku','text'], ['es_insumo','esInsumo','bool10'],
+    // [628/629] canal MosGo (toggle 🛵 solo-MASTER) + precio de etiqueta del saco
+    ['canal_mayoreo','canalMayoreo','bool10'], ['precio_fijo','precioFijo','bool10']
   ];
 
   // Convierte un valor crudo de PostgREST al tipo del shape-hoja.
@@ -1740,6 +1742,18 @@ const API = (() => {
       return _desempacarME(out);
     }
 
+    if (action === 'toggleMosgo') {
+      // [628] Interruptor 🛵 del canal MosGo (solo MASTER — el guard real vive en la RPC).
+      // ON  → enciende canal_mayoreo Y estado (todo lo de MosGo se vende también en ME).
+      // OFF → apaga AMBOS en cascada (decisión 3 del dueño). Sin fallback GAS (feature nueva).
+      const out = await _sbRpcMOSWrite('catalogo_toggle_mosgo', { p: {
+        codigoBarra: String(p.codigoBarra || ''), on: !!p.on, usuario: _mosUsuario(p)
+      } });
+      if (out == null) throw new Error('Sin conexión con Supabase');
+      if (out.ok === false) throw new Error(out.error || 'toggle falló');
+      return out;
+    }
+
     if (action === 'eliminarItemsCatalogo') {
       // mos.eliminar_items_catalogo(p): purga atómica. Devuelve el MISMO shape que GAS PurgaCatalogo.gs:
       //   éxito  → {ok:true,  data:{idLote,eliminadosProductos,eliminadosEquivs,idsNoEncontrados,timestamp}}
@@ -1774,6 +1788,8 @@ const API = (() => {
         // [597] envase del derivado + toggle insumo (la RPC los ignora si vienen undefined)
         envaseSku: p.envaseSku != null ? String(p.envaseSku) : undefined,
         esInsumo: p.esInsumo,
+        // [629] presentación de granel con precio de ETIQUETA (regla del saco)
+        precioFijo: p.precioFijo,
         codigoProductoBase: p.codigoProductoBase != null ? String(p.codigoProductoBase) : undefined,
         factorConversion: p.factorConversion, factorConversionBase: p.factorConversionBase,
         mermaEsperadaPct: p.mermaEsperadaPct, stockMinimo: p.stockMinimo, stockMaximo: p.stockMaximo,
@@ -1802,6 +1818,7 @@ const API = (() => {
       ['descripcion','marca','idCategoria','unidad','Unidad_Medida','precioVenta','precioCosto',
        'Cod_Tributo','IGV_Porcentaje','Cod_SUNAT','Tipo_IGV','estado','esEnvasable',
        'envaseSku','esInsumo',   // [597] envase del derivado (vaciable) + toggle insumo
+       'precioFijo',             // [629] etiqueta del saco (presentación de granel)
        'factorConversion','factorConversionBase','mermaEsperadaPct','stockMinimo','stockMaximo',
        'zona','modoVenta','margenPct','precioTope','motivoPrecio'].forEach(k => {
         if (k in p && p[k] !== undefined) a[k] = p[k];

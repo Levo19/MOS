@@ -3131,9 +3131,9 @@ const MOS = (() => {
                   <div class="flex items-center gap-2 shrink-0">
                     <div class="${precioClass}" style="cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${d.idProducto}')">${fmtMoney(precioActual)}</div>
                     ${_renderRotChip(d, true)}
-                    <button type="button" class="toggle-sw sm ${presActivo ? 'on' : ''}" data-pid="${d.idProducto}"
+                    ${_esMasterSession() ? `<button type="button" class="toggle-sw sm ${presActivo ? 'on' : ''}" data-pid="${d.idProducto}"
                             onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
-                            title="${presActivo ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
+                            title="${presActivo ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>` : ''}${_togglesMosgoHtml(d, true)}
                     <button class="cat-btn cat-btn-printx sm" onclick="event.stopPropagation();MOS.abrirMembreteCard('${d.idProducto}')" title="Imprimir">${_svgIcon('printer')}</button>
                     <button class="cat-btn cat-btn-plusctx sm" onclick="event.stopPropagation();MOS.abrirPlusContextual('${d.idProducto}', event)" title="Agregar satélite">＋</button>
                   </div>
@@ -3166,9 +3166,9 @@ const MOS = (() => {
                 <span class="cat-nombre-edit" onclick="event.stopPropagation();MOS.abrirEditarProducto('${pp.idProducto}')"
                       title="Tocar para editar">${_highlight(pp.descripcion || pp.idProducto, words)}</span>
                 <span style="margin-left:auto;color:#34d399;font-weight:700;cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${pp.idProducto}')">${fmtMoney(pp.precioVenta)}</span>
-                <button type="button" class="toggle-sw sm ${ppAct ? 'on' : ''}" data-pid="${pp.idProducto}"
+                ${_esMasterSession() ? `<button type="button" class="toggle-sw sm ${ppAct ? 'on' : ''}" data-pid="${pp.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${pp.idProducto}', false)"
-                        title="${ppAct ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
+                        title="${ppAct ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>` : ''}${_togglesMosgoHtml(pp, true)}
                 <button class="cat-btn cat-btn-printx sm" onclick="event.stopPropagation();MOS.abrirMembreteCard('${pp.idProducto}')" title="Imprimir">${_svgIcon('printer')}</button>
               </div>`;
             }).join('');
@@ -3182,9 +3182,9 @@ const MOS = (() => {
                   <span style="color:#34d399;font-weight:800;font-size:12px;cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${d.idProducto}')">${fmtMoney(d.precioVenta)}</span>
                   ${_renderRotChip(d, true)}
                 </span>
-                <button type="button" class="toggle-sw sm ${dAct ? 'on' : ''}" data-pid="${d.idProducto}"
+                ${_esMasterSession() ? `<button type="button" class="toggle-sw sm ${dAct ? 'on' : ''}" data-pid="${d.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
-                        title="${dAct ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>
+                        title="${dAct ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>` : ''}${_togglesMosgoHtml(d, true)}
                 <button class="cat-btn cat-btn-printx sm" onclick="event.stopPropagation();MOS.abrirMembreteCard('${d.idProducto}')" title="Imprimir (membrete / adhesivo envasado)">${_svgIcon('printer')}</button>
                 <button class="cat-btn cat-btn-plusctx sm" onclick="event.stopPropagation();MOS.abrirPlusContextual('${d.idProducto}', event)" title="Agregar satélite">＋</button>
               </div>
@@ -3225,11 +3225,11 @@ const MOS = (() => {
               ${_renderRotChip(base)}
               <!-- [catálogo v4] botonera SVG (dibujo §05): toggle · 💰cascada · 📈grupo · 🖨 · 🗑master · ＋ -->
               <div class="flex gap-1.5 mt-1 items-center">
-                <button type="button" class="toggle-sw ${activo ? 'on' : ''}" data-pid="${base.idProducto}"
+                ${_esMasterSession() ? `<button type="button" class="toggle-sw ${activo ? 'on' : ''}" data-pid="${base.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${base.idProducto}', true)"
                         title="${activo ? 'Apagar producto' : 'Prender producto'}">
                   <span class="toggle-sw-knob"></span>
-                </button>
+                </button>` : ''}${_togglesMosgoHtml(base, false)}
                 <button class="cat-btn cat-btn-chart"
                         onclick="event.stopPropagation();MOS.abrirAnalitica('${base.idProducto}')"
                         title="Analítica del grupo (almacén + zonas)">${_svgIcon('chart')}</button>
@@ -16638,6 +16638,55 @@ const MOS = (() => {
     }
   }
 
+  // [628 · decisión 5] Los DOS interruptores de cada ítem del catálogo — apagar producto
+  // y canal 🛵 MosGo — son EXCLUSIVOS del MASTER: los demás admins no los ven siquiera.
+  function _togglesMosgoHtml(prod, sm) {
+    if (!_esMasterSession() || !prod) return '';
+    const go = String(prod.canalMayoreo) === '1';
+    return `<button type="button" class="cat-btn${sm ? ' sm' : ''}" data-go="${prod.idProducto}"
+              style="font-size:${sm ? 12 : 14}px;line-height:1;${go
+                ? 'background:linear-gradient(120deg,#6e56cf,#e93d82);border-color:transparent;filter:none'
+                : 'opacity:.45;filter:grayscale(1)'}"
+              onclick="event.stopPropagation();MOS.toggleMosgo('${prod.idProducto}')"
+              title="${go ? 'Se vende en MosGo — tocar para QUITARLO (lo apaga también en ME)'
+                          : 'Vender en MosGo 🛵 (lo enciende también en el catálogo/ME)'}">🛵</button>`;
+  }
+
+  // [628] Interruptor del canal MosGo. ON enciende también el catálogo (todo lo de MosGo
+  // se vende en ME — decisión 1); OFF apaga AMBOS en cascada (decisión 3). El guard
+  // MASTER real vive server-side en mos.catalogo_toggle_mosgo (SOLO_MASTER).
+  async function toggleMosgo(idProducto) {
+    if (!_esMasterSession()) { toast('Solo Master', 'error'); return; }
+    const p = S.productos.find(x => x.idProducto === idProducto);
+    if (!p) return;
+    const cb = String(p.codigoBarra || '').trim();
+    if (!cb) { toast('⚠ Este ítem no tiene código de barras — MosGo vende por código', 'error'); return; }
+    const on = String(p.canalMayoreo) !== '1';
+    if (!on && !await _modalConfirm(
+        `Quitar "${(p.descripcion || cb).substring(0, 40)}" de MosGo también lo APAGA en el catálogo (ME) — así lo decidiste: un solo gesto apaga ambos.\n\n¿Continuar?`,
+        { warning: true, titulo: '🛵 Quitar de MosGo' })) return;
+
+    const estadoPrevio = p.estado, goPrevio = p.canalMayoreo;
+    // Optimista: cascada visual inmediata (ON prende el producto; OFF lo apaga)
+    p.canalMayoreo = on ? '1' : '0';
+    p.estado = on ? '1' : '0';
+    _actualizarVisualProducto(idProducto, on);
+    _togglesEnVuelo.add(idProducto);
+    try { renderCatalogo(); } catch (_) {}
+    toast(on ? '🛵 Ahora se vende en MosGo (y sigue en ME)' : '⚫ Quitado de MosGo y apagado en ME', 'ok', 2500);
+    try {
+      await API.post('toggleMosgo', { codigoBarra: cb, on });
+      _marcarToggleReciente(idProducto);
+    } catch (e) {
+      p.canalMayoreo = goPrevio; p.estado = estadoPrevio;
+      _actualizarVisualProducto(idProducto, _isProdActivo(p));
+      try { renderCatalogo(); } catch (_) {}
+      toast('⚠ No se pudo guardar: ' + (e.message || e), 'error');
+    } finally {
+      _togglesEnVuelo.delete(idProducto);
+    }
+  }
+
   async function _prenderHijos(baseProd) {
     const skuBase = baseProd.skuBase || baseProd.idProducto;
     const presentaciones = S.productos.filter(p =>
@@ -16937,15 +16986,17 @@ const MOS = (() => {
     }
 
     if (tipo === 'presentacion') {
-      // [pres-v1] Un GRANEL no lleva presentación NUEVA (KGM ignora su precio propio → se cobra por kg + tramos).
-      // Se bloquea solo la CREACIÓN; editar una existente sigue permitido (los viejos se purgan a mano).
-      if (!editarProd && tipoPadre === 'envasable') {
-        toast('🧱 Un granel no lleva presentación: su precio se ignora (cobra por kg + tramos). Usa TRAMOS para el descuento por volumen, o creá un DERIVADO (envasado) y a ÉSE ponle la presentación.', 'error');
-        return;
-      }
+      // [629 · regla del saco] El candado "granel no lleva presentación" se REEMPLAZA:
+      // ahora un granel SÍ puede tener presentación, pero SIEMPRE de PRECIO FIJO — se
+      // cobra la etiqueta (ME 2.8.249 la trata como unidad) y el stock descuenta
+      // factor × kg del canónico vía mos._venta_canonico. Sin el flag, ME ignoraría el
+      // precio y cobraría por kg (el bug del pack ×25 de nakamito a S/200 en vez de 155).
+      _satState.padreGranel = (tipoPadre === 'envasable');
       tit.textContent = editarProd ? '🧱 Editar presentación' : '🧱 Nueva presentación';
       her.classList.remove('hidden');
-      her.textContent = `Hereda ${igvTxt} · categoría ${padre.idCategoria || '—'} del producto padre`;
+      her.textContent = _satState.padreGranel
+        ? `PRECIO FIJO sobre granel: se cobra la etiqueta y descuenta factor × kg del stock · hereda ${igvTxt}`
+        : `Hereda ${igvTxt} · categoría ${padre.idCategoria || '—'} del producto padre`;
       // [pres-v1] Picker de 2 familias (Pack ×N / Fracción ÷N). El nombre se compone (BASE · DESCRIPTOR) y el
       // código refleja el factor (P-<slug>-X{N}/D{N}). Reemplaza el input "min 2" (que bloqueaba fracciones).
       body.innerHTML = `
@@ -17488,6 +17539,20 @@ const MOS = (() => {
         params.skuBase = skuPadre;
         params.factorConversion = f;
         params.codigoProductoBase = ''; params.factorConversionBase = ''; params.mermaEsperadaPct = '';
+        // [629 · regla del saco] Presentación sobre GRANEL = SIEMPRE precio fijo: ME cobra
+        // la etiqueta y el stock descuenta factor × kg del canónico.
+        if (_satState.padreGranel) params.precioFijo = '1';
+        // [629 · guardarraíl escalera] El escalón grande debe salir MÁS BARATO por unidad/kilo
+        // que comprar suelto — si no, casi siempre es un dedazo. AVISA, nunca bloquea.
+        const _pvPadre = parseFloat(padre.precioVenta) || 0;
+        if (f > 1 && _pvPadre > 0) {
+          const _porU = precio / f;
+          if (_porU > _pvPadre + 1e-9 && !await _modalConfirm(
+              `Este escalón sale a ${fmtMoney(_porU)} por ${_satState.padreGranel ? 'kilo' : 'unidad'}, MÁS CARO que comprar suelto (${fmtMoney(_pvPadre)}). Al cliente no le conviene — ¿es a propósito?\n\n(×${f} a ${fmtMoney(precio)} vs suelto ${fmtMoney(_pvPadre * f)})`,
+              { warning: true, titulo: '⚠ El escalón no ahorra' })) {
+            $('satPrecio')?.focus(); return;
+          }
+        }
       }
       _satGuardando = true;
       cerrarModalSatelite();
@@ -45253,7 +45318,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _p2AbrirUno, _p2VolverLista, _p2GuardarUno, costosPrecioUno, _p2CerrarUno, _p2GuardarUnoDirecto,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
     // [RONDA 5 · purga] exports equiv embebidas eliminados
-    toggleProductoActivo, confirmarApagarBase, cerrarApagarBaseRevertir,
+    toggleProductoActivo, toggleMosgo, confirmarApagarBase, cerrarApagarBaseRevertir,
     // Evaluación de personal
     refreshEvaluacion, abrirAuditar, cerrarAuditar, guardarAuditoria,
     auditToggleCheck, auditCheckAll, auditToggle, imprimirLiquidacionDia,
