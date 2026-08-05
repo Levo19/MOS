@@ -255,6 +255,7 @@ const MOS = (() => {
     // minimizado en el FAB flotante — se re-expande tocándolo desde cualquier vista).
     if (S.view === 'proveedores' && viewName !== 'proveedores' && S.pv2) {
       S.pv2.view = 'home';
+      try { _pv2StockAutoDetener(); } catch (_) {}   // [660] no seguir pidiendo stock fuera del módulo
       const _lay = $('pv2Layout'); if (_lay) _lay.remove();
       // [615·M2] El overlay de ubicación vive en <body> (fixed, z-index 8700): sin esto
       // quedaba tapando Caja/Finanzas al cambiar de módulo, con su listener de Escape vivo.
@@ -44006,6 +44007,52 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (e) { S.pv2.items = []; }
     S.pv2.cargando = false;
     pv2Render();
+    try { _pv2StockAutoIniciar(); } catch (_) {}   // [660] stock en vivo mientras esté abierto
+  }
+
+  // [660] STOCK EN VIVO EN PROVEEDORES ────────────────────────────────────────
+  // El stock (wh.stock / me.stock_zonas) se pedía UNA vez al abrir el proveedor: si
+  // WH despachaba o ajustaba con la vista abierta, acá seguía el número viejo y se
+  // pedía de más. Ahora se re-pide solo el stock (RPC prov_stock_ubicaciones, la
+  // barata) cada PV2_STOCK_MS y al volver el foco. NO re-pide el catálogo ni el
+  // histórico: sólo re-mergea las ubicaciones sobre los items que ya están en pantalla.
+  const PV2_STOCK_MS = 25 * 1000;
+  let _pv2StockTimer = null, _pv2StockVis = null, _pv2StockEnVuelo = false;
+
+  async function _pv2RefrescarStock() {
+    if (_pv2StockEnVuelo) return;
+    if (S.view !== 'proveedores' || S.pv2.view !== 'pedido') return;
+    const prov = S.pv2.prov, id = prov && (prov.idProveedor || prov.id);
+    if (!id || !Array.isArray(S.pv2.items) || !S.pv2.items.length) return;
+    if (document.visibilityState !== 'visible') return;
+    // No pisar al admin mientras edita (mismo criterio que el auto-refresh de zona).
+    if ($('pv2Modal') || $('provProductoModal')) return;
+    _pv2StockEnVuelo = true;
+    try {
+      const ubis = await API.get('getProvStockUbicaciones', { idProveedor: id }).catch(() => null);
+      // Sólo aplicar si el admin sigue en el MISMO proveedor (pudo cambiar mientras volvía).
+      const idAhora = S.pv2.prov && (S.pv2.prov.idProveedor || S.pv2.prov.id);
+      if (!ubis || String(idAhora) !== String(id)) return;
+      if (S.view !== 'proveedores' || S.pv2.view !== 'pedido') return;
+      S.pv2.ubis = ubis;
+      _pv2MergeUbicaciones(S.pv2.items, ubis);
+      pv2Render();
+    } catch (_) {
+    } finally { _pv2StockEnVuelo = false; }
+  }
+
+  function _pv2StockAutoIniciar() {
+    if (_pv2StockTimer) clearInterval(_pv2StockTimer);
+    _pv2StockTimer = setInterval(() => { _pv2RefrescarStock(); }, PV2_STOCK_MS);
+    if (!_pv2StockVis) {
+      _pv2StockVis = () => { if (document.visibilityState === 'visible') _pv2RefrescarStock(); };
+      document.addEventListener('visibilitychange', _pv2StockVis);
+      window.addEventListener('focus', _pv2StockVis);
+    }
+  }
+  function _pv2StockAutoDetener() {
+    if (_pv2StockTimer) { clearInterval(_pv2StockTimer); _pv2StockTimer = null; }
+    // El handler de foco es barato y chequea la vista → queda registrado una sola vez.
   }
 
   // [614] Pega `ubicaciones` (RPC prov_stock_ubicaciones) sobre cada producto por
@@ -44717,7 +44764,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     buscar(v){ S.pv2.q = String(v||'').trim().toLowerCase();
       const b = $('pv2HomeBody'); if (b) b.innerHTML = _pv2HomeListaHtml(); else pv2Render(); },
     abrir(id){ _pv2Abrir(id); },
-    volver() { _pv2UbiCerrar(); S.pv2.view = 'home'; S.pv2.prov = null; pv2Render(); },
+    volver() { _pv2UbiCerrar(); try { _pv2StockAutoDetener(); } catch (_) {} S.pv2.view = 'home'; S.pv2.prov = null; pv2Render(); },
     tab(t)   { S.pv2.tab = t; pv2Render(); },
     solo()   { S.pv2.solo = !S.pv2.solo; pv2Render(); },
     showOff(){ S.pv2.off = !S.pv2.off; pv2Render(); },
