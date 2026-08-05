@@ -105,6 +105,25 @@ const FAMILIAS = [
   }));
   t('al tocar aparece el +1 volador', fly.fly && fly.txt === '+1', JSON.stringify(fly));
 
+  // [v0.5.2] venta persistente + fecha chip/overlay 2 semanas
+  await p.evaluate(() => { Venta.clear(); UI.go(0); St.cliDoc = '20601234567'; UI.addEsc('P-NKM1K-X3'); });
+  await p.reload(); await p.waitForTimeout(900);
+  const rest = await p.evaluate(() => ({ cart: St.cart, cli: St.cliDoc }));
+  t('la venta en curso SOBREVIVE al reload (auto-update sin perder carrito)',
+    rest.cart['P-NKM1K-X3'] === 1 && rest.cli === '20601234567', JSON.stringify(rest));
+  const fe = await p.evaluate(() => { UI.openCart(); return document.getElementById('sheet').innerText; });
+  t('el sheet muestra el chip de fecha HOY', /📅 HOY ▾/.test(fe), fe.slice(0, 140));
+  const ovf = await p.evaluate(() => { UI.openFecha(); const b = [...document.querySelectorAll('#sheet .chips button')];
+    return { n: b.length, l0: b[0]?.innerText, l1: b[1]?.innerText }; });
+  t('el overlay ofrece exactamente 14 días (2 semanas)', ovf.n === 14, JSON.stringify(ovf));
+  t('los dos primeros son HOY y MAÑANA', ovf.l0 === 'HOY' && ovf.l1 === 'MAÑANA', JSON.stringify(ovf));
+  const pick = await p.evaluate(() => { const b = [...document.querySelectorAll('#sheet .chips button')][5];
+    b.click(); const chip = document.querySelector('#sheet .chips button');
+    return { fecha: St.fechaEntrega, chip: chip ? chip.innerText : '' }; });
+  t('elegir un día vuelve al carrito con el chip actualizado',
+    /\d{4}-\d{2}-\d{2}/.test(pick.fecha) && /📅 .+ ▾/.test(pick.chip), JSON.stringify(pick));
+  await p.evaluate(() => { Venta.clear(); UI.close(); });
+
   // familias vacías → mensaje de "activa con 🛵"
   await p.evaluate(() => { D.fams = []; D.escalones = []; UI.go(0); });
   const vacio = await p.evaluate(() => document.getElementById('lista').innerText);
