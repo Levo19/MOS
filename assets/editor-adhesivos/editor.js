@@ -246,20 +246,51 @@
       g.innerHTML = '<div class="ed2-vacio">' + (q ? 'Sin resultados para "' + _esc(_busqueda) + '"' : 'El catálogo está vacío.<br>Crea el primer aviso con <b>✨ Crear nuevo</b>.') + '</div>';
       return;
     }
-    g.innerHTML = lista.map(function(p, i) {
-      var idEsc = _esc(String(p.idPlantilla || ''));
-      var tam = _esc(p.tamanoCanvas || '50x25');
-      return '<div class="ed2-card" style="animation-delay:' + Math.min(i * 55, 500) + 'ms">'
-        +   '<div class="ed2-card-th" data-print="' + idEsc + '" title="Imprimir este aviso"><div class="ed2-th-holder" id="ed2Th_' + idEsc + '"><span class="ed2-th-spin"></span></div></div>'
-        +   '<div class="ed2-card-body">'
-        +     '<div class="ed2-card-name" title="' + _esc(p.descripcion || p.nombre) + '">' + _esc(p.nombre) + '</div>'
-        +     '<div class="ed2-card-meta"><span>' + tam + ' mm</span><span class="ed2-chip-fija">🔒 FIJA</span></div>'
-        +     '<div class="ed2-card-acts">'
-        +       '<button class="ed2-btn-print" data-print="' + idEsc + '">🖨 Imprimir</button>'
-        +       '<button class="ed2-btn-base" data-base="' + idEsc + '" title="Partir de esta: crea una copia editable en el Estudio (el original no se toca)">⧉</button>'
-        +     '</div>'
-        +   '</div>'
-        + '</div>';
+    // [v2.2 · pedido dueño] GRUPOS por familia de nombre — "Dulces Papito", "WiFis",
+    // "Apps"… así se encuentra rápido. La familia sale del prefijo antes del "·" (o la
+    // primera palabra); los conocidos llevan nombre bonito; lo suelto cae en "Otros".
+    function _grupoDe(p) {
+      var n = String(p.nombre || '').trim();
+      var i2 = n.indexOf('·');
+      var pre = i2 > 0 ? n.slice(0, i2).trim() : (n.split(/[\s]+/)[0] || '');
+      var k = pre.toLowerCase();
+      if (k === 'papito' || k === 'dulce') return 'Dulces Papito';
+      if (k === 'wifi' || k === 'wifis') return 'WiFis';
+      if (k === 'app' || k === 'apps') return 'Apps';
+      return pre || 'Otros';
+    }
+    var grupos = {};
+    lista.forEach(function(p) { var gk = _grupoDe(p); (grupos[gk] = grupos[gk] || []).push(p); });
+    // los grupos de 1 sola plantilla (prefijos sueltos) se juntan en "Otros"
+    Object.keys(grupos).forEach(function(gk) {
+      if (gk !== 'Otros' && grupos[gk].length === 1 && ['Dulces Papito', 'WiFis', 'Apps'].indexOf(gk) < 0) {
+        (grupos['Otros'] = grupos['Otros'] || []).push(grupos[gk][0]); delete grupos[gk];
+      }
+    });
+    var nombresG = Object.keys(grupos).sort(function(a, b) {
+      if (a === 'Otros') return 1; if (b === 'Otros') return -1; return a.localeCompare(b);
+    });
+    var idx = 0;
+    g.innerHTML = nombresG.map(function(gk) {
+      var cards = grupos[gk].sort(function(a, b) { return String(a.nombre).localeCompare(String(b.nombre)); })
+        .map(function(p) {
+          var idEsc = _esc(String(p.idPlantilla || ''));
+          var tam = _esc(p.tamanoCanvas || '50x25');
+          var d = Math.min((idx++) * 55, 500);
+          return '<div class="ed2-card" style="animation-delay:' + d + 'ms">'
+            +   '<div class="ed2-card-th" data-print="' + idEsc + '" title="Imprimir este aviso"><div class="ed2-th-holder" id="ed2Th_' + idEsc + '"><span class="ed2-th-spin"></span></div></div>'
+            +   '<div class="ed2-card-body">'
+            +     '<div class="ed2-card-name" title="' + _esc(p.descripcion || p.nombre) + '">' + _esc(p.nombre) + '</div>'
+            +     '<div class="ed2-card-meta"><span>' + tam + ' mm</span><span class="ed2-chip-fija">🔒 FIJA</span></div>'
+            +     '<div class="ed2-card-acts">'
+            +       '<button class="ed2-btn-print" data-print="' + idEsc + '">🖨 Imprimir</button>'
+            +       '<button class="ed2-btn-base" data-base="' + idEsc + '" title="Partir de esta: crea una copia editable en el Estudio (el original no se toca)">⧉</button>'
+            +     '</div>'
+            +   '</div>'
+            + '</div>';
+        }).join('');
+      return '<div class="ed2-grupo" style="grid-column:1/-1;margin:8px 2px -2px;font:800 11px/1 system-ui,sans-serif;letter-spacing:.9px;text-transform:uppercase;color:#93a4c2;border-bottom:1px solid rgba(148,163,184,.22);padding-bottom:6px">'
+        + _esc(gk) + ' <span style="opacity:.55;font-weight:600">(' + grupos[gk].length + ')</span></div>' + cards;
     }).join('');
     // wiring (sin onclicks inline con ids — más robusto con ids raros)
     g.querySelectorAll('[data-print]').forEach(function(el) {
