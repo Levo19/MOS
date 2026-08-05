@@ -2736,6 +2736,10 @@ const API = (() => {
     // La SERIE la usa la emisión CPE → debe vivir fresca en Supabase, no en una Hoja que se atrasa.
     crearSerie:                 _mosCatalogoDirecto,
     actualizarSerie:            _mosCatalogoDirecto,
+    // [628] Toggle 🛵 MosGo: 100% Supabase (RPC mos.catalogo_toggle_mosgo, guard SOLO_MASTER
+    // server-side). GAS no lo conoce → gate always-true; sin token, el branch LANZA (no cae
+    // a GAS, que respondería "Acción no reconocida" — el bug que reportó el dueño).
+    toggleMosgo:                () => true,
     // [AUTH] verificación de clave admin: Supabase-first SIEMPRE (RPC central bcrypt+cascada+auditoría);
     // si no hay token → null → GAS kill-switch. La validación no es "dinero directo", es auth central.
     verificarClaveAdmin:        () => true,

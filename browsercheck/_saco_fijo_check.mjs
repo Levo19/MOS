@@ -45,6 +45,13 @@ t('spec del catálogo trae canalMayoreo y precioFijo', api.includes("['canal_may
 t('crearProducto reenvía precioFijo', api.includes('precioFijo: p.precioFijo,'));
 t('actualizarProducto acepta precioFijo', api.includes("'precioFijo',             // [629]"));
 t('acción toggleMosgo llama a catalogo_toggle_mosgo', api.includes("_sbRpcMOSWrite('catalogo_toggle_mosgo'"));
+// [672] el toggle DEBE estar registrado en el mapa de escrituras directas — sin esta
+// entrada, la acción caía a GAS y respondía "Acción no reconocida" (bug reportado).
+{
+  const i = api.indexOf('const _MOS_POST_DIRECTO = {');
+  const mapa = i >= 0 ? api.slice(i, api.indexOf('};', i)) : '';
+  t('toggleMosgo registrado en _MOS_POST_DIRECTO (no cae a GAS)', mapa.includes('toggleMosgo:                () => true,'));
+}
 
 console.log(`\n${fail === 0 ? '✅ TODO OK' : '❌ FALLOS'} — ${ok} pasaron, ${fail} fallaron`);
 process.exit(fail === 0 ? 0 : 1);
