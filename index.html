@@ -12375,6 +12375,21 @@
       filter: grayscale(.4);
     }
 
+    /* [2.43.679] Pill GO (canal MosGo) — por CLASE para poder prender/apagar el botón
+       en sitio (classList) sin repintar el catálogo entero (el repintado parpadeaba). */
+    .go-pill {
+      font-weight: 800; letter-spacing: .6px; line-height: 1; border-radius: 7px;
+      cursor: pointer; flex-shrink: 0; font-family: inherit; transition: all .15s;
+      font-size: 10.5px; padding: 6px 9px;
+      background: transparent; border: 1px dashed #475569; color: #64748b;
+    }
+    .go-pill.sm { font-size: 9px; padding: 4px 7px; }
+    .go-pill.on {
+      background: #6e56cf; border: 1px solid #8f7aff; color: #fff;
+      box-shadow: 0 1px 6px rgba(110,86,207,.45);
+    }
+    .go-pill:active { transform: scale(.94); }
+
     /* Toggle switch (estado activo/inactivo) */
     .toggle-sw {
       position: relative;
@@ -20068,7 +20083,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.678"></script>
+<script src="js/api.js?v=2.43.679"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20084,7 +20099,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.678"></script>
+<script src="js/app.js?v=2.43.679"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

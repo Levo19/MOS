@@ -16648,15 +16648,22 @@ const MOS = (() => {
   function _togglesMosgoHtml(prod, sm) {
     if (!_esMasterSession() || !prod) return '';
     const go = String(prod.canalMayoreo) === '1';
-    return `<button type="button" data-go="${prod.idProducto}"
-              style="font-size:${sm ? 9 : 10.5}px;font-weight:800;letter-spacing:.6px;line-height:1;
-                     padding:${sm ? '4px 7px' : '6px 9px'};border-radius:7px;cursor:pointer;flex-shrink:0;
-                     font-family:inherit;transition:all .15s;${go
-                ? 'background:#6e56cf;border:1px solid #8f7aff;color:#fff;box-shadow:0 1px 6px rgba(110,86,207,.45)'
-                : 'background:transparent;border:1px dashed #475569;color:#64748b'}"
+    // [2.43.679] por CLASES (.go-pill/.on) para poder actualizar el botón EN SITIO
+    // al togglear — antes se repintaba el catálogo completo y parpadeaba todo.
+    return `<button type="button" class="go-pill${sm ? ' sm' : ''}${go ? ' on' : ''}" data-go="${prod.idProducto}"
               onclick="event.stopPropagation();MOS.toggleMosgo('${prod.idProducto}')"
-              title="${go ? 'Se vende en MosGo (GO) — tocar para QUITARLO (lo apaga también en ME)'
-                          : 'Vender en MosGo (GO) — lo enciende también en el catálogo/ME'}">GO</button>`;
+              title="${go ? 'Se vende en MosGo — tocar para quitarlo (ME no se toca)'
+                          : 'Vender en MosGo (ME no se toca)'}">GO</button>`;
+  }
+
+  // [2.43.679] Prende/apaga las pills GO de un producto EN SITIO (aparece en 1 o más
+  // renders de la misma card) — cero re-render, cero parpadeo.
+  function _pintarGo(idProducto, on) {
+    document.querySelectorAll('[data-go="' + idProducto + '"]').forEach(b => {
+      b.classList.toggle('on', !!on);
+      b.title = on ? 'Se vende en MosGo — tocar para quitarlo (ME no se toca)'
+                   : 'Vender en MosGo (ME no se toca)';
+    });
   }
 
   // [628] Interruptor del canal MosGo. ON enciende también el catálogo (todo lo de MosGo
@@ -16674,14 +16681,16 @@ const MOS = (() => {
     // el toggle de prendido gobierna SOLO ME. Ninguno toca al otro — "así no combinamos".
     p.canalMayoreo = on ? '1' : '0';
     _togglesEnVuelo.add(idProducto);
-    try { renderCatalogo(); } catch (_) {}
+    // [2.43.679] SOLO se pinta el botón tocado — repintar el catálogo entero hacía
+    // parpadear todas las cards (animación de entrada) en cada toque.
+    _pintarGo(idProducto, on);
     toast(on ? '🚀 Visible en MosGo' : '⚪ Fuera de MosGo', 'ok', 2000);
     try {
       await API.post('toggleMosgo', { codigoBarra: cb, on });
       _marcarToggleReciente(idProducto);
     } catch (e) {
       p.canalMayoreo = goPrevio;
-      try { renderCatalogo(); } catch (_) {}
+      _pintarGo(idProducto, String(goPrevio) === '1');
       toast('⚠ No se pudo guardar: ' + (e.message || e), 'error');
     } finally {
       _togglesEnVuelo.delete(idProducto);
