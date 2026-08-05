@@ -39,6 +39,8 @@ const FAMILIAS = [
         { documento: '20601234567', nombre: 'POLLERIA DONA MECHE', tipo_doc: 'RUC', tipo_negocio: 'polleria', telefono_wsp: '999888777' }], comision_pct: 3 },
       ruta_pedidos_listar: { pedidos: [] },
       ruta_rendiciones_listar: { rendiciones: [] },
+      // device-auth exige `estado` — sin esto lanza "respuesta sin estado" (artefacto del mock)
+      verificar_dispositivo: { ok: true, estado: 'APROBADO' },
       ruta_pedido_crear: { ok: true, id_pedido: 'R-0100', estado: 'CONFIRMADO', total: 205, ahorro: 55, ajustados: 0 }
     };
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ok[fn] || { ok: true }) });
@@ -85,6 +87,23 @@ const FAMILIAS = [
   t('el pedido viaja con los códigos de escalón y cantidades', !!pedidoEnviado &&
     (pedidoEnviado.items || []).length === 2 && pedidoEnviado.items.every(i => i.cant === 1), JSON.stringify(pedidoEnviado?.items));
   t('sin errores JS en toda la sesión', errs.length === 0, errs.join(' | ').slice(0, 200));
+
+  // [v0.5.1] badge contador + '+1' volador (volver a Vender: confirmar limpió y cambió de tab)
+  const badges = await p.evaluate(() => {
+    UI.go(0); UI.addEsc('P-NKMGLT-X25'); UI.addEsc('P-NKMGLT-X25');  // 2 sacos → badge 2
+    return {
+      qns: [...document.querySelectorAll('.esc button .qn')].map(x => ({ n: x.textContent, enSaco: /Saco|x25|155/.test(x.closest('button').innerText) })),
+      cssQn: !!document.querySelector('.esc button .qn'),
+    };
+  });
+  t('el escalón muestra su contador sin ir al carrito', badges.cssQn, JSON.stringify(badges));
+  t('el saco marca 2 tras dos toques', badges.qns.some(x => x.n === '2'), JSON.stringify(badges.qns));
+  const fly = await p.evaluate(() => new Promise(res => {
+    const btn = [...document.querySelectorAll('.esc button')].find(b => /Tripack/.test(b.innerText));
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    setTimeout(() => res({ fly: !!document.querySelector('.plusfly'), txt: document.querySelector('.plusfly')?.textContent }), 120);
+  }));
+  t('al tocar aparece el +1 volador', fly.fly && fly.txt === '+1', JSON.stringify(fly));
 
   // familias vacías → mensaje de "activa con 🛵"
   await p.evaluate(() => { D.fams = []; D.escalones = []; UI.go(0); });
