@@ -32,13 +32,25 @@ if (coco) {
   t('WHCOLFNO ya NO manda a comprar (lo cubre su granel)', parseFloat(alm.faltaComprarEq) === 0, alm.faltaComprarEq);
   t('WHCOLFNO manda a ENVASAR', parseFloat(alm.faltaEnvasarEq) > 0, alm.faltaEnvasarEq);
 } else { t('viene WHCOLFNO', false); }
-const aj = (p070.data.productos || []).find(x => x.codigoBarra === 'WHAJARUM');
-const ajAlm = aj && aj.ubicaciones.find(u => u.tipo === 'ALMACEN');
-if (ajAlm) {
-  console.log(`     WHAJARUM: falta ${ajAlm.faltaEq} → comprar ${ajAlm.faltaComprarEq} / envasar ${ajAlm.faltaEnvasarEq}`);
-  t('AJONJOLI (granel en 0) SÍ manda a comprar', parseFloat(ajAlm.faltaComprarEq) > 0, ajAlm.faltaComprarEq);
-  t('comprar + envasar = faltante total', Math.abs(parseFloat(ajAlm.faltaComprarEq) + parseFloat(ajAlm.faltaEnvasarEq) - parseFloat(ajAlm.faltaEq)) < 0.01);
+// [rev500] La REGLA, no un producto concreto: el stock cambia día a día (el 04/08 entró
+// granel de ajonjolí y su respuesta correcta pasó de "comprar" a "envasar" — el assert
+// viejo, atado a ese estado, fallaba aunque el código estuviera bien).
+let nReglas = 0, malReglas = 0;
+for (const p of (p070.data.productos || [])) {
+  const alm = (p.ubicaciones || []).find(u => u.tipo === 'ALMACEN');
+  if (!alm || !(parseFloat(alm.faltaEq) > 0)) continue;
+  nReglas++;
+  const falta = parseFloat(alm.faltaEq), comprar = parseFloat(alm.faltaComprarEq) || 0;
+  const envasar = parseFloat(alm.faltaEnvasarEq) || 0, granel = parseFloat(alm.padreDispEq) || 0;
+  const sumaOk = Math.abs(comprar + envasar - falta) < 0.01;
+  const envOk = Math.abs(envasar - Math.min(falta, granel)) < 0.01;   // se envasa lo que el granel cubre
+  const comOk = Math.abs(comprar - Math.max(0, falta - granel)) < 0.01; // se compra solo el resto
+  if (!(sumaOk && envOk && comOk)) { malReglas++;
+    console.log(`     ✗ ${p.codigoBarra}: falta ${falta} · granel ${granel} → comprar ${comprar} / envasar ${envasar}`); }
 }
+console.log(`     productos con faltante evaluados: ${nReglas}`);
+t('comprar + envasar = faltante, en TODOS', malReglas === 0, malReglas + ' incoherentes');
+t('lo que cubre el granel se ENVASA, el resto se COMPRA', malReglas === 0);
 
 console.log('── H4: tope al stock corrupto');
 const p007 = await call('PROV007');

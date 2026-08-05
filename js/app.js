@@ -26697,9 +26697,15 @@ const MOS = (() => {
       }
       _tkAcc.pdf = { url: pdf, correlativo: d.correlativo || t.correlativo, estado: d.estado, idVenta: t.idVenta, t: t, blob: null, fname: null };
       const est = String(d.estado || '').toUpperCase();
-      const chip = (est === 'EMITIDO' || d.aceptada === true)
+      // [621] BAJA se evalúa PRIMERO: un comprobante dado de baja ante SUNAT conserva
+      // `aceptada = true` (fue aceptado ANTES de anularse), así que con el orden anterior
+      // la rama BAJA era inalcanzable y se pintaba "🟢 Aceptado" sobre un documento
+      // anulado — que además se ofrecía enviar al cliente por WhatsApp.
+      const esBaja = (est === 'BAJA');
+      const chip = esBaja
+        ? '<span style="font-size:12px;font-weight:800;color:#fff;background:#64748b;padding:3px 10px;border-radius:8px">⛔ Dado de baja ante SUNAT</span>'
+        : (est === 'EMITIDO' || d.aceptada === true)
         ? '<span style="font-size:12px;font-weight:800;color:#052e1c;background:#10b981;padding:3px 10px;border-radius:8px">🟢 Aceptado</span>'
-        : est === 'BAJA' ? '<span style="font-size:12px;font-weight:800;color:#fff;background:#64748b;padding:3px 10px;border-radius:8px">Dado de baja</span>'
         : est === 'RECHAZADO' ? '<span style="font-size:12px;font-weight:800;color:#fff;background:#ef4444;padding:3px 10px;border-radius:8px">✖ Rechazado por SUNAT</span>'
         : '<span style="font-size:12px;font-weight:800;color:#2a1c02;background:#f59e0b;padding:3px 10px;border-radius:8px">🟡 ' + _escapeHtml(String(d.estado || 'Pendiente SUNAT')) + '</span>';
       const url = _escapeHtml(String(pdf));
@@ -26709,10 +26715,13 @@ const MOS = (() => {
            <div style="margin:8px 0">${chip}</div>
            <div style="font-family:ui-monospace,monospace;font-size:16px;font-weight:800;color:#e2e8f0">${_escapeHtml(String(d.correlativo || t.correlativo || ''))}</div>
            <div style="font-size:12px;color:#64748b;margin-top:4px">${_escapeHtml(String(t.tipoDoc || ''))} · ${_escapeHtml(String(t.cliente || t.clienteDoc || '—'))}</div>
-           <div style="font-size:11.5px;color:#64748b;margin-top:14px;line-height:1.6">El PDF oficial lo emite NubeFact.<br>Descárgalo o envíaselo al cliente como archivo 📎</div>
+           ${esBaja
+             ? '<div style="font-size:12px;color:#fca5a5;margin-top:14px;line-height:1.6;background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.4);border-radius:10px;padding:9px 11px"><b>Este comprobante fue ANULADO ante SUNAT.</b><br>No se lo envíes al cliente: ya no tiene validez fiscal.</div>'
+             : '<div style="font-size:11.5px;color:#64748b;margin-top:14px;line-height:1.6">El PDF oficial lo emite NubeFact.<br>Descárgalo o envíaselo al cliente como archivo 📎</div>'}
            <a href="${url}" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;font-size:12px;color:#818cf8;font-weight:700">Abrir el oficial en pestaña ↗</a>
          </div>`;
-      if (acc) acc.classList.remove('hidden');
+      // [621] con un comprobante dado de baja NO se ofrecen las acciones de envío/compartir.
+      if (acc) acc.classList.toggle('hidden', esBaja);
     } catch (e) {
       if (body) body.innerHTML = '<div style="text-align:center;color:#fca5a5;padding:30px 16px">No se pudo cargar el comprobante.<br><span style="font-size:12px;color:#94a3b8">' + _escapeHtml(String(e && (e.message || e))) + '</span></div>';
     }
@@ -40180,7 +40189,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // Escape simple para atributos/texto en templates (reusa CSS.escape donde haga falta).
-  function _esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  // [621] Esta era la SEGUNDA definición de `_esc` en el mismo scope: por hoisting ganaba
+  // sobre la de la línea ~26015 y NO escapa la comilla simple, dejando sin proteger 15
+  // `onclick="…('${_esc(x)}')"` (un skuBase/idCobro con apóstrofo cierra el literal JS).
+  // Se unifica: ahora también escapa `'`, igual que la otra.
+  function _esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   async function _zonaCargarPanel(force) {
     _zonaToggleAlmacenBtns();   // [Sorpresas/Mermas] Guías ↔ 🎯/♻️ según la zona activa
