@@ -16669,21 +16669,18 @@ const MOS = (() => {
     const cb = String(p.codigoBarra || '').trim();
     if (!cb) { toast('⚠ Este ítem no tiene código de barras — MosGo vende por código', 'error'); return; }
     const on = String(p.canalMayoreo) !== '1';
-    const estadoPrevio = p.estado, goPrevio = p.canalMayoreo;
-    // Optimista. ON enciende también el producto (decisión 1: todo lo GO se vende en ME).
-    // [632] OFF solo lo saca del canal — la cascada de apagado se DESCARTÓ: el dueño la
-    // vio en acción (la familia entera "en mallas" y el granel fuera de la caja de ME).
+    const goPrevio = p.canalMayoreo;
+    // [633] INDEPENDENCIA TOTAL (decisión final del dueño): el GO gobierna SOLO MosGo y
+    // el toggle de prendido gobierna SOLO ME. Ninguno toca al otro — "así no combinamos".
     p.canalMayoreo = on ? '1' : '0';
-    if (on && !_isProdActivo(p)) { p.estado = '1'; _actualizarVisualProducto(idProducto, true); }
     _togglesEnVuelo.add(idProducto);
     try { renderCatalogo(); } catch (_) {}
-    toast(on ? '🚀 GO: ahora se vende en MosGo (y sigue en ME)' : '⚪ Fuera de MosGo — en ME sigue a la venta', 'ok', 2200);
+    toast(on ? '🚀 Visible en MosGo' : '⚪ Fuera de MosGo', 'ok', 2000);
     try {
       await API.post('toggleMosgo', { codigoBarra: cb, on });
       _marcarToggleReciente(idProducto);
     } catch (e) {
-      p.canalMayoreo = goPrevio; p.estado = estadoPrevio;
-      _actualizarVisualProducto(idProducto, _isProdActivo(p));
+      p.canalMayoreo = goPrevio;
       try { renderCatalogo(); } catch (_) {}
       toast('⚠ No se pudo guardar: ' + (e.message || e), 'error');
     } finally {
