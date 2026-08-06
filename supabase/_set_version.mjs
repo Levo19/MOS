@@ -15,3 +15,20 @@ if (!build) {
 fs.writeFileSync(f, JSON.stringify({ version, build }));
 JSON.parse(fs.readFileSync(f, 'utf8'));   // autoverificación
 console.log('OK', f, '→', version, '· build', build.slice(0, 60) + (build.length > 60 ? '…' : ''));
+
+// [2.43.681 · bug del bucle de actualización] Si el index.html del repo trae el letrero
+// `var V = 'x.y.z'` (el banner de consola de MOS + el chequeo de auto-update), se bumpea
+// AQUÍ MISMO. Quedó en 2.43.651 durante ~30 versiones porque el ritual no lo cubría →
+// cada carga "detectaba" versión nueva, vaciaba el caché del SW y recargaba (el bucle
+// "actualizando solo… / borra datos del sitio" que reportó el dueño).
+try {
+  const idx = repo.replace(/[\\/]+$/, '') + '/index.html';
+  if (fs.existsSync(idx)) {
+    const html = fs.readFileSync(idx, 'utf8');
+    const re = /var V = '(\d+\.\d+\.\d+)';(\s*\/\/ ⚠ bumpear)/;
+    if (re.test(html)) {
+      fs.writeFileSync(idx, html.replace(re, `var V = '${version}';$2`));
+      console.log('OK', idx, '→ var V =', version);
+    }
+  }
+} catch (e) { console.error('⚠ no pude bumpear var V del index:', e.message); process.exit(1); }

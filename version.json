@@ -1,1 +1,1 @@
-{"version":"2.43.680","build":"2.43.680 infraestructura: solicitudes agrupadas TTL 1h + suspendidos fuera de zonas + grupo MosGo"}
+{"version":"2.43.681","build":"2.43.681 fix bucle de actualizacion (var V del banner nunca se bumpeaba)"}
