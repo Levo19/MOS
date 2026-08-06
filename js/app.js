@@ -507,6 +507,7 @@ const MOS = (() => {
       S.session = saved;
       _applySession();
       _refreshAuditCtx();
+      _registrarSesionDispositivo();   // [637] sella "quién estuvo aquí" en el dispositivo
       const overlay = $('loginOverlay');
       if (overlay) overlay.classList.add('hidden');
       nav('dashboard');
@@ -729,6 +730,7 @@ const MOS = (() => {
         S.session = { idPersonal: userId, nombre: res.nombre, rol: res.rol, idSesion: _generaIdSesion() };
         _saveSession(S.session);
         _applySession();
+        _registrarSesionDispositivo();   // [637] sella "quién estuvo aquí" en el dispositivo
         // [v2.43.133 FIX] Revelar botones admin del sistema seguridad inmediatamente al login
         try {
           var _rolN = String(res.rol || '').toUpperCase();
@@ -20078,6 +20080,25 @@ const MOS = (() => {
           try { navigator.vibrate && navigator.vibrate(10); } catch (_) {}
         }
       }, { passive: true });
+      // [637 · espacio del MASTER] spotlight + tilt 3D siguiendo el puntero (solo PC:
+      // hover real). Delegado y pasivo — un listener para toda la flota.
+      if (window.matchMedia && matchMedia('(hover:hover)').matches) {
+        cont.addEventListener('pointermove', (ev) => {
+          const card = ev.target.closest && ev.target.closest('.devt');
+          if (!card) return;
+          const r = card.getBoundingClientRect();
+          if (!r.width || !r.height) return;
+          const px = (ev.clientX - r.left) / r.width, py = (ev.clientY - r.top) / r.height;
+          card.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+          card.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+          card.style.setProperty('--ry', ((px - 0.5) * 7).toFixed(2) + 'deg');
+          card.style.setProperty('--rx', ((0.5 - py) * 7).toFixed(2) + 'deg');
+        }, { passive: true });
+        cont.addEventListener('pointerout', (ev) => {
+          const card = ev.target.closest && ev.target.closest('.devt');
+          if (card) { card.style.removeProperty('--rx'); card.style.removeProperty('--ry'); }
+        }, { passive: true });
+      }
     }
   }
 
@@ -22886,6 +22907,21 @@ const MOS = (() => {
   // Cuenta dispositivos online (ACTIVO + actividad <5 min) en una estación
   function _dispOnlineEnEstacion(idEstacion) {
     return _dispEnEstacion(idEstacion).filter(_dispEnLinea).length;
+  }
+
+  // [637] Sella en mos.dispositivos QUIÉN usa este equipo (ultima_sesion) — la misma RPC
+  // heartbeat de ME/WH (mos.registrar_sesion). Sin esto los equipos del panel MOS salían
+  // como "Mobile abbf2b · hace 4h" sin dueño en Infraestructura (reporte del dueño).
+  function _registrarSesionDispositivo() {
+    try {
+      const dev = (window.DeviceAuth && typeof DeviceAuth.deviceId === 'function' && DeviceAuth.deviceId())
+        || (window.__MOS_AUDIT && window.__MOS_AUDIT.deviceId) || '';
+      const quien = S.session && S.session.nombre;
+      if (!dev || !quien) return;
+      if (window.DeviceAuth && DeviceAuth.rpc) {
+        DeviceAuth.rpc('registrar_sesion', { deviceId: dev, vendedor: quien }).catch(() => {});
+      }
+    } catch (_) {}
   }
 
   function _dispPendientes() {

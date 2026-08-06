@@ -409,11 +409,18 @@
     #infraContenedor .face .avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:850;font-size:14px;color:#04121f}
     #infraContenedor .face .uname{font-size:11px;font-weight:750;color:var(--cink);max-width:88%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     #infraContenedor .face .ust{font-size:9px;font-weight:700}
-    #infraContenedor .devt{position:relative;transition:transform .16s cubic-bezier(.34,1.4,.64,1),filter .2s}
-    /* [2.43.682 · feedback dueño] cards con RESPUESTA táctil pareja en toda la flota:
-       hover levanta suave (PC), tap comprime (móvil/tablet) — acompaña a la vibración. */
-    @media (hover:hover){ #infraContenedor .devt:hover{transform:translateY(-3px) scale(1.02)} }
+    #infraContenedor .devt{position:relative;--mx:50%;--my:50%;transition:transform .16s cubic-bezier(.34,1.4,.64,1),filter .2s}
+    /* [2.43.683 · espacio del MASTER] SPOTLIGHT que sigue al puntero + inclinación 3D
+       sutil (PC). En móvil/tablet: compresión + vibración al tocar. GPU-barato:
+       solo transform + un radial en ::after. */
+    #infraContenedor .devt::after{content:'';position:absolute;inset:-3px;border-radius:14px;pointer-events:none;opacity:0;transition:opacity .25s;
+      background:radial-gradient(140px circle at var(--mx) var(--my),rgba(148,163,255,.18),transparent 65%)}
+    @media (hover:hover){
+      #infraContenedor .devt:hover{transform:perspective(620px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(-3px) scale(1.02)}
+      #infraContenedor .devt:hover::after{opacity:1}
+    }
     #infraContenedor .devt:active{transform:scale(.95)}
+    @media (prefers-reduced-motion:reduce){ #infraContenedor .devt{transition:none} #infraContenedor .devt:hover{transform:none} }
     #infraContenedor .mbtn:active,#infraContenedor .act:active,#infraContenedor .iconbtn:active{transform:scale(.88)}
     #infraContenedor .devt.online .face{box-shadow:inset 0 0 20px rgba(16,185,129,.18),0 0 16px -4px rgba(16,185,129,.5)}
     #infraContenedor .devt.susp .face{filter:grayscale(.85) brightness(.7)}
@@ -20038,7 +20045,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.682';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.683';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20088,7 +20095,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.682"></script>
+<script src="js/api.js?v=2.43.683"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20104,7 +20111,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.682"></script>
+<script src="js/app.js?v=2.43.683"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
