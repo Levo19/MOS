@@ -12,3 +12,4 @@ inversionesmos-*.json
 
 # Scripts de trabajo de migración (no son producto; usan .pgpass externo)
 supabase/*.js
+.cron_secret_descia
