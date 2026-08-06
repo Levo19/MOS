@@ -414,7 +414,7 @@
        sutil (PC). En móvil/tablet: compresión + vibración al tocar. GPU-barato:
        solo transform + un radial en ::after. */
     #infraContenedor .devt::after{content:'';position:absolute;inset:-3px;border-radius:14px;pointer-events:none;opacity:0;transition:opacity .25s;
-      background:radial-gradient(140px circle at var(--mx) var(--my),rgba(148,163,255,.18),transparent 65%)}
+      background:radial-gradient(150px circle at var(--mx) var(--my),rgba(148,163,255,.24),transparent 65%)}
     @media (hover:hover){
       #infraContenedor .devt:hover{transform:perspective(620px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(-3px) scale(1.02)}
       #infraContenedor .devt:hover::after{opacity:1}
@@ -20045,7 +20045,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.683';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.684';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20095,7 +20095,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.683"></script>
+<script src="js/api.js?v=2.43.684"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20111,7 +20111,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.683"></script>
+<script src="js/app.js?v=2.43.684"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

@@ -20091,8 +20091,8 @@ const MOS = (() => {
           const px = (ev.clientX - r.left) / r.width, py = (ev.clientY - r.top) / r.height;
           card.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
           card.style.setProperty('--my', (py * 100).toFixed(1) + '%');
-          card.style.setProperty('--ry', ((px - 0.5) * 7).toFixed(2) + 'deg');
-          card.style.setProperty('--rx', ((0.5 - py) * 7).toFixed(2) + 'deg');
+          card.style.setProperty('--ry', ((px - 0.5) * 12).toFixed(2) + 'deg');   // [684] ±6°: visible sin lupa
+          card.style.setProperty('--rx', ((0.5 - py) * 12).toFixed(2) + 'deg');
         }, { passive: true });
         cont.addEventListener('pointerout', (ev) => {
           const card = ev.target.closest && ev.target.closest('.devt');
