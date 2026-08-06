@@ -19169,6 +19169,12 @@ const MOS = (() => {
   function _taxSubHit(s) {
     return (String(s.subcategoria||'') + ' ' + String(s.descripcion||'') + ' ' + String(s.ejemplos||'')).toLowerCase().includes(_catQ);
   }
+  // Tono estable por categoría (para el tile del emoji y los acentos)
+  function _taxHue(cid) {
+    let h = 0; const s = String(cid || '');
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+    return h;
+  }
   function _renderCategoriasCards(cont, rows) {
     const bar = $('catCmdBar');
     const nSubs = rows.reduce((a, c) => a + (c.subcategorias || []).length, 0);
@@ -19177,10 +19183,10 @@ const MOS = (() => {
       bar.innerHTML = `<div class="cmd">
         <div class="stat"><div><div class="big tnum">${rows.length}</div><div class="cap">categorías</div></div></div>
         <div class="stat"><div><div class="big tnum">${nSubs}</div><div class="cap">subcategorías</div></div></div>
-        <div class="stat"><div><div class="big tnum">${nProd}</div><div class="cap">productos</div></div></div>
+        <div class="stat"><div><div class="big tnum">${nProd.toLocaleString()}</div><div class="cap">productos</div></div></div>
         <div class="cmd-right">
           <input id="catSearchInp" class="search" placeholder="🔎 categoría, subcategoría o ejemplo…" value="${_escapeHtml(_catQ)}" oninput="MOS.catBuscar(this.value)">
-          <span class="modechip" title="La IA clasifica cada producto al crearlo/editarlo; una categoría nueva aparece aquí sola">🤖 se auto-alimenta</span>
+          <span class="taxchip-ia" title="La IA clasifica cada producto al crearlo o editarlo. Si detecta un dominio nuevo (p.ej. herramientas), la categoría se registra sola.">🤖 auto-alimentada por IA</span>
         </div>
       </div>`;
     }
@@ -19194,36 +19200,51 @@ const MOS = (() => {
         <div style="font-size:28px;opacity:.5;margin-bottom:8px">🏷️</div>Sin resultados para "${_escapeHtml(_catQ)}"</div>`;
       return;
     }
+    const maxProd = Math.max(1, ...vis.map(c => Number(c.productos) || 0));
     cont.innerHTML = vis.map(c => {
       const cid = String(c.categoria || '');
       const emoji = _TAX_EMOJI[cid] || '🆕';
+      const hue = _taxHue(cid);
       const esAuto = /🤖/.test(String(c.descripcion || ''));
       const abierta = (_catAbierta === cid) || (_catQ && (c.subcategorias || []).some(_taxSubHit) && !(String(c.nombre||'').toLowerCase().includes(_catQ)));
       const subs = (c.subcategorias || []);
       const subsVis = (abierta && _catQ) ? subs.filter(s => _taxSubHit(s) || String(c.nombre||'').toLowerCase().includes(_catQ)) : subs;
       const desc = String(c.descripcion || '').replace(/\s*\(.*margen.*\)\s*/i, '');
+      const nP = Number(c.productos) || 0;
+      // chips de las 3 subcategorías más pobladas (vista colapsada)
+      const top3 = subs.slice(0, 3).map(s =>
+        `<span class="taxmini">${_escapeHtml(s.subcategoria)} <b class="tnum">${Number(s.productos) || 0}</b></span>`).join('')
+        + (subs.length > 3 ? `<span class="taxmini taxmini-mas">+${subs.length - 3}</span>` : '');
       let subHtml = '';
       if (abierta) {
-        subHtml = `<div class="taxsubs" onclick="event.stopPropagation()">` + subsVis.map(s => `
-          <div class="taxsub">
-            <div class="taxsub-top"><span class="taxsub-n">${_escapeHtml(s.subcategoria)}</span>
-              ${s.auto ? '<span class="modechip" style="background:#7c3aed22;color:#c4b5fd">🤖 nueva (IA)</span>' : ''}
-              <span class="taxsub-c tnum">${Number(s.productos) || 0}</span></div>
+        const maxSub = Math.max(1, ...subs.map(s => Number(s.productos) || 0));
+        subHtml = `<div class="taxsubs" onclick="event.stopPropagation()">` + subsVis.map(s => {
+          const n = Number(s.productos) || 0;
+          return `<div class="taxsub" style="--th:${hue}">
+            <div class="taxsub-top">
+              <span class="taxsub-n">${_escapeHtml(s.subcategoria)}</span>
+              ${s.auto ? '<span class="taxchip-ia sm">🤖 nueva</span>' : ''}
+              <span class="taxsub-c tnum">${n}</span>
+            </div>
+            <div class="taxbar"><i style="width:${Math.max(3, Math.round(n / maxSub * 100))}%"></i></div>
             ${s.descripcion ? `<div class="taxsub-d">${_escapeHtml(s.descripcion)}</div>` : ''}
-            ${s.ejemplos ? `<div class="taxsub-e">Ej.: ${_escapeHtml(s.ejemplos)}</div>` : ''}
-          </div>`).join('') + `</div>`;
+            ${s.ejemplos ? `<div class="taxsub-e" title="${_escapeHtml(s.ejemplos)}">🛒 ${_escapeHtml(s.ejemplos)}</div>` : ''}
+          </div>`;
+        }).join('') + `</div>`;
       }
-      return `<div class="catcard taxcard${abierta ? ' tax-open' : ''}" ${abierta ? 'style="grid-column:1/-1"' : ''} onclick="MOS.catToggle('${_escapeHtml(cid)}')">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:20px">${emoji}</span>
+      return `<div class="catcard taxcard${abierta ? ' tax-open' : ''}" style="--th:${hue}${abierta ? ';grid-column:1/-1' : ''}" onclick="MOS.catToggle('${_escapeHtml(cid)}')">
+        <div class="taxhead">
+          <span class="taxemoji">${emoji}</span>
           <div style="flex:1;min-width:0">
-            <div class="ct" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escapeHtml(c.nombre || cid)}${esAuto ? ' <span class="modechip" style="background:#7c3aed22;color:#c4b5fd">🤖 nueva</span>' : ''}</div>
+            <div class="ct" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escapeHtml(c.nombre || cid)}${esAuto ? ' <span class="taxchip-ia sm">🤖 nueva</span>' : ''}</div>
+            <div class="taxsubcnt">${subs.length} subcategorías</div>
           </div>
-          <span class="modechip tnum">${Number(c.productos) || 0} prod</span>
-          <span class="modechip tnum">${subs.length} sub</span>
-          <span style="color:#5f7290;font-size:12px;transition:transform .25s;${abierta ? 'transform:rotate(180deg)' : ''}">▼</span>
+          <div class="taxnum"><b class="tnum">${nP.toLocaleString()}</b><span>productos</span></div>
+          <span class="taxcaret${abierta ? ' up' : ''}">▾</span>
         </div>
-        <div class="cdesc">${_escapeHtml(desc.slice(0, 160))}</div>
+        <div class="taxbar big"><i style="width:${Math.max(2, Math.round(nP / maxProd * 100))}%"></i></div>
+        <div class="cdesc" style="white-space:normal">${_escapeHtml(desc.slice(0, 150))}</div>
+        ${abierta ? '' : `<div class="taxminis">${top3}</div>`}
         ${subHtml}
       </div>`;
     }).join('');

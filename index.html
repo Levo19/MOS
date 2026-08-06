@@ -633,17 +633,40 @@
     .cfgpanel .modechip.tope{background:rgba(167,139,250,.14);color:#c4b5fd;border-color:rgba(167,139,250,.3)}
     .cfgpanel .modechip.fijo{background:rgba(125,211,252,.12);color:#7dd3fc;border-color:rgba(125,211,252,.3)}
     .cfgpanel .modechip.libre{background:rgba(148,163,184,.12);color:#cbd5e1;border-color:rgba(148,163,184,.3)}
-    /* ── [640] Taxonomía IA: acordeón de subcategorías ── */
-    .cfgpanel .taxcard.tax-open{border-color:#7c3aed;background:linear-gradient(160deg,#101a30,#0b1526)}
-    .cfgpanel .taxsubs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;margin-top:11px;padding-top:11px;border-top:1px dashed #26375a;cursor:default;animation:taxIn .28s ease}
+    /* ── [640] Taxonomía IA: guía viva con acento por categoría (--th = hue) ── */
+    .cfgpanel .taxcard{position:relative;overflow:hidden}
+    .cfgpanel .taxcard::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:hsl(var(--th,215) 70% 55% / .75);border-radius:3px 0 0 3px}
+    .cfgpanel .taxcard:hover{border-color:hsl(var(--th,215) 70% 55% / .6)}
+    .cfgpanel .taxcard.tax-open{border-color:hsl(var(--th,215) 70% 55% / .7);background:linear-gradient(165deg,hsl(var(--th,215) 45% 14% / .55),#0b1526 55%)}
+    .cfgpanel .taxhead{display:flex;align-items:center;gap:10px}
+    .cfgpanel .taxemoji{font-size:19px;width:38px;height:38px;display:grid;place-items:center;border-radius:11px;background:hsl(var(--th,215) 55% 50% / .14);border:1px solid hsl(var(--th,215) 60% 55% / .25);flex:none}
+    .cfgpanel .taxsubcnt{font-size:10px;color:#5f7290;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-top:1px}
+    .cfgpanel .taxnum{text-align:right;flex:none}
+    .cfgpanel .taxnum b{font-size:15px;color:#eaf1fb;display:block;line-height:1}
+    .cfgpanel .taxnum span{font-size:9px;color:#5f7290;text-transform:uppercase;letter-spacing:.05em}
+    .cfgpanel .taxcaret{color:#5f7290;font-size:13px;transition:transform .25s;flex:none}
+    .cfgpanel .taxcaret.up{transform:rotate(180deg)}
+    .cfgpanel .taxbar{height:3px;border-radius:99px;background:#16233c;margin:9px 0 7px;overflow:hidden}
+    .cfgpanel .taxbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,hsl(var(--th,215) 70% 50%),hsl(var(--th,215) 80% 65%));transition:width .5s ease}
+    .cfgpanel .taxbar.big{margin-top:10px}
+    .cfgpanel .taxminis{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+    .cfgpanel .taxmini{font-size:10px;color:#9fb2ce;background:#0d1a2e;border:1px solid #1c2b45;border-radius:99px;padding:2px 8px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+    .cfgpanel .taxmini b{color:#8fd0ff}
+    .cfgpanel .taxmini-mas{color:#5f7290;border-style:dashed}
+    .cfgpanel .taxchip-ia{font-size:10px;font-weight:800;padding:3px 10px;border-radius:99px;background:linear-gradient(120deg,rgba(124,58,237,.18),rgba(167,139,250,.1));color:#c4b5fd;border:1px solid rgba(167,139,250,.35);white-space:nowrap}
+    .cfgpanel .taxchip-ia.sm{font-size:8.5px;padding:1px 7px;vertical-align:2px}
+    .cfgpanel .taxsubs{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:9px;margin-top:12px;padding-top:12px;border-top:1px dashed #26375a;cursor:default;animation:taxIn .28s ease}
     @keyframes taxIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
-    .cfgpanel .taxsub{background:#0d1a2e;border:1px solid #1c2b45;border-radius:10px;padding:9px 11px}
+    .cfgpanel .taxsub{background:#0d1a2e;border:1px solid #1c2b45;border-radius:11px;padding:10px 12px;transition:.15s}
+    .cfgpanel .taxsub:hover{border-color:hsl(var(--th,215) 60% 55% / .45);transform:translateY(-1px)}
+    .cfgpanel .taxsub .taxbar{margin:6px 0 5px}
     .cfgpanel .taxsub-top{display:flex;align-items:center;gap:6px}
     .cfgpanel .taxsub-n{font-size:12.5px;font-weight:750;color:#dbe7f8;flex:1;min-width:0}
     .cfgpanel .taxsub-c{font-size:11px;font-weight:800;color:#8fd0ff;background:rgba(74,168,255,.1);border-radius:6px;padding:1px 7px}
     .cfgpanel .taxsub-d{font-size:10.5px;color:#9fb2ce;margin-top:3px;line-height:1.45}
-    .cfgpanel .taxsub-e{font-size:10px;color:#5f7290;margin-top:3px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    @media (prefers-reduced-motion:reduce){.cfgpanel .taxsubs{animation:none}}
+    .cfgpanel .taxsub-e{font-size:10px;color:#7d90ad;margin-top:5px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#0a1424;border-radius:7px;padding:3px 8px}
+    @media (max-width:520px){.cfgpanel .taxsubs{grid-template-columns:1fr}.cfgpanel .taxnum span{display:none}}
+    @media (prefers-reduced-motion:reduce){.cfgpanel .taxsubs{animation:none}.cfgpanel .taxbar i{transition:none}}
     .cfgpanel .group{background:linear-gradient(150deg,#0d2141,#0b1428);border:1px solid #26375a;border-radius:16px;padding:15px;margin-top:14px}
     .cfgpanel .rowlist{display:flex;flex-direction:column;gap:8px}
     .cfgpanel .prow{display:flex;align-items:center;gap:10px;background:#0b1526;border:1px solid #1c2b45;border-radius:12px;padding:11px 13px;flex-wrap:wrap}
@@ -20056,7 +20079,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.685';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.686';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20106,7 +20129,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.685"></script>
+<script src="js/api.js?v=2.43.686"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20122,7 +20145,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.685"></script>
+<script src="js/app.js?v=2.43.686"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
