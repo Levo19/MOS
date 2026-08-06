@@ -37,7 +37,7 @@ ${cands || '(sin candidatos)'}
 
 TAREAS:
 A) INTERNOS: elige 1 a 3 candidatos que mejor sustituyan al producto (misma función y formato similar: granel↔granel, empaquetado↔empaquetado de tamaño parecido). Si ninguno sirve de verdad, lista vacía.
-B) EXTERNOS: busca en la web (máximo 2 búsquedas) 1 a 3 productos del mercado peruano MUY parecidos que NO estén en la lista de candidatos (otra marca comercial, presentación similar) — sirven para que el comprador los consiga.
+B) EXTERNOS: busca en la web (UNA sola búsqueda, aprovéchala bien) 1 a 3 productos del mercado peruano MUY parecidos que NO estén en la lista de candidatos (otra marca comercial, presentación similar) — sirven para que el comprador los consiga.
 
 RESPONDE ÚNICAMENTE este JSON, sin texto antes ni después:
 {"internos":[{"n":1,"motivo":"..."}],"externos":[{"nombre":"...","marca":"...","presentacion":"...","motivo":"..."}]}`;
@@ -47,7 +47,7 @@ async function generar(key: string, prod: any): Promise<{ internos: any[]; exter
   const base = { model: MODELO, max_tokens: 1000, messages: [{ role: 'user', content: prompt(prod) }] };
   for (const conWeb of [true, false]) {
     const payload = conWeb
-      ? { ...base, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }] }
+      ? { ...base, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }] }
       : base;
     const r = await fetch(ENDPOINT, {
       method: 'POST',
