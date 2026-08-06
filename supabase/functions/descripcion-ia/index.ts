@@ -103,6 +103,8 @@ Deno.serve(async (req: Request) => {
     const fn = body.repesca === true ? 'ia_repesca_pendientes' : 'ia_desc_pendientes';
     const pendientes = await rpc(fn, { max });
     if (!Array.isArray(pendientes) || !pendientes.length) return json({ ok: true, procesados: 0, nota: 'sin pendientes' });
+    // [643 · anti-bucle] los tomados suben intento YA: si fallan, se hunden en la cola
+    await rpc('ia_marcar_intento', { codigos: pendientes.map((p: any) => p.codigo_barra) });
 
     const hechos: any[] = [], fallos: any[] = [];
     for (const prod of pendientes) {
