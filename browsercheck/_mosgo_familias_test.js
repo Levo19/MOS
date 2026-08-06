@@ -69,6 +69,11 @@ const FAMILIAS = [
   t('el saco enseña su precio por kilo (6.20/kg) — no "ahorra" (queda bajo el suelto)', v.escBtns.some(b => /Saco/.test(b) && /(ahorra|\/kg)/.test(b)));
   t('la fracción legacy SIN precio fijo NO aparece (mentiría el precio)', !v.escBtns.some(b => /Cuarto/.test(b)));
   t('el tripack muestra "ahorra 10.00" (3×20−50)', v.escBtns.some(b => /Tripack/.test(b) && /ahorra S\/ 10\.00/.test(b)), JSON.stringify(v.escBtns.filter(x => /Tripack/.test(x))));
+  // [v0.5.5] argumento de venta mayorista
+  t('el tripack muestra su costo unitario (16.67 /un)', v.escBtns.some(b => /Tripack/.test(b) && /16\.67 \/un/.test(b)), JSON.stringify(v.escBtns.filter(x => /Tripack/.test(x))));
+  t('el ×N NO se repite si el nombre ya dice (N un)/(N kg)', !v.escBtns.some(b => /\(3 un\)\s*×3/.test(b) && /Tripack/.test(b)) && !v.escBtns.some(b => /\(25 kg\)\s*×25/.test(b)), JSON.stringify(v.escBtns));
+  const pitches = await p.evaluate(() => [...document.querySelectorAll('.pitch')].map(x => x.innerText.replace(/\n/g, ' ')));
+  t('pitch mayorista: "le sale a X · revende a Y · gana Z"', pitches.some(x => /le sale a\s*S\/ 16\.67/.test(x) && /revende a\s*S\/ 20\.00/.test(x) && /gana\s*S\/ 3\.33/.test(x)), JSON.stringify(pitches));
   t('la unidad base 1kg es su propio escalón a 20.00', v.escBtns.some(b => /^1 un/.test(b) && /20\.00/.test(b)));
 
   // carrito: 1 saco + 1 tripack → total 205, ahorro 10
