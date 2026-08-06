@@ -64,6 +64,8 @@ export const REGLAS = [
   ['SIBARITA|SAZONADOR|CUBITO|MAGGI|DOÑA GUSTA|BATIDOR CRIOLLO|SAZON LOPESA|LOPESA|COMPLETO\\b', 'ESPECIAS', [[null, 'Sazonadores y cubitos']]],
   ['PIMIENTA|CAYENA', 'ESPECIAS', [[null, 'Pimientas']]],
   ['CANELA|CLAVO DE OLOR|CLAVO OLOR', 'ESPECIAS', [[null, 'Canela y clavo']]],
+  // (BOLSA DE COMPRA antes que "COLOR": el condimento peruano "color" no debe pescar bolsas)
+  ['BOLSA DE COMPRA', 'DESCARTABLES', [[null, 'Bolsas']]],
   ['AJI (PANCA|MIRASOL|AMARILLO|COLORADO|LIMO)|PAPRIKA|PIMENTON|ACHIOTE|PALILLO|CURCUMA|AZAFRAN|COLOR\\b', 'ESPECIAS', [[null, 'Ajíes y colorantes naturales']]],
   ['COMINO|ANIS\\b|AJONJOLI|HINOJO|LINAZA|MOSTAZA GRANO|CARDAMOMO|NUEZ MOSCADA|JENGIBRE|KION', 'ESPECIAS', [[null, 'Semillas y raíces aromáticas']]],
   ['OREGANO|LAUREL|ROMERO|TOMILLO|ALBAHACA|HIERBA|PEREJIL|HUACATAY|CULANTRO', 'ESPECIAS', [[null, 'Hierbas secas']]],

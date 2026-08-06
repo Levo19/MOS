@@ -25,7 +25,6 @@ const MOS = (() => {
     equivMap: {},
     _ecoData: null,
     pnPendientes: [],
-    categorias: [],
     // [RIZ Capa 4] Estado del módulo Zona (inerte si el flag mosZonaModulo está OFF)
     zonaActual: null,        // idZona seleccionada
     zonaList: [],            // catálogo de zonas para el selector
@@ -1289,16 +1288,6 @@ const MOS = (() => {
     const oModo = String(producto.modoVenta || '').toUpperCase();
     const VALIDOS = ['MARGEN','FIJO','COMPETITIVO','LIBRE'];
 
-    let idCat = String(producto.idCategoria || '').trim().toUpperCase();
-    let origenCat = idCat ? 'producto' : '';
-    if (!idCat) {
-      const canonico = _buscarCanonicoFrontend(producto);
-      if (canonico && canonico.idCategoria) {
-        idCat = String(canonico.idCategoria).trim().toUpperCase();
-        origenCat = 'heredada';
-      }
-    }
-
     const oMarg = (producto.margenPct !== '' && producto.margenPct !== undefined && producto.margenPct !== null) ? parseFloat(producto.margenPct) : null;
     const oTope = (producto.precioTope !== '' && producto.precioTope !== undefined && producto.precioTope !== null) ? parseFloat(producto.precioTope) : null;
 
@@ -1306,7 +1295,7 @@ const MOS = (() => {
     const margen = (oMarg !== null && !isNaN(oMarg)) ? oMarg : 25;
     const tope  = (oTope !== null && !isNaN(oTope) && oTope > 0) ? oTope : 0;
     const origen = oModo ? 'producto' : 'default';
-    return { modo, margen, tope, origen, categoria: null, idCategoria: idCat, origenCategoria: origenCat };
+    return { modo, margen, tope, origen };
   }
 
   // Busca el canónico al que pertenece una presentación/derivado.
@@ -1627,12 +1616,11 @@ const MOS = (() => {
 
     // Fetch fresco (si no lo hizo el timer aún, o si se forzó)
     try {
-      const [freshProd, freshEquiv, freshCats] = await Promise.all([
+      // [rev.687] getCategorias eliminado: S.categorias quedó sin lectores tras el 640
+      const [freshProd, freshEquiv] = await Promise.all([
         API.get('getProductos', {}),
-        API.get('getEquivalencias', { activo: '1' }).catch(() => []),
-        API.get('getCategorias', {}).catch(() => [])  // tolera GAS no redesplegado
+        API.get('getEquivalencias', { activo: '1' }).catch(() => [])
       ]);
-      S.categorias = Array.isArray(freshCats) ? freshCats : [];
       // [FIX 500x BUG-1] freshProd null = hipo transitorio de Supabase (_conFallbackMOS ya NO cae a GAS y
       // devuelve null tras 3 reintentos). NO clobbear el catálogo con [] ni persistir cache vacío: conservar
       // lo cargado. Solo actualizar si vino un array real.
@@ -17743,7 +17731,7 @@ const MOS = (() => {
       IGV_Porcentaje:$('prodIGV')?.value          ? parseFloat($('prodIGV').value) : '',
       Unidad_Medida: $('prodUnidadMedida')?.value || 'NIU',
       Cod_SUNAT:     $('prodCodSUNAT')?.value     || '',
-      // Política override (vacío = hereda de categoría)
+      // Política override (vacío = default MARGEN 25%; la política vive por producto)
       modoVenta:     overridePolitica ? ($('prodModoVenta')?.value || '') : '',
       margenPct:     overridePolitica && $('prodMargenPct')?.value ? parseFloat($('prodMargenPct').value) : '',
       precioTope:    overridePolitica && $('prodPrecioTope')?.value ? parseFloat($('prodPrecioTope').value) : ''
@@ -18166,7 +18154,7 @@ const MOS = (() => {
   function cerrarSelProveedor() { closeModal('modalSelProveedor'); }
 
   // ── CONFIGURACIÓN ────────────────────────────────────────────
-  let cfgData = { zonas: [], estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [], categorias: [], personalMaster: [] };
+  let cfgData = { zonas: [], estaciones: [], impresoras: [], personal: [], personalMOS: [], series: [], dispositivos: [], taxonomia: [], personalMaster: [] };
 
   // ════════════════════════════════════════════════════════
   // CONFIGURACIÓN — sistema cache + prefetch + auto-refresh
@@ -18198,10 +18186,9 @@ const MOS = (() => {
     const b = _cfgLoadCache('bloqueosME');   if (b) cfgData.bloqueosME   = b;
     const s = _cfgLoadCache('series');       if (s) cfgData.series       = s;
     const d = _cfgLoadCache('dispositivos'); if (d) cfgData.dispositivos = d;
-    const c = _cfgLoadCache('categorias');   if (c) cfgData.categorias   = c;
     const tx = _cfgLoadCache('taxonomia');   if (tx) cfgData.taxonomia   = tx;
     const f = _cfgLoadCache('config');       if (f) cfgData.config       = f;
-    return !!(z || e || i || p || m || b || s || d || c || f);
+    return !!(z || e || i || p || m || b || s || d || tx || f);
   }
 
   // Prefetch al login: descarga TODO en paralelo y cachea (corre en background)
@@ -18310,7 +18297,7 @@ const MOS = (() => {
         API.get('getVendedoresMEBloqueados', {}),
         API.get('getSeries', {}),
         API.get('getDispositivos', {}),
-        API.get('getCategorias', {}),
+        API.get('getTaxonomia', {}),
         API.get('getConfig', {})
       ]);
       const _set = (k, res) => {
@@ -18329,7 +18316,7 @@ const MOS = (() => {
       _set('bloqueosME', bloqMERes);
       _set('series', serRes);
       _set('dispositivos', dispRes);
-      _set('categorias', catRes);
+      _set('taxonomia', catRes);
       _set('config', cfgRes);
       S._cfgPrecargado = true;
       renderCfgTab(S.cfgTab);
@@ -19197,7 +19184,7 @@ const MOS = (() => {
       : rows;
     if (!vis.length) {
       cont.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:36px 0;color:#5f7290;font-size:13px">
-        <div style="font-size:28px;opacity:.5;margin-bottom:8px">🏷️</div>Sin resultados para "${_escapeHtml(_catQ)}"</div>`;
+        <div style="font-size:28px;opacity:.5;margin-bottom:8px">🏷️</div>${_catQ ? 'Sin resultados para "' + _escapeHtml(_catQ) + '"' : 'No se pudo cargar la taxonomía — reintenta en unos segundos'}</div>`;
       return;
     }
     const maxProd = Math.max(1, ...vis.map(c => Number(c.productos) || 0));
@@ -19232,7 +19219,7 @@ const MOS = (() => {
           </div>`;
         }).join('') + `</div>`;
       }
-      return `<div class="catcard taxcard${abierta ? ' tax-open' : ''}" style="--th:${hue}${abierta ? ';grid-column:1/-1' : ''}" onclick="MOS.catToggle('${_escapeHtml(cid)}')">
+      return `<div class="catcard taxcard${abierta ? ' tax-open' : ''}" style="--th:${hue}${abierta ? ';grid-column:1/-1' : ''}" onclick="MOS.catToggle('${_escAttrJs(cid)}')">
         <div class="taxhead">
           <span class="taxemoji">${emoji}</span>
           <div style="flex:1;min-width:0">
@@ -19250,93 +19237,7 @@ const MOS = (() => {
     }).join('');
   }
 
-  function abrirModalCategoria(idCategoria, ev) {
-    if (typeof _evalSfx === 'function') _evalSfx('open');
-    if (ev && typeof _evalRipple === 'function') {
-      // Ripple en el card si existe el target
-      try {
-        const card = ev.target && ev.target.closest('.cat-card-modern');
-        if (card) {
-          const rect = card.getBoundingClientRect();
-          const size = Math.max(rect.width, rect.height) * 0.7;
-          const r = document.createElement('span');
-          r.className = 'cat-ripple';
-          r.style.width = r.style.height = size + 'px';
-          r.style.left = (ev.clientX - rect.left - size/2) + 'px';
-          r.style.top  = (ev.clientY - rect.top  - size/2) + 'px';
-          card.appendChild(r);
-          setTimeout(() => { try { r.remove(); } catch(_){} }, 700);
-        }
-      } catch(_){}
-    }
-    const cat = idCategoria
-      ? (cfgData.categorias || []).find(c => String(c.idCategoria) === String(idCategoria))
-      : null;
-    $('modalCategoriaTitle').textContent = cat ? 'Editar categoría' : 'Nueva categoría';
-    $('catId').value = cat ? cat.idCategoria : '';
-    $('catNombre').value = cat ? (cat.nombre || cat.idCategoria) : '';
-    $('catModo').value = cat ? (cat.modoVenta || 'MARGEN') : 'MARGEN';
-    $('catMargen').value = cat && cat.margenPct !== '' && cat.margenPct !== undefined ? cat.margenPct : 25;
-    $('catTope').value = cat && parseFloat(cat.precioTope) > 0 ? cat.precioTope : '';
-    $('catDesc').value = cat ? (cat.descripcion || '') : '';
-    $('catEstado').value = cat ? String(cat.estado || '1') : '1';
-    // Si es nueva, dejar nombre editable — si es edición, bloquear nombre/ID (lo identifica el sistema)
-    $('catNombre').disabled = !!cat;
-    _catOnModoChange();
-    openModal('modalCategoria');
-  }
-
-  function _catOnModoChange() {
-    const modo = $('catModo')?.value;
-    const margenWrap = $('catMargenWrap');
-    const topeWrap = $('catTopeWrap');
-    if (margenWrap) margenWrap.classList.toggle('hidden', modo === 'FIJO' || modo === 'LIBRE');
-    if (topeWrap)   topeWrap.classList.toggle('hidden', modo !== 'COMPETITIVO');
-  }
-
-  async function guardarCategoria() {
-    const id = $('catId').value;
-    const nombre = $('catNombre').value.trim();
-    if (!nombre) { toast('Nombre requerido', 'error'); return; }
-    const modo = $('catModo').value;
-    const margen = parseFloat($('catMargen').value);
-    const tope = parseFloat($('catTope').value);
-    if ((modo === 'MARGEN' || modo === 'COMPETITIVO') && (isNaN(margen) || margen < 0 || margen >= 100)) {
-      toast('Margen debe ser 0-99', 'error'); return;
-    }
-    if (modo === 'COMPETITIVO' && (!tope || tope <= 0)) {
-      toast('Precio tope requerido para modo COMPETITIVO', 'error'); return;
-    }
-    const params = {
-      nombre, modoVenta: modo,
-      margenPct: isNaN(margen) ? '' : margen,
-      precioTope: isNaN(tope) ? '' : tope,
-      descripcion: $('catDesc').value.trim(),
-      estado: $('catEstado').value
-    };
-    try {
-      if (id) {
-        await API.post('actualizarCategoria', { ...params, idCategoria: id });
-        toast('Categoría actualizada ✓', 'ok');
-      } else {
-        await API.post('crearCategoria', params);
-        toast('Categoría creada ✓', 'ok');
-      }
-      if (typeof _evalSfx === 'function') _evalSfx('success');
-      try {
-        const btn = $('btnGuardarCategoria');
-        if (btn && typeof _evalConfetti === 'function') {
-          const r = btn.getBoundingClientRect();
-          _evalConfetti(r.left + r.width/2, r.top + r.height/2, '#fbbf24');
-        }
-      } catch(_){}
-      closeModal('modalCategoria');
-      await renderCategorias(); // refetch
-    } catch(e) {
-      if (typeof _evalSfx === 'function') _evalSfx('error');
-      toast('Error: ' + e.message, 'error');
-    }
-  }
+  // [rev.687] CRUD de categorías eliminado (Config→Categorías es la taxonomía IA, solo lectura)
 
   // ── Integridad / Auditoría de PRODUCTOS_MASTER + EQUIVALENCIAS ───
   async function renderIntegridad(skipFetch) {
@@ -32590,9 +32491,9 @@ const MOS = (() => {
       _notifState.items = arr;
       _notifState.cargado = true;
     }).catch(() => {});
-    // Categorías
-    API.get('getCategorias', {}).then(r => {
-      if (Array.isArray(r)) cfgData.categorias = r;
+    // Taxonomía (guía de categorías IA)
+    API.get('getTaxonomia', {}).then(r => {
+      if (Array.isArray(r)) cfgData.taxonomia = r;
     }).catch(() => {});
     // Personal (de PERSONAL_MASTER)
     API.get('getPersonalMaster', {}).then(r => {
@@ -45608,7 +45509,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _notifSilenciar, _notifRestaurarDefault, _notifProbar, _notifReenviar,
     auditCorrer, auditResolver, auditResolverTodas, renderIntegridad,
     abrirModalZona, guardarZona,
-    abrirModalCategoria, guardarCategoria, _catOnModoChange,
     tutorialOpen, tutorialClose, tutorialNext, tutorialPrev, tutorialGoto,
     tutTicketsOpen, tutTicketsClose, tutTicketsNext, tutTicketsPrev, tutTicketsGoto,
     abrirModalEstacion, guardarEstacion, eliminarEstacion, _estActualizarPreview,

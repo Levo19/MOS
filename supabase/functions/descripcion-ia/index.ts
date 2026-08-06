@@ -1,6 +1,6 @@
 // Edge Function `descripcion-ia` — llena mos.productos.descripcion_ia de los canónicos
 // NUEVOS (≤7 días) automáticamente: busca en la web (Claude Haiku + web_search) y guarda
-// la ficha de 6 líneas (🏷 Marca … ✅ Usos). La dispara un cron pg_net cada 10 min.
+// la ficha (🏷 Marca … ✅ Usos + línea 🗂 de categoría que se extrae). Cron pg_net cada 10 min.
 //
 // AUTORIZACIÓN: header `x-cron-secret` == secret CRON_SECRET (deploy con --no-verify-jwt;
 // esta función NO la llaman los navegadores). Las RPCs que usa están grant SOLO service_role.
@@ -51,7 +51,8 @@ async function generar(key: string, prod: any): Promise<{ texto: string; conWeb:
     model: MODELO, max_tokens: 1200,
     messages: [{ role: 'user', content: prompt(prod) }],
   };
-  // 1º intento CON búsqueda web; si la herramienta no está disponible, fallback sin ella.
+  // 1º intento CON búsqueda web; el fallback SIN web corre SOLO si la herramienta no está
+  // disponible (400 de tool) — jamás por formato malo: eso sería pagar una 2ª llamada [rev.2/6].
   for (const conWeb of [true, false]) {
     const payload = conWeb
       ? { ...base, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }] }
@@ -60,21 +61,29 @@ async function generar(key: string, prod: any): Promise<{ texto: string; conWeb:
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60_000),   // [rev.7] sin cuelgues que maten la Edge a mitad de lote
     });
     const d = await r.json();
     if (!r.ok) {
-      if (conWeb) continue;               // sin web_search → reintenta pelado
-      throw new Error(`anthropic ${r.status}: ${JSON.stringify(d).slice(0, 180)}`);
+      const msg = JSON.stringify(d);
+      if (conWeb && r.status === 400 && /web_search|tool/i.test(msg)) continue;  // herramienta no disponible
+      throw new Error(`anthropic ${r.status}: ${msg.slice(0, 180)}`);
+    }
+    // [rev.5] truncada o pausada = fallo (una ficha a medias pasaría el guard 🏷…✅ y quedaría coja)
+    if (d.stop_reason === 'max_tokens' || d.stop_reason === 'pause_turn') {
+      throw new Error('respuesta truncada: ' + d.stop_reason);
     }
     let texto = (d.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n').trim();
+    // [rev.3] fuera variation selectors (🏷️ = 🏷+U+FE0F): rompían los regex de marca y 🗂
+    texto = texto.replace(/\uFE0F/g, '');
     // Normalizar: las citas de la búsqueda web parten líneas a la mitad. Se re-arma en
-    // EXACTAMENTE 6 renglones (uno por emoji), espacios colapsados.
+    // renglones (uno por emoji, 7 con la línea 🗂), espacios colapsados.
     texto = texto.replace(/\s*\n\s*/g, ' ').replace(/\s*(🏷|🧪|📋|📦|🎨|✅|🗂)/g, '\n$1').trim();
     // sin preámbulos ("Basándome en la búsqueda…"): la ficha SIEMPRE arranca en 🏷
     const i0 = texto.indexOf('🏷');
     if (i0 > 0) texto = texto.slice(i0);
     if (texto.includes('🏷') && texto.includes('✅')) return { texto, conWeb };
-    if (!conWeb) throw new Error('respuesta sin el formato 🏷…✅');
+    throw new Error('respuesta sin el formato 🏷…✅');
   }
   throw new Error('sin respuesta');
 }
@@ -88,7 +97,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const max = Math.min(Math.max(parseInt(String(body.max)) || 2, 1), 6);
+    const max = Math.min(Math.max(parseInt(String(body.max)) || 2, 1), 5);
     // [638] modo REPESCA: re-busca en la web los que quedaron con "(sin ficha web
     // específica)" pese a tener EAN — el pedido del dueño exige búsqueda real.
     const fn = body.repesca === true ? 'ia_repesca_pendientes' : 'ia_desc_pendientes';
@@ -106,11 +115,16 @@ Deno.serve(async (req: Request) => {
         let marca = (m ? m[1] : '').trim();
         if (/sin marca|gen[eé]rico|granel/i.test(marca)) marca = '';
         // [640] línea 🗂 = propuesta de categoría (se EXTRAE de la ficha, no se guarda en ella)
+        // [rev.9] con validación: MAYÚSCULAS reales, ≤30 chars, sin dígitos — nada de frases
+        // sueltas convirtiéndose en categorías vía _tax_registrar.
         let categoriaProp = '', subcategoriaProp = '';
-        const mc = /🗂\s*Categor[ií]a:\s*([A-ZÁÉÍÓÚÑ_ ]{3,40})\s*>\s*(.{2,60})/i.exec(texto);
+        const mc = /🗂\s*Categor[ií]a:\s*([^>\n]{3,40})\s*>\s*(.{3,60})/.exec(texto);
         if (mc) {
-          categoriaProp = mc[1].trim().toUpperCase().replace(/ /g, '_');
-          subcategoriaProp = mc[2].trim();
+          const cat = mc[1].trim().toUpperCase().replace(/ +/g, '_');
+          const sub = mc[2].trim();
+          if (/^[A-ZÁÉÍÓÚÑ_]{3,30}$/.test(cat) && sub.length >= 3) {
+            categoriaProp = cat; subcategoriaProp = sub;
+          }
         }
         texto = texto.split('\n').filter((l: string) => !l.startsWith('🗂')).join('\n').trim();
         const g = await rpc('ia_guardar_descripcion', { codigoBarra: prod.codigo_barra, texto, marca, categoriaProp, subcategoriaProp });

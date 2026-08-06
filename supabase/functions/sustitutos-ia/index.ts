@@ -28,7 +28,9 @@ function fichaCorta(f: unknown): string {
 }
 
 function prompt(prod: any): string {
-  const cands = (prod.candidatos || []).map((c: any, i: number) => `${i + 1}. ${c.nombre}`).join('\n');
+  // [rev.13] la subcategoría del candidato (cuando difiere) ayuda a elegir del mismo palo
+  const cands = (prod.candidatos || []).map((c: any, i: number) =>
+    `${i + 1}. ${c.nombre}${c.sub && c.sub !== prod.subcategoria ? ` [${c.sub}]` : ''}`).join('\n');
   return `Eres experto en abarrotes e insumos de cocina del mercado PERUANO. Un cliente pide este producto y NO hay stock; hay que sugerir SUSTITUTOS (producto lo más parecido en función, uso, formato y tamaño — JAMÁS el mismo producto en otro tamaño).
 
 PRODUCTO:
@@ -50,6 +52,8 @@ RESPONDE ÚNICAMENTE este JSON, sin texto antes ni después:
 
 async function generar(key: string, prod: any): Promise<{ internos: any[]; externos: any[] }> {
   const base = { model: MODELO, max_tokens: 700, messages: [{ role: 'user', content: prompt(prod) }] };
+  // fallback SIN web SOLO si la herramienta no está disponible — jamás por formato malo
+  // (eso pagaba una 2ª llamada completa) [rev.2/6]
   for (const conWeb of [true, false]) {
     const payload = conWeb
       ? { ...base, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }] }
@@ -58,22 +62,28 @@ async function generar(key: string, prod: any): Promise<{ internos: any[]; exter
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60_000),   // [rev.7]
     });
     const d = await r.json();
     if (!r.ok) {
-      if (conWeb) continue;
-      throw new Error(`anthropic ${r.status}: ${JSON.stringify(d).slice(0, 160)}`);
+      const msg = JSON.stringify(d);
+      if (conWeb && r.status === 400 && /web_search|tool/i.test(msg)) continue;
+      throw new Error(`anthropic ${r.status}: ${msg.slice(0, 160)}`);
+    }
+    // [rev.5] respuesta truncada = fallo (mejor reintentar por cola que guardar a medias)
+    if (d.stop_reason === 'max_tokens' || d.stop_reason === 'pause_turn') {
+      throw new Error('respuesta truncada: ' + d.stop_reason);
     }
     const texto = (d.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n');
     const i0 = texto.indexOf('{'), i1 = texto.lastIndexOf('}');
-    if (i0 < 0 || i1 <= i0) { if (!conWeb) throw new Error('sin JSON en la respuesta'); continue; }
+    if (i0 < 0 || i1 <= i0) throw new Error('sin JSON en la respuesta');
     try {
       const obj = JSON.parse(texto.slice(i0, i1 + 1));
       // mapear índices → candidatos reales (la IA no puede inventar skus)
       const vistos = new Set<string>();
       const internos = (Array.isArray(obj.internos) ? obj.internos : []).map((x: any) => {
         const cd = (prod.candidatos || [])[Number(x.n) - 1];
-        if (!cd || vistos.has(cd.cod)) return null;
+        if (!cd || !cd.cod || vistos.has(cd.cod)) return null;   // [rev.8] sin internos fantasma
         vistos.add(cd.cod);
         return { cod: cd.cod, motivo: String(x.motivo || '').slice(0, 140) };
       }).filter(Boolean).slice(0, 3);
