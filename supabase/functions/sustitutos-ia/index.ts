@@ -22,6 +22,11 @@ async function rpc(fn: string, p: unknown): Promise<any> {
   return r.json();
 }
 
+// dieta de tokens: de la ficha solo van las líneas útiles para sustituir (qué es, envase, uso)
+function fichaCorta(f: unknown): string {
+  return String(f || '').split('\n').filter((l) => /^(🧪|📦|✅)/.test(l)).join(' ').slice(0, 380);
+}
+
 function prompt(prod: any): string {
   const cands = (prod.candidatos || []).map((c: any, i: number) => `${i + 1}. ${c.nombre}`).join('\n');
   return `Eres experto en abarrotes e insumos de cocina del mercado PERUANO. Un cliente pide este producto y NO hay stock; hay que sugerir SUSTITUTOS (producto lo más parecido en función, uso, formato y tamaño — JAMÁS el mismo producto en otro tamaño).
@@ -30,7 +35,7 @@ PRODUCTO:
 NOMBRE: ${prod.descripcion}
 MARCA: ${prod.marca || '(sin marca / TONYS = envasado propio)'}
 CATEGORÍA: ${prod.categoria} > ${prod.subcategoria}
-FICHA: ${String(prod.ficha || '').slice(0, 600)}
+FICHA: ${fichaCorta(prod.ficha)}
 
 CANDIDATOS DEL CATÁLOGO PROPIO (para los INTERNOS elige SOLO de aquí, por su número):
 ${cands || '(sin candidatos)'}
@@ -44,7 +49,7 @@ RESPONDE ÚNICAMENTE este JSON, sin texto antes ni después:
 }
 
 async function generar(key: string, prod: any): Promise<{ internos: any[]; externos: any[] }> {
-  const base = { model: MODELO, max_tokens: 1000, messages: [{ role: 'user', content: prompt(prod) }] };
+  const base = { model: MODELO, max_tokens: 700, messages: [{ role: 'user', content: prompt(prod) }] };
   for (const conWeb of [true, false]) {
     const payload = conWeb
       ? { ...base, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }] }
