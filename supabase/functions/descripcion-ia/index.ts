@@ -33,14 +33,16 @@ function prompt(prod: { codigo_barra: string; descripcion: string; equivalentes:
 NOMBRE: ${prod.descripcion}
 ${eans.length ? 'CÓDIGO(S) DE BARRA EAN: ' + eans.join(', ') : 'SIN código EAN público (producto interno/granel).'}
 
-Busca en la web (máximo 2 búsquedas: primero el EAN si hay, luego "${prod.descripcion} Perú producto") y redacta EXACTAMENTE estas 6 líneas en español neutral (jamás voseo), máximo ~900 caracteres en total, sin nada antes ni después:
+Busca en la web (máximo 2 búsquedas: primero el EAN si hay, luego "${prod.descripcion} Perú producto") y redacta EXACTAMENTE estas 7 líneas en español neutral (jamás voseo), máximo ~950 caracteres en total, sin nada antes ni después:
 🏷 Marca: <marca comercial real, o "sin marca (granel/genérico)">
 🧪 Hecho de: <de qué está hecho>
 📋 Composición: <ingredientes/composición>
 📦 Presentación: <cómo viene: envase, tamaño, forma en que se vende>
 🎨 Características: <colores, formas, aspecto del producto y su empaque>
 ✅ Usos y beneficios: <para qué sirve, en qué ayuda>
+🗂 Categoría: <CATEGORIA> > <Subcategoría>
 
+Para la línea 🗂 usa una de estas categorías SI el producto calza: ABARROTES, ACEITES, BEBIDAS, CONFITERIA, CONSERVAS, DECORATIVOS, DESCARTABLES, ENDULZANTES, ENERGIZANTES, ESPECIAS, GALLETAS_SNACKS, GRANEL, INFUSIONES, INSUMOS_REPOSTERIA, LACTEOS, LIMPIEZA, MENESTRAS, PRODUCTOS_CHINOS, REPOSTERIA, SALSAS, VINAGRES, VINOS_LICORES. Si NO encaja en ninguna (p.ej. ferretería, textil), propone una nueva corta en MAYÚSCULAS (ej: HERRAMIENTAS). La subcategoría es libre, corta y en español (ej: Martillos).
 Si no encuentras ficha específica, descríbelo con conocimiento general del tipo de producto y agrega al final de la línea ✅: " (descripción general del tipo de producto — sin ficha web específica)". No inventes datos regulatorios.`;
 }
 
@@ -67,7 +69,10 @@ async function generar(key: string, prod: any): Promise<{ texto: string; conWeb:
     let texto = (d.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n').trim();
     // Normalizar: las citas de la búsqueda web parten líneas a la mitad. Se re-arma en
     // EXACTAMENTE 6 renglones (uno por emoji), espacios colapsados.
-    texto = texto.replace(/\s*\n\s*/g, ' ').replace(/\s*(🏷|🧪|📋|📦|🎨|✅)/g, '\n$1').trim();
+    texto = texto.replace(/\s*\n\s*/g, ' ').replace(/\s*(🏷|🧪|📋|📦|🎨|✅|🗂)/g, '\n$1').trim();
+    // sin preámbulos ("Basándome en la búsqueda…"): la ficha SIEMPRE arranca en 🏷
+    const i0 = texto.indexOf('🏷');
+    if (i0 > 0) texto = texto.slice(i0);
     if (texto.includes('🏷') && texto.includes('✅')) return { texto, conWeb };
     if (!conWeb) throw new Error('respuesta sin el formato 🏷…✅');
   }
@@ -93,12 +98,22 @@ Deno.serve(async (req: Request) => {
     const hechos: any[] = [], fallos: any[] = [];
     for (const prod of pendientes) {
       try {
-        const { texto, conWeb } = await generar(key, prod);
+        const gen = await generar(key, prod);
+        const conWeb = gen.conWeb;
+        let texto = gen.texto;
         // la marca para el minicampo: 1ª línea "🏷 Marca: X" (solo si es comercial real)
         const m = /🏷\s*Marca:\s*(.+)/.exec(texto);
         let marca = (m ? m[1] : '').trim();
         if (/sin marca|gen[eé]rico|granel/i.test(marca)) marca = '';
-        const g = await rpc('ia_guardar_descripcion', { codigoBarra: prod.codigo_barra, texto, marca });
+        // [640] línea 🗂 = propuesta de categoría (se EXTRAE de la ficha, no se guarda en ella)
+        let categoriaProp = '', subcategoriaProp = '';
+        const mc = /🗂\s*Categor[ií]a:\s*([A-ZÁÉÍÓÚÑ_ ]{3,40})\s*>\s*(.{2,60})/i.exec(texto);
+        if (mc) {
+          categoriaProp = mc[1].trim().toUpperCase().replace(/ /g, '_');
+          subcategoriaProp = mc[2].trim();
+        }
+        texto = texto.split('\n').filter((l: string) => !l.startsWith('🗂')).join('\n').trim();
+        const g = await rpc('ia_guardar_descripcion', { codigoBarra: prod.codigo_barra, texto, marca, categoriaProp, subcategoriaProp });
         if (g && g.ok) hechos.push({ cod: prod.codigo_barra, web: conWeb });
         else fallos.push({ cod: prod.codigo_barra, error: (g && g.error) || 'guardar falló' });
       } catch (e) {

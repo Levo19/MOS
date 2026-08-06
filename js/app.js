@@ -1283,13 +1283,12 @@ const MOS = (() => {
   let _catGroups = {}; // { [skuBase]: { base, pres[] } } — para acceso desde guardarPrecioRapido
 
   // ── Política de precios — resolver y calcular margen ──────
-  // Política efectiva: override del producto > política de la categoría
-  // (con herencia dinámica si es presentación/derivado) > default global.
+  // [640] El margen por CATEGORÍA murió (decisión dueño): la política vive PRODUCTO POR
+  // PRODUCTO. Efectiva: override del producto > default global (MARGEN 25%).
   function _resolverPoliticaProd(producto) {
     const oModo = String(producto.modoVenta || '').toUpperCase();
     const VALIDOS = ['MARGEN','FIJO','COMPETITIVO','LIBRE'];
 
-    // 1. Resolver idCategoria efectiva (con herencia)
     let idCat = String(producto.idCategoria || '').trim().toUpperCase();
     let origenCat = idCat ? 'producto' : '';
     if (!idCat) {
@@ -1299,16 +1298,15 @@ const MOS = (() => {
         origenCat = 'heredada';
       }
     }
-    const cat = (S.categorias || []).find(c => c && String(c.idCategoria || '').toUpperCase() === idCat);
 
     const oMarg = (producto.margenPct !== '' && producto.margenPct !== undefined && producto.margenPct !== null) ? parseFloat(producto.margenPct) : null;
     const oTope = (producto.precioTope !== '' && producto.precioTope !== undefined && producto.precioTope !== null) ? parseFloat(producto.precioTope) : null;
 
-    const modo  = (VALIDOS.indexOf(oModo) >= 0) ? oModo : (cat ? String(cat.modoVenta || 'MARGEN').toUpperCase() : 'MARGEN');
-    const margen = (oMarg !== null && !isNaN(oMarg)) ? oMarg : (cat ? (parseFloat(cat.margenPct) || 25) : 25);
-    const tope  = (oTope !== null && !isNaN(oTope) && oTope > 0) ? oTope : (cat ? (parseFloat(cat.precioTope) || 0) : 0);
-    const origen = oModo ? 'producto' : (cat ? 'categoría' : 'default');
-    return { modo, margen, tope, origen, categoria: cat, idCategoria: idCat, origenCategoria: origenCat };
+    const modo  = (VALIDOS.indexOf(oModo) >= 0) ? oModo : 'MARGEN';
+    const margen = (oMarg !== null && !isNaN(oMarg)) ? oMarg : 25;
+    const tope  = (oTope !== null && !isNaN(oTope) && oTope > 0) ? oTope : 0;
+    const origen = oModo ? 'producto' : 'default';
+    return { modo, margen, tope, origen, categoria: null, idCategoria: idCat, origenCategoria: origenCat };
   }
 
   // Busca el canónico al que pertenece una presentación/derivado.
@@ -2308,8 +2306,7 @@ const MOS = (() => {
   function populateCatFiltro() {
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
     const catOpts = '<option value="">— elegir —</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-    const prodCat = $('prodCategoria');
-    if (prodCat) prodCat.innerHTML = '<option value="">— seleccionar —</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    // [640] prodCategoria ya no es select: la categoría del producto la asigna la IA
     const pnCat = $('pnCategoria');
     if (pnCat) pnCat.innerHTML = catOpts;
     _renderFiltroCategList(cats);
@@ -7852,15 +7849,11 @@ const MOS = (() => {
           if (prodCat) {
             const ventaActual = parseFloat(prodCat.precioVenta) || 0;
             // Margen OBJETIVO registrado (puede ser null)
+            // [640] margen objetivo SOLO del producto (el margen por categoría murió)
             let margenObjetivo = null;
             const oMargRaw = prodCat.margenPct;
             if (oMargRaw !== '' && oMargRaw != null && !isNaN(parseFloat(oMargRaw))) {
               margenObjetivo = parseFloat(oMargRaw);
-            } else if (prodCat.categoria) {
-              const cat = (S.categorias || []).find(c => c.nombre === prodCat.categoria);
-              if (cat && cat.margenPct !== '' && cat.margenPct != null && !isNaN(parseFloat(cat.margenPct))) {
-                margenObjetivo = parseFloat(cat.margenPct);
-              }
             }
             // Margen actual CON el costo nuevo (si admin escribió costo)
             const margenConCostoNuevo = (ventaActual > 0 && brutoUnit > 0)
@@ -8830,15 +8823,11 @@ const MOS = (() => {
       if (codStr) {
         if (prodCat) {
           const ventaActual = parseFloat(prodCat.precioVenta) || 0;
+          // [640] margen objetivo SOLO del producto (el margen por categoría murió)
           let margenObjetivo = null;
           const oMargRaw = prodCat.margenPct;
           if (oMargRaw !== '' && oMargRaw != null && !isNaN(parseFloat(oMargRaw))) {
             margenObjetivo = parseFloat(oMargRaw);
-          } else if (prodCat.categoria) {
-            const cat = (S.categorias || []).find(c => c.nombre === prodCat.categoria);
-            if (cat && cat.margenPct !== '' && cat.margenPct != null && !isNaN(parseFloat(cat.margenPct))) {
-              margenObjetivo = parseFloat(cat.margenPct);
-            }
           }
           const margenConCostoNuevo = (ventaActual > 0 && brutoUnit > 0)
             ? ((ventaActual - brutoUnit) / ventaActual) * 100 : null;
@@ -15462,10 +15451,7 @@ const MOS = (() => {
     if ($('prodIGV'))         $('prodIGV').value         = (padre.IGV_Porcentaje !== undefined && padre.IGV_Porcentaje !== '') ? padre.IGV_Porcentaje : (tipoVal === '1' ? 18 : 0);
     if ($('prodCodSUNAT'))    $('prodCodSUNAT').value    = padre.Cod_SUNAT || '10000000';
     if ($('prodUnidadMedida')) $('prodUnidadMedida').value = padre.Unidad_Medida || 'NIU';
-    // Solo herendar idCategoria si no se ha llenado
-    if ($('prodCategoria') && !$('prodCategoria').value && padre.idCategoria) {
-      $('prodCategoria').value = padre.idCategoria;
-    }
+    // [640] categoría: ya no se copia — la asigna la IA (herencia server-side del líder)
     if ($('prodMarca') && !$('prodMarca').value && padre.marca) {
       $('prodMarca').value = padre.marca;
     }
@@ -16343,7 +16329,13 @@ const MOS = (() => {
       $('prodDescripcion').value = p.descripcion   || '';
       $('prodCodigoBarra').value = p.codigoBarra   || '';
       $('prodMarca').value       = p.marca         || '';
-      $('prodCategoria').value   = p.idCategoria   || '';
+      // [640] chip de categoría automática (IA): muestra cat > sub del producto
+      if ($('prodCategoriaChip')) {
+        const cia = p.categoriaIa && typeof p.categoriaIa === 'object' ? p.categoriaIa : null;
+        $('prodCategoriaChip').innerHTML = cia
+          ? `<b style="color:#cfe1ff">${_escapeHtml(cia.categoria || '')}</b><span style="opacity:.6">›</span>${_escapeHtml(cia.subcategoria || '')}`
+          : (p.idCategoria ? `<b style="color:#cfe1ff">${_escapeHtml(p.idCategoria)}</b>` : '🤖 se asigna sola al guardar');
+      }
       // Migración: valores legacy (KG, LITRO, BOLSA, etc.) → códigos SUNAT
       // El campo Unidad_Medida (SUNAT autoritativo) prima sobre unidad
       const _unidadProd = _normalizarUnidad(p.Unidad_Medida || p.unidad) || 'NIU';
@@ -16497,23 +16489,18 @@ const MOS = (() => {
   }
 
   function _prodActualizarPoliticaEfectiva() {
+    // [640] la categoría ya NO define política: el margen es por producto (o default 25%)
     const el = $('prodPoliticaEfectiva');
     if (!el) return;
-    const idCat = $('prodCategoria')?.value;
-    const cat = (cfgData.categorias || []).find(c => String(c.idCategoria).toUpperCase() === String(idCat || '').toUpperCase());
     const override = $('prodPoliticaOverride')?.checked;
     if (override) {
       const modo = $('prodModoVenta')?.value || 'MARGEN';
       const margen = parseFloat($('prodMargenPct')?.value);
       const detalle = (modo === 'MARGEN' || modo === 'COMPETITIVO') && !isNaN(margen)
         ? `${modo} ${margen}%` : modo;
-      el.innerHTML = `Política efectiva: <span class="text-amber-400 font-semibold">${detalle}</span> <span class="text-slate-600">(override del producto)</span>`;
-    } else if (cat) {
-      const detalle = (cat.modoVenta === 'MARGEN' || cat.modoVenta === 'COMPETITIVO')
-        ? `${cat.modoVenta} ${parseFloat(cat.margenPct).toFixed(1)}%` : cat.modoVenta;
-      el.innerHTML = `Política efectiva: <span class="text-emerald-400 font-semibold">${detalle}</span> <span class="text-slate-600">(de categoría ${cat.nombre || cat.idCategoria})</span>`;
+      el.innerHTML = `Política efectiva: <span class="text-amber-400 font-semibold">${detalle}</span> <span class="text-slate-600">(de este producto)</span>`;
     } else {
-      el.innerHTML = `Política efectiva: <span class="text-slate-400 italic">${idCat ? 'categoría sin política configurada' : 'selecciona una categoría primero'}</span>`;
+      el.innerHTML = `Política efectiva: <span class="text-slate-400">MARGEN 25% <span class="text-slate-600">(default — defínela por producto si quieres otra)</span></span>`;
     }
   }
 
@@ -17744,7 +17731,7 @@ const MOS = (() => {
       descripcion:   desc,
       codigoBarra:   $('prodCodigoBarra')?.value  || '',
       marca:         $('prodMarca')?.value        || '',
-      idCategoria:   $('prodCategoria')?.value    || '',
+      // [640] idCategoria ya NO se envía: la asigna la IA server-side (espejo de categoria_ia)
       unidad:        $('prodUnidad')?.value       || 'NIU',
       precioVenta:   parseFloat($('prodPrecioVenta')?.value) || 0,
       precioCosto:   $('prodPrecioCosto')?.value  ? parseFloat($('prodPrecioCosto').value) : '',
@@ -18212,6 +18199,7 @@ const MOS = (() => {
     const s = _cfgLoadCache('series');       if (s) cfgData.series       = s;
     const d = _cfgLoadCache('dispositivos'); if (d) cfgData.dispositivos = d;
     const c = _cfgLoadCache('categorias');   if (c) cfgData.categorias   = c;
+    const tx = _cfgLoadCache('taxonomia');   if (tx) cfgData.taxonomia   = tx;
     const f = _cfgLoadCache('config');       if (f) cfgData.config       = f;
     return !!(z || e || i || p || m || b || s || d || c || f);
   }
@@ -18232,7 +18220,7 @@ const MOS = (() => {
         API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = _dispAplicarShield(r); _cfgSaveCache('dispositivos', cfgData.dispositivos); } }).catch(() => {}),
         // [635] solicitudes de extensión de horario → sección A de Infraestructura
         API.get('getAlertasExtensionHorario', {}).then(r => { if (r) cfgData.alertasHorario = r; }).catch(() => {}),
-        API.get('getCategorias', {}).then(r => { if (r) { cfgData.categorias = r; _cfgSaveCache('categorias', r); } }).catch(() => {}),
+        API.get('getTaxonomia', {}).then(r => { if (Array.isArray(r)) { cfgData.taxonomia = r; _cfgSaveCache('taxonomia', r); } }).catch(() => {}),
         API.get('getConfig', {}).then(r => { if (r) { cfgData.config = r; _cfgSaveCache('config', r); } }).catch(() => {})
       ];
       Promise.all(tasks).finally(() => {
@@ -18280,7 +18268,7 @@ const MOS = (() => {
         tasks.push(API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = _dispAplicarShield(r); _cfgSaveCache('dispositivos', cfgData.dispositivos); } }).catch(() => {}));
       }
       if (tab === 'categorias') {
-        tasks.push(API.get('getCategorias', {}).then(r => { if (r) { cfgData.categorias = r; _cfgSaveCache('categorias', r); } }).catch(() => {}));
+        tasks.push(API.get('getTaxonomia', {}).then(r => { if (Array.isArray(r)) { cfgData.taxonomia = r; _cfgSaveCache('taxonomia', r); } }).catch(() => {}));
       }
       await Promise.all(tasks);
       // Re-render solo si la pestaña sigue activa
@@ -19137,79 +19125,108 @@ const MOS = (() => {
   // ── Pestaña Configuración → Evaluación ─────────────────
 
 
-  // ── CATEGORÍAS / política de precios ─────────────────────
-  // [Mockup] estado del buscador de categorías
+  // ── CATEGORÍAS · Taxonomía IA (640) ─────────────────────
+  // El margen por categoría MURIÓ (decisión dueño): este panel ya no configura precios,
+  // es la GUÍA VIVA de la taxonomía — 23+ categorías / 108+ subcategorías con descripción,
+  // ejemplos reales y conteos. Se AUTO-alimenta: si la IA detecta un dominio nuevo
+  // (p.ej. HERRAMIENTAS) al crear/editar un producto, aparece aquí solo, con chip 🤖.
   let _catQ = '';
   let _catQTimer = null;
+  let _catAbierta = null;   // categoría expandida (acordeón)
+  const _TAX_EMOJI = { ABARROTES:'🌾', ACEITES:'🫒', BEBIDAS:'🥤', CONFITERIA:'🍬', CONSERVAS:'🥫', DECORATIVOS:'🎀', DESCARTABLES:'🥡', ENDULZANTES:'🍯', ENERGIZANTES:'⚡', ESPECIAS:'🌶️', GALLETAS_SNACKS:'🍪', GRANEL:'🥜', INFUSIONES:'🍵', INSUMOS_REPOSTERIA:'🧁', LACTEOS:'🥛', LIMPIEZA:'🧼', MENESTRAS:'🫘', OTROS:'📦', PRODUCTOS_CHINOS:'🥢', REPOSTERIA:'🎂', SALSAS:'🥣', VINAGRES:'🧴', VINOS_LICORES:'🍷' };
   function catBuscar(v) {
     _catQ = String(v || '').trim().toLowerCase();
     clearTimeout(_catQTimer);
     _catQTimer = setTimeout(() => {
-      _renderCategoriasCards($('catGridContainer'), cfgData.categorias || []);
+      _renderCategoriasCards($('catGridContainer'), cfgData.taxonomia || []);
       const s = $('catSearchInp');
       if (s) { s.focus(); try { s.setSelectionRange(s.value.length, s.value.length); } catch (_) {} }
     }, 320);
   }
+  function catToggle(cat) {
+    _catAbierta = (_catAbierta === cat) ? null : cat;
+    if (typeof _evalSfx === 'function') _evalSfx('open');
+    _renderCategoriasCards($('catGridContainer'), cfgData.taxonomia || []);
+  }
   async function renderCategorias(skipFetch) {
     const cont = $('catGridContainer');
     if (!cont) return;
-    // Pintar desde cache instantáneamente si ya está en cfgData
-    const cached = cfgData.categorias || [];
+    const cached = cfgData.taxonomia || [];
     if (cached.length > 0) _renderCategoriasCards(cont, cached);
     else cont.innerHTML = `<div class="col-span-full text-center py-8 text-slate-500 text-sm"><div class="inline-block animate-spin">⏳</div> Cargando...</div>`;
     if (!skipFetch) {
       try {
-        const r = await API.get('getCategorias', {});
-        cfgData.categorias = r || [];
-        _renderCategoriasCards(cont, cfgData.categorias);
+        const r = await API.get('getTaxonomia', {});
+        if (Array.isArray(r)) { cfgData.taxonomia = r; _cfgSaveCache('taxonomia', r); }
+        _renderCategoriasCards(cont, cfgData.taxonomia || []);
       } catch(e) {
         if (!cached.length) cont.innerHTML = `<div class="col-span-full text-center py-8 text-rose-400 text-sm">Error: ${e.message}</div>`;
       }
     }
   }
 
+  // ¿la subcategoría matchea el buscador?
+  function _taxSubHit(s) {
+    return (String(s.subcategoria||'') + ' ' + String(s.descripcion||'') + ' ' + String(s.ejemplos||'')).toLowerCase().includes(_catQ);
+  }
   function _renderCategoriasCards(cont, rows) {
-    // [Mockup] cmd bar: contadores + buscador + nueva categoría
     const bar = $('catCmdBar');
+    const nSubs = rows.reduce((a, c) => a + (c.subcategorias || []).length, 0);
+    const nProd = rows.reduce((a, c) => a + (Number(c.productos) || 0), 0);
     if (bar) {
-      const modos = [...new Set(rows.map(c => String(c.modoVenta || '').toUpperCase()).filter(Boolean))];
       bar.innerHTML = `<div class="cmd">
         <div class="stat"><div><div class="big tnum">${rows.length}</div><div class="cap">categorías</div></div></div>
-        <div class="stat"><div><div class="big tnum">${modos.length}</div><div class="cap">modos de venta</div></div></div>
+        <div class="stat"><div><div class="big tnum">${nSubs}</div><div class="cap">subcategorías</div></div></div>
+        <div class="stat"><div><div class="big tnum">${nProd}</div><div class="cap">productos</div></div></div>
         <div class="cmd-right">
-          <input id="catSearchInp" class="search" placeholder="🔎 buscar categoría…" value="${_escapeHtml(_catQ)}" oninput="MOS.catBuscar(this.value)">
-          <button class="abtn" onclick="MOS.abrirModalCategoria(null)">＋ nueva categoría</button>
+          <input id="catSearchInp" class="search" placeholder="🔎 categoría, subcategoría o ejemplo…" value="${_escapeHtml(_catQ)}" oninput="MOS.catBuscar(this.value)">
+          <span class="modechip" title="La IA clasifica cada producto al crearlo/editarlo; una categoría nueva aparece aquí sola">🤖 se auto-alimenta</span>
         </div>
       </div>`;
     }
     cont.className = 'grid2';
     const vis = _catQ
-      ? rows.filter(c => (String(c.nombre || '') + ' ' + String(c.idCategoria || '')).toLowerCase().includes(_catQ))
+      ? rows.filter(c => (String(c.nombre||'') + ' ' + String(c.categoria||'') + ' ' + String(c.descripcion||'')).toLowerCase().includes(_catQ)
+                      || (c.subcategorias || []).some(_taxSubHit))
       : rows;
     if (!vis.length) {
       cont.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:36px 0;color:#5f7290;font-size:13px">
-        <div style="font-size:28px;opacity:.5;margin-bottom:8px">🏷️</div>
-        ${_catQ ? 'Sin resultados para "' + _escapeHtml(_catQ) + '"' : 'Sin categorías. Crea una con "＋ nueva categoría"'}
-      </div>`;
+        <div style="font-size:28px;opacity:.5;margin-bottom:8px">🏷️</div>Sin resultados para "${_escapeHtml(_catQ)}"</div>`;
       return;
     }
-    const modoIcos = { MARGEN: '📈', FIJO: '🔒', COMPETITIVO: '🎯', LIBRE: '🆓' };
     cont.innerHTML = vis.map(c => {
-      const activa = String(c.estado) === '1';
-      const modo = String(c.modoVenta || '').toUpperCase();
-      const margen = (modo === 'MARGEN' || modo === 'COMPETITIVO') ? (parseFloat(c.margenPct) || 0).toFixed(1) + '%' : '';
-      const tope = parseFloat(c.precioTope) > 0 ? 'S/' + parseFloat(c.precioTope).toFixed(2) : '';
-      const chipCls = modo === 'COMPETITIVO' ? 'tope' : (modo === 'FIJO' ? 'fijo' : (modo === 'LIBRE' ? 'libre' : ''));
-      const chipTxt = modo === 'MARGEN' ? `margen ${margen}` : (modo === 'COMPETITIVO' ? `margen ${margen} · tope` : modo.toLowerCase());
-      return `<div class="catcard${activa ? '' : '" style="opacity:.55'}" onclick="MOS.abrirModalCategoria('${c.idCategoria}', event)">
+      const cid = String(c.categoria || '');
+      const emoji = _TAX_EMOJI[cid] || '🆕';
+      const esAuto = /🤖/.test(String(c.descripcion || ''));
+      const abierta = (_catAbierta === cid) || (_catQ && (c.subcategorias || []).some(_taxSubHit) && !(String(c.nombre||'').toLowerCase().includes(_catQ)));
+      const subs = (c.subcategorias || []);
+      const subsVis = (abierta && _catQ) ? subs.filter(s => _taxSubHit(s) || String(c.nombre||'').toLowerCase().includes(_catQ)) : subs;
+      const desc = String(c.descripcion || '').replace(/\s*\(.*margen.*\)\s*/i, '');
+      let subHtml = '';
+      if (abierta) {
+        subHtml = `<div class="taxsubs" onclick="event.stopPropagation()">` + subsVis.map(s => `
+          <div class="taxsub">
+            <div class="taxsub-top"><span class="taxsub-n">${_escapeHtml(s.subcategoria)}</span>
+              ${s.auto ? '<span class="modechip" style="background:#7c3aed22;color:#c4b5fd">🤖 nueva (IA)</span>' : ''}
+              <span class="taxsub-c tnum">${Number(s.productos) || 0}</span></div>
+            ${s.descripcion ? `<div class="taxsub-d">${_escapeHtml(s.descripcion)}</div>` : ''}
+            ${s.ejemplos ? `<div class="taxsub-e">Ej.: ${_escapeHtml(s.ejemplos)}</div>` : ''}
+          </div>`).join('') + `</div>`;
+      }
+      return `<div class="catcard taxcard${abierta ? ' tax-open' : ''}" ${abierta ? 'style="grid-column:1/-1"' : ''} onclick="MOS.catToggle('${_escapeHtml(cid)}')">
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:18px">${modoIcos[modo] || '🏷️'}</span>
-          <div style="flex:1;min-width:0"><div class="ct" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.nombre || c.idCategoria}</div></div>
-          <span class="modechip ${chipCls}">${chipTxt}</span>
+          <span style="font-size:20px">${emoji}</span>
+          <div style="flex:1;min-width:0">
+            <div class="ct" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escapeHtml(c.nombre || cid)}${esAuto ? ' <span class="modechip" style="background:#7c3aed22;color:#c4b5fd">🤖 nueva</span>' : ''}</div>
+          </div>
+          <span class="modechip tnum">${Number(c.productos) || 0} prod</span>
+          <span class="modechip tnum">${subs.length} sub</span>
+          <span style="color:#5f7290;font-size:12px;transition:transform .25s;${abierta ? 'transform:rotate(180deg)' : ''}">▼</span>
         </div>
-        <div class="cdesc">${c.idCategoria}${tope ? ' · tope ' + tope : ''}${activa ? '' : ' · <span style="color:#94a3b8">inactiva</span>'}${c.descripcion ? ' · ' + _escapeHtml(String(c.descripcion).slice(0, 60)) : ''}</div>
+        <div class="cdesc">${_escapeHtml(desc.slice(0, 160))}</div>
+        ${subHtml}
       </div>`;
-    }).join('') + `<div class="catcard" style="border-style:dashed;display:grid;place-items:center;color:#5f7290;min-height:80px" onclick="MOS.abrirModalCategoria(null)">＋ nueva categoría</div>`;
+    }).join('');
   }
 
   function abrirModalCategoria(idCategoria, ev) {
@@ -45577,7 +45594,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalImpresora, guardarImpresora, eliminarImpresora, _impActualizarPreview,
     eliminarZona, _zonaActualizarPreview,
     toggleZonaActiva, toggleEstacionActiva, toggleImpresoraActiva,
-    cfgBuscar, cfgToggleSusp, _cfgDetToggle, catBuscar,
+    cfgBuscar, cfgToggleSusp, _cfgDetToggle, catBuscar, catToggle,
     abrirSorpresasPanel, abrirVencimientosPanel, vencSetFiltro, vencVerProducto, vencVolver, vencHistLote,
     abrirMermasPanel, mermasSetFiltro, mermasSetAgrupar, mermasVerFoto,
     abrirModalPersonal, guardarPersonal, togglePersonalActivo, eliminarPersonal,

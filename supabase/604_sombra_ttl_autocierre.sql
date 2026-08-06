@@ -16,7 +16,7 @@ CREATE OR REPLACE FUNCTION wh.vencer_listas_sombra()
 AS $function$
 declare
   v_row record; v_disp int := 0; v_uso int := 0; v_auto int := 0; v_avis int := 0;
-  v_esc numeric; v_det jsonb; v_res jsonb; v_guia text;
+  v_esc numeric; v_esc_items int; v_det jsonb; v_res jsonb; v_guia text; v_twin text;
 begin
   -- [604] ALERTA DE PRE-VENCIMIENTO (pedido del dueño): sombra viva con 20-24h → push a WH+admins
   -- ("por vencer") UNA sola vez (marca [aviso-ttl] en la nota). Da 4h de ventana humana antes del TTL.
@@ -55,6 +55,22 @@ begin
       from jsonb_array_elements(coalesce(v_row.items,'[]'::jsonb)) it;
 
     if v_esc > 0 then
+      -- [604b] GUÍA GEMELA (caso real LS1785522660160/G_L1785526158074): el operador escaneó la sombra
+      -- y despachó por el flujo normal (guía YA emitida) pero el cierre contable nunca llegó. Si existe
+      -- una SALIDA a la MISMA zona, posterior a la creación de la sombra, con el MISMO total de unidades
+      -- (±0.01) y ±2 líneas → NO crear otra guía (sería doble descuento); solo contabilizar.
+      select count(*) into v_esc_items
+        from jsonb_array_elements(coalesce(v_row.items,'[]'::jsonb)) it
+       where wh._num(coalesce(it->>'cantidadEscaneada','0')) > 0;
+      select g.id_guia into v_twin
+        from wh.guias g
+       where upper(coalesce(g.id_zona,'')) = upper(coalesce(v_row.zona,''))
+         and g.tipo like 'SALIDA%'
+         and g.fecha >= v_row.fecha_creacion - interval '1 hour'
+         and abs(coalesce((select sum(gd.cant_recibida) from wh.guia_detalle gd where gd.id_guia = g.id_guia), 0) - v_esc) < 0.01
+         and abs(coalesce((select count(*) from wh.guia_detalle gd where gd.id_guia = g.id_guia), 0) - v_esc_items) <= 2
+       order by g.fecha limit 1;
+
       -- [604] AUTO-CIERRE COMPLETO — 1) GUÍA por lo escaneado (codigo_barra del canónico por sku_base)
       select coalesce(jsonb_agg(jsonb_build_object(
                'codigo_barra', pr.codigo_barra,
@@ -71,6 +87,9 @@ begin
        where wh._num(coalesce(it->>'cantidadEscaneada','0')) > 0
          and coalesce(btrim(it->>'skuBase'),'') <> '';
 
+      if v_twin is not null then
+        v_det := '[]'::jsonb;   -- gemela detectada → sin guía nueva (solo contabilidad)
+      end if;
       if v_det is not null and jsonb_array_length(v_det) > 0 then
         v_guia := 'GLSC_' || v_row.id_lista;
         v_res := wh.crear_despacho_rapido(jsonb_build_object(
@@ -89,7 +108,9 @@ begin
       v_res := wh.cerrar_lista_sombra(jsonb_build_object('idLista', v_row.id_lista));
       update wh.listas_sombra
          set nota = coalesce(nota,'') || ' [604: auto-cierre TTL · ' || v_esc || ' uds escaneadas' ||
-                    case when v_det is not null and jsonb_array_length(v_det) > 0 then ' · guía GLSC_' || v_row.id_lista else '' end || ']'
+                    case when v_twin is not null then ' · guía gemela detectada ' || v_twin || ' (sin guía nueva)'
+                         when v_det is not null and jsonb_array_length(v_det) > 0 then ' · guía GLSC_' || v_row.id_lista
+                         else '' end || ']'
        where id_lista = v_row.id_lista;
       v_auto := v_auto + 1;
     else

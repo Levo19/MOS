@@ -1,0 +1,13 @@
+import fs from 'fs'; import pkg from 'pg'; const {Client}=pkg;
+const c=new Client({connectionString:fs.readFileSync('C:/Users/ISO/.sb_db.url','utf8').trim(),ssl:{rejectUnauthorized:false}});
+await c.connect();
+const m=(await c.query(`select id_categoria, coalesce(margen_pct,0) mg from mos.categorias order by 1`)).rows;
+console.log(JSON.stringify(Object.fromEntries(m.map(r=>[r.id_categoria, Number(r.mg)]))));
+const t=(await c.query(`select tipo_producto::text t, count(*) n from mos.productos where coalesce(estado,true) group by 1`)).rows;
+console.log(JSON.stringify(t));
+const eq=(await c.query(`select count(*) n from mos.equivalencias where activo`)).rows[0].n;
+console.log('equivalencias:'+eq);
+const dtony=(await c.query(`select count(*) n from mos.productos where tipo_producto::text='DERIVADO' and coalesce(estado,true)`)).rows[0].n;
+const dmarca=(await c.query(`select count(*) n from mos.productos where tipo_producto::text='DERIVADO' and coalesce(estado,true) and nullif(btrim(coalesce(marca,'')),'') is not null`)).rows[0].n;
+console.log('derivados:'+dtony+' con marca:'+dmarca);
+await c.end();

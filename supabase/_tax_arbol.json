@@ -1,0 +1,890 @@
+{
+ "BEBIDAS": {
+  "Aguas": {
+   "n": 13,
+   "ej": [
+    "LOA AGUA GASIFICADA MANDARINA 625ML",
+    "LOA AGUA 625ML BOTELLA",
+    "LOA AGUA GASIFICADA PIÑA 625ML BOTELLA"
+   ]
+  },
+  "Jugos y refrescos": {
+   "n": 33,
+   "ej": [
+    "KRIS TROPICAL PUNCH 350ML",
+    "KRIS TROPICAL PUNCH 500ML",
+    "REFRESCO CHICHA MORADA 1LT BOTELLA"
+   ]
+  },
+  "Gaseosas": {
+   "n": 35,
+   "ej": [
+    "KR GASEOSA PIÑA 350ML BOTELLA",
+    "FANTA 3L",
+    "PEPSI GASEOSA JUMBO 750ML"
+   ]
+  },
+  "Café": {
+   "n": 19,
+   "ej": [
+    "ALTOMAYO CAFE CLASICO 50GR FRASCO",
+    "CAFETAL GOURMET CAFE INSTANTANEO 7GR DOYPACK",
+    "ALTOMAYO GOURMET CAFE INSTANTANEO 14 GR"
+   ]
+  },
+  "Cocoa y chocolate de taza": {
+   "n": 35,
+   "ej": [
+    "DAFAS MOSTAZA 2KG BOLSA",
+    "ALPESA MOSTAZA PERSONAL 12UN BOLSA",
+    "MISKISIMOO CHOCOLATADA EN POLVO 26GR SOBRE"
+   ]
+  },
+  "Otras bebidas": {
+   "n": 22,
+   "ej": [
+    "BAIXIANG BEBIDA TE NEGRO CON LITCHI 500ML BOTELLA",
+    "CUCHARITA DE PLASTICO TRANSPARENTE",
+    "KERO ALOE BEBIDA FRUTOS ROJOS 300ML BOTELLA"
+   ]
+  },
+  "Cebada y sucedáneos": {
+   "n": 3,
+   "ej": [
+    "NESTLE ECCO 10GR",
+    "NESTLE ECCO 170GR LATA",
+    "NESTLE ECCO 12GR"
+   ]
+  }
+ },
+ "ABARROTES": {
+  "Harinas andinas": {
+   "n": 14,
+   "ej": [
+    "SUR ANDINO HARINA MACA ROJA 200GR DOYPACK",
+    "ANCESTRO HARINA DE MACA NEGRA 200GR DOYPACK",
+    "MACA EN POLVO GRANEL"
+   ]
+  },
+  "Avenas y cereales": {
+   "n": 20,
+   "ej": [
+    "3 OSITOS AVENA PRECOCIDA CLASICA 100GR BOLSA",
+    "AVENA EN HOJUELA PREMIUM GRANEL",
+    "QUAKER AVENA TRADICIONAL 200GR BOLSA"
+   ]
+  },
+  "Fideos y pastas": {
+   "n": 28,
+   "ej": [
+    "MAXIMO FIDEO CORTO CODO 250GR BOLSA",
+    "MAXIMO FIDEO CORTO MUNICION 250GR BOLSA",
+    "NICOLINI FIDEO CABELLO DE ANGEL 250GR BOLSA"
+   ]
+  },
+  "Arroz": {
+   "n": 15,
+   "ej": [
+    "FANSI FIDEO DE ARROZ 100GR BOLSA",
+    "VALLESOL ARROZ GRANEL",
+    "arroz pilado miyako"
+   ]
+  },
+  "Harinas": {
+   "n": 19,
+   "ej": [
+    "DEMSA HARINA DE MAIZ GRANEL",
+    "FAVORITA HARINA SIN PREPARAR 180GR BOLSA",
+    "MOLITALIA SEMOLA 200GR"
+   ]
+  },
+  "Almidones y chuño": {
+   "n": 7,
+   "ej": [
+    "maizena duryea 500gr",
+    "AVEBE FECULA DE PAPA CHUÑO GRANEL",
+    "AVEBE CHUÑO 25KG"
+   ]
+  },
+  "Huevos": {
+   "n": 6,
+   "ej": [
+    "ELYASAN ESCENCIAS COLOROANTE AMARILLO HUEVO E-100 1KG",
+    "HUEVO A GRANEL",
+    "DOCE UNIDADES"
+   ]
+  },
+  "Sopas instantáneas": {
+   "n": 3,
+   "ej": [
+    "AJINOMEN SOPA INSTANTANEA CARNE 80GR SOBRE",
+    "AJINOMEN SOPA INSTANTANEA GALLINA 80GR SOBRE",
+    "AJINOMEN SOPA INSTANTANEA POLLO 80GR SOBRE"
+   ]
+  },
+  "Apanaduras": {
+   "n": 1,
+   "ej": [
+    "PAN MOLIDO OSCURO GRANEL EXO"
+   ]
+  }
+ },
+ "REPOSTERIA": {
+  "Herramientas de repostería": {
+   "n": 13,
+   "ej": [
+    "AEROGRAFO MANUAL NACIONALES",
+    "PEGAMENTO REPOSTERO",
+    "brocha pequeña"
+   ]
+  },
+  "Cortadores": {
+   "n": 12,
+   "ej": [
+    "CORTADOR DE PLASTICO 5PCS",
+    "CORTADOR DE PORCIONES",
+    "CORTADOR DE PLASTICO FIGURAS"
+   ]
+  },
+  "Moldes y aros": {
+   "n": 14,
+   "ej": [
+    "MOLDE ALUMINIO #20 C/HUECO",
+    "ARO DE ALUMINO",
+    "MOLDE DE PALETA EN SILICONA BLANCO PEQUEÑO"
+   ]
+  },
+  "Insumos de decoración": {
+   "n": 4,
+   "ej": [
+    "CORTE DECORATIVO PARA TORTAS DISEÑOS VARIADOS",
+    "PERLA IMPORTADA",
+    "ALAMBRE PARA FLORES"
+   ]
+  },
+  "Boquillas y mangas": {
+   "n": 9,
+   "ej": [
+    "JUEGO DE BOQUILLA # 01",
+    "BOQUILLA VARIADOS IMPORTADO",
+    "BOQUILLA VARIADOS NACIONAL"
+   ]
+  }
+ },
+ "CONSERVAS": {
+  "Verduras y encurtidos": {
+   "n": 24,
+   "ej": [
+    "AFES MENSI 125CC BOTELLA",
+    "GUAN JI TAUSI CON AJO 260GR FRASCO",
+    "SANTIS CHAMPIÑONES 4.2KG LATA"
+   ]
+  },
+  "Frutas en almíbar": {
+   "n": 6,
+   "ej": [
+    "RIO CONSERVA DURAZNO 820GR LATA",
+    "ARICA ALMIBAR DE DURAZNO",
+    "COMPASS DURAZNO MITAD 820GR LATA"
+   ]
+  },
+  "Atún y pescados": {
+   "n": 5,
+   "ej": [
+    "belini portola",
+    "FLORIDA ATUN FILETE EN AGUA 150GR LATA",
+    "FLORIDA ATUN GRATED 135GR LATA"
+   ]
+  }
+ },
+ "DESCARTABLES": {
+  "Bolsas": {
+   "n": 37,
+   "ej": [
+    "BEARY PANCO BLANCO 230GR BOLSA",
+    "BOLSA 4*8*1",
+    "WMY PANCO BLANCO 230GR BOLSA"
+   ]
+  },
+  "Papeles y films": {
+   "n": 11,
+   "ej": [
+    "PARACAS PAPEL HIGIENICO MORADO 2UN",
+    "CAÑITA DE PAPEL X 25UND",
+    "SERVILLETA"
+   ]
+  },
+  "Bases y bandejas": {
+   "n": 42,
+   "ej": [
+    "BASE DE TECNOPOR Ø 25 CM",
+    "MAQUETA DE TECNOPOR Ø 30 X 15 CM.",
+    "ESFERA DE TECNOPOR DE 1 1/2 #05"
+   ]
+  },
+  "Envases y tapers": {
+   "n": 12,
+   "ej": [
+    "ENVASE TRANSPARENTE PORTA CUPCAKE",
+    "TOPER ACRILICO MEDIANO PIEZA",
+    "CEOFAN 3.5*4*2"
+   ]
+  },
+  "Cajas para torta y delivery": {
+   "n": 15,
+   "ej": [
+    "CAJA 25 X 25 X 35 PARA TORTA ALTA",
+    "CAJA 30 X 40 X 15 PARA TORTA RECTANGULAR",
+    "CAJA DE PIE O BOCADITO CON VISOR 30 X 30 X 8 CM"
+   ]
+  },
+  "Vasos, platos y cubiertos": {
+   "n": 12,
+   "ej": [
+    "VASO DESCARTABLE 6OZ 50UN",
+    "MINI TENEDOR DORADO SET 36PCS",
+    "CONTOMETROS GRANDES"
+   ]
+  },
+  "Pirotines": {
+   "n": 4,
+   "ej": [
+    "PIROTIN GRANDE VARIOS",
+    "PIROTIN PARA CUPCAKES",
+    "PIROTIN PEQUEÑO VARIOS"
+   ]
+  },
+  "Palitos y brochetas": {
+   "n": 2,
+   "ej": [
+    "MOLDADIENTES",
+    "MONDA DIENTE DOBLE PUNTA"
+   ]
+  }
+ },
+ "INSUMOS_REPOSTERIA": {
+  "Levaduras y leudantes": {
+   "n": 11,
+   "ej": [
+    "BICARBONATO DE SODIO 30GR",
+    "CREMOR TARTARO GRANEL",
+    "UNIVERSAL POLVO DE HORNEAR 25GR SOBRE"
+   ]
+  },
+  "Cacao y derivados": {
+   "n": 4,
+   "ej": [
+    "CURAZAO CACAO EN POLVO GRANEL",
+    "CURAZAO COBERTURA BLANCO 1kg",
+    "CASCARA DE CACAO GRANEL"
+   ]
+  },
+  "Gelatinas y postres en polvo": {
+   "n": 21,
+   "ej": [
+    "UNIVERSAL MAZAMORRA MORADA 150GR",
+    "UNIVERSAL PUDIN VAINILLA 100 GR SOBRE",
+    "DELPHI COLAPIZ 20GR SOBRE"
+   ]
+  },
+  "Manjares y cremas": {
+   "n": 12,
+   "ej": [
+    "NESTLE MANJAR BLANCO 1KG BOLSA",
+    "COSTA CHOCMAN DOBLE MANJAR 50GR",
+    "FRATELLO MASA FONDANT BLANCO X KG"
+   ]
+  },
+  "Esencias y colorantes": {
+   "n": 13,
+   "ej": [
+    "FRATELLO COLORANTE A LA GRASA 2GR",
+    "COLORANTE LIQUIDO X 30 ML",
+    "ESENCIA TURBIA 90 ML"
+   ]
+  },
+  "Premezclas y bases horneadas": {
+   "n": 4,
+   "ej": [
+    "BUPAS CACHITO X 25 UND X 150 GR",
+    "BUPAS HOJARASAS X 50 UND X 145 GR",
+    "KEKE VAINILLA TAJADA"
+   ]
+  },
+  "Mantecas": {
+   "n": 3,
+   "ej": [
+    "manteca hidrogenaDA 100 GR nelmac",
+    "famosa manteca",
+    "PAPEL MANTECA"
+   ]
+  }
+ },
+ "ENERGIZANTES": {
+  "Energizantes y rehidratantes": {
+   "n": 18,
+   "ej": [
+    "360 ENERGY DRINK GAMER 300ML BOTELLA",
+    "360 ENERGY DRINK MARACUYA 300ML BOTELLA",
+    "VOLT ENERGY DRINK MACA 300ML BOTELLA"
+   ]
+  }
+ },
+ "LIMPIEZA": {
+  "Detergentes y jabones": {
+   "n": 6,
+   "ej": [
+    "BOLIVAR JABON AROMA FLORAL 190GR",
+    "AMARAS SHAMPOO + ACONDICIONADOR VARIOS 22ML SACHET",
+    "AVAL JABON LIQUIDO VARIOS 400ML BOTELLA"
+   ]
+  },
+  "Lejías y desinfectantes": {
+   "n": 4,
+   "ej": [
+    "normita limpiatodo 300ml",
+    "BLANQUEADOR EN POLVO",
+    "clorox lejia 345ml"
+   ]
+  },
+  "Lavavajillas": {
+   "n": 4,
+   "ej": [
+    "AYUDIN LAVA VAJILLA 1 KILO",
+    "DKASA LAVAVAJILLAS LIMON 900ML BOTELLA",
+    "DKASA LAVAVAJILLAS LIQUIDO LIMON 4LT GALON"
+   ]
+  },
+  "Plagas e insecticidas": {
+   "n": 2,
+   "ej": [
+    "GALLO REPELENTE ESPIRAL 10UN CAJA",
+    "SICARIO MATA RATAS FRASCO"
+   ]
+  },
+  "Utensilios de limpieza": {
+   "n": 1,
+   "ej": [
+    "HOJAS LAUREL ESPAÑOL GRANEL"
+   ]
+  }
+ },
+ "INFUSIONES": {
+  "Filtrantes e infusiones": {
+   "n": 42,
+   "ej": [
+    "MCCOLINS FILTRANTE MANZANILLA 25UN CAJA",
+    "MCCOLINS FILTRANTE TE VERDE SABOR PIÑA 25UN CAJA",
+    "MCCOLINS FILTRANTE TE PURO 25UN CAJA"
+   ]
+  },
+  "Emolientes": {
+   "n": 2,
+   "ej": [
+    "EMOLIENTE CHICO BOLSA EXO",
+    "EMOLIENTE GRANDE BOLSA EXO"
+   ]
+  }
+ },
+ "ESPECIAS": {
+  "Glutamato y umami": {
+   "n": 20,
+   "ej": [
+    "AJINOMOTO SAZONADOR GLUTAMATO 13GR SOBRE",
+    "AJINOMOTO SAZONADOR GLUTAMATO 27GR SOBRE",
+    "AJINOMOTO GLUTAMATO 1KG BOLSA"
+   ]
+  },
+  "Pimientas": {
+   "n": 27,
+   "ej": [
+    "PIMIENTA CAYENA GRANEL",
+    "MERI PIMIENTA Y COMINO CHICO 5GR SOBRE",
+    "PIMIENTA NEGRA ENTERA GRANEL"
+   ]
+  },
+  "Sazonadores y cubitos": {
+   "n": 53,
+   "ej": [
+    "AJINOMIX POP CORN 6GR SOBRE",
+    "DOÑA GUSTA SAZONADOR PESCADO 70GR TIRA",
+    "DOS BANDERAS PREPARADO LECHON 100GR SOBRE"
+   ]
+  },
+  "Ajo, cebolla y mezclas": {
+   "n": 17,
+   "ej": [
+    "AJO EN POLVO 15UN SARTA (0.5)",
+    "LEITE ESPECIAL MANJAR GRANEL",
+    "AJO EN POLVO GRANEL"
+   ]
+  },
+  "Hierbas secas": {
+   "n": 45,
+   "ej": [
+    "OREGANO MOLIDO PIZERO 15GR",
+    "OREGANO ENTERO GRANEL EXO",
+    "HONGO Y LAUREL 10GR SOBRE"
+   ]
+  },
+  "Ajíes y colorantes naturales": {
+   "n": 42,
+   "ej": [
+    "Bolsa de compra color variado",
+    "BOLSA DE COMPRA DE COLOR VARIADO",
+    "BADIA CURCUMA EN POLVO 56.7GR FRASCO"
+   ]
+  },
+  "Semillas y raíces aromáticas": {
+   "n": 42,
+   "ej": [
+    "AJONJOLI BLANCO PREMIUM 50GR",
+    "LINAZA PREMIUM 50GR",
+    "ANIS ENTERO 15UN SARTA (0.50)"
+   ]
+  },
+  "Canela y clavo": {
+   "n": 30,
+   "ej": [
+    "CANELA ENTERA 250GR",
+    "CANELA ENTERA 20GR",
+    "CANELA ENTERA 50GR"
+   ]
+  },
+  "Sales": {
+   "n": 6,
+   "ej": [
+    "EMSAL SAL MARINA MESA BOLSA",
+    "EMSAL SAL PARRILLERA 500GR BOTELLA",
+    "EMSAL SAL MARINA COCINA BOLSA"
+   ]
+  }
+ },
+ "VINAGRES": {
+  "Vinagre blanco y tinto": {
+   "n": 29,
+   "ej": [
+    "DEL FIRME VINAGRE BLANCO 1L BOTELLA",
+    "DEL FIRME VINAGRE BLANCO 1.1L DOYPACK",
+    "VALLE VERDE VINAGRE BLANCO 5LT BOTELLA"
+   ]
+  },
+  "Vinagre de arroz": {
+   "n": 2,
+   "ej": [
+    "9 DEGREES VINAGRE DE ARROZ 500ML BOTELLA",
+    "GWY VINAGRE DE ARROZ 630ML BOTELLA"
+   ]
+  },
+  "Vinagre de manzana": {
+   "n": 3,
+   "ej": [
+    "LA AREQUIPEÑITA VINAGRE DE MANZANA 1LT BOTELLA",
+    "LA AREQUIPEÑITA VINAGRE DE MANZANA 320ML BOTELLA",
+    "LA AREQUIPEÑITA VINAGRE DE MANZANA 500ML BOTELLA"
+   ]
+  },
+  "Balsámico": {
+   "n": 1,
+   "ej": [
+    "LA AREQUIPEÑITA VINAGRE BALSAMICO 250ML BOTELLA"
+   ]
+  }
+ },
+ "SALSAS": {
+  "Cremas de mesa": {
+   "n": 23,
+   "ej": [
+    "DAFAS KETCHUP 2KG BOLSA",
+    "ALACENA MAYONESA 95GR DOYPACK",
+    "ALPESA KETCHUP 1KG BOLSA"
+   ]
+  },
+  "Pastas de ají y adobos": {
+   "n": 4,
+   "ej": [
+    "DOS BANDERAS ADEREZO CRIOLLO 90GR",
+    "WALIBI SALSA PICANTE AJI CRIOLLO 85GR",
+    "DON VITTORIO SALSA ROJA COMPLETA 400GR DOYPACK"
+   ]
+  },
+  "Sazonadores líquidos": {
+   "n": 6,
+   "ej": [
+    "MCILHENNY TABASCO SALSA PICANTE 60ML BOTELLA",
+    "FOCH SALSA INGLESA 125CC BOTELLA",
+    "LEA PERRINS SALSA INGLESA 290GR BOTELLA"
+   ]
+  },
+  "Salsas peruanas listas": {
+   "n": 7,
+   "ej": [
+    "ALACENA HUANCAINA 200GR DOYPACK",
+    "ALACENA TARI AJI 200GR DOYPACK",
+    "TARI CREMA DE AJI 400GR DOYPACK"
+   ]
+  },
+  "Salsas de tomate": {
+   "n": 5,
+   "ej": [
+    "SIBARITA TUCO TALLARIN CHICO 10GR SOBRE",
+    "SIBARITA TUCO TALLARIN GRANDE 32.4 GR COBRE",
+    "POMAROLA SALSA BOLOGNESA 170GR DOYPACK"
+   ]
+  }
+ },
+ "GALLETAS_SNACKS": {
+  "Galletas saladas": {
+   "n": 9,
+   "ej": [
+    "FIELD CHOCOSODA GALLETA BAÑADA 36GR",
+    "CLUB SOCIAL GALLETA 24GR",
+    "DIA GALLETA SODA 10UN PAQUETE"
+   ]
+  },
+  "Galletas dulces": {
+   "n": 44,
+   "ej": [
+    "CASINO GALLETA CREMA SABOR ALFAJOR 43GR",
+    "COSTA FRAC GALLETA VAINILLA 41GR BOLSA",
+    "NESTLE MOROCHAS 30GR"
+   ]
+  },
+  "Snacks y piqueos": {
+   "n": 11,
+   "ej": [
+    "BUCKY CHIFLES 30GR BOLSA",
+    "DELICIOUS JALEA BEBIBLE FRESA",
+    "DELICIOUS JALEA BEBIBLE NARANJA"
+   ]
+  },
+  "Wafers": {
+   "n": 8,
+   "ej": [
+    "COSTA NIK WAFER CHICO FRESA 27GR BOLSA",
+    "COSTA WAFER GRANDE CHOCOLATE 105GR BOLSA",
+    "COSTA NIK WAFER BAÑADO 34GR"
+   ]
+  }
+ },
+ "LACTEOS": {
+  "Leches": {
+   "n": 61,
+   "ej": [
+    "HONG YUAN CARAMELO CON LECHE VARIOS 320GR BOLSA",
+    "BONLE CHOCOLATADA GLORIA 180ML",
+    "BONLE MANJAR BLANCO 1KG BOLSA"
+   ]
+  },
+  "Leche condensada": {
+   "n": 5,
+   "ej": [
+    "BONLE LECHE CONDENSADA 397GR LATA",
+    "FRATELLO ESENCIA LECHE CONDENSADA 90ML BOTELLA",
+    "GLORIA LECHE CONDENSADA 393GR LATA"
+   ]
+  },
+  "Cremas y yogures": {
+   "n": 4,
+   "ej": [
+    "BATTI MIX YOGURT VAINILLA HOJUELAS DE MAIZ 144GR VASO",
+    "BATTI MIX YOGURT VAINILLA MINI MINI COOKIES 138GR VASO",
+    "CHOCO CHOCKY STICK LECHE 36GR CAJA"
+   ]
+  },
+  "Mantequillas y margarinas": {
+   "n": 12,
+   "ej": [
+    "LA DANESA MARGARINA 500GR BARRA",
+    "PREMIUM MANTEQUILLA DE MANI 450GR BOTELLA",
+    "PETER PAN MANTEQUILLA DE MANI 462GR FRASCO"
+   ]
+  },
+  "Quesos": {
+   "n": 6,
+   "ej": [
+    "CLUB SOCIAL GALLETA QUESO 24GR",
+    "CHEESECUPCAKE",
+    "GLORIA QUESO CREMA 227GR CAJA"
+   ]
+  }
+ },
+ "ENDULZANTES": {
+  "Mieles y algarrobina": {
+   "n": 10,
+   "ej": [
+    "LA ABEJA REAL CHANCHAMAYO MIEL ECO 600ML BOTELLA",
+    "EL PIURANITO ALGARROBINA 600ML BOTELLA",
+    "algarrobos del norte algarrobina 500ml"
+   ]
+  },
+  "Chancaca y panela": {
+   "n": 4,
+   "ej": [
+    "JORGE QUIROZ PANELA 1KG BOLSA",
+    "CHANCACA GRANDE 1UN BOLSA",
+    "CHANCACA CHICO 1UN BOLSA"
+   ]
+  },
+  "Glucosa y jarabes": {
+   "n": 1,
+   "ej": [
+    "JOFSAC GLUCOSA 250 GR"
+   ]
+  },
+  "Azúcares": {
+   "n": 4,
+   "ej": [
+    "UMSHA AZUCAR IMPALPABLE GRANEL",
+    "CASA GRANDE AZUCAR BLANCA GRANEL",
+    "MELOSITA AZUCAR IMPLAPABLE GRANEL"
+   ]
+  },
+  "Edulcorantes": {
+   "n": 3,
+   "ej": [
+    "FRUTISIMO GELATINA BEBIBLE CON STEVIA PIÑA 20GR SOBRE",
+    "FRUTISIMO GELATINA BEBIBLE CON STEVIA FRESA 20GR SOBRE",
+    "FRUTISIMO GELATINA BEBIBLE CON STEVIA NARANJA 20GR SOBRE"
+   ]
+  }
+ },
+ "CONFITERIA": {
+  "Chocolates y coberturas": {
+   "n": 21,
+   "ej": [
+    "FIELD CORONITA CHOCOLATE 96GR TACO",
+    "leite fudge",
+    "MINI CUA CUA"
+   ]
+  },
+  "Caramelos y golosinas": {
+   "n": 18,
+   "ej": [
+    "ALPENLIEBE CHUPETIN UVA",
+    "SILUETA DE ANGELITOS EN CARTULINA DORADA H/M PQT DE 10 UND",
+    "ALPENLIEBE CHUPETIN FRESA"
+   ]
+  },
+  "Chicles": {
+   "n": 2,
+   "ej": [
+    "TRIDENT 8.5GR",
+    "LEAL GELATINA CHICLE GRANEL"
+   ]
+  },
+  "Frutas confitadas": {
+   "n": 1,
+   "ej": [
+    "CANDY FRUIT FRUTA CONFITADA GRANEL"
+   ]
+  }
+ },
+ "PRODUCTOS_CHINOS": {
+  "Sillao y salsa de soya": {
+   "n": 38,
+   "ej": [
+    "AJINOSILLAO SILLAO 5L GALON",
+    "AJINOSILLAO SILLAO 500ML BOTELLA",
+    "KIKO SALSA DE SOYA 500ML BOTELLA"
+   ]
+  },
+  "Salsas y condimentos orientales": {
+   "n": 33,
+   "ej": [
+    "GUAN JI SALSA DE OSTION 510GR BOTELLA",
+    "GUAN JI SALSA DE OSTION 2.27KG GALON",
+    "GUAN JI SALSA DE OSTION 730GR BOTELLA"
+   ]
+  },
+  "Fideos y sopas orientales": {
+   "n": 10,
+   "ej": [
+    "WUFENG JIANGXI FIDEO DE ARROZ 340GR SOBRE",
+    "CABALLO DE ORO AZUL PASTA WANTAN 500GR BOLSA",
+    "BAIXIANG SOPA RAMEN CARNE 115GR BOLSA"
+   ]
+  },
+  "Otros orientales": {
+   "n": 27,
+   "ej": [
+    "WHITE RABBIT caramelo de leche 500gr",
+    "ZOBON CHICKEN POWDER 1KG LATA",
+    "ARROZ GLUTINOSO ENTERO GRANEL"
+   ]
+  },
+  "Setas y algas": {
+   "n": 7,
+   "ej": [
+    "BARCIDDA ALGA NORI 10UN BOLSA",
+    "DOCE UNIDADES",
+    "DOCE UNIDADES"
+   ]
+  }
+ },
+ "ACEITES": {
+  "Aceite de oliva": {
+   "n": 18,
+   "ej": [
+    "OLIZANA ACEITE DE OLIVA EXTRA VIRGEN 500ML",
+    "OLIVO DEL VALLE ACEITE DE OLIVA EXTRA VIRGEN 50ML BOTELLA",
+    "OLIVO DEL VALLE ACEITE DE OLIVA EXTRA VIRGEN 90ML BOTELLA"
+   ]
+  },
+  "Aceite vegetal": {
+   "n": 37,
+   "ej": [
+    "DEL CIELO ACEITE 900ML",
+    "LA AREQUIPEÑITA ACEITE DE ALMENDRA 250ML BOTELLA",
+    "ALSOL ACEITE VEGETAL 5L GALON"
+   ]
+  },
+  "Aceites especiales": {
+   "n": 18,
+   "ej": [
+    "YU XI ACEITE DE AJONJOLI 25CC BOTELLA",
+    "YU XI ACEITE DE AJONJOLI 50CC BOTELLA",
+    "YU XI ACEITE DE AJONJOLI CHUPON 125ML BOTELLA"
+   ]
+  }
+ },
+ "GRANEL": {
+  "Secos y deshidratados salados": {
+   "n": 5,
+   "ej": [
+    "CAMARON SECO 15UN SARTA (1.0)",
+    "CHARQUI GRANEL",
+    "HONGO GRANEL"
+   ]
+  },
+  "Frutos secos": {
+   "n": 24,
+   "ej": [
+    "MANI CAJU ENTERA 500GR",
+    "ALMENDRA EN POLVO GRANEL",
+    "MANI CAJU ENTERA 250GR"
+   ]
+  },
+  "Frutas deshidratadas": {
+   "n": 13,
+   "ej": [
+    "GUINDON SIN PEPA GRANDE 10/20 GRANEL",
+    "ARANDANO DESHIDRATADO GRANEL",
+    "COCO RALLADO LARGOEXO GRANEL"
+   ]
+  },
+  "Semillas y granos andinos": {
+   "n": 19,
+   "ej": [
+    "SEMILLAS DE QUILLABAMBA SIETE SEMILLAS 185GR BOLSA",
+    "QUINUA BLANCA PREMIUM GRANEL EXO",
+    "SEMILLAS DE QUILLABAMBA AVENA CON SEMILLAS 180GR BOLSA"
+   ]
+  }
+ },
+ "DECORATIVOS": {
+  "Cintas y listones": {
+   "n": 4,
+   "ej": [
+    "GOLDEN CINTA DE EMBALAJE TAPE X 6 UND",
+    "ELFA CINTA DE EMBALAJE",
+    "CINTA TELA SATINADA GRUESA"
+   ]
+  },
+  "Velas de cumpleaños": {
+   "n": 9,
+   "ej": [
+    "SANTA CRUZ VELA MEDIANA 12HRS BOLSA",
+    "SET VELAS PLATEADAS 6PCS",
+    "VELA NUMEROS GRANDES"
+   ]
+  },
+  "Adornos y toppers": {
+   "n": 22,
+   "ej": [
+    "MOLDE DE SILICONA SILUETA DESPEDIDA DE SOLTERA",
+    "PAPEL ORO COMESTIBLE - DORADO NACIONAL",
+    "12 SOBRES COLORES VARIADOS"
+   ]
+  },
+  "Grageas y perlas comestibles": {
+   "n": 2,
+   "ej": [
+    "Guindas dulces deshidratado",
+    "MOLDE DE SILICONA PERLAS"
+   ]
+  }
+ },
+ "MENESTRAS": {
+  "Maíces y granos andinos": {
+   "n": 12,
+   "ej": [
+    "MAIZ ASTILLA BLANCO GRANEL EXO",
+    "MAIZ PILPE GRANEL EXO",
+    "CEBADA TOSTADA CLARA GRANEL"
+   ]
+  },
+  "Frijoles": {
+   "n": 3,
+   "ej": [
+    "FRIJOL NEGRO CARAOTA GRANEL EXO",
+    "FRIJOL CASTILLA GRANEL EXO",
+    "FRIJOL CANARIO GRANEL EXO"
+   ]
+  },
+  "Arvejas": {
+   "n": 1,
+   "ej": [
+    "ARVERJA PARTIDA GRANEL EXO"
+   ]
+  },
+  "Garbanzos": {
+   "n": 1,
+   "ej": [
+    "GARBANZO AMERICANO GRANEL EXO"
+   ]
+  },
+  "Lentejas": {
+   "n": 2,
+   "ej": [
+    "LENTEJON SIMPSON GRANEL EXO",
+    "LENTEJA SIMPSON BEBÉ GRANEL EXO"
+   ]
+  },
+  "Pallares y habas": {
+   "n": 2,
+   "ej": [
+    "PALLAR GRANEL EXO",
+    "SEMILLAS DE QUILLABAMBA CREMA DE HABAS 180GR BOLSA"
+   ]
+  }
+ },
+ "OTROS": {
+  "Por revisar (nombre insuficiente)": {
+   "n": 4,
+   "ej": [
+    "X 12 UNID",
+    "X 5 UND",
+    "MEDIANO"
+   ]
+  },
+  "Fósforos y encendido": {
+   "n": 4,
+   "ej": [
+    "LLAMA FOSFORO CHICO 10UN PAQUETE",
+    "INTI FOSFORO CHICO 10UN PAQUETE",
+    "INTI FOSFORO FAMILIAR 200UN CAJA"
+   ]
+  }
+ },
+ "VINOS_LICORES": {
+  "Vinos y licores": {
+   "n": 14,
+   "ej": [
+    "GATO VINO TINTO 1LT CAJA",
+    "ROJAS VINO BLANCO 750ML BOTELLA",
+    "GATO VINO BLANCO 1LT CAJA"
+   ]
+  }
+ }
+}

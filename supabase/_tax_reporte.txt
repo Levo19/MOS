@@ -1,0 +1,157 @@
+clasificados: 1557/1557 (100.0%) · sin clasificar: 0
+
+ABARROTES (113)
+   · Fideos y pastas: 28
+   · Avenas y cereales: 20
+   · Harinas: 19
+   · Arroz: 15
+   · Harinas andinas: 14
+   · Almidones y chuño: 7
+   · Huevos: 6
+   · Sopas instantáneas: 3
+   · Apanaduras: 1
+
+ACEITES (73)
+   · Aceite vegetal: 37
+   · Aceite de oliva: 18
+   · Aceites especiales: 18
+
+BEBIDAS (160)
+   · Gaseosas: 35
+   · Cocoa y chocolate de taza: 35
+   · Jugos y refrescos: 33
+   · Otras bebidas: 22
+   · Café: 19
+   · Aguas: 13
+   · Cebada y sucedáneos: 3
+
+CONFITERIA (42)
+   · Chocolates y coberturas: 21
+   · Caramelos y golosinas: 18
+   · Chicles: 2
+   · Frutas confitadas: 1
+
+CONSERVAS (35)
+   · Verduras y encurtidos: 24
+   · Frutas en almíbar: 6
+   · Atún y pescados: 5
+
+DECORATIVOS (37)
+   · Adornos y toppers: 22
+   · Velas de cumpleaños: 9
+   · Cintas y listones: 4
+   · Grageas y perlas comestibles: 2
+
+DESCARTABLES (135)
+   · Bases y bandejas: 42
+   · Bolsas: 37
+   · Cajas para torta y delivery: 15
+   · Envases y tapers: 12
+   · Vasos, platos y cubiertos: 12
+   · Papeles y films: 11
+   · Pirotines: 4
+   · Palitos y brochetas: 2
+
+ENDULZANTES (22)
+   · Mieles y algarrobina: 10
+   · Chancaca y panela: 4
+   · Azúcares: 4
+   · Edulcorantes: 3
+   · Glucosa y jarabes: 1
+
+ENERGIZANTES (18)
+   · Energizantes y rehidratantes: 18
+
+ESPECIAS (282)
+   · Sazonadores y cubitos: 53
+   · Hierbas secas: 45
+   · Ajíes y colorantes naturales: 42
+   · Semillas y raíces aromáticas: 42
+   · Canela y clavo: 30
+   · Pimientas: 27
+   · Glutamato y umami: 20
+   · Ajo, cebolla y mezclas: 17
+   · Sales: 6
+
+GALLETAS_SNACKS (72)
+   · Galletas dulces: 44
+   · Snacks y piqueos: 11
+   · Galletas saladas: 9
+   · Wafers: 8
+
+GRANEL (61)
+   · Frutos secos: 24
+   · Semillas y granos andinos: 19
+   · Frutas deshidratadas: 13
+   · Secos y deshidratados salados: 5
+
+INFUSIONES (44)
+   · Filtrantes e infusiones: 42
+   · Emolientes: 2
+
+INSUMOS_REPOSTERIA (68)
+   · Gelatinas y postres en polvo: 21
+   · Esencias y colorantes: 13
+   · Manjares y cremas: 12
+   · Levaduras y leudantes: 11
+   · Cacao y derivados: 4
+   · Premezclas y bases horneadas: 4
+   · Mantecas: 3
+
+LACTEOS (88)
+   · Leches: 61
+   · Mantequillas y margarinas: 12
+   · Quesos: 6
+   · Leche condensada: 5
+   · Cremas y yogures: 4
+
+LIMPIEZA (17)
+   · Detergentes y jabones: 6
+   · Lejías y desinfectantes: 4
+   · Lavavajillas: 4
+   · Plagas e insecticidas: 2
+   · Utensilios de limpieza: 1
+
+MENESTRAS (21)
+   · Maíces y granos andinos: 12
+   · Frijoles: 3
+   · Lentejas: 2
+   · Pallares y habas: 2
+   · Arvejas: 1
+   · Garbanzos: 1
+
+OTROS (8)
+   · Por revisar (nombre insuficiente): 4
+   · Fósforos y encendido: 4
+
+PRODUCTOS_CHINOS (115)
+   · Sillao y salsa de soya: 38
+   · Salsas y condimentos orientales: 33
+   · Otros orientales: 27
+   · Fideos y sopas orientales: 10
+   · Setas y algas: 7
+
+REPOSTERIA (52)
+   · Moldes y aros: 14
+   · Herramientas de repostería: 13
+   · Cortadores: 12
+   · Boquillas y mangas: 9
+   · Insumos de decoración: 4
+
+SALSAS (45)
+   · Cremas de mesa: 23
+   · Salsas peruanas listas: 7
+   · Sazonadores líquidos: 6
+   · Salsas de tomate: 5
+   · Pastas de ají y adobos: 4
+
+VINAGRES (35)
+   · Vinagre blanco y tinto: 29
+   · Vinagre de manzana: 3
+   · Vinagre de arroz: 2
+   · Balsámico: 1
+
+VINOS_LICORES (14)
+   · Vinos y licores: 14
+
+── SIN CLASIFICAR (primeros 60):

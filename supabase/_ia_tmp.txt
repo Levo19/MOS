@@ -1,0 +1,6 @@
+🏷 Marca: test
+🧪 Hecho de: test
+📋 Composición: test
+📦 Presentación: test
+🎨 Características: test de formato con largo suficiente para pasar el minimo de sesenta caracteres
+✅ Usos y beneficios: test

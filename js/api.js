@@ -338,7 +338,9 @@ const API = (() => {
     // [597] envase del derivado (sku_base del insumo · 'SIN_ENVASE' = no lleva) + toggle insumo de envasado
     ['envase_sku','envaseSku','text'], ['es_insumo','esInsumo','bool10'],
     // [628/629] canal MosGo (toggle 🛵 solo-MASTER) + precio de etiqueta del saco
-    ['canal_mayoreo','canalMayoreo','bool10'], ['precio_fijo','precioFijo','bool10']
+    ['canal_mayoreo','canalMayoreo','bool10'], ['precio_fijo','precioFijo','bool10'],
+    // [640] taxonomía IA {categoria, subcategoria} (id_categoria es su espejo)
+    ['categoria_ia','categoriaIa','json']
   ];
 
   // Convierte un valor crudo de PostgREST al tipo del shape-hoja.
@@ -3417,6 +3419,11 @@ const API = (() => {
       }
       if (action === 'getCategorias') {
         return _conFallbackMOS(() => _getCategoriasDirecto(p));
+      }
+      // [640] Taxonomía IA para Config→Categorías (23+ categorías / 108+ subcategorías con
+      // descripciones y ejemplos; el catálogo se auto-alimenta). Supabase-only, sin GAS.
+      if (action === 'getTaxonomia') {
+        return _sbRpcMOS('taxonomia_config', { p }, 'mos').then(r => Array.isArray(r) ? r : null).catch(() => null);
       }
       // [Optimización] catálogos/config (107) → lectura directa. Maestro + fallback GAS. Nombre de acción no
       // matcheado ⇒ recto a GAS (no rompe; solo no acelera ese caso).

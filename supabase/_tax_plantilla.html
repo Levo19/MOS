@@ -1,0 +1,128 @@
+<title>Taxonomía y herencia — catálogo MOS</title>
+<style>
+:root{
+  --bg:#F7F6F2; --panel:#FFFFFF; --ink:#20242B; --mut:#6B7280; --line:#E3E1DA;
+  --acc:#B4530A; --acc-soft:#FBEADC; --ok:#1A7A4A; --ok-soft:#E3F2E9;
+  --tonys:#7C3AED; --tonys-soft:#F1EAFD; --chip:#EFEDE7;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#15171C; --panel:#1E2128; --ink:#E8E6E1; --mut:#9AA0AB; --line:#31353E;
+  --acc:#E8833A; --acc-soft:#3A2A1C; --ok:#4CC38A; --ok-soft:#1B3327;
+  --tonys:#B69AF5; --tonys-soft:#2C2440; --chip:#2A2D35;
+}}
+:root[data-theme="dark"]{
+  --bg:#15171C; --panel:#1E2128; --ink:#E8E6E1; --mut:#9AA0AB; --line:#31353E;
+  --acc:#E8833A; --acc-soft:#3A2A1C; --ok:#4CC38A; --ok-soft:#1B3327;
+  --tonys:#B69AF5; --tonys-soft:#2C2440; --chip:#2A2D35;
+}
+:root[data-theme="light"]{
+  --bg:#F7F6F2; --panel:#FFFFFF; --ink:#20242B; --mut:#6B7280; --line:#E3E1DA;
+  --acc:#B4530A; --acc-soft:#FBEADC; --ok:#1A7A4A; --ok-soft:#E3F2E9;
+  --tonys:#7C3AED; --tonys-soft:#F1EAFD; --chip:#EFEDE7;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 "Segoe UI",system-ui,sans-serif;margin:0;padding:28px 18px 60px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:1.5rem;margin:0 0 4px;text-wrap:balance}
+h2{font-size:1.12rem;margin:38px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+.sub{color:var(--mut);margin:0 0 18px}
+.kpis{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 6px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px;min-width:118px}
+.kpi b{display:block;font-size:1.35rem;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--mut);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
+.aviso{background:var(--acc-soft);border-left:4px solid var(--acc);border-radius:8px;padding:12px 16px;margin:18px 0}
+.aviso b{color:var(--acc)}
+code{background:var(--chip);border-radius:5px;padding:1px 6px;font-size:.88em}
+/* ── diagrama de herencia ── */
+.diag{display:flex;flex-direction:column;gap:0;margin:14px 0}
+.nodo{background:var(--panel);border:1.5px solid var(--line);border-radius:12px;padding:13px 16px;position:relative}
+.nodo.raiz{border-color:var(--acc)}
+.nodo h4{margin:0 0 4px;font-size:1rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nodo p{margin:2px 0;font-size:.9rem;color:var(--mut)}
+.tag{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:999px;padding:2px 10px}
+.tag.p{background:var(--ok-soft);color:var(--ok)}
+.tag.t{background:var(--tonys-soft);color:var(--tonys)}
+.tag.x{background:var(--chip);color:var(--mut)}
+.hij{margin-left:26px;border-left:2.5px solid var(--line);padding:14px 0 0 22px;position:relative}
+.hij .nodo::before{content:"";position:absolute;left:-24.5px;top:26px;width:22px;height:2.5px;background:var(--line)}
+.hij + .hij{padding-top:12px}
+.her{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.her span{font-size:.8rem;border-radius:6px;padding:2px 9px;background:var(--ok-soft);color:var(--ok);font-weight:600}
+.her span.no{background:var(--chip);color:var(--mut);font-weight:400;text-decoration:line-through}
+.her span.tn{background:var(--tonys-soft);color:var(--tonys)}
+/* ── grilla de categorías ── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;align-items:start}
+.cat{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.cat header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.cat h3{margin:0;font-size:.95rem;flex:1;letter-spacing:.02em}
+.tot{font-weight:700;font-variant-numeric:tabular-nums;background:var(--acc-soft);color:var(--acc);border-radius:999px;padding:1px 10px;font-size:.85rem}
+.mg{font-size:.72rem;color:var(--mut);white-space:nowrap}
+.cat ul{list-style:none;margin:0;padding:6px 14px 10px}
+.cat li{padding:5px 0;border-bottom:1px dashed var(--line)}
+.cat li:last-child{border-bottom:0}
+.sr{display:flex;justify-content:space-between;gap:8px}
+.sn{font-weight:600;font-size:.9rem}
+.sc{color:var(--mut);font-variant-numeric:tabular-nums;font-size:.85rem}
+.ej{color:var(--mut);font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pie{margin-top:34px;padding:14px 18px;background:var(--ok-soft);border-left:4px solid var(--ok);border-radius:8px}
+@media (max-width:640px){body{padding:18px 10px 50px}.hij{margin-left:10px;padding-left:14px}.hij .nodo::before{left:-16.5px;width:14px}}
+</style>
+<div class="wrap">
+<h1>Taxonomía y herencia del catálogo MOS</h1>
+<p class="sub">Análisis de las 1,557 fichas <code>descripcion_ia</code> de los canónicos — nada está seteado aún; esto es el dibujo para tu OK.</p>
+
+<div class="kpis">
+  <div class="kpi"><b>1,557</b><span>canónicos con ficha</span></div>
+  <div class="kpi"><b>225</b><span>derivados → TONYS</span></div>
+  <div class="kpi"><b>491</b><span>presentaciones heredan</span></div>
+  <div class="kpi"><b>61</b><span>equivalencias (solo alias)</span></div>
+  <div class="kpi"><b>23</b><span>categorías</span></div>
+  <div class="kpi"><b>108</b><span>subcategorías</span></div>
+</div>
+
+<div class="aviso"><b>⚠ Hallazgo clave:</b> el campo <code>id_categoria</code> actual no es solo una etiqueta — <b>gobierna el motor de precios</b> (cada categoría tiene su margen % en <code>mos.categorias</code>: ACEITES 18%… DECORATIVOS 40%). Si lo piso con un JSON, se rompe el cálculo de márgenes. <b>Propuesta:</b> mantengo las 23 categorías existentes como nivel 1 (el motor no se toca) y el JSON <code>{"categoria","subcategoria"}</code> vive en un campo nuevo <code>categoria_ia jsonb</code>, siempre espejo de <code>id_categoria</code> + la subcategoría nueva. Cero riesgo, misma información.</div>
+
+<h2>1 · Cómo se hereda (reglas 1–5)</h2>
+<div class="diag">
+  <div class="nodo raiz">
+    <h4>CANÓNICO <span class="tag p">líder · ficha propia</span></h4>
+    <p>Dueño de los 3 campos: <b>marca</b> (desglosada de la línea 🏷 de su ficha — regla 5) · <b>descripcionIA</b> (ya generada) · <b>categoría</b> {categoria, subcategoria}.</p>
+    <div class="her"><span>🏷 marca ← línea 🏷 de la ficha</span><span>📄 descripcionIA propia</span><span>🗂 categoría propia</span></div>
+  </div>
+  <div class="hij">
+    <div class="nodo">
+      <h4>PRESENTACIÓN del canónico <span class="tag p">hereda todo del líder</span></h4>
+      <p>Regla 2 — Tripack, saco 25 kg, six-pack… agrupados del líder: <b>no generan nada propio</b>, copian los 3 campos.</p>
+      <div class="her"><span>🏷 marca del líder</span><span>📄 descIA del líder</span><span>🗂 categoría del líder</span></div>
+    </div>
+  </div>
+  <div class="hij">
+    <div class="nodo">
+      <h4>DERIVADO (envasado en almacén) <span class="tag t">marca = TONYS</span></h4>
+      <p>Regla 4 — nace de un canónico envasable (granel → bolsa 1 kg, etc.). Hereda ficha y categoría del padre, pero la marca es <b>TONYS</b>: sello de que se envasó en el almacén. Hoy los 225 derivados tienen marca vacía → todos la recibirían.</p>
+      <div class="her"><span class="tn">🏷 marca = "TONYS"</span><span>📄 descIA del padre canónico</span><span>🗂 categoría del padre</span></div>
+    </div>
+    <div class="hij">
+      <div class="nodo">
+        <h4>PRESENTACIÓN del derivado <span class="tag t">hereda del derivado</span></h4>
+        <p>Regla 2 aplicada al líder derivado: el Tripack de Nakamito 1 kg también sale <b>TONYS</b>, con la misma ficha y categoría.</p>
+        <div class="her"><span class="tn">🏷 TONYS (cascada)</span><span>📄 descIA del derivado</span><span>🗂 categoría del derivado</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="hij">
+    <div class="nodo">
+      <h4>EQUIVALENTE <span class="tag x">solo alias</span></h4>
+      <p>Regla 3 — es el <b>mismo</b> producto con otro código de barras. Vive en <code>mos.equivalencias</code>, no tiene campos propios: al escanearlo se resuelve al líder y se leen los campos de él.</p>
+      <div class="her"><span class="no">sin marca propia</span><span class="no">sin descIA propia</span><span class="no">sin categoría propia</span></div>
+    </div>
+  </div>
+</div>
+
+<h2>2 · Las 23 categorías y sus 108 subcategorías <span style="font-weight:400;color:var(--mut);font-size:.85rem">(conteo real de canónicos + 2 ejemplos por subcategoría)</span></h2>
+<div class="grid">
+<!--CARDS-->
+</div>
+
+<div class="pie"><b>✅ Cobertura: 1,557 / 1,557 (100%).</b> Solo 8 caen en OTROS: 4 fósforos (subcategoría propia) y 4 con nombre insuficiente ("X 12 UNID", "MEDIANO") que conviene renombrar a mano. Si apruebas la lista y el diagrama, el siguiente paso es: crear <code>categoria_ia</code>, setear canónicos, y correr la herencia 2→4 (presentaciones y derivados TONYS).</div>
+</div>

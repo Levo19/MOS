@@ -633,6 +633,17 @@
     .cfgpanel .modechip.tope{background:rgba(167,139,250,.14);color:#c4b5fd;border-color:rgba(167,139,250,.3)}
     .cfgpanel .modechip.fijo{background:rgba(125,211,252,.12);color:#7dd3fc;border-color:rgba(125,211,252,.3)}
     .cfgpanel .modechip.libre{background:rgba(148,163,184,.12);color:#cbd5e1;border-color:rgba(148,163,184,.3)}
+    /* ── [640] Taxonomía IA: acordeón de subcategorías ── */
+    .cfgpanel .taxcard.tax-open{border-color:#7c3aed;background:linear-gradient(160deg,#101a30,#0b1526)}
+    .cfgpanel .taxsubs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;margin-top:11px;padding-top:11px;border-top:1px dashed #26375a;cursor:default;animation:taxIn .28s ease}
+    @keyframes taxIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+    .cfgpanel .taxsub{background:#0d1a2e;border:1px solid #1c2b45;border-radius:10px;padding:9px 11px}
+    .cfgpanel .taxsub-top{display:flex;align-items:center;gap:6px}
+    .cfgpanel .taxsub-n{font-size:12.5px;font-weight:750;color:#dbe7f8;flex:1;min-width:0}
+    .cfgpanel .taxsub-c{font-size:11px;font-weight:800;color:#8fd0ff;background:rgba(74,168,255,.1);border-radius:6px;padding:1px 7px}
+    .cfgpanel .taxsub-d{font-size:10.5px;color:#9fb2ce;margin-top:3px;line-height:1.45}
+    .cfgpanel .taxsub-e{font-size:10px;color:#5f7290;margin-top:3px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    @media (prefers-reduced-motion:reduce){.cfgpanel .taxsubs{animation:none}}
     .cfgpanel .group{background:linear-gradient(150deg,#0d2141,#0b1428);border:1px solid #26375a;border-radius:16px;padding:15px;margin-top:14px}
     .cfgpanel .rowlist{display:flex;flex-direction:column;gap:8px}
     .cfgpanel .prow{display:flex;align-items:center;gap:10px;background:#0b1526;border:1px solid #1c2b45;border-radius:12px;padding:11px 13px;flex-wrap:wrap}
@@ -15255,7 +15266,7 @@
         <div class="callout" style="margin-bottom:12px">Cada categoría define su <b>modo de venta</b> (margen % o precio tope) que hereda al producto. El gate de clave admin se conserva para editar.</div>
         <div id="catGridContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"></div>
         <div class="text-[11px] text-slate-600 italic mt-3">
-          ℹ️ <strong class="text-emerald-400">📈 MARGEN</strong>: precio = costo / (1 − margen/100). <strong class="text-blue-400">🔒 FIJO</strong>: no sugiere cambio. <strong class="text-amber-400">🎯 COMPETITIVO</strong>: margen + tope. <strong class="text-slate-400">🆓 LIBRE</strong>: todo manual.
+          ℹ️ Guía viva de la <strong class="text-violet-300">taxonomía IA</strong>: cada producto se clasifica solo al crearlo o editarlo (categoría › subcategoría) y su árbol la hereda. Si aparece un dominio nuevo (p.ej. 🛠 herramientas), la categoría se registra sola con chip 🤖. El margen ya <strong class="text-rose-300">no</strong> se define por categoría: vive producto por producto.
         </div>
       </div>
 
@@ -18478,8 +18489,8 @@
             <input id="prodMarca" class="inp" placeholder="El Sol">
           </div>
           <div>
-            <label class="lbl">Categoría</label>
-            <select id="prodCategoria" class="inp" onchange="MOS._prodActualizarPoliticaEfectiva()"><option value="">— seleccionar —</option></select>
+            <label class="lbl">Categoría <span style="opacity:.55;font-weight:400">· 🤖 automática</span></label>
+            <div id="prodCategoriaChip" class="inp" style="display:flex;align-items:center;gap:6px;min-height:38px;cursor:default;color:#9fb2cc" title="La IA clasifica el producto por su nombre al guardar; si editas el nombre se re-clasifica solo (y su árbol hereda)">🤖 se asigna sola al guardar</div>
           </div>
           <div>
             <label class="lbl">Unidad de medida (SUNAT)</label>
@@ -20045,7 +20056,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.684';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.685';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20095,7 +20106,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.684"></script>
+<script src="js/api.js?v=2.43.685"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20111,7 +20122,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.684"></script>
+<script src="js/app.js?v=2.43.685"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
