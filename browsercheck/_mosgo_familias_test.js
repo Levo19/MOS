@@ -66,15 +66,27 @@ const FAMILIAS = [
   t('pintan las 2 familias del piloto', v.nCards === 2, v.nCards);
   t('la familia granel muestra stock en kg y precio suelto /kg', /450 kg/.test(v.granelTxt) && /8\.00.*\/kg/.test(v.granelTxt), v.granelTxt.slice(0, 90));
   t('el SACO sale con SU precio de etiqueta (155), no 25×8=200', v.escBtns.some(b => /Saco 25 kg/.test(b) && /155\.00/.test(b)), JSON.stringify(v.escBtns));
-  t('el saco enseña su precio por kilo (6.20/kg) — no "ahorra" (queda bajo el suelto)', v.escBtns.some(b => /Saco/.test(b) && /(ahorra|\/kg)/.test(b)));
   t('la fracción legacy SIN precio fijo NO aparece (mentiría el precio)', !v.escBtns.some(b => /Cuarto/.test(b)));
-  t('el tripack muestra "ahorra 10.00" (3×20−50)', v.escBtns.some(b => /Tripack/.test(b) && /ahorra S\/ 10\.00/.test(b)), JSON.stringify(v.escBtns.filter(x => /Tripack/.test(x))));
-  // [v0.5.5] argumento de venta mayorista
-  t('el tripack muestra su costo unitario (16.67 /un)', v.escBtns.some(b => /Tripack/.test(b) && /16\.67 \/un/.test(b)), JSON.stringify(v.escBtns.filter(x => /Tripack/.test(x))));
   t('el ×N NO se repite si el nombre ya dice (N un)/(N kg)', !v.escBtns.some(b => /\(3 un\)\s*×3/.test(b) && /Tripack/.test(b)) && !v.escBtns.some(b => /\(25 kg\)\s*×25/.test(b)), JSON.stringify(v.escBtns));
-  const pitches = await p.evaluate(() => [...document.querySelectorAll('.pitch')].map(x => x.innerText.replace(/\n/g, ' ')));
-  t('pitch mayorista: "le sale a X · revende a Y · gana Z"', pitches.some(x => /le sale a\s*S\/ 16\.67/.test(x) && /revende a\s*S\/ 20\.00/.test(x) && /gana\s*S\/ 3\.33/.test(x)), JSON.stringify(pitches));
   t('la unidad base 1kg es su propio escalón a 20.00', v.escBtns.some(b => /^1 un/.test(b) && /20\.00/.test(b)));
+
+  // [v0.5.6] avisos PALPITANTES en el botón (reemplazan al chip "ahorra" y al pitch)
+  const hints = await p.evaluate(() => ({
+    hintATripack: [...document.querySelectorAll('.esc button')].some(b => /Tripack/.test(b.innerText) && b.querySelector('.hintA')?.textContent === '▼10.0'),
+    hintSTripack: [...document.querySelectorAll('.esc button')].some(b => /Tripack/.test(b.innerText) && /▼sug\. 20\.00/.test(b.querySelector('.hintS')?.textContent || '')),
+    hintASaco: [...document.querySelectorAll('.esc button')].some(b => /Saco/.test(b.innerText) && b.querySelector('.hintA')?.textContent === '▼45.0'),
+    baseSinHints: [...document.querySelectorAll('.esc button')].filter(b => /^1 (un|kg)/.test(b.innerText.trim())).every(b => !b.querySelector('.hintA') && !b.querySelector('.hintS')),
+    costoU: [...document.querySelectorAll('.esc button .cu')].some(x => /16\.67 \/un/.test(x.textContent)),
+    sinPitch: !document.querySelector('.pitch'),
+    sinEnCarrito: !/en carrito/.test(document.getElementById('lista').innerText),
+    animA: (() => { const el = document.querySelector('.esc button .hintA'); return el ? getComputedStyle(el).animationName : ''; })()
+  }));
+  t('▼ahorro palpita junto al precio (tripack ▼10.0 · saco ▼45.0)', hints.hintATripack && hints.hintASaco, JSON.stringify(hints));
+  t('▼sug. (precio del padre) palpita junto al costo unitario', hints.hintSTripack);
+  t('el costo unitario sigue visible (16.67 /un)', hints.costoU);
+  t('la unidad base SIN descuento no palpita nada', hints.baseSinHints);
+  t('fuera la franja pitch y fuera "en carrito" (la bolita basta)', hints.sinPitch && hints.sinEnCarrito);
+  t('el palpitar es animación CSS real (hintbeat)', hints.animA === 'hintbeat', hints.animA);
 
   // carrito: 1 saco + 1 tripack → total 205, ahorro 10
   await p.evaluate(() => { UI.addEsc('P-NKMGLT-X25'); UI.addEsc('P-NKM1K-X3'); });
