@@ -83,9 +83,12 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const max = Math.min(Math.max(parseInt(String(body.max)) || 2, 1), 5);
-    const pendientes = await rpc('ia_desc_pendientes', { max });
-    if (!Array.isArray(pendientes) || !pendientes.length) return json({ ok: true, procesados: 0, nota: 'sin pendientes recientes' });
+    const max = Math.min(Math.max(parseInt(String(body.max)) || 2, 1), 6);
+    // [638] modo REPESCA: re-busca en la web los que quedaron con "(sin ficha web
+    // específica)" pese a tener EAN — el pedido del dueño exige búsqueda real.
+    const fn = body.repesca === true ? 'ia_repesca_pendientes' : 'ia_desc_pendientes';
+    const pendientes = await rpc(fn, { max });
+    if (!Array.isArray(pendientes) || !pendientes.length) return json({ ok: true, procesados: 0, nota: 'sin pendientes' });
 
     const hechos: any[] = [], fallos: any[] = [];
     for (const prod of pendientes) {
