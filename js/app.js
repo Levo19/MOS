@@ -19912,19 +19912,20 @@ const MOS = (() => {
     return _cfgEyebrow('⏸', 'Suspendidos (2 días sin conectar · a los 7 pasan a Archivados)') + `<div class="pend">${rows}</div>`;
   }
 
-  // [635] 🛵 Grupo MosGo — los equipos cuya última app es la ruta (no tienen zona física).
+  // [636] 🛵 Zona GO (MosGo) — MISMO lenguaje visual que las demás zonas (cards de
+  // dispositivo dibujadas con halo/avatar/botonera vía _dispDrawn), en identidad violeta.
   function _cfgZonaGo() {
     const devs = _fleetDe((cfgData.dispositivos || []).filter(d => String(d.App || '').toLowerCase() === 'mosgo'));
     if (!devs.length) return '';
-    const rows = devs.map(d => {
-      const act = _dispActividad(d.Ultima_Conexion);
-      return `<div class="printer" style="border-left:3px solid #8f7aff">
-        <span class="pic">🛵</span>
-        <div style="flex:1;min-width:0"><div class="pn">${d.Nombre_Equipo || 'Equipo ruta'} ${_appBadge(d.App)}</div>
-        <div class="pmeta" style="color:${act.color}">${act.dot} ${act.label}${d.Ultima_Sesion ? ' · 👤 ' + d.Ultima_Sesion : ''}</div></div>
-      </div>`;
-    }).join('');
-    return _cfgEyebrow('GO', 'MosGo · venta en ruta') + `<div class="pend" style="border-left:2px solid rgba(143,122,255,.35)">${rows}</div>`;
+    const online = devs.filter(_dispEnLinea).length;
+    const liveChip = online ? `<span class="chip live"><span class="d" style="background:#10b981"></span>${online} en línea</span>` : '';
+    return `<div class="zone${online ? ' online' : ''}" style="border-color:rgba(143,122,255,.45);background:linear-gradient(160deg,rgba(110,86,207,.10),transparent 55%)">
+      <div class="zhead"><div class="zbadge" style="background:linear-gradient(135deg,#6e56cf,#8f7aff)">🛵</div>
+        <div class="zt"><div class="row1"><h3 style="color:#c4b5fd">MosGo · Ruta</h3>${liveChip}<span class="chip" style="background:rgba(110,86,207,.18);border-color:#8f7aff;color:#c4b5fd">🛵 MosGo</span><span class="zid">ZONA-GO</span></div>
+        <div class="zmeta">${devs.length} equipo${devs.length === 1 ? '' : 's'} de preventa · venden contra stock de ALMACÉN · solo admins</div></div>
+      </div>
+      <div class="fleet">${devs.map(d => _dispDrawn(d)).join('')}</div>
+    </div>`;
   }
 
   function _cfgSinZona() {
@@ -20029,7 +20030,7 @@ const MOS = (() => {
     const rows = arch.map(d => {
       const idAttr = String(d.ID_Dispositivo).replace(/'/g, '&#39;');
       const act = _dispActividad(d.Ultima_Conexion);
-      const _suspT = String(d.Estado || '').toUpperCase() === 'SUSPENDIDO' ? _dispSuspTxt(d) : '';
+      const _suspT = /^(SUSPENDIDO|CANCELADO)/.test(String(d.Estado || '').toUpperCase()) ? _dispSuspTxt(d) : '';
       return `<div class="printer" style="opacity:.8">
         <span class="pic" style="filter:grayscale(.6)">${_dispIcono(d.Nombre_Equipo)}</span>
         <div style="flex:1;min-width:0"><div class="pn">${d.Nombre_Equipo || 'Dispositivo'} ${_appBadge(d.App)}</div>
@@ -20068,6 +20069,16 @@ const MOS = (() => {
       _cfgLife() +
       _cfgArch();
     _dispActualizarMapa();
+    // [636 · háptico] tap en cards de dispositivo / botoneras / toggles → vibración suave
+    // (Android; iOS la ignora sin romper). Un solo listener delegado, pasivo.
+    if (!cont._hapticsOn) {
+      cont._hapticsOn = true;
+      cont.addEventListener('pointerdown', (ev) => {
+        if (ev.target.closest && ev.target.closest('.mbtn,.devt,.act,.iconbtn,.ubtn,.pers-switch')) {
+          try { navigator.vibrate && navigator.vibrate(10); } catch (_) {}
+        }
+      }, { passive: true });
+    }
   }
 
   // ════════════════════════════════════════════════════════════

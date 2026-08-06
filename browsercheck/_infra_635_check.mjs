@@ -33,7 +33,7 @@ t('archivados muestran cuánto llevan suspendidos', app.includes("⏸ suspendido
 t('renderInfra incluye las secciones nuevas en orden', /_cfgPend\(\) \+\s*_cfgZonaVip\(\) \+\s*_cfgZonaGo\(\) \+/.test(app) && app.includes('_cfgSuspendidos() +'));
 
 console.log('── MosGo en infraestructura');
-t('grupo MosGo existe', app.includes('function _cfgZonaGo') && app.includes("'MosGo · venta en ruta'"));
+t('grupo MosGo existe con las cards de zona', app.includes('function _cfgZonaGo') && app.includes('MosGo · Ruta') && /_cfgZonaGo[\s\S]{0,1400}_dispDrawn/.test(app));
 t('badge de app conoce mosGo', app.includes("app === 'mosgo'") && app.includes("label = 'MosGo'"));
 
 console.log(`\n${fail === 0 ? '✅ TODO OK' : '❌ FALLOS'} — ${ok} pasaron, ${fail} fallaron`);
