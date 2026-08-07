@@ -1,1 +1,1 @@
-{"version":"2.43.707","build":"Promo Centro: las pestanas en fila deslizable necesitaban flex:none (se encogian y el texto se partia en 3 lineas = circulos)"}
+{"version":"2.43.708","build":"Promo Centro: las pestanas vuelven a envolver en 2 filas (overflow-x recortaba las pildoras); solo se les sube la altura a 40px"}

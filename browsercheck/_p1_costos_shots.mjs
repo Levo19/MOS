@@ -8,7 +8,9 @@ import fs from 'fs';
 const OUT = process.env.SHOTS_DIR || 'C:/Users/ISO/AppData/Local/Temp/claude/C--Users-ISO/e8682971-fe93-47c3-b8de-b8dd5c509f30/scratchpad/p1shots';
 fs.mkdirSync(OUT, { recursive: true });
 const URL = process.env.MOS_URL || 'https://levo19.github.io/MOS/';
-const VPS = [[390, 844, 'movil'], [768, 1024, 'tablet'], [1280, 860, 'pc']];
+const TODAS = [[390, 844, 'movil'], [768, 1024, 'tablet'], [1280, 860, 'pc']];
+// arg opcional: solo un viewport (movil|tablet|pc)
+const VPS = process.argv[2] ? TODAS.filter(v => v[2] === process.argv[2]) : TODAS;
 
 const SEED = {
   mos_device_id: '7e57c1a0-de1c-4a7e-b0de-c47a10906474',
@@ -24,7 +26,9 @@ for (const [W, H, tag] of VPS) {
   const errs = [];
   p.on('pageerror', e => errs.push(String(e).split('\n')[0].slice(0, 160)));
   await p.addInitScript(seed => { for (const [k, v] of Object.entries(seed)) localStorage.setItem(k, v); }, SEED);
-  await p.goto(URL + '?nc=' + Date.now(), { waitUntil: 'domcontentloaded' });
+  // GitHub Pages a veces tarda cuando acaba de re-desplegar → 60s + 1 reintento
+  try { await p.goto(URL + '?nc=' + Date.now(), { waitUntil: 'domcontentloaded', timeout: 60000 }); }
+  catch (_) { await w(4000); await p.goto(URL + '?nc=' + Date.now(), { waitUntil: 'domcontentloaded', timeout: 60000 }); }
   await w(21000);
   await p.evaluate(() => { const b = [...document.querySelectorAll('button,a')].find(el => /Entrar a MOS/i.test(el.textContent || '')); if (b) b.click(); });
   await w(1500);
