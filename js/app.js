@@ -1091,25 +1091,35 @@ const MOS = (() => {
     _refreshEcoStatus();
     _startEcoAutoRefresh();
 
+    // [705 · guard] Un RPC vencido por TIMEOUT puede RESOLVER con null (no rechaza) → el
+    // ternario `status==='fulfilled' ? value : default` dejaba pasar el null y la lectura
+    // `alertas.criticos` reventaba con "Cannot read properties of null (reading 'criticos')",
+    // que salía como el toast crudo "Error al cargar dashboard: …" (visto en producción).
+    // Ahora cada respuesta se normaliza a su forma esperada y, si alguna vino vacía, el
+    // dashboard se pinta con lo que hay y REINTENTA UNA vez a los 3s (S._dashRetry lo limita).
+    const _ok  = r => (r && r.status === 'fulfilled') ? r.value : null;
+    const rot0 = _ok(rotRes), alertas0 = _ok(alertasRes), mermas0 = _ok(mermasRes), prods0 = _ok(prodRes);
+    const incompleto = (rot0 == null) || (alertas0 == null) || (prods0 == null);
+
     // KPI — stock bajo
-    const rot = rotRes.status === 'fulfilled' ? rotRes.value : [];
-    const stockBajo = Array.isArray(rot) ? rot.filter(r => r.alertaMinimo).length : 0;
+    const rot = Array.isArray(rot0) ? rot0 : [];
+    const stockBajo = rot.filter(r => r && r.alertaMinimo).length;
     const kpiSV = $('kpiStockVal');
-    if (kpiSV) { kpiSV.textContent = stockBajo; }
+    if (kpiSV) { kpiSV.textContent = (rot0 == null) ? '…' : stockBajo; }
     if (stockBajo > 0) {
       const b = $('kpiStockBadge'); if (b) b.classList.remove('hidden');
     }
 
     // KPI — vencimientos
-    const alertas = alertasRes.status === 'fulfilled' ? alertasRes.value : { criticos: [], alertas: [] };
+    const alertas = (alertas0 && typeof alertas0 === 'object') ? alertas0 : { criticos: [], alertas: [] };
     const criticos = (alertas.criticos || []).length;
     const kpiVV = $('kpiVencVal');
-    if (kpiVV) kpiVV.textContent = criticos;
+    if (kpiVV) kpiVV.textContent = (alertas0 == null) ? '…' : criticos;
     if (criticos > 0) { const b = $('kpiVencBadge'); if (b) b.classList.remove('hidden'); }
 
     // KPI — mermas
-    const mermas = mermasRes.status === 'fulfilled' ? (mermasRes.value || []) : [];
-    const kpiMV = $('kpiMermasVal'); if (kpiMV) kpiMV.textContent = mermas.length;
+    const mermas = Array.isArray(mermas0) ? mermas0 : [];
+    const kpiMV = $('kpiMermasVal'); if (kpiMV) kpiMV.textContent = (mermas0 == null) ? '…' : mermas.length;
 
     // KPI — productos (ACTIVOS). El prefetch trae el catálogo COMPLETO (sin filtro de
     // estado) para que `S.productos` sea IDÉNTICO al que carga el refresh del catálogo
@@ -1118,9 +1128,11 @@ const MOS = (() => {
     // `added:N` en CADA ciclo (mismatch de filtro entre dos paths, no de backend).
     // El KPI de activos se calcula client-side con _isProdActivo (paridad con el filtro
     // server `String(estado)==='1'`), sin perder el conteo correcto.
-    const prods = prodRes.status === 'fulfilled' ? (prodRes.value || []) : [];
-    const kpiPV = $('kpiProductosVal'); if (kpiPV) kpiPV.textContent = prods.filter(p => _isProdActivo(p)).length;
-    S.productos = prods;
+    const prods = Array.isArray(prods0) ? prods0 : [];
+    const kpiPV = $('kpiProductosVal'); if (kpiPV) kpiPV.textContent = (prods0 == null) ? '…' : prods.filter(p => _isProdActivo(p)).length;
+    // [705 · guard] NUNCA sembrar S.productos con [] por un timeout: dejaba el catálogo en
+    // blanco hasta el próximo refresh. Solo se reemplaza si el RPC trajo catálogo de verdad.
+    if (prods.length) S.productos = prods;
 
     // Charts
     renderRotacionChart(rot);
@@ -1132,6 +1144,21 @@ const MOS = (() => {
       ...((alertas.alertas  || []).slice(0, 2).map(a => ({ tipo: 'ALERTA',  msg: (a.codigoProducto || a.descripcion || '—') + ' vence en ' + (a.diasRestantes || 0) + 'd' }))),
       ...(mermas.slice(0, 2).map(m => ({ tipo: 'MERMA', msg: 'Merma pendiente: ' + (m.codigoProducto || '—') })))
     ].slice(0, 6));
+
+    // [705] Reintento único a los 3s cuando la base venía con ventana de carga (RPC nulo).
+    // Sin toast de error: el dashboard es informativo, no bloquea nada.
+    if (incompleto && !S._dashRetry) {
+      S._dashRetry = true;
+      toast('⏳ La base tardó en responder — reintentando el dashboard…', 'info', 2600);
+      setTimeout(() => {
+        Promise.resolve()
+          .then(() => loadDashboard())
+          .catch(e => console.warn('[dashboard] reintento falló:', e && e.message))
+          .finally(() => { S._dashRetry = false; });
+      }, 3000);
+    } else if (!incompleto) {
+      S._dashRetry = false;
+    }
   }
 
   function renderRotacionChart(rot) {
@@ -9749,7 +9776,7 @@ const MOS = (() => {
       const v = parseFloat(l.inputValue != null && l.inputValue !== '' ? l.inputValue : l.precioUnitario);
       return v > 0;
     });
-    if (!lineas.length) { if (silent) { _sello('', ''); return; } toast('⚠ Escribe al menos un monto', 'error'); return; }
+    if (!lineas.length) { if (silent) { _sello('☁ se guarda solo', ''); return; } toast('⚠ Escribe al menos un monto', 'error'); return; }
     // [H1 · sin lag] Armamos los ítems LOCALMENTE (costoNuevo = bruto tecleado) y abrimos el Paso 2
     // AL INSTANTE, sin esperar la red. Los costos ya se autosalvan por línea; la persistencia
     // (detalle + aplicar al canónico con historial) corre en background.
@@ -9759,7 +9786,7 @@ const MOS = (() => {
       const bruto = (function(){ try { return _costosGuiaCalcularBruto(l, st) || parseFloat(l.inputValue) || 0; } catch(_) { return parseFloat(l.inputValue) || 0; } })();
       return { idCanonico: p.idProducto || l.idCanonico || cod, codProducto: cod, costoNuevo: _r1(bruto), costoAnterior: parseFloat(p.precioCosto) || 0 };
     }).filter(x => x.costoNuevo > 0);
-    if (!items.length) { if (silent) { _sello('', ''); return; } toast('⚠ Sin líneas válidas', 'error'); return; }
+    if (!items.length) { if (silent) { _sello('☁ se guarda solo', ''); return; } toast('⚠ Sin líneas válidas', 'error'); return; }
     // [703 · autoguardado] En modo silencioso solo se envían las líneas cuyo costo CAMBIÓ desde el
     // último envío (misma guarda `_costosAplicados` que usa el 💰 por línea) → salir de un campo ya
     // guardado no re-postea nada.
