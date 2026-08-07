@@ -1,1 +1,1 @@
-{"version":"2.43.702","build":"fix: el reemplazo del selector de categoria en PN no habia aplicado al index (replace silencioso)"}
+{"version":"2.43.703","build":"UX movil Paso 1 de compras (overlay de costos) reformado: cabecera plegable, linea que se encierra tipo chip al salir del campo, autoguardado al catalogo (adios boton global), pie sticky con total, adaptativo 390/768/1280 + 5 fixes de los modales del catalogo"}

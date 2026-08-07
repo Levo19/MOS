@@ -2374,9 +2374,9 @@ const MOS = (() => {
       const tip = (descMax != null && descMax >= 5)
         ? `2ª unidad hasta <b>-${Math.min(descMax, 50)}%</b> sin bajar de 12% de margen`
         : 'combínalo de gancho junto a un producto estrella de su subcategoría';
-      return `<div style="display:flex;gap:10px;align-items:center;background:#0d1526;border:1px solid #22314f;border-left:3px solid hsl(${hu} 65% 55% / .8);border-radius:11px;padding:9px 12px;margin-bottom:7px">
+      return `<div class="pc-row" style="display:flex;gap:10px;align-items:center;background:#0d1526;border:1px solid #22314f;border-left:3px solid hsl(${hu} 65% 55% / .8);border-radius:11px;padding:9px 12px;margin-bottom:7px">
         <div style="flex:1;min-width:0">
-          <div style="font-size:12.5px;font-weight:700;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_TAX_EMOJI[cia ? cia.categoria : ''] || '🏷️'} ${_escapeHtml(x.p.descripcion || '')}</div>
+          <div class="pc-row-name" title="${_escapeHtml(x.p.descripcion || '')}" style="font-size:12.5px;font-weight:700;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_TAX_EMOJI[cia ? cia.categoria : ''] || '🏷️'} ${_escapeHtml(x.p.descripcion || '')}</div>
           <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;font-size:9.5px">${extraChips(x)}</div>
           <div style="font-size:10px;color:#7c8db1;margin-top:4px">💡 ${tip}</div>
         </div>
@@ -2431,7 +2431,7 @@ const MOS = (() => {
       const tabs = $('pcTabs'), body = $('pcBody');
       if (!tabs || !body) return;
       tabs.innerHTML = Object.entries(TABS).map(([k, t]) =>
-        `<button data-tab="${k}" style="background:${cur === k ? 'rgba(99,102,241,.25)' : '#0d1526'};border:1px solid ${cur === k ? '#6366f1' : '#22314f'};color:${cur === k ? '#c7d2fe' : '#94a3b8'};border-radius:99px;padding:5px 13px;font-size:11px;font-weight:700;cursor:pointer">${t.lbl}</button>`).join('');
+        `<button class="pc-tab" data-tab="${k}" style="background:${cur === k ? 'rgba(99,102,241,.25)' : '#0d1526'};border:1px solid ${cur === k ? '#6366f1' : '#22314f'};color:${cur === k ? '#c7d2fe' : '#94a3b8'};border-radius:99px;padding:5px 13px;font-size:11px;font-weight:700;cursor:pointer">${t.lbl}</button>`).join('');
       tabs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { cur = b.dataset.tab; try { navigator.vibrate && navigator.vibrate(6); } catch(_){} pinta(); }));
       const r = TABS[cur].arma();
       body.innerHTML = (r.intro ? `<div style="font-size:11px;color:#7c8db1;margin-bottom:10px;line-height:1.5">${r.intro}</div>` : '') + r.html;
@@ -8744,23 +8744,26 @@ const MOS = (() => {
     _opsInyectarKeyframes();
     _opsInyectarCSSModalCostosUnificado();
     _p2InyectarCSS();   // [v2.43.603] estilos del botón 💰 por línea (.cl-precio-*)
+    // [703] El bloque avanzado (foto de factura + modo monto/IGV) nace ABIERTO en tablet/PC y
+    // CERRADO en móvil: en 390px se comía ~300px del scroll y dejaba media línea visible.
+    if (S._p1AdvOpen == null) S._p1AdvOpen = (window.innerWidth || 0) >= 768;
     let modal = document.getElementById('modalCostosGuiaUnif');
     if (!modal) {
       modal = document.createElement('div');
       modal.id = 'modalCostosGuiaUnif';
-      modal.className = 'fixed inset-0 z-[1100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 hidden';
+      modal.className = 'fixed inset-0 z-[1100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 hidden p1-modal';
       modal.innerHTML = `
-        <div class="bg-slate-900 border-2 border-emerald-500/50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-          <div class="px-5 py-4 border-b border-slate-700/60">
+        <div class="bg-slate-900 border-2 border-emerald-500/50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col p1-box">
+          <div class="px-5 py-4 border-b border-slate-700/60 p1-head">
             <div class="flex items-center gap-3">
-              <span class="text-2xl">🧾</span>
+              <span class="text-2xl p1-head-ic">🧾</span>
               <div class="flex-1 min-w-0">
                 <div class="font-black text-emerald-300 truncate" id="opsCostosTitulo">Compra —</div>
                 <div class="text-[11px] text-slate-400 truncate" id="opsCostosSubtitle">—</div>
               </div>
               <button onclick="MOS.opsSalirModoCostos()" class="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-500/40 transition-all text-slate-300 shrink-0" title="Cerrar">✕</button>
             </div>
-            <div class="flex items-center gap-2 mt-2.5 text-[11px] font-extrabold">
+            <div class="flex items-center gap-2 mt-2.5 text-[11px] font-extrabold p1-pasos">
               <span style="color:#34d399">● Paso 1 · Montos → costos</span>
               <span style="color:#475569">──</span>
               <span style="color:#64748b">○ Paso 2 · Precios</span>
@@ -8824,7 +8827,7 @@ const MOS = (() => {
     const chipOcr = tieneFoto
       ? `<div id="opsChipOcrStatus" class="ops-chip-ok">📸 ${conCosto}/${totLin} con monto · mira la factura arriba y escribe</div>`
       : `<div id="opsChipOcrStatus" class="ops-chip-info">✍ ${conCosto}/${totLin} con monto · sin foto — escribe mirando la factura física</div>`;
-    // Progreso visual
+    // Progreso visual — SIEMPRE visible (fuera del bloque plegable): es la brújula del flujo.
     const progCls = pct === 100 ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
     const progreso = `<div id="costosGuiaProgreso" class="ops-prog-bar">
       <div class="ops-prog-fill" style="width:${pct}%"></div>
@@ -8845,9 +8848,31 @@ const MOS = (() => {
         <button onclick="MOS._costosGuiaSetIgv('INCLUIDO')" class="ops-tg-btn ${st.igvMode === 'INCLUIDO' ? 'is-active' : ''}">Incluido</button>
         <button onclick="MOS._costosGuiaSetIgv('SIN_IGV')"  class="ops-tg-btn ${st.igvMode === 'SIN_IGV'  ? 'is-active' : ''}">Sin</button>
       </div>
-      <span class="ops-tg-auto" title="El costo siempre se aplica al catálogo — es obligatorio">🔄 Actualiza el catálogo</span>
+      <span class="ops-tg-auto" title="El costo se aplica solo al catálogo al salir del campo — es obligatorio">🔄 Se guarda solo</span>
     </div>`;
-    return `<div class="flex flex-col gap-2">${fotoHtml}${chipOcr}${progreso}${toggles}</div>`;
+    // [703 · móvil] En pantallas chicas la foto (190px) + chip + toggles se comían el 60% del alto y
+    // dejaban ~1 línea visible con 34 productos. Ahora viven en un bloque PLEGABLE; lo único fijo es
+    // la barra de progreso "N/M con costo". En PC el bloque está siempre abierto (CSS).
+    const modoLbl = st.inputMode === 'TOTAL' ? 'Total' : 'Unitario';
+    const igvLbl  = st.igvMode === 'INCLUIDO' ? 'IGV incl.' : 'sin IGV';
+    const abierto = !!S._p1AdvOpen;
+    const toggle = `<button type="button" class="p1-adv-toggle" id="p1AdvToggle" onclick="MOS._costosToggleAvanzado()"
+        title="Foto de la factura y modo de monto/IGV">
+      <span class="p1-adv-lbl">${tieneFoto ? '📄 Factura · ' : ''}Monto ${modoLbl} · ${igvLbl}</span>
+      <span class="p1-adv-caret">${abierto ? '▴' : '▾'}</span>
+    </button>`;
+    return `<div class="flex flex-col gap-2">${toggle}<div class="p1-adv${abierto ? ' open' : ''}" id="p1Adv">${fotoHtml}${chipOcr}${toggles}</div>${progreso}</div>`;
+  }
+
+  // [703] Plegar/desplegar el bloque avanzado del Paso 1 (foto de factura + modos de monto/IGV).
+  // Solo tiene efecto visual en móvil (≤700px); en PC el bloque va siempre desplegado.
+  function _costosToggleAvanzado() {
+    S._p1AdvOpen = !S._p1AdvOpen;
+    const adv = document.getElementById('p1Adv');
+    const car = document.querySelector('#p1AdvToggle .p1-adv-caret');
+    if (adv) adv.classList.toggle('open', !!S._p1AdvOpen);
+    if (car) car.textContent = S._p1AdvOpen ? '▴' : '▾';
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
 
   function _renderCostosBody(op) {
@@ -8859,8 +8884,8 @@ const MOS = (() => {
         <p class="text-sm">Sin líneas registradas en esta guía</p>
       </div>`;
     }
-    return `
-      <div class="flex flex-col gap-2">${_renderCostosLineasInner(op)}</div>`;
+    // [703] .p1-lista = grid adaptativo (1 col móvil · 2 col ≥768px). La lista es la protagonista.
+    return `<div class="p1-lista">${_renderCostosLineasInner(op)}</div>`;
   }
 
   // Solo las cards de productos — reutiliza la lógica de filas existente
@@ -8975,14 +9000,19 @@ const MOS = (() => {
         }
       }
     } catch(_) {}
-    return `<div class="alm-v-costo-line ${rowState}" id="costoGuiaLinea_${i}" style="animation-delay:${Math.min(i,12)*30}ms">
-      <div class="cl-head">
+    // [703 · móvil] La línea nace PLEGADA cuando ya tiene costo: check verde + costo grande.
+    // Tocarla la re-abre (_costosLineaExpandir). En PC el plegado no aplica (CSS).
+    const plegada = brutoUnit > 0 ? ' is-collapsed' : '';
+    const descPlano = String((descBad && prodCat) ? prodCat.descripcion : (descRaw || (prodCat && prodCat.descripcion) || l.codigoProducto || l.codigoBarra || ''));
+    return `<div class="alm-v-costo-line ${rowState}${plegada}" id="costoGuiaLinea_${i}" style="animation-delay:${Math.min(i,12)*30}ms">
+      <div class="cl-head" onclick="MOS._costosLineaExpandir(${i})">
         ${fotoHtml}
         <span id="costoGuiaMarca_${i}" class="cl-marca" hidden></span>
         <div class="cl-titles">
-          <div class="cl-desc">${desc}${equivBadge}</div>
+          <div class="cl-desc" title="${_escapeHtml(descPlano)}">${desc}${equivBadge}</div>
           <div class="cl-cod">▌ ${cod} · <b>${cant}u</b></div>
         </div>
+        <span class="cl-sum" id="costoGuiaSum_${i}">${brutoUnit > 0 ? '✓ S/ ' + _money(brutoUnit).toFixed(2) : ''}</span>
         <span class="cl-chip" id="costoGuiaChip_${i}">${chipHtml}</span>
       </div>
       <div class="cl-money">
@@ -8992,7 +9022,11 @@ const MOS = (() => {
             <span class="ci-cur">S/</span>
             <input type="number" step="0.01" min="0" class="alm-v-costo-input"
                    value="${l.inputValue || ''}"
+                   inputmode="decimal" enterkeyhint="next" autocomplete="off"
                    oninput="MOS._costosGuiaUpdLinea(${i}, this.value)"
+                   onfocus="MOS._costosInputFocus(this,${i})"
+                   onblur="MOS._costosInputBlur(${i})"
+                   onkeydown="MOS._costosInputKey(event,${i})"
                    placeholder="0.00">
             <button type="button" class="ci-x" title="Quitar el monto · deshace retroactivamente el costo aplicado al catálogo"
                     onclick="event.stopPropagation();event.preventDefault();MOS._costosGuiaQuitarMonto(${i})">×</button>
@@ -9003,9 +9037,103 @@ const MOS = (() => {
           <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
         </div>
       </div>
+      <button type="button" class="cl-next" id="costoGuiaNext_${i}" onclick="MOS._costosSiguiente(${i})">✓ Listo · siguiente producto →</button>
       ${margenInfoHtml}
       <div class="cl-actions" id="costoGuiaAcc_${i}">${_costosLineaAccionesHTML(l, i, brutoUnit)}</div>
     </div>`;
+  }
+
+  // ───────── [703] Flujo guiado móvil del Paso 1 (costos) ─────────
+  // Al enfocar: select-all + el campo NUNCA queda bajo el teclado (scrollIntoView center).
+  function _costosInputFocus(el, i) {
+    if (!el) return;
+    const row = document.getElementById('costoGuiaLinea_' + i);
+    if (row) row.classList.remove('is-collapsed');
+    try { el.select(); } catch(_) { try { el.setSelectionRange(0, String(el.value).length); } catch(__){} }
+    // doble rAF + timeout: iOS levanta el teclado DESPUÉS del focus → recentrar dos veces
+    const centrar = () => { try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(_){} };
+    requestAnimationFrame(() => requestAnimationFrame(centrar));
+    clearTimeout(S._p1CenterT); S._p1CenterT = setTimeout(centrar, 420);
+  }
+  // Enter / "siguiente" del teclado = confirmar y saltar al siguiente sin costo.
+  function _costosInputKey(ev, i) {
+    if (!ev || (ev.key !== 'Enter' && ev.keyCode !== 13)) return;
+    ev.preventDefault();
+    _costosSiguiente(i);
+  }
+  // Salir del campo = la línea se pliega (si tiene costo) y el costo se aplica al catálogo.
+  function _costosInputBlur(i) {
+    const st = S._costosGuiaState; if (!st) return;
+    const l = (st.lineas || [])[i]; if (!l) return;
+    const bruto = _costosGuiaCalcularBruto(l, st) || 0;
+    const row = document.getElementById('costoGuiaLinea_' + i);
+    if (row) row.classList.toggle('is-collapsed', bruto > 0);
+    _costosAplicarDebounce();
+  }
+  // Tocar una línea plegada la vuelve a abrir con el cursor listo.
+  function _costosLineaExpandir(i) {
+    const row = document.getElementById('costoGuiaLinea_' + i); if (!row) return;
+    if (!row.classList.contains('is-collapsed')) return;   // ya abierta: no robar el foco
+    row.classList.remove('is-collapsed');
+    const inp = row.querySelector('.alm-v-costo-input');
+    if (inp) { try { inp.focus(); } catch(_){} }
+  }
+  // Índice de la siguiente línea SIN costo (circular desde desde+1).
+  function _costosProxSinCosto(desde) {
+    const st = S._costosGuiaState; if (!st) return -1;
+    const ls = st.lineas || [];
+    for (let k = 1; k <= ls.length; k++) {
+      const j = (desde + k) % ls.length;
+      if (!(_costosGuiaCalcularBruto(ls[j], st) > 0)) return j;
+    }
+    return -1;
+  }
+  // "✓ Listo · siguiente" de la línea: pliega ésta y abre+enfoca la próxima sin costo.
+  function _costosSiguiente(i) {
+    const row = document.getElementById('costoGuiaLinea_' + i);
+    const st = S._costosGuiaState;
+    const bruto = st && st.lineas[i] ? (_costosGuiaCalcularBruto(st.lineas[i], st) || 0) : 0;
+    if (row) row.classList.toggle('is-collapsed', bruto > 0);
+    _costosAplicarDebounce();
+    const j = _costosProxSinCosto(i);
+    if (j < 0) { toast('✓ Todos los productos tienen costo', 'ok', 2500); try { _opsBeep && _opsBeep('ok'); } catch(_){} return; }
+    _costosEnfocarLinea(j);
+  }
+  // CTA del pie: salta al siguiente pendiente, o cierra si ya no queda ninguno.
+  function _costosSiguientePendiente() {
+    const j = _costosProxSinCosto(-1);
+    if (j < 0) { opsSalirModoCostos(); return; }
+    _costosEnfocarLinea(j);
+  }
+  function _costosEnfocarLinea(j) {
+    const row = document.getElementById('costoGuiaLinea_' + j); if (!row) return;
+    row.classList.remove('is-collapsed');
+    row.classList.add('cl-flash');
+    setTimeout(() => row.classList.remove('cl-flash'), 700);
+    const inp = row.querySelector('.alm-v-costo-input');
+    if (inp) { try { inp.focus(); } catch(_){} } else { try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(_){} }
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
+  // [703] Pie: total acumulado + CTA guiada. Se repinta con cada monto.
+  function _costosCtaUpd() {
+    const st = S._costosGuiaState; if (!st) return;
+    const ls = st.lineas || [];
+    const falta = ls.filter(l => !(_costosGuiaCalcularBruto(l, st) > 0)).length;
+    const cta = document.getElementById('costosCtaGuiada');
+    if (cta) {
+      cta.innerHTML = falta > 0 ? `→ Siguiente sin costo <b>(${falta})</b>` : '✓ Listo · cerrar la compra';
+      cta.classList.toggle('is-done', falta === 0);
+    }
+    const mini = document.getElementById('costosMiniProg');
+    if (mini) mini.textContent = (ls.length - falta) + '/' + ls.length;
+  }
+  // [703] El costo se aplica SOLO al catálogo (mismas RPCs que el botón viejo) tras 1.2s
+  // sin ediciones. Reemplaza al botón "✓ Aplicar costos al catálogo" que el dueño quitó.
+  function _costosAplicarDebounce() {
+    clearTimeout(S._p1AplicarT);
+    const sello = document.getElementById('costosSaveState');
+    if (sello) { sello.textContent = '⏳ guardando…'; sello.className = 'p1-save is-busy'; }
+    S._p1AplicarT = setTimeout(() => { _costosAplicarAlCatalogo(true); }, 1200);
   }
 
   // [v2.43.615] ¿esta línea YA tiene su precio puesto (Paso 2)? = publicado en esta sesión (_precioListo)
@@ -9098,37 +9226,46 @@ const MOS = (() => {
       try { renderCatalogo(); } catch(_){}
     } catch (e) { toast('⚠ NO se publicó — reintenta: ' + (e.message || e), 'error'); }
   }
-  // [v2.43.603] progreso de precios en el footer del Paso 1
+  // [v2.43.603] progreso de precios · [703] vive como chip compacto en la barra sticky del pie
   function _costosGuiaUpdPrecioProgreso() {
     const st = S._costosGuiaState; if (!st) return;
     const el = document.getElementById('costosPrecioProg'); if (!el) return;
     const tot = (st.lineas || []).length;
     const ok = (st.lineas || []).filter(l => l._precioListo > 0).length;
-    el.innerHTML = `💰 precios publicados: <b>${ok}/${tot}</b>`;
+    el.innerHTML = `💰 <b>${ok}/${tot}</b>`;
+    el.title = ok + ' de ' + tot + ' productos con precio publicado al catálogo';
     el.style.color = ok === tot && tot > 0 ? '#34d399' : '#fbbf24';
   }
 
+  // [703] PIE STICKY del Paso 1 — una sola fila: TOTAL acumulado (siempre visible, nunca se va con
+  // el scroll) + sello de autoguardado + chip de precios + CTA guiada.
+  // ELIMINADOS por pedido del dueño (comían ~300px en 390px de ancho, dejando 1 línea visible):
+  //   · el párrafo de ayuda "Escribe el monto de cada línea → aparece su botón 💰 Precio…"
+  //   · el contador largo "💰 precios publicados: X/N"  → ahora chip `💰 X/N`
+  //   · el botón "✓ Aplicar costos al catálogo"          → ahora AUTOMÁTICO al salir del campo
+  //     (_costosAplicarDebounce → _costosAplicarAlCatalogo, mismas RPCs). El botón del voucher
+  //     de Almacén (MOS.guardarCostosYPaso2) sigue vivo y llama a la misma función.
   function _renderCostosFooter(op) {
     const st = S._costosGuiaState;
     const lineas = (st && st.lineas) || [];
     let totalBruto = 0;
     lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
     const totalNeto = totalBruto / (1 + _IGV_RATE);
-    return `<div class="ops-costos-totales">
-      <span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</b>
-      <span class="ops-tot-sep">·</span>
-      <span class="ops-tot-lbl">IGV</span>  <b id="costosGuiaTotalIgv">S/ ${(totalBruto - totalNeto).toFixed(2)}</b>
-      <span class="ops-tot-sep">·</span>
-      <span class="ops-tot-lbl ops-tot-bruto">Total</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${totalBruto.toFixed(2)}</b>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;font-size:10.5px;line-height:1.5;color:#7b8aa6;margin:8px 2px 10px;padding:8px 11px;background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.18);border-radius:10px">
-      <span style="flex:1">Escribe el monto de cada línea → aparece su botón <b style="color:#7cb3f0">💰 Precio</b> para publicarlo al catálogo ahí mismo (con margen, curvas y presentaciones).</span>
-      <span id="costosPrecioProg" style="flex:none;font-weight:800;color:#fbbf24">💰 precios publicados: <b>${(function(){ const st2=S._costosGuiaState; return ((st2&&st2.lineas)||[]).filter(l=>l._precioListo>0).length + '/' + ((st2&&st2.lineas)||[]).length; })()}</b></span>
-    </div>
-    <div class="ops-costos-actions">
-      <button onclick="MOS.guardarCostosYPaso2()" class="ops-cta-jefa ops-btn-primary" title="Aplica TODOS los costos escritos al catálogo (con historial). Los precios se publican con el 💰 de cada línea.">
-        ✓ Aplicar costos al catálogo
-      </button>
+    const nPrec = lineas.filter(l => l._precioListo > 0).length;
+    const conCosto = lineas.filter(l => _costosGuiaCalcularBruto(l, st) > 0).length;
+    const falta = lineas.length - conCosto;
+    return `<div class="p1-foot">
+      <div class="p1-foot-tot">
+        <div class="p1-tot-main"><span class="ops-tot-lbl ops-tot-bruto">Total</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${_money(totalBruto).toFixed(2)}</b></div>
+        <div class="p1-tot-sub"><span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${_money(totalNeto).toFixed(2)}</b><span class="ops-tot-sep">·</span><span class="ops-tot-lbl">IGV</span> <b id="costosGuiaTotalIgv">S/ ${_money(totalBruto - totalNeto).toFixed(2)}</b></div>
+      </div>
+      <div class="p1-foot-meta">
+        <span id="costosMiniProg" class="p1-mini-prog" title="Productos con costo">${conCosto}/${lineas.length}</span>
+        <span id="costosPrecioProg" class="p1-precio-prog" title="${nPrec} de ${lineas.length} productos con precio publicado">💰 <b>${nPrec}/${lineas.length}</b></span>
+        <span id="costosSaveState" class="p1-save">☁ se guarda solo</span>
+      </div>
+      <button id="costosCtaGuiada" class="p1-cta${falta === 0 ? ' is-done' : ''}" onclick="MOS._costosSiguientePendiente()"
+              title="Salta al siguiente producto sin costo">${falta > 0 ? `→ Siguiente sin costo <b>(${falta})</b>` : '✓ Listo · cerrar la compra'}</button>
     </div>`;
   }
 
@@ -9406,6 +9543,143 @@ const MOS = (() => {
         cursor: pointer; font-weight: 700; font-size: 12px;
       }
       #modalCostosGuiaUnif .ops-btn-ghost:hover { background: rgba(71,85,105,.7); }
+
+      /* ═══════════════════ [703] PASO 1 REFORMADO · MÓVIL-FIRST + ADAPTATIVO ═══════════════════
+         Diagnóstico medido (390×844, guía de 34 líneas): cabecera (foto 190px + chip + progreso +
+         toggles ≈ 330px) + pie (párrafo de ayuda + contador + botón ≈ 300px) dejaban ~120px de
+         scroll → MEDIA línea visible. De ahí el "no es cómodo con más de 2 productos".
+
+         FLUJO CANÓNICO (dueño):
+           1) escribes el costo → click afuera → SE AUTOGUARDA y la línea se ENCIERRA TIPO CHIP.
+           2) recién chipeada, esa línea muestra su 💰 Precio (paso 2 POR PRODUCTO, nunca global).
+         El plegado a chip vale en TODOS los tamaños (es el flujo, no un truco de móvil).
+
+         JERARQUÍA: header compacto · lista de líneas protagonista · pie sticky (total + acción).
+         TIERS: <768 lista 1 col filas grandes · ≥768 modal centrado + 2 col · ≥1024 ancho cómodo. */
+
+      /* ── Bloque avanzado plegable (foto de la factura + modo monto/IGV) ── */
+      #modalCostosGuiaUnif .p1-adv-toggle {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+        background: rgba(15,23,42,.7); border: 1px solid #28344c; border-radius: 10px;
+        padding: 9px 12px; min-height: 42px; color: #93a4c2; font-size: 11.5px; font-weight: 700; cursor: pointer;
+      }
+      #modalCostosGuiaUnif .p1-adv-toggle:hover { border-color: #34d399; color: #cbd5e1; }
+      #modalCostosGuiaUnif .p1-adv-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #modalCostosGuiaUnif .p1-adv-caret { flex: none; color: #34d399; font-size: 13px; }
+      #modalCostosGuiaUnif .p1-adv { display: none; flex-direction: column; gap: 8px; }
+      #modalCostosGuiaUnif .p1-adv.open { display: flex; }
+
+      /* ── Lista de líneas: protagonista ── */
+      #modalCostosGuiaUnif .p1-lista { display: grid; grid-template-columns: 1fr; gap: 9px; align-items: start; }
+      #modalCostosGuiaUnif .cl-flash { animation: p1Flash .7s ease-out; }
+      @keyframes p1Flash { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.55) } 100% { box-shadow: 0 0 0 14px rgba(52,211,153,0) } }
+
+      /* Fila grande y tocable */
+      #modalCostosGuiaUnif .alm-v-costo-line { padding: 11px 12px; }
+      #modalCostosGuiaUnif .cl-head { align-items: center; gap: 10px; min-height: 52px; cursor: pointer; }
+      #modalCostosGuiaUnif .cl-desc {
+        font-size: 13px; line-height: 1.25; word-break: normal; overflow-wrap: anywhere;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      #modalCostosGuiaUnif .cl-money { padding-left: 0; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+      #modalCostosGuiaUnif .cl-readout { align-items: flex-start; text-align: left; }
+      #modalCostosGuiaUnif .ci { border-radius: 12px; }
+      #modalCostosGuiaUnif .ci-cur { font-size: 15px; padding: 0 6px 0 13px; }
+      /* ≥16px obligatorio: por debajo, iOS hace zoom al enfocar y descuadra el overlay */
+      #modalCostosGuiaUnif .alm-v-costo-input { font-size: 18px; padding: 14px 12px 14px 6px; min-height: 54px; }
+      #modalCostosGuiaUnif .ci .ci-x { width: 46px; font-size: 24px; }
+      #modalCostosGuiaUnif .cl-next {
+        display: block; width: 100%; margin-top: 9px; min-height: 46px;
+        background: rgba(16,185,129,.13); border: 1px solid rgba(16,185,129,.45); color: #6ee7b7;
+        border-radius: 11px; font-size: 12.5px; font-weight: 800; cursor: pointer;
+      }
+      #modalCostosGuiaUnif .cl-next:active { transform: scale(.985); }
+      #modalCostosGuiaUnif .cl-precio-btn, #modalCostosGuiaUnif .cl-priced { min-height: 46px; }
+      #modalCostosGuiaUnif .cl-price-hint { padding: 11px 13px; }
+      #modalCostosGuiaUnif .cl-sum { display: none; }
+
+      /* ESTADO 2 · CHIPEADA (ya tiene costo): cabecera + chip verde del monto + 💰 Precio */
+      #modalCostosGuiaUnif .alm-v-costo-line.is-collapsed .cl-money,
+      #modalCostosGuiaUnif .alm-v-costo-line.is-collapsed .cl-next,
+      #modalCostosGuiaUnif .alm-v-costo-line.is-collapsed .alm-v-impacto,
+      #modalCostosGuiaUnif .alm-v-costo-line.is-collapsed .cl-chip { display: none; }
+      #modalCostosGuiaUnif .alm-v-costo-line.is-collapsed .cl-sum {
+        display: inline-flex; align-items: center; flex: none; gap: 4px;
+        font-size: 14px; font-weight: 900; font-family: ui-monospace,monospace; color: #34d399;
+        background: rgba(52,211,153,.13); border: 1px solid rgba(52,211,153,.4);
+        border-radius: 999px; padding: 6px 11px; white-space: nowrap;
+      }
+      #modalCostosGuiaUnif .alm-v-costo-line.is-collapsed .cl-cod { display: none; }
+      #modalCostosGuiaUnif .alm-v-costo-line.is-collapsed .cl-actions { margin-top: 8px; }
+      /* ESTADO 3 · precio ya publicado: sello del chip en azul-verde (lo pinta .cl-priced) */
+      #modalCostosGuiaUnif .alm-v-costo-line.is-done.is-collapsed .cl-sum { border-color: rgba(52,211,153,.7); }
+
+      /* ── Pie sticky: TOTAL siempre a la vista + sellos + acción principal ── */
+      #modalCostosGuiaUnif .p1-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      #modalCostosGuiaUnif .p1-foot-tot { flex: none; min-width: 0; }
+      #modalCostosGuiaUnif .p1-tot-main { display: flex; align-items: baseline; gap: 7px; }
+      #modalCostosGuiaUnif .p1-tot-main b { font-size: 19px; font-weight: 900; font-family: ui-monospace,monospace; }
+      #modalCostosGuiaUnif .p1-tot-sub { display: flex; align-items: baseline; gap: 5px; font-size: 10px; color: #93a4c2; font-family: ui-monospace,monospace; margin-top: 1px; }
+      #modalCostosGuiaUnif .p1-tot-sub b { color: #cbd5e1; font-weight: 700; }
+      #modalCostosGuiaUnif .p1-foot-meta { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; order: 3; width: 100%; }
+      #modalCostosGuiaUnif .p1-mini-prog { font-size: 11px; font-weight: 800; color: #93a4c2; background: rgba(15,23,42,.7); border: 1px solid #28344c; border-radius: 999px; padding: 3px 9px; font-family: ui-monospace,monospace; }
+      #modalCostosGuiaUnif .p1-precio-prog { font-size: 11px; font-weight: 800; color: #fbbf24; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+      #modalCostosGuiaUnif .p1-save { font-size: 10px; font-weight: 700; color: #64748b; white-space: nowrap; }
+      #modalCostosGuiaUnif .p1-save.is-busy { color: #fbbf24; }
+      #modalCostosGuiaUnif .p1-save.is-ok   { color: #34d399; }
+      #modalCostosGuiaUnif .p1-save.is-err  { color: #f87171; }
+      #modalCostosGuiaUnif .p1-cta {
+        flex: none; margin-left: auto; background: linear-gradient(135deg,#10b981,#059669);
+        color: #fff; font-weight: 900; padding: 12px 16px; border-radius: 13px; border: 0; cursor: pointer;
+        font-size: 12.5px; box-shadow: 0 6px 14px -2px rgba(16,185,129,.5); min-height: 48px;
+      }
+      #modalCostosGuiaUnif .p1-cta.is-done { background: linear-gradient(135deg,#3f8cff,#4aa8ff); box-shadow: 0 6px 14px -2px rgba(74,168,255,.45); }
+      #modalCostosGuiaUnif .p1-cta:active { transform: scale(.98); }
+
+      /* ═══ TIER 1 · MÓVIL (<768px): hoja anclada abajo, casi pantalla completa ═══ */
+      @media (max-width: 767px) {
+        #modalCostosGuiaUnif { padding: 0 !important; align-items: flex-end !important; }
+        #modalCostosGuiaUnif .p1-box { max-width: none; max-height: 97vh; height: 97vh; border-radius: 18px 18px 0 0; border-width: 1px; }
+        #modalCostosGuiaUnif .p1-head { padding: 11px 14px 9px !important; }
+        #modalCostosGuiaUnif .p1-head-ic { font-size: 18px !important; }
+        #modalCostosGuiaUnif #opsCostosTitulo { font-size: 13.5px; }
+        #modalCostosGuiaUnif .p1-pasos { display: none; }   /* el paso ya lo dice el título */
+        #modalCostosGuiaUnif #opsCostosSubheader { padding: 8px 14px !important; }
+        #modalCostosGuiaUnif #opsCostosBody { padding: 10px 12px 14px !important; }
+        #modalCostosGuiaUnif #opsCostosFooter { padding: 9px 12px calc(10px + env(safe-area-inset-bottom, 0px)) !important; }
+        #modalCostosGuiaUnif .ops-p1-foto { max-height: 150px; }
+        #modalCostosGuiaUnif .ops-tg-btn { min-height: 40px; padding: 8px 13px; font-size: 12px; }
+        #modalCostosGuiaUnif .ops-tg-auto { margin-left: 0; }
+        #modalCostosGuiaUnif .ops-toggles-grid { gap: 8px; }
+      }
+
+      /* ═══ TIER 2 · TABLET (≥768px): modal centrado + lista en 2 columnas ═══ */
+      @media (min-width: 768px) {
+        #modalCostosGuiaUnif .p1-box { max-width: 900px; max-height: 92vh; }
+        #modalCostosGuiaUnif .p1-lista { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        #modalCostosGuiaUnif .cl-money { grid-template-columns: minmax(150px, 1fr) auto; align-items: end; gap: 12px; }
+        #modalCostosGuiaUnif .cl-readout { align-items: flex-end; text-align: right; }
+        #modalCostosGuiaUnif .alm-v-costo-input { font-size: 17px; min-height: 50px; }
+        #modalCostosGuiaUnif .p1-foot-meta { order: 0; width: auto; flex: 1 1 auto; justify-content: flex-start; }
+        #modalCostosGuiaUnif .p1-tot-main b { font-size: 21px; }
+        #modalCostosGuiaUnif .p1-cta { font-size: 13.5px; padding: 13px 20px; }
+      }
+
+      /* ═══ TIER 3 · PC (≥1024px): ancho cómodo, nunca pantalla completa ═══ */
+      @media (min-width: 1024px) {
+        #modalCostosGuiaUnif .p1-box { max-width: 1060px; max-height: 88vh; }
+        #modalCostosGuiaUnif #opsCostosBody { padding-left: 22px !important; padding-right: 22px !important; }
+        #modalCostosGuiaUnif .p1-lista { gap: 11px; }
+        #modalCostosGuiaUnif .alm-v-costo-line { padding: 13px 15px; }
+      }
+
+      @media (hover: none) {
+        #modalCostosGuiaUnif .ops-btn-primary:hover, #modalCostosGuiaUnif .cl-priced:hover { transform: none; box-shadow: none; }
+        #modalCostosGuiaUnif .p1-adv-toggle:hover { border-color: #28344c; color: #93a4c2; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #modalCostosGuiaUnif .alm-v-costo-line, #modalCostosGuiaUnif .cl-flash { animation: none; }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -9440,14 +9714,23 @@ const MOS = (() => {
   // Paso 1: guarda el detalle (RPC 383) + aplica costos al CANÓNICO con historial (RPC 431).
   // Paso 2: cascada de precios con márgenes respetados (v1: lista por producto con el
   // bidireccional del modal curvas; el toggle AUTO en lote llega en la siguiente tanda).
-  async function guardarCostosYPaso2() {
+  async function guardarCostosYPaso2() { return _costosAplicarAlCatalogo(false); }
+
+  // [703] Aplicar los costos escritos AL CATÁLOGO. Antes era el botón "✓ Aplicar costos al catálogo"
+  // del pie del Paso 1 (el dueño lo declaró inútil: ocupaba ~300px en móvil). Ahora corre SOLO,
+  // debounced, al salir de cada campo (_costosAplicarDebounce). MISMAS RPCs, mismo orden, misma
+  // guarda anti-duplicado — solo cambia QUIÉN lo dispara. `silent` = sin toasts de arranque/fin
+  // (el sello "☁ guardado" del pie es el feedback). El botón del voucher de Almacén
+  // (MOS.guardarCostosYPaso2) sigue existiendo y llama aquí con silent=false.
+  async function _costosAplicarAlCatalogo(silent) {
     const st = S._costosGuiaState;
     if (!st) return;
+    const _sello = (txt, cls) => { const e = document.getElementById('costosSaveState'); if (e) { e.textContent = txt; e.className = 'p1-save ' + (cls || ''); } };
     const lineas = (st.lineas || []).filter(l => {
       const v = parseFloat(l.inputValue != null && l.inputValue !== '' ? l.inputValue : l.precioUnitario);
       return v > 0;
     });
-    if (!lineas.length) { toast('⚠ Escribe al menos un monto', 'error'); return; }
+    if (!lineas.length) { if (silent) { _sello('', ''); return; } toast('⚠ Escribe al menos un monto', 'error'); return; }
     // [H1 · sin lag] Armamos los ítems LOCALMENTE (costoNuevo = bruto tecleado) y abrimos el Paso 2
     // AL INSTANTE, sin esperar la red. Los costos ya se autosalvan por línea; la persistencia
     // (detalle + aplicar al canónico con historial) corre en background.
@@ -9457,21 +9740,33 @@ const MOS = (() => {
       const bruto = (function(){ try { return _costosGuiaCalcularBruto(l, st) || parseFloat(l.inputValue) || 0; } catch(_) { return parseFloat(l.inputValue) || 0; } })();
       return { idCanonico: p.idProducto || l.idCanonico || cod, codProducto: cod, costoNuevo: _r1(bruto), costoAnterior: parseFloat(p.precioCosto) || 0 };
     }).filter(x => x.costoNuevo > 0);
-    if (!items.length) { toast('⚠ Sin líneas válidas', 'error'); return; }
-    // reflejar el costo nuevo en memoria (para que el 💰 por línea sugiera con lo nuevo)
-    items.forEach(x => { const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
-    // [v2.43.603 · pedido del dueño] YA NO se abre el overlay de precios en lote (era un
-    // tercer modal confuso): este botón aplica LOS COSTOS y te quedas en la guía — los
-    // PRECIOS se publican con el botón 💰 de cada línea (directo al editor de ese producto).
+    if (!items.length) { if (silent) { _sello('', ''); return; } toast('⚠ Sin líneas válidas', 'error'); return; }
+    // [703 · autoguardado] En modo silencioso solo se envían las líneas cuyo costo CAMBIÓ desde el
+    // último envío (misma guarda `_costosAplicados` que usa el 💰 por línea) → salir de un campo ya
+    // guardado no re-postea nada.
     st._costosAplicados = st._costosAplicados || {};
-    items.forEach(x => { st._costosAplicados[x.codProducto] = x.costoNuevo; });
-    toast(`🏭 Aplicando ${items.length} costo(s) al catálogo…`, 'info');
+    const pend = silent ? items.filter(x => st._costosAplicados[x.codProducto] !== x.costoNuevo) : items;
+    if (silent && !pend.length) { _sello('☁ guardado', 'is-ok'); return; }
+    // reflejar el costo nuevo en memoria (para que el 💰 por línea sugiera con lo nuevo)
+    pend.forEach(x => { const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
+    // [v2.43.603 · pedido del dueño] YA NO se abre el overlay de precios en lote (era un
+    // tercer modal confuso): esto aplica LOS COSTOS y te quedas en la guía — los
+    // PRECIOS se publican con el botón 💰 de cada línea (directo al editor de ese producto).
+    pend.forEach(x => { st._costosAplicados[x.codProducto] = x.costoNuevo; });
+    if (!silent) toast(`🏭 Aplicando ${items.length} costo(s) al catálogo…`, 'info');
+    else _sello('⏳ guardando…', 'is-busy');
     try {
-      await guardarCostosGuia();
-      const apiItems = items.map(x => ({ codProducto: x.codProducto, costoUnitario: x.costoNuevo })).filter(x => x.codProducto && x.costoUnitario > 0);
+      await guardarCostosGuia(silent);
+      const apiItems = pend.map(x => ({ codProducto: x.codProducto, costoUnitario: x.costoNuevo })).filter(x => x.codProducto && x.costoUnitario > 0);
       await API.post('aplicarCostosCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: apiItems });
-      toast(`✓ ${items.length} costo(s) en el catálogo — ahora publica los precios con 💰 en cada línea`, 'ok', 4500);
-    } catch (e) { toast('⚠ Guardado local; falló persistir costos: ' + (e.message || e), 'error'); }
+      if (silent) _sello('☁ guardado', 'is-ok');
+      else toast(`✓ ${items.length} costo(s) en el catálogo — ahora publica los precios con 💰 en cada línea`, 'ok', 4500);
+    } catch (e) {
+      // si falló, soltar la guarda para que el próximo intento reenvíe
+      pend.forEach(x => { delete st._costosAplicados[x.codProducto]; });
+      if (silent) _sello('⚠ sin guardar', 'is-err');
+      toast('⚠ Guardado local; falló persistir costos: ' + (e.message || e), 'error');
+    }
   }
 
   // [v5 §11] Satélites (presentaciones/derivados) de un canónico afectados por el costo nuevo.
@@ -11149,6 +11444,18 @@ const MOS = (() => {
       .mesa-backdrop.mesa-dimmed .mesa-sheet{transform:scale(.955) translateY(0);filter:blur(2.5px) brightness(.5);
         pointer-events:none;transition:transform .32s cubic-bezier(.4,0,.2,1),filter .32s ease}
       @media (prefers-reduced-motion:reduce){.mesa-sheet,.mesa-card,.mesa-ph>i,.mesa-x,.btn-mesa-compras{transition:none;animation:none}}
+      /* [703 · fix móvil] En 390px la barra iba en UNA fila con overflow-x: el buscador se
+         estrangulaba a 86px y los chips de zona quedaban fuera de pantalla (había que
+         descubrir el scroll horizontal a ciegas). Ahora: buscador de ancho completo arriba
+         (16px = iOS no hace zoom al enfocar) y los chips en su propia fila deslizable. */
+      @media (max-width:640px){
+        .mesa-toolbar{flex-wrap:wrap;overflow-x:visible;gap:8px}
+        .mesa-search-wrap{flex:1 1 100%;min-width:0;height:44px}
+        .mesa-search{font-size:16px}
+        .mesa-zchips{flex:1 1 100%;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+        .mesa-zchips::-webkit-scrollbar{display:none}
+        .mesa-x{width:40px;height:40px}
+      }
     `;
     document.head.appendChild(st);
   }
@@ -11530,13 +11837,16 @@ const MOS = (() => {
     const _prec = _costoLineaPreciada(linea, _pCat, brutoUnit);
     const _chip = $('costoGuiaChip_' + idx); if (_chip) _chip.innerHTML = _costosChipHTML(brutoUnit, _prec);
     const _row = $('costoGuiaLinea_' + idx); if (_row) { _row.classList.remove('is-nocost', 'is-cost', 'is-done'); _row.classList.add(_prec ? 'is-done' : (brutoUnit > 0 ? 'is-cost' : 'is-nocost')); }
+    // [703] resumen plegado de la línea (✓ S/ x.xx) + CTA guiada del pie
+    const _sum = $('costoGuiaSum_' + idx); if (_sum) _sum.textContent = brutoUnit > 0 ? '✓ S/ ' + _money(brutoUnit).toFixed(2) : '';
+    try { _costosCtaUpd(); } catch(_){}
     // Recalcular totales
     let totalBruto = 0;
     st.lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
     const totalNeto = totalBruto / (1 + _IGV_RATE);
-    const elN = $('costosGuiaTotalNeto');  if (elN) elN.textContent = 'S/ ' + totalNeto.toFixed(2);
-    const elI = $('costosGuiaTotalIgv');   if (elI) elI.textContent = 'S/ ' + (totalBruto - totalNeto).toFixed(2);
-    const elB = $('costosGuiaTotalBruto'); if (elB) elB.textContent = 'S/ ' + totalBruto.toFixed(2);
+    const elN = $('costosGuiaTotalNeto');  if (elN) elN.textContent = 'S/ ' + _money(totalNeto).toFixed(2);
+    const elI = $('costosGuiaTotalIgv');   if (elI) elI.textContent = 'S/ ' + _money(totalBruto - totalNeto).toFixed(2);
+    const elB = $('costosGuiaTotalBruto'); if (elB) elB.textContent = 'S/ ' + _money(totalBruto).toFixed(2);
     // [v41.20] Dispara debounce para refrescar sugerencia inline
     _costosGuiaSugerirDebounce(idx);
     // [v2.41.54] Marca visual: el ✓/⚠ de esta línea se recalcula
@@ -11572,8 +11882,18 @@ const MOS = (() => {
     const cell = $('costoGuiaSubtot_' + idx); if (cell) cell.innerHTML = _costosGuiaHelperHTML(0, 0);
     const acc = $('costoGuiaAcc_' + idx); if (acc) acc.innerHTML = _costosLineaAccionesHTML(linea, idx, 0);
     const _chip = $('costoGuiaChip_' + idx); if (_chip) _chip.innerHTML = _costosChipHTML(0, false);
-    const _row = $('costoGuiaLinea_' + idx); if (_row) { _row.classList.remove('is-cost', 'is-done'); _row.classList.add('is-nocost'); }
+    const _row = $('costoGuiaLinea_' + idx); if (_row) { _row.classList.remove('is-cost', 'is-done', 'is-collapsed'); _row.classList.add('is-nocost'); }
+    const _sum = $('costoGuiaSum_' + idx); if (_sum) _sum.textContent = '';
     _costosGuiaUpdMarca(idx); _costosGuiaUpdProgreso();
+    try { _costosCtaUpd(); _costosGuiaUpdPrecioProgreso(); } catch(_){}
+    // los totales del pie también bajan al quitar el monto
+    try {
+      let tB = 0; st.lineas.forEach(l => { tB += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
+      const tN = tB / (1 + _IGV_RATE);
+      const eN = $('costosGuiaTotalNeto');  if (eN) eN.textContent = 'S/ ' + _money(tN).toFixed(2);
+      const eI = $('costosGuiaTotalIgv');   if (eI) eI.textContent = 'S/ ' + _money(tB - tN).toFixed(2);
+      const eB = $('costosGuiaTotalBruto'); if (eB) eB.textContent = 'S/ ' + _money(tB).toFixed(2);
+    } catch(_){}
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     // revertir el costo aplicado al catálogo (retroactivo) — best-effort, no bloquea la UI
     if (cod && st.idGuia) {
@@ -11622,12 +11942,15 @@ const MOS = (() => {
     if (!cont) return;
     const pct = total > 0 ? Math.round((conCosto / total) * 100) : 0;
     const completo = (conCosto === total);
-    cont.innerHTML = `
-      <span style="color:${completo ? '#34d399' : (conCosto > 0 ? '#fbbf24' : '#94a3b8')};font-weight:800">
-        ${completo ? '✓ ' : ''}${conCosto}/${total} producto${total === 1 ? '' : 's'} con costo
-      </span>
-      <span style="color:#64748b;margin-left:6px">· ${pct}%</span>
-      ${!completo ? '<span style="color:#f87171;margin-left:6px;font-size:10px">⚠ faltan ' + (total - conCosto) + '</span>' : ''}`;
+    // [703 · fix] Antes esto pisaba el innerHTML entero de .ops-prog-bar y BORRABA la barra de
+    // relleno (.ops-prog-fill) en el primer tecleo: el progreso quedaba en texto plano sin barra.
+    // Ahora se repinta con la MISMA estructura del render.
+    const progCls = completo ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
+    cont.innerHTML = `<div class="ops-prog-fill" style="width:${pct}%"></div>
+      <div class="ops-prog-text">
+        <span class="${progCls}"><b>${completo ? '✓ ' : ''}${conCosto}/${total}</b> con costo · ${pct}%</span>
+        ${!completo ? `<span class="alm-v-progreso-faltan">⚠ faltan ${total - conCosto}</span>` : ''}
+      </div>`;
   }
 
   // [v2.41.54] Autoguardado por línea — debounce 1.5s tras último cambio
@@ -11670,7 +11993,7 @@ const MOS = (() => {
   }
 
 
-  async function guardarCostosGuia() {
+  async function guardarCostosGuia(silent) {
     const st = S._costosGuiaState;
     const { idGuia, lineas } = st;
     if (!idGuia) return;
@@ -11682,7 +12005,7 @@ const MOS = (() => {
       }))
       .filter(it => it.precioUnitario > 0);
     if (!items.length) {
-      toast('No hay precios para guardar', 'error');
+      if (!silent) toast('No hay precios para guardar', 'error');
       return;
     }
     // [v2.43.615] La actualización del catálogo es OBLIGATORIA (pedido del dueño: el check era inútil).
@@ -11709,11 +12032,14 @@ const MOS = (() => {
       });
       const respData = (resp && resp.data) || resp || {};
       const ventaAuto = parseInt(respData.productosVentaAutoActualizada || 0, 10);
-      toast('✓ ' + items.length + ' costos guardados'
-            + (updateMaster ? ' + catálogo MOS' : '')
-            + (ventaAuto > 0 ? ' · ✨ ' + ventaAuto + ' precios auto-recalc. con margen objetivo' : '')
-            + (sugerenciasInline.length ? ' · ' + sugerenciasInline.length + ' precios aplicados' : ''),
-            'ok');
+      // [703] en autoguardado silencioso solo avisamos si hubo un efecto que el usuario NO pidió
+      // explícitamente (recálculo automático de precios de venta) — eso siempre se anuncia.
+      if (!silent || ventaAuto > 0 || sugerenciasInline.length)
+        toast('✓ ' + items.length + ' costos guardados'
+              + (updateMaster ? ' + catálogo MOS' : '')
+              + (ventaAuto > 0 ? ' · ✨ ' + ventaAuto + ' precios auto-recalc. con margen objetivo' : '')
+              + (sugerenciasInline.length ? ' · ' + sugerenciasInline.length + ' precios aplicados' : ''),
+              'ok');
       // [v2.43.10] Marcar localStorage que costos fueron actualizados (✓ en botón)
       try { localStorage.setItem('mos_costos_aplicada_' + idGuia, String(Date.now())); } catch(_){}
       await almLoadOps(true);
@@ -45561,6 +45887,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     almToggleFiltroIngreso,
     abrirOpsDetalleOverlay, cerrarOpsDetalleOverlay, abrirFotoOverlay,
     _costosGuiaUpdLinea, _costosGuiaQuitarMonto, _costosGuiaSetMode, _costosGuiaSetIgv, guardarCostosGuia,
+    // [703] Paso 1 móvil-first: cabecera plegable, filas plegables, flujo guiado y autoguardado
+    _costosToggleAvanzado, _costosLineaExpandir, _costosInputFocus, _costosInputBlur, _costosInputKey,
+    _costosSiguiente, _costosSiguientePendiente, _costosAplicarAlCatalogo,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
