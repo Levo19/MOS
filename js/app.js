@@ -3001,7 +3001,12 @@ const MOS = (() => {
       const staggerIdx = idx < 12 ? idx : 0;
 
       // Badges
-      const badgeCat  = base.idCategoria ? `<span class="badge badge-gray text-xs">${base.idCategoria}</span>` : '';
+      // [689] chip de TAXONOMÍA IA: emoji + subcategoría con el color de su categoría
+      // (la subcategoría es lo informativo; el emoji/color dice la categoría; hover = ruta completa)
+      const cia = (base.categoriaIa && typeof base.categoriaIa === 'object') ? base.categoriaIa : null;
+      const badgeCat = cia
+        ? `<span class="badge tax-badge text-xs" style="--th:${_taxHue(cia.categoria)}" title="${_escapeHtml(cia.categoria)} › ${_escapeHtml(cia.subcategoria || '')}">${_TAX_EMOJI[cia.categoria] || '🏷️'} ${_escapeHtml(cia.subcategoria || cia.categoria)}</span>`
+        : (base.idCategoria ? `<span class="badge badge-gray text-xs">${base.idCategoria}</span>` : '');
       const badgeEnv  = base.esEnvasable == '1' ? `<span class="badge badge-yellow text-xs">⚗️ Envasable</span>` : '';
       // [597] insumo de envasado (celofán/descartable) — lo consumen los derivados al envasarse
       const badgeIns  = base.esInsumo == '1' ? `<span class="badge text-xs" style="background:rgba(56,189,248,.12);color:#38bdf8">🧷 Insumo</span>` : '';
