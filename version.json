@@ -1,1 +1,1 @@
-{"version":"2.43.706","build":"Guard del dashboard: RPC vencido resolvia null y reventaba en .criticos (toast crudo); ahora normaliza, muestra ... y reintenta 1 vez a los 3s"}
+{"version":"2.43.707","build":"Promo Centro: las pestanas en fila deslizable necesitaban flex:none (se encogian y el texto se partia en 3 lineas = circulos)"}
