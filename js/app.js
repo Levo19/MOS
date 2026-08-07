@@ -2437,6 +2437,16 @@ const MOS = (() => {
   // 2) Toast rápido "🔍 Filtrando..."
   // 3) requestAnimationFrame antes del render → el navegador pinta primero
   //    el cierre del modal y después corre el render pesado
+  // [694 HOTFIX] estas dos vivían dentro del builder viejo y el 693 se las llevó —
+  // el export las referencia y su ausencia mataba TODO MOS (ReferenceError al cargar).
+  function _cerrarFiltroFloat() {
+    document.getElementById('catFiltroPanelFloat')?.remove();
+  }
+  function _limpiarYCerrar() {
+    _cerrarFiltroFloat();
+    limpiarFiltrosCat();
+  }
+
   function _aplicarFiltroOptimista(fn) {
     _cerrarFiltroFloat();
     // Render diferido para que el cierre del modal se pinte primero

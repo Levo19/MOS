@@ -1,1 +1,1 @@
-{"version":"2.43.693","build":"Filtros como grupo de botones (Categoría/Subcat/Tipo/Orden) con overlays elegantes y estados prendidos; 🆕 Nuevos toggle con luz celeste"}
+{"version":"2.43.694","build":"HOTFIX: ReferenceError _cerrarFiltroFloat mataba el arranque (cargando usuario)"}
