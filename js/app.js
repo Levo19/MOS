@@ -2445,18 +2445,21 @@ const MOS = (() => {
   function _fpPill(on, hu) {
     return `display:flex;align-items:center;gap:6px;padding:8px 11px;cursor:pointer;font-size:11.5px;font-weight:600;border-radius:10px;border:1px solid ${on ? `hsl(${hu} 65% 55% / .75)` : '#22314f'};color:${on ? `hsl(${hu} 80% 78%)` : '#94a3b8'};background:${on ? `hsl(${hu} 55% 45% / .2)` : 'rgba(30,41,59,.4)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all .15s`;
   }
+  // [698] mismo LENGUAJE que todos los modales del módulo: modal-backdrop + modal-box,
+  // header con tinte índigo, .modal-close-x, animación global. (El card custom con
+  // !important era el único disidente del estándar.)
   function _fpOverlay(titulo, inner) {
     document.getElementById('catFiltroPanelFloat')?.remove();
-    const html = `<div id="catFiltroPanelFloat" class="cat-fp-backdrop"
-      style="position:fixed!important;inset:0!important;background:rgba(0,0,0,.6)!important;z-index:2147483647!important;display:flex!important;align-items:flex-start!important;justify-content:center!important;padding:80px 16px 16px!important">
-      <div class="cat-fp-card" style="width:100%!important;max-width:390px!important;max-height:75vh!important;overflow-y:auto!important;background:#0f172a!important;border:2px solid #6366f1!important;border-radius:16px!important;padding:16px!important;box-shadow:0 25px 60px -10px rgba(99,102,241,.6)!important;animation:catFpCardIn .18s ease-out" onclick="event.stopPropagation()">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <div style="font-size:13px;font-weight:800;color:#a5b4fc;letter-spacing:.5px">${titulo}</div>
-          <button onclick="MOS._cerrarFiltroFloat()" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;padding:0 6px;font-weight:900;line-height:1">×</button>
+    const [ico, ...resto] = titulo.split(' ');
+    const html = `<div id="catFiltroPanelFloat" class="modal-backdrop open" style="z-index:99998">
+      <div class="modal-box" style="max-width:400px;max-height:80vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+        <div class="px-5 py-4 flex items-center gap-3" style="border-bottom:1px solid #1e293b;background:linear-gradient(120deg,rgba(67,56,202,.3),transparent 65%)">
+          <span style="font-size:20px">${ico}</span>
+          <h2 class="font-bold text-base text-white flex-1">${resto.join(' ')}</h2>
+          <button onclick="MOS._cerrarFiltroFloat()" class="modal-close-x">×</button>
         </div>
-        ${inner}
+        <div class="p-4 overflow-y-auto flex-1">${inner}</div>
       </div>
-      <style>@keyframes catFpCardIn{from{opacity:0;transform:translateY(-12px) scale(.96)}to{opacity:1;transform:none}}</style>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
     const fp = document.getElementById('catFiltroPanelFloat');
@@ -16911,8 +16914,8 @@ const MOS = (() => {
       ops.push({ k:'presentacion', ic:'🧱', t:'Presentación', d:'pack ×N o fracción ÷N (precio propio)' });
       ops.push({ k:'equivalente',  ic:'🏷️', t:'Equivalente',  d:'otro código de barra' });
     }
-    const html = `<div id="plusCtxMenu" class="fixed z-[95] rounded-xl shadow-2xl overflow-hidden"
-        style="background:#131d30;border:1px solid #28344c;min-width:250px">
+    const html = `<div id="plusCtxMenu" class="fixed z-[95] overflow-hidden cat-pop-std"
+        style="min-width:250px">
       <div class="px-3 py-2 text-[10px] font-bold uppercase tracking-wider" style="color:#93a4c2;border-bottom:1px solid #1e293b">
         ＋ agregar a · <span style="color:#34d399">${_escapeHtml((p.descripcion||'').slice(0,28))}</span></div>
       ${ops.map(o => `<button onclick="MOS._cerrarPlusCtx();MOS.abrirModalSatelite('${o.k}','${_escapeHtml(idProducto)}')"

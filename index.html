@@ -323,6 +323,24 @@
     .foto-mini img{width:100%;height:100%;object-fit:cover;display:block}
     .foto-mini:hover{transform:scale(1.08);border-color:#6366f1}
     .foto-mini-empty{border-style:dashed;color:#475e8d}
+    /* ── [698] LENGUAJE ÚNICO del módulo catálogo ──
+       MODALES = .modal-box global (radius 18, borde slate, gradiente) + header con tinte.
+       POPOVERS (menú ＋ / alertas) = radius 14, borde slate, misma sombra y animación. */
+    .cat-pop-std{border-radius:14px!important;border:1px solid #28344c!important;background:#131d30!important;box-shadow:0 18px 45px -12px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03) inset!important;animation:catOvIn .16s ease-out}
+    @keyframes catOvIn{from{opacity:0;transform:translateY(-8px) scale(.97)}to{opacity:1;transform:none}}
+    /* táctil: targets dignos y sin hovers pegajosos */
+    @media (pointer:coarse){
+      .cat-btn.sm{min-width:38px;min-height:38px}
+      .foto-mini{width:38px;height:38px}
+      .pres-chip{padding-top:8px;padding-bottom:8px}
+    }
+    @media (hover:none){
+      .pn-card:hover{transform:none;box-shadow:none;border-color:#28344c}
+      .ct2-btn:hover{transform:none;background:transparent}
+      .foto-mini:hover{transform:none;border-color:rgba(148,163,184,.3)}
+      .ct2-nuevo:hover{transform:none}
+    }
+    @media (prefers-reduced-motion:reduce){.cat-pop-std{animation:none}}
     .tax-badge { background: hsl(var(--th,215) 55% 50% / .13); color: hsl(var(--th,215) 75% 72%);
                  border: 1px solid hsl(var(--th,215) 60% 55% / .3); gap: 4px; max-width: 200px;
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -13355,12 +13373,11 @@
     .cat-alert-pop {
       position: fixed;
       z-index: 9998; width: 280px; max-width: calc(100vw - 32px);
-      background: linear-gradient(135deg, #1a1503, #0f172a);
-      border: 1px solid rgba(255,215,0,.35); border-radius: 12px;
-      box-shadow: 0 12px 32px rgba(0,0,0,.55), 0 0 22px rgba(255,215,0,.15);
-      display: none; cursor: default;
-      animation: catAlertPopIn .22s cubic-bezier(.34,1.56,.64,1);
-      text-align: left;
+      /* [698] marco estándar de popover + tinte ámbar como acento interno */
+      background: linear-gradient(135deg, rgba(120,53,15,.18), #131d30 55%);
+      border: 1px solid #28344c; border-radius: 14px;
+      box-shadow: 0 18px 45px -12px rgba(0,0,0,.6), 0 0 0 1px rgba(245,158,11,.12);
+      animation: catOvIn .16s ease-out;
     }
     .cat-alert-pop.show { display: block; }
     @keyframes catAlertPopIn {
@@ -20060,7 +20077,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.697';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.698';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20110,7 +20127,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.697"></script>
+<script src="js/api.js?v=2.43.698"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20126,7 +20143,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.697"></script>
+<script src="js/app.js?v=2.43.698"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
