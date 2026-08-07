@@ -4,7 +4,7 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 
-const OUT = 'C:/Users/ISO/AppData/Local/Temp/claude/C--Users-ISO/e8682971-fe93-47c3-b8de-b8dd5c509f30/scratchpad/catshots';
+const OUT = process.env.SHOTS_DIR || 'C:/Users/ISO/AppData/Local/Temp/claude/C--Users-ISO/e8682971-fe93-47c3-b8de-b8dd5c509f30/scratchpad/catshots';
 fs.mkdirSync(OUT, { recursive: true });
 const VPS = process.argv[2] ? [[+process.argv[2], 900, 'x' + process.argv[2]]]
   : [[390, 844, 'movil'], [768, 1024, 'tablet'], [1366, 900, 'pc']];
@@ -44,6 +44,9 @@ for (const [W, H, tag] of VPS) {
   await p.addInitScript(seed => { for (const [k, v] of Object.entries(seed)) localStorage.setItem(k, v); }, SEED);
   await p.goto('https://levo19.github.io/MOS/?nc=' + Date.now(), { waitUntil: 'domcontentloaded' });
   await w(21000);
+  // cerrar el wizard de permisos post-update si aparece (tapa TODA la app)
+  await p.evaluate(() => { const b=[...document.querySelectorAll('button,a')].find(el=>/Entrar a MOS/i.test(el.textContent||'')); if (b) b.click(); });
+  await w(1800);
   await p.evaluate(() => { try { MOS.nav('catalogo'); } catch (_) {} });
   await w(7000);
   const boot = await p.evaluate(() => { let mos='nd'; try { mos = typeof MOS; } catch(_){} const g=(document.body.innerText.match(/(\d+) grupos/)||[])[1]; return { mos, grupos: g||0 }; });
