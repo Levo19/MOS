@@ -2099,6 +2099,7 @@ const MOS = (() => {
       const obj = JSON.parse(raw);
       return {
         categoria:   String(obj.categoria || ''),
+        subcategoria: String(obj.subcategoria || ''),
         tipos:       new Set(Array.isArray(obj.tipos) ? obj.tipos : []),
         soloAlertas: !!obj.soloAlertas,
         orden:       String(obj.orden || '')
@@ -2109,13 +2110,14 @@ const MOS = (() => {
     try {
       localStorage.setItem(_CAT_FILTROS_KEY, JSON.stringify({
         categoria:   _catFiltros.categoria,
+        subcategoria: _catFiltros.subcategoria || '',
         tipos:       Array.from(_catFiltros.tipos),
         soloAlertas: _catFiltros.soloAlertas,
         orden:       _catFiltros.orden
       }));
     } catch(_){}
   };
-  const _catFiltros = _catFiltrosCargar() || { categoria: '', tipos: new Set(), soloAlertas: false, orden: '' };
+  const _catFiltros = _catFiltrosCargar() || { categoria: '', subcategoria: '', tipos: new Set(), soloAlertas: false, orden: '' };
   // [v2.43.37] orden válidos: '' (alfabético), 'rot_desc', 'rot_asc', 'mrg_desc', 'mrg_asc'
 
   // ¿Este grupo tiene alguna alerta?
@@ -2309,7 +2311,7 @@ const MOS = (() => {
   }
 
   function _updateFiltroBadge() {
-    const count = (_catFiltros.categoria ? 1 : 0) + _catFiltros.tipos.size + (_catFiltros.orden ? 1 : 0);
+    const count = (_catFiltros.categoria ? 1 : 0) + (_catFiltros.subcategoria ? 1 : 0) + _catFiltros.tipos.size + (_catFiltros.orden ? 1 : 0);
     const badge = $('filtrosBadge');
     if (badge) { badge.textContent = count; badge.classList.toggle('hidden', count === 0); }
 
@@ -2319,6 +2321,7 @@ const MOS = (() => {
     if (chips) {
       const parts = [];
       if (_catFiltros.categoria) parts.push(`<span class="cat-chip">📂 ${_catFiltros.categoria} <button onclick="MOS.setFiltroCategoria('')">×</button></span>`);
+      if (_catFiltros.subcategoria) parts.push(`<span class="cat-chip">🧩 ${_escapeHtml(_catFiltros.subcategoria)} <button onclick="MOS.setFiltroSubcategoria('')">×</button></span>`);
       _catFiltros.tipos.forEach(t => parts.push(`<span class="cat-chip">${tipoLabels[t]} <button onclick="MOS.toggleFiltroTipo('${t}')">×</button></span>`));
       if (_catFiltros.orden && ordenLabels[_catFiltros.orden]) {
         parts.push(`<span class="cat-chip">${ordenLabels[_catFiltros.orden]} <button onclick="MOS.setFiltroOrden('')">×</button></span>`);
@@ -2401,6 +2404,20 @@ const MOS = (() => {
         <div class="cat-fp-radio${!curCat ? ' is-on' : ''}" data-cat="" style="padding:6px 9px;cursor:pointer;font-size:11px;color:${!curCat ? '#a5b4fc' : '#94a3b8'};border-radius:5px;background:${!curCat ? 'rgba(99,102,241,.15)' : 'transparent'}">Todas</div>
         ${cats.map(c => `<div class="cat-fp-radio${curCat === c ? ' is-on' : ''}" data-cat="${_escapeHtml(c)}" style="padding:6px 9px;cursor:pointer;font-size:11px;color:${curCat === c ? '#a5b4fc' : '#94a3b8'};border-radius:5px;background:${curCat === c ? 'rgba(99,102,241,.15)' : 'transparent'}">${_escapeHtml(c)}</div>`).join('')}
       </div>
+      ${curCat ? (() => {
+        // [690] segundo nivel: subcategorías (taxonomía IA) de la categoría elegida
+        const subs = {};
+        S.productos.forEach(p => { if (p.idCategoria === curCat && p.categoriaIa && typeof p.categoriaIa === 'object' && p.categoriaIa.subcategoria) subs[p.categoriaIa.subcategoria] = (subs[p.categoriaIa.subcategoria] || 0) + 1; });
+        const lista = Object.entries(subs).sort((a, b) => b[1] - a[1]);
+        if (!lista.length) return '';
+        const curSub = _catFiltros.subcategoria || '';
+        const pill = (on) => `padding:4px 10px;cursor:pointer;font-size:10.5px;border-radius:999px;border:1px solid ${on ? 'rgba(165,180,252,.5)' : '#1e293b'};color:${on ? '#a5b4fc' : '#94a3b8'};background:${on ? 'rgba(99,102,241,.15)' : 'transparent'};white-space:nowrap`;
+        return `<div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin:0 0 6px;letter-spacing:.5px">🧩 Subcategoría</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;max-height:130px;overflow-y:auto">
+        <div class="cat-fp-sub" data-sub="" style="${pill(!curSub)}">Todas</div>
+        ${lista.map(([sb, n]) => `<div class="cat-fp-sub" data-sub="${_escapeHtml(sb)}" style="${pill(curSub === sb)}">${_escapeHtml(sb)} <b style="opacity:.7">${n}</b></div>`).join('')}
+      </div>`;
+      })() : ''}
       <div style="border-top:1px solid #1e293b;padding-top:10px">
         <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">Tipo de producto</div>
         ${tiposHtml}
@@ -2445,6 +2462,13 @@ const MOS = (() => {
         const cat = el.dataset.cat || '';
         try { _opsBeep && _opsBeep('tac'); } catch(_){}
         _aplicarFiltroOptimista(() => setFiltroCategoria(cat));
+      });
+    });
+    float.querySelectorAll('.cat-fp-sub').forEach(el => {
+      el.addEventListener('click', () => {
+        const sub = el.dataset.sub || '';
+        try { _opsBeep && _opsBeep('tac'); } catch(_){}
+        _aplicarFiltroOptimista(() => setFiltroSubcategoria(sub));
       });
     });
     float.querySelectorAll('.cat-fp-chk').forEach(el => {
@@ -2541,10 +2565,19 @@ const MOS = (() => {
 
   function setFiltroCategoria(cat) {
     _catFiltros.categoria = cat;
+    _catFiltros.subcategoria = '';   // [690] cambiar de categoría resetea el 2º nivel
     _catFiltrosGuardar(); // [v2.43.71]
     _updateFiltroBadge();
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
     _renderFiltroCategList(cats);
+    renderCatalogo();
+  }
+
+  // [690] filtro de 2º nivel (subcategoría de la taxonomía IA)
+  function setFiltroSubcategoria(sub) {
+    _catFiltros.subcategoria = sub || '';
+    _catFiltrosGuardar();
+    _updateFiltroBadge();
     renderCatalogo();
   }
 
@@ -2558,6 +2591,7 @@ const MOS = (() => {
 
   function limpiarFiltrosCat() {
     _catFiltros.categoria = '';
+    _catFiltros.subcategoria = '';
     _catFiltros.tipos.clear();
     _catFiltros.orden = '';
     _catFiltrosGuardar(); // [v2.43.71]
@@ -2836,6 +2870,7 @@ const MOS = (() => {
     let result = allGroups.map(g => {
       // Filtro categoría
       if (_catFiltros.categoria && g.base.idCategoria !== _catFiltros.categoria) return null;
+      if (_catFiltros.subcategoria && !(g.base.categoriaIa && g.base.categoriaIa.subcategoria === _catFiltros.subcategoria)) return null;
       // Filtro alertas
       if (_catFiltros.soloAlertas && !g.__hasAlert) return null;
       // Filtro tipo (OR entre los seleccionados)
@@ -45547,7 +45582,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _espiaToggleMute, _espiaAbrirHistorial,
     _espiaGpsRefresh, _espiaGpsRangoCambiar,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
-    toggleFiltroCat, setFiltroCategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
+    toggleFiltroCat, setFiltroCategoria, setFiltroSubcategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
     // [v2.43.37] Catálogo: filtro de orden + modal de rotación
     setFiltroOrden,
     // [v2.43.45] Panel flotante de filtros (nuclear)
