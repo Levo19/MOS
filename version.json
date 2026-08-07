@@ -1,1 +1,1 @@
-{"version":"2.43.701","build":"PN sin categoria manual ni obligatoria: chip automatico IA (como el modal de producto)"}
+{"version":"2.43.702","build":"fix: el reemplazo del selector de categoria en PN no habia aplicado al index (replace silencioso)"}
