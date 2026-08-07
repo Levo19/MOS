@@ -3177,6 +3177,7 @@ const MOS = (() => {
                   ? 'background:rgba(52,211,153,.14);color:#34d399'
                   : 'background:rgba(124,179,240,.13);color:#7cb3f0';
                 return `<div class="pres-chip${hasAlert ? ' border-amber-900/50' : ''}${presActivo ? '' : ' pres-inactive'}" data-pres-id="${d.idProducto}">
+                  <button class="foto-mini${d.fotoUrl ? '' : ' foto-mini-empty'}" onclick="event.stopPropagation();MOS.abrirModalFotoProducto('${_escAttrJs(d.skuBase || '')}','${d.idProducto}')" title="${d.fotoUrl ? 'Cambiar la foto de esta presentación' : 'Agregar foto a esta presentación'}">${d.fotoUrl ? `<img src="${_escapeHtml(d.fotoUrl)}" loading="lazy">` : '📷'}</button>
                   <div class="min-w-0 flex-1">
                     <!-- [catálogo v4] nombre tocable = editar; el precio del satélite vive en su modal editar -->
                     <div class="text-xs font-semibold text-slate-200 truncate"><span class="cat-nombre-edit"
@@ -3236,6 +3237,7 @@ const MOS = (() => {
             return `<div class="rounded-lg p-2.5${dAct ? '' : ' opacity-60'}" style="background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.14)">
               <div class="flex items-center gap-2 flex-wrap">
                 <span style="font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;background:rgba(183,155,255,.15);color:#b79bff">🥄 DERIVADO</span>
+                <button class="foto-mini${d.fotoUrl ? '' : ' foto-mini-empty'}" onclick="event.stopPropagation();MOS.abrirModalFotoProducto('${_escAttrJs(d.skuBase || '')}','${d.idProducto}')" title="${d.fotoUrl ? 'Cambiar la foto de este derivado' : 'Agregar foto a este derivado'}">${d.fotoUrl ? `<img src="${_escapeHtml(d.fotoUrl)}" loading="lazy">` : '📷'}</button>
                 <span class="cat-nombre-edit text-xs font-semibold text-slate-200"
                       onclick="event.stopPropagation();MOS.abrirEditarProducto('${d.idProducto}')"
                       title="Tocar para editar (ahí vive su precio)">${hlD}</span>
@@ -5215,12 +5217,15 @@ const MOS = (() => {
   // [v2.43.38] Modal moderno bottom-sheet para subir foto del producto.
   // Optimista: cierra inmediato al guardar + toast + confetti.
   // Sonido tac al click, ok al éxito, error si falla.
-  function abrirModalFotoProducto(skuBase) {
+  function abrirModalFotoProducto(skuBase, idProducto) {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    // Buscar producto canónico del skuBase
+    // [646] con idProducto = foto PROPIA de esa presentación/derivado (no toca a la familia)
+    window._catFotoTargetId = String(idProducto || '').trim() || '';
     const sku = String(skuBase || '').trim();
     const productos = S.productos || [];
-    const p = productos.find(x => String(x.skuBase || x.idProducto) === sku);
+    const p = window._catFotoTargetId
+      ? productos.find(x => String(x.idProducto) === window._catFotoTargetId)
+      : productos.find(x => String(x.skuBase || x.idProducto) === sku);
     if (!p) { toast('Producto no encontrado', 'error'); return; }
 
     const cat = String(p.idCategoria || '');
@@ -5233,7 +5238,9 @@ const MOS = (() => {
     // Resumen de qué productos comparten esta foto:
     // canónico + presentaciones (PRODUCTOS_MASTER mismo skuBase)
     // + equivalentes (S.equivMap[skuBase])
-    const compartidos = productos.filter(x => String(x.skuBase || x.idProducto) === sku);
+    const compartidos = window._catFotoTargetId
+      ? [p]   // [646] individual: la foto es SOLO de este producto
+      : productos.filter(x => String(x.skuBase || x.idProducto) === sku);
     const listaCanonicos = compartidos.map(x => {
       const factor = parseFloat(x.factorConversion) || 1;
       const tag = factor === 1 ? 'canónico' : `×${factor} presentación`;
@@ -5399,6 +5406,8 @@ const MOS = (() => {
     inp.click();
   }
   function _catFotoGuardar(skuBase) {
+    const targetId = String(window._catFotoTargetId || '');   // [646]
+    const esDe = (p) => targetId ? String(p.idProducto) === targetId : String(p.skuBase || p.idProducto) === skuBase;
     const st = window._catFotoState;
     if (!st || !st.fotoBase64) { toast('Selecciona una foto primero', 'warn'); return; }
     try { _opsBeep && _opsBeep('ok'); } catch(_){}
@@ -5408,15 +5417,9 @@ const MOS = (() => {
     // si el backend rechaza. Antes el optimismo dejaba dataURL local cuando
     // fallaba → al recargar el catálogo, la foto desaparecía silenciosa.
     const fotosPrevias = new Map();
-    (S.productos || []).forEach(p => {
-      if (String(p.skuBase || p.idProducto) === skuBase) {
-        fotosPrevias.set(p.idProducto, p.fotoUrl || '');
-      }
-    });
+    (S.productos || []).forEach(p => { if (esDe(p)) fotosPrevias.set(p.idProducto, p.fotoUrl || ''); });
     const dataUrl = 'data:' + st.mimeType + ';base64,' + st.fotoBase64;
-    (S.productos || []).forEach(p => {
-      if (String(p.skuBase || p.idProducto) === skuBase) p.fotoUrl = dataUrl;
-    });
+    (S.productos || []).forEach(p => { if (esDe(p)) p.fotoUrl = dataUrl; });
     if (typeof renderCatalogo === 'function') renderCatalogo();
     _catFotoConfetti();
     const revertir = () => {
@@ -5427,6 +5430,7 @@ const MOS = (() => {
     };
     API.post('subirFotoProducto', {
       skuBase:    skuBase,
+      idProducto: targetId || undefined,   // [646] foto individual
       fotoBase64: st.fotoBase64,
       mimeType:   st.mimeType
     }).then(r => {
@@ -5435,9 +5439,7 @@ const MOS = (() => {
         // Antes leía r.data.fotoUrl (undefined) → la UI nunca adoptaba la URL de Drive.
         const url = r.fotoUrl || r.url || '';
         if (url) {
-          (S.productos || []).forEach(p => {
-            if (String(p.skuBase || p.idProducto) === skuBase) p.fotoUrl = url;
-          });
+          (S.productos || []).forEach(p => { if (esDe(p)) p.fotoUrl = url; });
           if (typeof renderCatalogo === 'function') renderCatalogo();
         }
         toast('✅ Foto guardada', 'success', 2500);

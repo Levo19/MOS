@@ -318,6 +318,11 @@
     .badge-blue   { background: rgba(99,102,241,.15); color: #818cf8; }
     .badge-gray   { background: rgba(100,116,139,.15); color: #94a3b8; }
     /* [689] chip de taxonomía IA en el catálogo: color estable por categoría (--th = hue) */
+    /* [646] mini-foto en filas de presentaciones/derivados (tap = subir/cambiar SU foto) */
+    .foto-mini{width:32px;height:32px;flex:none;border-radius:9px;border:1px solid rgba(148,163,184,.3);background:#0a1424;overflow:hidden;display:grid;place-items:center;font-size:13px;cursor:pointer;padding:0;transition:transform .15s,border-color .15s}
+    .foto-mini img{width:100%;height:100%;object-fit:cover;display:block}
+    .foto-mini:hover{transform:scale(1.08);border-color:#6366f1}
+    .foto-mini-empty{border-style:dashed;color:#475e8d}
     .tax-badge { background: hsl(var(--th,215) 55% 50% / .13); color: hsl(var(--th,215) 75% 72%);
                  border: 1px solid hsl(var(--th,215) 60% 55% / .3); gap: 4px; max-width: 200px;
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -20055,7 +20060,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.696';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.697';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20105,7 +20110,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.696"></script>
+<script src="js/api.js?v=2.43.697"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20121,7 +20126,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.696"></script>
+<script src="js/app.js?v=2.43.697"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

@@ -1934,11 +1934,12 @@ const API = (() => {
       // persiste foto_url en TODAS las filas del skuBase vía mos.set_foto_producto (paridad subirFotoProducto GAS).
       // El front (app.js:4843) lee r.ok!==false y r.fotoUrl → devolvemos {ok:true, skuBase, fotoUrl, fileId, actualizados}.
       const sku = p.skuBase != null ? String(p.skuBase) : '';
+      const idProd = p.idProducto != null ? String(p.idProducto).trim() : '';   // [646] foto individual
       const b64 = String(p.fotoBase64 || '').trim();
       const mime = String(p.mimeType || 'image/jpeg');
-      if (!sku || !b64) return null;                // sin datos → que GAS valide (skuBase/fotoBase64 requeridos)
+      if ((!sku && !idProd) || !b64) return null;                // sin datos → que GAS valide (skuBase/fotoBase64 requeridos)
       let up;
-      try { up = await _subirFotoStorageMOS(sku, b64, mime); }
+      try { up = await _subirFotoStorageMOS(idProd || sku, b64, mime); }   // archivo propio por producto
       catch (e) {
         // sin token (Edge caída) → caé a GAS (sube a Drive, como hoy). Cualquier otro error de Storage (RLS/red)
         // tras flag ON: el front MOS no tiene cola de writes → caer a GAS subiría a Drive y duplicaría la foto en
@@ -1948,7 +1949,7 @@ const API = (() => {
         throw (e instanceof Error ? e : new Error('storage upload falló'));
       }
       // persistir la URL pública en mos.productos (todas las filas del skuBase)
-      const out = await _sbRpcMOSWrite('set_foto_producto', { p: { skuBase: sku, fotoUrl: up.url } });
+      const out = await _sbRpcMOSWrite('set_foto_producto', { p: { skuBase: sku, idProducto: idProd || undefined, fotoUrl: up.url } });
       if (out == null) return null;                 // sin token en la 2da llamada → GAS (raro; el upload ya pasó)
       if (out.ok === false) {
         const err = out.error || 'rpc directo sin respuesta';
