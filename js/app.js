@@ -2238,11 +2238,8 @@ const MOS = (() => {
   }, { passive: true, capture: true });
 
   function populateCatFiltro() {
+    // [640/701] los selects de categoría murieron (la asigna la IA); esto solo alimenta el filtro
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
-    const catOpts = '<option value="">— elegir —</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-    // [640] prodCategoria ya no es select: la categoría del producto la asigna la IA
-    const pnCat = $('pnCategoria');
-    if (pnCat) pnCat.innerHTML = catOpts;
     _renderFiltroCategList(cats);
   }
 
@@ -3868,8 +3865,10 @@ const MOS = (() => {
     // [601] pnPrecioCosto ELIMINADO del modal: el costo entra por COMPRAS (con procedencia)
     $('pnIGV').value          = '1';
     populateCatFiltro();
-    const catSel = $('pnCategoria');
-    if (catSel && pn.idCategoria) catSel.value = pn.idCategoria;
+    const catChip = $('pnCategoriaChip');
+    if (catChip) catChip.innerHTML = pn.idCategoria
+      ? `<b style="color:#cfe1ff">${_escapeHtml(pn.idCategoria)}</b><span style="opacity:.6">· la IA la confirma al registrar</span>`
+      : '🤖 se asigna sola al registrar';
     const unidSel = $('pnUnidad');
     if (unidSel && pn.unidad) unidSel.value = pn.unidad;
 
@@ -4728,7 +4727,9 @@ const MOS = (() => {
       const u = String(p.Unidad_Medida || p.unidad || 'NIU').toUpperCase();
       $('pnUnidad').value = u;
     }
-    if ($('pnCategoria')) $('pnCategoria').value = p.idCategoria || '';
+    if ($('pnCategoriaChip')) $('pnCategoriaChip').innerHTML = p.idCategoria
+      ? `<b style="color:#cfe1ff">${_escapeHtml(p.idCategoria)}</b><span style="opacity:.6">· la IA la confirma al registrar</span>`
+      : '🤖 se asigna sola al registrar';
     if ($('pnIGV')) $('pnIGV').value = String(p.Tipo_IGV || '1');
     if ($('pnPrecioVenta')) $('pnPrecioVenta').value = p.precioVenta || '';
     if ($('pnPrecioCosto')) $('pnPrecioCosto').value = p.precioCosto || '';
@@ -4851,13 +4852,12 @@ const MOS = (() => {
       const codigoFinal= $('pnCodigoFinal')?.value?.trim();
       const marca      = $('pnMarca')?.value?.trim();
       const unidad     = $('pnUnidad')?.value;
-      const catId      = $('pnCategoria')?.value;
       const pVenta     = parseFloat($('pnPrecioVenta')?.value || '0') || 0;
       const igv        = $('pnIGV')?.value || '1';
 
       if (!desc)        { mostrarPNError('La descripción es obligatoria'); return; }
       if (!codigoFinal) { mostrarPNError('El código de barras es obligatorio'); return; }
-      if (!catId)       { mostrarPNError('Selecciona una categoría'); return; }
+      // [701] la categoría YA NO es obligatoria ni manual: la asigna la IA al registrar
       // [601] precio OPCIONAL (registro rápido). Sin precio → confirmar: nace con sello
       // ⛔ SIN PRECIO y ME bloquea su venta hasta que alguien se lo ponga en el catálogo.
       if (!(pVenta > 0)) {
@@ -4869,7 +4869,6 @@ const MOS = (() => {
       // [601] costo: JAMÁS desde PN (la RPC igual lo fuerza a 0) — entra por Compras con procedencia.
       Object.assign(params, {
         codigoFinal, descripcion: desc, marca,
-        idCategoria: catId,
         unidad,             // legacy
         Unidad_Medida: unidad, // sincronizado (mismo valor SUNAT)
         precioVenta: pVenta, Tipo_IGV: igv
