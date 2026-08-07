@@ -39194,7 +39194,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try {
       const lista = await API.get('getPromociones', {});
       const fresh = Array.isArray(lista) ? lista : (lista && lista.data) || [];
-      console.log('[loadPromociones] respuesta GAS:', fresh.length, 'promociones', fresh);
+      console.log('[loadPromociones] Supabase:', fresh.length, 'promociones');
       _promoState.lista = fresh;
       _promoState.lastFetch = Date.now();
       _promoSaveCache(fresh);

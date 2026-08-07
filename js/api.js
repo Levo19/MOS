@@ -2738,6 +2738,11 @@ const API = (() => {
     // Gate always-true (aunque get_flags no cargue) + _MOS_DIRECT_REQUIRED ⇒ si el directo no puede (sin token)
     // LANZA "reintentar", jamás cae a GAS (que está muerto en cero-GAS → "nunca sube").
     subirFotoProducto:          () => true,
+    // [696 · cero-GAS] promociones: GAS ya NO existe — estas 3 estaban en el mapa de RPCs
+    // pero SIN entrada en el gate → caían al POST GAS muerto ("Acción no reconocida").
+    crearPromocion:             () => true,
+    actualizarPromocion:        () => true,
+    eliminarPromocion:          () => true,
     subirImagenConfig:          () => true,
     // [CATÁLOGO · estaciones] 100% Supabase (RPC mos.crear_estacion/actualizar_estacion, SQL 215) — sin GAS,
     // sin clasp. Gate _mosCatalogoDirecto (ON en prod). El trigger de versión (200) bumpea al escribir → WH/ME
@@ -2900,7 +2905,7 @@ const API = (() => {
   // no commitea (sin token), FALLAN (reintentar) en vez de caer a GAS — porque liquidaciones_dia
   // está en SYNC_OFF, así que un write GAS NO propaga a la tabla que lee la mega tabla → desync
   // silencioso (peor que fallar). Con la identidad MEX:NOMBRE|ZONA, además, el GAS mis-llavearía.
-  const _MOS_DIRECT_REQUIRED = { crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1,
+  const _MOS_DIRECT_REQUIRED = { crearPromocion: 1, actualizarPromocion: 1, eliminarPromocion: 1, crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
     codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, guiaPreview: 1,
