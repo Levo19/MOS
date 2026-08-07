@@ -6848,6 +6848,10 @@
     .ct2-btn:active{transform:scale(.96)}
     .ct2-btn.active{background:linear-gradient(160deg,rgba(248,113,113,.28),rgba(248,113,113,.1));border-color:#f87171;color:#fecaca;box-shadow:0 0 0 1px rgba(248,113,113,.35),0 4px 14px -4px rgba(248,113,113,.55)}
     .ct2-btn.active .ct2-ic{transform:scale(1.15);filter:drop-shadow(0 0 6px rgba(248,113,113,.8))}
+    .ct2-btn.on{background:linear-gradient(160deg,rgba(99,102,241,.3),rgba(99,102,241,.12));border-color:#6366f1;color:#c7d2fe;box-shadow:0 0 0 1px rgba(99,102,241,.35),0 4px 14px -4px rgba(99,102,241,.55)}
+    .ct2-btn.on .ct2-ic{transform:scale(1.12);filter:drop-shadow(0 0 6px rgba(129,140,248,.8))}
+    .ct2-btn.on-sky{background:linear-gradient(160deg,rgba(56,189,248,.28),rgba(56,189,248,.1));border-color:#38bdf8;color:#bae6fd;box-shadow:0 0 0 1px rgba(56,189,248,.35),0 4px 14px -4px rgba(56,189,248,.55)}
+    .ct2-btn.on-sky .ct2-ic{transform:scale(1.12);filter:drop-shadow(0 0 6px rgba(56,189,248,.8))}
     .ct2-ic{font-size:16px;line-height:1}
     .ct2-n{position:absolute;top:0;right:4px;color:#0b1220;font-size:8.5px;font-weight:900;border-radius:99px;min-width:14px;height:14px;display:flex;align-items:center;justify-content:center;padding:0 3px}
     .ct2-n.azul{background:#38bdf8}.ct2-n.verde{background:#34d399}.ct2-n.rojo{background:#f87171}
@@ -14678,16 +14682,23 @@
             <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           </button>
         </div>
-          <div class="relative" id="catFiltroWrap">
-          <button id="btnFiltrosCat" type="button" class="inp flex items-center gap-2 whitespace-nowrap" style="min-height:38px;min-width:80px">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
-            <span class="cat-btn-new-lbl">Filtros</span>
-            <span id="filtrosBadge" class="hidden bg-indigo-500 text-white text-xs rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center leading-none">0</span>
-          </button>
-          <!-- [692] panel inline viejo eliminado: el flotante (catFiltroPanelFloat) es el único -->
-        </div>
+          <!-- [693] botón Filtros movido a la fila 2 como grupo FILTRO (📂🧩⚗️↕️) -->
         </div>
         <div class="ct2-f2">
+          <div class="ct2-grp" id="catFiltroGrupo"><span class="ct2-glbl">Filtro</span>
+            <button id="fCatB" class="ct2-btn" onclick="MOS.fpAbrir('cat')" title="Filtrar por categoría">
+              <span class="ct2-ic">📂</span><span class="ct2-lbl">Categoría</span>
+            </button>
+            <button id="fSubB" class="ct2-btn" onclick="MOS.fpAbrir('sub')" title="Filtrar por subcategoría (taxonomía IA)">
+              <span class="ct2-ic">🧩</span><span class="ct2-lbl">Subcat.</span>
+            </button>
+            <button id="fTipoB" class="ct2-btn" onclick="MOS.fpAbrir('tipo')" title="Filtrar por tipo de producto">
+              <span class="ct2-ic">⚗️</span><span class="ct2-lbl">Tipo</span>
+            </button>
+            <button id="fOrdB" class="ct2-btn" onclick="MOS.fpAbrir('orden')" title="Ordenar el catálogo">
+              <span class="ct2-ic">↕️</span><span class="ct2-lbl">Orden</span>
+            </button>
+          </div>
           <div class="ct2-grp"><span class="ct2-glbl">Entrada</span>
             <button id="btnPNCat" class="ct2-btn" onclick="MOS.abrirPNDesdeToolbar()" title="Productos nuevos por registrar (llegaron en guías de WH)">
               <span class="ct2-ic">🆕</span><span class="ct2-lbl">Nuevos</span><span id="pnToolbarCount" class="ct2-n azul" style="display:none">0</span>
@@ -20044,7 +20055,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.692';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.693';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20094,7 +20105,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.692"></script>
+<script src="js/api.js?v=2.43.693"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20110,7 +20121,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.692"></script>
+<script src="js/app.js?v=2.43.693"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

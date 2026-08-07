@@ -2258,6 +2258,11 @@ const MOS = (() => {
     const count = (_catFiltros.categoria ? 1 : 0) + (_catFiltros.subcategoria ? 1 : 0) + (_catFiltros.soloAlertas ? 1 : 0) + _catFiltros.tipos.size + (_catFiltros.orden ? 1 : 0);
     // [692] el filtro "solo alertas" SIEMPRE con indicador (antes quedaba activo invisible → "¿dónde están mis productos?")
     $('btnAlertasCat')?.classList.toggle('active', !!_catFiltros.soloAlertas);
+    // [693] grupo FILTRO: cada botón prendido si su filtro está activo
+    $('fCatB')?.classList.toggle('on', !!_catFiltros.categoria);
+    $('fSubB')?.classList.toggle('on', !!_catFiltros.subcategoria);
+    $('fTipoB')?.classList.toggle('on', _catFiltros.tipos.size > 0);
+    $('fOrdB')?.classList.toggle('on', !!_catFiltros.orden);
     const badge = $('filtrosBadge');
     if (badge) { badge.textContent = count; badge.classList.toggle('hidden', count === 0); }
 
@@ -2295,163 +2300,93 @@ const MOS = (() => {
   // de .cat-tool-btn. Aunque forzamos overflow:visible, en algún viewport o
   // navegador puede no aplicar. Solución definitiva: crear un panel CLON en
   // document.body con position:fixed y z-index máximo. Imposible recortarlo.
-  function toggleFiltroCat(ev) {
-    if (ev && ev.stopPropagation) ev.stopPropagation();
-    if (ev && ev.preventDefault) ev.preventDefault();
-    // [v2.43.49 FIX DEFINITIVO] Debounce 250ms — el handler estaba siendo
-    // disparado 2 veces (onclick inline + addEventListener) → la 2da llamada
-    // cerraba el panel recién creado. Ahora ignoramos llamadas rápidas.
-    const now = Date.now();
-    if (window._filtroLastToggle && (now - window._filtroLastToggle) < 250) {
-      console.log('[filtro] click duplicado ignorado (' + (now - window._filtroLastToggle) + 'ms)');
-      return;
-    }
-    window._filtroLastToggle = now;
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  // [693] FILTRO como GRUPO de botones (📂 Categoría · 🧩 Subcat · ⚗️ Tipo · ↕️ Orden):
+  // cada uno abre su overlay elegante y se PINTA (.on) mientras tenga filtro activo.
+  function toggleFiltroCat() { fpAbrir('cat'); }   // compat con atajos/bindings viejos
 
-    // Si ya hay un panel flotante abierto, cerrarlo (toggle)
-    const existente = document.getElementById('catFiltroPanelFloat');
-    if (existente) {
-      existente.remove();
-      return;
-    }
-    // Ocultar el panel original por las dudas
-    const orig = document.getElementById('catFiltroPanel');
-    if (orig) orig.classList.add('hidden');
-
-    const btn = document.getElementById('btnFiltrosCat');
-
-    // Categorías
-    const productos = Array.isArray(S.productos) ? S.productos : [];
-    const cats = [...new Set(productos.map(p => p && p.idCategoria).filter(Boolean))].sort();
-    const curCat = _catFiltros.categoria;
-    const curOrd = _catFiltros.orden || '';
-    const tiposLabels = { envasable:'⚗️ Envasable', conPres:'📦 Con pres.', derivado:'🔗 Derivado', inactivo:'🚫 Inactivos' };
-    const tiposHtml = Object.entries(tiposLabels).map(([k, lbl]) => {
-      const on = _catFiltros.tipos.has(k);
-      return `<div class="cat-fp-chk${on ? ' is-on' : ''}" data-tipo="${k}" style="padding:7px 9px;background:${on ? 'rgba(99,102,241,.2)' : 'rgba(30,41,59,.5)'};border:1px solid ${on ? '#6366f1' : '#334155'};border-radius:6px;cursor:pointer;font-size:11px;color:#cbd5e1;display:flex;align-items:center;gap:6px;margin-bottom:3px;transition:all .15s">
-        <span style="width:14px;height:14px;border-radius:3px;border:1.5px solid ${on ? '#6366f1' : '#475569'};background:${on ? '#6366f1' : 'transparent'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:900">${on ? '✓' : ''}</span>
-        <span>${lbl}</span>
-      </div>`;
-    }).join('');
-
-    // [v2.43.48] Fix BRUTAL: estilos forzados con !important inline + cssText
-    // para que NINGÚN CSS global pueda ocultarlo. Si todavía no aparece,
-    // sabemos que algo externo lo está removiendo y mostramos error.
+  function _fpPill(on, hu) {
+    return `display:flex;align-items:center;gap:6px;padding:8px 11px;cursor:pointer;font-size:11.5px;font-weight:600;border-radius:10px;border:1px solid ${on ? `hsl(${hu} 65% 55% / .75)` : '#22314f'};color:${on ? `hsl(${hu} 80% 78%)` : '#94a3b8'};background:${on ? `hsl(${hu} 55% 45% / .2)` : 'rgba(30,41,59,.4)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all .15s`;
+  }
+  function _fpOverlay(titulo, inner) {
+    document.getElementById('catFiltroPanelFloat')?.remove();
     const html = `<div id="catFiltroPanelFloat" class="cat-fp-backdrop"
-      style="position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100vh!important;background:rgba(0,0,0,.6)!important;z-index:2147483647!important;display:flex!important;align-items:flex-start!important;justify-content:center!important;padding-top:80px!important;padding-left:16px!important;padding-right:16px!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important">
-      <div class="cat-fp-card" style="width:100%!important;max-width:360px!important;max-height:75vh!important;overflow-y:auto!important;background:#0f172a!important;border:2px solid #6366f1!important;border-radius:14px!important;padding:16px!important;box-shadow:0 25px 60px -10px rgba(99,102,241,.6),0 0 0 1px rgba(99,102,241,.3)!important;opacity:1!important;visibility:visible!important;display:block!important"
-        onclick="event.stopPropagation()">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="font-size:13px;font-weight:800;color:#a5b4fc;letter-spacing:.5px">🔍 FILTROS DEL CATÁLOGO</div>
-        <button onclick="MOS._cerrarFiltroFloat()" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;padding:0 6px;font-weight:900;line-height:1">×</button>
+      style="position:fixed!important;inset:0!important;background:rgba(0,0,0,.6)!important;z-index:2147483647!important;display:flex!important;align-items:flex-start!important;justify-content:center!important;padding:80px 16px 16px!important">
+      <div class="cat-fp-card" style="width:100%!important;max-width:390px!important;max-height:75vh!important;overflow-y:auto!important;background:#0f172a!important;border:2px solid #6366f1!important;border-radius:16px!important;padding:16px!important;box-shadow:0 25px 60px -10px rgba(99,102,241,.6)!important;animation:catFpCardIn .18s ease-out" onclick="event.stopPropagation()">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="font-size:13px;font-weight:800;color:#a5b4fc;letter-spacing:.5px">${titulo}</div>
+          <button onclick="MOS._cerrarFiltroFloat()" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;padding:0 6px;font-weight:900;line-height:1">×</button>
+        </div>
+        ${inner}
       </div>
-      <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">📂 Categoría</div>
-      <div id="catFpCategList" style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px;max-height:200px;overflow-y:auto;margin-bottom:12px;padding-right:2px">
-        <div class="cat-fp-radio" data-cat="" style="grid-column:1/-1;text-align:center;padding:7px 9px;cursor:pointer;font-size:11px;font-weight:700;border-radius:8px;border:1px solid ${!curCat ? 'rgba(165,180,252,.55)' : '#22314f'};color:${!curCat ? '#a5b4fc' : '#94a3b8'};background:${!curCat ? 'rgba(99,102,241,.16)' : 'rgba(30,41,59,.35)'}">Todas las categorías</div>
-        ${cats.map(c => { const hu = _taxHue(c); const on = curCat === c; return `<div class="cat-fp-radio" data-cat="${_escapeHtml(c)}" style="display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:pointer;font-size:10.5px;font-weight:600;border-radius:8px;border:1px solid ${on ? `hsl(${hu} 65% 55% / .75)` : '#22314f'};color:${on ? `hsl(${hu} 80% 78%)` : '#94a3b8'};background:${on ? `hsl(${hu} 55% 45% / .2)` : 'rgba(30,41,59,.35)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all .15s"><span style="flex:none">${_TAX_EMOJI[c] || '🏷️'}</span><span style="overflow:hidden;text-overflow:ellipsis">${_escapeHtml(c)}</span></div>`; }).join('')}
-      </div>
-      ${curCat ? (() => {
-        // [690] segundo nivel: subcategorías (taxonomía IA) de la categoría elegida
-        const subs = {};
-        S.productos.forEach(p => { if (p.idCategoria === curCat && p.categoriaIa && typeof p.categoriaIa === 'object' && p.categoriaIa.subcategoria) subs[p.categoriaIa.subcategoria] = (subs[p.categoriaIa.subcategoria] || 0) + 1; });
-        const lista = Object.entries(subs).sort((a, b) => b[1] - a[1]);
-        if (!lista.length) return '';
-        const curSub = _catFiltros.subcategoria || '';
-        const pill = (on) => `padding:4px 10px;cursor:pointer;font-size:10.5px;border-radius:999px;border:1px solid ${on ? 'rgba(165,180,252,.5)' : '#1e293b'};color:${on ? '#a5b4fc' : '#94a3b8'};background:${on ? 'rgba(99,102,241,.15)' : 'transparent'};white-space:nowrap`;
-        return `<div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin:0 0 6px;letter-spacing:.5px">🧩 Subcategoría</div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;max-height:130px;overflow-y:auto">
-        <div class="cat-fp-sub" data-sub="" style="${pill(!curSub)}">Todas</div>
-        ${lista.map(([sb, n]) => `<div class="cat-fp-sub" data-sub="${_escapeHtml(sb)}" style="${pill(curSub === sb)}">${_escapeHtml(sb)} <b style="opacity:.7">${n}</b></div>`).join('')}
-      </div>`;
-      })() : ''}
-      <div style="border-top:1px solid #1e293b;padding-top:10px">
-        <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">⚗️ Tipo de producto</div>
-        ${tiposHtml}
-      </div>
-      <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px">
-        <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">↕️ Ordenar por</div>
-        ${[
-          { k: '',         lbl: 'Alfabético (default)' },
-          { k: 'rot_desc', lbl: '📦 Rotación: más vendidos primero' },
-          { k: 'rot_asc',  lbl: '🌙 Rotación: lentos primero' },
-          { k: 'mrg_desc', lbl: '💎 Margen: alto → bajo' },
-          { k: 'mrg_asc',  lbl: '⚠ Margen: bajo → alto' }
-        ].map(o => `<div class="cat-fp-ord${curOrd === o.k ? ' is-on' : ''}" data-orden="${o.k}" style="padding:7px 9px;cursor:pointer;font-size:11px;color:${curOrd === o.k ? '#a5b4fc' : '#94a3b8'};border-radius:5px;background:${curOrd === o.k ? 'rgba(99,102,241,.15)' : 'transparent'};margin-bottom:2px">${o.lbl}</div>`).join('')}
-      </div>
-      <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px;text-align:right">
-        <button onclick="MOS._limpiarYCerrar()" style="background:rgba(248,113,113,.15);color:#f87171;border:1px solid rgba(248,113,113,.4);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">Limpiar todo</button>
-      </div>
-      </div>
-      <style>
-        @keyframes catFpBgIn{from{opacity:0}to{opacity:1}}
-        @keyframes catFpCardIn{from{opacity:0;transform:translateY(-12px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
-      </style>
+      <style>@keyframes catFpCardIn{from{opacity:0;transform:translateY(-12px) scale(.96)}to{opacity:1;transform:none}}</style>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', html);
-    const fpEl = document.getElementById('catFiltroPanelFloat');
-    if (fpEl) {
-      fpEl.addEventListener('click', e => {
-        if (e.target === fpEl) _cerrarFiltroFloat();
-      });
-    } else {
-      console.error('[filtro] FALLO: insertAdjacentHTML no creó el elemento');
-      toast('⚠ Error creando filtro — revisa consola', 'error', 5000);
-    }
-
-    // Wire listeners
-    const float = document.getElementById('catFiltroPanelFloat');
-    if (!float) return;
-    float.addEventListener('click', e => e.stopPropagation());
-    // [v2.43.50] Click optimista: cerrar modal inmediato + render diferido
-    float.querySelectorAll('.cat-fp-radio').forEach(el => {
-      el.addEventListener('click', () => {
-        const cat = el.dataset.cat || '';
-        try { _opsBeep && _opsBeep('tac'); } catch(_){}
-        _aplicarFiltroOptimista(() => setFiltroCategoria(cat));
-      });
-    });
-    float.querySelectorAll('.cat-fp-sub').forEach(el => {
-      el.addEventListener('click', () => {
-        const sub = el.dataset.sub || '';
-        try { _opsBeep && _opsBeep('tac'); } catch(_){}
-        _aplicarFiltroOptimista(() => setFiltroSubcategoria(sub));
-      });
-    });
-    float.querySelectorAll('.cat-fp-chk').forEach(el => {
-      el.addEventListener('click', () => {
-        const tipo = el.dataset.tipo;
-        try { _opsBeep && _opsBeep('tac'); } catch(_){}
-        // Feedback visual inmediato del check antes de cerrar
-        el.classList.toggle('is-on');
-        _aplicarFiltroOptimista(() => toggleFiltroTipo(tipo));
-      });
-    });
-    float.querySelectorAll('.cat-fp-ord').forEach(el => {
-      el.addEventListener('click', () => {
-        const orden = el.dataset.orden || '';
-        try { _opsBeep && _opsBeep('tac'); } catch(_){}
-        _aplicarFiltroOptimista(() => setFiltroOrden(orden));
-      });
-    });
-
-    // ESC cierra (backdrop ya maneja click outside)
-    const closeOnEsc = (e) => {
-      if (e.key !== 'Escape') return;
-      _cerrarFiltroFloat();
-      document.removeEventListener('keydown', closeOnEsc);
-    };
-    document.addEventListener('keydown', closeOnEsc);
-
-    toast('🔍 Filtros abiertos', 'info', 1200);
-  }
-  function _cerrarFiltroFloat() {
     const fp = document.getElementById('catFiltroPanelFloat');
-    if (fp) fp.remove();
+    if (fp) fp.addEventListener('click', e => { if (e.target === fp) _cerrarFiltroFloat(); });
+    return fp;
   }
-  function _limpiarYCerrar() {
-    limpiarFiltrosCat();
-    _cerrarFiltroFloat();
+  function fpAbrir(tipo) {
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    try { navigator.vibrate && navigator.vibrate(8); } catch(_){}
+    const productos = Array.isArray(S.productos) ? S.productos : [];
+    if (tipo === 'cat') {
+      const cats = [...new Set(productos.map(p => p.idCategoria).filter(Boolean))].sort();
+      const cur = _catFiltros.categoria;
+      const inner = `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px">
+        <div class="cat-fp-radio" data-cat="" style="${_fpPill(!cur, 215)};grid-column:1/-1;justify-content:center">Todas las categorías</div>
+        ${cats.map(c => { const hu = _taxHue(c), on = cur === c; return `<div class="cat-fp-radio" data-cat="${_escapeHtml(c)}" style="${_fpPill(on, hu)}"><span style="flex:none">${_TAX_EMOJI[c] || '🏷️'}</span><span style="overflow:hidden;text-overflow:ellipsis">${_escapeHtml(c)}</span></div>`; }).join('')}
+      </div>`;
+      const fp = _fpOverlay('📂 Filtrar por categoría', inner);
+      fp && fp.querySelectorAll('.cat-fp-radio').forEach(el => el.addEventListener('click', () => {
+        _aplicarFiltroOptimista(() => setFiltroCategoria(el.dataset.cat || ''));
+      }));
+    } else if (tipo === 'sub') {
+      const cur = _catFiltros.subcategoria, curCat = _catFiltros.categoria;
+      const subs = {};
+      productos.forEach(p => {
+        const cia = p.categoriaIa;
+        if (!cia || typeof cia !== 'object' || !cia.subcategoria) return;
+        if (curCat && p.idCategoria !== curCat) return;
+        const k = cia.subcategoria;
+        (subs[k] = subs[k] || { n: 0, cat: cia.categoria || p.idCategoria }).n++;
+      });
+      const lista = Object.entries(subs).sort((a, b) => b[1].n - a[1].n);
+      const inner = `${curCat ? `<div style="font-size:10.5px;color:#64748b;margin-bottom:8px">Subcategorías de <b style="color:#a5b4fc">${_escapeHtml(curCat)}</b> — quita ese filtro para verlas todas</div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <div class="cat-fp-sub" data-sub="" style="${_fpPill(!cur, 215)}">Todas</div>
+        ${lista.map(([sb, v]) => { const hu = _taxHue(v.cat), on = cur === sb; return `<div class="cat-fp-sub" data-sub="${_escapeHtml(sb)}" data-cat="${_escapeHtml(v.cat || '')}" style="${_fpPill(on, hu)}">${_TAX_EMOJI[v.cat] || ''} ${_escapeHtml(sb)} <b style="opacity:.65">${v.n}</b></div>`; }).join('')}
+      </div>`;
+      const fp = _fpOverlay('🧩 Filtrar por subcategoría', inner);
+      fp && fp.querySelectorAll('.cat-fp-sub').forEach(el => el.addEventListener('click', () => {
+        _aplicarFiltroOptimista(() => {
+          const sub = el.dataset.sub || '';
+          if (sub && el.dataset.cat) _catFiltros.categoria = el.dataset.cat;   // elegir sub fija también su categoría
+          _catFiltros.subcategoria = sub;
+          _catFiltrosGuardar(); _updateFiltroBadge(); renderCatalogo();
+        });
+      }));
+    } else if (tipo === 'tipo') {
+      const tiposLabels = { envasable: '⚗️ Envasable', conPres: '📦 Con presentaciones', derivado: '🔗 Derivado', inactivo: '🚫 Inactivos' };
+      const inner = Object.entries(tiposLabels).map(([k, lbl]) => { const on = _catFiltros.tipos.has(k); return `<div class="cat-fp-chk" data-tipo="${k}" style="${_fpPill(on, 215)};margin-bottom:6px">${lbl}${on ? ' ✓' : ''}</div>`; }).join('');
+      const fp = _fpOverlay('⚗️ Tipo de producto', inner);
+      fp && fp.querySelectorAll('.cat-fp-chk').forEach(el => el.addEventListener('click', () => {
+        _aplicarFiltroOptimista(() => toggleFiltroTipo(el.dataset.tipo));
+      }));
+    } else if (tipo === 'orden') {
+      const ops = [
+        { k: '',         lbl: '🔤 Alfabético (default)' },
+        { k: 'rot_desc', lbl: '📦 Rotación: más vendidos primero' },
+        { k: 'rot_asc',  lbl: '🌙 Rotación: lentos primero' },
+        { k: 'mrg_desc', lbl: '💎 Margen: alto → bajo' },
+        { k: 'mrg_asc',  lbl: '⚠ Margen: bajo → alto' }
+      ];
+      const cur = _catFiltros.orden || '';
+      const inner = ops.map(o => `<div class="cat-fp-ord" data-orden="${o.k}" style="${_fpPill(cur === o.k, 215)};margin-bottom:6px">${o.lbl}</div>`).join('');
+      const fp = _fpOverlay('↕️ Ordenar por', inner);
+      fp && fp.querySelectorAll('.cat-fp-ord').forEach(el => el.addEventListener('click', () => {
+        _aplicarFiltroOptimista(() => setFiltroOrden(el.dataset.orden || ''));
+      }));
+    }
   }
 
   // [v2.43.49] Bind directo SOLO click (no pointerdown — causaba doble disparo
@@ -3490,7 +3425,9 @@ const MOS = (() => {
   function abrirPNDesdeToolbar() {
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     try { navigator.vibrate && navigator.vibrate(10); } catch(_){}
-    if (!_pnBannerExpandido()) togglePNBanner();
+    // [693] toggle real: abierto → cierra; cerrado → abre y hace scroll
+    if (_pnBannerExpandido()) { togglePNBanner(); return; }
+    togglePNBanner();
     const b = $('pnBannerCat');
     if (b) { try { b.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(_){} }
   }
@@ -3542,11 +3479,13 @@ const MOS = (() => {
     const esAdmin = _esAdminOMaster();
     // Si NO hay pendientes Y NO es admin → ocultar. Si es admin, mantenerlo
     // visible (aunque vacío) para que pueda usar "Agregar manual".
-    if (!lista.length && !esAdmin) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+    const btnPN = $('btnPNCat');
+    if (!lista.length && !esAdmin) { banner.style.display = 'none'; banner.innerHTML = ''; btnPN?.classList.remove('on-sky'); return; }
 
     // [692] compacto: cerrado = ni una línea (el botón 🆕 de la toolbar lo despliega);
     // ya no se auto-abre vacío para admins.
     const open = _pnBannerExpandido();
+    btnPN?.classList.toggle('on-sky', open);   // [693] botón prendido mientras la sección esté abierta
     if (!open) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
     banner.style.display = 'block';
 
@@ -45398,7 +45337,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnDescartar, pnVerOcultos, pnRestaurar,
     pnBuscarParaCorregir, pnSeleccionarParaCorregir,
-    togglePNBanner, abrirPNDesdeToolbar, openImagePreview, closeImagePreview,
+    togglePNBanner, abrirPNDesdeToolbar, fpAbrir, openImagePreview, closeImagePreview,
     // PN manual (admin/master)
     abrirCrearPNManual, cerrarCrearPNManual, crearPNManualSubmit,
     _cpnToggleAutogen, _cpnFotoSeleccionada, _cpnRemoverFoto, _cpnStep,
