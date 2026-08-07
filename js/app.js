@@ -1306,7 +1306,7 @@ const MOS = (() => {
       // [v2.43.47 PERF] CSS variables para el color de halo → 1 sola clase
       // en vez de 6+ propiedades inline por foto. Mucho más rápido con 2000 cards.
       const styleVars = `--cat-foto-hue:${hue}`;
-      const clickHandler = `event.stopPropagation();MOS.abrirModalFotoProducto('${safeSku}')`;
+      const clickHandler = `event.stopPropagation();MOS.abrirModalFotoProducto('${safeSku}','${_escAttrJs(p.idProducto || '')}')`;
       if (url) {
         return `<button type="button" class="cat-foto cat-foto-img" onclick="${clickHandler}"
                         title="Click para cambiar foto"
