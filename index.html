@@ -6836,7 +6836,9 @@
     /* ── [691] Toolbar v2 del catálogo: 2 filas ── */
     .cat-toolbar.ct2{display:block}
     .ct2-f1{display:flex;gap:8px;align-items:center}
-    .ct2-f1 .cat-search-wrap{flex:1}
+    .ct2-f1 .cat-search-wrap{flex:1 1 auto;min-width:0;position:relative}
+    .ct2-f1 .cat-search-wrap input{width:100%;transition:box-shadow .25s ease,border-color .25s ease}
+    .ct2-f1 .cat-search-wrap input:focus{border-color:#c9a227;box-shadow:0 0 0 3px rgba(255,215,0,.18),0 0 18px rgba(255,215,0,.25)}
     .ct2-f2{display:flex;gap:8px;align-items:stretch;margin-top:9px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:2px}
     .ct2-f2::-webkit-scrollbar{height:0}
     .ct2-grp{display:flex;gap:4px;background:#0d1526;border:1px solid #22314f;border-radius:12px;padding:4px 6px 4px 4px;align-items:center;flex-shrink:0;scroll-snap-align:start}
@@ -6844,15 +6846,22 @@
     .ct2-btn{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:60px;min-height:44px;padding:5px 10px;border-radius:9px;font-size:10px;font-weight:700;color:#b6c2dd;position:relative;cursor:pointer;border:1px solid transparent;background:transparent;transition:background .15s,transform .15s}
     .ct2-btn:hover{background:#16223c;transform:translateY(-1px)}
     .ct2-btn:active{transform:scale(.96)}
-    .ct2-btn.active{background:rgba(248,113,113,.14);border-color:rgba(248,113,113,.4);color:#fca5a5}
+    .ct2-btn.active{background:linear-gradient(160deg,rgba(248,113,113,.28),rgba(248,113,113,.1));border-color:#f87171;color:#fecaca;box-shadow:0 0 0 1px rgba(248,113,113,.35),0 4px 14px -4px rgba(248,113,113,.55)}
+    .ct2-btn.active .ct2-ic{transform:scale(1.15);filter:drop-shadow(0 0 6px rgba(248,113,113,.8))}
     .ct2-ic{font-size:16px;line-height:1}
     .ct2-n{position:absolute;top:0;right:4px;color:#0b1220;font-size:8.5px;font-weight:900;border-radius:99px;min-width:14px;height:14px;display:flex;align-items:center;justify-content:center;padding:0 3px}
     .ct2-n.azul{background:#38bdf8}.ct2-n.verde{background:#34d399}.ct2-n.rojo{background:#f87171}
     .ct2-gmaster{background:rgba(168,85,247,.08);border-color:rgba(168,85,247,.4)}
     .ct2-gmaster .ct2-glbl{color:#c084fc}
     .ct2-sep{flex:1;min-width:4px}
-    .ct2-nuevo{background:linear-gradient(135deg,#6366f1,#4f46e5);border:0;border-radius:12px;color:#fff;display:flex;align-items:center;gap:5px;padding:0 16px;font-weight:800;font-size:13px;box-shadow:0 4px 14px rgba(99,102,241,.35);cursor:pointer;flex-shrink:0;min-height:44px;transition:transform .15s}
+    .ct2-nuevo{position:relative;overflow:hidden;background:linear-gradient(135deg,#6366f1,#8b5cf6);border:0;border-radius:999px;color:#fff;display:flex;align-items:center;gap:8px;padding:0 18px 0 8px;font-weight:800;font-size:12.5px;letter-spacing:.02em;box-shadow:0 6px 18px -4px rgba(99,102,241,.55),inset 0 1px 0 rgba(255,255,255,.25);cursor:pointer;flex-shrink:0;min-height:44px;transition:transform .16s,box-shadow .2s}
+    .ct2-nuevo .plus{width:28px;height:28px;border-radius:99px;background:rgba(255,255,255,.18);display:grid;place-items:center;font-size:15px;font-weight:900;flex:none}
+    .ct2-nuevo:hover{transform:translateY(-1px);box-shadow:0 10px 26px -6px rgba(139,92,246,.7),inset 0 1px 0 rgba(255,255,255,.25)}
     .ct2-nuevo:active{transform:scale(.96)}
+    .ct2-nuevo::after{content:'';position:absolute;top:0;left:-60%;width:40%;height:100%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.3),transparent);transform:skewX(-20deg);animation:ct2shine 5s ease-in-out infinite}
+    @keyframes ct2shine{0%,72%{left:-60%}88%,100%{left:130%}}
+    @media (prefers-reduced-motion:reduce){.ct2-nuevo::after{animation:none}}
+    @media (max-width:560px){.ct2-nuevo{padding:0 10px 0 8px}}
     @media (max-width:560px){.ct2-lbl-n{display:none}.ct2-nuevo{padding:0 13px;font-size:17px}}
     /* en el Catálogo el botón NO debe recortarse por el overflow:hidden de .cat-tool-btn */
     .cat-toolbar > .btn-mesa-compras { overflow: visible; }
@@ -14675,37 +14684,7 @@
             <span class="cat-btn-new-lbl">Filtros</span>
             <span id="filtrosBadge" class="hidden bg-indigo-500 text-white text-xs rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center leading-none">0</span>
           </button>
-          <!-- Panel responsive:
-               · mobile (<640): fixed full-width centrado, debajo del header
-               · sm-md tablet (640-1024): fixed con max-width a la derecha
-               · desktop (≥1024): absolute anclado al botón -->
-          <div id="catFiltroPanel" class="hidden fixed lg:absolute right-2 lg:right-0 left-2 lg:left-auto top-24 lg:top-full mt-1 z-[60] rounded-xl shadow-2xl p-4 max-w-[300px] mx-auto lg:mx-0 lg:w-72" style="background:#1e293b;border:1px solid #334155">
-            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Categoría</div>
-            <div id="filtroCategList" class="max-h-44 overflow-y-auto space-y-0.5 mb-4"></div>
-            <div style="border-top:1px solid #334155" class="pt-3 mt-1">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Tipo de producto</div>
-              <div class="space-y-0.5">
-                <label class="filtro-check" id="fchkEnvasable" onclick="MOS.toggleFiltroTipo('envasable')"><span>⚗️</span> Envasable</label>
-                <label class="filtro-check" id="fchkConPres"   onclick="MOS.toggleFiltroTipo('conPres')"><span>📦</span> Con presentaciones</label>
-                <label class="filtro-check" id="fchkDerivado"  onclick="MOS.toggleFiltroTipo('derivado')"><span>🔗</span> Derivado</label>
-                <label class="filtro-check" id="fchkInactivo"  onclick="MOS.toggleFiltroTipo('inactivo')"><span>🚫</span> Inactivos</label>
-              </div>
-            </div>
-            <!-- [v2.43.37] Ordenar por rotación / margen -->
-            <div style="border-top:1px solid #334155" class="pt-3 mt-3">
-              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Ordenar por</div>
-              <div class="space-y-0.5" id="filtroOrdenList">
-                <div class="filtro-radio active" data-orden=""        onclick="MOS.setFiltroOrden('')">Alfabético (default)</div>
-                <div class="filtro-radio"        data-orden="rot_desc" onclick="MOS.setFiltroOrden('rot_desc')">📦 Rotación: más vendidos primero</div>
-                <div class="filtro-radio"        data-orden="rot_asc"  onclick="MOS.setFiltroOrden('rot_asc')">🌙 Rotación: lentos primero</div>
-                <div class="filtro-radio"        data-orden="mrg_desc" onclick="MOS.setFiltroOrden('mrg_desc')">💎 Margen: alto → bajo</div>
-                <div class="filtro-radio"        data-orden="mrg_asc"  onclick="MOS.setFiltroOrden('mrg_asc')">⚠ Margen: bajo → alto</div>
-              </div>
-            </div>
-            <div style="border-top:1px solid #334155" class="pt-3 mt-3">
-              <button onclick="MOS.limpiarFiltrosCat()" class="text-xs text-slate-500 hover:text-red-400 transition-colors">Limpiar filtros</button>
-            </div>
-          </div>
+          <!-- [692] panel inline viejo eliminado: el flotante (catFiltroPanelFloat) es el único -->
         </div>
         </div>
         <div class="ct2-f2">
@@ -14725,6 +14704,7 @@
               <span class="ct2-ic">⚠️</span><span class="ct2-lbl">Alertas</span><span class="ct2-n rojo" id="alertaCount">0</span>
             </button>
           </div>
+          <span class="ct2-sep"></span>
           <div class="ct2-grp ct2-gmaster hidden" id="catMasterGroup"><span class="ct2-glbl">Master</span>
             <button class="ct2-btn" onclick="MOS.abrirCestaPurga()" title="Eliminar items huérfanos del catálogo">
               <span class="ct2-ic">🗑</span><span class="ct2-lbl">Purgar</span>
@@ -14733,8 +14713,7 @@
               <span class="ct2-ic">📜</span><span class="ct2-lbl">Log</span>
             </button>
           </div>
-          <span class="ct2-sep"></span>
-          <button class="ct2-nuevo" onclick="MOS.abrirModalProducto(null)" title="Crear producto nuevo">＋<span class="ct2-lbl-n">Nuevo</span></button>
+          <button class="ct2-nuevo" onclick="MOS.abrirModalProducto(null)" title="Crear producto nuevo"><span class="plus">＋</span><span class="ct2-lbl-n">Nuevo producto</span></button>
         </div>
       </div>
       <!-- Chips de filtros activos -->
@@ -20065,7 +20044,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.691';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.692';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20115,7 +20094,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.691"></script>
+<script src="js/api.js?v=2.43.692"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20131,7 +20110,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.691"></script>
+<script src="js/app.js?v=2.43.692"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

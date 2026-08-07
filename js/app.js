@@ -2161,8 +2161,7 @@ const MOS = (() => {
   function toggleFiltroAlertas() {
     _catFiltros.soloAlertas = !_catFiltros.soloAlertas;
     _catFiltrosGuardar(); // [v2.43.71]
-    const btn = $('btnAlertasCat');
-    if (btn) btn.classList.toggle('active', _catFiltros.soloAlertas);
+    _updateFiltroBadge();  // [692] pinta botón + chip + contador
     renderCatalogo();
   }
 
@@ -2256,7 +2255,9 @@ const MOS = (() => {
   }
 
   function _updateFiltroBadge() {
-    const count = (_catFiltros.categoria ? 1 : 0) + (_catFiltros.subcategoria ? 1 : 0) + _catFiltros.tipos.size + (_catFiltros.orden ? 1 : 0);
+    const count = (_catFiltros.categoria ? 1 : 0) + (_catFiltros.subcategoria ? 1 : 0) + (_catFiltros.soloAlertas ? 1 : 0) + _catFiltros.tipos.size + (_catFiltros.orden ? 1 : 0);
+    // [692] el filtro "solo alertas" SIEMPRE con indicador (antes quedaba activo invisible → "¿dónde están mis productos?")
+    $('btnAlertasCat')?.classList.toggle('active', !!_catFiltros.soloAlertas);
     const badge = $('filtrosBadge');
     if (badge) { badge.textContent = count; badge.classList.toggle('hidden', count === 0); }
 
@@ -2266,6 +2267,7 @@ const MOS = (() => {
     if (chips) {
       const parts = [];
       if (_catFiltros.categoria) parts.push(`<span class="cat-chip">📂 ${_catFiltros.categoria} <button onclick="MOS.setFiltroCategoria('')">×</button></span>`);
+      if (_catFiltros.soloAlertas) parts.push(`<span class="cat-chip">⚠️ Solo alertas <button onclick="MOS.toggleFiltroAlertas()">×</button></span>`);
       if (_catFiltros.subcategoria) parts.push(`<span class="cat-chip">🧩 ${_escapeHtml(_catFiltros.subcategoria)} <button onclick="MOS.setFiltroSubcategoria('')">×</button></span>`);
       _catFiltros.tipos.forEach(t => parts.push(`<span class="cat-chip">${tipoLabels[t]} <button onclick="MOS.toggleFiltroTipo('${t}')">×</button></span>`));
       if (_catFiltros.orden && ordenLabels[_catFiltros.orden]) {
@@ -2344,10 +2346,10 @@ const MOS = (() => {
         <div style="font-size:13px;font-weight:800;color:#a5b4fc;letter-spacing:.5px">🔍 FILTROS DEL CATÁLOGO</div>
         <button onclick="MOS._cerrarFiltroFloat()" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;padding:0 6px;font-weight:900;line-height:1">×</button>
       </div>
-      <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">Categoría</div>
-      <div id="catFpCategList" style="max-height:140px;overflow-y:auto;margin-bottom:12px">
-        <div class="cat-fp-radio${!curCat ? ' is-on' : ''}" data-cat="" style="padding:6px 9px;cursor:pointer;font-size:11px;color:${!curCat ? '#a5b4fc' : '#94a3b8'};border-radius:5px;background:${!curCat ? 'rgba(99,102,241,.15)' : 'transparent'}">Todas</div>
-        ${cats.map(c => `<div class="cat-fp-radio${curCat === c ? ' is-on' : ''}" data-cat="${_escapeHtml(c)}" style="padding:6px 9px;cursor:pointer;font-size:11px;color:${curCat === c ? '#a5b4fc' : '#94a3b8'};border-radius:5px;background:${curCat === c ? 'rgba(99,102,241,.15)' : 'transparent'}">${_escapeHtml(c)}</div>`).join('')}
+      <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">📂 Categoría</div>
+      <div id="catFpCategList" style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px;max-height:200px;overflow-y:auto;margin-bottom:12px;padding-right:2px">
+        <div class="cat-fp-radio" data-cat="" style="grid-column:1/-1;text-align:center;padding:7px 9px;cursor:pointer;font-size:11px;font-weight:700;border-radius:8px;border:1px solid ${!curCat ? 'rgba(165,180,252,.55)' : '#22314f'};color:${!curCat ? '#a5b4fc' : '#94a3b8'};background:${!curCat ? 'rgba(99,102,241,.16)' : 'rgba(30,41,59,.35)'}">Todas las categorías</div>
+        ${cats.map(c => { const hu = _taxHue(c); const on = curCat === c; return `<div class="cat-fp-radio" data-cat="${_escapeHtml(c)}" style="display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:pointer;font-size:10.5px;font-weight:600;border-radius:8px;border:1px solid ${on ? `hsl(${hu} 65% 55% / .75)` : '#22314f'};color:${on ? `hsl(${hu} 80% 78%)` : '#94a3b8'};background:${on ? `hsl(${hu} 55% 45% / .2)` : 'rgba(30,41,59,.35)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all .15s"><span style="flex:none">${_TAX_EMOJI[c] || '🏷️'}</span><span style="overflow:hidden;text-overflow:ellipsis">${_escapeHtml(c)}</span></div>`; }).join('')}
       </div>
       ${curCat ? (() => {
         // [690] segundo nivel: subcategorías (taxonomía IA) de la categoría elegida
@@ -2364,11 +2366,11 @@ const MOS = (() => {
       </div>`;
       })() : ''}
       <div style="border-top:1px solid #1e293b;padding-top:10px">
-        <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">Tipo de producto</div>
+        <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">⚗️ Tipo de producto</div>
         ${tiposHtml}
       </div>
       <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px">
-        <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">Ordenar por</div>
+        <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:6px;letter-spacing:.5px">↕️ Ordenar por</div>
         ${[
           { k: '',         lbl: 'Alfabético (default)' },
           { k: 'rot_desc', lbl: '📦 Rotación: más vendidos primero' },
@@ -2629,6 +2631,9 @@ const MOS = (() => {
       if (ecbn.startsWith(qn)) return { score: 80, field: 'equiv', exacto: false, equivMatch: eqCb };
       if (ecbn.includes(qn))   return { score: 60, field: 'equiv', exacto: false, equivMatch: eqCb };
     }
+    if (_norm(p.marca).includes(qn))                     return { score: 40, field: 'marca', exacto: false };  // [692]
+    const _subIA = (p.categoriaIa && typeof p.categoriaIa === 'object' && p.categoriaIa.subcategoria) || '';
+    if (_subIA && _norm(_subIA).includes(qn))            return { score: 39, field: 'subcat', exacto: false };  // [692]
     if (_norm(p.idCategoria).includes(qn))               return { score: 38, field: 'cat',  exacto: false };
     if (words.some(w => desc.includes(w) || cb.includes(w))) return { score: 22, field: 'desc', exacto: false };
     return { score: 0 };
@@ -2799,6 +2804,7 @@ const MOS = (() => {
     const cntAlert = $('alertaCount');
     if (btnAlert) btnAlert.classList.toggle('hidden', totalAlertas === 0);
     if (cntAlert) cntAlert.textContent = totalAlertas;
+    _updateFiltroBadge();   // [692] estado "prendido" del botón/chips SIEMPRE sincronizado (también al cargar)
     // Badge de alerta en íconos del nav (sidebar y mobile)
     ['catAlertBadge', 'catAlertBadgeMob'].forEach(id => {
       const el = $(id);
@@ -3538,7 +3544,10 @@ const MOS = (() => {
     // visible (aunque vacío) para que pueda usar "Agregar manual".
     if (!lista.length && !esAdmin) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
 
-    const open = _pnBannerExpandido() || (!lista.length && esAdmin); // si vacío y admin, abierto por default
+    // [692] compacto: cerrado = ni una línea (el botón 🆕 de la toolbar lo despliega);
+    // ya no se auto-abre vacío para admins.
+    const open = _pnBannerExpandido();
+    if (!open) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
     banner.style.display = 'block';
 
     const addBtnHtml = esAdmin ? `
