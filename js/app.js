@@ -8828,10 +8828,11 @@ const MOS = (() => {
         <span class="ops-p1-foto-pill">📄 Factura de la guía</span>
         <span class="ops-p1-foto-zoom">🔍 Ampliar / zoom</span>
       </div>` : '';
-    // Chip de progreso de montos (sin OCR)
+    // Instrucción (sin contador: el contador vive en la barra de progreso de abajo, que SÍ se
+    // repinta al teclear — duplicarlo aquí mostraba un "0/3" congelado junto a un "1/3" vivo).
     const chipOcr = tieneFoto
-      ? `<div id="opsChipOcrStatus" class="ops-chip-ok">📸 ${conCosto}/${totLin} con monto · mira la factura arriba y escribe</div>`
-      : `<div id="opsChipOcrStatus" class="ops-chip-info">✍ ${conCosto}/${totLin} con monto · sin foto — escribe mirando la factura física</div>`;
+      ? `<div id="opsChipOcrStatus" class="ops-chip-ok">📸 Mira la factura de arriba y escribe el monto de cada línea</div>`
+      : `<div id="opsChipOcrStatus" class="ops-chip-info">✍ Sin foto — escribe los montos mirando la factura física</div>`;
     // Progreso visual — SIEMPRE visible (fuera del bloque plegable): es la brújula del flujo.
     const progCls = pct === 100 ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
     const progreso = `<div id="costosGuiaProgreso" class="ops-prog-bar">

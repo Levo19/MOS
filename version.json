@@ -1,1 +1,1 @@
-{"version":"2.43.704","build":"Paso 1 costos: cabecera avanzada acostada en tablet/PC (+90px de lista), bloque de impacto con su CSS (no se inyectaba entrando por la Mesa), toggles 36px"}
+{"version":"2.43.705","build":"Paso 1 costos: el chip de instruccion ya no duplica el contador (mostraba 0/3 congelado junto al 1/3 vivo de la barra)"}
