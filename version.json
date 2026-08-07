@@ -1,1 +1,1 @@
-{"version":"2.43.703","build":"UX movil Paso 1 de compras (overlay de costos) reformado: cabecera plegable, linea que se encierra tipo chip al salir del campo, autoguardado al catalogo (adios boton global), pie sticky con total, adaptativo 390/768/1280 + 5 fixes de los modales del catalogo"}
+{"version":"2.43.704","build":"Paso 1 costos: cabecera avanzada acostada en tablet/PC (+90px de lista), bloque de impacto con su CSS (no se inyectaba entrando por la Mesa), toggles 36px"}

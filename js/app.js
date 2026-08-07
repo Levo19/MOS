@@ -8742,6 +8742,11 @@ const MOS = (() => {
 
   function _abrirModalCostosUnificado(op) {
     _opsInyectarKeyframes();
+    // [703 · BUG] Las reglas base de .alm-v-impacto* (el bloque "Margen → / Precio →" de cada
+    // línea) viven en _opsInyectarCSSCostosMode, que SOLO se inyectaba al abrir el overlay de
+    // Almacén. Entrando por Catálogo → Mesa → Costos nunca se inyectaban: el bloque salía SIN
+    // estilo (texto a 16px pegado y desbordado). Es idempotente, así que se pide siempre.
+    _opsInyectarCSSCostosMode();
     _opsInyectarCSSModalCostosUnificado();
     _p2InyectarCSS();   // [v2.43.603] estilos del botón 💰 por línea (.cl-precio-*)
     // [703] El bloque avanzado (foto de factura + modo monto/IGV) nace ABIERTO en tablet/PC y
@@ -9597,6 +9602,8 @@ const MOS = (() => {
       #modalCostosGuiaUnif .cl-precio-btn, #modalCostosGuiaUnif .cl-priced { min-height: 46px; }
       #modalCostosGuiaUnif .cl-price-hint { padding: 11px 13px; }
       #modalCostosGuiaUnif .cl-sum { display: none; }
+      /* toggles de modo: medían 27px de alto — poco incluso con mouse */
+      #modalCostosGuiaUnif .ops-tg-btn { min-height: 36px; }
 
       /* ESTADO 2 · CHIPEADA (ya tiene costo): cabecera + chip verde del monto + 💰 Precio */
       #modalCostosGuiaUnif .alm-v-costo-line.is-collapsed .cl-money,
@@ -9649,13 +9656,24 @@ const MOS = (() => {
         #modalCostosGuiaUnif #opsCostosFooter { padding: 9px 12px calc(10px + env(safe-area-inset-bottom, 0px)) !important; }
         #modalCostosGuiaUnif .ops-p1-foto { max-height: 150px; }
         #modalCostosGuiaUnif .ops-tg-btn { min-height: 40px; padding: 8px 13px; font-size: 12px; }
+        /* bloque de impacto legible en 390px (label arriba, valores debajo) */
+        #modalCostosGuiaUnif .alm-v-impacto { padding: 8px 11px; }
+        #modalCostosGuiaUnif .alm-v-impacto-fila { font-size: 11.5px; gap: 6px; row-gap: 2px; }
+        #modalCostosGuiaUnif .alm-v-impacto-label { min-width: 44px; }
+        #modalCostosGuiaUnif .alm-v-impacto-hint { font-size: 9.5px; }
         #modalCostosGuiaUnif .ops-tg-auto { margin-left: 0; }
         #modalCostosGuiaUnif .ops-toggles-grid { gap: 8px; }
       }
 
       /* ═══ TIER 2 · TABLET (≥768px): modal centrado + lista en 2 columnas ═══ */
       @media (min-width: 768px) {
-        #modalCostosGuiaUnif .p1-box { max-width: 900px; max-height: 92vh; }
+        #modalCostosGuiaUnif .p1-box { max-width: 900px; max-height: 93vh; }
+        /* la cabecera avanzada se acuesta: factura + chip lado a lado (medido: ahorra ~90px de
+           alto, que es scroll de lista; abierta en columna dejaba 187px de lista en un PC de 860) */
+        #modalCostosGuiaUnif .p1-adv { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+        #modalCostosGuiaUnif .ops-p1-foto { flex: 1 1 330px; aspect-ratio: auto; height: 122px; max-height: 122px; }
+        #modalCostosGuiaUnif #opsChipOcrStatus { flex: 1 1 220px; }
+        #modalCostosGuiaUnif .ops-toggles-grid { flex: 1 1 100%; }
         #modalCostosGuiaUnif .p1-lista { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
         #modalCostosGuiaUnif .cl-money { grid-template-columns: minmax(150px, 1fr) auto; align-items: end; gap: 12px; }
         #modalCostosGuiaUnif .cl-readout { align-items: flex-end; text-align: right; }
@@ -9667,7 +9685,7 @@ const MOS = (() => {
 
       /* ═══ TIER 3 · PC (≥1024px): ancho cómodo, nunca pantalla completa ═══ */
       @media (min-width: 1024px) {
-        #modalCostosGuiaUnif .p1-box { max-width: 1060px; max-height: 88vh; }
+        #modalCostosGuiaUnif .p1-box { max-width: 1060px; max-height: 92vh; }
         #modalCostosGuiaUnif #opsCostosBody { padding-left: 22px !important; padding-right: 22px !important; }
         #modalCostosGuiaUnif .p1-lista { gap: 11px; }
         #modalCostosGuiaUnif .alm-v-costo-line { padding: 13px 15px; }
