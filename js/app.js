@@ -358,6 +358,10 @@ const MOS = (() => {
     if (searchInp) {
       const toolbar = searchInp.closest('.cat-toolbar');
       if (toolbar) {
+        // [691] háptica de la fila de acciones
+        document.querySelector('.ct2-f2')?.addEventListener('pointerdown', (e) => {
+          if (e.target.closest('.ct2-btn, .ct2-nuevo')) { try { navigator.vibrate && navigator.vibrate(8); } catch(_){} }
+        });
         searchInp.addEventListener('focus', () => toolbar.classList.add('search-active'));
         searchInp.addEventListener('blur',  () => { if (!searchInp.value) toolbar.classList.remove('search-active'); });
       }
@@ -937,74 +941,15 @@ const MOS = (() => {
     // quedaba oculto en el menú avatar hasta reiniciar. _aplicarVisibilidadConfig se vuelve a
     // llamar al abrir el menú avatar (DOM ya completo, S.session.rol listo).
     _aplicarVisibilidadConfig();
-    // [v2.43.53] Kebab Master con dropdown Purgar+Log (reemplaza btnLogProductos)
-    const btnKeb = $('btnMasterKebab');
-    if (btnKeb) {
-      btnKeb.classList.toggle('hidden', !isMaster);
-      if (isMaster && btnKeb.dataset.bound !== '1') {
-        btnKeb.dataset.bound = '1';
-        btnKeb.addEventListener('click', (e) => {
-          e.stopPropagation();
-          abrirKebabMaster(e);
-        });
-      }
-    }
+    // [691] Grupo MASTER visible en la toolbar (reemplaza el kebab ⋮ de acciones ocultas)
+    const grpMaster = $('catMasterGroup');
+    if (grpMaster) grpMaster.classList.toggle('hidden', !isMaster);
     // Legacy btnLogProductos siempre oculto en master mode
     const btnLog = $('btnLogProductos');
     if (btnLog) btnLog.classList.add('hidden');
   }
 
-  // [v2.43.53] Dropdown del kebab Master en el header (Purgar + Log)
-  function abrirKebabMaster(ev) {
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    const existente = document.getElementById('masterKebabMenu');
-    if (existente) { existente.remove(); return; }
-    const rect = ev && ev.currentTarget ? ev.currentTarget.getBoundingClientRect()
-                                         : { right: window.innerWidth/2, bottom: 80 };
-    const menuW = 240;
-    let left = rect.right - menuW;
-    if (left < 8) left = 8;
-    const top = rect.bottom + 4;
-    const html = `<div id="masterKebabMenu"
-      style="position:fixed;top:${top}px;left:${left}px;width:${menuW}px;background:#0f172a;border:1px solid #6b21a8;border-radius:10px;padding:6px;box-shadow:0 15px 40px -8px rgba(0,0,0,.6),0 0 0 1px rgba(168,85,247,.2);z-index:99998;animation:catKebabIn .15s ease-out"
-      onclick="event.stopPropagation()">
-      <div style="font-size:9px;color:#c084fc;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px 6px">👑 Acciones Master</div>
-      <button onclick="MOS._cerrarKebabMaster();MOS.abrirCestaPurga()"
-              style="display:flex;align-items:center;gap:10px;width:100%;background:rgba(248,113,113,.08);border:0;color:#fca5a5;border-radius:6px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s;margin-bottom:3px"
-              onmouseover="this.style.background='rgba(248,113,113,.18)'"
-              onmouseout="this.style.background='rgba(248,113,113,.08)'">
-        <span style="font-size:16px">🗑</span>
-        <div style="flex:1">
-          <div>Purgar catálogo</div>
-          <div style="font-size:9px;color:#94a3b8;font-weight:400;margin-top:1px">Eliminar items huérfanos</div>
-        </div>
-      </button>
-      <button onclick="MOS._cerrarKebabMaster();MOS.abrirLogProductos()"
-              style="display:flex;align-items:center;gap:10px;width:100%;background:rgba(168,85,247,.08);border:0;color:#c084fc;border-radius:6px;padding:10px 12px;font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:background .15s"
-              onmouseover="this.style.background='rgba(168,85,247,.18)'"
-              onmouseout="this.style.background='rgba(168,85,247,.08)'">
-        <span style="font-size:16px">📜</span>
-        <div style="flex:1">
-          <div>Log de cambios</div>
-          <div style="font-size:9px;color:#94a3b8;font-weight:400;margin-top:1px">Historial del catálogo</div>
-        </div>
-      </button>
-    </div>`;
-    document.body.insertAdjacentHTML('beforeend', html);
-    setTimeout(() => {
-      const close = (e) => {
-        const m = document.getElementById('masterKebabMenu');
-        if (!m || m.contains(e.target)) return;
-        m.remove();
-        document.removeEventListener('click', close);
-      };
-      document.addEventListener('click', close);
-    }, 0);
-  }
-  function _cerrarKebabMaster() {
-    const m = document.getElementById('masterKebabMenu');
-    if (m) m.remove();
-  }
+  // [691] kebab Master eliminado: sus acciones viven como grupo MASTER visible en la toolbar
 
   function logout() {
     _stopCajasRefresh();
@@ -3513,6 +3458,8 @@ const MOS = (() => {
   function _updatePNBadge() {
     const n = (S.pnPendientes || []).length;
     const txt = n > 0 ? String(n > 99 ? '99+' : n) : '';
+    const tb = $('pnToolbarCount');
+    if (tb) { tb.textContent = txt; tb.style.display = n > 0 ? 'flex' : 'none'; }
     ['pnNavBadge', 'pnNavBadgeMob'].forEach(id => {
       const el = $(id);
       if (!el) return;
@@ -3533,6 +3480,15 @@ const MOS = (() => {
       return v === '1';
     } catch { return false; }
   }
+  // [691] botón 🆕 de la toolbar: abre la sección "Por registrar" EXISTENTE y hace scroll
+  function abrirPNDesdeToolbar() {
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    try { navigator.vibrate && navigator.vibrate(10); } catch(_){}
+    if (!_pnBannerExpandido()) togglePNBanner();
+    const b = $('pnBannerCat');
+    if (b) { try { b.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(_){} }
+  }
+
   function togglePNBanner() {
     const open = !_pnBannerExpandido();
     try { localStorage.setItem('mos_pn_banner_open', open ? '1' : '0'); } catch {}
@@ -45433,7 +45389,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnDescartar, pnVerOcultos, pnRestaurar,
     pnBuscarParaCorregir, pnSeleccionarParaCorregir,
-    togglePNBanner, openImagePreview, closeImagePreview,
+    togglePNBanner, abrirPNDesdeToolbar, openImagePreview, closeImagePreview,
     // PN manual (admin/master)
     abrirCrearPNManual, cerrarCrearPNManual, crearPNManualSubmit,
     _cpnToggleAutogen, _cpnFotoSeleccionada, _cpnRemoverFoto, _cpnStep,
@@ -45590,7 +45546,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.51] Purga catálogo (master)
     _cerrarKebab,
     // [v2.43.53] Kebab Master en header (Purgar + Log)
-    abrirKebabMaster, _cerrarKebabMaster,
     // [v2.43.57] Espía V2 — WebRTC 4 streams con efectos premium
     abrirEspiaV2, cerrarEspiaV2,
     _espiaV2Swap, _espiaV2ToggleMute, _espiaV2Fullscreen,

@@ -6833,6 +6833,27 @@
       font-size: 10px; font-weight: 900; display: grid; place-items: center;
       box-shadow: 0 2px 6px rgba(251,113,133,.6);
     }
+    /* ── [691] Toolbar v2 del catálogo: 2 filas ── */
+    .cat-toolbar.ct2{display:block}
+    .ct2-f1{display:flex;gap:8px;align-items:center}
+    .ct2-f1 .cat-search-wrap{flex:1}
+    .ct2-f2{display:flex;gap:8px;align-items:stretch;margin-top:9px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:2px}
+    .ct2-f2::-webkit-scrollbar{height:0}
+    .ct2-grp{display:flex;gap:4px;background:#0d1526;border:1px solid #22314f;border-radius:12px;padding:4px 6px 4px 4px;align-items:center;flex-shrink:0;scroll-snap-align:start}
+    .ct2-glbl{font-size:8.5px;font-weight:800;letter-spacing:.07em;color:#44598a;text-transform:uppercase;writing-mode:vertical-rl;transform:rotate(180deg);padding:2px 0;margin:0 2px}
+    .ct2-btn{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:60px;min-height:44px;padding:5px 10px;border-radius:9px;font-size:10px;font-weight:700;color:#b6c2dd;position:relative;cursor:pointer;border:1px solid transparent;background:transparent;transition:background .15s,transform .15s}
+    .ct2-btn:hover{background:#16223c;transform:translateY(-1px)}
+    .ct2-btn:active{transform:scale(.96)}
+    .ct2-btn.active{background:rgba(248,113,113,.14);border-color:rgba(248,113,113,.4);color:#fca5a5}
+    .ct2-ic{font-size:16px;line-height:1}
+    .ct2-n{position:absolute;top:0;right:4px;color:#0b1220;font-size:8.5px;font-weight:900;border-radius:99px;min-width:14px;height:14px;display:flex;align-items:center;justify-content:center;padding:0 3px}
+    .ct2-n.azul{background:#38bdf8}.ct2-n.verde{background:#34d399}.ct2-n.rojo{background:#f87171}
+    .ct2-gmaster{background:rgba(168,85,247,.08);border-color:rgba(168,85,247,.4)}
+    .ct2-gmaster .ct2-glbl{color:#c084fc}
+    .ct2-sep{flex:1;min-width:4px}
+    .ct2-nuevo{background:linear-gradient(135deg,#6366f1,#4f46e5);border:0;border-radius:12px;color:#fff;display:flex;align-items:center;gap:5px;padding:0 16px;font-weight:800;font-size:13px;box-shadow:0 4px 14px rgba(99,102,241,.35);cursor:pointer;flex-shrink:0;min-height:44px;transition:transform .15s}
+    .ct2-nuevo:active{transform:scale(.96)}
+    @media (max-width:560px){.ct2-lbl-n{display:none}.ct2-nuevo{padding:0 13px;font-size:17px}}
     /* en el Catálogo el botón NO debe recortarse por el overflow:hidden de .cat-tool-btn */
     .cat-toolbar > .btn-mesa-compras { overflow: visible; }
     .cat-toolbar > .cat-tool-btn {
@@ -14631,9 +14652,13 @@
               style="width:52px;height:52px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#0b1220;font-size:22px;border:2px solid #fcd34d"
               title="¿Cómo funcionan los precios y categorías?">🎓</button>
 
-      <!-- Toolbar -->
-      <div class="cat-toolbar">
-        <div class="cat-search-wrap">
+      <!-- [691] Toolbar v2 — 2 filas: arriba ENCUENTRAS (búsqueda+filtros), abajo OPERAS
+           (grupos ENTRADA/GESTIÓN/MASTER + CTA Nuevo). Se acaban los parches search-active/collapse:
+           nada compite con el buscador. El botón 🆕 abre la sección "Por registrar" EXISTENTE
+           (pnBannerCat, con sus efectos) — no la duplica. -->
+      <div class="cat-toolbar ct2">
+        <div class="ct2-f1">
+          <div class="cat-search-wrap">
           <input id="searchCatalogo" type="search" class="inp w-full pl-9 pr-11"
                  placeholder="Buscar por nombre, código, SKU..."
                  oninput="MOS.filterCatalogo()" autocomplete="off">
@@ -14644,17 +14669,7 @@
             <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           </button>
         </div>
-        <!-- [v5 §11] Mesa de compras — mismo botón que en Almacén/Operaciones -->
-        <button class="btn-mesa-compras cat-tool-btn" onclick="MOS.abrirMesaCompras()" title="Procesar compras: costos → precios de cada guía de proveedor">
-          🧾 <span class="cat-btn-new-lbl">Compras</span><span class="bmc-n" style="display:none">0</span>
-        </button>
-        <!-- Botón Alertas (solo visible si hay productos con alertas) -->
-        <button id="btnAlertasCat" onclick="MOS.toggleFiltroAlertas()" class="alert-btn hidden cat-tool-btn" title="Productos con alertas — click para filtrar">
-          <span class="alert-btn-icon">⚠</span>
-          <span class="alert-btn-count" id="alertaCount">0</span>
-        </button>
-        <!-- Filtros dropdown -->
-        <div class="relative cat-tool-btn" id="catFiltroWrap">
+          <div class="relative" id="catFiltroWrap">
           <button id="btnFiltrosCat" type="button" class="inp flex items-center gap-2 whitespace-nowrap" style="min-height:38px;min-width:80px">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
             <span class="cat-btn-new-lbl">Filtros</span>
@@ -14692,24 +14707,35 @@
             </div>
           </div>
         </div>
-        <button class="cat-tool-btn cat-tool-btn-collapse cat-btn-promo" onclick="MOS.nav('promociones')" title="Gestionar promociones">
-          <span>🎯</span><span class="cat-btn-new-lbl">Promos</span>
-        </button>
-        <!-- [v2.43.54] Kebab Master en toolbar — SIN cat-tool-btn-collapse para
-             que NO se oculte cuando search-active. Siempre visible al master. -->
-        <button id="btnMasterKebab" type="button" class="hidden"
-                title="Acciones Master"
-                style="background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.5);color:#c084fc;font-size:1.4rem;padding:4px 12px;border-radius:8px;min-width:44px;min-height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:900;line-height:1;transition:background .15s,transform .15s;flex-shrink:0">
-          ⋮
-        </button>
-        <!-- Legacy: mantengo el id por compatibilidad pero oculto -->
-        <button id="btnLogProductos" class="hidden" onclick="MOS.abrirLogProductos()" style="display:none"></button>
-        <!-- [v2.43.498] + Nuevo producto = ACCIÓN PRINCIPAL: SIN cat-tool-btn-collapse
-             para que NUNCA se oculte al buscar (mismo fix del kebab master). flex-shrink:0
-             para que no lo aplaste el buscador al crecer. -->
-        <button class="btn-primary whitespace-nowrap flex items-center gap-1 cat-tool-btn cat-btn-new" style="flex-shrink:0" onclick="MOS.abrirModalProducto(null)" title="Crear producto nuevo">
-          <span style="font-size:1.15rem;line-height:1">+</span><span class="cat-btn-new-lbl">Nuevo</span>
-        </button>
+        </div>
+        <div class="ct2-f2">
+          <div class="ct2-grp"><span class="ct2-glbl">Entrada</span>
+            <button id="btnPNCat" class="ct2-btn" onclick="MOS.abrirPNDesdeToolbar()" title="Productos nuevos por registrar (llegaron en guías de WH)">
+              <span class="ct2-ic">🆕</span><span class="ct2-lbl">Nuevos</span><span id="pnToolbarCount" class="ct2-n azul" style="display:none">0</span>
+            </button>
+            <button class="btn-mesa-compras ct2-btn" onclick="MOS.abrirMesaCompras()" title="Procesar compras: costos → precios de cada guía de proveedor">
+              <span class="ct2-ic">🧾</span><span class="ct2-lbl">Compras</span><span class="bmc-n ct2-n verde" style="display:none">0</span>
+            </button>
+          </div>
+          <div class="ct2-grp"><span class="ct2-glbl">Gestión</span>
+            <button class="ct2-btn" onclick="MOS.nav('promociones')" title="Gestionar promociones">
+              <span class="ct2-ic">🎯</span><span class="ct2-lbl">Promos</span>
+            </button>
+            <button id="btnAlertasCat" onclick="MOS.toggleFiltroAlertas()" class="ct2-btn hidden" title="Productos con alertas — click para filtrar">
+              <span class="ct2-ic">⚠️</span><span class="ct2-lbl">Alertas</span><span class="ct2-n rojo" id="alertaCount">0</span>
+            </button>
+          </div>
+          <div class="ct2-grp ct2-gmaster hidden" id="catMasterGroup"><span class="ct2-glbl">Master</span>
+            <button class="ct2-btn" onclick="MOS.abrirCestaPurga()" title="Eliminar items huérfanos del catálogo">
+              <span class="ct2-ic">🗑</span><span class="ct2-lbl">Purgar</span>
+            </button>
+            <button class="ct2-btn" onclick="MOS.abrirLogProductos()" title="Historial de cambios del catálogo">
+              <span class="ct2-ic">📜</span><span class="ct2-lbl">Log</span>
+            </button>
+          </div>
+          <span class="ct2-sep"></span>
+          <button class="ct2-nuevo" onclick="MOS.abrirModalProducto(null)" title="Crear producto nuevo">＋<span class="ct2-lbl-n">Nuevo</span></button>
+        </div>
       </div>
       <!-- Chips de filtros activos -->
       <div id="catFiltroChips" class="hidden flex flex-wrap gap-1 mb-2"></div>
@@ -20039,7 +20065,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.690';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.691';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20089,7 +20115,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.690"></script>
+<script src="js/api.js?v=2.43.691"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20105,7 +20131,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.690"></script>
+<script src="js/app.js?v=2.43.691"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
