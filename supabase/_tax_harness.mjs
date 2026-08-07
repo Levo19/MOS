@@ -24,6 +24,7 @@ ${css}</style>
 <script>
 const DATA=${JSON.stringify(data)};
 const _escapeHtml=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const _escAttrJs=s=>encodeURIComponent(String(s));  // stub del arnés: solo evita romper el atributo
 const $=id=>document.getElementById(id);
 const MOS={catToggle:(c)=>{_catAbierta=(_catAbierta===c)?null:c;_renderCategoriasCards($('catGridContainer'),DATA);},catBuscar:()=>{}};
 let _catQ='';let _catAbierta='ESPECIAS';

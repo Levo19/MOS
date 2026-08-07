@@ -19177,7 +19177,7 @@ const MOS = (() => {
         </div>
       </div>`;
     }
-    cont.className = 'grid2';
+    cont.className = 'grid2 taxgrid';
     const vis = _catQ
       ? rows.filter(c => (String(c.nombre||'') + ' ' + String(c.categoria||'') + ' ' + String(c.descripcion||'')).toLowerCase().includes(_catQ)
                       || (c.subcategorias || []).some(_taxSubHit))
