@@ -76,7 +76,13 @@ set statement_timeout to '20s'
 as $fn$
 declare
   v_in     jsonb   := coalesce(p->'lineas', '[]'::jsonb);
-  v_nombre text    := left(btrim(coalesce(p->>'nombre', '')), 80);
+  -- OJO con btrim() a secas: en PostgreSQL solo recorta ESPACIOS, no tabuladores ni
+  -- saltos de línea. Un nombre pegado con un tabulador o un salto pasaba el "no vacío"
+  -- y entraba una solicitud sin dueño. Se colapsa TODO el blanco primero con la clase
+  -- POSIX [[:space:]], que es la que entiende el regex de Postgres.
+  -- (Este comentario NO puede llevar secuencias escapadas: el DDL vive dentro de un
+  --  template literal de JS y se convertirían en caracteres reales, partiendo la línea.)
+  v_nombre text    := left(btrim(regexp_replace(coalesce(p->>'nombre', ''), '[[:space:]]+', ' ', 'g')), 80);
   v_tel    text    := left(regexp_replace(coalesce(p->>'telefono', ''), '[^0-9]', '', 'g'), 20);
   v_ua     text    := left(btrim(coalesce(p->>'ua', '')), 400);
   v_n      int;
@@ -103,6 +109,14 @@ begin
   v_n := jsonb_array_length(v_in);
   if v_n = 0  then return jsonb_build_object('ok', false, 'razon', 'vacio');      end if;
   if v_n > 60 then return jsonb_build_object('ok', false, 'razon', 'max_lineas'); end if;
+
+  -- NOMBRE OBLIGATORIO (decisión del dueño): esto es un pre-pedido conversacional.
+  -- Sin saber quién es, el vendedor no puede llamarlo ni buscarlo en su cartera, y la
+  -- solicitud llega muerta a MosGo. El front ya lo exige; esto es la defensa del
+  -- servidor, que es la que de verdad manda.
+  if v_nombre = '' then
+    return jsonb_build_object('ok', false, 'razon', 'nombre');
+  end if;
 
   -- cada línea: id = 10 hex, escalon_idx = entero, cantidad = entero.
   -- Cualquier otra cosa (precio incluido) se descarta sin mirarla.
@@ -397,8 +411,10 @@ const anon = async (sql, params) => {
   await c.query('release savepoint sp');
   return { rows: out };
 };
+// nombre por defecto: es obligatorio, así cada test aísla LO SUYO y no choca con esa regla
 const solicitar = async p => {
-  const r = await anon(`select mos.catv_solicitar($1::jsonb) r`, [JSON.stringify(p)]);
+  const q = Object.assign({ nombre: 'QA 657' }, p);
+  const r = await anon(`select mos.catv_solicitar($1::jsonb) r`, [JSON.stringify(q)]);
   return r.err ? { err: r.err } : r.rows[0].r;
 };
 
@@ -479,14 +495,28 @@ let SOL1 = null, ESPERADO = 0;
     ['id inventado',       { lineas: [{ id: 'deadbeef00', escalon_idx: 0, cantidad: 1 }] },             'linea_invalida'],
     ['id con forma mala',  { lineas: [{ id: '../../etc', escalon_idx: 0, cantidad: 1 }] },              'payload'],
     ['escalón fuera',      { lineas: [{ id: F1.id, escalon_idx: 99, cantidad: 1 }] },                   'linea_invalida'],
-    ['lineas no-array',    { lineas: { id: F1.id } },                                                   'payload']
+    ['lineas no-array',    { lineas: { id: F1.id } },                                                   'payload'],
+    // NOMBRE OBLIGATORIO — el pre-pedido sin dueño no sirve para nada
+    ['sin nombre',         { lineas: L(1), nombre: undefined },                                          'nombre'],
+    ['nombre vacío',       { lineas: L(1), nombre: '' },                                                 'nombre'],
+    ['nombre solo espacios', { lineas: L(1), nombre: '        ' },                                       'nombre'],
+    ['nombre solo tabs/saltos', { lineas: L(1), nombre: '\t\n  \r' },                                    'nombre']
   ];
   for (const [n, p, esp] of casos) {
     const r = await solicitar({ ...p, ua: UA_T + '-val-' + n });
     chk('rechaza ' + n, r && r.ok === false && r.razon === esp, JSON.stringify(r));
   }
+  // y con nombre de verdad, la MISMA línea entra
+  {
+    const r = await solicitar({ lineas: L(1), nombre: '  Bodega Con Nombre  ', ua: UA_T + '-val-ok' });
+    chk('acepta con nombre (y lo recorta)', r && r.ok === true, JSON.stringify(r));
+    const g = (await c.query(`select nombre from mos.catv_solicitudes where codigo = $1`, [r.codigo])).rows[0];
+    chk('nombre guardado sin espacios sobrantes', g && g.nombre === 'Bodega Con Nombre', JSON.stringify(g));
+  }
+  // hasta acá: camino feliz + anti-manipulación + la de 'acepta con nombre' = 3 filas.
+  // Todo lo rechazado tiene que haberse ido sin dejar rastro.
   const antes = (await c.query(`select count(*)::int n from mos.catv_solicitudes`)).rows[0].n;
-  chk('los rechazos NO dejaron filas', antes - BASE === 2, `nuevas=${antes - BASE} (base=${BASE})`);
+  chk('los rechazos NO dejaron filas', antes - BASE === 3, `nuevas=${antes - BASE} (base=${BASE})`);
 }
 
 // ── 5 · límite de 5/hora ──────────────────────────────────────────────────────
@@ -593,7 +623,9 @@ let SOL1 = null, ESPERADO = 0;
      where coalesce(user_agent, '') like 'harness-657%'
         or coalesce(user_agent, '') like 'ua-distinto-%'`)).rowCount;
   const quedan = (await c.query(`select count(*)::int n from mos.catv_solicitudes`)).rows[0].n;
-  chk('limpieza · el harness no deja basura en PROD', quedan === 0, `borradas=${del} quedan=${quedan}`);
+  // se borra SOLO lo del harness: si ya había solicitudes de clientes de verdad, se
+  // quedan donde están (BASE) y la secuencia no se toca.
+  chk('limpieza · el harness no deja basura en PROD', quedan === BASE, `borradas=${del} quedan=${quedan} base=${BASE}`);
   if (quedan === 0) await c.query(`alter sequence mos.catv_solicitudes_id_seq restart with 1`);
 }
 

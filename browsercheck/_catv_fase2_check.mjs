@@ -191,6 +191,30 @@ async function vista(browser, cfg) {
   await pg.click('#burb');
   await pg.waitForSelector('#cesta.on .cx', { timeout: 6000 });
   await pg.waitForTimeout(650);
+
+  // ── NOMBRE OBLIGATORIO: sin nombre no sale nada ─────────────────────────────
+  await pg.fill('#cnom', '   ');                      // solo espacios: tampoco vale
+  await pg.click('.bmax[data-enviar]');
+  await pg.waitForTimeout(700);
+  const sinNom = await pg.evaluate(() => ({
+    marcado: document.getElementById('cnom').classList.contains('mal'),
+    enfocado: document.activeElement && document.activeElement.id === 'cnom',
+    aviso: (document.getElementById('aviso') || {}).textContent,
+    avisoVisible: document.getElementById('aviso').classList.contains('on'),
+    siguePidiendo: !document.querySelector('.clisto'),
+    botonVivo: !document.querySelector('.bmax[data-enviar]').disabled
+  }));
+  chk(`${cfg.n} · sin nombre NO envía`, sinNom.siguePidiendo === true);
+  chk(`${cfg.n} · sin nombre marca y enfoca el campo`, sinNom.marcado && sinNom.enfocado,
+    `marcado=${sinNom.marcado} foco=${sinNom.enfocado}`);
+  chk(`${cfg.n} · el mensaje explica por qué`,
+    sinNom.avisoVisible && /Cuéntanos quién eres para atenderte/.test(sinNom.aviso || ''), sinNom.aviso);
+  chk(`${cfg.n} · el botón queda utilizable`, sinNom.botonVivo === true);
+  await pg.fill('#cnom', 'B');
+  await pg.waitForTimeout(250);
+  chk(`${cfg.n} · al escribir se retira la marca`,
+    !(await pg.evaluate(() => document.getElementById('cnom').classList.contains('mal'))));
+
   await pg.fill('#cnom', 'Bodega La Prueba QA');
   await pg.fill('#ctel', '987 654 321');
   await pg.waitForTimeout(320);
