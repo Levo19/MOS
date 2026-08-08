@@ -1,1 +1,1 @@
-{"version":"2.43.708","build":"Promo Centro: las pestanas vuelven a envolver en 2 filas (overflow-x recortaba las pildoras); solo se les sube la altura a 40px"}
+{"version":"2.43.709","build":"PURGANTE: purga remota one-shot (SW + caches + storage basura) con lista blanca sagrada; da-device-cache ya no se borra en el auto-update"}

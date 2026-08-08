@@ -37,7 +37,7 @@ try {
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.43.708';
+const VERSION = '2.43.709';
 const CACHE   = 'mos-v' + VERSION;
 // ⚠️ Los assets propios versionados (app.js/api.js) DEBEN cachearse con EL MISMO
 // `?v=` que index.html usa en su <script src>, o el match offline falla por
@@ -89,11 +89,16 @@ self.addEventListener('install', e => {
 });
 
 // ── Activar: borrar cachés viejos y reclamar clientes ───────
+// [2.43.709] 'da-device-cache' NO es un caché de assets: es la TERCERA réplica del
+//   mos_device_id que device-auth.js guarda (localStorage → IndexedDB → Cache) para
+//   sobrevivir a un "borrar datos del sitio". Este activate la venía borrando en CADA
+//   bump de versión, dejando la identidad del equipo colgando de dos patas.
+const CACHES_INTOCABLES = ['da-device-cache'];
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
-        keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+        keys.filter(k => k !== CACHE && CACHES_INTOCABLES.indexOf(k) === -1).map(k => caches.delete(k))
       ))
       .then(() => self.clients.claim())
   );

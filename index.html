@@ -20137,7 +20137,8 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.708';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.709';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
     try {
@@ -20175,7 +20176,11 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
             //   versión nueva garantizada. El SW se re-registra solo en esa carga. MOS es admin/online.
             var _limpiar = function () {
               var tasks = [];
-              try { if (window.caches && caches.keys) tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (x) { return caches.delete(x); })); })); } catch (_) {}
+              // [658] 'da-device-cache' es la TERCERA réplica del mos_device_id (LS → IDB → Cache).
+              //   Borrarla acá dejaba la identidad colgando de solo dos patas; si el usuario además
+              //   había hecho "borrar datos del sitio", el equipo renacía como dispositivo NUEVO y
+              //   quedaba en "esperando aprobación". Se excluye siempre.
+              try { if (window.caches && caches.keys) tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.filter(function (x) { return x !== 'da-device-cache'; }).map(function (x) { return caches.delete(x); })); })); } catch (_) {}
               try { if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) tasks.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })); } catch (_) {}
               Promise.all(tasks).then(_recargar, _recargar);
             };
@@ -20187,7 +20192,231 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     } catch (e) {}
   })();
 </script>
-<script src="js/api.js?v=2.43.708"></script>
+<script>
+  /* ══════════════════════════════════════════════════════════════════════════════
+     PURGANTE · purga remota one-shot (SQL 658)
+     ──────────────────────────────────────────────────────────────────────────────
+     PARA QUÉ: hay equipos que se quedan con el Service Worker viejo pegado y no
+     actualizan nunca. El MASTER sube mos.config.MOS_PURGANTE_TOKEN y, al siguiente
+     arranque, ESTE equipo se limpia UNA sola vez: mata todos los SW, borra todas las
+     cachés, vacía localStorage/sessionStorage/IDB re-descargable, RE-SIEMBRA la lista
+     blanca sagrada y recarga limpio contra la última versión.
+
+     LEYES DE ESTE BLOQUE — no negociables:
+       1. JAMÁS puede impedir que la app abra. Todo va en try/catch. Si falla la red,
+          el storage o IDB, no pasa nada: la app arranca normal.
+       2. NO bloquea el pintado. El token se pide en paralelo, sin await del boot.
+          Bloquear acá sería fail-closed: un equipo sin señal no podría trabajar.
+       3. purganteToken '0' / vacío / ausente = DESARMADO ⇒ no hace absolutamente
+          nada, ni siquiera marca. Costo: un RPC anon de ~1 KB por arranque.
+       4. Tres candados anti-bucle independientes: mos_purgante_done (localStorage),
+          un guard en sessionStorage y el '?pv=' de la URL. Con que UNO sobreviva,
+          el equipo no se re-purga.
+       5. La lista blanca se fotografía en memoria ANTES de tocar nada y además se
+          respalda en sessionStorage: si la pestaña muere entre el clear y el
+          re-sembrado, el siguiente arranque la rescata.
+     ══════════════════════════════════════════════════════════════════════════════ */
+  (function () {
+    'use strict';
+    var APP = 'MOS', DEV_KEY = 'mos_device_id';
+    var K_DONE = 'mos_purgante_done', K_PEND = 'mos_purgante_pend', K_BAK = '__purgante_bak';
+    var SB = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
+    var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
+
+    /* ── LISTA BLANCA SAGRADA · MOS ──────────────────────────────────────────────
+       Todo lo que NO esté acá MUERE. Criterio: sobrevive lo que el servidor no puede
+       devolver (identidad, sesión, trabajo del usuario aún no enviado, permisos que
+       el MASTER concedió) — muere todo lo re-descargable, los wizards y las
+       preferencias cosméticas, que es justamente lo que se quiere resetear. */
+    var BLANCA = [
+      // identidad del equipo (device-auth). Perderla = "esperando aprobación" y, sin
+      // red, la app queda fail-closed. Se conservan también los cachés de verificación:
+      // sin ellos un equipo offline no puede re-verificar y no abre.
+      'mos_device_id', 'mos_device_auth_date_lima', 'mos_device_verify_version',
+      'mos_device_auth_devid', 'mos_device_auth_ts', 'mos_device_auth_directo', 'da_optimista_ts',
+      // sesión del usuario (idPersonal, rol, idSesion)
+      'MOS_SESSION',
+      // TRABAJO NO ENVIADO — lo más parecido a una cola offline que tiene MOS:
+      // pedidos a proveedor armados y todavía no despachados.
+      'mos_prov_carritos', 'mos_prov_carrito_activo',
+      // trabajo del usuario: proyecciones (lo teclea a mano) y selección de
+      // liquidaciones multi-día en curso.
+      //   NO se listan 'eda2_borrador'/'eda_borrador': editor-adhesivos/editor.js los
+      //   borra SIEMPRE al cargar, por regla explícita del dueño ("sin sistema de
+      //   borradores: lo no guardado se descarta al salir"). Protegerlos sería mentir.
+      'mos_proy_estado_v1', 'mos_liq_seleccion',
+      // permisos concedidos por el MASTER: borrarlos deja al operador fuera de horario
+      // pese a tener la extensión, o abre un bypass del bloqueo (seg_fuera_cache_MOS).
+      'ext_horario_hasta', 'seg_fuera_cache_MOS',
+      // posición de la burbuja flotante de seguridad
+      'seg_badge_pos',
+      // el propio purgante
+      K_DONE, K_PEND
+    ];
+    /* Prefijos: mos_p2_draft_<guia> = captura del Paso 2 a medio hacer;
+       mos_membrete_cola_<tipo>      = cola de impresión armada a mano;
+       mos_jefa_aplicada_ / mos_costos_aplicada_ = marcas de "esto ya se aplicó";
+       perderlas permitiría aplicar DOS VECES un pedido de jefa o una actualización
+       de costos. Cuestan bytes; el error costaría dinero. */
+    var BLANCA_PFX = ['mos_p2_draft_', 'mos_membrete_cola_', 'mos_jefa_aplicada_', 'mos_costos_aplicada_'];
+    // 3ª réplica del deviceId (device-auth.js). Si se borra, la identidad queda sin red de seguridad.
+    var CACHES_VIVOS = ['da-device-cache'];
+    // MOS no tiene IDB re-descargable: la única base es 'da_device' (identidad) → no se toca ninguna.
+    var IDB_BORRAR = [];
+
+    function g(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+    function s(k, v) { try { localStorage.setItem(k, v); } catch (_) {} }
+    function protegida(k) {
+      if (BLANCA.indexOf(k) > -1) return true;
+      for (var i = 0; i < BLANCA_PFX.length; i++) if (k.lastIndexOf(BLANCA_PFX[i], 0) === 0) return true;
+      return false;
+    }
+    function rpc(fn, payload, keep, signal) {
+      return fetch(SB + '/rest/v1/rpc/' + fn, {
+        method: 'POST', keepalive: !!keep, cache: 'no-store', signal: signal || undefined,
+        headers: {
+          apikey: ANON, Authorization: 'Bearer ' + ANON,
+          'Accept-Profile': 'mos', 'Content-Profile': 'mos', 'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+    }
+
+    // ── 0 · RESCATE de una purga interrumpida ────────────────────────────────────
+    try {
+      var bak = sessionStorage.getItem(K_BAK);
+      if (bak) {
+        var o = JSON.parse(bak), rec = 0;
+        for (var bk in o) if (Object.prototype.hasOwnProperty.call(o, bk) && g(bk) === null) { s(bk, o[bk]); rec++; }
+        sessionStorage.removeItem(K_BAK);
+        if (rec) console.log('🧹 PURGANTE: rescatadas ' + rec + ' claves sagradas de una purga interrumpida');
+      }
+    } catch (_) {}
+
+    // ── 0b · TELEMETRÍA DIFERIDA (se purgó sin red) ──────────────────────────────
+    try {
+      var pend = g(K_PEND);
+      if (pend) {
+        var pj = JSON.parse(pend); pj.reintento = true;
+        rpc('purgante_reportar', { p: pj }).then(function (r) {
+          if (r && r.ok) { try { localStorage.removeItem(K_PEND); } catch (_) {} }
+        }).catch(function () {});
+      }
+    } catch (_) {}
+
+    // ── 1 · ¿el servidor ordenó purga? ───────────────────────────────────────────
+    var ac = null, tid = null;
+    try { ac = new AbortController(); tid = setTimeout(function () { try { ac.abort(); } catch (_) {} }, 7000); } catch (_) {}
+    try {
+      rpc('get_flags', {}, false, ac && ac.signal)
+        .then(function (r) { return r && r.ok ? r.json() : null; })
+        .then(function (f) {
+          try { clearTimeout(tid); } catch (_) {}
+          var tok = (f && f.purganteToken != null) ? String(f.purganteToken) : '0';
+          if (!tok || tok === '0') return;                    // DESARMADO → nada
+          if (g(K_DONE) === tok) return;                      // candado 1: ya purgado
+          try { if (String(location.search).indexOf('pv=' + tok) > -1) { s(K_DONE, tok); return; } } catch (_) {}  // candado 2
+          try { if (sessionStorage.getItem('__purgante_' + tok) === '1') return; } catch (_) {}                     // candado 3
+          purgar(tok);
+        })
+        .catch(function () { try { clearTimeout(tid); } catch (_) {} });
+    } catch (_) {}
+
+    // ── 2 · la purga ─────────────────────────────────────────────────────────────
+    function purgar(tok) {
+      var ver = ''; try { ver = String(window.__MOS_V || ''); } catch (_) {}
+      var est = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
+      console.log('%c 🧹 PURGANTE ' + tok + ' — limpiando este equipo (una sola vez) ', 'background:#a855f7;color:#fff;' + est);
+
+      // (i) fotografía de la lista blanca ANTES de tocar nada
+      var snap = {}, n = 0;
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && protegida(k)) { snap[k] = localStorage.getItem(k); n++; }
+        }
+      } catch (_) {}
+      try { sessionStorage.setItem(K_BAK, JSON.stringify(snap)); } catch (_) {}
+
+      var tareas = [];
+      // (ii) matar TODOS los service workers
+      try {
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          tareas.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+            return Promise.all(rs.map(function (r) { return r.unregister().catch(function () {}); }));
+          }).catch(function () {}));
+        }
+      } catch (_) {}
+      // (ii-b) borrar TODAS las cachés menos la réplica del deviceId
+      try {
+        if (window.caches && caches.keys) {
+          tareas.push(caches.keys().then(function (ks) {
+            return Promise.all(ks.filter(function (x) { return CACHES_VIVOS.indexOf(x) === -1; })
+              .map(function (x) { return caches.delete(x).catch(function () {}); }));
+          }).catch(function () {}));
+        }
+      } catch (_) {}
+      // (iv) IndexedDB re-descargable (en MOS: ninguna — 'da_device' es identidad)
+      if (IDB_BORRAR.length) {
+        try {
+          tareas.push(Promise.resolve(
+            (window.indexedDB && indexedDB.databases) ? indexedDB.databases() : []
+          ).then(function (dbs) {
+            var hay = (dbs || []).map(function (d) { return d && d.name; });
+            return Promise.all(IDB_BORRAR.filter(function (nm) { return hay.indexOf(nm) > -1; }).map(function (nm) {
+              return new Promise(function (res) {
+                try { var rq = indexedDB.deleteDatabase(nm); rq.onsuccess = rq.onerror = rq.onblocked = function () { res(); }; }
+                catch (_) { res(); }
+              });
+            }));
+          }).catch(function () {}));
+        } catch (_) {}
+      }
+
+      var yaFue = false;
+      var fin = function () {
+        if (yaFue) return; yaFue = true;
+        // (iii) clear + RE-SEMBRAR la lista blanca
+        try { localStorage.clear(); } catch (_) {}
+        var kk;
+        for (kk in snap) if (Object.prototype.hasOwnProperty.call(snap, kk)) s(kk, snap[kk]);
+        var ok = 0; for (kk in snap) if (g(kk) === snap[kk]) ok++;
+        try { sessionStorage.clear(); } catch (_) {}
+        // (v) marcar hecho + candados (DESPUÉS del clear de sessionStorage)
+        s(K_DONE, tok);
+        try { sessionStorage.setItem('__purgante_' + tok, '1'); } catch (_) {}
+        // (c) telemetría: keepalive para que sobreviva a la recarga. Si no hay red,
+        //     queda encolada en K_PEND y se manda en el próximo arranque.
+        var rep = {
+          device: g(DEV_KEY) || '', app: APP, token: tok, version_antes: ver,
+          ua: String(navigator.userAgent || '').slice(0, 400)
+        };
+        s(K_PEND, JSON.stringify(rep));
+        try {
+          rpc('purgante_reportar', { p: rep }, true).then(function (r) {
+            if (r && r.ok) { try { localStorage.removeItem(K_PEND); } catch (_) {} }
+          }).catch(function () {});
+        } catch (_) {}
+        console.log('🧹 PURGANTE ' + tok + ': ' + ok + '/' + n + ' claves sagradas conservadas. Recargando limpio…');
+        // (vi) recarga limpia y cache-busted
+        // SIN setTimeout a propósito: la app vieja sigue viva y escribiendo hasta que
+        // el navegador se lleve el documento. Cada milisegundo de espera entre el clear
+        // y el replace es una ventana para que un caché recién purgado se vuelva a
+        // escribir. El fetch de telemetría ya salió con keepalive: sobrevive la navegación.
+        try {
+          var q = location.search ? (location.search + '&pv=' + tok) : ('?pv=' + tok);
+          location.replace(location.origin + location.pathname + q + location.hash);
+        } catch (_) { try { location.reload(); } catch (__) {} }
+      };
+      Promise.all(tareas).then(fin, fin);
+      // Watchdog: si un unregister/caches.delete se cuelga (pasa en iOS), la purga
+      // igual se completa. Sin esto quedaría a medias y se reintentaría en el próximo
+      // arranque — tampoco sería grave, pero así termina hoy.
+      setTimeout(fin, 9000);
+    }
+  })();
+</script>
+<script src="js/api.js?v=2.43.709"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20203,7 +20432,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.708"></script>
+<script src="js/app.js?v=2.43.709"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
