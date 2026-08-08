@@ -2601,7 +2601,7 @@ const MOS = (() => {
           ${totalDist ? `<div class="pc-precio-lbl">c/u S/ ${_money(s.precioPromo).toFixed(2)}</div>` : ''}
         </div>
         <div style="flex:1;text-align:right">
-          ${_pcChip('−' + dto + '%', '#a78bfa')}
+          ${_pcChip('−' + dto + '%' + (s.tipo === 'COMBO' ? ' en el combo' : (s.tipo === 'GRUPO' ? ' en el pack' : '')), '#a78bfa')}
           <div style="margin-top:4px">${_pcChip(mgTxt, mgCol)}</div>
         </div>
       </div>

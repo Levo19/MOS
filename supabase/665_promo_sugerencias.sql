@@ -73,7 +73,7 @@ begin
     q_hijos numeric, n_hijos int, pr30 numeric, ya_promo boolean,
     sust_nom text, sust_sub text
   ) on commit drop;
-  delete from _pgs_bb;
+  delete from _pgs_bb where true;   -- (Supabase exige WHERE en DELETE desde el API)
 
   insert into _pgs_bb
   with prod as (
@@ -160,7 +160,7 @@ begin
   create temporary table if not exists _pgs_lider (
     subcat text, l_sku text, l_desc text, l_pv numeric, l_pc numeric, l_q30 numeric
   ) on commit drop;
-  delete from _pgs_lider;
+  delete from _pgs_lider where true;   -- (Supabase exige WHERE en DELETE desde el API)
   insert into _pgs_lider
   select distinct on (subcat) subcat, sku_base, descripcion, pv, pc, q30
     from _pgs_bb where subcat <> '' and q30 > 0

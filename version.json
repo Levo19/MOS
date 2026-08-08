@@ -1,1 +1,1 @@
-{"version":"2.43.710","build":"2.43.710 Centro de Promociones UNIFICADO: un solo overlay (mis promos + 6 sugerencias reales + playbook 9 jugadas), form con estrategia/vigencia/horario y margen en vivo; muere la vista aparte"}
+{"version":"2.43.711","build":"2.43.711 Centro de Promociones unificado: fix DELETE sin WHERE en la RPC del radar (Supabase 400) + el chip de descuento aclara si es por pack/combo"}
