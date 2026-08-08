@@ -1,0 +1,227 @@
+{
+ "url": "http://127.0.0.1:8799/catalogo.html",
+ "tag": "local",
+ "vistas": {
+  "390": {
+   "pageerrors": [],
+   "consoleErrors": [],
+   "requestFailed": [],
+   "resultadosBusca": 1,
+   "tomas": {
+    "portada": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_390_1portada.png",
+    "sumario": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_390_2sumario.png",
+    "capitulo": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_390_3capitulo.png",
+    "hoja0": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_390_4hoja_surtido.png",
+    "hojaMarca": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_390_5hoja_zuko.png",
+    "contratapa": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_390_6contratapa.png",
+    "buscador": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_390_7buscador.png"
+   },
+   "dom": {
+    "capitulos": [
+     {
+      "titulo": "Almidonesychuño",
+      "color": "#c9cffe",
+      "contrasteTintaSobreColor": 11.41,
+      "entro": false
+     },
+     {
+      "titulo": "Avenasycereales",
+      "color": "#b2e1ba",
+      "contrasteTintaSobreColor": 11.85,
+      "entro": false
+     },
+     {
+      "titulo": "Glutamatoyumami",
+      "color": "#fcbfd1",
+      "contrasteTintaSobreColor": 11.14,
+      "entro": false
+     },
+     {
+      "titulo": "Jugosyrefrescos",
+      "color": "#9ae0ed",
+      "contrasteTintaSobreColor": 11.76,
+      "entro": true
+     },
+     {
+      "titulo": "Sazonadoresycubitos",
+      "color": "#e8d09d",
+      "contrasteTintaSobreColor": 11.5,
+      "entro": false
+     }
+    ],
+    "hojas": [
+     {
+      "titulo": "Surtido",
+      "kicker": "Almidones y chuño",
+      "fichas": 3
+     },
+     {
+      "titulo": "Surtido",
+      "kicker": "Avenas y cereales",
+      "fichas": 1
+     },
+     {
+      "titulo": "Surtido",
+      "kicker": "Glutamato y umami · 1 de 2",
+      "fichas": 2
+     },
+     {
+      "titulo": "Surtido",
+      "kicker": "Glutamato y umami · 2 de 2",
+      "fichas": 2
+     },
+     {
+      "titulo": "ZUKO",
+      "kicker": "Marca · 1 de 3",
+      "fichas": 3
+     },
+     {
+      "titulo": "ZUKO",
+      "kicker": "Marca · 2 de 3",
+      "fichas": 3
+     },
+     {
+      "titulo": "ZUKO",
+      "kicker": "Marca · 3 de 3",
+      "fichas": 3
+     },
+     {
+      "titulo": "SIBARITA",
+      "kicker": "Marca · 1 de 2",
+      "fichas": 2
+     },
+     {
+      "titulo": "SIBARITA",
+      "kicker": "Marca · 2 de 2",
+      "fichas": 2
+     },
+     {
+      "titulo": "Surtido",
+      "kicker": "Sazonadores y cubitos",
+      "fichas": 2
+     }
+    ],
+    "fichas": 23,
+    "agotados": 1,
+    "sellosAgotado": 1,
+    "sumario": [
+     "Almidones y chuño",
+     "Avenas y cereales",
+     "Glutamato y umami",
+     "Jugos y refrescos",
+     "Sazonadores y cubitos"
+    ],
+    "escalones": 29,
+    "preciosVacios": 0,
+    "selloLevo": "⚡<Levo.dev />",
+    "selloEsLink": false,
+    "wa": "https://wa.me/51967767081?text=Hola%20INVERSIONES%20MOS%2C%20vi%20el%20cat%C3%A1logo%20virtual%20y%20quiero%20cotizar.",
+    "desbordeH": false,
+    "alto": 15192
+   }
+  },
+  "1280": {
+   "pageerrors": [],
+   "consoleErrors": [],
+   "requestFailed": [],
+   "resultadosBusca": 1,
+   "tomas": {
+    "portada": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_1280_1portada.png",
+    "sumario": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_1280_2sumario.png",
+    "capitulo": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_1280_3capitulo.png",
+    "hoja0": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_1280_4hoja_surtido.png",
+    "hojaMarca": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_1280_5hoja_zuko.png",
+    "contratapa": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_1280_6contratapa.png",
+    "buscador": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/cat_1280_7buscador.png"
+   },
+   "dom": {
+    "capitulos": [
+     {
+      "titulo": "Almidonesychuño",
+      "color": "#c9cffe",
+      "contrasteTintaSobreColor": 11.41,
+      "entro": false
+     },
+     {
+      "titulo": "Avenasycereales",
+      "color": "#b2e1ba",
+      "contrasteTintaSobreColor": 11.85,
+      "entro": false
+     },
+     {
+      "titulo": "Glutamatoyumami",
+      "color": "#fcbfd1",
+      "contrasteTintaSobreColor": 11.14,
+      "entro": false
+     },
+     {
+      "titulo": "Jugosyrefrescos",
+      "color": "#9ae0ed",
+      "contrasteTintaSobreColor": 11.76,
+      "entro": true
+     },
+     {
+      "titulo": "Sazonadoresycubitos",
+      "color": "#e8d09d",
+      "contrasteTintaSobreColor": 11.5,
+      "entro": false
+     }
+    ],
+    "hojas": [
+     {
+      "titulo": "Surtido",
+      "kicker": "Almidones y chuño",
+      "fichas": 3
+     },
+     {
+      "titulo": "Surtido",
+      "kicker": "Avenas y cereales",
+      "fichas": 1
+     },
+     {
+      "titulo": "Surtido",
+      "kicker": "Glutamato y umami",
+      "fichas": 4
+     },
+     {
+      "titulo": "ZUKO",
+      "kicker": "Marca · 1 de 2",
+      "fichas": 5
+     },
+     {
+      "titulo": "ZUKO",
+      "kicker": "Marca · 2 de 2",
+      "fichas": 4
+     },
+     {
+      "titulo": "SIBARITA",
+      "kicker": "Marca",
+      "fichas": 4
+     },
+     {
+      "titulo": "Surtido",
+      "kicker": "Sazonadores y cubitos",
+      "fichas": 2
+     }
+    ],
+    "fichas": 23,
+    "agotados": 1,
+    "sellosAgotado": 1,
+    "sumario": [
+     "Almidones y chuño",
+     "Avenas y cereales",
+     "Glutamato y umami",
+     "Jugos y refrescos",
+     "Sazonadores y cubitos"
+    ],
+    "escalones": 29,
+    "preciosVacios": 0,
+    "selloLevo": "⚡<Levo.dev />",
+    "selloEsLink": false,
+    "wa": "https://wa.me/51967767081?text=Hola%20INVERSIONES%20MOS%2C%20vi%20el%20cat%C3%A1logo%20virtual%20y%20quiero%20cotizar.",
+    "desbordeH": false,
+    "alto": 13500
+   }
+  }
+ }
+}

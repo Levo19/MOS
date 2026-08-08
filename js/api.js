@@ -2744,6 +2744,7 @@ const API = (() => {
     crearPromocion:             () => true,
     actualizarPromocion:        () => true,
     eliminarPromocion:          () => true,
+    promoDescartar:             () => true,
     subirImagenConfig:          () => true,
     // [CATÁLOGO · estaciones] 100% Supabase (RPC mos.crear_estacion/actualizar_estacion, SQL 215) — sin GAS,
     // sin clasp. Gate _mosCatalogoDirecto (ON en prod). El trigger de versión (200) bumpea al escribir → WH/ME
@@ -2906,7 +2907,7 @@ const API = (() => {
   // no commitea (sin token), FALLAN (reintentar) en vez de caer a GAS — porque liquidaciones_dia
   // está en SYNC_OFF, así que un write GAS NO propaga a la tabla que lee la mega tabla → desync
   // silencioso (peor que fallar). Con la identidad MEX:NOMBRE|ZONA, además, el GAS mis-llavearía.
-  const _MOS_DIRECT_REQUIRED = { crearPromocion: 1, actualizarPromocion: 1, eliminarPromocion: 1, crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1,
+  const _MOS_DIRECT_REQUIRED = { crearPromocion: 1, actualizarPromocion: 1, eliminarPromocion: 1, promoDescartar: 1, crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
     codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, guiaPreview: 1,
@@ -3358,12 +3359,14 @@ const API = (() => {
       }
       // [kill-GAS lecturas · bloque 1 · CERO-GAS] SQL 386 + RPCs existentes. Contrato _fetch('GET'): devuelve el
       // payload (r.data / r.historial), lanza si {ok:false}. Sin fallback GAS.
-      if (action === 'getAuthCatalogo' || action === 'getPromociones' || action === 'getCronStatus' ||
+      if (action === 'getAuthCatalogo' || action === 'getPromociones' || action === 'getPromoSugerencias' || action === 'getCronStatus' ||
           action === 'getLiquidacionesPendientesSemana' || action === 'meHistorialCliente' || action === 'meHistorialExtra') {
         return (async () => {
           let rpc, prof = 'mos', pick = 'data';
           if (action === 'getAuthCatalogo')                    { rpc = 'auth_catalogo'; }
           else if (action === 'getPromociones')                { rpc = 'promociones_lista'; }
+          // [666] radar de promociones (SQL 665): sugerencias con reglas del dueno
+          else if (action === 'getPromoSugerencias')           { rpc = 'promo_sugerencias'; pick = '__all'; }
           else if (action === 'getCronStatus')                 { rpc = 'cron_status'; }
           else if (action === 'getLiquidacionesPendientesSemana') { rpc = 'liquidaciones_pendientes'; }
           else if (action === 'meHistorialCliente')            { rpc = 'historial_cliente'; prof = 'me'; pick = 'historial'; }
@@ -3371,7 +3374,7 @@ const API = (() => {
           const r = await _sbRpcMOS(rpc, { p: p || {} }, prof);
           if (r == null) throw new Error('Sin conexión con el servidor');
           if (r.ok === false) throw new Error(r.error || 'Error del servidor');
-          return r[pick];
+          return pick === '__all' ? r : r[pick];
         })();
       }
       // [FASE 1 · PILOTO] getProductos → lectura directa Supabase con gate por-acción + frescura + fallback GAS.
@@ -3749,6 +3752,7 @@ const API = (() => {
         actualizarImpresora:     'actualizar_impresora',
         eliminarProductoProveedor:'eliminar_proveedor_producto',
         eliminarPromocion:       'eliminar_promocion',
+        promoDescartar:          'promo_descartar',
         guardarTarjetaWA:        'guardar_tarjeta_wa',
         setHorarioCustomPersonal:'set_horario_custom_personal',
         actualizarNotifConfig:   'actualizar_notif_config',

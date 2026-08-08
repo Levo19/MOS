@@ -1,0 +1,97 @@
+{
+  "url": "http://127.0.0.1:8791/index.html",
+  "V": "0.5.9",
+  "secciones": [
+    {
+      "nombre": "Almidones y chuño",
+      "contador": "1",
+      "gc": "#a5b4fc",
+      "colorTexto": "rgb(165, 180, 252)",
+      "bordeCard": "rgb(165, 180, 252)",
+      "cards": 1
+    },
+    {
+      "nombre": "Avenas y cereales",
+      "contador": "1",
+      "gc": "#6ee7b7",
+      "colorTexto": "rgb(110, 231, 183)",
+      "bordeCard": "rgb(110, 231, 183)",
+      "cards": 1
+    },
+    {
+      "nombre": "Glutamato y umami",
+      "contador": "2",
+      "gc": "#fcd34d",
+      "colorTexto": "rgb(252, 211, 77)",
+      "bordeCard": "rgb(252, 211, 77)",
+      "cards": 2
+    },
+    {
+      "nombre": "Sazonadores y cubitos",
+      "contador": "1",
+      "gc": "#f9a8d4",
+      "colorTexto": "rgb(249, 168, 212)",
+      "bordeCard": "rgb(249, 168, 212)",
+      "cards": 1
+    }
+  ],
+  "chips": [
+    "📦 25 kg",
+    "📦 30 kg",
+    "📦 30 un",
+    "📦 274.5 kg",
+    "📦 1848 un"
+  ],
+  "stkViejo": 0,
+  "refs": [
+    "suelto (ref.): S/ 8.00 /kg"
+  ],
+  "escalones": [
+    "1 kgS/ 7.00",
+    "Pack x25 (25 kg)S/ 140.00▼35.0S/ 5.60 /kg▼sug. 7.00",
+    "Pack x10 (10 kg)S/ 72.00▼8.0S/ 7.20 /kg▼sug. 8.00",
+    "1 unS/ 8.00",
+    "Tripack (3 un)S/ 22.00▼2.0S/ 7.33 /un▼sug. 8.00",
+    "1 kgS/ 8.00",
+    "Pack x25 (25 kg)S/ 155.00▼45.0S/ 6.20 /kg▼sug. 8.00",
+    "1 unS/ 0.40",
+    "Pack x84 (84 un)S/ 25.00▼8.6S/ 0.30 /un▼sug. 0.40"
+  ],
+  "altp": 0,
+  "conceptosFam": [],
+  "contraste": [
+    {
+      "nm": "Almidones y chuño",
+      "ratio": 9.07
+    },
+    {
+      "nm": "Avenas y cereales",
+      "ratio": 11.86
+    },
+    {
+      "nm": "Glutamato y umami",
+      "ratio": 12.53
+    },
+    {
+      "nm": "Sazonadores y cubitos",
+      "ratio": 9.97
+    }
+  ],
+  "busca": {
+    "secciones": [
+      "Glutamato y umami"
+    ],
+    "cards": [
+      "NAKAMITO GLUTAMATO 1KG",
+      "NAKAMITO GLUTAMATO GRANEL"
+    ],
+    "color": "#fcd34d"
+  },
+  "irA": {
+    "fsku": "LEV1154",
+    "encontrado": true,
+    "flash": true
+  },
+  "pageerrors": [],
+  "consoleErrors": []
+}

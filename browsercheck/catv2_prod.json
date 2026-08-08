@@ -1,0 +1,441 @@
+{
+ "url": "https://mosgo.vercel.app/catalogo.html",
+ "tag": "prod",
+ "vistas": {
+  "360": {
+   "pageerrors": [],
+   "consoleErrors": [],
+   "requestFailed": [],
+   "aud": {
+    "docDesborde": false,
+    "bodyDesborde": false,
+    "desbordes": [],
+    "fichas": 25,
+    "lupas": 25,
+    "fabBottom": "18px",
+    "vh": "7.8px"
+   },
+   "lb": {
+    "nombre": "Santis Chuño Granel",
+    "meta": "por kilo",
+    "escalones": 2,
+    "elegido": 1,
+    "color": "#c9cffe",
+    "filoColor": "rgb(201, 207, 254)",
+    "subtotal": "S/ 7.00",
+    "cantidad": "1",
+    "cabe": true,
+    "taps": [
+     38,
+     59.890625,
+     59.890625,
+     44,
+     44,
+     43
+    ]
+   },
+   "burb": {
+    "n": "3",
+    "on": true,
+    "fabArriba": true,
+    "guardado": {
+     "items": [
+      {
+       "id": "af14fcb4e7",
+       "ei": 0,
+       "c": 2
+      },
+      {
+       "id": "41f77de747",
+       "ei": 0,
+       "c": 1
+      }
+     ],
+     "nombre": "",
+     "tel": ""
+    }
+   },
+   "ce": {
+    "lineas": 2,
+    "total": "S/ 204.00",
+    "resumen": "2 productos · 3 u",
+    "inputs": [
+     16,
+     16
+    ],
+    "cabe": true,
+    "pieSafe": "16px",
+    "subtotales": [
+     "S/ 14.00",
+     "S/ 190.00"
+    ]
+   }
+  },
+  "390": {
+   "pageerrors": [],
+   "consoleErrors": [],
+   "requestFailed": [],
+   "aud": {
+    "docDesborde": false,
+    "bodyDesborde": false,
+    "desbordes": [],
+    "fichas": 25,
+    "lupas": 25,
+    "fabBottom": "18px",
+    "vh": "8.44px"
+   },
+   "lb": {
+    "nombre": "Santis Chuño Granel",
+    "meta": "por kilo",
+    "escalones": 2,
+    "elegido": 1,
+    "color": "#c9cffe",
+    "filoColor": "rgb(201, 207, 254)",
+    "subtotal": "S/ 7.00",
+    "cantidad": "1",
+    "cabe": true,
+    "taps": [
+     38,
+     59.890625,
+     59.890625,
+     44,
+     44,
+     43
+    ]
+   },
+   "burb": {
+    "n": "3",
+    "on": true,
+    "fabArriba": true,
+    "guardado": {
+     "items": [
+      {
+       "id": "af14fcb4e7",
+       "ei": 0,
+       "c": 2
+      },
+      {
+       "id": "41f77de747",
+       "ei": 0,
+       "c": 1
+      }
+     ],
+     "nombre": "",
+     "tel": ""
+    }
+   },
+   "ce": {
+    "lineas": 2,
+    "total": "S/ 204.00",
+    "resumen": "2 productos · 3 u",
+    "inputs": [
+     16,
+     16
+    ],
+    "cabe": true,
+    "pieSafe": "16px",
+    "subtotales": [
+     "S/ 14.00",
+     "S/ 190.00"
+    ]
+   }
+  },
+  "768": {
+   "pageerrors": [],
+   "consoleErrors": [],
+   "requestFailed": [],
+   "aud": {
+    "docDesborde": false,
+    "bodyDesborde": false,
+    "desbordes": [],
+    "fichas": 25,
+    "lupas": 25,
+    "fabBottom": "18px",
+    "vh": "10.24px"
+   },
+   "lb": {
+    "nombre": "Santis Chuño Granel",
+    "meta": "por kilo",
+    "escalones": 2,
+    "elegido": 1,
+    "color": "#c9cffe",
+    "filoColor": "rgb(201, 207, 254)",
+    "subtotal": "S/ 7.00",
+    "cantidad": "1",
+    "cabe": true,
+    "taps": [
+     38,
+     59.890625,
+     59.890625,
+     44,
+     44,
+     43
+    ]
+   },
+   "burb": {
+    "n": "3",
+    "on": true,
+    "fabArriba": true,
+    "guardado": {
+     "items": [
+      {
+       "id": "af14fcb4e7",
+       "ei": 0,
+       "c": 2
+      },
+      {
+       "id": "41f77de747",
+       "ei": 0,
+       "c": 1
+      }
+     ],
+     "nombre": "",
+     "tel": ""
+    }
+   },
+   "ce": {
+    "lineas": 2,
+    "total": "S/ 204.00",
+    "resumen": "2 productos · 3 u",
+    "inputs": [
+     16,
+     16
+    ],
+    "cabe": true,
+    "pieSafe": "16px",
+    "subtotales": [
+     "S/ 14.00",
+     "S/ 190.00"
+    ]
+   }
+  },
+  "1024": {
+   "pageerrors": [],
+   "consoleErrors": [],
+   "requestFailed": [],
+   "aud": {
+    "docDesborde": false,
+    "bodyDesborde": false,
+    "desbordes": [],
+    "fichas": 25,
+    "lupas": 25,
+    "fabBottom": "18px",
+    "vh": "8px"
+   },
+   "lb": {
+    "nombre": "Santis Chuño Granel",
+    "meta": "por kilo",
+    "escalones": 2,
+    "elegido": 1,
+    "color": "#c9cffe",
+    "filoColor": "rgb(201, 207, 254)",
+    "subtotal": "S/ 7.00",
+    "cantidad": "1",
+    "cabe": true,
+    "taps": [
+     38,
+     59.890625,
+     59.890625,
+     44,
+     44,
+     43
+    ]
+   },
+   "burb": {
+    "n": "3",
+    "on": true,
+    "fabArriba": true,
+    "guardado": {
+     "items": [
+      {
+       "id": "af14fcb4e7",
+       "ei": 0,
+       "c": 2
+      },
+      {
+       "id": "41f77de747",
+       "ei": 0,
+       "c": 1
+      }
+     ],
+     "nombre": "",
+     "tel": ""
+    }
+   },
+   "ce": {
+    "lineas": 2,
+    "total": "S/ 204.00",
+    "resumen": "2 productos · 3 u",
+    "inputs": [
+     16,
+     16
+    ],
+    "cabe": true,
+    "pieSafe": "16px",
+    "subtotales": [
+     "S/ 14.00",
+     "S/ 190.00"
+    ]
+   }
+  },
+  "1440": {
+   "pageerrors": [],
+   "consoleErrors": [],
+   "requestFailed": [],
+   "aud": {
+    "docDesborde": false,
+    "bodyDesborde": false,
+    "desbordes": [],
+    "fichas": 25,
+    "lupas": 25,
+    "fabBottom": "18px",
+    "vh": "9px"
+   },
+   "lb": {
+    "nombre": "Santis Chuño Granel",
+    "meta": "por kilo",
+    "escalones": 2,
+    "elegido": 1,
+    "color": "#c9cffe",
+    "filoColor": "rgb(201, 207, 254)",
+    "subtotal": "S/ 7.00",
+    "cantidad": "1",
+    "cabe": true,
+    "taps": [
+     38,
+     59.890625,
+     59.890625,
+     44,
+     44,
+     43
+    ]
+   },
+   "burb": {
+    "n": "3",
+    "on": true,
+    "fabArriba": true,
+    "guardado": {
+     "items": [
+      {
+       "id": "af14fcb4e7",
+       "ei": 0,
+       "c": 2
+      },
+      {
+       "id": "41f77de747",
+       "ei": 0,
+       "c": 1
+      }
+     ],
+     "nombre": "",
+     "tel": ""
+    }
+   },
+   "ce": {
+    "lineas": 2,
+    "total": "S/ 204.00",
+    "resumen": "2 productos · 3 u",
+    "inputs": [
+     16,
+     16
+    ],
+    "cabe": true,
+    "pieSafe": "16px",
+    "subtotales": [
+     "S/ 14.00",
+     "S/ 190.00"
+    ]
+   }
+  },
+  "iphone": {
+   "pageerrors": [],
+   "consoleErrors": [],
+   "requestFailed": [],
+   "aud": {
+    "docDesborde": false,
+    "bodyDesborde": false,
+    "desbordes": [],
+    "fichas": 25,
+    "lupas": 25,
+    "fabBottom": "18px",
+    "vh": "6.64px"
+   },
+   "lb": {
+    "nombre": "Santis Chuño Granel",
+    "meta": "por kilo",
+    "escalones": 2,
+    "elegido": 1,
+    "color": "#c9cffe",
+    "filoColor": "rgb(201, 207, 254)",
+    "subtotal": "S/ 7.00",
+    "cantidad": "1",
+    "cabe": true,
+    "taps": [
+     38,
+     59.890625,
+     59.890625,
+     44,
+     44,
+     43
+    ]
+   },
+   "burb": {
+    "n": "3",
+    "on": true,
+    "fabArriba": true,
+    "guardado": {
+     "items": [
+      {
+       "id": "af14fcb4e7",
+       "ei": 0,
+       "c": 2
+      },
+      {
+       "id": "41f77de747",
+       "ei": 0,
+       "c": 1
+      }
+     ],
+     "nombre": "",
+     "tel": ""
+    }
+   },
+   "ce": {
+    "lineas": 2,
+    "total": "S/ 204.00",
+    "resumen": "2 productos · 3 u",
+    "inputs": [
+     16,
+     16
+    ],
+    "cabe": true,
+    "pieSafe": "16px",
+    "subtotales": [
+     "S/ 14.00",
+     "S/ 190.00"
+    ]
+   }
+  }
+ },
+ "wa": "Hola INVERSIONES MOS 👋\n\n🧾 *PEDIDO SOL-7* · catálogo virtual\n\n1) 2 × Santis Chuño Granel · 1 kg — S/ 14.00\n2) 1 × Fecula De Papa Chuño Granel · AVEBE · Pack x25 (25 kg) — S/ 190.00\n\n*TOTAL: S/ 204.00*\n\n👤 Bodega La Prueba QA\n📲 Por favor confírmenme stock y entrega.",
+ "sol": "SOL-7",
+ "hack": {
+  "d": {
+   "ok": true,
+   "total": 204,
+   "codigo": "SOL-8",
+   "lineas": 2
+  },
+  "real": 204,
+  "enviado": 0.03
+ },
+ "ios": {
+  "fabBottom": "86px",
+  "burbBottom": "18px",
+  "piePad": "16px",
+  "wkBlurLb": "blur(11px) saturate(1.15)",
+  "wkBlurCesta": "blur(8px)",
+  "maxCesta": "610.880005px",
+  "dvhEnCss": false
+ }
+}

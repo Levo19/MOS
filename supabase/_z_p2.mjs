@@ -1,0 +1,13 @@
+import fs from 'fs';
+import pkg from 'pg';
+const { Client } = pkg;
+const c = new Client({ connectionString: fs.readFileSync('C:/Users/ISO/.sb_db.url','utf8').trim(), ssl:{rejectUnauthorized:false} });
+await c.connect();
+const q = async (t,s,p)=>{ try{ const r=await c.query(s,p); console.log('###',t); console.dir(r.rows,{depth:4,maxArrayLength:80}); }catch(e){ console.log('###',t,'ERR',e.message); } };
+const cols = async(sch,tab)=>q('cols '+sch+'.'+tab, `select string_agg(column_name||':'||data_type,' | ' order by ordinal_position) c from information_schema.columns where table_schema=$1 and table_name=$2`,[sch,tab]);
+await cols('wh','lotes_vencimiento');
+await q('lv_sample', `select * from wh.lotes_vencimiento order by 1 desc limit 5`);
+await q('lv_count', `select count(*) n, count(*) filter (where fecha_vencimiento is not null) con_venc from wh.lotes_vencimiento`);
+await q('tablas_wh', `select table_name from information_schema.tables where table_schema='wh' order by 1`);
+await q('tablas_me', `select table_name from information_schema.tables where table_schema='me' order by 1`);
+await c.end();

@@ -1,0 +1,57 @@
+{
+ "COD": "SOL-6",
+ "sec": {
+  "titulo": "🌐 Solicitudes del catálogo",
+  "contador": "6",
+  "cards": 6,
+  "codigo": "SOL-6",
+  "pill": "🌐 CATÁLOGO",
+  "hace": "⏱ hace 2 min",
+  "linea2": "QA anti-manipulación · S/ 204.00",
+  "linea3": "📱 900000777 · 2 líneas · toca para atender",
+  "antesDePedidos": true,
+  "catv": 6
+ },
+ "det": {
+  "titulo": "🌐 SOL-6 · QA anti-manipulación",
+  "wa": "https://wa.me/51900000777",
+  "lineas": 2,
+  "total": "TOTAL S/ 204.00",
+  "botones": [
+   "🛒 Convertir en pedido",
+   "✓ Solo marcar atendida"
+  ]
+ },
+ "conv": {
+  "tab": 0,
+  "cart": {
+   "WHSASUNO": 2
+  },
+  "packs": 2,
+  "barra": "2 packs · S/ 14.00",
+  "barraVisible": true,
+  "toast": "🛒 SOL-6 → 1 línea(s) al carrito · cliente «QA anti-manipulación» — elígelo o regístralo antes de confirmar",
+  "yaNoEsta": true,
+  "quedan": 5,
+  "venta": {
+   "cart": {
+    "WHSASUNO": 2
+   },
+   "cli": "",
+   "fecha": "",
+   "nota": ""
+  }
+ },
+ "post": {
+  "existe": true,
+  "codigos": [
+   "SOL-5",
+   "SOL-4",
+   "SOL-3",
+   "SOL-2",
+   "SOL-1"
+  ]
+ },
+ "errs": [],
+ "cons": []
+}

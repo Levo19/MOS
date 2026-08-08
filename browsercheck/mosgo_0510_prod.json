@@ -1,0 +1,100 @@
+{
+  "V": "0.5.10",
+  "browse": [
+    {
+      "titulo": "Almidones y chuño",
+      "tag": null,
+      "contador": null,
+      "tono": "#c9cffe",
+      "contrasteTextoSobreBanda": 11.41,
+      "subgruposMarca": [],
+      "cards": 1
+    },
+    {
+      "titulo": "Avenas y cereales",
+      "tag": null,
+      "contador": null,
+      "tono": "#b2e1ba",
+      "contrasteTextoSobreBanda": 11.85,
+      "subgruposMarca": [],
+      "cards": 1
+    },
+    {
+      "titulo": "Glutamato y umami",
+      "tag": null,
+      "contador": null,
+      "tono": "#fcbfd1",
+      "contrasteTextoSobreBanda": 11.14,
+      "subgruposMarca": [],
+      "cards": 3
+    },
+    {
+      "titulo": "Sazonadores y cubitos",
+      "tag": null,
+      "contador": null,
+      "tono": "#9ae0ed",
+      "contrasteTextoSobreBanda": 11.76,
+      "subgruposMarca": [
+        "SIBARITA · 4"
+      ],
+      "cards": 6
+    }
+  ],
+  "chips": [
+    "📦 25 kg",
+    "📦 30 kg",
+    "📦 274.5 kg",
+    "📦 75 un",
+    "📦 30 un",
+    "📦 61 un",
+    "📦 271 un",
+    "📦 1848 un",
+    "📦 42 un",
+    "📦 1260 un",
+    "📦 1050 un"
+  ],
+  "stkViejo": 0,
+  "refs": [
+    "suelto (ref.): S/ 8.00 /kg",
+    "suelto (ref.): S/ 0.40 /un",
+    "suelto (ref.): S/ 0.80 /un",
+    "suelto (ref.): S/ 0.40 /un",
+    "suelto (ref.): S/ 0.80 /un"
+  ],
+  "altp": 0,
+  "busca_glutamato": [
+    {
+      "titulo": "Glutamato y umami",
+      "tag": null,
+      "contador": null,
+      "tono": "#fcbfd1",
+      "contrasteTextoSobreBanda": 11.14,
+      "subgruposMarca": [],
+      "cards": 3
+    }
+  ],
+  "busca_marca_zuko": [],
+  "busca_marca_sibarita": [
+    {
+      "titulo": "SIBARITA",
+      "tag": "MARCA",
+      "contador": "4 productos",
+      "tono": "#ccd4dc",
+      "contrasteTextoSobreBanda": 11.56,
+      "subgruposMarca": [
+        "Sazonadores y cubitos · 4"
+      ],
+      "cards": 4
+    }
+  ],
+  "colorEstable": true,
+  "irA": {
+    "fsku": "LEV1154",
+    "encontrado": true,
+    "flash": true
+  },
+  "pageerrors": [],
+  "consoleErrors": [],
+  "url": "https://mosgo.vercel.app/",
+  "whatif": false
+}

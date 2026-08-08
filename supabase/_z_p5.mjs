@@ -1,0 +1,13 @@
+import fs from 'fs';
+import pkg from 'pg';
+const { Client } = pkg;
+const c = new Client({ connectionString: fs.readFileSync('C:/Users/ISO/.sb_db.url','utf8').trim(), ssl:{rejectUnauthorized:false} });
+await c.connect();
+const q = async (t,s,p)=>{ try{ const r=await c.query(s,p); console.log('###',t); console.dir(r.rows,{depth:4,maxArrayLength:80}); }catch(e){ console.log('###',t,'ERR',e.message); } };
+await q('tipos', `select tipo_producto::text t, count(*) n from mos.productos group by 1 order by 2 desc`);
+await q('cpb', `select codigo_producto_base, count(*) n from mos.productos where codigo_producto_base is not null and codigo_producto_base<>'' group by 1 order by 2 desc limit 5`);
+await q('cpb_match', `select count(*) tot, count(*) filter (where exists(select 1 from mos.productos b where b.sku_base=p.codigo_producto_base)) m_sku, count(*) filter (where exists(select 1 from mos.productos b where b.codigo_barra=p.codigo_producto_base)) m_cb from mos.productos p where coalesce(p.codigo_producto_base,'')<>''`);
+await q('envasables', `select count(*) n from mos.productos where es_envasable`);
+await q('catia', `select categoria_ia from mos.productos where categoria_ia is not null limit 3`);
+await q('sust', `select sku_base, sustitutos_internos from mos.productos where jsonb_typeof(sustitutos_internos)='array' and jsonb_array_length(sustitutos_internos)>0 limit 3`);
+await c.end();

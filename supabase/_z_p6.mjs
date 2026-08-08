@@ -1,0 +1,10 @@
+import fs from 'fs';
+import pkg from 'pg';
+const { Client } = pkg;
+const c = new Client({ connectionString: fs.readFileSync('C:/Users/ISO/.sb_db.url','utf8').trim(), ssl:{rejectUnauthorized:false} });
+await c.connect();
+const q = async (t,s,p)=>{ try{ const r=await c.query(s,p); console.log('###',t); console.dir(r.rows,{depth:3,maxArrayLength:80}); }catch(e){ console.log('###',t,'ERR',e.message); } };
+await q('pres', `select sku_base, codigo_barra, descripcion, factor_conversion, codigo_producto_base, id_producto from mos.productos where tipo_producto::text='PRESENTACION' limit 6`);
+await q('deriv', `select sku_base, codigo_barra, descripcion, factor_conversion, codigo_producto_base from mos.productos where tipo_producto::text='DERIVADO' limit 4`);
+await q('canon_env', `select sku_base, codigo_barra, descripcion, es_envasable from mos.productos where es_envasable limit 4`);
+await c.end();

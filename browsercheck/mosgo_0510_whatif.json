@@ -1,0 +1,196 @@
+{
+  "V": "0.5.10",
+  "browse": [
+    {
+      "titulo": "Almidones y chuño",
+      "tag": null,
+      "contador": null,
+      "tono": "#c9cffe",
+      "contrasteTextoSobreBanda": 11.41,
+      "subgruposMarca": [],
+      "cards": 1
+    },
+    {
+      "titulo": "Avenas y cereales",
+      "tag": null,
+      "contador": null,
+      "tono": "#b2e1ba",
+      "contrasteTextoSobreBanda": 11.85,
+      "subgruposMarca": [],
+      "cards": 1
+    },
+    {
+      "titulo": "Azúcares",
+      "tag": null,
+      "contador": null,
+      "tono": "#fcbfd1",
+      "contrasteTextoSobreBanda": 11.14,
+      "subgruposMarca": [],
+      "cards": 1
+    },
+    {
+      "titulo": "Esencias y colorantes",
+      "tag": null,
+      "contador": null,
+      "tono": "#9ae0ed",
+      "contrasteTextoSobreBanda": 11.76,
+      "subgruposMarca": [
+        "UMSHA · 3"
+      ],
+      "cards": 3
+    },
+    {
+      "titulo": "Gelatinas y postres en polvo",
+      "tag": null,
+      "contador": null,
+      "tono": "#e8d09d",
+      "contrasteTextoSobreBanda": 11.5,
+      "subgruposMarca": [],
+      "cards": 1
+    },
+    {
+      "titulo": "Glutamato y umami",
+      "tag": null,
+      "contador": null,
+      "tono": "#e5c5f4",
+      "contrasteTextoSobreBanda": 11.24,
+      "subgruposMarca": [],
+      "cards": 2
+    },
+    {
+      "titulo": "Jugos y refrescos",
+      "tag": null,
+      "contador": null,
+      "tono": "#9ee3d4",
+      "contrasteTextoSobreBanda": 11.87,
+      "subgruposMarca": [
+        "UMSHA · 6",
+        "ZUKO · 9"
+      ],
+      "cards": 15
+    },
+    {
+      "titulo": "Salsas de tomate",
+      "tag": null,
+      "contador": null,
+      "tono": "#f9c7a6",
+      "contrasteTextoSobreBanda": 11.34,
+      "subgruposMarca": [],
+      "cards": 2
+    },
+    {
+      "titulo": "Sazonadores y cubitos",
+      "tag": null,
+      "contador": null,
+      "tono": "#b1d7fe",
+      "contrasteTextoSobreBanda": 11.56,
+      "subgruposMarca": [
+        "SIBARITA · 22"
+      ],
+      "cards": 22
+    }
+  ],
+  "chips": [
+    "📦 25 kg",
+    "📦 30 kg",
+    "📦 0 kg",
+    "📦 10 un",
+    "📦 96 un",
+    "📦 0 un",
+    "📦 0 un",
+    "📦 274.5 kg",
+    "📦 30 un",
+    "📦 12 un",
+    "📦 144 un",
+    "📦 84 un",
+    "📦 0 un",
+    "📦 360 un",
+    "📦 156 un",
+    "📦 660 un",
+    "📦 96 un",
+    "📦 96 un",
+    "📦 108 un",
+    "📦 54 un",
+    "📦 168 un",
+    "📦 96 un",
+    "📦 120 un",
+    "📦 108 un",
+    "📦 -294 un",
+    "📦 336 un",
+    "📦 1848 un",
+    "📦 42 un",
+    "📦 -96 un",
+    "📦 0 un",
+    "📦 0 un",
+    "📦 6 un",
+    "📦 0 un",
+    "📦 0 un",
+    "📦 0 un",
+    "📦 -6 un",
+    "📦 0 un",
+    "📦 0 un",
+    "📦 25 kg",
+    "📦 726 un",
+    "📦 1260 un",
+    "📦 1050 un",
+    "📦 0 un",
+    "📦 0 un",
+    "📦 984 un",
+    "📦 0 un",
+    "📦 -100 un",
+    "📦 0 un"
+  ],
+  "stkViejo": 0,
+  "refs": [
+    "suelto (ref.): S/ 8.00 /kg"
+  ],
+  "altp": 19,
+  "busca_glutamato": [
+    {
+      "titulo": "Glutamato y umami",
+      "tag": null,
+      "contador": null,
+      "tono": "#e5c5f4",
+      "contrasteTextoSobreBanda": 11.24,
+      "subgruposMarca": [],
+      "cards": 2
+    }
+  ],
+  "busca_marca_zuko": [
+    {
+      "titulo": "ZUKO",
+      "tag": "MARCA",
+      "contador": "9 productos",
+      "tono": "#ccd4dc",
+      "contrasteTextoSobreBanda": 11.56,
+      "subgruposMarca": [
+        "Jugos y refrescos · 9"
+      ],
+      "cards": 9
+    }
+  ],
+  "busca_marca_sibarita": [
+    {
+      "titulo": "SIBARITA",
+      "tag": "MARCA",
+      "contador": "24 productos",
+      "tono": "#ccd4dc",
+      "contrasteTextoSobreBanda": 11.56,
+      "subgruposMarca": [
+        "Salsas de tomate · 2",
+        "Sazonadores y cubitos · 22"
+      ],
+      "cards": 24
+    }
+  ],
+  "colorEstable": true,
+  "irA": {
+    "fsku": "LEV1154",
+    "encontrado": true,
+    "flash": true
+  },
+  "pageerrors": [],
+  "consoleErrors": [],
+  "url": "http://127.0.0.1:8791/index.html",
+  "whatif": true
+}

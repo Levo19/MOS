@@ -1,0 +1,12 @@
+import fs from 'fs';
+import pkg from 'pg';
+const { Client } = pkg;
+const c = new Client({ connectionString: fs.readFileSync('C:/Users/ISO/.sb_db.url','utf8').trim(), ssl:{rejectUnauthorized:false} });
+await c.connect();
+const q = async (t,s,p)=>{ try{ const r=await c.query(s,p); console.log('###',t); console.dir(r.rows,{depth:4,maxArrayLength:80}); }catch(e){ console.log('###',t,'ERR',e.message); } };
+const cols = async(sch,tab)=>q('cols '+sch+'.'+tab, `select string_agg(column_name||':'||data_type,' | ' order by ordinal_position) c from information_schema.columns where table_schema=$1 and table_name=$2`,[sch,tab]);
+await cols('wh','stock');
+await cols('me','ventas_detalle');
+await cols('me','ventas');
+await q('vd_recent', `select count(*) n, min(fecha) mn, max(fecha) mx from me.ventas_detalle where fecha >= now() - interval '30 days'`);
+await c.end();

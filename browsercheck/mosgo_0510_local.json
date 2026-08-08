@@ -1,0 +1,156 @@
+{
+  "V": "0.5.15",
+  "browse": [
+    {
+      "titulo": "Almidones y chuño",
+      "tag": null,
+      "contador": null,
+      "tono": "#c9cffe",
+      "contrasteTextoSobreBanda": 11.41,
+      "subgruposMarca": [],
+      "cards": 3
+    },
+    {
+      "titulo": "Avenas y cereales",
+      "tag": null,
+      "contador": null,
+      "tono": "#b2e1ba",
+      "contrasteTextoSobreBanda": 11.85,
+      "subgruposMarca": [],
+      "cards": 1
+    },
+    {
+      "titulo": "Glutamato y umami",
+      "tag": null,
+      "contador": null,
+      "tono": "#fcbfd1",
+      "contrasteTextoSobreBanda": 11.14,
+      "subgruposMarca": [],
+      "cards": 4
+    },
+    {
+      "titulo": "Jugos y refrescos",
+      "tag": null,
+      "contador": null,
+      "tono": "#9ae0ed",
+      "contrasteTextoSobreBanda": 11.76,
+      "subgruposMarca": [
+        "ZUKO · 9"
+      ],
+      "cards": 9
+    },
+    {
+      "titulo": "Sazonadores y cubitos",
+      "tag": null,
+      "contador": null,
+      "tono": "#e8d09d",
+      "contrasteTextoSobreBanda": 11.5,
+      "subgruposMarca": [
+        "SIBARITA · 4"
+      ],
+      "cards": 6
+    },
+    {
+      "titulo": "Vinagre blanco y tinto",
+      "tag": null,
+      "contador": null,
+      "tono": "#e5c5f4",
+      "contrasteTextoSobreBanda": 11.24,
+      "subgruposMarca": [],
+      "cards": 2
+    }
+  ],
+  "chips": [
+    "📦 25",
+    "📦 0",
+    "📦 30",
+    "📦 30",
+    "📦 274.5",
+    "📦 75",
+    "📦 124",
+    "📦 20",
+    "📦 660",
+    "📦 96",
+    "📦 96",
+    "📦 108",
+    "📦 54",
+    "📦 168",
+    "📦 96",
+    "📦 120",
+    "📦 108",
+    "📦 61",
+    "📦 271",
+    "📦 1848",
+    "📦 42",
+    "📦 1260",
+    "📦 1050",
+    "📦 0",
+    "📦 0"
+  ],
+  "stkViejo": 0,
+  "refs": [
+    "suelto (ref.): S/ 8.00 /kg",
+    "suelto (ref.): S/ 8.00 /kg",
+    "suelto (ref.): S/ 1.20 /un",
+    "suelto (ref.): S/ 1.20 /un",
+    "suelto (ref.): S/ 1.20 /un",
+    "suelto (ref.): S/ 1.20 /un",
+    "suelto (ref.): S/ 1.20 /un",
+    "suelto (ref.): S/ 1.20 /un",
+    "suelto (ref.): S/ 1.20 /un",
+    "suelto (ref.): S/ 1.20 /un",
+    "suelto (ref.): S/ 1.20 /un",
+    "suelto (ref.): S/ 0.40 /un",
+    "suelto (ref.): S/ 0.80 /un",
+    "suelto (ref.): S/ 0.40 /un",
+    "suelto (ref.): S/ 0.80 /un"
+  ],
+  "altp": 3,
+  "busca_glutamato": [
+    {
+      "titulo": "Glutamato y umami",
+      "tag": null,
+      "contador": null,
+      "tono": "#fcbfd1",
+      "contrasteTextoSobreBanda": 11.14,
+      "subgruposMarca": [],
+      "cards": 4
+    }
+  ],
+  "busca_marca_zuko": [
+    {
+      "titulo": "ZUKO",
+      "tag": "MARCA",
+      "contador": "9 productos",
+      "tono": "#ccd4dc",
+      "contrasteTextoSobreBanda": 11.56,
+      "subgruposMarca": [
+        "Jugos y refrescos · 9"
+      ],
+      "cards": 9
+    }
+  ],
+  "busca_marca_sibarita": [
+    {
+      "titulo": "SIBARITA",
+      "tag": "MARCA",
+      "contador": "4 productos",
+      "tono": "#ccd4dc",
+      "contrasteTextoSobreBanda": 11.56,
+      "subgruposMarca": [
+        "Sazonadores y cubitos · 4"
+      ],
+      "cards": 4
+    }
+  ],
+  "colorEstable": true,
+  "irA": {
+    "fsku": "LEV1154",
+    "encontrado": true,
+    "flash": true
+  },
+  "pageerrors": [],
+  "consoleErrors": [],
+  "url": "http://127.0.0.1:8791/index.html",
+  "whatif": false
+}

@@ -1,0 +1,371 @@
+  // [695] rotación semanal (misma fuente que el chip del card: series de S.rotacion)
+  function _promoRotSem(p) {
+    try {
+      const prods = (S.rotacion && S.rotacion.productos) || {};
+      const serie = prods[String(p.codigoBarra || '').trim()] || [];
+      if (!serie.length) return 0;
+      let totU = 0, totKg = 0;
+      serie.forEach(x => { totU += parseFloat(x.unidades) || 0; totKg += parseFloat(x.kg) || 0; });
+      const esPeso = !!_UMS_PESO[String(p.unidad || p.Unidad_Medida || '').trim().toUpperCase()];
+      return (esPeso && totKg > 0 ? totKg : totU) / (serie.length || 8);
+    } catch (_) { return 0; }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // [666] CENTRO DE PROMOCIONES — UN SOLO OVERLAY.
+  //   Antes había dos espacios: este radar (🎯) y el módulo/vista aparte.
+  //   Ahora todo vive acá: 🎁 Mis promociones · 💡 Sugerencias del día · 📖 Playbook.
+  //   El módulo viejo (view-promociones) murió: MOS.nav('promociones') redirige aquí.
+  //   Las sugerencias las calcula mos.promo_sugerencias() (SQL 665) con las reglas del dueño;
+  //   la creación SIEMPRE pasa por el form y su confirmación — nunca automática.
+  // ════════════════════════════════════════════════════════════════════
+
+  // Las 9 jugadas del dueño. `k` coincide con el campo `estrategia` que guarda la promo.
+  const PROMO_JUGADAS = [
+    { k: 'ancla',          ico: '🐌→⭐', nom: 'Ancla con el líder',   cuando: 'Un producto no rota: cuélgalo del más vendido de su subcategoría. El estrella arrastra.', tipo: 'COMBO' },
+    { k: 'sustitutos',     ico: '🔁',    nom: 'Cruce con sustitutos', cuando: 'Cuando falta uno, ofrecer el sustituto con un descuento chico convierte el "no hay" en venta.', tipo: 'PORCENTAJE', cant: 1 },
+    { k: 'segunda',        ico: '2️⃣',    nom: '2ª unidad al %',       cuando: 'Sobre-stock con margen sano: protege el margen de la 1ª unidad y sube el ticket.', tipo: 'GRUPO', cant: 2 },
+    { k: 'pack',           ico: '🧺',    nom: 'Pack familiar',        cuando: 'Sobre-stock grande: 3 a 6 unidades con precio de etiqueta único, sin re-etiquetar.', tipo: 'GRUPO', cant: 4 },
+    { k: 'valle',          ico: '⏰',    nom: 'Horas valle',          cuando: 'La promo vive solo en el hueco de la tarde: mueve inventario sin canibalizar la venta fuerte.', tipo: 'PORCENTAJE', cant: 1, hora: ['14:00', '18:00'] },
+    { k: 'estacionalidad', ico: '🎉',    nom: 'Estacionalidad',       cuando: 'Repostería y decorativos pican en fiestas: promociona el sobre-stock ANTES de la temporada.', tipo: 'GRUPO', cant: 3 },
+    { k: 'topseller',      ico: '🛡',    nom: 'Jamás el top-seller',  cuando: 'Regla de defensa: el que rota solo NO se descuenta — pierdes margen sin ganar clientes.', guia: true },
+    { k: 'psicologico',    ico: '🏷',    nom: 'Precio psicológico',   cuando: 'Remates en .90 / .50 — y el cartel dice el %, no solo el precio.', tipo: 'PORCENTAJE', cant: 1 },
+    { k: 'escalera',       ico: '📉',    nom: 'Escalera de remate',   cuando: 'Si en 2 semanas no movió: sube el escalón 20→30→40%. El peor descuento es la merma al 100%.', tipo: 'PORCENTAJE', cant: 1 }
+  ];
+  const _PJ = (k) => PROMO_JUGADAS.find(j => j.k === k) || null;
+  function _pjChip(k, mini) {
+    const j = _PJ(k); if (!j) return '';
+    return `<span class="pc-chip" style="background:rgba(99,102,241,.14);color:#a5b4fc;border-color:rgba(99,102,241,.4)">${j.ico} ${mini ? '' : j.nom}</span>`;
+  }
+
+  const _pcState = { tab: 'mis', sug: [], playbook: null, cargando: false, seed: '', why: {}, pasadas: false, err: '' };
+
+  function _pcChip(txt, color, extra) {
+    return `<span class="pc-chip" style="background:${color}1f;color:${color};border-color:${color}55;${extra || ''}">${txt}</span>`;
+  }
+  // 🟢 activa · ⏸ pausada · ⌛ vencida
+  function _promoEstado(p) {
+    const hoy = _hoyISO();
+    const hasta = String(p.vigenciaHasta || '').substring(0, 10);
+    if (hasta && hasta < hoy) return { k: 'vencida', txt: '⌛ vencida', col: '#94a3b8' };
+    if (!p.activa) return { k: 'pausada', txt: '⏸ pausada', col: '#f59e0b' };
+    return { k: 'activa', txt: '🟢 activa', col: '#34d399' };
+  }
+  function _promoNombre(p) {
+    if (p.tipo === 'COMBO') {
+      const its = (p.items || []).map(i => i.descripcion).filter(Boolean);
+      return its.length ? its.join(' + ') : `Combo de ${(p.items || []).length} productos`;
+    }
+    const prod = (S.productos || []).find(pr => (pr.skuBase || pr.idProducto) === p.skuBase);
+    return prod ? (prod.descripcion || p.skuBase) : (p.skuBase || '—');
+  }
+  function _promoResumen(p) {
+    const v = parseFloat(p.valorPromo) || 0;
+    if (p.tipo === 'COMBO')  return `🛒 Combo a S/ ${_money(v).toFixed(2)}`;
+    if (p.tipo === 'GRUPO')  return `📦 Lleva ${p.cantMin} por S/ ${_money((parseFloat(p.cantMin) || 0) * v).toFixed(2)} (c/u S/ ${_money(v).toFixed(2)})`;
+    return `% −${v}% desde ${p.cantMin} ${(parseFloat(p.cantMin) || 0) === 1 ? 'unidad' : 'unidades'}`;
+  }
+  function _promoVentana(p) {
+    const d = String(p.vigenciaDesde || '').substring(0, 10), h = String(p.vigenciaHasta || '').substring(0, 10);
+    const fechas = (d || h) ? `📅 ${d || '—'} → ${h || 'sin fin'}` : '📅 sin vigencia definida';
+    const horas = (p.horaDesde && p.horaHasta) ? ` · ⏰ ${p.horaDesde}–${p.horaHasta}` : '';
+    return fechas + horas;
+  }
+
+  async function abrirPromoCentro(tabIni) {
+    try { _opsBeep && _opsBeep('tac'); } catch (_) {}
+    try { navigator.vibrate && navigator.vibrate(10); } catch (_) {}
+    $('promoCentro')?.remove();
+    _pcState.tab = tabIni || 'mis';
+    _pcState.why = {};
+    const div = document.createElement('div');
+    div.id = 'promoCentro'; div.className = 'modal-backdrop open';
+    div.innerHTML = `<div class="modal-box pc-box" style="max-width:860px;max-height:92vh;display:flex;flex-direction:column;border:1px solid rgba(99,102,241,.5);box-shadow:0 30px 80px -15px rgba(99,102,241,.4)">
+      <div class="px-5 py-4 flex items-center gap-3" style="border-bottom:1px solid #1e293b;background:linear-gradient(120deg,rgba(67,56,202,.35),rgba(139,92,246,.12) 60%,transparent)">
+        <span style="font-size:24px">🎯</span>
+        <div class="flex-1 min-w-0">
+          <h2 class="font-bold text-base text-white">Centro de Promociones</h2>
+          <div style="font-size:10.5px;color:#a5b4fc">Tus promos, las ideas del día con tus datos reales y el playbook — todo en un solo lugar</div>
+        </div>
+        <button onclick="document.getElementById('promoCentro').remove()" class="modal-close-x">×</button>
+      </div>
+      <div class="px-4 pt-3" style="display:flex;gap:6px;flex-wrap:wrap" id="pcTabs"></div>
+      <div id="pcBody" class="p-4 overflow-y-auto flex-1"></div>
+    </div>`;
+    div.addEventListener('click', e => { if (e.target === div) div.remove(); });
+    document.body.appendChild(div);
+    _pcPinta();
+
+    // Promos frescas (la lista puede venir de cache) + radar en paralelo
+    _pcCargarPromos();
+    _pcCargarSugerencias();
+  }
+
+  async function _pcCargarPromos() {
+    try {
+      const r = await API.get('getPromociones', {});
+      _promoState.lista = Array.isArray(r) ? r : ((r && r.data) || []);
+      _promoState.lastFetch = Date.now();
+      _promoSaveCache(_promoState.lista);
+    } catch (e) { _promoState.lastError = e && e.message ? e.message : String(e); }
+    if ($('pcBody')) _pcPinta();
+  }
+
+  async function _pcCargarSugerencias(seed) {
+    _pcState.cargando = true; _pcState.err = '';
+    if ($('pcBody') && _pcState.tab === 'sug') _pcPinta();
+    try {
+      const p = { n: 6 };
+      if (seed) p.seed = seed;
+      const r = await API.get('getPromoSugerencias', p);
+      // el contrato _fetch('GET') devuelve r.data → acá necesitamos también el playbook,
+      // así que la RPC lo manda dentro de data cuando viene por wrapper. Soportamos ambos.
+      if (Array.isArray(r)) { _pcState.sug = r; }
+      else if (r && Array.isArray(r.data)) { _pcState.sug = r.data; _pcState.playbook = r.playbook || _pcState.playbook; _pcState.seed = r.seed || ''; }
+      else { _pcState.sug = []; }
+    } catch (e) {
+      _pcState.err = e && e.message ? e.message : String(e);
+      _pcState.sug = [];
+    }
+    _pcState.cargando = false;
+    if ($('pcBody')) _pcPinta();
+  }
+
+  // el playbook viaja aparte del array de data: lo pedimos crudo una sola vez
+  async function _pcCargarPlaybook() {
+    if (_pcState.playbook) return;
+    try {
+      const r = await API.get('getPromoSugerencias', { n: 6, playbook: 1 });
+      if (r && r.playbook) _pcState.playbook = r.playbook;
+    } catch (_) {}
+  }
+
+  function _pcPinta() {
+    const tabs = $('pcTabs'), body = $('pcBody');
+    if (!tabs || !body) return;
+    const activas = (_promoState.lista || []).filter(p => _promoEstado(p).k === 'activa').length;
+    const T = [
+      ['mis',  `🎁 Mis promociones${activas ? ' · ' + activas : ''}`],
+      ['sug',  `💡 Sugerencias del día`],
+      ['play', `📖 Playbook`]
+    ];
+    tabs.innerHTML = T.map(([k, lbl]) =>
+      `<button class="pc-tab" data-tab="${k}" style="background:${_pcState.tab === k ? 'rgba(99,102,241,.25)' : '#0d1526'};border:1px solid ${_pcState.tab === k ? '#6366f1' : '#22314f'};color:${_pcState.tab === k ? '#c7d2fe' : '#94a3b8'};border-radius:99px;padding:5px 13px;font-size:11px;font-weight:700;cursor:pointer">${lbl}</button>`).join('');
+    tabs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      _pcState.tab = b.dataset.tab;
+      try { navigator.vibrate && navigator.vibrate(6); } catch (_) {}
+      _pcPinta();
+    }));
+    body.innerHTML = _pcState.tab === 'mis' ? _pcMisHtml() : (_pcState.tab === 'sug' ? _pcSugHtml() : _pcPlayHtml());
+    if (_pcState.tab === 'play' && !_pcState.playbook) _pcCargarPlaybook().then(() => { if ($('pcBody') && _pcState.tab === 'play') _pcPinta(); });
+  }
+
+  // ── SECCIÓN 1 · MIS PROMOCIONES ──────────────────────────────────
+  function _pcMisHtml() {
+    const lista = _promoState.lista || [];
+    const vivas = [], pasadas = [];
+    lista.forEach(p => (_promoEstado(p).k === 'activa' ? vivas : pasadas).push(p));
+    const ord = (a, b) => String(b.actualizado || b.vigenciaDesde || '').localeCompare(String(a.actualizado || a.vigenciaDesde || ''));
+    vivas.sort(ord); pasadas.sort(ord);
+
+    const btnNueva = `<button onclick="MOS.promoAbrirNueva()" class="pc-btn-nueva">＋ Nueva promoción</button>`;
+    let h = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">${btnNueva}
+      <button class="pc-mini" onclick="MOS._pcCargarPromos()" title="Refrescar">🔄</button></div>`;
+
+    if (!lista.length) {
+      h += `<div class="pc-empty">
+        <div style="font-size:30px">🎁</div>
+        <div style="font-weight:700;color:#cbd5e1;margin-top:6px">Todavía no tienes promociones</div>
+        <div style="font-size:11.5px;color:#7c8db1;margin-top:4px;line-height:1.5">Empieza por la pestaña <b style="color:#a5b4fc">💡 Sugerencias del día</b>:
+        ahí el sistema ya calculó con tus datos qué conviene promocionar y a qué precio.</div>
+        <button class="pc-mini" style="margin-top:10px" onclick="MOS._pcIr('sug')">Ver las ideas de hoy →</button>
+      </div>`;
+      return h;
+    }
+    h += vivas.length
+      ? vivas.map(_pcPromoCard).join('')
+      : `<div class="pc-empty" style="padding:18px"><div style="font-size:12px;color:#94a3b8">Ninguna promoción activa ahora mismo.</div></div>`;
+
+    if (pasadas.length) {
+      h += `<button class="pc-acc" onclick="MOS._pcTogglePasadas()">
+        <span>📁 Pasadas · ${pasadas.length}</span><span style="color:#64748b">${_pcState.pasadas ? '▲' : '▼'}</span></button>`;
+      if (_pcState.pasadas) h += `<div style="margin-top:8px">${pasadas.map(p => _pcPromoCard(p, true)).join('')}</div>`;
+    }
+    return h;
+  }
+
+  function _pcPromoCard(p, esPasada) {
+    const st = _promoEstado(p);
+    const idRef = p.idPromo || p.skuBase || '';
+    const esRemate = String(p.estrategia || '') === 'escalera' || String(p.estrategia || '') === 'remate';
+    return `<div class="pc-card" style="border-left:3px solid ${st.col}99;${esPasada ? 'opacity:.78' : ''}">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px">
+            ${_pcChip(st.txt, st.col)}
+            ${esRemate ? _pcChip('🔥 remate', '#f87171') : ''}
+            ${p.estrategia ? _pjChip(p.estrategia) : ''}
+          </div>
+          <div class="pc-card-name">${_escapeHtml(_promoNombre(p))}</div>
+          <div style="font-size:11.5px;color:#a5b4fc;margin-top:3px">${_escapeHtml(_promoResumen(p))}</div>
+          ${p.descripcion ? `<div style="font-size:10.5px;color:#7c8db1;margin-top:2px">“${_escapeHtml(p.descripcion)}”</div>` : ''}
+          <div style="font-size:10px;color:#64748b;margin-top:4px">${_escapeHtml(_promoVentana(p))}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex:none">
+          ${esPasada
+            ? `<button class="pc-mini pc-mini-ok" onclick="MOS.promoReactivar('${idRef}')">↻ Reactivar</button>`
+            : `<button type="button" class="toggle-sw ${p.activa ? 'on' : ''}" title="${p.activa ? 'Pausar' : 'Activar'}"
+                  onclick="MOS.promoToggleActiva('${idRef}')"><span class="toggle-sw-knob"></span></button>`}
+          <div style="display:flex;gap:5px">
+            <button class="pc-mini" onclick="MOS.promoEditar('${idRef}')" title="Editar">✎</button>
+            <button class="pc-mini pc-mini-bad" onclick="MOS.promoEliminarDirecto('${idRef}')" title="Eliminar">🗑</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── SECCIÓN 2 · SUGERENCIAS DEL DÍA ──────────────────────────────
+  function _pcSugHtml() {
+    let h = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="flex:1;font-size:11px;color:#7c8db1;line-height:1.5">Calculadas con tus ventas de 30 días, tu stock y tus vencimientos.
+      Ninguna se aplica sola: tú confirmas cada una.</div>
+      <button class="pc-mini" onclick="MOS._pcOtrasIdeas()" ${_pcState.cargando ? 'disabled' : ''}>🔀 Otras ideas</button>
+    </div>`;
+    if (_pcState.cargando) return h + `<div class="pc-skel"></div><div class="pc-skel"></div><div class="pc-skel"></div>`;
+    if (_pcState.err) return h + `<div class="pc-empty"><div style="color:#f87171;font-size:12px">⚠ ${_escapeHtml(_pcState.err)}</div>
+      <button class="pc-mini" style="margin-top:8px" onclick="MOS._pcCargarSugerencias()">Reintentar</button></div>`;
+    if (!_pcState.sug.length) return h + `<div class="pc-empty"><div style="font-size:30px">✨</div>
+      <div style="font-weight:700;color:#cbd5e1;margin-top:6px">Sin ideas nuevas ahora</div>
+      <div style="font-size:11.5px;color:#7c8db1;margin-top:4px">Ya cubriste lo que el radar detectó (o lo descartaste). Vuelve mañana o crea una desde el playbook.</div></div>`;
+    return h + _pcState.sug.map(_pcSugCard).join('');
+  }
+
+  function _pcSugCard(s) {
+    const dto = parseFloat(s.descuentoPct) || 0;
+    const mg  = (s.margenResultante == null) ? null : parseFloat(s.margenResultante);
+    const mgCol = (s.perdida) ? '#f87171' : (mg == null ? '#94a3b8' : (mg >= 20 ? '#34d399' : (mg >= 10 ? '#fbbf24' : '#fb923c')));
+    const mgTxt = s.perdida ? '⚠ vende a pérdida'
+      : (mg == null ? 'margen no verificable (sin costo)' : `margen ${mg}% · S/ ${_money(s.margenSoles).toFixed(2)}`);
+    const totalDist = (s.tipo === 'GRUPO' || s.tipo === 'COMBO');
+    const abierto = !!_pcState.why[s.id];
+    return `<div class="pc-card pc-sug" style="border-left:3px solid ${s.regla === 'REMATE' ? '#f87171' : (s.regla === 'POR_VENCER' ? '#fbbf24' : '#6366f1')}aa">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">
+        ${_pcChip(s.emoji + ' ' + s.etiqueta, s.regla === 'REMATE' ? '#f87171' : (s.regla === 'POR_VENCER' ? '#fbbf24' : '#818cf8'))}
+        ${_pjChip(s.estrategia)}
+        ${s.horaDesde ? _pcChip('⏰ ' + s.horaDesde + '–' + s.horaHasta, '#38bdf8') : ''}
+      </div>
+      <div class="pc-card-name">${_escapeHtml(s.descripcion || s.skuBase)}</div>
+      <div style="font-size:10.5px;color:#94a3b8;margin-top:4px;line-height:1.45">📊 ${_escapeHtml(s.porque || '')}</div>
+
+      <div class="pc-precio">
+        <div>
+          <div class="pc-precio-lbl">precio normal</div>
+          <div class="pc-precio-old">S/ ${_money(s.precioNormal).toFixed(2)}</div>
+        </div>
+        <div style="color:#475569;font-size:15px">→</div>
+        <div>
+          <div class="pc-precio-lbl">${totalDist ? (s.tipo === 'COMBO' ? 'precio del combo' : 'precio del pack') : 'precio promo'}</div>
+          <div class="pc-precio-new">S/ ${_money(totalDist ? s.precioSugerido : s.precioPromo).toFixed(2)}</div>
+          ${totalDist ? `<div class="pc-precio-lbl">c/u S/ ${_money(s.precioPromo).toFixed(2)}</div>` : ''}
+        </div>
+        <div style="flex:1;text-align:right">
+          ${_pcChip('−' + dto + '%', '#a78bfa')}
+          <div style="margin-top:4px">${_pcChip(mgTxt, mgCol)}</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">
+        <button class="pc-mini pc-mini-ok" onclick="MOS.promoDesdeSugerencia('${s.id}')">✓ Crear esta promo</button>
+        <button class="pc-mini" onclick="MOS._pcWhy('${s.id}')">${abierto ? '▲ Ocultar' : '💡 ¿Por qué?'}</button>
+        <button class="pc-mini pc-mini-bad" onclick="MOS.promoDescartarSug('${s.id}')" title="No me interesa">✕</button>
+      </div>
+      ${abierto ? `<div class="pc-why">${_escapeHtml(s.porqueDetalle || '')}</div>` : ''}
+    </div>`;
+  }
+
+  // ── SECCIÓN 3 · PLAYBOOK ─────────────────────────────────────────
+  function _pcPlayHtml() {
+    const pb = _pcState.playbook || {};
+    const ej = (k) => {
+      const d = pb[k];
+      if (!d) return '';
+      let t = '';
+      if (k === 'ancla' && d.lento)        t = `Tu caso: <b>${_escapeHtml(d.lento)}</b> no rota — cuélgalo de <b>${_escapeHtml(d.lider)}</b> (${d.liderVentas} vendidos/30d en “${_escapeHtml(d.sub || '')}”).`;
+      else if (k === 'sustitutos' && d.producto) t = `Tu caso: <b>${_escapeHtml(d.producto)}</b> ya está mapeado con <b>${_escapeHtml(d.sustituto || '')}</b> en “${_escapeHtml(d.sub || '')}”.`;
+      else if (k === 'segunda' && d.producto)    t = `Tu caso: <b>${_escapeHtml(d.producto)}</b> tiene ${d.cobertura} días de cobertura y ${d.margen}% de margen.`;
+      else if (k === 'pack' && d.producto)       t = `Tu caso: <b>${_escapeHtml(d.producto)}</b> con ${d.stock} unidades en stock.`;
+      else if (k === 'valle' && d.producto)      t = `Tu caso: <b>${_escapeHtml(d.producto)}</b> (${d.ventas30} vendidos/30d) es candidato a mover de 14:00 a 18:00.`;
+      else if (k === 'estacionalidad' && d.producto) t = `Tu caso: <b>${_escapeHtml(d.producto)}</b> (${_escapeHtml(d.cat || '')}) — muévelo ANTES de la temporada.`;
+      else if (k === 'topseller' && d.producto)  t = `Tu top hoy: <b>${_escapeHtml(d.producto)}</b> (${d.ventas30} vendidos/30d). Ese JAMÁS entra a promo — ya se vende solo.`;
+      else if (k === 'psicologico' && d.producto) t = `Tu caso: <b>${_escapeHtml(d.producto)}</b> de S/ ${_money(d.de).toFixed(2)} → S/ ${_money(d.a).toFixed(2)} (termina en .90/.50).`;
+      else if (k === 'escalera' && d.producto)   t = `Tu caso: <b>${_escapeHtml(d.producto)}</b> con ${d.stock} en stock y ${d.ventas30} ventas/30d — si el primer escalón no mueve, sube.`;
+      return t ? `<div class="pc-play-ej">${t}</div>` : '';
+    };
+    return `<div style="font-size:11px;color:#7c8db1;margin-bottom:10px;line-height:1.5">Las 9 jugadas del negocio. Cada una dice cuándo usarla, trae un ejemplo con TUS productos y se puede aplicar de una.</div>`
+      + PROMO_JUGADAS.map(j => `<div class="pc-card">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12.5px;font-weight:800;color:#c7d2fe">${j.ico} ${j.nom}</div>
+              <div style="font-size:11px;color:#94a3b8;margin-top:3px;line-height:1.5">${j.cuando}</div>
+              ${ej(j.k)}
+            </div>
+            <button class="pc-mini ${j.guia ? '' : 'pc-mini-ok'}" style="flex:none" onclick="MOS.pcUsarJugada('${j.k}')">${j.guia ? '🛡 Regla' : 'Usar esta jugada'}</button>
+          </div>
+        </div>`).join('');
+  }
+
+  // ── acciones del overlay ─────────────────────────────────────────
+  function _pcIr(tab) { _pcState.tab = tab; _pcPinta(); }
+  function _pcTogglePasadas() { _pcState.pasadas = !_pcState.pasadas; _pcPinta(); }
+  function _pcWhy(id) { _pcState.why[id] = !_pcState.why[id]; _pcPinta(); }
+  function _pcOtrasIdeas() { _pcCargarSugerencias('N' + Date.now()); }
+
+  function pcUsarJugada(k) {
+    const j = _PJ(k);
+    if (!j) return;
+    if (j.guia) { toast('🛡 Es una regla de defensa: el top-seller nunca entra a promo. El radar ya lo excluye solo.', 'ok'); return; }
+    $('promoCentro')?.remove();
+    promoAbrirNueva(k);
+  }
+
+  // ✓ Crear esta promo → precarga el form con la sugerencia (el dueño ajusta y confirma)
+  function promoDesdeSugerencia(id) {
+    const s = (_pcState.sug || []).find(x => x.id === id);
+    if (!s) return;
+    $('promoCentro')?.remove();
+    promoAbrirNueva(s.estrategia, s);
+  }
+
+  async function promoDescartarSug(id) {
+    const s = (_pcState.sug || []).find(x => x.id === id);
+    if (!s) return;
+    _pcState.sug = _pcState.sug.filter(x => x.id !== id);
+    _pcPinta();
+    toast('Idea descartada — no te la vuelvo a proponer por 30 días', 'ok');
+    try { await API.post('promoDescartar', { skuBase: s.skuBase, regla: s.regla, por: 'MOS' }); }
+    catch (e) { toast('No pude guardar el descarte: ' + e.message, 'error'); }
+  }
+
+  // ↻ Reactivar: abre el form con los datos de la promo pasada + vigencia nueva
+  function promoReactivar(idRef) {
+    const p = (_promoState.lista || []).find(x => (x.idPromo === idRef) || (x.skuBase === idRef));
+    if (!p) return;
+    $('promoCentro')?.remove();
+    promoEditar(idRef);
+    promoPresetVig(30);
+    const t = $('promoTogActiva'); if (t) t.classList.add('on');
+    toast('Ajusta la vigencia y confirma para volver a activarla', 'ok');
+  }
+
+  async function promoEliminarDirecto(idRef) {
+    const p = (_promoState.lista || []).find(x => (x.idPromo === idRef) || (x.skuBase === idRef));
+    if (!p) return;
+    if (!await _modalConfirm('Se quita del POS de inmediato.', { danger: true, titulo: '¿Eliminar esta promoción?', okText: 'Eliminar' })) return;
+    const backup = (_promoState.lista || []).slice();
+    _promoState.lista = backup.filter(x => x !== p);
+    _promoSaveCache(_promoState.lista); _pcPinta();
+    toast('Promoción eliminada', 'ok');
+    try { await API.post('eliminarPromocion', { idPromo: p.idPromo, skuBase: p.skuBase }); _pcCargarPromos(); }
+    catch (e) { _promoState.lista = backup; _promoSaveCache(_promoState.lista); _pcPinta(); toast('Error: ' + e.message, 'error'); }
+  }
