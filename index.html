@@ -13435,6 +13435,18 @@
     .cat-chip button { background:none; border:none; color:#818cf8; cursor:pointer; font-size:13px; line-height:1; padding:0 0 0 2px; }
     .cat-chip-clear { background:rgba(239,68,68,.1); color:#f87171; border-color:rgba(239,68,68,.2); }
     .cat-chip-clear button { color:#f87171; }
+    /* [716] estado vacío que se explica: qué filtro recorta + botones para quitarlo */
+    .cat-vacio-filtros { font-size:12px; color:#fbbf24; margin-top:6px; font-weight:600; }
+    .cat-vacio-pista   { font-size:11.5px; color:#94a3b8; margin-top:8px; line-height:1.55; max-width:420px; margin-left:auto; margin-right:auto; }
+    .cat-vacio-btns    { display:flex; gap:7px; flex-wrap:wrap; justify-content:center; margin-top:14px; }
+    .cat-vacio-btn {
+      background:rgba(99,102,241,.16); border:1px solid rgba(99,102,241,.45); color:#c7d2fe;
+      border-radius:9px; padding:7px 13px; font-size:11.5px; font-weight:700; cursor:pointer;
+      transition:filter .15s, transform .1s;
+    }
+    .cat-vacio-btn:hover  { filter:brightness(1.25); }
+    .cat-vacio-btn:active { transform:scale(.96); }
+    .cat-vacio-btn-alt { background:rgba(148,163,184,.12); border-color:rgba(148,163,184,.35); color:#cbd5e1; }
     .filtro-radio { display:flex; align-items:center; gap:8px; padding:4px 8px; border-radius:8px; cursor:pointer; font-size:13px; color:#cbd5e1; transition:background .15s; }
     .filtro-radio:hover { background:rgba(99,102,241,.1); }
     .filtro-radio.active { color:#a5b4fc; font-weight:600; background:rgba(99,102,241,.12); }
@@ -20378,7 +20390,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.715';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.716';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -20657,7 +20669,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.715"></script>
+<script src="js/api.js?v=2.43.716"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20673,7 +20685,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.715"></script>
+<script src="js/app.js?v=2.43.716"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

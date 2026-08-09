@@ -2279,6 +2279,23 @@ const MOS = (() => {
       + cats.map(c => `<div class="filtro-radio${cur === c ? ' active' : ''}" onclick="MOS.setFiltroCategoria('${c}')">${c}</div>`).join('');
   }
 
+  // [716] Etiquetas de los filtros — antes vivían dentro de _updateFiltroBadge y
+  //   el estado vacío del catálogo no podía nombrarlos. Ahora se comparten.
+  const _CAT_TIPO_LABELS  = { envasable: '⚗️ Envasable', conPres: '📦 Con pres.', derivado: '🔗 Derivado', inactivo: '🚫 Inactivos' };
+  const _CAT_ORDEN_LABELS = { rot_desc: '📦 Más vendidos', rot_asc: '🌙 Menos vendidos', mrg_desc: '💎 Margen alto', mrg_asc: '⚠ Margen bajo' };
+
+  // [716] Filtros que RECORTAN la lista (el orden no recorta: nunca deja 0 resultados).
+  //   Cada uno sabe decir su nombre y cómo quitarse — el estado vacío los usa para
+  //   explicar "dice 2 alertas pero está vacío" y ofrecer el botón que lo destraba.
+  function _catFiltrosActivos() {
+    const out = [];
+    if (_catFiltros.soloAlertas)  out.push({ lbl: '⚠️ Solo alertas',                           quitar: 'MOS.toggleFiltroAlertas()' });
+    if (_catFiltros.categoria)    out.push({ lbl: '📂 ' + _catFiltros.categoria,                quitar: "MOS.setFiltroCategoria('')" });
+    if (_catFiltros.subcategoria) out.push({ lbl: '🧩 ' + _catFiltros.subcategoria,             quitar: "MOS.setFiltroSubcategoria('')" });
+    _catFiltros.tipos.forEach(t => out.push({ lbl: _CAT_TIPO_LABELS[t] || t,                    quitar: `MOS.toggleFiltroTipo('${t}')` }));
+    return out;
+  }
+
   function _updateFiltroBadge() {
     const count = (_catFiltros.categoria ? 1 : 0) + (_catFiltros.subcategoria ? 1 : 0) + (_catFiltros.soloAlertas ? 1 : 0) + _catFiltros.tipos.size + (_catFiltros.orden ? 1 : 0);
     // [692] el filtro "solo alertas" SIEMPRE con indicador (antes quedaba activo invisible → "¿dónde están mis productos?")
@@ -2291,8 +2308,8 @@ const MOS = (() => {
     const badge = $('filtrosBadge');
     if (badge) { badge.textContent = count; badge.classList.toggle('hidden', count === 0); }
 
-    const tipoLabels  = { envasable:'⚗️ Envasable', conPres:'📦 Con pres.', derivado:'🔗 Derivado', inactivo:'🚫 Inactivos' };
-    const ordenLabels = { rot_desc:'📦 Más vendidos', rot_asc:'🌙 Menos vendidos', mrg_desc:'💎 Margen alto', mrg_asc:'⚠ Margen bajo' };
+    const tipoLabels  = _CAT_TIPO_LABELS;
+    const ordenLabels = _CAT_ORDEN_LABELS;
     const chips = $('catFiltroChips');
     if (chips) {
       const parts = [];
@@ -3360,6 +3377,11 @@ const MOS = (() => {
     _catFiltros.subcategoria = '';
     _catFiltros.tipos.clear();
     _catFiltros.orden = '';
+    // [716] "Limpiar todo" ahora APAGA también ⚠️ Solo alertas. Antes lo dejaba
+    //   prendido: el chip decía "Limpiar todo", la lista seguía recortada y el
+    //   dueño no entendía por qué faltaban productos.
+    _catFiltros.soloAlertas = false;
+    $('btnAlertasCat')?.classList.remove('active');
     _catFiltrosGuardar(); // [v2.43.71]
     _updateFiltroBadge();
     const cats = [...new Set(S.productos.map(p => p.idCategoria).filter(Boolean))].sort();
@@ -3367,6 +3389,14 @@ const MOS = (() => {
     _refrescarFiltroOrdenUI();
     renderCatalogo();
     $('catFiltroPanel')?.classList.add('hidden');
+  }
+
+  // [716] Escape total desde el estado vacío: borra los filtros Y el texto buscado.
+  //   Es el botón "no entiendo nada, devuélveme el catálogo".
+  function _catLimpiarTodo() {
+    const inp = $('searchCatalogo');
+    if (inp) inp.value = '';
+    limpiarFiltrosCat();   // ya guarda, sincroniza el badge y repinta
   }
 
   // [v2.43.37] Setter del orden + visual feedback + sonido
@@ -3437,6 +3467,17 @@ const MOS = (() => {
     if (desc === qn)                                     return { score: 88,  field: 'desc', exacto: true };
     if (desc.startsWith(qn))                             return { score: 82,  field: 'desc', exacto: false };
     if (words.length > 1 && words.every(w => desc.includes(w))) return { score: 76, field: 'desc', exacto: false };
+    // [716] BÚSQUEDA TOKENIZADA AMPLIA: todas las palabras, en cualquier orden y
+    //   posición, repartidas entre los campos de texto (nombre + marca +
+    //   subcategoría IA + categoría). Cubre "niu personal" o "alacena cremas".
+    //   El código de barra y el SKU quedan FUERA del AND a propósito: siguen por
+    //   prefijo/substring completo — meter dígitos sueltos al AND produce
+    //   falsos positivos ("12" matchearía media tienda).
+    if (words.length > 1) {
+      const subIaTok = (p.categoriaIa && typeof p.categoriaIa === 'object' && p.categoriaIa.subcategoria) || '';
+      const hay = desc + ' ' + _norm(p.marca) + ' ' + _norm(subIaTok) + ' ' + _norm(p.idCategoria);
+      if (words.every(w => hay.includes(w)))             return { score: 74,  field: 'desc', exacto: false };
+    }
     if (cb.includes(qn))                                 return { score: 68,  field: 'cb',   exacto: false };
     if (desc.includes(qn))                               return { score: 62,  field: 'desc', exacto: false };
     // ── Búsqueda en equivalentes ─────────────────────────────────────
@@ -3768,11 +3809,36 @@ const MOS = (() => {
         : `${total} grupos · ${S.productos.length} ítems`;
     }
 
+    // [716] ESTADO VACÍO QUE SE EXPLICA SOLO.
+    //   El caso real del dueño: badge "⚠️ Alertas 2" prendido + buscar "alacena
+    //   personal" → "0 resultados de 1770" sin decir que el filtro de alertas
+    //   estaba recortando. Ahora el vacío NOMBRA los filtros que recortan y trae
+    //   el botón que quita cada uno (más el escape total).
     if (!result.length) {
+      const activos = _catFiltrosActivos();
+      const nombres = activos.map(f => f.lbl).join(' · ');
+      const titulo = rawQ
+        ? `Sin resultados para «<span class="text-slate-300">${_escapeHtml(rawQ)}</span>»`
+        : 'Ningún producto pasa los filtros';
+      const conFiltros = activos.length
+        ? `<div class="cat-vacio-filtros">con ${_escapeHtml(nombres)} activo${activos.length > 1 ? 's' : ''}</div>`
+        : '';
+      // pista que desarma la confusión "dice 2 pero está vacío"
+      const pista = (rawQ && _catFiltros.soloAlertas && totalAlertas > 0)
+        ? `<div class="cat-vacio-pista">Hay ${totalAlertas} producto${totalAlertas > 1 ? 's' : ''} con alerta, pero ninguno coincide con «${_escapeHtml(rawQ)}».</div>`
+        : (activos.length ? '' : `<div class="text-xs mt-1">Prueba con el código de barra o parte del nombre</div>`);
+      const botones = activos.length
+        ? `<div class="cat-vacio-btns">
+             ${activos.map(f => `<button class="cat-vacio-btn" onclick="${f.quitar}">Quitar ${_escapeHtml(f.lbl)}</button>`).join('')}
+             <button class="cat-vacio-btn cat-vacio-btn-alt" onclick="MOS._catLimpiarTodo()">🧹 Limpiar todo</button>
+           </div>`
+        : '';
       container.innerHTML = `<div class="text-center py-16 text-slate-500">
         <div class="text-4xl mb-3">🔍</div>
-        <div class="font-medium">Sin resultados para "<span class="text-slate-300">${rawQ}</span>"</div>
-        <div class="text-xs mt-1">Prueba con el código de barra o parte del nombre</div>
+        <div class="font-medium">${titulo}</div>
+        ${conFiltros}
+        ${pista}
+        ${botones}
       </div>`;
       return;
     }
@@ -47100,6 +47166,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _espiaGpsRefresh, _espiaGpsRangoCambiar,
     toggleAvatarMenu, closeAvatarMenu, installPWA,
     toggleFiltroCat, setFiltroCategoria, setFiltroSubcategoria, toggleFiltroTipo, limpiarFiltrosCat, toggleFiltroAlertas, toggleAlertPop,
+    _catLimpiarTodo,   // [716] escape del estado vacío (filtros + texto)
     // [v2.43.37] Catálogo: filtro de orden + modal de rotación
     setFiltroOrden,
     // [v2.43.45] Panel flotante de filtros (nuclear)
