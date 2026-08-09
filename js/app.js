@@ -9554,6 +9554,9 @@ const MOS = (() => {
     // [703] El bloque avanzado (foto de factura + modo monto/IGV) nace ABIERTO en tablet/PC y
     // CERRADO en móvil: en 390px se comía ~300px del scroll y dejaba media línea visible.
     if (S._p1AdvOpen == null) S._p1AdvOpen = (window.innerWidth || 0) >= 768;
+    // [717] La carta nace ABIERTA en PC (≥1024) y retraída en tablet, donde 292px
+    //   de carta dejarían la lista de 2 columnas ilegible. El dueño la abre con ⟩.
+    if (S._p1CartaOff == null) S._p1CartaOff = (window.innerWidth || 0) < 1024;
     let modal = document.getElementById('modalCostosGuiaUnif');
     if (!modal) {
       modal = document.createElement('div');
@@ -9568,6 +9571,7 @@ const MOS = (() => {
                 <div class="font-black text-emerald-300 truncate" id="opsCostosTitulo">Compra —</div>
                 <div class="text-[11px] text-slate-400 truncate" id="opsCostosSubtitle">—</div>
               </div>
+              <span id="p1HeadThumb" class="p1-head-thumb-wrap"></span>
               <button onclick="MOS.opsSalirModoCostos()" class="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-500/40 transition-all text-slate-300 shrink-0" title="Cerrar">✕</button>
             </div>
             <div class="flex items-center gap-2 mt-2.5 text-[11px] font-extrabold p1-pasos">
@@ -9577,7 +9581,11 @@ const MOS = (() => {
             </div>
           </div>
           <div class="px-5 pt-3 pb-3 border-b border-slate-800" id="opsCostosSubheader"></div>
-          <div class="px-5 py-4 overflow-y-auto flex-1 ops-costos-scroll" id="opsCostosBody"></div>
+          <!-- [717] fila cuerpo + carta lateral de la factura (la carta sólo vive en ≥768px) -->
+          <div class="p1-row">
+            <div class="px-5 py-4 overflow-y-auto flex-1 ops-costos-scroll" id="opsCostosBody"></div>
+            <aside class="p1-carta" id="p1Carta"></aside>
+          </div>
           <div class="px-5 pt-3 pb-4 border-t border-slate-700/60 bg-slate-900 rounded-b-2xl" id="opsCostosFooter"></div>
         </div>`;
       document.body.appendChild(modal);
@@ -9613,6 +9621,70 @@ const MOS = (() => {
     sub.innerHTML  = _renderCostosSubheader(op);
     body.innerHTML = _renderCostosBody(op);
     foot.innerHTML = _renderCostosFooter(op);
+    _p1PintarCarta();   // [717] carta lateral (≥768) + thumb del header (móvil)
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // [717] LA CARTA DE LA FACTURA — panel lateral retráctil.
+  //   Antes la foto vivía como banda 16/9 dentro del subheader: en tablet/PC
+  //   dejaba un hueco enorme a su costado, comía ~250px de alto antes de la
+  //   primera línea y la factura salía recortada e ilegible.
+  //   Ahora es una "carta" pegada al borde derecho, más baja y más angosta que
+  //   el overlay (se siente sección secundaria), con pestañita ⟨ ⟩ para
+  //   retraerla. Retraída = sólo la pestañita 📄 y el cuerpo usa TODO el ancho.
+  //   En móvil no hay carta: un thumbnail compacto en el header abre el zoom.
+  // ════════════════════════════════════════════════════════════════
+  function _p1PintarCarta() {
+    const st = S._costosGuiaState;
+    const carta = document.getElementById('p1Carta');
+    const thumbWrap = document.getElementById('p1HeadThumb');
+    if (!st) return;
+    const url = String((st && st.foto) || '').trim();
+    const tiene = !!url;
+    const esc = _escapeHtml(url);
+    if (thumbWrap) {
+      thumbWrap.innerHTML = tiene
+        ? `<button type="button" class="p1-thumb" title="Ver la factura (zoom)" onclick="MOS.abrirFotoOverlay('${esc}')">
+             <img src="${esc}" alt="Factura" loading="lazy" onerror="this.style.display='none'">
+             <span class="p1-thumb-ic">📄</span>
+           </button>`
+        : '';
+    }
+    if (!carta) return;
+    if (!tiene) { carta.innerHTML = ''; carta.classList.add('is-vacia'); return; }
+    carta.classList.remove('is-vacia');
+    if (S._p1CartaOff == null) S._p1CartaOff = false;
+    carta.classList.toggle('is-off', !!S._p1CartaOff);
+    carta.innerHTML = `
+      <button type="button" class="p1-carta-tab" id="p1CartaTab" onclick="MOS._p1CartaToggle()"
+        title="${S._p1CartaOff ? 'Mostrar la factura' : 'Ocultar la factura'}"
+        aria-expanded="${S._p1CartaOff ? 'false' : 'true'}">
+        <span class="p1-carta-tab-ic">📄</span>
+        <span class="p1-carta-tab-car">${S._p1CartaOff ? '⟨' : '⟩'}</span>
+      </button>
+      <div class="p1-carta-in">
+        <div class="p1-carta-head"><span>📄 Factura</span></div>
+        <div class="p1-carta-foto" onclick="MOS.abrirFotoOverlay('${esc}')" title="Ampliar la factura (zoom)">
+          <img src="${esc}" alt="Factura de la guía" loading="lazy" onerror="this.closest('.p1-carta-foto').classList.add('is-err')">
+          <span class="p1-carta-foto-empty">📄 Sin vista previa · toca para abrir</span>
+          <span class="p1-carta-zoom">🔍 Ampliar</span>
+        </div>
+        <div class="p1-carta-pie">Compárala con cada línea y escribe el monto.</div>
+      </div>`;
+  }
+
+  function _p1CartaToggle() {
+    S._p1CartaOff = !S._p1CartaOff;
+    const carta = document.getElementById('p1Carta');
+    const tab = document.getElementById('p1CartaTab');
+    if (carta) carta.classList.toggle('is-off', !!S._p1CartaOff);
+    if (tab) {
+      const car = tab.querySelector('.p1-carta-tab-car');
+      if (car) car.textContent = S._p1CartaOff ? '⟨' : '⟩';
+      tab.setAttribute('aria-expanded', S._p1CartaOff ? 'false' : 'true');
+      tab.title = S._p1CartaOff ? 'Mostrar la factura' : 'Ocultar la factura';
+    }
+    try { _opsBeep && _opsBeep('tac'); } catch (_) {}
   }
 
   function _renderCostosSubheader(op) {
@@ -9621,19 +9693,13 @@ const MOS = (() => {
     const totLin = (st.lineas || []).length;
     const conCosto = (st.lineas || []).filter(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
     const pct = totLin > 0 ? Math.round((conCosto / totLin) * 100) : 0;
-    // [v5 §11] FOTO de la factura DENTRO del Paso 1 (preview + zoom a pantalla completa).
-    const fotoUrl = tieneFoto ? _escapeHtml(String(st.foto).trim()) : '';
-    const fotoHtml = tieneFoto ? `
-      <div class="ops-p1-foto" onclick="MOS.abrirFotoOverlay('${fotoUrl}')" title="Ampliar la factura (zoom)">
-        <img src="${fotoUrl}" alt="Factura del proveedor" loading="lazy" onerror="this.closest('.ops-p1-foto').classList.add('is-err')">
-        <span class="ops-p1-foto-empty">📄 Sin vista previa · toca para abrir</span>
-        <span class="ops-p1-foto-pill">📄 Factura de la guía</span>
-        <span class="ops-p1-foto-zoom">🔍 Ampliar / zoom</span>
-      </div>` : '';
+    // [717] La foto YA NO vive acá: se mudó a la carta lateral (≥768px) y al thumb
+    //   del header (móvil). El subheader queda sólo con chip + modos + progreso.
+    const fotoHtml = '';
     // Instrucción (sin contador: el contador vive en la barra de progreso de abajo, que SÍ se
     // repinta al teclear — duplicarlo aquí mostraba un "0/3" congelado junto a un "1/3" vivo).
     const chipOcr = tieneFoto
-      ? `<div id="opsChipOcrStatus" class="ops-chip-ok">📸 Mira la factura de arriba y escribe el monto de cada línea</div>`
+      ? `<div id="opsChipOcrStatus" class="ops-chip-ok">📸 Compara con la factura y escribe el monto de cada línea</div>`
       : `<div id="opsChipOcrStatus" class="ops-chip-info">✍ Sin foto — escribe los montos mirando la factura física</div>`;
     // Progreso visual — SIEMPRE visible (fuera del bloque plegable): es la brújula del flujo.
     const progCls = pct === 100 ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
@@ -9666,7 +9732,7 @@ const MOS = (() => {
     const abierto = !!S._p1AdvOpen;
     const toggle = `<button type="button" class="p1-adv-toggle" id="p1AdvToggle" onclick="MOS._costosToggleAvanzado()"
         title="Foto de la factura y modo de monto/IGV">
-      <span class="p1-adv-lbl">${tieneFoto ? '📄 Factura · ' : ''}Monto ${modoLbl} · ${igvLbl}</span>
+      <span class="p1-adv-lbl">Monto ${modoLbl} · ${igvLbl}</span>
       <span class="p1-adv-caret">${abierto ? '▴' : '▾'}</span>
     </button>`;
     return `<div class="flex flex-col gap-2">${toggle}<div class="p1-adv${abierto ? ' open' : ''}" id="p1Adv">${fotoHtml}${chipOcr}${toggles}</div>${progreso}</div>`;
@@ -10445,6 +10511,77 @@ const MOS = (() => {
       }
       #modalCostosGuiaUnif .p1-cta.is-done { background: linear-gradient(135deg,#3f8cff,#4aa8ff); box-shadow: 0 6px 14px -2px rgba(74,168,255,.45); }
       #modalCostosGuiaUnif .p1-cta:active { transform: scale(.98); }
+
+      /* ═══ [717] CARTA LATERAL DE LA FACTURA ═══════════════════════════════
+         Base (móvil): no hay carta — la factura es un thumb en el header que
+         abre el visor con zoom. En ≥768px la carta aparece pegada al borde
+         derecho, más baja y angosta que el overlay, y se retrae con ⟨ ⟩. */
+      #modalCostosGuiaUnif .p1-row { display: flex; flex: 1 1 auto; min-height: 0; align-items: stretch; }
+      #modalCostosGuiaUnif #opsCostosBody { flex: 1 1 auto; min-width: 0; }
+      #modalCostosGuiaUnif .p1-carta { display: none; }
+      #modalCostosGuiaUnif .p1-head-thumb-wrap { display: flex; align-items: center; margin-right: 6px; }
+      #modalCostosGuiaUnif .p1-thumb {
+        position: relative; width: 38px; height: 38px; border-radius: 9px; overflow: hidden; padding: 0;
+        border: 1px solid #2c3f66; background: #0a1120; flex: none; cursor: pointer;
+        transition: transform .12s ease, border-color .18s ease;
+      }
+      #modalCostosGuiaUnif .p1-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+      #modalCostosGuiaUnif .p1-thumb-ic { position: absolute; right: 1px; bottom: 0; font-size: 10px; text-shadow: 0 1px 3px #000; }
+      #modalCostosGuiaUnif .p1-thumb:active { transform: scale(.93); }
+      #modalCostosGuiaUnif .p1-thumb:hover  { border-color: #34d399; }
+
+      @media (min-width: 768px) {
+        /* en tablet/PC manda la carta: el thumb del header sobra */
+        #modalCostosGuiaUnif .p1-head-thumb-wrap { display: none; }
+        #modalCostosGuiaUnif .p1-carta {
+          display: flex; flex: none; position: relative; width: 292px;
+          margin: 10px 10px 12px 0; align-self: center; max-height: calc(100% - 22px);
+          transition: width .38s cubic-bezier(.22,1,.36,1);
+        }
+        #modalCostosGuiaUnif .p1-carta.is-vacia { display: none; }
+        #modalCostosGuiaUnif .p1-carta.is-off   { width: 34px; }
+        #modalCostosGuiaUnif .p1-carta-in {
+          flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px;
+          margin-left: 30px; background: #0b1526; border: 1px solid #24406b; border-radius: 14px; padding: 10px;
+          box-shadow: -16px 0 34px -20px rgba(2,6,23,.95), 0 12px 32px -18px rgba(52,211,153,.32);
+          overflow: hidden;
+          transition: opacity .26s ease, transform .38s cubic-bezier(.22,1,.36,1);
+        }
+        /* retraída: la carta se va hacia AFUERA (derecha) y se desvanece */
+        #modalCostosGuiaUnif .p1-carta.is-off .p1-carta-in { opacity: 0; transform: translateX(46px); pointer-events: none; }
+        #modalCostosGuiaUnif .p1-carta-tab {
+          position: absolute; left: 0; top: 50%; transform: translateY(-50%); z-index: 3;
+          width: 28px; height: 78px; padding: 0; cursor: pointer;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+          background: #12233d; border: 1px solid #2c4468; border-right: 0; border-radius: 10px 0 0 10px;
+          color: #8fe6c2; font-size: 12px; transition: background .18s ease, color .18s ease;
+        }
+        #modalCostosGuiaUnif .p1-carta-tab:hover { background: #18304f; color: #34d399; }
+        #modalCostosGuiaUnif .p1-carta-tab-car { font-size: 11px; color: #64748b; }
+        #modalCostosGuiaUnif .p1-carta-head { flex: none; font-size: 10px; font-weight: 800; color: #7c8db1; text-transform: uppercase; letter-spacing: .05em; }
+        #modalCostosGuiaUnif .p1-carta-foto {
+          position: relative; flex: 1 1 auto; min-height: 130px; border-radius: 10px; overflow: hidden;
+          background: #060d1f; border: 1px solid #1c2b48; cursor: zoom-in;
+        }
+        /* contain (no cover): la factura completa se lee — antes salía recortada */
+        #modalCostosGuiaUnif .p1-carta-foto img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        #modalCostosGuiaUnif .p1-carta-foto.is-err img { display: none; }
+        #modalCostosGuiaUnif .p1-carta-foto-empty { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; color: #7b8aa6; font-size: 11px; text-align: center; padding: 8px; }
+        #modalCostosGuiaUnif .p1-carta-foto.is-err .p1-carta-foto-empty { display: flex; }
+        #modalCostosGuiaUnif .p1-carta-zoom { position: absolute; right: 6px; bottom: 6px; background: rgba(7,13,24,.85); border-radius: 8px; padding: 3px 8px; font-size: 10px; color: #cbd5e1; }
+        #modalCostosGuiaUnif .p1-carta-pie { flex: none; font-size: 10px; color: #64748b; line-height: 1.45; }
+      }
+      /* tablet angosta: con la carta abierta la lista va a 1 columna (2 quedaban ilegibles) */
+      @media (min-width: 768px) and (max-width: 1023px) {
+        #modalCostosGuiaUnif .p1-row:has(.p1-carta:not(.is-off)) .p1-lista { grid-template-columns: 1fr; }
+      }
+      @media (min-width: 1024px) {
+        #modalCostosGuiaUnif .p1-carta { width: 322px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #modalCostosGuiaUnif .p1-carta, #modalCostosGuiaUnif .p1-carta-in { transition: none !important; }
+        #modalCostosGuiaUnif .p1-carta.is-off .p1-carta-in { transform: none !important; }
+      }
 
       /* ═══ TIER 1 · MÓVIL (<768px): hoja anclada abajo, casi pantalla completa ═══ */
       @media (max-width: 767px) {
@@ -12032,11 +12169,23 @@ const MOS = (() => {
     const ctaTxt = est.fase === 'finalizado' ? '👁 Revisar'
                  : est.fase === 'procesado' ? '🏷 Poner precios →'
                  : '💰 Ingresar compra →';
+    // [717] HONESTIDAD DE ORIGEN. En las compras EN ZONA la línea NO trae monto
+    //   (me.guias_detalle sólo guarda cantidad): "Costos" y "Precios" se leen del
+    //   CATÁLOGO del producto. Por eso salían 1/1 sin que nadie tocara nada y
+    //   parecía magia. Lo decimos en el tooltip y, cuando la compra sale
+    //   completa, en una línea a la vista.
+    const tipCostos = esZona
+      ? 'Compra EN ZONA: la línea no trae monto. Esto marca si el PRODUCTO ya tiene costo en el catálogo (no lo puso esta compra).'
+      : 'Líneas de la guía con costo escrito.';
+    const tipPrecios = esZona
+      ? 'Precio de venta que ya tiene el producto en el catálogo, comparado con su margen objetivo. Publicar precio sigue siendo manual.'
+      : 'Productos con precio de venta al día respecto del costo.';
     const faseBar = `
       <div class="mesa-phases">
-        <div class="mesa-ph ${est.pctC >= 100 ? 'ok' : est.pctC > 0 ? 'mid' : ''}"><span>Costos</span><i style="width:${est.pctC}%"></i><b>${est.costos.con}/${est.costos.total}</b></div>
-        <div class="mesa-ph ${est.pctC < 100 ? 'lock' : est.pctP >= 100 ? 'ok' : est.pctP > 0 ? 'mid' : ''}"><span>Precios</span><i style="width:${est.pctC < 100 ? 0 : est.pctP}%"></i><b>${est.pctC < 100 ? '—' : est.precios.con + '/' + est.precios.total}</b></div>
-      </div>`;
+        <div class="mesa-ph ${est.pctC >= 100 ? 'ok' : est.pctC > 0 ? 'mid' : ''}" title="${_escapeHtml(tipCostos)}"><span>Costos</span><i style="width:${est.pctC}%"></i><b>${est.costos.con}/${est.costos.total}</b></div>
+        <div class="mesa-ph ${est.pctC < 100 ? 'lock' : est.pctP >= 100 ? 'ok' : est.pctP > 0 ? 'mid' : ''}" title="${_escapeHtml(tipPrecios)}"><span>Precios</span><i style="width:${est.pctC < 100 ? 0 : est.pctP}%"></i><b>${est.pctC < 100 ? '—' : est.precios.con + '/' + est.precios.total}</b></div>
+      </div>
+      ${(esZona && est.fase === 'finalizado') ? `<div class="mesa-zona-nota">ℹ️ Costo y precio vienen del catálogo del producto — esta compra en zona no registra montos por línea</div>` : ''}`;
     return `
       <button class="mesa-card tone-${est.tone} fase-${est.fase}${esZona ? ' is-zona' : ''}" id="mesacard_${_escapeHtml(k)}" data-fase="${est.fase}" style="animation-delay:${Math.min(i, 16) * 40}ms"
               onclick="MOS._mesaComprasEntrar('${op.fuente}','${_escapeHtml(op.idGuia)}')">
@@ -12211,6 +12360,8 @@ const MOS = (() => {
       .mesa-card.is-zona{border-left-color:#a855f7;background:linear-gradient(180deg,#0e1626,rgba(168,85,247,.055))}
       .mesa-card.is-zona:hover{box-shadow:0 16px 30px -14px rgba(168,85,247,.35)}
       .mesa-origen-pill{font-size:8.5px;font-weight:900;letter-spacing:.03em;color:#c084fc;background:rgba(168,85,247,.16);border:1px solid rgba(168,85,247,.4);border-radius:999px;padding:2px 7px}
+      /* [717] nota de origen del costo/precio en compras EN ZONA */
+      .mesa-zona-nota{margin-top:6px;font-size:9.5px;line-height:1.45;color:#a78bfa;background:rgba(168,85,247,.09);border:1px solid rgba(168,85,247,.24);border-radius:8px;padding:5px 8px;text-align:left}
       .mesa-card.is-zona .mesa-prov-name{color:#e9d5ff}
       .mesa-cajera{font-weight:700;font-size:12.5px;color:#c084fc}
       /* [v2.43.613] estado honesto: color distinto por fase + animación al completarse */
@@ -47086,6 +47237,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _costosSiguiente, _costosSiguientePendiente, _costosAplicarAlCatalogo,
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
+    _p1CartaToggle,   // [717] pestañita ⟨ ⟩ de la carta lateral de la factura
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaSetZona, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
