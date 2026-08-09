@@ -9725,9 +9725,9 @@ const MOS = (() => {
     const fotoHtml = '';
     // Instrucción (sin contador: el contador vive en la barra de progreso de abajo, que SÍ se
     // repinta al teclear — duplicarlo aquí mostraba un "0/3" congelado junto a un "1/3" vivo).
-    const chipOcr = tieneFoto
-      ? `<div id="opsChipOcrStatus" class="ops-chip-ok">📸 Compara con la factura y escribe el monto de cada línea</div>`
-      : `<div id="opsChipOcrStatus" class="ops-chip-info">✍ Sin foto — escribe los montos mirando la factura física</div>`;
+    // [721] La línea "📸 Compara con la factura y escribe el monto de cada línea"
+    //   MURIÓ por pedido del dueño: su lugar lo ocupan ahora los totales en vivo.
+    //   (El chip de OCR del voucher de Almacén es otro, vive en _renderVoucher.)
     // Progreso visual — SIEMPRE visible (fuera del bloque plegable): es la brújula del flujo.
     const progCls = pct === 100 ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
     const progreso = `<div id="costosGuiaProgreso" class="ops-prog-bar">
@@ -9737,7 +9737,12 @@ const MOS = (() => {
         ${pct < 100 ? `<span class="alm-v-progreso-faltan">⚠ faltan ${totLin - conCosto}</span>` : ''}
       </div>
     </div>`;
-    // Toggles modo input + IGV
+    // [721] HEADER ÚNICO: toggles + TOTALES EN VIVO. El total subió del pie a acá
+    //   (reemplaza la frase "📸 Compara con la factura…", que el dueño mandó matar)
+    //   para que modo, IGV y plata se lean de un vistazo en la misma zona.
+    let _tBruto = 0;
+    (st.lineas || []).forEach(l => { _tBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
+    const _tNeto = _tBruto / (1 + _IGV_RATE);
     const toggles = `<div class="ops-toggles-grid">
       <div class="ops-tg-group">
         <span class="ops-tg-lbl">Monto</span>
@@ -9749,7 +9754,10 @@ const MOS = (() => {
         <button onclick="MOS._costosGuiaSetIgv('INCLUIDO')" class="ops-tg-btn ${st.igvMode === 'INCLUIDO' ? 'is-active' : ''}">Incluido</button>
         <button onclick="MOS._costosGuiaSetIgv('SIN_IGV')"  class="ops-tg-btn ${st.igvMode === 'SIN_IGV'  ? 'is-active' : ''}">Sin</button>
       </div>
-      <span class="ops-tg-auto" title="El costo se aplica solo al catálogo al salir del campo — es obligatorio">🔄 Se guarda solo</span>
+      <div class="p1-tot-head">
+        <span class="p1-tot-main"><span class="ops-tot-lbl ops-tot-bruto">Total</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${_money(_tBruto).toFixed(2)}</b></span>
+        <span class="p1-tot-sub"><span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${_money(_tNeto).toFixed(2)}</b><span class="ops-tot-sep">·</span><span class="ops-tot-lbl">IGV</span> <b id="costosGuiaTotalIgv">S/ ${_money(_tBruto - _tNeto).toFixed(2)}</b></span>
+      </div>
     </div>`;
     // [703 · móvil] En pantallas chicas la foto (190px) + chip + toggles se comían el 60% del alto y
     // dejaban ~1 línea visible con 34 productos. Ahora viven en un bloque PLEGABLE; lo único fijo es
@@ -9762,7 +9770,7 @@ const MOS = (() => {
       <span class="p1-adv-lbl">Monto ${modoLbl} · ${igvLbl}</span>
       <span class="p1-adv-caret">${abierto ? '▴' : '▾'}</span>
     </button>`;
-    return `<div class="flex flex-col gap-2">${toggle}<div class="p1-adv${abierto ? ' open' : ''}" id="p1Adv">${fotoHtml}${chipOcr}${toggles}</div>${progreso}</div>`;
+    return `<div class="flex flex-col gap-2">${toggle}<div class="p1-adv${abierto ? ' open' : ''}" id="p1Adv">${fotoHtml}${toggles}</div>${progreso}</div>`;
   }
 
   // [703] Plegar/desplegar el bloque avanzado del Paso 1 (foto de factura + modos de monto/IGV).
@@ -9901,6 +9909,15 @@ const MOS = (() => {
         }
       }
     } catch(_) {}
+    // [721] SUGERENCIA (no verdad): el costo que el producto ya tiene en el catálogo.
+    //   Se ofrece como chip que al tocarlo RELLENA el campo; el admin lo edita o lo
+    //   ignora. Nunca marca la compra como cotejada por sí solo — eso lo decide el
+    //   admin al confirmar. Sólo se muestra si la línea aún no tiene monto escrito.
+    const costoCat = prodCat ? (parseFloat(prodCat.precioCosto) || 0) : 0;
+    const sugCatHtml = (costoCat > 0 && !(brutoUnit > 0))
+      ? `<button type="button" class="cl-sugcat" title="Rellenar con el costo que este producto tiene hoy en el catálogo (puedes editarlo)"
+           onclick="event.stopPropagation();MOS._costosUsarCostoCatalogo(${i},${costoCat})">📚 catálogo: S/ ${_money(costoCat).toFixed(2)}<span class="cl-sugcat-cta">usar</span></button>`
+      : '';
     // [703 · móvil] La línea nace PLEGADA cuando ya tiene costo: check verde + costo grande.
     // Tocarla la re-abre (_costosLineaExpandir). En PC el plegado no aplica (CSS).
     const plegada = brutoUnit > 0 ? ' is-collapsed' : '';
@@ -9938,10 +9955,29 @@ const MOS = (() => {
           <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
         </div>
       </div>
+      ${sugCatHtml}
       <button type="button" class="cl-next" id="costoGuiaNext_${i}" onclick="MOS._costosSiguiente(${i})">✓ Listo · siguiente producto →</button>
       ${margenInfoHtml}
       <div class="cl-actions" id="costoGuiaAcc_${i}">${_costosLineaAccionesHTML(l, i, brutoUnit)}</div>
     </div>`;
+  }
+
+  // [721] Rellena el campo con el costo del catálogo como PUNTO DE PARTIDA editable.
+  //   Escribe en el input y dispara el mismo camino que teclear a mano (_costosGuiaUpdLinea
+  //   + blur), así que el cotejo se registra igual que cualquier costo confirmado.
+  function _costosUsarCostoCatalogo(i, costoUnit) {
+    const st = S._costosGuiaState;
+    const l = st && st.lineas && st.lineas[i];
+    if (!l || !(costoUnit > 0)) return;
+    const cant = parseFloat(l.cantidad) || 1;
+    // el input está en la unidad del modo activo (TOTAL o UNITARIO)
+    const valor = st.inputMode === 'TOTAL' ? +(costoUnit * cant).toFixed(2) : +(+costoUnit).toFixed(2);
+    const row = document.getElementById('costoGuiaLinea_' + i);
+    const inp = row && row.querySelector('.alm-v-costo-input');
+    if (inp) { inp.value = valor; inp.focus(); }
+    _costosGuiaUpdLinea(i, String(valor));
+    _costosInputBlur(i);           // confirma y aplica igual que un costo tecleado
+    try { _opsBeep && _opsBeep('tac'); } catch (_) {}
   }
 
   // ───────── [703] Flujo guiado móvil del Paso 1 (costos) ─────────
@@ -10154,19 +10190,17 @@ const MOS = (() => {
     const totalNeto = totalBruto / (1 + _IGV_RATE);
     const nPrec = lineas.filter(l => l._precioListo > 0).length;
     const conCosto = lineas.filter(l => _costosGuiaCalcularBruto(l, st) > 0).length;
-    const falta = lineas.length - conCosto;
-    return `<div class="p1-foot">
-      <div class="p1-foot-tot">
-        <div class="p1-tot-main"><span class="ops-tot-lbl ops-tot-bruto">Total</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${_money(totalBruto).toFixed(2)}</b></div>
-        <div class="p1-tot-sub"><span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${_money(totalNeto).toFixed(2)}</b><span class="ops-tot-sep">·</span><span class="ops-tot-lbl">IGV</span> <b id="costosGuiaTotalIgv">S/ ${_money(totalBruto - totalNeto).toFixed(2)}</b></div>
-      </div>
+    // [721] PIE MÍNIMO. El bloque de totales subió al header y el botón
+    //   "→ Siguiente sin costo" murió por pedido del dueño ("es inútil, solo
+    //   estorba"): el salto real se hace con Enter / ✓ Listo de cada línea,
+    //   que sigue vivo (_costosInputKey → _costosSiguiente).
+    //   Sobrevive el pie con los chips de progreso y el sello de guardado.
+    return `<div class="p1-foot p1-foot-min">
       <div class="p1-foot-meta">
         <span id="costosMiniProg" class="p1-mini-prog" title="Productos con costo">${conCosto}/${lineas.length}</span>
         <span id="costosPrecioProg" class="p1-precio-prog" title="${nPrec} de ${lineas.length} productos con precio publicado">💰 <b>${nPrec}/${lineas.length}</b></span>
         <span id="costosSaveState" class="p1-save">☁ se guarda solo</span>
       </div>
-      <button id="costosCtaGuiada" class="p1-cta${falta === 0 ? ' is-done' : ''}" onclick="MOS._costosSiguientePendiente()"
-              title="Salta al siguiente producto sin costo">${falta > 0 ? `→ Siguiente sin costo <b>(${falta})</b>` : '✓ Listo · cerrar la compra'}</button>
     </div>`;
   }
 
@@ -10525,6 +10559,13 @@ const MOS = (() => {
       #modalCostosGuiaUnif .p1-tot-sub { display: flex; align-items: baseline; gap: 5px; font-size: 10px; color: #93a4c2; font-family: ui-monospace,monospace; margin-top: 1px; }
       #modalCostosGuiaUnif .p1-tot-sub b { color: #cbd5e1; font-weight: 700; }
       #modalCostosGuiaUnif .p1-foot-meta { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; order: 3; width: 100%; }
+      /* [721] pie mínimo: sin totales ni CTA, sólo chips + sello */
+      #modalCostosGuiaUnif .p1-foot-min { gap: 6px; }
+      #modalCostosGuiaUnif .p1-foot-min .p1-foot-meta { order: 0; width: auto; }
+      /* [721] totales EN VIVO dentro del header compacto */
+      #modalCostosGuiaUnif .p1-tot-head { display: flex; flex-direction: column; align-items: flex-end; margin-left: auto; min-width: 0; }
+      #modalCostosGuiaUnif .p1-tot-head .p1-tot-main b { font-size: 17px; }
+      #modalCostosGuiaUnif .p1-tot-head .p1-tot-sub { font-size: 9.5px; }
       #modalCostosGuiaUnif .p1-mini-prog { font-size: 11px; font-weight: 800; color: #93a4c2; background: rgba(15,23,42,.7); border: 1px solid #28344c; border-radius: 999px; padding: 3px 9px; font-family: ui-monospace,monospace; }
       #modalCostosGuiaUnif .p1-precio-prog { font-size: 11px; font-weight: 800; color: #fbbf24; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
       #modalCostosGuiaUnif .p1-save { font-size: 10px; font-weight: 700; color: #64748b; white-space: nowrap; }
@@ -10564,7 +10605,8 @@ const MOS = (() => {
            que la costura sea continua (un solo cuerpo, no dos cajas juntas) */
         #modalCostosGuiaUnif .p1-carta {
           display: block;   /* ⚠ la base es display:none (móvil): hay que reactivarla acá */
-          position: absolute; left: 100%; margin-left: -2px; top: 21%;
+          /* [721] centrado en el eje Y del overlay (antes arrancaba en 21% y colgaba feo) */
+          position: absolute; left: 100%; margin-left: -2px; top: 50%; transform: translateY(-50%);
           width: 0; height: min(52vh, 430px); overflow: hidden; pointer-events: none;
           transition: width .42s cubic-bezier(.22,1,.36,1);
         }
@@ -10584,7 +10626,7 @@ const MOS = (() => {
         #modalCostosGuiaUnif .p1-carta.is-off .p1-carta-in { transform: translateX(-100%); }
         /* pestañita: viaja con el brazo para quedar siempre en el borde exterior */
         #modalCostosGuiaUnif .p1-carta-tab {
-          position: absolute; left: 100%; top: 25%; z-index: 4;
+          position: absolute; left: 100%; top: 50%; margin-top: -37px; z-index: 4;
           width: 26px; height: 74px; padding: 0; cursor: pointer;
           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
           background: #12233d; border: 2px solid rgba(16,185,129,.5); border-left: 0; border-radius: 0 11px 11px 0;
@@ -10645,7 +10687,6 @@ const MOS = (() => {
            alto, que es scroll de lista; abierta en columna dejaba 187px de lista en un PC de 860) */
         #modalCostosGuiaUnif .p1-adv { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
         #modalCostosGuiaUnif .ops-p1-foto { flex: 1 1 330px; aspect-ratio: auto; height: 122px; max-height: 122px; }
-        #modalCostosGuiaUnif #opsChipOcrStatus { flex: 1 1 220px; }
         #modalCostosGuiaUnif .ops-toggles-grid { flex: 1 1 100%; }
         #modalCostosGuiaUnif .p1-lista { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
         #modalCostosGuiaUnif .cl-money { grid-template-columns: minmax(150px, 1fr) auto; align-items: end; gap: 12px; }
@@ -11786,6 +11827,14 @@ const MOS = (() => {
       .cl-precio-btn:active{transform:scale(.96)}
       .cl-precio-btn.sec{background:#131d30;color:#7cb3f0;border:1px solid #28344c;box-shadow:none;padding:7px 11px}
       .cl-precio-ok{font-size:10.5px;font-weight:800;color:#34d399;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3);border-radius:9px;padding:7px 11px}
+      /* [721] chip de SUGERENCIA: el costo que el producto ya tiene en el catálogo.
+         Es un punto de partida editable, nunca prueba de cotejo. */
+      .cl-sugcat{display:inline-flex;align-items:center;gap:8px;margin-top:8px;font-size:10.5px;font-weight:750;
+        color:#c4b5fd;background:rgba(139,92,246,.10);border:1px dashed rgba(139,92,246,.42);
+        border-radius:9px;padding:6px 10px;cursor:pointer;transition:.15s;font-family:ui-monospace,monospace}
+      .cl-sugcat:hover{background:rgba(139,92,246,.18);border-style:solid;color:#ddd6fe}
+      .cl-sugcat:active{transform:scale(.97)}
+      .cl-sugcat-cta{font-family:inherit;font-size:9.5px;font-weight:800;color:#04140d;background:#c4b5fd;border-radius:999px;padding:2px 7px;letter-spacing:.02em}
     `;
     document.head.appendChild(st);
   }
@@ -11895,26 +11944,45 @@ const MOS = (() => {
   //   • PENDIENTE  = falta costear (no todas las líneas tienen COSTO real).
   //   • PROCESADO  = TODOS los costos hechos (Paso 1 completo) — falta algún precio.
   //   • FINALIZADO = TODOS los costos Y TODOS los precios seteados (Paso 1 + Paso 2 completos).
-  // "Costeado" honesto por fuente:
-  //   • WH (proveedor): el costo se escribe en la línea de la guía (precio_unitario) → precioUnitario>0.
-  //   • ME (entrada libre): la línea NO trae costo (operacion_detalle devuelve precioUnitario = precio_venta,
-  //     que es el PRECIO, no un costo). Por eso se usa el costo REAL del catálogo (precioCosto del canónico);
-  //     si el producto no tiene costo (precio_costo=0), la compra queda "Falta costear" (no se marca falso).
+  // [721 · DIRECTRIZ DEL DUEÑO] "En zonas se registra una guía y es lo mismo que en
+  //   WH: sólo un registro, una PRESUNCIÓN. Es en MOS donde el admin registra y
+  //   coteja costos, y es admin/master quien pone precios."
+  //   ANTES (mal): para ME el costo se leía del CATÁLOGO (precioCosto del canónico).
+  //   Como casi todo producto ya tiene costo, TODA compra de zona nacía "1/1
+  //   completa" sin que nadie la cotejara — justo lo contrario de la directriz.
+  //   AHORA: la completitud sale del cotejo de ESTA guía (mos.historial_precio_costo
+  //   por id_guia, RPC 721 → S._cotejoGuias). Una compra nace "⏳ Falta cotejar 0/N"
+  //   y sólo avanza cuando el admin confirma los costos DE ESTA COMPRA en el Paso 1.
+  //   El costo del catálogo sigue existiendo, pero como SUGERENCIA editable en el
+  //   Paso 1 (chip "catálogo: S/ x.xx"), nunca como prueba de cotejo.
+  // "Costeado" por fuente:
+  //   • WH (proveedor): el costo va en la línea de la guía (precio_unitario) → precioUnitario>0.
+  //   • ME (entrada libre): la línea no lleva monto → cuenta el cotejo registrado de esa guía.
   function _comprasEstado(op) {
     const k = op.fuente + '_' + op.idGuia;
     const lineas = ((S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || []);
     const total = lineas.length;
     const esME = String(op.fuente || '').toUpperCase() === 'ME';
     const idx = _prodIndex();
+    // cotejo confirmado por el admin para ESTA guía (0 mientras no se sepa: se
+    // muestra "falta cotejar", que es el estado honesto por defecto)
+    const cot = (S._cotejoGuias && S._cotejoGuias[op.idGuia]) || null;
+    const nCotejadas = esME ? Math.min(total, parseInt((cot && cot.n) || 0, 10) || 0) : 0;
     let conCosto = 0, conPrecio = 0, totalCosteados = 0;
-    lineas.forEach(l => {
+    lineas.forEach((l, i) => {
       const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
       const p = (cod && idx.byCod.get(cod)) || idx.byId.get(String(l.idCanonico || ''));
-      const costo = esME ? (p ? parseFloat(p.precioCosto) || 0 : 0) : (parseFloat(l.precioUnitario) || 0);
-      if (!(costo > 0)) return;
+      // ME: la línea i cuenta como cotejada si entra en las n confirmadas de la guía
+      //     (el historial guarda por producto, no por número de línea).
+      // WH: sigue mandando el monto escrito en la línea.
+      const cotejada = esME ? (i < nCotejadas) : ((parseFloat(l.precioUnitario) || 0) > 0);
+      if (!cotejada) return;
       conCosto++;
-      if (!p) return;                 // costeado pero sin producto resoluble → no se puede preciar
+      if (!p) return;                 // cotejado pero sin producto resoluble → no se puede preciar
       totalCosteados++;
+      // el costo de referencia para juzgar el precio sigue siendo el del catálogo
+      const costo = esME ? (parseFloat(p.precioCosto) || 0) : (parseFloat(l.precioUnitario) || 0);
+      if (!(costo > 0)) { conPrecio++; return; }   // sin costo comparable → no exigimos precio
       const venta = parseFloat(p.precioVenta) || 0;
       let margen = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : null;
       if (margen == null) { try { const mi = _calcularMargenInfo(p); margen = mi ? parseFloat(mi.objetivo) : null; } catch(_){} }
@@ -11923,8 +11991,10 @@ const MOS = (() => {
       if (Math.abs(venta - sug) <= 0.1) conPrecio++;   // precio fresco respecto al costo
     });
     let fase, tone, ico, label;
-    if (total === 0) { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = 'Falta costear'; }
-    else if (conCosto < total) { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = conCosto > 0 ? `Falta costear · ${total - conCosto} de ${total}` : 'Falta costear'; }
+    // [721] en zona la palabra es COTEJAR: la guía es una presunción hasta que el admin la revisa
+    const verbo = esME ? 'Falta cotejar' : 'Falta costear';
+    if (total === 0) { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = verbo; }
+    else if (conCosto < total) { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = conCosto > 0 ? `${verbo} · ${total - conCosto} de ${total}` : `${verbo} · 0/${total}`; }
     else {                       // todos los costos hechos
       const faltanPrecio = totalCosteados - conPrecio;
       if (totalCosteados > 0 && faltanPrecio <= 0) { fase = 'finalizado'; tone = 'em'; ico = '✓'; label = 'Finalizado'; }
@@ -11968,6 +12038,26 @@ const MOS = (() => {
     worker(); worker(); worker(); worker();
   }
 
+  // [721] Cotejo por guía de las compras EN ZONA: una sola llamada para todas.
+  //   Sin esto la Mesa no sabe qué confirmó el admin y toda compra de zona
+  //   queda (correctamente) en "Falta cotejar".
+  async function _mesaPrefetchCotejo() {
+    S._cotejoGuias = S._cotejoGuias || {};
+    const ids = _comprasFlat()
+      .filter(op => String(op.fuente || '').toUpperCase() === 'ME' && op.idGuia)
+      .map(op => op.idGuia);
+    const unicos = [...new Set(ids)].slice(0, 400);
+    if (!unicos.length) return;
+    try {
+      const r = await API.get('cotejoCostosGuias', { idGuias: unicos });
+      const data = (r && (r.data || r)) || {};
+      // las guías sin cotejo NO vienen en la respuesta: se marcan en 0 explícito
+      unicos.forEach(g => { S._cotejoGuias[g] = data[g] || { n: 0 }; });
+      const body = document.getElementById('mesaComprasBody');
+      if (body) { const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) })); body.innerHTML = _mesaComprasBodyHTML(compras); }
+    } catch (_) { /* silencioso: sin cotejo se sigue viendo "falta cotejar" */ }
+  }
+
   function abrirMesaCompras(filtro) {
     _opsInyectarKeyframes();
     _mesaComprasInyectarCSS();
@@ -11984,7 +12074,7 @@ const MOS = (() => {
     modal.innerHTML = _mesaComprasHTML();
     requestAnimationFrame(() => modal.classList.add('open'));
     // [v2.43.612] cargar las líneas de las compras visibles (el RPC no las trae) → sin "0 ítems".
-    try { _mesaPrefetchLineas(); } catch(_){}
+    try { _mesaPrefetchLineas(); _mesaPrefetchCotejo(); } catch(_){}
     // Si no hay datos aún (ej. entré desde Catálogo sin abrir Almacén), dispara la
     // carga cero-GAS (_prefetchAlmacen → operaciones_unificadas) y re-render al llegar.
     if (!_comprasFlat().length) {
@@ -11993,7 +12083,7 @@ const MOS = (() => {
       const _poll = setInterval(() => {
         const m = document.getElementById('mesaComprasModal');
         if (!m || !m.classList.contains('open') || ++_tries > 12) { clearInterval(_poll); return; }
-        if (_comprasFlat().length) { clearInterval(_poll); m.innerHTML = _mesaComprasHTML(); try { _mesaPrefetchLineas(); } catch(_){} }
+        if (_comprasFlat().length) { clearInterval(_poll); m.innerHTML = _mesaComprasHTML(); try { _mesaPrefetchLineas(); _mesaPrefetchCotejo(); } catch(_){} }
       }, 700);
     }
     // [C] la Mesa quiere ventana amplia (~45 días); si la carga base fue corta, amplía en background (cero-GAS).
@@ -12010,7 +12100,7 @@ const MOS = (() => {
         S._mesaCargando = false;
         const m = document.getElementById('mesaComprasModal');
         if (m && m.classList.contains('open') && !S._mesaAbierta) m.innerHTML = _mesaComprasHTML();
-        try { _mesaPrefetchLineas(); } catch(_){}
+        try { _mesaPrefetchLineas(); _mesaPrefetchCotejo(); } catch(_){}
       })();
     }
   }
@@ -12176,7 +12266,7 @@ const MOS = (() => {
       const nbtn = m.querySelector('.mesa-more-btn');
       if (nbtn) { nbtn.textContent = '✓ No hay compras más antiguas'; nbtn.disabled = true; nbtn.style.opacity = '.5'; }
     }
-    try { _mesaPrefetchLineas(); } catch(_){}          // [v2.43.612] cargar líneas de las compras recién traídas
+    try { _mesaPrefetchLineas(); _mesaPrefetchCotejo(); } catch(_){}          // [v2.43.612] cargar líneas de las compras recién traídas
   }
 
   // [D] Card grande: proveedor protagonista, productos con fade, progreso 2 pasos.
@@ -12202,23 +12292,21 @@ const MOS = (() => {
     const ctaTxt = est.fase === 'finalizado' ? '👁 Revisar'
                  : est.fase === 'procesado' ? '🏷 Poner precios →'
                  : '💰 Ingresar compra →';
-    // [717] HONESTIDAD DE ORIGEN. En las compras EN ZONA la línea NO trae monto
-    //   (me.guias_detalle sólo guarda cantidad): "Costos" y "Precios" se leen del
-    //   CATÁLOGO del producto. Por eso salían 1/1 sin que nadie tocara nada y
-    //   parecía magia. Lo decimos en el tooltip y, cuando la compra sale
-    //   completa, en una línea a la vista.
+    // [721] La guía de zona es una PRESUNCIÓN: el contador mide lo que el ADMIN
+    //   cotejó en ESTA compra (historial por id_guia), no lo que ya tenía el
+    //   catálogo. La nota "viene del catálogo" de 717 quedó obsoleta y se retira.
     const tipCostos = esZona
-      ? 'Compra EN ZONA: la línea no trae monto. Esto marca si el PRODUCTO ya tiene costo en el catálogo (no lo puso esta compra).'
+      ? 'Compra EN ZONA: es sólo un registro. Cuenta los costos que el admin ya cotejó y confirmó EN ESTA compra desde el Paso 1.'
       : 'Líneas de la guía con costo escrito.';
     const tipPrecios = esZona
-      ? 'Precio de venta que ya tiene el producto en el catálogo, comparado con su margen objetivo. Publicar precio sigue siendo manual.'
+      ? 'Productos ya cotejados cuyo precio de venta está al día respecto del costo. Poner precio es siempre de admin/master.'
       : 'Productos con precio de venta al día respecto del costo.';
     const faseBar = `
       <div class="mesa-phases">
         <div class="mesa-ph ${est.pctC >= 100 ? 'ok' : est.pctC > 0 ? 'mid' : ''}" title="${_escapeHtml(tipCostos)}"><span>Costos</span><i style="width:${est.pctC}%"></i><b>${est.costos.con}/${est.costos.total}</b></div>
         <div class="mesa-ph ${est.pctC < 100 ? 'lock' : est.pctP >= 100 ? 'ok' : est.pctP > 0 ? 'mid' : ''}" title="${_escapeHtml(tipPrecios)}"><span>Precios</span><i style="width:${est.pctC < 100 ? 0 : est.pctP}%"></i><b>${est.pctC < 100 ? '—' : est.precios.con + '/' + est.precios.total}</b></div>
       </div>
-      ${(esZona && est.fase === 'finalizado') ? `<div class="mesa-zona-nota">ℹ️ Costo y precio vienen del catálogo del producto — esta compra en zona no registra montos por línea</div>` : ''}`;
+      ${(esZona && est.fase === 'pendiente') ? `<div class="mesa-zona-nota">ℹ️ Registro de zona — falta que un admin coteje los costos en el Paso 1</div>` : ''}`;
     return `
       <button class="mesa-card tone-${est.tone} fase-${est.fase}${esZona ? ' is-zona' : ''}" id="mesacard_${_escapeHtml(k)}" data-fase="${est.fase}" style="animation-delay:${Math.min(i, 16) * 40}ms"
               onclick="MOS._mesaComprasEntrar('${op.fuente}','${_escapeHtml(op.idGuia)}')">
@@ -47268,6 +47356,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [703] Paso 1 móvil-first: cabecera plegable, filas plegables, flujo guiado y autoguardado
     _costosToggleAvanzado, _costosLineaExpandir, _costosInputFocus, _costosInputBlur, _costosInputKey,
     _costosSiguiente, _costosSiguientePendiente, _costosAplicarAlCatalogo,
+    _costosUsarCostoCatalogo,   // [721] chip "catálogo: S/ x.xx" → rellena el campo (sugerencia editable)
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     _p1CartaToggle,   // [717] pestañita ⟨ ⟩ de la carta lateral de la factura
