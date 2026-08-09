@@ -1,0 +1,333 @@
+{
+ "PRODUCTO_BASE": [
+  {
+   "SKU_Base": "SKU001",
+   "Nombre": "CABALLO DE ORO AZUL PASTA WANTAN 500GR",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU002",
+   "Nombre": "CABALLO DE ORO DORADO WANTAN 500GR",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU003",
+   "Nombre": "LA CHINA TAMARINDO",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU004",
+   "Nombre": "FOCH SALSA DE SOYA",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU005",
+   "Nombre": "FOCH ACEITE DE AJONJOLI",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU006",
+   "Nombre": "FOCH VINAGRE DE ARROZ",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU007",
+   "Nombre": "FOCH SALSA DE OSTION",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU008",
+   "Nombre": "SIBARITA OREGANO ENTERO",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU009",
+   "Nombre": "SIBARITA ROMERO ENTERO",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU010",
+   "Nombre": "ARROZ COSTENO EXTRA 750G",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU011",
+   "Nombre": "LECHE GLORIA EVAPORADA 400G",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  },
+  {
+   "SKU_Base": "SKU012",
+   "Nombre": "GASEOSA INKA KOLA 3L",
+   "Cod_SUNAT": "",
+   "Tipo_IGV": 1,
+   "Unidad_Medida": "NIU",
+   "Foto": "",
+   "Categoria": {
+    "categoria": "ABARROTES",
+    "subcategoria": "ABARROTES"
+   }
+  }
+ ],
+ "PRESENTACIONES": [
+  {
+   "SKU_Base": "SKU001",
+   "SKU": "SKU001-U",
+   "Cod_Barras": "7758725000036A",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 5.5
+  },
+  {
+   "SKU_Base": "SKU002",
+   "SKU": "SKU002-U",
+   "Cod_Barras": "7758725000036B",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 5.8
+  },
+  {
+   "SKU_Base": "SKU003",
+   "SKU": "SKU003-U",
+   "Cod_Barras": "7750464444799",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 3.2
+  },
+  {
+   "SKU_Base": "SKU004",
+   "SKU": "SKU004-U",
+   "Cod_Barras": "7750464444799A",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 4.1
+  },
+  {
+   "SKU_Base": "SKU005",
+   "SKU": "SKU005-U",
+   "Cod_Barras": "7750464444799B",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 8.9
+  },
+  {
+   "SKU_Base": "SKU006",
+   "SKU": "SKU006-U",
+   "Cod_Barras": "7750464444799C",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 6.4
+  },
+  {
+   "SKU_Base": "SKU007",
+   "SKU": "SKU007-U",
+   "Cod_Barras": "7750464444799D",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 7.3
+  },
+  {
+   "SKU_Base": "SKU008",
+   "SKU": "SKU008-U",
+   "Cod_Barras": "737186519674O",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 2.1
+  },
+  {
+   "SKU_Base": "SKU009",
+   "SKU": "SKU009-U",
+   "Cod_Barras": "737186519674R",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 2.3
+  },
+  {
+   "SKU_Base": "SKU010",
+   "SKU": "SKU010-U",
+   "Cod_Barras": "7751000000001",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 4.5
+  },
+  {
+   "SKU_Base": "SKU011",
+   "SKU": "SKU011-U",
+   "Cod_Barras": "7751000000002",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 4.2
+  },
+  {
+   "SKU_Base": "SKU012",
+   "SKU": "SKU012-U",
+   "Cod_Barras": "7751000000003",
+   "Factor": 1,
+   "Empaque": "UNIDAD",
+   "Descripcion": "UNIDAD",
+   "Precio_Venta": 10.5
+  }
+ ],
+ "EQUIVALENCIAS": [],
+ "STOCK_ZONAS": [
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7758725000036A",
+   "Cantidad": 10
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7758725000036B",
+   "Cantidad": 11
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7750464444799",
+   "Cantidad": 12
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7750464444799A",
+   "Cantidad": 13
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7750464444799B",
+   "Cantidad": 14
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7750464444799C",
+   "Cantidad": 15
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7750464444799D",
+   "Cantidad": 16
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "737186519674O",
+   "Cantidad": 17
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "737186519674R",
+   "Cantidad": 18
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7751000000001",
+   "Cantidad": 19
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7751000000002",
+   "Cantidad": 20
+  },
+  {
+   "Zona_ID": "TIENDA 1",
+   "Cod_Barras": "7751000000003",
+   "Cantidad": 21
+  }
+ ],
+ "PROMOCIONES": [],
+ "ZONAS_CONFIG": [
+  {
+   "idEstacion": "EST-TEST-1",
+   "Zona_ID": "TIENDA 1",
+   "Estacion_Nombre": "Caja-01",
+   "PrintNode_ID": "0",
+   "Serie_Boleta": "BM01",
+   "Serie_Factura": "FM01"
+  }
+ ],
+ "CLIENTES_FRECUENTES": []
+}
