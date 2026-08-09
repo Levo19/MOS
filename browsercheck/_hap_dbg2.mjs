@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+import { prepararPagina } from './_hap_seed.mjs';
+const ctx = await chromium.launchPersistentContext('./_hap_prof_dbg', { viewport:{width:390,height:800}, hasTouch:true, isMobile:true, deviceScaleFactor:2, permissions:['notifications','geolocation'] });
+const page = ctx.pages()[0] || await ctx.newPage();
+const resp=[];
+page.on('response', r=>{ if(/catalogo|mint-me/i.test(r.url())) resp.push(r.status()+' '+r.url().slice(0,100)); });
+page.on('requestfailed', r=>{ if(/catalogo|mint-me/i.test(r.url())) resp.push('FAIL '+r.url().slice(0,100)+' '+(r.failure()||{}).errorText); });
+await prepararPagina(page, ctx);
+await page.goto('http://127.0.0.1:8123/index.html', { waitUntil:'domcontentloaded' });
+await page.waitForTimeout(30000);
+console.log('estado1:', await page.evaluate(()=>({cards:document.querySelectorAll('.pos-card').length, txt:(document.body.innerText||'').replace(/\s+/g,' ').slice(0,200)})));
+await page.evaluate(()=>{ const b=[...document.querySelectorAll('button')].find(e=>/Reintentar descarga/i.test(e.textContent||'')); if(b) b.click(); });
+await page.waitForTimeout(40000);
+console.log('estado2:', await page.evaluate(()=>({cards:document.querySelectorAll('.pos-card').length, txt:(document.body.innerText||'').replace(/\s+/g,' ').slice(0,200)})));
+console.log('resp:\n'+resp.join('\n'));
+await ctx.close();

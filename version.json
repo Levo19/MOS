@@ -1,1 +1,1 @@
-{"version":"2.43.723","build":"2.43.723 Modal 1 sin pie: los productos fluyen hasta el borde; chips de progreso y sello se mudan al header compacto"}
+{"version":"2.43.724","build":"2.43.724 doctrina costos/precios: api.js manda el usuario en las RPC de costo (habilita el guard de rol ADMIN/MASTER del SQL 724)"}

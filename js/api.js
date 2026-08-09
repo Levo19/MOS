@@ -3778,7 +3778,15 @@ const API = (() => {
       };
       if (_MOS_ADMIN_RPC[action]) {
         return (async () => {
-          const r = await _sbRpcMOS(_MOS_ADMIN_RPC[action], { p: p || {} }, 'mos');
+          // [SQL 724 · doctrina de costos] El costo lo pone MOS, donde viven admin y master. La RPC
+          // mos.actualizar_costo_sku ahora VERIFICA el rol del `usuario` del payload contra mos.personal
+          // (mos._rol_precio_ok) y además lo deja escrito en mos.historial_precio_costo (source MOS_COSTO_SKU).
+          // Este dispatcher manda `p` CRUDO y los dos call-sites de app.js (finGuardarCostoProd,
+          // promoGuardarCostoRapido) no incluyen `usuario` → sin esta línea la escritura de costo quedaba
+          // ANÓNIMA en el histórico. Se inyecta igual que el resto del directo (_mosUsuario → __MOS_AUDIT).
+          const _p = { ...(p || {}) };
+          if (action === 'actualizarCostoPorSku' && !_p.usuario) _p.usuario = _mosUsuario(p);
+          const r = await _sbRpcMOS(_MOS_ADMIN_RPC[action], { p: _p }, 'mos');
           if (r == null) throw new Error('Sin conexión con el servidor');
           if (r.ok === false) throw new Error(r.error || 'Error del servidor');
           return r.data;

@@ -1,0 +1,135 @@
+text-2xl text-gray-400 hover:text-gray-700
+flex-1 py-2 rounded-lg bg-gray-200 text-gray-700 font-semibold
+absolute right-11 p-2 rounded-lg transition-colors
+absolute right-1 p-2 bg-emerald-100 text-posPrimary rounded-lg hover:bg-emerald-200 transi
+conexionEstado === 'OFFLINE' ? 'bg-red-500 animate-pulse' : 'bg-amber-400 text-amber-900'
+
+flex-1 py-3 rounded-lg border border-gray-600 bg-gray-700 text-sm font-bold
+flex-1 py-3 rounded-lg bg-gradient-to-r from-emerald-600 to-green-600 text-sm font-black d
+['py-2.5 rounded-xl font-black text-xs text-white flex items-center justify-center gap-1 t
+wiz-add-vendedor py-2.5 rounded-xl font-black text-xs text-white flex items-center justify
+me-hit text-gray-300 hover:text-gray-500 text-lg leading-none
+w-full bg-red-500 text-white p-3 font-bold text-sm
+shrink-0 text-red-400 hover:text-red-600 text-lg leading-none px-1
+me-gb text-slate-700
+me-gb text-indigo-600 me-gb-indigo
+me-gb text-amber-600 me-gb-amber
+me-gb text-red-500 me-gb-red disabled:opacity-50
+me-gb text-slate-700
+me-gb text-red-500 me-gb-red
+p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors disabled:op
+['me-tab-pill shrink-0', tabCajaActivo === 'TODAS' ? 'active' : '']
+['me-tab-pill shrink-0', tabCajaActivo === 'NOTAS' ? 'active' : '']
+['me-tab-pill shrink-0', tabCajaActivo === 'BOLETAS' ? 'active' : '']
+['me-tab-pill shrink-0', tabCajaActivo === 'FACTURAS' ? 'active' : '']
+
+
+[{ 'fx-cobrar-pulse': cobrarFx }, offlineMode ? 'bg-amber-500 shadow-amber-200' : 'bg-emer
+
+
+relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-no
+relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-no
+w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-600/40 text-slate-300 font-black
+w-8 h-8 rounded-full bg-gray-100 text-gray-500 font-black
+
+pago.tipoDoc === 'NOTA_DE_VENTA' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200
+pago.tipoDoc === 'BOLETA' ? 'bg-blue-500 text-white shadow-md shadow-blue-200 scale-[1.02]
+pago.tipoDoc === 'FACTURA' ? 'bg-purple-500 text-white shadow-md shadow-purple-200 scale-[
+!pago.tipoDocClienteCE ? 'bg-white shadow text-gray-800' : 'text-gray-400'
+pago.tipoDocClienteCE ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'
+shrink-0 p-1.5 text-gray-400 hover:text-red-500 rounded-lg transition-colors
+ceTipoSel==='4' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'
+ceTipoSel==='7' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'
+text-[10px] text-gray-500 hover:text-gray-700 font-bold w-full text-center py-1
+pago.metodo === 'EFECTIVO' && !pago.ventaCreditoDirecto ? 'bg-emerald-500 text-white shado
+pago.metodo === 'VIRTUAL' && !pago.ventaCreditoDirecto ? 'bg-blue-500 text-white shadow-md
+pago.metodo === 'MIXTO' && !pago.ventaCreditoDirecto ? 'bg-purple-500 text-white shadow-md
+pago.ventaCreditoDirecto ? 'bg-orange-50 border-orange-400 text-orange-700' : 'bg-gray-50 
+
+flex-1 py-3 rounded-lg font-black text-sm transition-all
+flex-1 py-3 rounded-lg font-black text-sm transition-all
+flex-1 py-3 rounded-lg font-black text-sm transition-all
+
+pagoCobroPendiente.metodo === 'EFECTIVO' ? 'bg-white text-posPrimary shadow' : 'text-gray-
+pagoCobroPendiente.metodo === 'VIRTUAL' ? 'bg-white text-posPrimary shadow' : 'text-gray-5
+pagoCobroPendiente.metodo === 'MIXTO' ? 'bg-white text-posSecondary shadow' : 'text-gray-5
+
+text-2xl text-gray-400 hover:text-gray-700 leading-none
+
+
+pagoMoneda.metodo === 'EFECTIVO' ? 'bg-white text-amber-600 shadow' : 'text-gray-500'
+pagoMoneda.metodo === 'VIRTUAL' ? 'bg-white text-amber-600 shadow' : 'text-gray-500'
+pagoMoneda.metodo === 'MIXTO' ? 'bg-white text-amber-600 shadow' : 'text-gray-500'
+
+adminCobrarEstado.metodo === 'EFECTIVO' ? 'bg-white text-emerald-600 shadow' : 'text-gray-
+adminCobrarEstado.metodo === 'VIRTUAL' ? 'bg-white text-emerald-600 shadow' : 'text-gray-
+adminCobrarEstado.metodo === 'MIXTO' ? 'bg-white text-emerald-600 shadow' : 'text-gray-
+
+adminConvEstado.tipo === 'BOLETA' ? 'bg-blue-500 text-white shadow' : 'bg-gray-100 text-g
+adminConvEstado.tipo === 'FACTURA' ? 'bg-purple-500 text-white shadow' : 'bg-gray-100 text
+!adminCli.ce ? 'bg-white shadow text-gray-800' : 'text-gray-400'
+adminCli.ce ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'
+shrink-0 p-1.5 text-gray-400 hover:text-red-500 rounded-lg transition-colors
+adminCli.ceTipo==='4' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'
+adminCli.ceTipo==='7' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'
+
+!adminCli.ce ? 'bg-white shadow text-gray-800' : 'text-gray-400'
+adminCli.ce ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'
+shrink-0 p-1.5 text-gray-400 hover:text-red-500 rounded-lg transition-colors
+adminCli.ceTipo==='4' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'
+adminCli.ceTipo==='7' ? 'bg-indigo-500 text-white shadow' : 'text-gray-400'
+cobroAsigMetodo === 'EFECTIVO' ? 'bg-emerald-500 text-white border-emerald-600' : 'bg-whit
+cobroAsigMetodo === 'VIRTUAL' ? 'bg-cyan-500 text-white border-cyan-600' : 'bg-white text-
+cobroAsigMetodo === 'MIXTO' ? 'bg-violet-500 text-white border-violet-600' : 'bg-white tex
+bg-gray-200 text-gray-700 font-black py-2.5 rounded-xl text-sm
+bg-red-500 text-white font-black py-2.5 rounded-xl text-sm disabled:opacity-50
+flex-1 py-4 rounded-2xl font-black text-sm border-2 transition-all
+flex-1 py-4 rounded-2xl font-black text-sm border-2 transition-all
+bg-white/20 text-white font-black text-xs px-3 py-1.5 rounded-lg
+w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black te
+flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors
+flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors
+flex-1 py-2.5 font-black text-xs uppercase tracking-wider transition-colors relative
+w-11 rounded-xl flex items-center justify-center transition-colors
+w-full bg-red-500 text-white p-2 font-bold text-xs
+w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-cen
+w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-cen
+w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify
+item.estadoDev === opt.code ? opt.activeCls : 'bg-gray-700/60 text-gray-400 hover:bg-gray-
+me-hit ml-auto text-rose-400 text-xs px-2 py-2
+text-gray-500 text-xs font-bold px-2 py-1 rounded bg-gray-800
+w-11 rounded-xl flex items-center justify-center
+w-full bg-red-500 text-white p-2 font-bold text-xs
+w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-cen
+w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-cen
+w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify
+g-filtro shrink-0
+g-filtro shrink-0
+g-filtro shrink-0
+g-filtro shrink-0
+w-full flex items-center gap-3 p-3 text-left
+text-xs text-gray-500 font-bold px-2 py-1.5 rounded-lg hover:text-red-400
+w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black te
+w-11 rounded-xl flex items-center justify-center transition-colors
+w-full bg-red-500 text-white p-2 font-bold text-xs
+w-11 rounded-xl flex items-center justify-center
+w-full bg-red-500 text-white p-2 font-bold text-xs
+w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-cen
+w-8 h-8 bg-gray-700 text-white rounded-lg font-black text-lg flex items-center justify-cen
+w-8 h-8 bg-red-900/50 text-red-400 rounded-lg font-black text-sm flex items-center justify
+w-9 h-9 bg-white/20 rounded-full flex items-center justify-center text-white font-black te
+w-11 h-11 rounded-xl flex items-center justify-center transition-colors
+w-full bg-red-500 text-white p-2 font-bold text-xs
+
+me-modal-generic-close
+me-modal-generic-btn me-modal-generic-btn-ghost
+me-modal-generic-btn me-modal-generic-btn-${accent}
+me-modal-generic-close
+me-modal-generic-btn me-modal-generic-btn-primary
+_extBtn _extBtnNo
+_extBtn _extBtnNo
+_extBtn _extBtnOk
+_extBtn _extBtnNo
+_extBtn _extBtnNo
+_extBtn _extBtnOk
+_extBtn _extBtnNo
