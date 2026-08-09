@@ -10563,6 +10563,7 @@ const MOS = (() => {
         /* ventana de recorte pegada al borde: -2px come el borde del overlay para
            que la costura sea continua (un solo cuerpo, no dos cajas juntas) */
         #modalCostosGuiaUnif .p1-carta {
+          display: block;   /* ⚠ la base es display:none (móvil): hay que reactivarla acá */
           position: absolute; left: 100%; margin-left: -2px; top: 21%;
           width: 0; height: min(52vh, 430px); overflow: hidden; pointer-events: none;
           transition: width .42s cubic-bezier(.22,1,.36,1);
