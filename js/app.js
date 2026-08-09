@@ -2369,7 +2369,9 @@ const MOS = (() => {
     return `<span class="pc-chip" style="background:rgba(99,102,241,.14);color:#a5b4fc;border-color:rgba(99,102,241,.4)">${j.ico} ${mini ? '' : j.nom}</span>`;
   }
 
-  const _pcState = { tab: 'mis', sug: [], playbook: null, cargando: false, seed: '', why: {}, pasadas: false, err: '', activando: {} };
+  // [714] `tab` sólo tiene DOS valores: 'mis' (la vista integrada) y 'play' (el playbook).
+  //   La pestaña 💡 "Sugerencias del día" murió: las ideas ya viven arriba en la vista principal.
+  const _pcState = { tab: 'mis', sug: [], playbook: null, cargando: false, seed: '', pasadas: false, err: '', activando: {}, renueva: false };
 
   function _pcChip(txt, color, extra) {
     return `<span class="pc-chip" style="background:${color}1f;color:${color};border-color:${color}55;${extra || ''}">${txt}</span>`;
@@ -2395,6 +2397,28 @@ const MOS = (() => {
     const fechas = (d || h) ? `📅 ${d || '—'} → ${h || 'sin fin'}` : '📅 sin vigencia definida';
     const horas = (p.horaDesde && p.horaHasta) ? ` · ⏰ ${p.horaDesde}–${p.horaHasta}` : '';
     return fechas + horas;
+  }
+
+  // [714] En la CARD la fecha va corta y SIN AÑO: "08 ago → 07 sep".
+  //   El año sólo aparece cuando la ventana cruza de año o no es del año en curso
+  //   (si no, una promo del año pasado en "Pasadas" se leería como si fuera de hoy).
+  //   El formato largo con año sigue vivo en el detalle (_promoVentana).
+  const _PC_MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  function _pcFechaCorta(iso, conAnio) {
+    const m = String(iso || '').match(/^([0-9]{4})-([0-9]{2})-([0-9]{2})/);
+    if (!m) return '';
+    const mes = _PC_MESES[parseInt(m[2], 10) - 1] || m[2];
+    return m[3] + ' ' + mes + (conAnio ? ' ' + m[1] : '');
+  }
+  function _pcVentanaCorta(p) {
+    const d = String(p.vigenciaDesde || '').substring(0, 10);
+    const h = String(p.vigenciaHasta || '').substring(0, 10);
+    const ad = d.substring(0, 4), ah = h.substring(0, 4);
+    const hoyA = String(_hoyISO()).substring(0, 4);
+    const conAnio = !!((ad && ah && ad !== ah) || (ad && ad !== hoyA) || (ah && ah !== hoyA));
+    const a = _pcFechaCorta(d, conAnio), b = _pcFechaCorta(h, conAnio);
+    if (!a && !b) return 'sin vigencia';
+    return (a || '—') + ' → ' + (b || 'sin fin');
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -2590,8 +2614,8 @@ const MOS = (() => {
   async function abrirPromoCentro(tabIni) {
     _pcSon('tac'); _pcVibra(10);
     $('promoCentro')?.remove();
-    _pcState.tab = tabIni || 'mis';
-    _pcState.why = {};
+    // [714] sólo quedan 'mis' y 'play' — cualquier otro valor (incl. el viejo 'sug') cae en 'mis'
+    _pcState.tab = (tabIni === 'play') ? 'play' : 'mis';
     const div = document.createElement('div');
     div.id = 'promoCentro'; div.className = 'modal-backdrop open';
     div.innerHTML = `<div class="modal-box pc-box" style="max-width:980px;max-height:92vh;display:flex;flex-direction:column;border:1px solid rgba(99,102,241,.5);box-shadow:0 30px 80px -15px rgba(99,102,241,.4)">
@@ -2659,10 +2683,10 @@ const MOS = (() => {
     if (!tabs || !body) return;
     const scroll = body.scrollTop;
     const activas = (_promoState.lista || []).filter(p => _promoEstado(p).k === 'activa').length;
-    const ideas   = (_pcState.sug || []).length;
+    // [714] Sólo 2 pestañas. La de "Sugerencias del día" era la MISMA card que ya
+    //   se pinta arriba en la vista integrada: redundante y confundía al dueño.
     const T = [
       ['mis',  `🎁 Mis promociones${activas ? ' · ' + activas : ''}`],
-      ['sug',  `💡 Ideas del día${ideas ? ' · ' + ideas : ''}`],
       ['play', `📖 Playbook`]
     ];
     tabs.innerHTML = T.map(([k, lbl]) =>
@@ -2672,8 +2696,14 @@ const MOS = (() => {
       _pcVibra(6); _pcSon('tac');
       _pcPinta();
     }));
-    body.innerHTML = _pcState.tab === 'mis' ? _pcMisHtml() : (_pcState.tab === 'sug' ? _pcSugHtml() : _pcPlayHtml());
+    body.innerHTML = _pcState.tab === 'play' ? _pcPlayHtml() : _pcMisHtml();
     body.scrollTop = scroll;
+    // [714] micro-animación de renovación: las ideas recién barajadas entran escalonadas
+    if (_pcState.renueva && !_pcState.cargando) {
+      _pcState.renueva = false;
+      const g = $('pcxIdeas');
+      if (g && !_pcReduce()) { g.classList.add('pcx-renueva'); setTimeout(() => g.classList.remove('pcx-renueva'), 900); }
+    }
     if (_pcState.tab === 'play' && !_pcState.playbook) _pcCargarPlaybook().then(() => { if ($('pcBody') && _pcState.tab === 'play') _pcPinta(); });
   }
 
@@ -2686,10 +2716,13 @@ const MOS = (() => {
     vivas.sort(ord); pasadas.sort(ord);
     const ideas = _pcState.sug || [];
 
+    // [714] UN SOLO botón de refresco. Antes había "🔄" (promos) y "🔀 Otras ideas"
+    //   (radar): dos acciones que el dueño no sabía distinguir. Ahora es una sola
+    //   pasada — re-baraja el radar con nonce Y refresca las promos guardadas.
     let h = `<div class="pcx-barra">
       <button onclick="MOS.promoAbrirNueva()" class="pc-btn-nueva">＋ Nueva promoción</button>
-      <button class="pc-mini" onclick="MOS._pcCargarPromos()" title="Refrescar mis promociones">🔄</button>
-      <button class="pc-mini" onclick="MOS._pcOtrasIdeas()" ${_pcState.cargando ? 'disabled' : ''} title="Otras ideas del radar">🔀 Otras ideas</button>
+      <button class="pc-mini pcx-btn-ref ${_pcState.cargando ? 'girando' : ''}" onclick="MOS._pcNuevasIdeas()"
+        ${_pcState.cargando ? 'disabled' : ''} title="Baraja otras ideas del radar y refresca tus promociones"><span class="pcx-ref-ico">🔀</span> Nuevas ideas</button>
     </div>`;
 
     // ── ideas (aura especial) ──
@@ -2699,6 +2732,11 @@ const MOS = (() => {
     } else if (ideas.length) {
       h += _pcSecH('💡', 'Ideas de hoy', ideas.length, 'calculadas con tus datos reales — ninguna se activa sola')
         + `<div class="pcx-grid" id="pcxIdeas">${ideas.map(_pcCardIdea).join('')}</div>`;
+    } else if (_pcState.err) {
+      // el radar falló: el aviso vive acá (antes sólo existía dentro de la pestaña muerta)
+      h += _pcSecH('💡', 'Ideas de hoy', '', '')
+        + `<div class="pc-empty"><div style="color:#f87171;font-size:12px">⚠ ${_escapeHtml(_pcState.err)}</div>
+           <button class="pc-mini" style="margin-top:8px" onclick="MOS._pcNuevasIdeas()">Reintentar</button></div>`;
     }
 
     // ── activas ──
@@ -2734,26 +2772,30 @@ const MOS = (() => {
     </div>`;
   }
 
-  // ── CARD de promoción guardada ───────────────────────────────────
+  // ════════════════════════════════════════════════════════════════
+  // [714] DIETA DE CARDS — al leer rápido el dueño sólo necesita CUATRO cosas:
+  //   qué producto(s), qué estrategia, qué precio hoy y qué precio ofrece.
+  //   Todo lo demás (stats del radar, cartel, margen, vigencia larga, el porqué)
+  //   vive en el click: sheet de estrategia (ideas) y detalle (promos guardadas).
+  // ════════════════════════════════════════════════════════════════
+
+  // ── CARD de promoción guardada: producto(s) + deal + fechas cortas + toggle ──
   function _pcCardPromo(p, esPasada) {
     const st = _promoEstado(p);
     const idRef = p.idPromo || p.skuBase || '';
     const d = _dealDePromo(p);
     const fr = _dealFrase(d);
-    const esRemate = String(p.estrategia || '') === 'escalera' || String(p.estrategia || '') === 'remate';
+    // el estado sólo se declara en "Pasadas": en la sección de activas es redundante
+    const chips = (esPasada ? _pcChip(st.txt, st.col) : '') + (p.estrategia ? _pjChip(p.estrategia) : '');
+    const horas = (p.horaDesde && p.horaHasta) ? ` · ⏰ ${p.horaDesde}–${p.horaHasta}` : '';
     return `<article class="pcx-card ${esPasada ? 'pcx-pasada' : ''}" data-pcid="${_escAttrJs(idRef)}"
         style="--acc:${st.col}" onclick="MOS._pcDetalle('${_escAttrJs(idRef)}')">
-      <header class="pcx-chips">
-        ${_pcChip(st.txt, st.col)}
-        ${esRemate ? _pcChip('🔥 remate', '#f87171') : ''}
-        ${p.estrategia ? _pjChip(p.estrategia) : ''}
-      </header>
+      ${chips ? `<header class="pcx-chips">${chips}</header>` : ''}
       ${_pcProdsHtml(d.nombres, d.skus)}
       <div class="pcx-deal">${_escapeHtml(fr.big)}</div>
       ${fr.sub ? `<div class="pcx-deal-sub">${_escapeHtml(fr.sub)}</div>` : ''}
-      ${p.descripcion ? `<div class="pcx-cartel">🏷 ${_escapeHtml(p.descripcion)}</div>` : ''}
       <footer class="pcx-foot">
-        <span class="pcx-fechas">${_escapeHtml(_promoVentana(p))}</span>
+        <span class="pcx-fechas">${_escapeHtml(_pcVentanaCorta(p) + horas)}</span>
         ${esPasada
           ? `<button class="pc-mini pc-mini-ok" onclick="event.stopPropagation();MOS.promoReactivar('${_escAttrJs(idRef)}')">↻ Reactivar</button>`
           : `<button type="button" class="toggle-sw ${p.activa ? 'on' : ''}" title="${p.activa ? 'Pausar' : 'Activar'}"
@@ -2762,54 +2804,33 @@ const MOS = (() => {
     </article>`;
   }
 
-  // ── CARD de IDEA (mismo formato + aura) ──────────────────────────
+  // ── CARD de IDEA: estrategia + fuente + producto(s) + deal. Nada más. ──
   function _pcCardIdea(s) {
     const d = _dealDeSug(s);
     const fr = _dealFrase(d);
     const col = s.regla === 'REMATE' ? '#f87171' : (s.regla === 'POR_VENCER' ? '#fbbf24' : '#818cf8');
     const activando = !!_pcState.activando[s.id];
+    const fuente = String((s.emoji || '') + ' ' + (s.etiqueta || '')).trim();
     return `<article class="pcx-card pcx-idea ${activando ? 'pcx-activando' : ''}" data-pcsug="${_escAttrJs(s.id)}"
         style="--acc:${col}" onclick="MOS._pcSheet('${_escAttrJs(s.id)}')">
       <span class="pcx-aura" aria-hidden="true"></span>
       <header class="pcx-chips">
-        <span class="pc-chip pcx-badge-idea">💡 idea</span>
-        ${_pcChip(s.emoji + ' ' + s.etiqueta, col)}
         ${_pjChip(s.estrategia)}
-        ${s.horaDesde ? _pcChip('⏰ ' + s.horaDesde + '–' + s.horaHasta, '#38bdf8') : ''}
+        ${fuente ? _pcChip(_escapeHtml(fuente), col) : ''}
       </header>
       ${_pcProdsHtml(d.nombres.length ? d.nombres : [s.descripcion || s.skuBase], d.skus.length ? d.skus : [s.skuBase])}
-      ${d.lider ? `<div class="pcx-ancla">⭐ Anclado a ${_escapeHtml(d.lider.nombre)}${d.lider.ventas != null ? ` (${_escapeHtml(String(d.lider.ventas))} salidas/30d)` : ''}</div>` : ''}
       <div class="pcx-deal">${_escapeHtml(fr.big)}</div>
       ${fr.sub ? `<div class="pcx-deal-sub">${_escapeHtml(fr.sub)}</div>` : ''}
-      <div class="pcx-porque">📊 ${_escapeHtml(s.porque || '')}</div>
-      <footer class="pcx-foot">
-        <span class="pcx-fechas">toca para ver la estrategia</span>
-        <span style="display:flex;gap:6px;align-items:center">
-          <button type="button" class="pc-mini pc-mini-bad" title="No me interesa"
-            onclick="event.stopPropagation();MOS.promoDescartarSug('${_escAttrJs(s.id)}')">✕</button>
-          <button type="button" class="toggle-sw pcx-tog-idea" title="Activar esta idea"
-            onclick="event.stopPropagation();MOS._pcSheet('${_escAttrJs(s.id)}')"><span class="toggle-sw-knob"></span></button>
-        </span>
+      <footer class="pcx-foot pcx-foot-der">
+        <button type="button" class="pc-mini pc-mini-bad" title="No me interesa"
+          onclick="event.stopPropagation();MOS.promoDescartarSug('${_escAttrJs(s.id)}')">✕</button>
+        <button type="button" class="toggle-sw pcx-tog-idea" title="Activar esta idea"
+          onclick="event.stopPropagation();MOS._pcSheet('${_escAttrJs(s.id)}')"><span class="toggle-sw-knob"></span></button>
       </footer>
     </article>`;
   }
 
-  // ── SECCIÓN 2 · IDEAS (misma card, sola) ─────────────────────────
-  function _pcSugHtml() {
-    let h = `<div class="pcx-barra">
-      <div style="flex:1;font-size:11px;color:#7c8db1;line-height:1.5">Calculadas con tus ventas de 30 días, tu stock y tus vencimientos. Ninguna se aplica sola: tú confirmas cada una.</div>
-      <button class="pc-mini" onclick="MOS._pcOtrasIdeas()" ${_pcState.cargando ? 'disabled' : ''}>🔀 Otras ideas</button>
-    </div>`;
-    if (_pcState.cargando) return h + `<div class="pcx-grid"><div class="pc-skel"></div><div class="pc-skel"></div><div class="pc-skel"></div></div>`;
-    if (_pcState.err) return h + `<div class="pc-empty"><div style="color:#f87171;font-size:12px">⚠ ${_escapeHtml(_pcState.err)}</div>
-      <button class="pc-mini" style="margin-top:8px" onclick="MOS._pcCargarSugerencias()">Reintentar</button></div>`;
-    if (!_pcState.sug.length) return h + `<div class="pc-empty"><div style="font-size:30px">✨</div>
-      <div style="font-weight:700;color:#cbd5e1;margin-top:6px">Sin ideas nuevas ahora</div>
-      <div style="font-size:11.5px;color:#7c8db1;margin-top:4px">Ya cubriste lo que el radar detectó (o lo descartaste). Vuelve mañana o crea una desde el playbook.</div></div>`;
-    return h + `<div class="pcx-grid" id="pcxIdeas">${_pcState.sug.map(_pcCardIdea).join('')}</div>`;
-  }
-
-  // ── SECCIÓN 3 · PLAYBOOK ─────────────────────────────────────────
+  // ── SECCIÓN 2 · PLAYBOOK ─────────────────────────────────────────
   function _pcPlayHtml() {
     const pb = _pcState.playbook || {};
     const ej = (k) => {
@@ -3096,10 +3117,16 @@ const MOS = (() => {
   }
 
   // ── acciones del overlay ─────────────────────────────────────────
-  function _pcIr(tab) { _pcState.tab = tab; _pcPinta(); }
   function _pcTogglePasadas() { _pcState.pasadas = !_pcState.pasadas; _pcSon('tac'); _pcPinta(); }
-  function _pcWhy(id) { _pcState.why[id] = !_pcState.why[id]; _pcPinta(); }
-  function _pcOtrasIdeas() { _pcSon('tac'); _pcCargarSugerencias('N' + Date.now()); }
+  // [714] UN SOLO refresco: re-baraja el radar (nonce) y refresca las promos guardadas
+  //   en la misma pasada. Reemplaza a los antiguos 🔄 (_pcCargarPromos) y 🔀 (_pcOtrasIdeas).
+  function _pcNuevasIdeas() {
+    if (_pcState.cargando) return;
+    _pcSon('tac'); _pcVibra(8);
+    _pcState.renueva = true;
+    _pcCargarSugerencias('N' + Date.now());
+    _pcCargarPromos();
+  }
 
   function pcUsarJugada(k) {
     const j = _PJ(k);
@@ -46925,7 +46952,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     pnToggleDuplicar, pnBuscarParaDuplicar, pnSeleccionarParaDuplicar,
     loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
     // [666] centro de promociones unificado · [667] cards v2, detalle y sheet de ideas
-    _pcCargarPromos, _pcCargarSugerencias, _pcIr, _pcTogglePasadas, _pcWhy, _pcOtrasIdeas,
+    _pcCargarPromos, _pcCargarSugerencias, _pcTogglePasadas, _pcNuevasIdeas,
     _pcDetalle, _pcCerrarDetalle, _pcSheet, _pcCerrarSheet, _pcActivarIdea,
     promoPisoPinta, promoPctSlider, promoAbrirCargarCosto, promoGuardarCostoRapido,
     pcUsarJugada, promoDesdeSugerencia, promoDescartarSug, promoReactivar, promoEliminarDirecto,

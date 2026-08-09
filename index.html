@@ -7128,12 +7128,14 @@
                    border:1px solid rgba(99,102,241,.4); border-radius:99px; padding:1px 7px; }
     .pcx-sec-sub { font-size:10.5px; color:#64748b; flex:1; min-width:120px; }
 
-    .pcx-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(252px,1fr)); gap:10px; }
+    /* [714] grid PAREJO: todas las cards de una fila miden lo mismo (grid-auto-rows:1fr
+       + height:100%). Con la card a dieta ya no hacen falta 196px de alto. */
+    .pcx-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(252px,1fr)); gap:10px; grid-auto-rows:1fr; }
 
     .pcx-card {
-      position:relative; display:flex; flex-direction:column; gap:7px;
+      position:relative; display:flex; flex-direction:column; gap:7px; height:100%;
       background:#0d1526; border:1px solid #22314f; border-left:3px solid var(--acc,#6366f1);
-      border-radius:14px; padding:12px 13px 11px; min-height:196px; cursor:pointer;
+      border-radius:14px; padding:12px 13px 11px; min-height:152px; cursor:pointer;
       transition:border-color .18s ease, transform .18s cubic-bezier(.34,1.4,.64,1), box-shadow .18s ease;
     }
     @media (hover:hover) {
@@ -7155,6 +7157,8 @@
     .pcx-nombres { min-width:0; flex:1; }
     .pcx-nom { font-size:11.5px; font-weight:700; color:#e2e8f0; line-height:1.3;
                overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+    /* combo (2+ productos): 1 línea cada uno para que el bloque siga midiendo 2 líneas */
+    .pcx-nom:not(:only-child) { -webkit-line-clamp:1; }
     .pcx-nom + .pcx-nom { margin-top:2px; color:#a8b6d1; font-weight:600; }
 
     .pcx-ancla { font-size:10.5px; font-weight:700; color:#fcd34d; background:rgba(251,191,36,.1);
@@ -7166,10 +7170,24 @@
     }
     .pcx-deal-sub { font-size:11px; color:#a5b4fc; line-height:1.4; font-variant-numeric:tabular-nums; }
     .pcx-cartel   { font-size:10.5px; color:#94a3b8; font-style:italic; }
-    .pcx-porque   { font-size:10px; color:#7c8db1; line-height:1.45; }
     .pcx-foot { display:flex; align-items:center; justify-content:space-between; gap:8px;
                 border-top:1px solid #1a2740; padding-top:8px; margin-top:2px; }
+    /* [714] card de idea: sin texto a la izquierda, los botones se van al borde derecho */
+    .pcx-foot-der { justify-content:flex-end; }
     .pcx-fechas { font-size:9.5px; color:#64748b; line-height:1.35; min-width:0; }
+
+    /* [714] UN SOLO refresco: el icono gira mientras el radar trabaja y las ideas
+       nuevas entran escalonadas — el dueño VE que se renovaron. */
+    .pcx-btn-ref .pcx-ref-ico { display:inline-block; }
+    .pcx-btn-ref.girando .pcx-ref-ico { animation:pcxGira .85s linear infinite; }
+    @keyframes pcxGira { to { transform:rotate(360deg); } }
+    .pcx-renueva > .pcx-card { animation:pcxRenueva .44s cubic-bezier(.34,1.4,.64,1) backwards; }
+    .pcx-renueva > .pcx-card:nth-child(2) { animation-delay:.06s; }
+    .pcx-renueva > .pcx-card:nth-child(3) { animation-delay:.12s; }
+    .pcx-renueva > .pcx-card:nth-child(4) { animation-delay:.18s; }
+    .pcx-renueva > .pcx-card:nth-child(5) { animation-delay:.24s; }
+    .pcx-renueva > .pcx-card:nth-child(6) { animation-delay:.30s; }
+    @keyframes pcxRenueva { from { opacity:0; transform:translateY(10px) scale(.97); } to { opacity:1; transform:none; } }
 
     /* ── aura de IDEA: borde brillante que gira, sutil ── */
     .pcx-idea { isolation:isolate; border-color:rgba(129,140,248,.3); background:#0d1526;
@@ -7270,7 +7288,8 @@
       .pp-grid { grid-template-columns:1fr 1fr; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .pcx-aura, .pcx-badge-idea, .pcx-tog-idea.on, .pcx-aterriza { animation:none !important; }
+      .pcx-aura, .pcx-badge-idea, .pcx-tog-idea.on, .pcx-aterriza,
+      .pcx-btn-ref.girando .pcx-ref-ico, .pcx-renueva > .pcx-card { animation:none !important; }
       .pcx-card, .pcx-card:hover, .pcx-sheet, .pcx-sheet-back { transition:none !important; transform:none !important; }
     }
 
@@ -20359,7 +20378,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.714';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.715';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -20638,7 +20657,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.714"></script>
+<script src="js/api.js?v=2.43.715"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20654,7 +20673,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.714"></script>
+<script src="js/app.js?v=2.43.715"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
