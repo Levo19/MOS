@@ -8,7 +8,7 @@ import fs from 'fs';
 const OUT = process.env.SHOTS_DIR || 'C:/Users/ISO/AppData/Local/Temp/claude/C--Users-ISO/e8682971-fe93-47c3-b8de-b8dd5c509f30/scratchpad/p1_717';
 const TAGSUF = process.env.SHOT_SUF || '';
 fs.mkdirSync(OUT, { recursive: true });
-const _ALL = [[390, 844, 'movil'], [768, 1024, 'tablet'], [1280, 900, 'pc']];
+const _ALL = [[390, 844, 'movil'], [768, 1024, 'tablet'], [1280, 900, 'pc'], [1600, 950, 'pcancho']];
 const VPS = process.env.VP ? _ALL.filter(v => v[2] === process.env.VP) : _ALL;
 const GUIA = process.env.GUIA || 'G_L17861131797225kwi4vv';
 const SEED = {
@@ -91,12 +91,12 @@ for (const [W, H, tag] of VPS) {
     await p.evaluate(() => document.getElementById('p1CartaTab').click());
     await w(700);
   } else {
-    res.push([tag, 'carta', W >= 768 ? 'SIN PESTAÑA (¿no aplicó?)' : 'n/a móvil (thumb en header)']);
-    if (W >= 768) fallas++;
+    res.push([tag, 'carta', W >= 1100 ? 'SIN PESTAÑA (¿no aplicó?)' : 'n/a angosto (thumb en header)']);
+    if (W >= 1100) fallas++;
   }
 
   // móvil: el thumbnail del header abre el overlay de zoom
-  if (W < 768) {
+  if (W < 1100) {
     const th = await p.evaluate(() => !!document.querySelector('.p1-thumb'));
     if (th) {
       await p.evaluate(() => document.querySelector('.p1-thumb').click());
