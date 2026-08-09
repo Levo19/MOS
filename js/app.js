@@ -3047,7 +3047,10 @@ const MOS = (() => {
       actualizado: new Date().toISOString().slice(0, 16).replace('T', ' '), notas: '', _tmp: true
     };
 
-    // coreografía: toggle verde → sonido → confeti → la card se muda a Activas
+    // coreografía: toggle verde → sonido → confeti → la card se muda a Activas.
+    // ⚠ El estado se muta ANTES de animar: si la promo se guarda mientras vuela la
+    //   card, el patch del idPromo real tiene que encontrar el registro temporal
+    //   (si no, el refresco del server la duplicaba).
     const card = document.querySelector(`[data-pcsug="${(s.id || '').replace(/"/g, '')}"]`);
     const tog  = card ? card.querySelector('.pcx-tog-idea') : null;
     if (tog) tog.classList.add('on');
@@ -3055,13 +3058,14 @@ const MOS = (() => {
     _pcSon('ok'); _pcVibra(24);
     _pcConfetti(tog || card);
 
+    _pcState.sug = (_pcState.sug || []).filter(x => x.id !== id);
+    delete _pcState.activando[id];
+    _promoState.lista.unshift(local);
+    _promoSaveCache(_promoState.lista);
+
     const rematar = () => {
-      _pcState.sug = (_pcState.sug || []).filter(x => x.id !== id);
-      delete _pcState.activando[id];
-      _promoState.lista.unshift(local);
-      _promoSaveCache(_promoState.lista);
       _pcPinta();
-      const nueva = document.querySelector(`[data-pcid="${String(tmpId).replace(/"/g, '')}"]`);
+      const nueva = $('pcxActivas') ? $('pcxActivas').querySelector('.pcx-card') : null;
       if (nueva && !_pcReduce()) nueva.classList.add('pcx-aterriza');
       toast('Promoción activada ✓ ya corre en el POS', 'ok');
     };
@@ -3069,11 +3073,13 @@ const MOS = (() => {
 
     try {
       const res = await API.post('crearPromocion', params);
-      if (res && res.idPromo) {
-        const item = _promoState.lista.find(p => p.idPromo === tmpId);
-        if (item) { item.idPromo = res.idPromo; item._tmp = false; _promoSaveCache(_promoState.lista); }
+      const item = _promoState.lista.find(p => p.idPromo === tmpId);
+      if (item) {
+        if (res && res.idPromo) item.idPromo = res.idPromo;
+        item._tmp = false;
+        _promoSaveCache(_promoState.lista);
       }
-      _pcCargarPromos();
+      await _pcCargarPromos();
     } catch (e) {
       _promoState.lista = _promoState.lista.filter(p => p.idPromo !== tmpId);
       _promoSaveCache(_promoState.lista);
