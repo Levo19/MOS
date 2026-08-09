@@ -13,3 +13,8 @@ inversionesmos-*.json
 # Scripts de trabajo de migración (no son producto; usan .pgpass externo)
 supabase/*.js
 .cron_secret_descia
+
+# perfiles y temporales de browsercheck (Playwright)
+browsercheck/_hap_prof_*/
+browsercheck/*.png
+browsercheck/_hap_*.txt
