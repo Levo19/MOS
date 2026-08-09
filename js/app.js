@@ -9581,12 +9581,16 @@ const MOS = (() => {
             </div>
           </div>
           <div class="px-5 pt-3 pb-3 border-b border-slate-800" id="opsCostosSubheader"></div>
-          <!-- [717] fila cuerpo + carta lateral de la factura (la carta sólo vive en ≥768px) -->
           <div class="p1-row">
             <div class="px-5 py-4 overflow-y-auto flex-1 ops-costos-scroll" id="opsCostosBody"></div>
-            <aside class="p1-carta" id="p1Carta"></aside>
           </div>
           <div class="px-5 pt-3 pb-4 border-t border-slate-700/60 bg-slate-900 rounded-b-2xl" id="opsCostosFooter"></div>
+          <!-- [717] EL BRAZO: extensión pegada al borde derecho del overlay (hija
+               absolute, left:100%). La ventana recorta; la tarjeta de adentro sale
+               deslizándose desde detrás del overlay. Costura continua (sin gap ni
+               sombra en la unión) y pestañita 📄 siempre en el borde. -->
+          <aside class="p1-carta" id="p1Carta"></aside>
+          <span id="p1CartaTabWrap"></span>
         </div>`;
       document.body.appendChild(modal);
     }
@@ -9629,39 +9633,58 @@ const MOS = (() => {
   //   Antes la foto vivía como banda 16/9 dentro del subheader: en tablet/PC
   //   dejaba un hueco enorme a su costado, comía ~250px de alto antes de la
   //   primera línea y la factura salía recortada e ilegible.
-  //   Ahora es una "carta" pegada al borde derecho, más baja y más angosta que
-  //   el overlay (se siente sección secundaria), con pestañita ⟨ ⟩ para
-  //   retraerla. Retraída = sólo la pestañita 📄 y el cuerpo usa TODO el ancho.
-  //   En móvil no hay carta: un thumbnail compacto en el header abre el zoom.
+  //   Ahora la factura es EL BRAZO del overlay: una extensión físicamente pegada
+  //   a su borde derecho —sin aire ni costura visible—, un solo cuerpo con un
+  //   apéndice que sobresale. Nace del mismo contenedor (hija absolute del box,
+  //   left:100%, tercio superior), comparte fondo y borde, es más baja y angosta,
+  //   y la sombra sólo envuelve el contorno exterior. Al abrir se despliega
+  //   deslizándose hacia afuera; al retraer se recoge detrás del overlay dejando
+  //   la pestañita 📄 en el borde. Se mueve CON el overlay.
+  //   El cuerpo del overlay queda LIMPIO: cero preview adentro, líneas a todo ancho.
+  //   Si no hay viewport para las dos (móvil/tablet chico) la carta no existe:
+  //   manda el thumbnail del header + el visor con zoom.
   // ════════════════════════════════════════════════════════════════
+  const _P1_CARTA_MIN = 1100;   // ancho mínimo para que quepan overlay + carta
+  function _p1HayEspacioCarta() { return (window.innerWidth || 0) >= _P1_CARTA_MIN; }
+
   function _p1PintarCarta() {
     const st = S._costosGuiaState;
     const carta = document.getElementById('p1Carta');
+    const tabWrap = document.getElementById('p1CartaTabWrap');
     const thumbWrap = document.getElementById('p1HeadThumb');
     if (!st) return;
     const url = String((st && st.foto) || '').trim();
     const tiene = !!url;
     const esc = _escapeHtml(url);
+    const hayCarta = tiene && _p1HayEspacioCarta();
+    // el thumb del header manda cuando NO hay carta (móvil, tablet chico o sin foto)
     if (thumbWrap) {
-      thumbWrap.innerHTML = tiene
+      thumbWrap.innerHTML = (tiene && !hayCarta)
         ? `<button type="button" class="p1-thumb" title="Ver la factura (zoom)" onclick="MOS.abrirFotoOverlay('${esc}')">
              <img src="${esc}" alt="Factura" loading="lazy" onerror="this.style.display='none'">
              <span class="p1-thumb-ic">📄</span>
            </button>`
         : '';
     }
-    if (!carta) return;
-    if (!tiene) { carta.innerHTML = ''; carta.classList.add('is-vacia'); return; }
+    if (!carta || !tabWrap) return;
+    const box = carta.closest('.p1-box');
+    if (!hayCarta) {
+      carta.innerHTML = ''; carta.classList.add('is-vacia'); tabWrap.innerHTML = '';
+      box?.classList.remove('is-arm-open');
+      return;
+    }
     carta.classList.remove('is-vacia');
     if (S._p1CartaOff == null) S._p1CartaOff = false;
     carta.classList.toggle('is-off', !!S._p1CartaOff);
-    carta.innerHTML = `
+    box?.classList.toggle('is-arm-open', !S._p1CartaOff);
+    tabWrap.innerHTML = `
       <button type="button" class="p1-carta-tab" id="p1CartaTab" onclick="MOS._p1CartaToggle()"
         title="${S._p1CartaOff ? 'Mostrar la factura' : 'Ocultar la factura'}"
         aria-expanded="${S._p1CartaOff ? 'false' : 'true'}">
         <span class="p1-carta-tab-ic">📄</span>
-        <span class="p1-carta-tab-car">${S._p1CartaOff ? '⟨' : '⟩'}</span>
-      </button>
+        <span class="p1-carta-tab-car">${S._p1CartaOff ? '⟩' : '⟨'}</span>
+      </button>`;
+    carta.innerHTML = `
       <div class="p1-carta-in">
         <div class="p1-carta-head"><span>📄 Factura</span></div>
         <div class="p1-carta-foto" onclick="MOS.abrirFotoOverlay('${esc}')" title="Ampliar la factura (zoom)">
@@ -9677,10 +9700,14 @@ const MOS = (() => {
     S._p1CartaOff = !S._p1CartaOff;
     const carta = document.getElementById('p1Carta');
     const tab = document.getElementById('p1CartaTab');
-    if (carta) carta.classList.toggle('is-off', !!S._p1CartaOff);
+    if (carta) {
+      carta.classList.toggle('is-off', !!S._p1CartaOff);
+      carta.closest('.p1-box')?.classList.toggle('is-arm-open', !S._p1CartaOff);
+    }
     if (tab) {
       const car = tab.querySelector('.p1-carta-tab-car');
-      if (car) car.textContent = S._p1CartaOff ? '⟨' : '⟩';
+      // la flecha apunta a lo que va a pasar: ⟩ saca la carta, ⟨ la esconde
+      if (car) car.textContent = S._p1CartaOff ? '⟩' : '⟨';
       tab.setAttribute('aria-expanded', S._p1CartaOff ? 'false' : 'true');
       tab.title = S._p1CartaOff ? 'Mostrar la factura' : 'Ocultar la factura';
     }
@@ -10530,32 +10557,40 @@ const MOS = (() => {
       #modalCostosGuiaUnif .p1-thumb:active { transform: scale(.93); }
       #modalCostosGuiaUnif .p1-thumb:hover  { border-color: #34d399; }
 
-      @media (min-width: 768px) {
-        /* en tablet/PC manda la carta: el thumb del header sobra */
-        #modalCostosGuiaUnif .p1-head-thumb-wrap { display: none; }
+      /* ── EL BRAZO (≥1100px: sólo si hay aire para el overlay Y su extensión) ── */
+      @media (min-width: 1100px) {
+        #modalCostosGuiaUnif .p1-box { position: relative; }
+        /* ventana de recorte pegada al borde: -2px come el borde del overlay para
+           que la costura sea continua (un solo cuerpo, no dos cajas juntas) */
         #modalCostosGuiaUnif .p1-carta {
-          display: flex; flex: none; position: relative; width: 292px;
-          margin: 10px 10px 12px 0; align-self: center; max-height: calc(100% - 22px);
-          transition: width .38s cubic-bezier(.22,1,.36,1);
+          position: absolute; left: 100%; margin-left: -2px; top: 21%;
+          width: 0; height: min(52vh, 430px); overflow: hidden; pointer-events: none;
+          transition: width .42s cubic-bezier(.22,1,.36,1);
         }
         #modalCostosGuiaUnif .p1-carta.is-vacia { display: none; }
-        #modalCostosGuiaUnif .p1-carta.is-off   { width: 34px; }
+        #modalCostosGuiaUnif .p1-carta:not(.is-off) { width: 304px; pointer-events: auto; }
         #modalCostosGuiaUnif .p1-carta-in {
-          flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px;
-          margin-left: 30px; background: #0b1526; border: 1px solid #24406b; border-radius: 14px; padding: 10px;
-          box-shadow: -16px 0 34px -20px rgba(2,6,23,.95), 0 12px 32px -18px rgba(52,211,153,.32);
-          overflow: hidden;
-          transition: opacity .26s ease, transform .38s cubic-bezier(.22,1,.36,1);
+          width: 304px; height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 11px 12px 12px 13px;
+          /* MISMA superficie que el overlay: fondo slate-900 + borde esmeralda, sin
+             borde izquierdo (ahí está la unión) y con la sombra sólo hacia afuera */
+          background: #0f172a; border: 2px solid rgba(16,185,129,.5); border-left: 0;
+          border-radius: 0 16px 16px 0;
+          box-shadow: 14px 0 30px -16px rgba(2,6,23,.95), 0 14px 34px -20px rgba(2,6,23,.8);
+          transform: translateX(0);
+          transition: transform .42s cubic-bezier(.22,1,.36,1);
         }
-        /* retraída: la carta se va hacia AFUERA (derecha) y se desvanece */
-        #modalCostosGuiaUnif .p1-carta.is-off .p1-carta-in { opacity: 0; transform: translateX(46px); pointer-events: none; }
+        /* recogido: la tarjeta se mete DETRÁS del overlay (la ventana la recorta) */
+        #modalCostosGuiaUnif .p1-carta.is-off .p1-carta-in { transform: translateX(-100%); }
+        /* pestañita: viaja con el brazo para quedar siempre en el borde exterior */
         #modalCostosGuiaUnif .p1-carta-tab {
-          position: absolute; left: 0; top: 50%; transform: translateY(-50%); z-index: 3;
-          width: 28px; height: 78px; padding: 0; cursor: pointer;
+          position: absolute; left: 100%; top: 25%; z-index: 4;
+          width: 26px; height: 74px; padding: 0; cursor: pointer;
           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-          background: #12233d; border: 1px solid #2c4468; border-right: 0; border-radius: 10px 0 0 10px;
-          color: #8fe6c2; font-size: 12px; transition: background .18s ease, color .18s ease;
+          background: #12233d; border: 2px solid rgba(16,185,129,.5); border-left: 0; border-radius: 0 11px 11px 0;
+          color: #8fe6c2; font-size: 12px;
+          transition: transform .42s cubic-bezier(.22,1,.36,1), background .18s ease, color .18s ease;
         }
+        #modalCostosGuiaUnif .p1-box.is-arm-open .p1-carta-tab { transform: translateX(302px); }
         #modalCostosGuiaUnif .p1-carta-tab:hover { background: #18304f; color: #34d399; }
         #modalCostosGuiaUnif .p1-carta-tab-car { font-size: 11px; color: #64748b; }
         #modalCostosGuiaUnif .p1-carta-head { flex: none; font-size: 10px; font-weight: 800; color: #7c8db1; text-transform: uppercase; letter-spacing: .05em; }
@@ -10570,17 +10605,14 @@ const MOS = (() => {
         #modalCostosGuiaUnif .p1-carta-foto.is-err .p1-carta-foto-empty { display: flex; }
         #modalCostosGuiaUnif .p1-carta-zoom { position: absolute; right: 6px; bottom: 6px; background: rgba(7,13,24,.85); border-radius: 8px; padding: 3px 8px; font-size: 10px; color: #cbd5e1; }
         #modalCostosGuiaUnif .p1-carta-pie { flex: none; font-size: 10px; color: #64748b; line-height: 1.45; }
-      }
-      /* tablet angosta: con la carta abierta la lista va a 1 columna (2 quedaban ilegibles) */
-      @media (min-width: 768px) and (max-width: 1023px) {
-        #modalCostosGuiaUnif .p1-row:has(.p1-carta:not(.is-off)) .p1-lista { grid-template-columns: 1fr; }
-      }
-      @media (min-width: 1024px) {
-        #modalCostosGuiaUnif .p1-carta { width: 322px; }
+        /* Se reserva el carril del brazo a la derecha: el conjunto [overlay|brazo]
+           queda centrado y —clave— el overlay NO se mueve al plegar/desplegar,
+           sólo se extiende o se recoge el apéndice. */
+        #modalCostosGuiaUnif { padding-right: 330px !important; }
+        #modalCostosGuiaUnif .p1-box { max-width: min(1060px, calc(100vw - 380px)); }
       }
       @media (prefers-reduced-motion: reduce) {
-        #modalCostosGuiaUnif .p1-carta, #modalCostosGuiaUnif .p1-carta-in { transition: none !important; }
-        #modalCostosGuiaUnif .p1-carta.is-off .p1-carta-in { transform: none !important; }
+        #modalCostosGuiaUnif .p1-carta, #modalCostosGuiaUnif .p1-carta-in, #modalCostosGuiaUnif .p1-carta-tab { transition: none !important; }
       }
 
       /* ═══ TIER 1 · MÓVIL (<768px): hoja anclada abajo, casi pantalla completa ═══ */
