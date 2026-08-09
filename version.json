@@ -1,1 +1,1 @@
-{"version":"2.43.721","build":"2.43.721 Compras: la guia de zona es una presuncion — el cotejo lo hace el admin (RPC 721 por id_guia) + header compacto con totales en vivo + pie minimo + brazo centrado"}
+{"version":"2.43.722","build":"2.43.722 Fix: el cotejo por guia se pide por API.post (el dispatcher directo vive del lado POST)"}

@@ -12049,7 +12049,9 @@ const MOS = (() => {
     const unicos = [...new Set(ids)].slice(0, 400);
     if (!unicos.length) return;
     try {
-      const r = await API.get('cotejoCostosGuias', { idGuias: unicos });
+      // API.post: el dispatcher directo de estas RPCs vive del lado POST
+      // (igual que historialPrecioCosto, que también es lectura pura).
+      const r = await API.post('cotejoCostosGuias', { idGuias: unicos });
       const data = (r && (r.data || r)) || {};
       // las guías sin cotejo NO vienen en la respuesta: se marcan en 0 explícito
       unicos.forEach(g => { S._cotejoGuias[g] = data[g] || { n: 0 }; });
