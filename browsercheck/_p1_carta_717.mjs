@@ -86,7 +86,9 @@ for (const [W, H, tag] of VPS) {
     await p.screenshot({ path: `${OUT}/2_retraida_${tag}${TAGSUF}.png` });
     console.log(`[${tag}] retraída:`, JSON.stringify(m2));
     res.push([tag, 'retraida', `lista=${m2.lista?.w} (antes ${m1.lista?.w}) retraida=${m2.retraida}`]);
-    if (!(m2.lista?.w > m1.lista?.w)) { res.push([tag, 'OJO', 'la lista no ganó ancho al retraer']); }
+    // el brazo vive FUERA del overlay: la lista debe medir IGUAL en ambos estados
+    if (m2.lista?.w !== m1.lista?.w) { res.push([tag, 'FALLA', 'el brazo le robó ancho al cuerpo del overlay']); fallas++; }
+    if (!(m1.carta?.w > 0) && !m1.retraida) { res.push([tag, 'FALLA', 'el brazo no se ve desplegado']); fallas++; }
     // volver a expandir
     await p.evaluate(() => document.getElementById('p1CartaTab').click());
     await w(700);

@@ -10609,8 +10609,8 @@ const MOS = (() => {
         /* Se reserva el carril del brazo a la derecha: el conjunto [overlay|brazo]
            queda centrado y —clave— el overlay NO se mueve al plegar/desplegar,
            sólo se extiende o se recoge el apéndice. */
-        #modalCostosGuiaUnif { padding-right: 330px !important; }
-        #modalCostosGuiaUnif .p1-box { max-width: min(1060px, calc(100vw - 380px)); }
+        #modalCostosGuiaUnif { padding-right: 348px !important; }
+        #modalCostosGuiaUnif .p1-box { max-width: min(1060px, calc(100vw - 396px)); }
       }
       @media (prefers-reduced-motion: reduce) {
         #modalCostosGuiaUnif .p1-carta, #modalCostosGuiaUnif .p1-carta-in, #modalCostosGuiaUnif .p1-carta-tab { transition: none !important; }
