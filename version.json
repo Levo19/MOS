@@ -1,1 +1,1 @@
-{"version":"2.43.722","build":"2.43.722 Fix: el cotejo por guia se pide por API.post (el dispatcher directo vive del lado POST)"}
+{"version":"2.43.723","build":"2.43.723 Modal 1 sin pie: los productos fluyen hasta el borde; chips de progreso y sello se mudan al header compacto"}

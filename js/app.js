@@ -9584,7 +9584,10 @@ const MOS = (() => {
           <div class="p1-row">
             <div class="px-5 py-4 overflow-y-auto flex-1 ops-costos-scroll" id="opsCostosBody"></div>
           </div>
-          <div class="px-5 pt-3 pb-4 border-t border-slate-700/60 bg-slate-900 rounded-b-2xl" id="opsCostosFooter"></div>
+          <!-- [722] contenedor del pie: queda VACÍO (sin borde ni padding) para que la
+               lista fluya hasta el borde inferior. Se conserva el nodo porque
+               _renderModalCostosCompleto escribe en él. -->
+          <div id="opsCostosFooter" class="p1-foot-hidden"></div>
           <!-- [717] EL BRAZO: extensión pegada al borde derecho del overlay (hija
                absolute, left:100%). La ventana recorta; la tarjeta de adentro sale
                deslizándose desde detrás del overlay. Costura continua (sin gap ni
@@ -9743,6 +9746,11 @@ const MOS = (() => {
     let _tBruto = 0;
     (st.lineas || []).forEach(l => { _tBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
     const _tNeto = _tBruto / (1 + _IGV_RATE);
+    // [722] los chips de progreso y el sello ☁ también viven acá: el pie MURIÓ entero
+    //   ("no quiero nada que me estorbe como pie de modal, deja que los productos fluyan").
+    const _hTot = (st.lineas || []).length;
+    const _hConCosto = (st.lineas || []).filter(l => _costosGuiaCalcularBruto(l, st) > 0).length;
+    const _hPrec = (st.lineas || []).filter(l => l._precioListo > 0).length;
     const toggles = `<div class="ops-toggles-grid">
       <div class="ops-tg-group">
         <span class="ops-tg-lbl">Monto</span>
@@ -9758,6 +9766,11 @@ const MOS = (() => {
         <span class="p1-tot-main"><span class="ops-tot-lbl ops-tot-bruto">Total</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${_money(_tBruto).toFixed(2)}</b></span>
         <span class="p1-tot-sub"><span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${_money(_tNeto).toFixed(2)}</b><span class="ops-tot-sep">·</span><span class="ops-tot-lbl">IGV</span> <b id="costosGuiaTotalIgv">S/ ${_money(_tBruto - _tNeto).toFixed(2)}</b></span>
       </div>
+      <span class="p1-hd-chips">
+        <span id="costosMiniProg" class="p1-mini-prog" title="Productos con costo">${_hConCosto}/${_hTot}</span>
+        <span id="costosPrecioProg" class="p1-precio-prog" title="${_hPrec} de ${_hTot} productos con precio publicado">💰 <b>${_hPrec}/${_hTot}</b></span>
+        <span id="costosSaveState" class="p1-save">☁ se guarda solo</span>
+      </span>
     </div>`;
     // [703 · móvil] En pantallas chicas la foto (190px) + chip + toggles se comían el 60% del alto y
     // dejaban ~1 línea visible con 34 productos. Ahora viven en un bloque PLEGABLE; lo único fijo es
@@ -10188,20 +10201,14 @@ const MOS = (() => {
     let totalBruto = 0;
     lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
     const totalNeto = totalBruto / (1 + _IGV_RATE);
-    const nPrec = lineas.filter(l => l._precioListo > 0).length;
-    const conCosto = lineas.filter(l => _costosGuiaCalcularBruto(l, st) > 0).length;
-    // [721] PIE MÍNIMO. El bloque de totales subió al header y el botón
-    //   "→ Siguiente sin costo" murió por pedido del dueño ("es inútil, solo
-    //   estorba"): el salto real se hace con Enter / ✓ Listo de cada línea,
-    //   que sigue vivo (_costosInputKey → _costosSiguiente).
-    //   Sobrevive el pie con los chips de progreso y el sello de guardado.
-    return `<div class="p1-foot p1-foot-min">
-      <div class="p1-foot-meta">
-        <span id="costosMiniProg" class="p1-mini-prog" title="Productos con costo">${conCosto}/${lineas.length}</span>
-        <span id="costosPrecioProg" class="p1-precio-prog" title="${nPrec} de ${lineas.length} productos con precio publicado">💰 <b>${nPrec}/${lineas.length}</b></span>
-        <span id="costosSaveState" class="p1-save">☁ se guarda solo</span>
-      </div>
-    </div>`;
+    // [722] EL PIE MURIÓ ENTERO. Pedido del dueño: "no quiero nada que me estorbe
+    //   como pie de modal, deja que los productos fluyan". Los chips de progreso
+    //   (N/M · 💰x/y) y el sello ☁ se mudaron al header compacto conservando sus
+    //   ids (costosMiniProg / costosPrecioProg / costosSaveState), así que los
+    //   actualizadores en vivo siguen apuntando a nodos existentes.
+    //   Antes acá vivían además el total (subió al header en 721) y el botón
+    //   "→ Siguiente sin costo" (eliminado en 721).
+    return '';
   }
 
   function _opsInyectarCSSModalCostosUnificado() {
@@ -10559,13 +10566,22 @@ const MOS = (() => {
       #modalCostosGuiaUnif .p1-tot-sub { display: flex; align-items: baseline; gap: 5px; font-size: 10px; color: #93a4c2; font-family: ui-monospace,monospace; margin-top: 1px; }
       #modalCostosGuiaUnif .p1-tot-sub b { color: #cbd5e1; font-weight: 700; }
       #modalCostosGuiaUnif .p1-foot-meta { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; order: 3; width: 100%; }
-      /* [721] pie mínimo: sin totales ni CTA, sólo chips + sello */
-      #modalCostosGuiaUnif .p1-foot-min { gap: 6px; }
-      #modalCostosGuiaUnif .p1-foot-min .p1-foot-meta { order: 0; width: auto; }
+      /* [722] el pie no existe: sin alto, sin borde, sin padding — la lista llega al borde */
+      #modalCostosGuiaUnif .p1-foot-hidden { display: none !important; }
+      #modalCostosGuiaUnif #opsCostosBody { padding-bottom: 18px !important; }
       /* [721] totales EN VIVO dentro del header compacto */
       #modalCostosGuiaUnif .p1-tot-head { display: flex; flex-direction: column; align-items: flex-end; margin-left: auto; min-width: 0; }
       #modalCostosGuiaUnif .p1-tot-head .p1-tot-main b { font-size: 17px; }
       #modalCostosGuiaUnif .p1-tot-head .p1-tot-sub { font-size: 9.5px; }
+      /* [722] chips de progreso + sello, discretos, al extremo del header */
+      #modalCostosGuiaUnif .p1-hd-chips { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+      #modalCostosGuiaUnif .p1-hd-chips .p1-mini-prog,
+      #modalCostosGuiaUnif .p1-hd-chips .p1-precio-prog { font-size: 9.5px; padding: 2px 7px; }
+      #modalCostosGuiaUnif .p1-hd-chips .p1-save { font-size: 9px; opacity: .75; }
+      @media (max-width: 767px) {
+        /* en móvil los chips bajan a su propia fila para no apretar los toggles */
+        #modalCostosGuiaUnif .p1-hd-chips { flex: 1 1 100%; justify-content: flex-end; }
+      }
       #modalCostosGuiaUnif .p1-mini-prog { font-size: 11px; font-weight: 800; color: #93a4c2; background: rgba(15,23,42,.7); border: 1px solid #28344c; border-radius: 999px; padding: 3px 9px; font-family: ui-monospace,monospace; }
       #modalCostosGuiaUnif .p1-precio-prog { font-size: 11px; font-weight: 800; color: #fbbf24; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
       #modalCostosGuiaUnif .p1-save { font-size: 10px; font-weight: 700; color: #64748b; white-space: nowrap; }

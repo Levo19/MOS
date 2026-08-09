@@ -77,8 +77,10 @@ for (const [W, H, tag] of VPS) {
       totalEnPie:    !!q('#opsCostosFooter #costosGuiaTotalBruto'),
       cta:           !!q('#costosCtaGuiada'),
       fraseCompara:  (q('#opsCostosSubheader')?.innerText || '').includes('Compara con la factura'),
-      sello:         !!q('#costosSaveState'),
-      chips:         !!q('#costosMiniProg'),
+      sello:         !!q('#opsCostosSubheader #costosSaveState'),
+      chips:         !!q('#opsCostosSubheader #costosMiniProg'),
+      pieVisible:    (() => { const f = q('#opsCostosFooter'); if (!f) return false; const b = f.getBoundingClientRect(); return b.height > 0; })(),
+      pieTexto:      (q('#opsCostosFooter')?.innerText || '').trim(),
       sugCat:        document.querySelectorAll('.cl-sugcat').length,
       header:        r(q('#opsCostosSubheader')),
       pie:           r(q('#opsCostosFooter')),
@@ -95,7 +97,9 @@ for (const [W, H, tag] of VPS) {
   if (p1.totalEnPie)     { res.push([tag, 'FALLA', 'el total sigue en el pie']); fallas++; }
   if (p1.cta)            { res.push([tag, 'FALLA', 'el botón "Siguiente sin costo" sigue vivo']); fallas++; }
   if (p1.fraseCompara)   { res.push([tag, 'FALLA', 'la frase "Compara con la factura" sigue viva']); fallas++; }
-  if (!p1.sello || !p1.chips) { res.push([tag, 'FALLA', 'el pie perdió chips o sello']); fallas++; }
+  if (!p1.sello || !p1.chips) { res.push([tag, 'FALLA', 'los chips/sello no están en el header']); fallas++; }
+  if (p1.pieVisible || p1.pieTexto) { res.push([tag, 'FALLA', 'el pie sigue ocupando espacio: "' + p1.pieTexto + '"']); fallas++; }
+  res.push([tag, 'C sin pie', `pieVisible=${p1.pieVisible} pieTexto="${p1.pieTexto}"`]);
   if (p1.centroCarta != null) {
     const d = Math.abs(p1.centroCarta - p1.centroBox);
     res.push([tag, 'C brazo', `centroBox=${p1.centroBox} centroCarta=${p1.centroCarta} Δ=${d}`]);
