@@ -2369,7 +2369,7 @@ const MOS = (() => {
     return `<span class="pc-chip" style="background:rgba(99,102,241,.14);color:#a5b4fc;border-color:rgba(99,102,241,.4)">${j.ico} ${mini ? '' : j.nom}</span>`;
   }
 
-  const _pcState = { tab: 'mis', sug: [], playbook: null, cargando: false, seed: '', why: {}, pasadas: false, err: '' };
+  const _pcState = { tab: 'mis', sug: [], playbook: null, cargando: false, seed: '', why: {}, pasadas: false, err: '', activando: {} };
 
   function _pcChip(txt, color, extra) {
     return `<span class="pc-chip" style="background:${color}1f;color:${color};border-color:${color}55;${extra || ''}">${txt}</span>`;
@@ -2383,18 +2383,12 @@ const MOS = (() => {
     return { k: 'activa', txt: '🟢 activa', col: '#34d399' };
   }
   function _promoNombre(p) {
-    if (p.tipo === 'COMBO') {
+    if (String(p.tipo).toUpperCase() === 'COMBO') {
       const its = (p.items || []).map(i => i.descripcion).filter(Boolean);
       return its.length ? its.join(' + ') : `Combo de ${(p.items || []).length} productos`;
     }
     const prod = (S.productos || []).find(pr => (pr.skuBase || pr.idProducto) === p.skuBase);
     return prod ? (prod.descripcion || p.skuBase) : (p.skuBase || '—');
-  }
-  function _promoResumen(p) {
-    const v = parseFloat(p.valorPromo) || 0;
-    if (p.tipo === 'COMBO')  return `🛒 Combo a S/ ${_money(v).toFixed(2)}`;
-    if (p.tipo === 'GRUPO')  return `📦 Lleva ${p.cantMin} por S/ ${_money((parseFloat(p.cantMin) || 0) * v).toFixed(2)} (c/u S/ ${_money(v).toFixed(2)})`;
-    return `% −${v}% desde ${p.cantMin} ${(parseFloat(p.cantMin) || 0) === 1 ? 'unidad' : 'unidades'}`;
   }
   function _promoVentana(p) {
     const d = String(p.vigenciaDesde || '').substring(0, 10), h = String(p.vigenciaHasta || '').substring(0, 10);
@@ -2403,20 +2397,203 @@ const MOS = (() => {
     return fechas + horas;
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [667] EFECTOS — coreografía, no feria. Todo respeta prefers-reduced-motion.
+  // ════════════════════════════════════════════════════════════════════
+  function _pcReduce() {
+    try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (_) { return false; }
+  }
+  // sonidos cortos: reusa la utilería WebAudio del panel (_opsBeep)
+  function _pcSon(tipo) { try { _opsBeep && _opsBeep(tipo); } catch (_) {} }
+  function _pcVibra(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (_) {} }
+
+  // micro-confeti alrededor de un elemento (12 partículas, 700ms, sin librerías)
+  function _pcConfetti(el) {
+    if (!el || _pcReduce()) return;
+    let r;
+    try { r = el.getBoundingClientRect(); } catch (_) { return; }
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const cols = ['#34d399', '#a78bfa', '#fbbf24', '#38bdf8', '#f472b6'];
+    for (let i = 0; i < 12; i++) {
+      const s = document.createElement('i');
+      const ang = (Math.PI * 2 * i) / 12 + Math.random() * 0.4;
+      const dist = 40 + Math.random() * 46;
+      s.style.cssText = `position:fixed;left:${cx}px;top:${cy}px;width:6px;height:6px;border-radius:2px;` +
+        `background:${cols[i % cols.length]};z-index:10000;pointer-events:none;` +
+        `transition:transform .72s cubic-bezier(.2,.8,.3,1),opacity .72s ease-out`;
+      document.body.appendChild(s);
+      requestAnimationFrame(() => {
+        s.style.transform = `translate(${Math.cos(ang) * dist}px,${Math.sin(ang) * dist + 26}px) rotate(${Math.round(Math.random() * 360)}deg)`;
+        s.style.opacity = '0';
+      });
+      setTimeout(() => s.remove(), 780);
+    }
+  }
+
+  // La card "idea" se muda a la sección de activas: clon volador (FLIP simplificado).
+  function _pcMudanza(cardEl, destId, cb) {
+    const fin = () => { try { cb && cb(); } catch (_) {} };
+    if (!cardEl || _pcReduce()) { fin(); return; }
+    let r1;
+    try { r1 = cardEl.getBoundingClientRect(); } catch (_) { fin(); return; }
+    const dest = document.getElementById(destId);
+    const r2 = dest ? dest.getBoundingClientRect() : r1;
+    const clone = cardEl.cloneNode(true);
+    clone.classList.add('pcx-volando');
+    clone.style.cssText = `position:fixed;left:${r1.left}px;top:${r1.top}px;width:${r1.width}px;height:${r1.height}px;` +
+      `margin:0;z-index:9998;pointer-events:none;transition:transform .58s cubic-bezier(.4,.9,.3,1),opacity .58s ease-out`;
+    document.body.appendChild(clone);
+    cardEl.style.opacity = '0';
+    cardEl.style.transform = 'scale(.94)';
+    requestAnimationFrame(() => {
+      clone.style.transform = `translate(${Math.round(r2.left - r1.left)}px,${Math.round(r2.top - r1.top + 8)}px) scale(.9)`;
+      clone.style.opacity = '.12';
+    });
+    setTimeout(() => { clone.remove(); fin(); }, 600);
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // [667] MOTOR DE FRASES — el dueño lee "lo que sale cada uno" y "lo que ahorra",
+  //   nunca "−7.9% en el pack". Una sola gramática para promos guardadas e ideas.
+  // ════════════════════════════════════════════════════════════════════
+  const _S = (v) => 'S/ ' + _money(v).toFixed(2);
+
+  function _pcProd(sku) {
+    if (!sku) return null;
+    return (S.productos || []).find(pr => (pr.skuBase || pr.idProducto) === sku) || null;
+  }
+  function _pcPv(sku) { const p = _pcProd(sku); return p ? (parseFloat(p.precioVenta) || 0) : 0; }
+  function _pcPc(sku) { const p = _pcProd(sku); return p ? (parseFloat(p.precioCosto) || 0) : 0; }
+
+  // promo GUARDADA → forma normalizada
+  function _dealDePromo(p) {
+    const tipo = String(p.tipo || '').toUpperCase();
+    if (tipo === 'COMBO') {
+      const its = p.items || [];
+      let normal = 0, falta = false;
+      its.forEach(i => {
+        const pv = _pcPv(i.skuBase);
+        if (pv > 0) normal += pv * (parseFloat(i.cantidad) || 1); else falta = true;
+      });
+      return { tipo, cantMin: 1, pvUnit: 0, totalNormal: falta ? 0 : _money(normal),
+               totalPromo: _money(parseFloat(p.valorPromo) || 0), unitPromo: 0,
+               nombres: its.map(i => i.descripcion).filter(Boolean), skus: its.map(i => i.skuBase) };
+    }
+    const pv = _pcPv(p.skuBase);
+    const n  = Math.max(1, parseFloat(p.cantMin) || 1);
+    const v  = parseFloat(p.valorPromo) || 0;
+    const nom = [_promoNombre(p)], sk = [p.skuBase];
+    if (tipo === 'GRUPO') {
+      return { tipo, cantMin: n, pvUnit: pv, totalNormal: _money(pv * n), totalPromo: _money(v * n),
+               unitPromo: _money(v), nombres: nom, skus: sk };
+    }
+    const unit = pv > 0 ? pv * (1 - v / 100) : 0;
+    return { tipo: 'PORCENTAJE', cantMin: n, pct: _money(v), pvUnit: pv, totalNormal: _money(pv * n),
+             totalPromo: _money(unit * n), unitPromo: _money(unit), nombres: nom, skus: sk };
+  }
+
+  // SUGERENCIA del radar → misma forma normalizada
+  function _dealDeSug(s) {
+    const tipo = String(s.tipo || '').toUpperCase();
+    const pv = parseFloat(s.precioNormal) || 0;
+    if (tipo === 'COMBO') {
+      const its = s.items || [];
+      const lpv = parseFloat(s.liderPrecio) || _pcPv(s.liderSku) || 0;
+      return { tipo, cantMin: 1, pvUnit: 0, totalNormal: _money(pv + lpv),
+               totalPromo: _money(parseFloat(s.precioSugerido) || 0), unitPromo: 0,
+               nombres: its.map(i => i.descripcion).filter(Boolean),
+               skus: its.map(i => i.skuBase),
+               lider: s.lider ? { nombre: s.lider, ventas: s.liderVentas, sku: s.liderSku } : null };
+    }
+    const n = Math.max(1, parseFloat(s.cantMin) || 1);
+    const unit = _money(parseFloat(s.precioPromo) || 0);
+    const nom = [s.descripcion || s.skuBase], sk = [s.skuBase];
+    if (tipo === 'GRUPO') {
+      return { tipo, cantMin: n, pvUnit: pv, totalNormal: _money(pv * n),
+               totalPromo: _money(parseFloat(s.precioSugerido) || unit * n), unitPromo: unit, nombres: nom, skus: sk };
+    }
+    return { tipo: 'PORCENTAJE', cantMin: n, pct: _money(parseFloat(s.descuentoPct) || 0), pvUnit: pv,
+             totalNormal: _money(pv * n), totalPromo: _money(unit * n), unitPromo: unit, nombres: nom, skus: sk };
+  }
+
+  // forma normalizada → LA FRASE (big = protagonista, sub = lo que sale c/u y el ahorro)
+  function _dealFrase(d) {
+    if (!d) return { big: '—', sub: '', ahorro: 0 };
+    const ahorro = Math.max(0, _money(d.totalNormal - d.totalPromo));
+    if (d.tipo === 'COMBO') {
+      const nom = (d.nombres || []).length ? d.nombres.join(' + ') : 'El combo';
+      return {
+        big: `${nom} juntos: ${_S(d.totalPromo)}`,
+        sub: d.totalNormal > 0 ? `por separado ${_S(d.totalNormal)} · ahorras ${_S(ahorro)}` : 'precio fijo del combo',
+        ahorro
+      };
+    }
+    if (d.tipo === 'GRUPO') {
+      const n = d.cantMin || 2;
+      // "2ª unidad": el par donde la primera se paga completa
+      if (n === 2 && d.pvUnit > 0 && d.totalPromo > d.pvUnit) {
+        const seg = _money(d.totalPromo - d.pvUnit);
+        return {
+          big: `1ª a ${_S(d.pvUnit)} · la 2ª te sale a ${_S(seg)}`,
+          sub: `el par ${_S(d.totalPromo)}${ahorro > 0 ? ` · ahorras ${_S(ahorro)}` : ''}`,
+          ahorro
+        };
+      }
+      return {
+        big: `Lleva ${n} por ${_S(d.totalPromo)}`,
+        sub: `c/u sale ${_S(d.totalPromo / n)}${ahorro > 0 ? ` · ahorras ${_S(ahorro)}` : ''}`,
+        ahorro
+      };
+    }
+    const pct = _money(d.pct || 0);
+    const pctTxt = (pct === Math.round(pct)) ? String(Math.round(pct)) : pct.toFixed(1);
+    if ((d.cantMin || 1) <= 1) {
+      return {
+        big: `−${pctTxt}% en cada unidad`,
+        sub: d.pvUnit > 0 ? `${_S(d.pvUnit)} → c/u sale ${_S(d.unitPromo)} · ahorras ${_S(d.pvUnit - d.unitPromo)} por unidad` : '',
+        ahorro
+      };
+    }
+    return {
+      big: `Desde ${d.cantMin} unidades: −${pctTxt}%`,
+      sub: d.pvUnit > 0 ? `c/u sale ${_S(d.unitPromo)} (antes ${_S(d.pvUnit)}) · ahorras ${_S(ahorro)} llevando ${d.cantMin}` : '',
+      ahorro
+    };
+  }
+
+  // compat: el resumen de una línea sigue existiendo, ahora en humano
+  function _promoResumen(p) { return _dealFrase(_dealDePromo(p)).big; }
+
+  // ── tiles de producto (foto si existe, si no la inicial) ──────────
+  function _pcTile(nombre, sku, extraCls) {
+    const p = _pcProd(sku);
+    const url = p ? String(p.fotoUrl || p.logoUrl || '').trim() : '';
+    const ini = String(nombre || sku || '?').trim().charAt(0).toUpperCase() || '?';
+    return url
+      ? `<span class="pcx-tile ${extraCls || ''}"><img src="${_escapeHtml(url)}" loading="lazy" alt=""></span>`
+      : `<span class="pcx-tile pcx-tile-vacio ${extraCls || ''}">${_escapeHtml(ini)}</span>`;
+  }
+  function _pcProdsHtml(nombres, skus) {
+    const n = nombres || [], sk = skus || [];
+    return `<div class="pcx-prods">
+      <div class="pcx-tiles">${n.map((x, i) => _pcTile(x, sk[i])).join('')}</div>
+      <div class="pcx-nombres">${n.map(x => `<div class="pcx-nom">${_escapeHtml(x)}</div>`).join('')}</div>
+    </div>`;
+  }
+
   async function abrirPromoCentro(tabIni) {
-    try { _opsBeep && _opsBeep('tac'); } catch (_) {}
-    try { navigator.vibrate && navigator.vibrate(10); } catch (_) {}
+    _pcSon('tac'); _pcVibra(10);
     $('promoCentro')?.remove();
     _pcState.tab = tabIni || 'mis';
     _pcState.why = {};
     const div = document.createElement('div');
     div.id = 'promoCentro'; div.className = 'modal-backdrop open';
-    div.innerHTML = `<div class="modal-box pc-box" style="max-width:860px;max-height:92vh;display:flex;flex-direction:column;border:1px solid rgba(99,102,241,.5);box-shadow:0 30px 80px -15px rgba(99,102,241,.4)">
+    div.innerHTML = `<div class="modal-box pc-box" style="max-width:980px;max-height:92vh;display:flex;flex-direction:column;border:1px solid rgba(99,102,241,.5);box-shadow:0 30px 80px -15px rgba(99,102,241,.4)">
       <div class="px-5 py-4 flex items-center gap-3" style="border-bottom:1px solid #1e293b;background:linear-gradient(120deg,rgba(67,56,202,.35),rgba(139,92,246,.12) 60%,transparent)">
         <span style="font-size:24px">🎯</span>
         <div class="flex-1 min-w-0">
           <h2 class="font-bold text-base text-white">Centro de Promociones</h2>
-          <div style="font-size:10.5px;color:#a5b4fc">Tus promos, las ideas del día con tus datos reales y el playbook — todo en un solo lugar</div>
+          <div style="font-size:10.5px;color:#a5b4fc">Tus promos y las ideas del día, juntas — al ojo se ve qué pasa</div>
         </div>
         <button onclick="document.getElementById('promoCentro').remove()" class="modal-close-x">×</button>
       </div>
@@ -2444,7 +2621,7 @@ const MOS = (() => {
 
   async function _pcCargarSugerencias(seed) {
     _pcState.cargando = true; _pcState.err = '';
-    if ($('pcBody') && _pcState.tab === 'sug') _pcPinta();
+    if ($('pcBody')) _pcPinta();
     try {
       const p = { n: 6 };
       if (seed) p.seed = seed;
@@ -2474,145 +2651,156 @@ const MOS = (() => {
   function _pcPinta() {
     const tabs = $('pcTabs'), body = $('pcBody');
     if (!tabs || !body) return;
+    const scroll = body.scrollTop;
     const activas = (_promoState.lista || []).filter(p => _promoEstado(p).k === 'activa').length;
+    const ideas   = (_pcState.sug || []).length;
     const T = [
       ['mis',  `🎁 Mis promociones${activas ? ' · ' + activas : ''}`],
-      ['sug',  `💡 Sugerencias del día`],
+      ['sug',  `💡 Ideas del día${ideas ? ' · ' + ideas : ''}`],
       ['play', `📖 Playbook`]
     ];
     tabs.innerHTML = T.map(([k, lbl]) =>
       `<button class="pc-tab" data-tab="${k}" style="background:${_pcState.tab === k ? 'rgba(99,102,241,.25)' : '#0d1526'};border:1px solid ${_pcState.tab === k ? '#6366f1' : '#22314f'};color:${_pcState.tab === k ? '#c7d2fe' : '#94a3b8'};border-radius:99px;padding:5px 13px;font-size:11px;font-weight:700;cursor:pointer">${lbl}</button>`).join('');
     tabs.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
       _pcState.tab = b.dataset.tab;
-      try { navigator.vibrate && navigator.vibrate(6); } catch (_) {}
+      _pcVibra(6); _pcSon('tac');
       _pcPinta();
     }));
     body.innerHTML = _pcState.tab === 'mis' ? _pcMisHtml() : (_pcState.tab === 'sug' ? _pcSugHtml() : _pcPlayHtml());
+    body.scrollTop = scroll;
     if (_pcState.tab === 'play' && !_pcState.playbook) _pcCargarPlaybook().then(() => { if ($('pcBody') && _pcState.tab === 'play') _pcPinta(); });
   }
 
-  // ── SECCIÓN 1 · MIS PROMOCIONES ──────────────────────────────────
+  // ── SECCIÓN 1 · LA VISTA FUSIONADA: ideas + activas + pasadas ─────
   function _pcMisHtml() {
     const lista = _promoState.lista || [];
     const vivas = [], pasadas = [];
     lista.forEach(p => (_promoEstado(p).k === 'activa' ? vivas : pasadas).push(p));
     const ord = (a, b) => String(b.actualizado || b.vigenciaDesde || '').localeCompare(String(a.actualizado || a.vigenciaDesde || ''));
     vivas.sort(ord); pasadas.sort(ord);
+    const ideas = _pcState.sug || [];
 
-    const btnNueva = `<button onclick="MOS.promoAbrirNueva()" class="pc-btn-nueva">＋ Nueva promoción</button>`;
-    let h = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">${btnNueva}
-      <button class="pc-mini" onclick="MOS._pcCargarPromos()" title="Refrescar">🔄</button></div>`;
+    let h = `<div class="pcx-barra">
+      <button onclick="MOS.promoAbrirNueva()" class="pc-btn-nueva">＋ Nueva promoción</button>
+      <button class="pc-mini" onclick="MOS._pcCargarPromos()" title="Refrescar mis promociones">🔄</button>
+      <button class="pc-mini" onclick="MOS._pcOtrasIdeas()" ${_pcState.cargando ? 'disabled' : ''} title="Otras ideas del radar">🔀 Otras ideas</button>
+    </div>`;
 
-    if (!lista.length) {
+    // ── ideas (aura especial) ──
+    if (_pcState.cargando && !ideas.length) {
+      h += _pcSecH('💡', 'Ideas de hoy', '', 'buscando en tus ventas, tu stock y tus vencimientos…')
+        + `<div class="pcx-grid"><div class="pc-skel"></div><div class="pc-skel"></div></div>`;
+    } else if (ideas.length) {
+      h += _pcSecH('💡', 'Ideas de hoy', ideas.length, 'calculadas con tus datos reales — ninguna se activa sola')
+        + `<div class="pcx-grid" id="pcxIdeas">${ideas.map(_pcCardIdea).join('')}</div>`;
+    }
+
+    // ── activas ──
+    h += `<div id="pcxAnclaActivas"></div>`
+      + _pcSecH('🟢', 'Activas ahora', vivas.length, vivas.length ? 'lo que el POS está aplicando en este momento' : '');
+    h += vivas.length
+      ? `<div class="pcx-grid" id="pcxActivas">${vivas.map(p => _pcCardPromo(p, false)).join('')}</div>`
+      : `<div class="pc-empty" style="padding:18px"><div style="font-size:12px;color:#94a3b8">Ninguna promoción activa ahora mismo.${ideas.length ? ' Mira las ideas de arriba: ya vienen con el precio calculado.' : ''}</div></div>`;
+
+    // ── pasadas (colapsadas) ──
+    if (pasadas.length) {
+      h += `<button class="pc-acc" onclick="MOS._pcTogglePasadas()">
+        <span>📁 Pasadas y pausadas · ${pasadas.length}</span><span style="color:#64748b">${_pcState.pasadas ? '▲' : '▼'}</span></button>`;
+      if (_pcState.pasadas) h += `<div class="pcx-grid" style="margin-top:8px">${pasadas.map(p => _pcCardPromo(p, true)).join('')}</div>`;
+    }
+
+    if (!lista.length && !ideas.length && !_pcState.cargando) {
       h += `<div class="pc-empty">
         <div style="font-size:30px">🎁</div>
         <div style="font-weight:700;color:#cbd5e1;margin-top:6px">Todavía no tienes promociones</div>
-        <div style="font-size:11.5px;color:#7c8db1;margin-top:4px;line-height:1.5">Empieza por la pestaña <b style="color:#a5b4fc">💡 Sugerencias del día</b>:
-        ahí el sistema ya calculó con tus datos qué conviene promocionar y a qué precio.</div>
-        <button class="pc-mini" style="margin-top:10px" onclick="MOS._pcIr('sug')">Ver las ideas de hoy →</button>
+        <div style="font-size:11.5px;color:#7c8db1;margin-top:4px;line-height:1.5">Cuando el radar encuentre algo que conviene mover, la idea aparece acá arriba con el precio ya calculado.</div>
       </div>`;
-      return h;
-    }
-    h += vivas.length
-      ? vivas.map(_pcPromoCard).join('')
-      : `<div class="pc-empty" style="padding:18px"><div style="font-size:12px;color:#94a3b8">Ninguna promoción activa ahora mismo.</div></div>`;
-
-    if (pasadas.length) {
-      h += `<button class="pc-acc" onclick="MOS._pcTogglePasadas()">
-        <span>📁 Pasadas · ${pasadas.length}</span><span style="color:#64748b">${_pcState.pasadas ? '▲' : '▼'}</span></button>`;
-      if (_pcState.pasadas) h += `<div style="margin-top:8px">${pasadas.map(p => _pcPromoCard(p, true)).join('')}</div>`;
     }
     return h;
   }
 
-  function _pcPromoCard(p, esPasada) {
-    const st = _promoEstado(p);
-    const idRef = p.idPromo || p.skuBase || '';
-    const esRemate = String(p.estrategia || '') === 'escalera' || String(p.estrategia || '') === 'remate';
-    return `<div class="pc-card" style="border-left:3px solid ${st.col}99;${esPasada ? 'opacity:.78' : ''}">
-      <div style="display:flex;gap:10px;align-items:flex-start">
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px">
-            ${_pcChip(st.txt, st.col)}
-            ${esRemate ? _pcChip('🔥 remate', '#f87171') : ''}
-            ${p.estrategia ? _pjChip(p.estrategia) : ''}
-          </div>
-          <div class="pc-card-name">${_escapeHtml(_promoNombre(p))}</div>
-          <div style="font-size:11.5px;color:#a5b4fc;margin-top:3px">${_escapeHtml(_promoResumen(p))}</div>
-          ${p.descripcion ? `<div style="font-size:10.5px;color:#7c8db1;margin-top:2px">“${_escapeHtml(p.descripcion)}”</div>` : ''}
-          <div style="font-size:10px;color:#64748b;margin-top:4px">${_escapeHtml(_promoVentana(p))}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex:none">
-          ${esPasada
-            ? `<button class="pc-mini pc-mini-ok" onclick="MOS.promoReactivar('${idRef}')">↻ Reactivar</button>`
-            : `<button type="button" class="toggle-sw ${p.activa ? 'on' : ''}" title="${p.activa ? 'Pausar' : 'Activar'}"
-                  onclick="MOS.promoToggleActiva('${idRef}')"><span class="toggle-sw-knob"></span></button>`}
-          <div style="display:flex;gap:5px">
-            <button class="pc-mini" onclick="MOS.promoEditar('${idRef}')" title="Editar">✎</button>
-            <button class="pc-mini pc-mini-bad" onclick="MOS.promoEliminarDirecto('${idRef}')" title="Eliminar">🗑</button>
-          </div>
-        </div>
-      </div>
+  function _pcSecH(ico, titulo, n, sub) {
+    return `<div class="pcx-sec">
+      <span class="pcx-sec-ico">${ico}</span>
+      <span class="pcx-sec-tit">${titulo}</span>
+      ${n ? `<span class="pcx-sec-n">${n}</span>` : ''}
+      ${sub ? `<span class="pcx-sec-sub">${_escapeHtml(sub)}</span>` : ''}
     </div>`;
   }
 
-  // ── SECCIÓN 2 · SUGERENCIAS DEL DÍA ──────────────────────────────
+  // ── CARD de promoción guardada ───────────────────────────────────
+  function _pcCardPromo(p, esPasada) {
+    const st = _promoEstado(p);
+    const idRef = p.idPromo || p.skuBase || '';
+    const d = _dealDePromo(p);
+    const fr = _dealFrase(d);
+    const esRemate = String(p.estrategia || '') === 'escalera' || String(p.estrategia || '') === 'remate';
+    return `<article class="pcx-card ${esPasada ? 'pcx-pasada' : ''}" data-pcid="${_escAttrJs(idRef)}"
+        style="--acc:${st.col}" onclick="MOS._pcDetalle('${_escAttrJs(idRef)}')">
+      <header class="pcx-chips">
+        ${_pcChip(st.txt, st.col)}
+        ${esRemate ? _pcChip('🔥 remate', '#f87171') : ''}
+        ${p.estrategia ? _pjChip(p.estrategia) : ''}
+      </header>
+      ${_pcProdsHtml(d.nombres, d.skus)}
+      <div class="pcx-deal">${_escapeHtml(fr.big)}</div>
+      ${fr.sub ? `<div class="pcx-deal-sub">${_escapeHtml(fr.sub)}</div>` : ''}
+      ${p.descripcion ? `<div class="pcx-cartel">🏷 ${_escapeHtml(p.descripcion)}</div>` : ''}
+      <footer class="pcx-foot">
+        <span class="pcx-fechas">${_escapeHtml(_promoVentana(p))}</span>
+        ${esPasada
+          ? `<button class="pc-mini pc-mini-ok" onclick="event.stopPropagation();MOS.promoReactivar('${_escAttrJs(idRef)}')">↻ Reactivar</button>`
+          : `<button type="button" class="toggle-sw ${p.activa ? 'on' : ''}" title="${p.activa ? 'Pausar' : 'Activar'}"
+                onclick="event.stopPropagation();MOS.promoToggleActiva('${_escAttrJs(idRef)}')"><span class="toggle-sw-knob"></span></button>`}
+      </footer>
+    </article>`;
+  }
+
+  // ── CARD de IDEA (mismo formato + aura) ──────────────────────────
+  function _pcCardIdea(s) {
+    const d = _dealDeSug(s);
+    const fr = _dealFrase(d);
+    const col = s.regla === 'REMATE' ? '#f87171' : (s.regla === 'POR_VENCER' ? '#fbbf24' : '#818cf8');
+    const activando = !!_pcState.activando[s.id];
+    return `<article class="pcx-card pcx-idea ${activando ? 'pcx-activando' : ''}" data-pcsug="${_escAttrJs(s.id)}"
+        style="--acc:${col}" onclick="MOS._pcSheet('${_escAttrJs(s.id)}')">
+      <span class="pcx-aura" aria-hidden="true"></span>
+      <header class="pcx-chips">
+        <span class="pc-chip pcx-badge-idea">💡 idea</span>
+        ${_pcChip(s.emoji + ' ' + s.etiqueta, col)}
+        ${_pjChip(s.estrategia)}
+        ${s.horaDesde ? _pcChip('⏰ ' + s.horaDesde + '–' + s.horaHasta, '#38bdf8') : ''}
+      </header>
+      ${_pcProdsHtml(d.nombres.length ? d.nombres : [s.descripcion || s.skuBase], d.skus.length ? d.skus : [s.skuBase])}
+      ${d.lider ? `<div class="pcx-ancla">⭐ Anclado a ${_escapeHtml(d.lider.nombre)}${d.lider.ventas != null ? ` (${_escapeHtml(String(d.lider.ventas))} salidas/30d)` : ''}</div>` : ''}
+      <div class="pcx-deal">${_escapeHtml(fr.big)}</div>
+      ${fr.sub ? `<div class="pcx-deal-sub">${_escapeHtml(fr.sub)}</div>` : ''}
+      <div class="pcx-porque">📊 ${_escapeHtml(s.porque || '')}</div>
+      <footer class="pcx-foot">
+        <span class="pcx-fechas">toca para ver la estrategia</span>
+        <span style="display:flex;gap:6px;align-items:center">
+          <button type="button" class="pc-mini pc-mini-bad" title="No me interesa"
+            onclick="event.stopPropagation();MOS.promoDescartarSug('${_escAttrJs(s.id)}')">✕</button>
+          <button type="button" class="toggle-sw pcx-tog-idea" title="Activar esta idea"
+            onclick="event.stopPropagation();MOS._pcSheet('${_escAttrJs(s.id)}')"><span class="toggle-sw-knob"></span></button>
+        </span>
+      </footer>
+    </article>`;
+  }
+
+  // ── SECCIÓN 2 · IDEAS (misma card, sola) ─────────────────────────
   function _pcSugHtml() {
-    let h = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <div style="flex:1;font-size:11px;color:#7c8db1;line-height:1.5">Calculadas con tus ventas de 30 días, tu stock y tus vencimientos.
-      Ninguna se aplica sola: tú confirmas cada una.</div>
+    let h = `<div class="pcx-barra">
+      <div style="flex:1;font-size:11px;color:#7c8db1;line-height:1.5">Calculadas con tus ventas de 30 días, tu stock y tus vencimientos. Ninguna se aplica sola: tú confirmas cada una.</div>
       <button class="pc-mini" onclick="MOS._pcOtrasIdeas()" ${_pcState.cargando ? 'disabled' : ''}>🔀 Otras ideas</button>
     </div>`;
-    if (_pcState.cargando) return h + `<div class="pc-skel"></div><div class="pc-skel"></div><div class="pc-skel"></div>`;
+    if (_pcState.cargando) return h + `<div class="pcx-grid"><div class="pc-skel"></div><div class="pc-skel"></div><div class="pc-skel"></div></div>`;
     if (_pcState.err) return h + `<div class="pc-empty"><div style="color:#f87171;font-size:12px">⚠ ${_escapeHtml(_pcState.err)}</div>
       <button class="pc-mini" style="margin-top:8px" onclick="MOS._pcCargarSugerencias()">Reintentar</button></div>`;
     if (!_pcState.sug.length) return h + `<div class="pc-empty"><div style="font-size:30px">✨</div>
       <div style="font-weight:700;color:#cbd5e1;margin-top:6px">Sin ideas nuevas ahora</div>
       <div style="font-size:11.5px;color:#7c8db1;margin-top:4px">Ya cubriste lo que el radar detectó (o lo descartaste). Vuelve mañana o crea una desde el playbook.</div></div>`;
-    return h + _pcState.sug.map(_pcSugCard).join('');
-  }
-
-  function _pcSugCard(s) {
-    const dto = parseFloat(s.descuentoPct) || 0;
-    const mg  = (s.margenResultante == null) ? null : parseFloat(s.margenResultante);
-    const mgCol = (s.perdida) ? '#f87171' : (mg == null ? '#94a3b8' : (mg >= 20 ? '#34d399' : (mg >= 10 ? '#fbbf24' : '#fb923c')));
-    const mgTxt = s.perdida ? '⚠ vende a pérdida'
-      : (mg == null ? 'margen no verificable (sin costo)' : `margen ${mg}% · S/ ${_money(s.margenSoles).toFixed(2)}`);
-    const totalDist = (s.tipo === 'GRUPO' || s.tipo === 'COMBO');
-    const abierto = !!_pcState.why[s.id];
-    return `<div class="pc-card pc-sug" style="border-left:3px solid ${s.regla === 'REMATE' ? '#f87171' : (s.regla === 'POR_VENCER' ? '#fbbf24' : '#6366f1')}aa">
-      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">
-        ${_pcChip(s.emoji + ' ' + s.etiqueta, s.regla === 'REMATE' ? '#f87171' : (s.regla === 'POR_VENCER' ? '#fbbf24' : '#818cf8'))}
-        ${_pjChip(s.estrategia)}
-        ${s.horaDesde ? _pcChip('⏰ ' + s.horaDesde + '–' + s.horaHasta, '#38bdf8') : ''}
-      </div>
-      <div class="pc-card-name">${_escapeHtml(s.descripcion || s.skuBase)}</div>
-      <div style="font-size:10.5px;color:#94a3b8;margin-top:4px;line-height:1.45">📊 ${_escapeHtml(s.porque || '')}</div>
-
-      <div class="pc-precio">
-        <div>
-          <div class="pc-precio-lbl">precio normal</div>
-          <div class="pc-precio-old">S/ ${_money(s.precioNormal).toFixed(2)}</div>
-        </div>
-        <div style="color:#475569;font-size:15px">→</div>
-        <div>
-          <div class="pc-precio-lbl">${totalDist ? (s.tipo === 'COMBO' ? 'precio del combo' : 'precio del pack') : 'precio promo'}</div>
-          <div class="pc-precio-new">S/ ${_money(totalDist ? s.precioSugerido : s.precioPromo).toFixed(2)}</div>
-          ${totalDist ? `<div class="pc-precio-lbl">c/u S/ ${_money(s.precioPromo).toFixed(2)}</div>` : ''}
-        </div>
-        <div style="flex:1;text-align:right">
-          ${_pcChip('−' + dto + '%' + (s.tipo === 'COMBO' ? ' en el combo' : (s.tipo === 'GRUPO' ? ' en el pack' : '')), '#a78bfa')}
-          <div style="margin-top:4px">${_pcChip(mgTxt, mgCol)}</div>
-        </div>
-      </div>
-
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">
-        <button class="pc-mini pc-mini-ok" onclick="MOS.promoDesdeSugerencia('${s.id}')">✓ Crear esta promo</button>
-        <button class="pc-mini" onclick="MOS._pcWhy('${s.id}')">${abierto ? '▲ Ocultar' : '💡 ¿Por qué?'}</button>
-        <button class="pc-mini pc-mini-bad" onclick="MOS.promoDescartarSug('${s.id}')" title="No me interesa">✕</button>
-      </div>
-      ${abierto ? `<div class="pc-why">${_escapeHtml(s.porqueDetalle || '')}</div>` : ''}
-    </div>`;
+    return h + `<div class="pcx-grid" id="pcxIdeas">${_pcState.sug.map(_pcCardIdea).join('')}</div>`;
   }
 
   // ── SECCIÓN 3 · PLAYBOOK ─────────────────────────────────────────
@@ -2646,25 +2834,272 @@ const MOS = (() => {
         </div>`).join('');
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // [667] DETALLE de una promoción — overlay propio SIEMPRE encima del centro
+  // ════════════════════════════════════════════════════════════════
+  function _pcCerrarDetalle() { $('promoDetalle')?.remove(); }
+
+  function _pcDetalle(idRef) {
+    const p = (_promoState.lista || []).find(x => (x.idPromo === idRef) || (x.skuBase === idRef));
+    if (!p) return;
+    _pcSon('tac'); _pcVibra(8);
+    $('promoDetalle')?.remove();
+    const st = _promoEstado(p);
+    const d  = _dealDePromo(p);
+    const fr = _dealFrase(d);
+    const j  = _PJ(p.estrategia);
+    const esPasada = st.k !== 'activa';
+
+    // margen real de la promo (si hay costo cargado)
+    let costo = 0, faltaCosto = false;
+    if (d.tipo === 'COMBO') {
+      (p.items || []).forEach(i => { const c = _pcPc(i.skuBase); if (c > 0) costo += c * (parseFloat(i.cantidad) || 1); else faltaCosto = true; });
+    } else {
+      const c = _pcPc(p.skuBase);
+      if (c > 0) costo = c * (d.cantMin || 1); else faltaCosto = true;
+    }
+    const mg = (!faltaCosto && costo > 0 && d.totalPromo > 0) ? ((d.totalPromo - costo) / d.totalPromo) * 100 : null;
+    const mgCol = mg == null ? '#94a3b8' : (mg < 0 ? '#f87171' : (mg >= 20 ? '#34d399' : (mg >= 10 ? '#fbbf24' : '#fb923c')));
+    const mgTxt = mg == null ? '⚠ sin costo cargado: el margen no es verificable'
+      : (mg < 0 ? `⚠ vendes a pérdida: ${_S(d.totalPromo - costo)}` : `te queda ${mg.toFixed(1)}% · ${_S(d.totalPromo - costo)}`);
+
+    const div = document.createElement('div');
+    div.id = 'promoDetalle'; div.className = 'modal-backdrop open pcx-det-back';
+    div.innerHTML = `<div class="modal-box pcx-det" style="max-width:520px;max-height:90vh;display:flex;flex-direction:column" onclick="event.stopPropagation()">
+      <div class="px-5 py-4 flex items-center gap-3" style="border-bottom:1px solid #1e293b;background:linear-gradient(120deg,${st.col}22,transparent 70%)">
+        <span style="font-size:22px">🎯</span>
+        <div class="flex-1 min-w-0">
+          <h2 class="font-bold text-base text-white">Detalle de la promoción</h2>
+          <div style="font-size:10.5px;color:${st.col}">${st.txt}${p.estrategia && j ? ` · ${j.ico} ${_escapeHtml(j.nom)}` : ''}</div>
+        </div>
+        <button onclick="MOS._pcCerrarDetalle()" class="modal-close-x">×</button>
+      </div>
+      <div class="p-4 overflow-y-auto flex-1" style="display:flex;flex-direction:column;gap:12px">
+
+        <div class="pcx-det-deal">
+          <div class="pcx-det-deal-big">${_escapeHtml(fr.big)}</div>
+          ${fr.sub ? `<div class="pcx-det-deal-sub">${_escapeHtml(fr.sub)}</div>` : ''}
+          ${p.descripcion ? `<div class="pcx-cartel" style="margin-top:8px">🏷 En el cartel: ${_escapeHtml(p.descripcion)}</div>` : ''}
+        </div>
+
+        <div>
+          <div class="pcx-det-h">Producto${d.nombres.length > 1 ? 's' : ''}</div>
+          ${_pcProdsHtml(d.nombres, d.skus)}
+        </div>
+
+        <div>
+          <div class="pcx-det-h">Cuándo corre</div>
+          <div class="pcx-det-txt">${_escapeHtml(_promoVentana(p))}</div>
+        </div>
+
+        <div>
+          <div class="pcx-det-h">Qué te deja</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            ${_pcChip(mgTxt, mgCol)}
+            ${d.totalNormal > 0 ? _pcChip(`normal ${_S(d.totalNormal)} → promo ${_S(d.totalPromo)}`, '#a78bfa') : ''}
+            ${fr.ahorro > 0 ? _pcChip(`el cliente ahorra ${_S(fr.ahorro)}`, '#38bdf8') : ''}
+          </div>
+        </div>
+
+        ${j ? `<div>
+          <div class="pcx-det-h">Por qué esta jugada</div>
+          <div class="pcx-det-txt">${j.ico} <b style="color:#c7d2fe">${_escapeHtml(j.nom)}</b> — ${_escapeHtml(j.cuando)}</div>
+        </div>` : ''}
+      </div>
+      <div class="flex gap-2 px-5 py-3 flex-shrink-0" style="border-top:1px solid #1e293b">
+        <button class="pc-mini pc-mini-bad" onclick="MOS._pcCerrarDetalle();MOS.promoEliminarDirecto('${_escAttrJs(idRef)}')">🗑 Eliminar</button>
+        ${esPasada
+          ? `<button class="pc-mini pc-mini-ok" style="flex:1" onclick="MOS._pcCerrarDetalle();MOS.promoReactivar('${_escAttrJs(idRef)}')">↻ Reactivar</button>`
+          : `<button class="pc-mini" style="flex:1" onclick="MOS.promoToggleActiva('${_escAttrJs(idRef)}');MOS._pcCerrarDetalle()">${p.activa ? '⏸ Pausar' : '▶ Reanudar'}</button>`}
+        <button class="pc-btn-nueva" style="flex:1" onclick="MOS._pcCerrarDetalle();MOS.promoEditar('${_escAttrJs(idRef)}')">✎ Editar</button>
+      </div>
+    </div>`;
+    div.addEventListener('click', e => { if (e.target === div) div.remove(); });
+    document.body.appendChild(div);
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // [667] SHEET de una IDEA — explica la estrategia y su porqué ANTES de activar
+  // ════════════════════════════════════════════════════════════════
+  function _pcCerrarSheet() {
+    const el = $('pcSheet');
+    if (!el) return;
+    el.classList.remove('abierto');
+    setTimeout(() => el.remove(), _pcReduce() ? 0 : 220);
+  }
+
+  function _pcSheet(id) {
+    const s = (_pcState.sug || []).find(x => x.id === id);
+    if (!s) return;
+    _pcSon('tac'); _pcVibra(8);
+    $('pcSheet')?.remove();
+    const d  = _dealDeSug(s);
+    const fr = _dealFrase(d);
+    const j  = _PJ(s.estrategia);
+    const mg = (s.margenResultante == null) ? null : parseFloat(s.margenResultante);
+    const mgCol = s.perdida ? '#f87171' : (mg == null ? '#94a3b8' : (mg >= 20 ? '#34d399' : (mg >= 10 ? '#fbbf24' : '#fb923c')));
+    const mgTxt = s.perdida ? '⚠ vende a pérdida'
+      : (mg == null ? '⚠ sin costo cargado: el margen no es verificable' : `te queda ${mg}% · ${_S(s.margenSoles)}`);
+    const datos = [];
+    if (s.ventas30 != null)      datos.push(['salidas 30d', _money(s.ventas30)]);
+    if (s.stock != null)         datos.push(['stock', _money(s.stock)]);
+    if (s.coberturaDias != null) datos.push(['cobertura', s.coberturaDias + ' días']);
+    if (s.margenActual != null)  datos.push(['margen hoy', s.margenActual + '%']);
+    if (s.mesesVenc != null)     datos.push(['vence en', s.mesesVenc + ' meses']);
+
+    const div = document.createElement('div');
+    div.id = 'pcSheet'; div.className = 'pcx-sheet-back';
+    div.innerHTML = `<div class="pcx-sheet" onclick="event.stopPropagation()">
+      <div class="pcx-sheet-grip"></div>
+      <div class="pcx-sheet-head">
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">
+          <span class="pc-chip pcx-badge-idea">💡 idea</span>
+          ${_pcChip(s.emoji + ' ' + s.etiqueta, s.regla === 'REMATE' ? '#f87171' : '#818cf8')}
+          ${_pjChip(s.estrategia)}
+        </div>
+        <div class="pcx-sheet-tit">${_escapeHtml(j ? j.nom : 'La jugada')}</div>
+      </div>
+      <div class="pcx-sheet-body">
+        ${_pcProdsHtml(d.nombres.length ? d.nombres : [s.descripcion || s.skuBase], d.skus.length ? d.skus : [s.skuBase])}
+        ${d.lider ? `<div class="pcx-ancla" style="margin-top:8px">⭐ Anclado a ${_escapeHtml(d.lider.nombre)}${d.lider.ventas != null ? ` (${_escapeHtml(String(d.lider.ventas))} salidas/30d)` : ''}</div>` : ''}
+
+        <div class="pcx-det-deal" style="margin-top:10px">
+          <div class="pcx-det-deal-big">${_escapeHtml(fr.big)}</div>
+          ${fr.sub ? `<div class="pcx-det-deal-sub">${_escapeHtml(fr.sub)}</div>` : ''}
+        </div>
+
+        <div class="pcx-det-h" style="margin-top:12px">Por qué esta jugada</div>
+        <div class="pcx-det-txt">${_escapeHtml(s.porqueDetalle || s.porque || '')}</div>
+
+        ${datos.length ? `<div class="pcx-det-h" style="margin-top:12px">Tus números</div>
+        <div class="pcx-datos">${datos.map(([k, v]) => `<div class="pcx-dato"><span>${k}</span><b>${_escapeHtml(String(v))}</b></div>`).join('')}</div>` : ''}
+
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+          ${_pcChip(mgTxt, mgCol)}
+          ${s.horaDesde ? _pcChip('⏰ solo ' + s.horaDesde + '–' + s.horaHasta, '#38bdf8') : ''}
+          ${_pcChip('vigencia ' + (s.regla === 'REMATE' ? '14' : '30') + ' días', '#a78bfa')}
+        </div>
+      </div>
+      <div class="pcx-sheet-pie">
+        <button class="pc-mini pc-mini-bad" onclick="MOS._pcCerrarSheet();MOS.promoDescartarSug('${_escAttrJs(s.id)}')">✕ No me interesa</button>
+        <button class="pc-mini" onclick="MOS._pcCerrarSheet();MOS.promoDesdeSugerencia('${_escAttrJs(s.id)}')">✎ Ajustar antes</button>
+        <button class="pc-btn-nueva pcx-btn-activar" onclick="MOS._pcActivarIdea('${_escAttrJs(s.id)}')">✓ Activar promo</button>
+      </div>
+    </div>`;
+    div.addEventListener('click', e => { if (e.target === div) _pcCerrarSheet(); });
+    document.body.appendChild(div);
+    requestAnimationFrame(() => div.classList.add('abierto'));
+  }
+
+  // idea → promoción real (sin pasar por el form: el sheet ya fue la confirmación)
+  function _pcMasDias(dias) {
+    const h = new Date(Date.now() + (dias * 86400000));
+    return h.getFullYear() + '-' + String(h.getMonth() + 1).padStart(2, '0') + '-' + String(h.getDate()).padStart(2, '0');
+  }
+
+  function _pcParamsDeSug(s) {
+    const tipo = String(s.tipo || '').toUpperCase();
+    const base = {
+      tipo,
+      descripcion:   s.descripcionSugerida || '',
+      vigenciaDesde: _hoyISO(),
+      vigenciaHasta: _pcMasDias(s.regla === 'REMATE' ? 14 : 30),
+      activa:        true,
+      horaDesde:     s.horaDesde || '',
+      horaHasta:     s.horaHasta || '',
+      estrategia:    s.estrategia || ''
+    };
+    if (tipo === 'COMBO') {
+      base.items = (s.items || []).map(i => ({ skuBase: i.skuBase, cantidad: parseInt(i.cantidad, 10) || 1, descripcion: i.descripcion }));
+      base.valorPromo = _money(s.precioSugerido);
+      base.cantMin = 1;
+    } else if (tipo === 'GRUPO') {
+      base.skuBase = s.skuBase;
+      base.cantMin = Math.max(1, parseFloat(s.cantMin) || 2);
+      base.valorPromo = _money(s.precioSugerido);
+      base.valorModo = 'TOTAL';
+    } else {
+      base.skuBase = s.skuBase;
+      base.cantMin = Math.max(1, parseFloat(s.cantMin) || 1);
+      base.valorPromo = _money(s.valorPromo);
+      base.valorModo = 'UNITARIO';
+    }
+    return base;
+  }
+
+  async function _pcActivarIdea(id) {
+    const s = (_pcState.sug || []).find(x => x.id === id);
+    if (!s) return;
+    if (_pcState.activando[id]) return;
+    _pcState.activando[id] = true;
+
+    const params = _pcParamsDeSug(s);
+    const tmpId  = 'PROMO_TMP_' + Date.now();
+    let valorLocal = params.valorPromo || 0;
+    if (params.tipo === 'GRUPO' && params.valorModo === 'TOTAL' && params.cantMin > 0) valorLocal = _money(valorLocal / params.cantMin);
+    const local = {
+      idPromo: tmpId, skuBase: params.skuBase || '', tipo: params.tipo,
+      cantMin: params.cantMin || 0, valorPromo: valorLocal, valorModo: params.valorModo || 'UNITARIO',
+      items: params.items || [], descripcion: params.descripcion || '',
+      vigenciaDesde: params.vigenciaDesde, vigenciaHasta: params.vigenciaHasta,
+      activa: true, horaDesde: params.horaDesde || null, horaHasta: params.horaHasta || null,
+      estrategia: params.estrategia || '',
+      actualizado: new Date().toISOString().slice(0, 16).replace('T', ' '), notas: '', _tmp: true
+    };
+
+    // coreografía: toggle verde → sonido → confeti → la card se muda a Activas
+    const card = document.querySelector(`[data-pcsug="${(s.id || '').replace(/"/g, '')}"]`);
+    const tog  = card ? card.querySelector('.pcx-tog-idea') : null;
+    if (tog) tog.classList.add('on');
+    _pcCerrarSheet();
+    _pcSon('ok'); _pcVibra(24);
+    _pcConfetti(tog || card);
+
+    const rematar = () => {
+      _pcState.sug = (_pcState.sug || []).filter(x => x.id !== id);
+      delete _pcState.activando[id];
+      _promoState.lista.unshift(local);
+      _promoSaveCache(_promoState.lista);
+      _pcPinta();
+      const nueva = document.querySelector(`[data-pcid="${String(tmpId).replace(/"/g, '')}"]`);
+      if (nueva && !_pcReduce()) nueva.classList.add('pcx-aterriza');
+      toast('Promoción activada ✓ ya corre en el POS', 'ok');
+    };
+    if (card) _pcMudanza(card, 'pcxAnclaActivas', rematar); else rematar();
+
+    try {
+      const res = await API.post('crearPromocion', params);
+      if (res && res.idPromo) {
+        const item = _promoState.lista.find(p => p.idPromo === tmpId);
+        if (item) { item.idPromo = res.idPromo; item._tmp = false; _promoSaveCache(_promoState.lista); }
+      }
+      _pcCargarPromos();
+    } catch (e) {
+      _promoState.lista = _promoState.lista.filter(p => p.idPromo !== tmpId);
+      _promoSaveCache(_promoState.lista);
+      _pcState.sug.unshift(s);
+      _pcPinta();
+      toast('No se pudo activar: ' + e.message, 'error');
+    }
+  }
+
   // ── acciones del overlay ─────────────────────────────────────────
   function _pcIr(tab) { _pcState.tab = tab; _pcPinta(); }
-  function _pcTogglePasadas() { _pcState.pasadas = !_pcState.pasadas; _pcPinta(); }
+  function _pcTogglePasadas() { _pcState.pasadas = !_pcState.pasadas; _pcSon('tac'); _pcPinta(); }
   function _pcWhy(id) { _pcState.why[id] = !_pcState.why[id]; _pcPinta(); }
-  function _pcOtrasIdeas() { _pcCargarSugerencias('N' + Date.now()); }
+  function _pcOtrasIdeas() { _pcSon('tac'); _pcCargarSugerencias('N' + Date.now()); }
 
   function pcUsarJugada(k) {
     const j = _PJ(k);
     if (!j) return;
     if (j.guia) { toast('🛡 Es una regla de defensa: el top-seller nunca entra a promo. El radar ya lo excluye solo.', 'ok'); return; }
-    $('promoCentro')?.remove();
     promoAbrirNueva(k);
   }
 
-  // ✓ Crear esta promo → precarga el form con la sugerencia (el dueño ajusta y confirma)
+  // ✓ Ajustar antes → precarga el form con la sugerencia (el dueño ajusta y confirma)
   function promoDesdeSugerencia(id) {
     const s = (_pcState.sug || []).find(x => x.id === id);
     if (!s) return;
-    $('promoCentro')?.remove();
     promoAbrirNueva(s.estrategia, s);
   }
 
@@ -2672,6 +3107,7 @@ const MOS = (() => {
     const s = (_pcState.sug || []).find(x => x.id === id);
     if (!s) return;
     _pcState.sug = _pcState.sug.filter(x => x.id !== id);
+    _pcSon('tac');
     _pcPinta();
     toast('Idea descartada — no te la vuelvo a proponer por 30 días', 'ok');
     try { await API.post('promoDescartar', { skuBase: s.skuBase, regla: s.regla, por: 'MOS' }); }
@@ -2682,7 +3118,6 @@ const MOS = (() => {
   function promoReactivar(idRef) {
     const p = (_promoState.lista || []).find(x => (x.idPromo === idRef) || (x.skuBase === idRef));
     if (!p) return;
-    $('promoCentro')?.remove();
     promoEditar(idRef);
     promoPresetVig(30);
     const t = $('promoTogActiva'); if (t) t.classList.add('on');
@@ -39955,8 +40390,138 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // [667] EL PISO — nunca poner el % a ciegas. Panel SIEMPRE visible junto al
+  //   campo: costo · precio actual · margen actual; y EN VIVO al tipear:
+  //   precio resultante → margen resultante con semáforo + piso y % máximo.
+  //   Sin costo cargado → aviso ámbar + carga rápida del costo ahí mismo.
+  // ════════════════════════════════════════════════════════════════
+  const _PROMO_MG_MIN = 12;   // margen mínimo sano (misma regla que el radar del SQL 665)
+
+  function _promoSemaforo(mg, perdida) {
+    if (perdida) return { col: '#f87171', ico: '🔴', txt: 'PÉRDIDA' };
+    if (mg == null) return { col: '#94a3b8', ico: '⚪', txt: 'sin dato' };
+    if (mg >= 20) return { col: '#34d399', ico: '🟢', txt: 'sano' };
+    if (mg >= _PROMO_MG_MIN) return { col: '#fbbf24', ico: '🟡', txt: 'fino' };
+    if (mg > 0) return { col: '#fb923c', ico: '🟠', txt: 'muy fino' };
+    return { col: '#f87171', ico: '🔴', txt: 'PÉRDIDA' };
+  }
+
+  // el % que todavía respeta el margen mínimo (piso = costo · 1.12)
+  function _promoPctMax(pv, pc) {
+    if (!(pv > 0) || !(pc > 0)) return null;
+    const pisoSano = pc * (1 + _PROMO_MG_MIN / 100);
+    if (pisoSano >= pv) return 0;
+    return Math.floor((1 - pisoSano / pv) * 100);
+  }
+
+  function promoPisoPinta() {
+    const box = $('promoPisoPanel');
+    if (!box) return;
+    const tipo = document.querySelector('input[name="promoTipo"]:checked')?.value || 'GRUPO';
+    if (tipo === 'COMBO') { box.innerHTML = ''; box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+
+    const p = _promoProdSel();
+    if (!p) {
+      box.innerHTML = `<div class="promo-piso promo-piso-vacio">🧮 Elige el producto y acá te muestro su costo, tu margen de hoy y hasta dónde puedes bajar sin perder plata.</div>`;
+      return;
+    }
+    const pv = parseFloat(p.precioVenta) || 0;
+    const pc = parseFloat(p.precioCosto) || 0;
+    const sku = p.skuBase || p.idProducto || '';
+    const mgHoy = (pv > 0 && pc > 0) ? ((pv - pc) / pv) * 100 : null;
+    const n = Math.max(1, parseFloat(($('promoCantMin') || {}).value) || 1);
+    const val = parseFloat(($('promoValor') || {}).value) || 0;
+
+    // precio unitario que resulta de lo tipeado
+    let unit = 0;
+    if (tipo === 'PORCENTAJE') unit = pv > 0 ? pv * (1 - val / 100) : 0;
+    else {
+      const esTotal = $('promoModoTotal')?.classList.contains('active');
+      unit = esTotal ? (n > 0 ? val / n : 0) : val;
+    }
+    const mgRes = (unit > 0 && pc > 0) ? ((unit - pc) / unit) * 100 : null;
+    const mgSol = (unit > 0 && pc > 0) ? _money(unit - pc) : null;
+    const perdida = pc > 0 && unit > 0 && unit < pc;
+    const sem = _promoSemaforo(mgRes, perdida);
+    const pctMax = _promoPctMax(pv, pc);
+    const pctActual = pv > 0 && unit > 0 ? Math.max(0, (1 - unit / pv) * 100) : 0;
+
+    const filas = `<div class="pp-grid">
+      <div class="pp-c"><span>tu costo</span><b>${pc > 0 ? _S(pc) : '—'}</b></div>
+      <div class="pp-c"><span>precio actual</span><b>${_S(pv)}</b></div>
+      <div class="pp-c"><span>margen hoy</span><b style="color:${mgHoy == null ? '#94a3b8' : (mgHoy >= 20 ? '#34d399' : '#fbbf24')}">${mgHoy == null ? '—' : mgHoy.toFixed(1) + '%'}</b></div>
+    </div>`;
+
+    const slider = (tipo === 'PORCENTAJE')
+      ? `<div class="pp-slider">
+           <input id="promoPctSlider" type="range" min="0" max="50" step="1" value="${Math.round(Math.min(50, val || 0))}"
+             oninput="MOS.promoPctSlider(this.value)" aria-label="Porcentaje de descuento">
+           <div class="pp-slider-lbl"><span>0%</span><span>${pctMax != null ? 'máx sano ' + pctMax + '%' : ''}</span><span>50%</span></div>
+         </div>` : '';
+
+    const vivo = (unit > 0)
+      ? `<div class="pp-vivo" style="--sem:${sem.col}">
+           <div class="pp-vivo-l"><span>c/u sale</span><b>${_S(unit)}</b></div>
+           <span class="pp-flecha">→</span>
+           <div class="pp-vivo-l"><span>te queda</span><b style="color:${sem.col}">${mgRes == null ? 'sin costo' : mgRes.toFixed(1) + '% · ' + _S(mgSol)}</b></div>
+           <span class="pp-sem" style="background:${sem.col}22;color:${sem.col};border-color:${sem.col}66">${sem.ico} ${sem.txt}</span>
+         </div>`
+      : `<div class="pp-vivo pp-vivo-off">Escribe el valor y acá aparece cuánto te queda por unidad.</div>`;
+
+    const piso = pc > 0
+      ? `<div class="pp-piso">🧱 piso: ${_S(pc)} (tu costo) · % máximo recomendado: <b style="color:#fbbf24">${pctMax != null ? pctMax + '%' : '—'}</b> <span style="color:#64748b">(deja ${_PROMO_MG_MIN}% de margen)</span>${pctActual > 0 ? ` · vas en <b style="color:${sem.col}">${pctActual.toFixed(0)}%</b>` : ''}</div>`
+      : `<div class="pp-sincosto">
+           <div>⚠ sin costo cargado: vas a ciegas. No puedo decirte dónde está tu piso.</div>
+           <div id="promoCostoRapido" class="hidden" style="margin-top:7px;display:flex;gap:6px;align-items:center">
+             <input id="promoCostoInput" type="number" step="0.01" min="0" inputmode="decimal" class="inp" style="flex:1;padding:6px 9px;font-size:12px" placeholder="costo con IGV">
+             <button type="button" class="pc-mini pc-mini-ok" onclick="MOS.promoGuardarCostoRapido('${_escAttrJs(sku)}')">Guardar</button>
+           </div>
+           <button type="button" class="pc-mini" style="margin-top:7px" onclick="MOS.promoAbrirCargarCosto()">💲 Cargar el costo ahora</button>
+         </div>`;
+
+    box.innerHTML = `<div class="promo-piso ${perdida ? 'bad' : ''}">
+      <div class="pp-h">🧮 Tu piso y tu margen <span>· ${_escapeHtml(p.descripcion || sku)}</span></div>
+      ${filas}${slider}${vivo}${piso}
+    </div>`;
+  }
+
+  // slider 0-50% sincronizado con el input de %
+  function promoPctSlider(v) {
+    const el = $('promoValor');
+    if (!el) return;
+    el.value = Math.max(0, parseInt(v, 10) || 0);
+    promoActualizarEjemplo();
+    promoRecalcMargen();
+  }
+
+  function promoAbrirCargarCosto() {
+    $('promoCostoRapido')?.classList.remove('hidden');
+    setTimeout(() => { try { $('promoCostoInput')?.focus(); } catch (_) {} }, 30);
+  }
+
+  async function promoGuardarCostoRapido(sku) {
+    const costo = parseFloat(($('promoCostoInput') || {}).value);
+    if (!costo || costo <= 0) { toast('Escribe un costo válido', 'error'); return; }
+    const prod = _pcProd(sku);
+    const previo = prod ? prod.precioCosto : null;
+    if (prod) prod.precioCosto = costo;   // optimista: el panel ya deja de estar a ciegas
+    promoPisoPinta(); promoRecalcMargen();
+    try {
+      await API.post('actualizarCostoPorSku', { sku, precioCosto: costo });
+      toast('Costo cargado ✓ ahora sí ves tu piso', 'ok');
+      try { _opsBeep && _opsBeep('ok'); } catch (_) {}
+    } catch (e) {
+      if (prod) prod.precioCosto = previo;
+      promoPisoPinta(); promoRecalcMargen();
+      toast('No se pudo guardar el costo: ' + e.message, 'error');
+    }
+  }
+
   // Panel de margen en vivo: precio normal → precio promo → margen % y en S/
   function promoRecalcMargen() {
+    promoPisoPinta();
     const box = $('promoMargenBox');
     if (!box) return;
     const tipo = document.querySelector('input[name="promoTipo"]:checked')?.value;
@@ -40120,6 +40685,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     promoPresetHora('todo');
     promoPresetVig(30);
     promoPintaEstrategias();
+    promoPisoPinta();   // [667] panel del piso visible desde el primer segundo
   }
 
   function promoEditar(idRef) {
@@ -40218,6 +40784,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   function promoActualizarEjemplo() {
     const tipo = document.querySelector('input[name="promoTipo"]:checked')?.value;
+    promoPisoPinta();   // [667] el piso se pinta SIEMPRE, aunque falten datos
     const ej = $('promoEjemplo');
     if (!ej) return;
     if (tipo === 'COMBO') {
@@ -46345,8 +46912,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _pnCheckDuplicadoCodigo, _pnRecalcularMargen, _pnPrellenaEquiv,
     pnToggleDuplicar, pnBuscarParaDuplicar, pnSeleccionarParaDuplicar,
     loadPromociones, promoNuevoForm, promoEditar, promoVolverLista, promoToggleActiva, _promoForzarRefresh,
-    // [666] centro de promociones unificado
+    // [666] centro de promociones unificado · [667] cards v2, detalle y sheet de ideas
     _pcCargarPromos, _pcCargarSugerencias, _pcIr, _pcTogglePasadas, _pcWhy, _pcOtrasIdeas,
+    _pcDetalle, _pcCerrarDetalle, _pcSheet, _pcCerrarSheet, _pcActivarIdea,
+    promoPisoPinta, promoPctSlider, promoAbrirCargarCosto, promoGuardarCostoRapido,
     pcUsarJugada, promoDesdeSugerencia, promoDescartarSug, promoReactivar, promoEliminarDirecto,
     promoAbrirNueva, promoSetEstrategia, promoPintaEstrategias, promoVerJugadas,
     promoPresetVig, promoPresetHora, promoRecalcMargen, promoSugerirValor, promoPrefill,

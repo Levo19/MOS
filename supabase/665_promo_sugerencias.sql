@@ -247,7 +247,7 @@ begin
            (case when x.l_sku is not null then 'TOTAL' else 'UNITARIO' end)::text,
            case when x.l_sku is not null then jsonb_build_array(
                 jsonb_build_object('skuBase', x.sku_base, 'cantidad', 1, 'descripcion', x.descripcion),
-                jsonb_build_object('skuBase', x.l_sku,   'cantidad', 1, 'descripcion', x.l_desc))
+                jsonb_build_object('skuBase', x.l_sku,   'cantidad', 1, 'descripcion', x.l_desc, 'esLider', true, 'ventas30', round(x.l_q30,0), 'precioVenta', round(x.l_pv,2)))
                 else null end,
            x.l_pc, null::text, null::text,
            case when x.l_sku is not null
@@ -256,7 +256,7 @@ begin
            (case when x.q30 <= 0 then 'Sin una sola venta en 30 días'
                  else 'Solo ' || to_char(x.q30,'FM999990.##') || ' vendido en 30 días' end ||
             ' · ' || to_char(x.stock,'FM999999990.##') || ' en stock parado' ||
-            case when x.l_sku is not null then ' · lo anclamos al líder de "' || x.subcat || '"' else '' end)::text,
+            case when x.l_sku is not null then ' · lo anclamos a ' || x.l_desc || ' (' || to_char(x.l_q30,'FM999990') || ' salidas/30d, líder de "' || x.subcat || '")' else '' end)::text,
            (case when x.l_sku is not null
                  then 'Lo colgué de ' || x.l_desc || ' (el líder de "' || x.subcat || '", ' ||
                       to_char(x.l_q30,'FM999990') || ' vendidos/30d) porque solo no rota (' ||
@@ -439,6 +439,10 @@ begin
       'cantMin',       e.cant_min,
       'valorModo',     e.valor_modo,
       'items',         e.items_j,
+      'lider',         (e.items_j->1->>'descripcion'),
+      'liderSku',      (e.items_j->1->>'skuBase'),
+      'liderVentas',   case when e.items_j is not null then (e.items_j->1->>'ventas30')::numeric end,
+      'liderPrecio',   case when e.items_j is not null then (e.items_j->1->>'precioVenta')::numeric end,
       'horaDesde',     e.hora_d,
       'horaHasta',     e.hora_h,
       'precioNormal',        round(e.pv, 2),
