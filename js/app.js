@@ -2521,9 +2521,15 @@ const MOS = (() => {
     if (!d) return { big: '—', sub: '', ahorro: 0 };
     const ahorro = Math.max(0, _money(d.totalNormal - d.totalPromo));
     if (d.tipo === 'COMBO') {
-      const nom = (d.nombres || []).length ? d.nombres.join(' + ') : 'El combo';
+      const ns = (d.nombres || []).filter(Boolean);
+      const junto = ns.join(' + ');
+      // los nombres del catálogo son larguísimos: si no entran, la frase manda el
+      // precio y los productos se leen en los tiles de arriba
+      const nom = (junto && junto.length <= 40) ? junto
+        : (ns.length ? `Los ${ns.length} juntos` : 'El combo');
+      const big = (nom.indexOf('juntos') >= 0) ? `${nom}: ${_S(d.totalPromo)}` : `${nom} juntos: ${_S(d.totalPromo)}`;
       return {
-        big: `${nom} juntos: ${_S(d.totalPromo)}`,
+        big,
         sub: d.totalNormal > 0 ? `por separado ${_S(d.totalNormal)} · ahorras ${_S(ahorro)}` : 'precio fijo del combo',
         ahorro
       };

@@ -14,6 +14,7 @@ const SEED = {
   MOS_SESSION: JSON.stringify({ idPersonal: 'TEST-CLAUDE', nombre: 'PRUEBA CLAUDE', rol: 'MASTER', idSesion: 'testclaude1' }),
 };
 const w = ms => new Promise(r => setTimeout(r, ms));
+const PROD_CON_COSTO = 'ANIS ESTRELLA ENTERO GRANEL';   // pv 80 · pc 30 · margen 62.5%
 
 const res = [];
 let errTotal = 0;
@@ -95,26 +96,21 @@ for (const [W, H, tag] of VPS) {
   // ── 4) FORM con panel del piso · z-index sobre el centro ──
   await p.evaluate(() => MOS.promoAbrirNueva());
   await w(900);
-  // elige un producto real y tipea un % para ver el panel EN VIVO
-  await p.evaluate(() => {
-    const conCosto = (S => null)(0);
-  });
-  const pisoInfo = await p.evaluate(() => {
-    // primer canónico con costo cargado
-    const prods = (window.__S && window.__S.productos) || [];
-    return prods.length;
-  });
   await p.evaluate(() => {
     document.querySelector('input[name="promoTipo"][value="PORCENTAJE"]').checked = true;
     MOS.promoSetTipo('PORCENTAJE');
   });
   await w(300);
-  // buscar producto con costo desde la UI
-  await p.evaluate(() => { const i = document.getElementById('promoBuscar'); i.value = 'a'; MOS.promoBuscarBase(); });
-  await w(600);
+  // producto CON costo cargado → el panel muestra piso, % máximo y semáforo reales
+  await p.evaluate(q => { const i = document.getElementById('promoBuscar'); i.value = q; MOS.promoBuscarBase(); }, PROD_CON_COSTO);
+  await w(700);
   await p.evaluate(() => { const r = document.querySelector('#promoBuscarRes .pn-result'); if (r) r.click(); });
   await w(500);
-  await p.evaluate(() => { const v = document.getElementById('promoValor'); v.value = '15'; MOS.promoActualizarEjemplo(); });
+  await p.evaluate(() => {
+    document.getElementById('promoCantMin').value = '2';
+    document.getElementById('promoValor').value = '20';
+    MOS.promoActualizarEjemplo();
+  });
   await w(400);
   const form = await p.evaluate(() => {
     const m = document.getElementById('modalPromoEdit');
@@ -127,6 +123,8 @@ for (const [W, H, tag] of VPS) {
       slider: !!document.getElementById('promoPctSlider')
     };
   });
+  await p.evaluate(() => document.getElementById('promoPisoPanel').scrollIntoView({ block: 'center' }));
+  await w(600);
   console.log(`[${tag}] form:`, JSON.stringify(form, null, 1));
   await p.screenshot({ path: `${OUT}/4_form_piso_${tag}.png` });
   res.push([tag, 'form', `zForm=${form.zForm} zCentro=${form.zCentro} slider=${form.slider}`]);
