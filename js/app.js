@@ -419,7 +419,35 @@ const MOS = (() => {
     // (que vive afuera de init) la encuentre. Bug previo: ReferenceError
     // _prefetchSesionEnLinea is not defined al hacer login completo.
     window._prefetchSesionEnLinea = _prefetchSesionEnLinea;
+
+    // ─────────────────────────────────────────────────────────
+    // [v2.43.725] PRIORIDAD AL CAMINO CRÍTICO.
+    // El prefetch bajaba MEGABYTES en paralelo con la verificación de dispositivo +
+    // el mint (un POST de 200 bytes). En un celular que vuelve de segundo plano esa
+    // avalancha ENTIERRA el POST de auth y lo hace abortar por timeout → "Sin
+    // conexión". Cambio mínimo: el prefetch se ENCADENA al resultado de la
+    // verificación (evento deviceauth:authorized / DeviceAuth.isAuthorized) en vez
+    // de dispararse en paralelo. Si el equipo NO queda autorizado, no se precarga
+    // nada (no tiene sentido). Failsafe: si DeviceAuth no existe (o no responde en
+    // 20s pero ya autorizó), se lanza igual — nunca se pierde el prefetch.
+    // ─────────────────────────────────────────────────────────
     function _prefetchSesionEnLinea() {
+      const _lanzar = () => { setTimeout(_prefetchSesionEnLineaAhora, 300); };
+      const _autorizado = () => {
+        try { return !!(window.DeviceAuth && window.DeviceAuth.isAuthorized && window.DeviceAuth.isAuthorized()); }
+        catch (_) { return false; }
+      };
+      // Sin módulo de auth (no debería pasar: MOS fail-closes si no carga) → como antes.
+      if (typeof window.DeviceAuth === 'undefined') { _lanzar(); return; }
+      if (_autorizado()) { _lanzar(); return; }
+      let _ya = false;
+      const _once = () => { if (_ya) return; _ya = true; _lanzar(); };
+      window.addEventListener('deviceauth:authorized', _once, { once: true });
+      window.addEventListener('deviceauth:gracia', _once, { once: true });
+      setTimeout(() => { if (!_ya && _autorizado()) _once(); }, 20000);
+    }
+
+    function _prefetchSesionEnLineaAhora() {
       if (!navigator.onLine) return;
       const t0 = Date.now();
       _netSyncStart('PRECARGANDO');
