@@ -1,0 +1,260 @@
+{
+  "motor": "chromium",
+  "ancho": 390,
+  "version": "2.13.544",
+  "regla": {
+    "hayModulo": true,
+    "nProds": 2263,
+    "casoA": {
+      "cod": "7758725000036",
+      "raiz": "7758725000036",
+      "n": 2,
+      "ambigua": true,
+      "miembros": [
+        {
+          "cb": "7758725000036A",
+          "suf": "A",
+          "desc": "CABALLO DE ORO AZUL PASTA WANTAN 500GR BOLSA"
+        },
+        {
+          "cb": "7758725000036B",
+          "suf": "B",
+          "desc": "CABALLO DE ORO DORADO WANTAN 500GR BOLSA"
+        }
+      ],
+      "sufijoLibre": "C",
+      "siguiente": "7758725000036C"
+    },
+    "casoB": {
+      "cod": "7750464444799",
+      "raiz": "7750464444799",
+      "n": 5,
+      "ambigua": true,
+      "miembros": [
+        {
+          "cb": "7750464444799",
+          "suf": "",
+          "desc": "LA CHINA TAMARINDO CHUPON 500ML BOTELLA"
+        },
+        {
+          "cb": "7750464444799A",
+          "suf": "A",
+          "desc": "FOCH PREPARADO ARROZ CHAUFA 500CC BOTELLA"
+        },
+        {
+          "cb": "7750464444799B",
+          "suf": "B",
+          "desc": "FOCH PREPARADO TALLARIN SALTADO 500CC BOTELLA"
+        },
+        {
+          "cb": "7750464444799C",
+          "suf": "C",
+          "desc": "FOCH PREPARADO TALLARIN SALTADO 125CC BOTELLA"
+        },
+        {
+          "cb": "7750464444799D",
+          "suf": "D",
+          "desc": "FOCH SALSA INGLESA 125CC BOTELLA"
+        }
+      ],
+      "sufijoLibre": "E",
+      "siguiente": "7750464444799E"
+    },
+    "explicitoA": false,
+    "noAmbiguo": {
+      "cb": "7750885008204",
+      "ambigua": false
+    },
+    "raicesMultiples": [
+      {
+        "raiz": "7750464444799",
+        "n": 5
+      },
+      {
+        "raiz": "PAS63-001",
+        "n": 4
+      },
+      {
+        "raiz": "7758725000036",
+        "n": 2
+      },
+      {
+        "raiz": "6123228926663",
+        "n": 2
+      },
+      {
+        "raiz": "3025258588596",
+        "n": 2
+      },
+      {
+        "raiz": "6920619591376",
+        "n": 2
+      },
+      {
+        "raiz": "7751304240502",
+        "n": 2
+      },
+      {
+        "raiz": "737186519674",
+        "n": 2
+      },
+      {
+        "raiz": "7752748012052",
+        "n": 2
+      },
+      {
+        "raiz": "7751020300016",
+        "n": 2
+      }
+    ]
+  },
+  "guias": {
+    "A": {
+      "nCand": 2,
+      "nFamilia": 2,
+      "primeroExacto": false,
+      "sheet": {
+        "visible": true,
+        "titulo": "Este código tiene 2 variantes",
+        "filas": 2,
+        "conFoto": 0,
+        "conTile": 2,
+        "chips": [
+          "…0036A",
+          "…0036B"
+        ],
+        "stocks": [
+          "Stock 35",
+          "Sin stock"
+        ],
+        "nombres": [
+          "CABALLO DE ORO AZUL PASTA WANTAN 500GR BOLSA",
+          "CABALLO DE ORO DORADO WANTAN 500GR BOLSA"
+        ],
+        "altoFila": 81,
+        "nuevo": true,
+        "sugerido": "Se registra como 7758725000036C",
+        "desbordaX": false
+      },
+      "eleccion": {
+        "elegido": "7758725000036B",
+        "sheetCerrado": true
+      },
+      "memoria": {
+        "primeraEsUltima": true,
+        "tagArriba": true,
+        "cbPrimera": "7758725000036B"
+      }
+    },
+    "B": {
+      "nCand": 5,
+      "nFamilia": 5,
+      "primeroExacto": false,
+      "sheet": {
+        "visible": true,
+        "titulo": "Este código tiene 5 variantes",
+        "filas": 5,
+        "conFoto": 0,
+        "conTile": 5,
+        "chips": [
+          "…4799 sin letra",
+          "…4799A",
+          "…4799B",
+          "…4799C",
+          "…4799D"
+        ],
+        "stocks": [
+          "Stock 17",
+          "Stock 90",
+          "Stock 22",
+          "Stock 18",
+          "Sin stock"
+        ],
+        "nombres": [
+          "LA CHINA TAMARINDO CHUPON 500ML BOTELLA",
+          "FOCH PREPARADO ARROZ CHAUFA 500CC BOTELLA",
+          "FOCH PREPARADO TALLARIN SALTADO 500CC BOTELL",
+          "FOCH PREPARADO TALLARIN SALTADO 125CC BOTELL",
+          "FOCH SALSA INGLESA 125CC BOTELLA"
+        ],
+        "altoFila": 81,
+        "nuevo": true,
+        "sugerido": "Se registra como 7750464444799E",
+        "desbordaX": false
+      },
+      "eleccion": {
+        "elegido": "7750464444799A",
+        "sheetCerrado": true
+      },
+      "memoria": {
+        "primeraEsUltima": true,
+        "tagArriba": true,
+        "cbPrimera": "7750464444799A"
+      }
+    }
+  },
+  "despacho": {
+    "A": {
+      "ambigua": true,
+      "n": 2,
+      "viaDirecta": true,
+      "sheet": {
+        "filas": 2,
+        "chips": [
+          "…0036B",
+          "…0036A"
+        ],
+        "nombres": [
+          "CABALLO DE ORO DORADO WANTAN 500GR BOLSA",
+          "CABALLO DE ORO AZUL PASTA WANTAN 500GR BOLSA"
+        ],
+        "nuevo": false,
+        "desbordaX": false
+      }
+    },
+    "B": {
+      "ambigua": true,
+      "n": 5,
+      "viaDirecta": true,
+      "sheet": {
+        "filas": 5,
+        "chips": [
+          "…4799A",
+          "…4799 sin letra",
+          "…4799B",
+          "…4799C",
+          "…4799D"
+        ],
+        "nombres": [
+          "FOCH PREPARADO ARROZ CHAUFA 500CC BOTELLA",
+          "LA CHINA TAMARINDO CHUPON 500ML BOTELLA",
+          "FOCH PREPARADO TALLARIN SALTADO 500CC BOTELL",
+          "FOCH PREPARADO TALLARIN SALTADO 125CC BOTELL",
+          "FOCH SALSA INGLESA 125CC BOTELLA"
+        ],
+        "nuevo": false,
+        "desbordaX": false
+      }
+    }
+  },
+  "pn": {
+    "avisoVisible": true,
+    "titulo": "⚠ Este código ya tiene 2 variantes (…0036A, …0036B)",
+    "variantes": 2,
+    "cbs": [
+      "7758725000036A",
+      "7758725000036B"
+    ],
+    "sugerido": "7758725000036C",
+    "textoBtn": "➕ Es uno NUEVO · usar 7758725000036C"
+  },
+  "pnNuevo": {
+    "valor": "7758725000036C",
+    "editable": true,
+    "avisoLimpio": true
+  },
+  "pageerrors": [],
+  "consolaErrores": [
+    "[error] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
+  ]
+}

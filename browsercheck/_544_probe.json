@@ -1,0 +1,299 @@
+{
+  "nProds": 2263,
+  "nEqs": 61,
+  "muestraProd": [
+    "idProducto",
+    "skuBase",
+    "codigoBarra",
+    "descripcion",
+    "marca",
+    "idCategoria",
+    "unidad",
+    "precioVenta",
+    "precioCosto",
+    "Cod_Tributo",
+    "IGV_Porcentaje",
+    "Cod_SUNAT",
+    "Tipo_IGV",
+    "Unidad_Medida",
+    "estado",
+    "esEnvasable",
+    "codigoProductoBase",
+    "factorConversion",
+    "factorConversionBase",
+    "mermaEsperadaPct",
+    "stockMinimo",
+    "stockMaximo",
+    "zona",
+    "fechaCreacion",
+    "creadoPor",
+    "modoVenta",
+    "margenPct",
+    "precioTope",
+    "fotoUrl",
+    "historialCambios",
+    "segmentos_precio",
+    "tipoProducto",
+    "envaseSku",
+    "esInsumo"
+  ],
+  "enProductos": {
+    "7758725000036": [
+      {
+        "cb": "7758725000036A",
+        "sku": "LEV182",
+        "id": "IDPRO0000273",
+        "fc": 1,
+        "est": "1",
+        "d": "CABALLO DE ORO AZUL PASTA WANTAN 500GR B"
+      },
+      {
+        "cb": "7758725000036B",
+        "sku": "LEV810",
+        "id": "IDPRO0000274",
+        "fc": 1,
+        "est": "1",
+        "d": "CABALLO DE ORO DORADO WANTAN 500GR BOLSA"
+      }
+    ],
+    "7750464444799": [
+      {
+        "cb": "7750464444799A",
+        "sku": "LEV072",
+        "id": "IDPRO0000655",
+        "fc": 1,
+        "est": "1",
+        "d": "FOCH PREPARADO ARROZ CHAUFA 500CC BOTELL"
+      },
+      {
+        "cb": "7750464444799C",
+        "sku": "LEV069",
+        "id": "IDPRO0000658",
+        "fc": 1,
+        "est": "1",
+        "d": "FOCH PREPARADO TALLARIN SALTADO 125CC BO"
+      },
+      {
+        "cb": "7750464444799B",
+        "sku": "LEV073",
+        "id": "IDPRO0000659",
+        "fc": 1,
+        "est": "1",
+        "d": "FOCH PREPARADO TALLARIN SALTADO 500CC BO"
+      },
+      {
+        "cb": "7750464444799D",
+        "sku": "LEV645",
+        "id": "IDPRO0000660",
+        "fc": 1,
+        "est": "1",
+        "d": "FOCH SALSA INGLESA 125CC BOTELLA"
+      },
+      {
+        "cb": "7750464444799",
+        "sku": "LEV950",
+        "id": "IDPRO0000871",
+        "fc": 1,
+        "est": "1",
+        "d": "LA CHINA TAMARINDO CHUPON 500ML BOTELLA"
+      }
+    ],
+    "737186519674": [
+      {
+        "cb": "737186519674O",
+        "sku": "LEV1594",
+        "id": "IDPRO0001106",
+        "fc": 1,
+        "est": "1",
+        "d": "ÑAWPA ACEITE DE OREGANO 30ML BOTELLA"
+      },
+      {
+        "cb": "737186519674R",
+        "sku": "LEV1593",
+        "id": "IDPRO0001107",
+        "fc": 1,
+        "est": "1",
+        "d": "ÑAWPA ACEITE DE ROMERO 30ML BOTELLA"
+      }
+    ],
+    "7751304240502": [
+      {
+        "cb": "7751304240502F",
+        "sku": "LEV1288",
+        "id": "IDPRO0000759",
+        "fc": 1,
+        "est": "1",
+        "d": "HOJA VERDE SAL DE MARAS ROSADA FINA 1KG "
+      },
+      {
+        "cb": "7751304240502G",
+        "sku": "LEV1600",
+        "id": "IDPRO0000760",
+        "fc": 1,
+        "est": "1",
+        "d": "HOJA VERDE SAL DE MARAS ROSADA GRUESA 1K"
+      }
+    ],
+    "7751020300016": [
+      {
+        "cb": "7751020300016B",
+        "sku": "LEV1184",
+        "id": "IDPRO0001393",
+        "fc": 1,
+        "est": "1",
+        "d": "SAMBER SAL DE MARAS ROSADA FINA 1KG BOLS"
+      },
+      {
+        "cb": "7751020300016A",
+        "sku": "LEV064",
+        "id": "IDPRO0001394",
+        "fc": 1,
+        "est": "1",
+        "d": "SAMBER SAL DE MARAS ROSADA GRUESA 1KG BO"
+      }
+    ],
+    "6123228926663": [
+      {
+        "cb": "6123228926663A",
+        "sku": "LEV816",
+        "id": "IDPRO0000480",
+        "fc": 1,
+        "est": "1",
+        "d": "CORESA PERU SAZONADOR HUMO LIQUIDO 250ML"
+      },
+      {
+        "cb": "6123228926663B",
+        "sku": "LEV566",
+        "id": "IDPRO0000481",
+        "fc": 1,
+        "est": "1",
+        "d": "CORESA PERU SAZONADOR HUMOLIQUIDO 500ML "
+      }
+    ],
+    "6920619591376": [
+      {
+        "cb": "6920619591376A",
+        "sku": "LEV820",
+        "id": "IDPRO0000727",
+        "fc": 1,
+        "est": "1",
+        "d": "GUAN JI SALSA DE OSTION 270GR BOTELLA"
+      },
+      {
+        "cb": "6920619591376",
+        "sku": "LEV108",
+        "id": "IDPRO0001507",
+        "fc": 1,
+        "est": "1",
+        "d": "SOFIT SALSA DE OSTION 270GR BOTELLA"
+      }
+    ],
+    "3025258588596": [
+      {
+        "cb": "3025258588596",
+        "sku": "LEV1644",
+        "id": "IDPRO0000485",
+        "fc": 1,
+        "est": "1",
+        "d": "CORESA SAL DE MARAS HIERBAS FINA 800GR F"
+      },
+      {
+        "cb": "3025258588596C",
+        "sku": "LEV0002347",
+        "id": "IDPRO0002347",
+        "fc": 1,
+        "est": "1",
+        "d": "CORESA SAL DE MARAS AHUMADA 450GR FRASCO"
+      }
+    ]
+  },
+  "enEquivs": {
+    "7758725000036": [],
+    "7750464444799": [],
+    "737186519674": [],
+    "7751304240502": [],
+    "7751020300016": [],
+    "6123228926663": [],
+    "6920619591376": [],
+    "3025258588596": []
+  },
+  "estadosDistintos": [
+    "1",
+    "0"
+  ],
+  "factores": [
+    "1",
+    "0.005",
+    "0.01",
+    "0.5",
+    "0.25",
+    "0.001",
+    "42",
+    "10",
+    "18",
+    "6"
+  ],
+  "fam": {
+    "7758725000036": {
+      "raiz": "7758725000036",
+      "n": 0,
+      "nInact": 0
+    },
+    "7750464444799": {
+      "raiz": "7750464444799",
+      "n": 0,
+      "nInact": 0
+    },
+    "737186519674": {
+      "raiz": "737186519674",
+      "n": 0,
+      "nInact": 0
+    },
+    "7751304240502": {
+      "raiz": "7751304240502",
+      "n": 0,
+      "nInact": 0
+    },
+    "7751020300016": {
+      "raiz": "7751020300016",
+      "n": 0,
+      "nInact": 0
+    },
+    "6123228926663": {
+      "raiz": "6123228926663",
+      "n": 0,
+      "nInact": 0
+    },
+    "6920619591376": {
+      "raiz": "6920619591376",
+      "n": 0,
+      "nInact": 0
+    },
+    "3025258588596": {
+      "raiz": "3025258588596",
+      "n": 0,
+      "nInact": 0
+    }
+  },
+  "conLetraTotal": 17,
+  "conLetraMuestra": [
+    "7758725000036A | CABALLO DE ORO AZUL PASTA WANTAN 5",
+    "7758725000036B | CABALLO DE ORO DORADO WANTAN 500GR",
+    "6123228926663A | CORESA PERU SAZONADOR HUMO LIQUIDO",
+    "6123228926663B | CORESA PERU SAZONADOR HUMOLIQUIDO ",
+    "7750464444799A | FOCH PREPARADO ARROZ CHAUFA 500CC ",
+    "7750464444799C | FOCH PREPARADO TALLARIN SALTADO 12",
+    "7750464444799B | FOCH PREPARADO TALLARIN SALTADO 50",
+    "7750464444799D | FOCH SALSA INGLESA 125CC BOTELLA",
+    "6920619591376A | GUAN JI SALSA DE OSTION 270GR BOTE",
+    "7751304240502F | HOJA VERDE SAL DE MARAS ROSADA FIN",
+    "7751304240502G | HOJA VERDE SAL DE MARAS ROSADA GRU",
+    "737186519674O | ÑAWPA ACEITE DE OREGANO 30ML BOTEL",
+    "737186519674R | ÑAWPA ACEITE DE ROMERO 30ML BOTELL",
+    "7751546682078A | ORIENTAL SALSA TAMARINDO 125CC BOT",
+    "7751020300016B | SAMBER SAL DE MARAS ROSADA FINA 1K",
+    "7751020300016A | SAMBER SAL DE MARAS ROSADA GRUESA ",
+    "3025258588596C | CORESA SAL DE MARAS AHUMADA 450GR "
+  ],
+  "pageerrors": []
+}

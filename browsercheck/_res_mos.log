@@ -1,0 +1,23 @@
+
+=== MOS · FASE 1 · carga normal (red OK) ===
+  DeviceAuth v1.0.30 · estado=ACTIVO · autorizado=true · overlay=false · 22793ms
+  cache: fecha=2026-08-10 devid=7e57c1a0 ok_ms=SI
+=== FASE 2 · a segundo plano y se corta la red ===
+  visibilityState de la app = visible
+=== FASE 3 · reload con Supabase COLGADO (arranque tras el sleep) ===
+  estado=ACTIVO gracia=true chip=true overlay=false preBlock=false blocked=false · 26873ms
+  requests colgadas a Supabase: 19
+  >>> GRACIA (opera sin pantalla de bloqueo): OK
+=== FASE 4 · vuelve la red y la app vuelve a primer plano ===
+  estado=ACTIVO gracia=false chip=false overlay=false autorizado=true
+  >>> RECUPERACIÓN SOLA (sin tocar nada): OK
+=== FASE 5 · NEGATIVO · equipo NO autorizado (cache forjado, red sana) ===
+  estado=PENDIENTE_APROBACION gracia=false autorizado=false overlay=true
+  overlay dice: "⌛ Esperando aprobación Tu dispositivo está pendiente de aprobación del master. Re-verificación automática cada 15 segundos. dead0000-0000-40"
+  >>> BLOQUEA AL NO AUTORIZADO: OK
+
+=== RESUMEN MOS ===
+  pageerrors app: 0 
+  pageerrors negativo: 0 
+  F1 activo=true · F3 gracia=true · F4 recupero=true · F5 bloqueo=true
+  VEREDICTO: TODO OK

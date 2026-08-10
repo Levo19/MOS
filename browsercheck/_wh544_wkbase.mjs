@@ -1,0 +1,13 @@
+import { webkit } from 'playwright';
+const URL='https://levo19.github.io/warehouseMos-/';
+const DEV='7e57c1a0-de1c-4a7e-b0de-c47a10906475';
+const SESION=JSON.stringify({idSesion:'LOCAL_TESTCLAUDE',idPersonal:'TEST-CLAUDE',nombre:'PRUEBA CLAUDE',apellido:'CLAUDE',color:'#4f46e5',rol:'MASTER',fechaDia:'2026-08-09',fechaGuardado:new Date().toISOString()});
+(async()=>{const b=await webkit.launch({headless:true});const c=await b.newContext({viewport:{width:390,height:844},hasTouch:true});const p=await c.newPage();
+const errs=[];p.on('pageerror',e=>errs.push(e.message));
+const fails=[];p.on('requestfailed',r=>fails.push(r.url().slice(0,110)+' :: '+(r.failure()?.errorText||'')));
+await p.addInitScript(([d,s])=>{localStorage.setItem('wh_device_id',d);localStorage.setItem('wh_sesion',s);localStorage.setItem('wh_last_activity',String(Date.now()));},[DEV,SESION]);
+await p.goto(URL,{waitUntil:'domcontentloaded',timeout:45000});await p.waitForTimeout(30000);
+console.log('BOOT PURO (sin tocar nada de 544)');
+console.log('pageerrors:',JSON.stringify(errs,null,1));
+console.log('requestfailed:',JSON.stringify(fails.slice(0,8),null,1));
+await b.close();})();
