@@ -242,7 +242,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.33';
+  var _VERSION = '1.0.35';
 
   var _config = null;
   var _state = {
@@ -270,7 +270,8 @@
     graciaPaso: 0,
     // [v1.0.30] ms en que la pestaña pasó a 'hidden' (para el despertar consciente).
     ocultoDesde: 0,
-    ultimoWakePing: 0
+    ultimoWakePing: 0,
+    ultimoReintentoGracia: 0
   };
   // [v1.0.16 BUG 2] Clave + ventana (ms) de la marca optimista anti-retroceso.
   // Persistida para que SOBREVIVA al reload (cuando la app sí recarga). Sólo
@@ -1530,8 +1531,8 @@
   // sobrevive a un cambio de turno ni a la noche. Al día siguiente el equipo SIEMPRE
   // tiene que hablar con el servidor antes de operar.
   var _GRACIA_MS = 8 * 60 * 60 * 1000;
-  var _GRACIA_PLAN = [3000, 8000, 20000];           // 3 reintentos escalonados
-  var _GRACIA_LATIDO_MS = 60000;                    // luego, re-consulta cada 60s
+  var _GRACIA_PLAN = [1500, 5000, 15000];           // 3 reintentos escalonados
+  var _GRACIA_LATIDO_MS = 30000;                    // luego, re-consulta cada 30s
 
   // ¿El fallo fue de RED (no hubo veredicto del servidor)?
   // · abort/timeout/TypeError de fetch/DNS → SÍ (el server nunca habló).
@@ -1614,6 +1615,22 @@
     return 'ACTIVO';
   }
 
+  // [v1.0.34] Vuelve a poner la escalera de reintentos en el primer peldano y dispara
+  // uno YA. Se llama cuando hay una senal de que la red pudo volver: la pestana vuelve
+  // a primer plano o el navegador emite 'online'. Sin esto la app se quedaba operando
+  // en gracia con el chip puesto hasta el siguiente latido, aunque la red ya estuviera
+  // sana. Throttle de 3s para que un manoseo de pestanas no dispare una rafaga.
+  function _reintentarGraciaYa(motivo) {
+    if (!_state.gracia) return;
+    var ahora = Date.now();
+    if (ahora - (_state.ultimoReintentoGracia || 0) < 3000) return;
+    _state.ultimoReintentoGracia = ahora;
+    if (_state.graciaTimer) { clearTimeout(_state.graciaTimer); _state.graciaTimer = null; }
+    _state.graciaPaso = 0;
+    try { console.log('[DeviceAuth] gracia: reintento inmediato (' + motivo + ')'); } catch (_) {}
+    _agendarReintentoGracia();
+  }
+
   function _agendarReintentoGracia() {
     if (!_state.gracia) return;
     if (_state.graciaTimer) return;
@@ -1668,6 +1685,11 @@
   // en serie son 13s en el PEOR caso: con 14s el watchdog cerraba fail-closed ANTES
   // de que el verify llegara a responder. 16s deja 3s de margen real.
   var _WATCHDOG_MS = 7000;
+  // Timeout del verify: GENEROSO a proposito. NO tiene que caber dentro del deadline
+  // -- son dos relojes distintos (ver _consultarBackend). Recortarlo convierte
+  // 'servidor lento' en 'sin red', y eso le regala gracia a un equipo que el
+  // servidor habria rechazado. 12s cubre de sobra el peor caso sano medido.
+  var _VERIFY_MS = 12000;
   function _desarmarWatchdog() {
     if (_state.watchdogTimer) { clearTimeout(_state.watchdogTimer); _state.watchdogTimer = null; }
   }
@@ -1767,12 +1789,12 @@
       // siembra/heartbea). Si registrar falla NO bloqueamos: igual verificamos.
       return _rpcAnon('verificar_dispositivo', {
         id_dispositivo: _state.deviceId, app: _config.app
-      }, 4000);
+      }, _VERIFY_MS);
     }, function () {
       // registrar falló → intentar verificar igual (puede existir ya).
       return _rpcAnon('verificar_dispositivo', {
         id_dispositivo: _state.deviceId, app: _config.app
-      }, 4000);
+      }, _VERIFY_MS);
     }).then(function (j) {
       var d = _mapVerifyResp(j);
       if (!d) throw new Error('verificar_dispositivo: respuesta sin estado');
@@ -2153,11 +2175,11 @@
     if (document.visibilityState !== 'visible') return;
     var oculto = _state.ocultoDesde ? (Date.now() - _state.ocultoDesde) : 0;
     _state.ocultoDesde = 0;
-    if (oculto > 60000) {
-      _wakePing();
-      // Si volvimos operando en gracia, reintentar YA (sin esperar el próximo tick).
-      if (_state.gracia && !_state.graciaTimer) { _state.graciaPaso = 0; _agendarReintentoGracia(); }
-    }
+    if (oculto > 60000) _wakePing();
+    // [v1.0.34] En gracia reintentamos SIEMPRE al volver a primer plano, sin importar
+    // cuánto estuvimos ocultos: es la señal más barata de 'el usuario volvió, quizá ya
+    // hay red'. El throttle de 3s evita ráfagas.
+    if (_state.gracia) { if (oculto <= 60000) _wakePing(); _reintentarGraciaYa('volvió a primer plano'); }
     // [v1.0.9 BUG H FIX] Si estamos en PENDIENTE_APROBACION y la pestaña vuelve
     // a foreground, hacer un fetch inmediato sin esperar 15s al próximo tick
     // del polling (que pudo haberse saltado mientras estaba en background).
@@ -2190,6 +2212,9 @@
     if (!_state.visibilityHandler) {
       _state.visibilityHandler = _onVisibilityChange;
       document.addEventListener('visibilitychange', _state.visibilityHandler);
+      // [v1.0.34] 'online': el navegador avisa que la conectividad volvió. Si estamos
+      // operando en gracia, es el momento exacto de reverificar (no esperar el latido).
+      try { window.addEventListener('online', function () { _wakePing(); _reintentarGraciaYa('evento online'); }); } catch (_) {}
     }
     // [v1.0.13] Resolver el deviceId RESILIENTE (multi-store) ANTES de verificar.
     // Es async (IndexedDB/Cache), por eso init ahora encadena la verificación.

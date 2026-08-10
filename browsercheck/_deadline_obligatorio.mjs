@@ -29,7 +29,7 @@ function servir() {
   }).listen(PORT);
 }
 
-async function medir(browser, etiqueta, { colgarRed, cacheHoy, devIdFalso }) {
+async function medir(browser, etiqueta, { colgarRed, cacheHoy, devIdFalso, asentar }) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage();
   const errs = []; page.on('pageerror', e => errs.push(String(e.message || e)));
@@ -60,14 +60,20 @@ async function medir(browser, etiqueta, { colgarRed, cacheHoy, devIdFalso }) {
     if (r && r.e && r.e !== 'VERIFICANDO' && r.e !== 'INIT') { t = Date.now() - t0; est = r.e; gr = r.g; break; }
     await page.waitForTimeout(250);
   }
+  // [seguridad] La gracia es PROVISIONAL: si el servidor alcanza a responder, su
+  // veredicto llega despues y manda. Para juzgar 'bloquea al no autorizado' hay que
+  // mirar el estado ASENTADO, no el primero que aparece.
+  if (asentar) await page.waitForTimeout(18000);
   const ui = await page.evaluate(() => {
     const ov = document.getElementById('deviceAuthOverlay');
+    const da = window.DeviceAuth; const st = da && da.estado ? da.estado() : null;
     return { ov: !!ov, txt: ov ? (ov.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 42) : '',
              pb: document.documentElement.classList.contains('da-pre-block'),
-             aut: !!(window.DeviceAuth && window.DeviceAuth.isAuthorized && window.DeviceAuth.isAuthorized()) };
+             estFin: st ? st.estado : null, grFin: !!(da && da.enGracia && da.enGracia()),
+             aut: !!(da && da.isAuthorized && da.isAuthorized()) };
   }).catch(() => ({}));
   await ctx.close();
-  return { etiqueta, t, est, gr, ui, errs };
+  return { etiqueta, t, est, gr, ui, errs, estFin: ui.estFin, grFin: ui.grFin };
 }
 
 (async () => {
@@ -97,11 +103,12 @@ async function medir(browser, etiqueta, { colgarRed, cacheHoy, devIdFalso }) {
 
   // Caso de seguridad con red SANA: equipo que el servidor NO autoriza → BLOQUEA.
   const rs = await medir(browser, 'RED SANA + equipo NO autorizado', {
-    colgarRed: false, cacheHoy: true, devIdFalso: 'dead0000-0000-4000-8000-' + String(Date.now() + 7).slice(-12)
+    colgarRed: false, cacheHoy: true, asentar: true,
+    devIdFalso: 'dead0000-0000-4000-8000-' + String(Date.now() + 7).slice(-12)
   });
-  const bloqueaOK = rs.ui.aut === false && rs.est !== 'ACTIVO' && rs.gr === false;
-  console.log(`  RED SANA + equipo NO autorizado (cache forjado) estado=${rs.est} gracia=${rs.gr} autorizado=${rs.ui.aut}`);
-  console.log(`     >>> BLOQUEA: ${bloqueaOK ? '✔' : '✘'} (resuelto en ${rs.t}ms) · pageerrors=${rs.errs.length}`);
+  const bloqueaOK = rs.ui.aut === false && rs.estFin !== 'ACTIVO' && rs.grFin === false;
+  console.log(`  RED SANA + equipo NO autorizado (cache forjado) primero=${rs.est}/gracia=${rs.gr} → ASENTADO=${rs.estFin}/gracia=${rs.grFin} autorizado=${rs.ui.aut}`);
+  console.log(`     >>> BLOQUEA (estado asentado): ${bloqueaOK ? '✔' : '✘'} · pageerrors=${rs.errs.length}`);
   if (!bloqueaOK) ok = false;
 
   console.log(`\nVEREDICTO: ${ok ? 'CUMPLE la regla (nunca colgado, <12s, y bloquea al no autorizado)' : 'NO CUMPLE'}`);
