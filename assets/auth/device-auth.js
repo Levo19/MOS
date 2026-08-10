@@ -242,7 +242,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.32';
+  var _VERSION = '1.0.33';
 
   var _config = null;
   var _state = {
@@ -1667,11 +1667,18 @@
   // [v1.0.30] 14000 → 16000. registrar_dispositivo (5s) + verificar_dispositivo (8s)
   // en serie son 13s en el PEOR caso: con 14s el watchdog cerraba fail-closed ANTES
   // de que el verify llegara a responder. 16s deja 3s de margen real.
-  var _WATCHDOG_MS = 10000;
+  var _WATCHDOG_MS = 7000;
   function _desarmarWatchdog() {
     if (_state.watchdogTimer) { clearTimeout(_state.watchdogTimer); _state.watchdogTimer = null; }
   }
-  function _armarWatchdog() {
+  function _armarWatchdog(reiniciar) {
+    // [v1.0.33] IDEMPOTENTE. init() arma el deadline UNA vez y manda sobre todo el
+    // arranque. _verificar() tambien lo llama, y en 1.0.32 eso REINICIABA el reloj:
+    // el deadline pasaba a contar desde despues de _resolverDeviceId (hasta 3s), y la
+    // prueba con la red muerta media 16.2s en vez de ~10s. Estando ya armado, no se
+    // toca. Un reintento explicito (Reintentar / forzarReVerify) si lo re-arma, porque
+    // el estado terminal anterior lo desarmo en el finally de _verificar().
+    if (_state.watchdogTimer && !reiniciar) return;
     _desarmarWatchdog();
     _state.watchdogTimer = setTimeout(function() {
       _state.watchdogTimer = null;
@@ -1755,17 +1762,17 @@
     return _rpcAnon('registrar_dispositivo', {
       id_dispositivo: _state.deviceId, app: _config.app,
       user_agent: ua, nombre_equipo: null
-    }, 3000).then(function () {
+    }, 2000).then(function () {
       // El veredicto de estado lo da verificar_dispositivo (registrar solo
       // siembra/heartbea). Si registrar falla NO bloqueamos: igual verificamos.
       return _rpcAnon('verificar_dispositivo', {
         id_dispositivo: _state.deviceId, app: _config.app
-      }, 5000);
+      }, 4000);
     }, function () {
       // registrar falló → intentar verificar igual (puede existir ya).
       return _rpcAnon('verificar_dispositivo', {
         id_dispositivo: _state.deviceId, app: _config.app
-      }, 5000);
+      }, 4000);
     }).then(function (j) {
       var d = _mapVerifyResp(j);
       if (!d) throw new Error('verificar_dispositivo: respuesta sin estado');
