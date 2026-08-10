@@ -37584,9 +37584,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const byNombre = {};
       const byIdPersonal = {};
       const arr = Array.isArray(resumenes) ? resumenes : [];
+      // [732] Dos personas distintas con el mismo nombre (hay dos "Jesus") hacían que una tarjeta
+      // mostrara el pago de la OTRA: el último con ese nombre pisaba al resto en byNombre. Ahora un
+      // nombre solo sirve de atajo si lo usa una sola persona; si no, no se cruza (mejor sin dato
+      // que con el dato de otro). El cruce por idPersonal sigue siendo el camino principal.
+      const _nomIds = {}, _nomUnico = {};
+      arr.forEach(r => { const n = String(r.nombre || '').toLowerCase().trim(); if (!n) return;
+        (_nomIds[n] = _nomIds[n] || {})[String(r.idPersonal || '')] = 1; });
+      Object.keys(_nomIds).forEach(n => { _nomUnico[n] = Object.keys(_nomIds[n]).length === 1; });
       arr.forEach(r => {
         const n = String(r.nombre || '').toLowerCase().trim();
-        if (n) byNombre[n] = r;
+        if (n && _nomUnico[n]) byNombre[n] = r;   // [732] solo si el nombre es INEQUÍVOCO
         if (r.idPersonal) byIdPersonal[r.idPersonal] = r;
       });
 

@@ -1,1 +1,1 @@
-{"version":"2.43.735","build":"2.43.735 dos personas con el mismo nombre ya no se mezclan: cada una su tarjeta y su pago (SQL 732 en el servidor + cruce por nombre solo si es inequivoco)"}
+{"version":"2.43.736","build":"2.43.736 completa el fix: la pantalla ya no cruza resumenes por nombre cuando dos personas lo comparten (la 735 subio sin esta mitad)"}
