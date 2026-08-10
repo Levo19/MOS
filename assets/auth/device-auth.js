@@ -1,5 +1,34 @@
 // ════════════════════════════════════════════════════════════════════
 // DeviceAuth — módulo compartido de verificación de dispositivos
+// v1.0.30 — 2026-08-10 — RESILIENCIA DE ARRANQUE/REANUDACIÓN (celular que vuelve
+//   de segundo plano). Cambios ADITIVOS; la política de seguridad NO se relaja.
+//   ┌─ EL PROBLEMA REAL (log del dueño) ────────────────────────────────────────
+//   │ Al despertar el móvil, las conexiones TCP/TLS están muertas: el preflight
+//   │ OPTIONS responde 200 en ~200ms (la red ESTÁ bien) pero el POST se cancela.
+//   │ Con timeouts cortos y UN SOLO intento, un HIPO de red se convertía en PARO
+//   │ TOTAL: SIN_VERIFICAR + pantalla de bloqueo, con el equipo YA verificado hoy.
+//   ├─ 1) DESPERTAR CONSCIENTE (_wakePing) ─────────────────────────────────────
+//   │ visibilitychange→visible tras >60s oculto: OPTIONS liviano a Supabase
+//   │ (3s, no-store, fire-and-forget) ANTES de disparar cualquier refresco, para
+//   │ reconstruir la conexión. Si falla no bloquea nada. Cubre MOS/ME/WH de una.
+//   ├─ 2) PACIENCIA (timeouts) ─────────────────────────────────────────────────
+//   │ registrar_dispositivo baja a 5s (NO es autoritativo: su fallo ya se ignora)
+//   │ → registrar+verificar en serie caben en 13s < watchdog. El watchdog sube de
+//   │ 14s a 16s (3s de margen) y ya no cierra a ciegas: consulta la GRACIA.
+//   ├─ 3) GRACIA EN VEZ DE PORTAZO (_entrarEnGracia) ───────────────────────────
+//   │ Si el verify FALLA POR RED (timeout/abort/5xx) y existe una verificación
+//   │ previa EXITOSA de ESTE MISMO deviceId con ≤8h (UN TURNO), la app OPERA en modo
+//   │ "verificando…" (chip discreto) mientras reintenta en background (3s/8s/20s
+//   │ y luego cada 60s). BLOQUEA sólo si: (a) no hay verificación previa válida,
+//   │ (b) el servidor RESPONDE un veredicto de no-autorizado (ese camino nunca
+//   │ pasa por aquí: va por _procesarRespuestaVerify y bloquea igual que siempre),
+//   │ o (c) la verificación previa supera las 8h. Un HTTP 4xx (el server habló)
+//   │ tampoco da gracia. JAMÁS se opera con un equipo que el servidor rechazó.
+//   │ LÍMITE HONESTO: el marcador vive en localStorage (forjable con devtools +
+//   │ red cortada). Es el mismo nivel de confianza del fail-soft offline que el
+//   │ módulo ya documentaba; se acota a 8h, se BORRA en _invalidarCache ante
+//   │ cualquier veredicto de bloqueo, y cada 60s se re-consulta al servidor.
+//   └─ DESPLIEGUE: las 3 apps deben bumpear su pin ?v= de device-auth.js.
 // v1.0.29 — 2026-07-16 — [fix 500x S4] CANCELADO_AUTO (solicitud del día que expiró sin aprobar)
 //   reusa la pantalla NO_REGISTRADO → conserva el botón "Solicitar" en vez de caer a SIN_VERIFICAR
 //   (fail-closed sin salida). Título/detalle propios ("Solicitud expirada").
@@ -213,7 +242,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.29';
+  var _VERSION = '1.0.32';
 
   var _config = null;
   var _state = {
@@ -233,7 +262,15 @@
     // [v1.0.16 BUG 2] Marca optimista: tras aprobar in-situ, true durante la
     // ventana anti-retroceso. Evita que un re-verify silencioso lagueado baje la
     // app a "sin autorización" justo después de aprobar.
-    recienAprobado: false
+    recienAprobado: false,
+    // [v1.0.30] GRACIA: true mientras operamos con una verificación previa válida
+    // porque la RED falló. No es un estado de auth: _state.estado sigue mandando.
+    gracia: false,
+    graciaTimer: null,
+    graciaPaso: 0,
+    // [v1.0.30] ms en que la pestaña pasó a 'hidden' (para el despertar consciente).
+    ocultoDesde: 0,
+    ultimoWakePing: 0
   };
   // [v1.0.16 BUG 2] Clave + ventana (ms) de la marca optimista anti-retroceso.
   // Persistida para que SOBREVIVA al reload (cuando la app sí recarga). Sólo
@@ -366,13 +403,16 @@
   // Accept-Profile/Content-Profile: mos). Las RPCs de auth esperan los args
   // bajo la clave `p`. Devuelve Promise<objeto JSON> o RECHAZA (timeout/red/
   // status no-2xx/JSON inválido) — el caller decide el fallback a GAS.
-  function _rpcAnon(fn, args) {
+  // [v1.0.30] `timeoutMs` opcional (default 8000, como antes) + cache:'no-store':
+  // tras el sleep del móvil una respuesta cacheada/conexión muerta no sirve.
+  function _rpcAnon(fn, args, timeoutMs) {
     var base = _sbBase();
     if (!base || !_config.sbAnon) return Promise.reject(new Error('SB no configurado'));
     var ctrl = new AbortController();
-    var to = setTimeout(function () { ctrl.abort(); }, 8000);
+    var to = setTimeout(function () { ctrl.abort(); }, timeoutMs || 8000);
     return fetch(base + '/rest/v1/rpc/' + fn, {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'apikey': _config.sbAnon,
         'Authorization': 'Bearer ' + _config.sbAnon,
@@ -414,6 +454,29 @@
       if (!r.ok) throw new Error('get_flags HTTP ' + r.status);
       return r.json();
     }).catch(function (e) { clearTimeout(to); throw e; });
+  }
+
+  // ── [v1.0.30] DESPERTAR CONSCIENTE (wake ping) ───────────────────────────────
+  // Tras el sleep del móvil, el socket TCP/TLS contra Supabase está MUERTO aunque
+  // la red esté bien: el primer POST "de verdad" se queda colgado hasta abortar.
+  // Antes de disparar cualquier refresco mandamos un OPTIONS liviano (sin body, sin
+  // auth, 3s, no-store) al MISMO origen que usan REST y las Edge Functions → el
+  // navegador rehace el handshake y el POST siguiente sale por una conexión viva.
+  // FIRE-AND-FORGET absoluto: el resultado se ignora, un fallo no bloquea nada.
+  // Throttle 10s para que no se dispare dos veces por un visibilitychange doble.
+  function _wakePing() {
+    try {
+      var base = _sbBase();
+      if (!base) return;
+      var ahora = Date.now();
+      if (ahora - (_state.ultimoWakePing || 0) < 10000) return;
+      _state.ultimoWakePing = ahora;
+      var ctrl = new AbortController();
+      var to = setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, 3000);
+      fetch(base + '/rest/v1/rpc/get_flags', {
+        method: 'OPTIONS', cache: 'no-store', signal: ctrl.signal
+      }).then(function () { clearTimeout(to); }, function () { clearTimeout(to); });
+    } catch (_) {}
   }
 
   // Adapta la respuesta snake_case de verificar_dispositivo/registrar_dispositivo
@@ -580,14 +643,24 @@
     return lastDate === hoyLima;
   }
 
+  // [v1.0.30] Clave DERIVADA (por app, igual que lastVerifyDate) con el instante ms
+  // de la última verificación EXITOSA. Es el reloj de la GRACIA: sin ella no se sabe
+  // si "verificado hoy" fue hace 2 minutos o hace 23 horas. No requiere tocar el
+  // storageKeys que pasan las 3 apps.
+  function _kOkMs() { return _config.storageKeys.lastVerifyDate + '_ok_ms'; }
+
   function _guardarCacheExitoso(fechaLima, verifyVersion) {
     _lsSet(_config.storageKeys.lastVerifyDate, fechaLima || _fechaHoyLima());
     _lsSet(_config.storageKeys.lastVerifyDeviceId, _state.deviceId);
     if (verifyVersion) _lsSet(_config.storageKeys.verifyVersion, String(verifyVersion));
+    _lsSet(_kOkMs(), String(Date.now()));   // [v1.0.30] reloj de la gracia
   }
   function _invalidarCache() {
     _lsRm(_config.storageKeys.lastVerifyDate);
     _lsRm(_config.storageKeys.verifyVersion);
+    // [v1.0.30] CRÍTICO: cualquier veredicto de bloqueo pasa por acá → apaga la
+    // gracia. Un equipo que el servidor rechazó NO puede volver a operar por cache.
+    _lsRm(_kOkMs());
   }
 
   // ── Sonidos + vibración ──────────────────────────────────────
@@ -732,8 +805,13 @@
       '.da-insitu-hint{font-size:11px;color:#64748b;margin-top:8px;line-height:1.4}',
       // Toast aprobado
       '#daApproveToast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:24px 36px;border-radius:16px;font-size:18px;font-weight:800;z-index:99998;box-shadow:0 20px 60px rgba(16,185,129,.4);animation:da-pop .4s ease-out;text-align:center}',
+      // [v1.0.30] Chip discreto de GRACIA: la app OPERA mientras se reverifica.
+      '#daGraciaChip{position:fixed;left:12px;bottom:12px;z-index:99997;display:flex;align-items:center;gap:7px;background:rgba(15,23,42,.92);color:#fbbf24;border:1px solid rgba(251,191,36,.45);padding:7px 12px;border-radius:999px;font:600 12px/1 system-ui,-apple-system,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35);pointer-events:none;max-width:calc(100vw - 24px)}',
+      '#daGraciaChip i{width:9px;height:9px;border-radius:50%;background:#fbbf24;display:inline-block;animation:da-gr-pulse 1.2s ease-in-out infinite}',
+      '@keyframes da-gr-pulse{0%,100%{opacity:.25}50%{opacity:1}}',
       // prefers-reduced-motion → sin animaciones (mockups §3): estados estáticos.
       '@media (prefers-reduced-motion: reduce){',
+      '  #daGraciaChip i{animation:none!important;opacity:1}',
       '  #' + OVERLAY_ID + '{transition:none}',
       '  #' + OVERLAY_ID + ' .da-emoji,#' + OVERLAY_ID + ' .da-spinner,#' + OVERLAY_ID + ' .da-dots i,.da-shake,.da-insitu-modal,.da-insitu-modal.da-modal-shake,#daApproveToast,.da-otp.da-otp-bad,.da-check-svg .da-ck-ring,.da-check-svg .da-ck-tick{animation:none!important}',
       '  .da-check-svg .da-ck-ring,.da-check-svg .da-ck-tick{stroke-dashoffset:0!important}',
@@ -746,7 +824,7 @@
       // pointer-events:none bloquea clicks; filter difumina visualmente; overflow
       // hidden previene scroll/inputs. Solo el overlay y modales DA siguen activos.
       'body.da-blocked{overflow:hidden!important}',
-      'body.da-blocked > *:not(#' + OVERLAY_ID + '):not(.da-insitu-overlay):not(#daApproveToast):not(#device-auth-css){pointer-events:none!important;filter:blur(4px) brightness(.4) saturate(.5)!important;user-select:none!important}'
+      'body.da-blocked > *:not(#' + OVERLAY_ID + '):not(.da-insitu-overlay):not(#daApproveToast):not(#daGraciaChip):not(#device-auth-css){pointer-events:none!important;filter:blur(4px) brightness(.4) saturate(.5)!important;user-select:none!important}'
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -1437,6 +1515,141 @@
     }).catch(function () {});
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // [v1.0.30] GRACIA EN VEZ DE PORTAZO
+  // Un timeout de red NO es un veredicto de seguridad. Si el servidor NO CONTESTA
+  // pero este mismo equipo tiene una verificación EXITOSA reciente, la app opera en
+  // modo "verificando…" y reintenta sola en background. El bloqueo se reserva para
+  // lo que de verdad es bloqueo. Ver la cabecera del archivo para la política.
+  // ══════════════════════════════════════════════════════════════════════════
+  // VENTANA DE GRACIA = 8 HORAS = UN TURNO. Decisión del dueño (opción A), no 24h.
+  // POR QUÉ 8h: cubre el caso real que motivó todo esto —el equipo verificó al abrir
+  // en la mañana y sufre un hipo de red al mediodía, dentro del MISMO turno— y a la vez
+  // cierra casi todo el hueco de falsificación: el marcador vive en localStorage, así
+  // que alguien con devtools Y la red cortada podría forjarlo; con 8h esa ventana no
+  // sobrevive a un cambio de turno ni a la noche. Al día siguiente el equipo SIEMPRE
+  // tiene que hablar con el servidor antes de operar.
+  var _GRACIA_MS = 8 * 60 * 60 * 1000;
+  var _GRACIA_PLAN = [3000, 8000, 20000];           // 3 reintentos escalonados
+  var _GRACIA_LATIDO_MS = 60000;                    // luego, re-consulta cada 60s
+
+  // ¿El fallo fue de RED (no hubo veredicto del servidor)?
+  // · abort/timeout/TypeError de fetch/DNS → SÍ (el server nunca habló).
+  // · HTTP 4xx → NO: el servidor RESPONDIÓ rechazando → fail-closed como siempre.
+  // · HTTP 5xx → SÍ: caída de infra, tampoco es un veredicto sobre el equipo.
+  // OJO: un "NO_REGISTRADO / SUSPENDIDO / INACTIVO" NUNCA llega acá — ese camino va
+  // por _procesarRespuestaVerify (HTTP 200 con estado) y bloquea igual que siempre.
+  function _esFalloDeRed(e) {
+    var m = String((e && e.message) || e || '');
+    if (/HTTP 4[0-9][0-9]/.test(m)) return false;
+    return true;
+  }
+
+  // ¿Hay una verificación previa VÁLIDA (mismo deviceId) y RECIENTE (≤8h)?
+  function _graciaElegible() {
+    try {
+      if (!_config || !_config.storageKeys || !_state.deviceId) return false;
+      // El cache debe pertenecer a ESTE deviceId (el multi-store ya lo resolvió).
+      if (_lsGet(_config.storageKeys.lastVerifyDeviceId) !== _state.deviceId) return false;
+      var ts = parseInt(_lsGet(_kOkMs()) || '0', 10);
+      if (ts > 0) {
+        if (ts > Date.now() + 60000) return false;          // marca en el futuro = basura
+        return (Date.now() - ts) <= _GRACIA_MS;
+      }
+      // [v1.0.32] SIN marca ms → NO hay gracia. El bootstrap por fecha-Lima que tenía
+      // la 1.0.30 ('verificado HOY') era compatible con una ventana de 24h, pero con 8h
+      // mentiría: 'hoy' a las 23:00 puede ser una verificación de las 00:30. Un equipo
+      // que aún no escribió la marca (primer arranque tras este deploy) simplemente no
+      // recibe gracia esa vez; en cuanto verifica bien una sola vez, ya la tiene.
+      return false;
+    } catch (_) { return false; }
+  }
+
+  function _chipGracia(on) {
+    try {
+      var el = document.getElementById('daGraciaChip');
+      if (!on) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+      if (el) return;
+      _injectCss();
+      el = document.createElement('div');
+      el.id = 'daGraciaChip';
+      el.innerHTML = '<i></i><span>Verificando dispositivo… (sin conexión estable)</span>';
+      _appendCuandoListo(el);
+    } catch (_) {}
+  }
+
+  function _pararGracia() {
+    if (_state.graciaTimer) { clearTimeout(_state.graciaTimer); _state.graciaTimer = null; }
+    _state.graciaPaso = 0;
+    if (_state.gracia) { _state.gracia = false; _chipGracia(false); }
+  }
+
+  // Entrar en gracia: la app se destapa (estado ACTIVO heredado de la verificación
+  // previa) + chip + reintentos. Devuelve 'ACTIVO' para que el caller no rechace.
+  function _entrarEnGracia(motivo) {
+    // [v1.0.31] BLINDADO. En 1.0.30 esta función no tenía try/catch: si CUALQUIER
+    // paso lanzaba, el callback moría con _state.estado todavía en 'VERIFICANDO' y
+    // el overlay quedaba para siempre. Ahora un throw cae al cierre fail-closed.
+    try { return _entrarEnGraciaReal(motivo); }
+    catch (e) {
+      try { console.error('[DeviceAuth] la gracia falló → cierre fail-closed:', e && e.message); } catch (_) {}
+      _cerrarPorGraciaVencida(e);
+      return 'SIN_VERIFICAR';
+    }
+  }
+  function _entrarEnGraciaReal(motivo) {
+    _desarmarWatchdog();
+    _verifyPromise = null;
+    _state.gracia = true;
+    _state.graciaPaso = 0;
+    _state.estado = 'ACTIVO';       // hereda el veredicto previo, NO lo inventa
+    try { console.warn('[DeviceAuth] GRACIA (' + motivo + '): verificación previa válida ≤8h y el servidor no responde → la app opera mientras se reverifica en background.'); } catch (_) {}
+    _ocultarOverlay();              // bajo ACTIVO quita da-pre-block + dispara deviceauth:authorized
+    _chipGracia(true);
+    if (_config.onAuth) { try { _config.onAuth(); } catch (_) {} }
+    _arrancarHeartbeat();
+    _detenerPolling();
+    try { window.dispatchEvent(new CustomEvent('deviceauth:gracia', { detail: { motivo: motivo } })); } catch (_) {}
+    _agendarReintentoGracia();
+    return 'ACTIVO';
+  }
+
+  function _agendarReintentoGracia() {
+    if (!_state.gracia) return;
+    if (_state.graciaTimer) return;
+    var i = _state.graciaPaso;
+    var espera = (i < _GRACIA_PLAN.length) ? _GRACIA_PLAN[i] : _GRACIA_LATIDO_MS;
+    _state.graciaTimer = setTimeout(function () {
+      _state.graciaTimer = null;
+      if (!_state.gracia) return;
+      _state.graciaPaso++;
+      // ¿Se venció la gracia mientras reintentábamos? → cerrar (condición (c)).
+      if (!_graciaElegible()) return _cerrarPorGraciaVencida();
+      _wakePing();                                  // conexión fresca antes del POST
+      _consultarBackend(true).then(function () {
+        // Llegó veredicto: si fue ACTIVO, _procesarRespuestaVerify ya destapó todo;
+        // si fue bloqueo, ya bloqueó. En ambos casos la gracia termina.
+        _pararGracia();
+      }, function (e) {
+        if (!_esFalloDeRed(e)) return _cerrarPorGraciaVencida(e);   // el server habló y no fue OK
+        _agendarReintentoGracia();                                   // sigue sin red → reintentar
+      });
+    }, espera);
+    try { if (_state.graciaTimer && _state.graciaTimer.unref) _state.graciaTimer.unref(); } catch (_) {}
+  }
+
+  // Fin de la gracia SIN veredicto favorable → fail-closed (pantalla de bloqueo).
+  function _cerrarPorGraciaVencida(e) {
+    // [v1.0.31] El ESTADO se fija ANTES de tocar el DOM: aunque _mostrarUI lance,
+    // el módulo YA salió de VERIFICANDO (nunca queda colgado).
+    try { _pararGracia(); } catch (_) {}
+    try { _detenerHeartbeat(); } catch (_) {}
+    _state.estado = 'SIN_VERIFICAR';
+    _verifyPromise = null;
+    try { _mostrarUI('SIN_VERIFICAR', (e && e.message) || 'No se pudo reverificar el dispositivo. Revisa tu conexión.'); } catch (_) {}
+    if (_config && _config.onError) { try { _config.onError(e || new Error('gracia vencida')); } catch (_) {} }
+  }
+
   // [v1.0.19] WATCHDOG GLOBAL del estado "VERIFICANDO" (DISENO §Estado 1:
   // "watchdog 10s — no cuelga"). Antes NO existía: si CUALQUIER eslabón del flow
   // de boot se colgaba (r.json() de GAS sin tope —ya corregido—, la rama
@@ -1451,7 +1664,10 @@
   // 1-10s) resuelve y desarma el watchdog antes de que dispare (no hay falso
   // positivo). Se desarma en _verificar().finally y en cualquier _mostrarUI/
   // _ocultarOverlay de estado terminal vía _desarmarWatchdog.
-  var _WATCHDOG_MS = 14000;
+  // [v1.0.30] 14000 → 16000. registrar_dispositivo (5s) + verificar_dispositivo (8s)
+  // en serie son 13s en el PEOR caso: con 14s el watchdog cerraba fail-closed ANTES
+  // de que el verify llegara a responder. 16s deja 3s de margen real.
+  var _WATCHDOG_MS = 10000;
   function _desarmarWatchdog() {
     if (_state.watchdogTimer) { clearTimeout(_state.watchdogTimer); _state.watchdogTimer = null; }
   }
@@ -1463,19 +1679,25 @@
       // ACTIVO/PENDIENTE/INACTIVO/SUSPENDIDO/NO_REGISTRADO/SIN_VERIFICAR el flow
       // ya mostró su UI → no tocar nada (no pisar un estado legítimo).
       if (_state.estado !== 'VERIFICANDO') return;
-      console.warn('[DeviceAuth] watchdog ' + _WATCHDOG_MS + 'ms: verificación colgada → salida fail-closed (SIN_VERIFICAR, Reintentar).');
-      // FAIL-CLOSED: NO autorizamos. Soltamos la promise zombi para que el
-      // próximo _verificar (Reintentar / visibilitychange) no la reuse colgada.
+      // [v1.0.31] DEADLINE DURO. Pase lo que pase, a los 10s el módulo SALE de
+      // VERIFICANDO: gracia (si hay verificación previa válida) o bloqueo con
+      // Reintentar. Todo en try/catch: un throw acá dejaba el overlay eterno.
+      try {
+        if (_graciaElegible()) { _entrarEnGracia('deadline ' + _WATCHDOG_MS + 'ms'); return; }
+      } catch (_) {}
+      console.warn('[DeviceAuth] deadline ' + _WATCHDOG_MS + 'ms: la verificación no resolvió → salida fail-closed (SIN_VERIFICAR, Reintentar).');
+      // FAIL-CLOSED: NO autorizamos. El ESTADO se fija ANTES de pintar nada.
       _verifyPromise = null;
       _state.estado = 'SIN_VERIFICAR';
-      _mostrarUI('SIN_VERIFICAR', 'MOS no respondió a tiempo. Revisa tu conexión e intenta de nuevo.');
-      if (_config.onError) try { _config.onError(new Error('watchdog timeout verificando dispositivo')); } catch(_) {}
+      try { _mostrarUI('SIN_VERIFICAR', 'MOS no respondió a tiempo. Revisa tu conexión e intenta de nuevo.'); } catch (_) {}
+      if (_config && _config.onError) { try { _config.onError(new Error('deadline verificando dispositivo')); } catch(_) {} }
     }, _WATCHDOG_MS);
   }
 
   // ── Verificación con singleton dedupe ────────────────────────
   function _verificar() {
     if (_verifyPromise) return _verifyPromise;
+    _pararGracia();   // [v1.0.30] verificación explícita → cerrar el modo gracia previo
     _state.estado = 'VERIFICANDO';
     _mostrarUI('VERIFICANDO');
     // [v1.0.19] Armar el watchdog: si nada resuelve en 14s, salir del spinner
@@ -1527,20 +1749,23 @@
     //    insertar (master se aprueba in-situ) — coherente con GAS. Si CUALQUIER
     //    RPC falla → fallback transparente a GAS (auth nunca se queda sin red). ──
     var ua = (navigator.userAgent || '').substring(0, 200);
+    // [v1.0.30] registrar_dispositivo con 5s (antes 8s): NO es autoritativo — su
+    // fallo ya se ignora (abajo se verifica igual) — y en serie con el verify (8s)
+    // se pasaba del watchdog. 5+8=13s < 16s.
     return _rpcAnon('registrar_dispositivo', {
       id_dispositivo: _state.deviceId, app: _config.app,
       user_agent: ua, nombre_equipo: null
-    }).then(function () {
+    }, 3000).then(function () {
       // El veredicto de estado lo da verificar_dispositivo (registrar solo
       // siembra/heartbea). Si registrar falla NO bloqueamos: igual verificamos.
       return _rpcAnon('verificar_dispositivo', {
         id_dispositivo: _state.deviceId, app: _config.app
-      });
+      }, 5000);
     }, function () {
       // registrar falló → intentar verificar igual (puede existir ya).
       return _rpcAnon('verificar_dispositivo', {
         id_dispositivo: _state.deviceId, app: _config.app
-      });
+      }, 5000);
     }).then(function (j) {
       var d = _mapVerifyResp(j);
       if (!d) throw new Error('verificar_dispositivo: respuesta sin estado');
@@ -1593,6 +1818,13 @@
       console.warn('[DeviceAuth] refresh silencioso falló (sin GAS):', e && e.message);
       return Promise.reject(e);
     }
+    // [v1.0.30] GRACIA: el fallo fue de RED (sin veredicto del servidor) Y este
+    // equipo tiene una verificación previa válida ≤8h → operar en modo
+    // "verificando…" con reintentos, en vez de la pantalla de bloqueo.
+    // Si el servidor RESPONDIÓ (HTTP 4xx) o no hay verificación previa → portazo.
+    if (_esFalloDeRed(e) && _graciaElegible()) {
+      return Promise.resolve(_entrarEnGracia((e && e.message) || 'red'));
+    }
     _state.estado = 'SIN_VERIFICAR';
     _mostrarUI('SIN_VERIFICAR', (e && e.message) || 'Error de red');
     if (_config.onError) try { _config.onError(e); } catch(_){}
@@ -1605,6 +1837,10 @@
   function _procesarRespuestaVerify(d, silencioso) {
     return Promise.resolve().then(function() {
         d = d || {};
+        // [v1.0.30] Llegó un VEREDICTO del servidor → la gracia terminó (sea ACTIVO
+        // o bloqueo). Sólo apaga el chip/reintentos; el veredicto lo aplica el
+        // state-machine de abajo, intacto.
+        _pararGracia();
         // R5: validar verifyVersion — si el server bumpó, invalidar cache local
         var storedVer = parseInt(_lsGet(_config.storageKeys.verifyVersion) || '0', 10);
         var serverVer = parseInt(d.verifyVersion || 0, 10);
@@ -1902,7 +2138,19 @@
 
   // ── visibilitychange: si vuelve de background y cambió el día Lima, re-verificar ──
   function _onVisibilityChange() {
+    // [v1.0.30] DESPERTAR CONSCIENTE. Anotamos cuándo se ocultó y, al volver tras
+    // >60s, mandamos el ping liviano ANTES de cualquier refresco: reconstruye la
+    // conexión TCP/TLS que murió con el sleep del móvil. Fire-and-forget: si falla
+    // no bloquea nada y el flujo de abajo sigue exactamente igual que antes.
+    if (document.visibilityState === 'hidden') { _state.ocultoDesde = Date.now(); return; }
     if (document.visibilityState !== 'visible') return;
+    var oculto = _state.ocultoDesde ? (Date.now() - _state.ocultoDesde) : 0;
+    _state.ocultoDesde = 0;
+    if (oculto > 60000) {
+      _wakePing();
+      // Si volvimos operando en gracia, reintentar YA (sin esperar el próximo tick).
+      if (_state.gracia && !_state.graciaTimer) { _state.graciaPaso = 0; _agendarReintentoGracia(); }
+    }
     // [v1.0.9 BUG H FIX] Si estamos en PENDIENTE_APROBACION y la pestaña vuelve
     // a foreground, hacer un fetch inmediato sin esperar 15s al próximo tick
     // del polling (que pudo haberse saltado mientras estaba en background).
@@ -1944,6 +2192,12 @@
     _state.recienAprobado = _optimistaVigente();
     _state.estado = 'VERIFICANDO';
     _mostrarUI('VERIFICANDO');
+    // [v1.0.31] DEADLINE GLOBAL armado ACÁ, no en _verificar(). En 1.0.30 el
+    // watchdog sólo cubría desde _verificar() en adelante: si _resolverDeviceId()
+    // (IndexedDB/Cache) tardaba, NADIE vigilaba y el overlay quedaba sin dueño.
+    // Desde init() el reloj cubre TODO el arranque: resolver id + registrar +
+    // verificar + procesar. _verificar() lo re-arma en cada reintento explícito.
+    _armarWatchdog();
     return _resolverDeviceId().then(function(id) {
       // [v1.0.16 BUG 1] _setDeviceId actualiza EN VIVO los nodos del UUID ya
       // pintados (overlay/modal) → "(sin id)"/"generando ID…" se reemplaza por el
@@ -1971,6 +2225,13 @@
         }
         return estado;
       });
+    }).catch(function (e) {
+      // [v1.0.31] init() NO propaga: en 1.0.30 el rechazo llegaba a las 3 apps (que
+      // llaman DeviceAuth.init(...) sin .catch) y salía como pageerror
+      // "signal is aborted without reason". El estado ya lo fijó el camino
+      // fail-closed / deadline; acá sólo devolvemos el estado alcanzado.
+      try { console.warn('[DeviceAuth] init resolvió con fallo controlado:', e && e.message); } catch (_) {}
+      return _state.estado;
     });
   }
 
@@ -1986,11 +2247,16 @@
       return _verificar();
     },
     isAuthorized: function() { return _state.estado === 'ACTIVO'; },
+    // [v1.0.30] true si operamos con una verificación previa mientras se reverifica.
+    enGracia: function() { return _state.gracia === true; },
+    // [v1.0.30] Ping liviano para reconstruir la conexión tras un sleep. Fire-and-forget.
+    wakePing: function() { try { _wakePing(); } catch(_) {} },
     cerrarSesion: function() {
       _invalidarCache();
       _detenerPolling();
       _detenerHeartbeat();
       _desarmarWatchdog();  // [v1.0.19] no dejar el watchdog vivo tras teardown
+      _pararGracia();       // [v1.0.30] ni el chip/reintentos de gracia
       // [v1.0.9 BUG LL FIX] Limpiar promise zombi — antes próxima init() reusaba
       // la promesa pendiente (que nunca resolvía si cerrarSesion la abortó).
       _verifyPromise = null;

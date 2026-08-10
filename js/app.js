@@ -419,7 +419,34 @@ const MOS = (() => {
     // (que vive afuera de init) la encuentre. Bug previo: ReferenceError
     // _prefetchSesionEnLinea is not defined al hacer login completo.
     window._prefetchSesionEnLinea = _prefetchSesionEnLinea;
+
+    // ─────────────────────────────────────────────
+    // [v2.43.728] PRIORIDAD AL CAMINO CRÍTICO.
+    // El prefetch bajaba MEGABYTES en paralelo con la verificación de dispositivo y el
+    // mint (un POST de 200 bytes). En un celular que vuelve de segundo plano esa
+    // avalancha entierra el POST de auth y lo hace abortar por timeout. Cambio mínimo:
+    // el prefetch se ENCADENA al resultado de la verificación (evento
+    // deviceauth:authorized / deviceauth:gracia) en vez de dispararse en paralelo.
+    // Si el equipo NO queda autorizado no se precarga nada. Failsafe a 20s por si el
+    // evento no llega pero el módulo ya autorizó → el prefetch nunca se pierde.
+    // El cuerpo original queda INTACTO en _prefetchSesionEnLineaAhora.
+    // ─────────────────────────────────────────────
     function _prefetchSesionEnLinea() {
+      const _lanzar = () => { setTimeout(_prefetchSesionEnLineaAhora, 300); };
+      const _autorizado = () => {
+        try { return !!(window.DeviceAuth && window.DeviceAuth.isAuthorized && window.DeviceAuth.isAuthorized()); }
+        catch (_) { return false; }
+      };
+      if (typeof window.DeviceAuth === 'undefined') { _lanzar(); return; }
+      if (_autorizado()) { _lanzar(); return; }
+      let _ya = false;
+      const _once = () => { if (_ya) return; _ya = true; _lanzar(); };
+      window.addEventListener('deviceauth:authorized', _once, { once: true });
+      window.addEventListener('deviceauth:gracia', _once, { once: true });
+      setTimeout(() => { if (!_ya && _autorizado()) _once(); }, 20000);
+    }
+
+    function _prefetchSesionEnLineaAhora() {
       if (!navigator.onLine) return;
       const t0 = Date.now();
       _netSyncStart('PRECARGANDO');
@@ -4196,6 +4223,7 @@ const MOS = (() => {
   function _segLadderCells(regiones, pcKg, cmap, onTramoJs, onBaseJs) {
     return regiones.map(r => {
       const rng = _segFmtPeso(r.a) + '–' + _segFmtPeso(r.b);
+      // [728] los extremos abierto/cerrado se DIBUJAN: '[' incluye · '(' excluye — antes solo se veían al editar
       const s = r.seg;
       if (!s) {
         return `<div class="seg-lad-cell base" title="Precio base (canónico) — se cobra donde no hay tramo"${onBaseJs ? ` onclick="${onBaseJs}"` : ''}>
@@ -4210,10 +4238,12 @@ const MOS = (() => {
       const precio = pcKg * (1 + aj / 100);
       const color = cmap[s.id] || '#6366f1';
       const sidEsc = String(s.id).replace(/'/g, '&#39;');
+      const brOpen = (s.minIncl !== false ? '[' : '('), brClose = (s.maxIncl ? ']' : ')');
+      const rngBr = brOpen + rng + brClose;
       const onc = onTramoJs ? onTramoJs(sidEsc) : '';
       return `<div class="seg-lad-cell" style="background:linear-gradient(150deg,${color},${color}cc)"
-                   title="${_escapeHtml(s.nombre || 'tramo')} · ${flecha}${sign}${aj}% → S/ ${precio.toFixed(2)}/kg · click para editar"${onc ? ` onclick="${onc}"` : ''}>
-          <div class="seg-lad-rng">${rng}</div>
+                   title="${_escapeHtml(s.nombre || 'tramo')} · rango ${rngBr} (${brOpen === '[' ? 'incluye' : 'excluye'} ${_segFmtPeso(r.a)} · ${brClose === ']' ? 'incluye' : 'excluye'} ${_segFmtPeso(r.b)}) · ${flecha}${sign}${aj}% → S/ ${precio.toFixed(2)}/kg · click para editar"${onc ? ` onclick="${onc}"` : ''}>
+          <div class="seg-lad-rng">${rngBr}</div>
           <div class="seg-lad-price">S/ ${precio.toFixed(2)}<span class="seg-lad-unit">/kg</span></div>
           <div class="seg-lad-badge">${flecha} ${sign}${aj}%</div>
           ${s.nombre ? `<div class="seg-lad-name">${_escapeHtml(s.nombre)}</div>` : ''}
@@ -18849,8 +18879,24 @@ const MOS = (() => {
     return isNaN(v) ? v : (kg ? v * 1000 : v);
   }
 
+  // [728] Firma del formulario para saber si hay cambios reales (botón honesto).
+  function _satTramoFirma() {
+    return [$('satDesde') && $('satDesde').value, $('satHasta') && $('satHasta').value,
+            $('satAjuste') && $('satAjuste').value, $('satTramoUm') && $('satTramoUm').value,
+            $('satMinIncl') && $('satMinIncl').dataset.incl, $('satMaxIncl') && $('satMaxIncl').dataset.incl].join('|');
+  }
+  function _satTramoDirtyUpd() {
+    const st = _satState; if (!st || st.tipo !== 'tramo' || !st.editSegId) return;
+    const b = $('satGuardarBtn'); if (!b) return;
+    const sucio = _satTramoFirma() !== (st.editFirma || '');
+    b.disabled = !sucio;
+    b.textContent = sucio ? 'Guardar cambios' : 'Sin cambios que guardar';
+    b.style.opacity = sucio ? '' : '.5';
+    b.style.cursor = sucio ? '' : 'not-allowed';
+  }
   function _satTramoPreview() {
     const st = _satState; if (!st || st.tipo !== 'tramo') return;
+    _satTramoDirtyUpd();
     const pc = parseFloat(st.padre.precioVenta) || 0;
     const desde = _satTramoG(parseFloat($('satDesde')?.value));
     const hasta = _satTramoG(parseFloat($('satHasta')?.value));
@@ -18907,7 +18953,8 @@ const MOS = (() => {
     const bi = $('satMinIncl'); if (bi) { const inc = seg.minIncl !== false; bi.dataset.incl = inc ? '1' : '0'; bi.textContent = inc ? '[' : '('; }
     const bx = $('satMaxIncl'); if (bx) { const inc = !!seg.maxIncl; bx.dataset.incl = inc ? '1' : '0'; bx.textContent = inc ? ']' : ')'; }
     const t = $('satTitulo'); if (t) t.textContent = '📊 Editar tramo';
-    const b = $('satGuardarBtn'); if (b) b.textContent = 'Guardar cambios';
+    _satState.editFirma = _satTramoFirma();
+    const b = $('satGuardarBtn'); if (b) { b.disabled = true; b.textContent = 'Sin cambios que guardar'; b.style.opacity = '.5'; b.style.cursor = 'not-allowed'; }
     try { _satTramoPreview(); } catch(_) {}
   }
   function _satTramoEditar(idSeg) {
@@ -19144,7 +19191,7 @@ const MOS = (() => {
           _source: 'MOS_MODAL_SATELITE',
           skuBase: skuPadre, idProducto: padre.idProducto, segmentos: segs
         });
-        toast(_edId ? '📊 Tramo actualizado ✓' : '📊 Tramo guardado ✓', 'ok');
+        toast(_edId ? '📊 Tramo actualizado ✓ — mira la escalera del card' : '📊 Tramo guardado ✓', 'ok');
         S.loaded['catalogo'] = false;
         await loadCatalogo(true);
         _pulseCatalogoCard(padre.idProducto);

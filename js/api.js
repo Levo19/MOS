@@ -160,15 +160,33 @@ const API = (() => {
 
   // Edge `mint-mos`: verify_jwt=false → va con `apikey` (anon, público), SIN Authorization
   // (es quien EMITE el token). Devuelve {ok,token,exp}. Lanza si no hay token válido.
-  async function _mintViaEdgeMOS(deviceId) {
+  async function _mintViaEdgeMOS(deviceId, timeoutMs) {
     const res = await _sbFetchTimeout(`${_SB_URL}/functions/v1/mint-mos`, {
       method: 'POST',
       headers: { 'apikey': _SB_ANON, 'Content-Type': 'application/json' },
+      cache: 'no-store',
       body: JSON.stringify({ deviceId })
-    }, 6000);
+    }, timeoutMs || 6000);
     const d = await res.json().catch(() => null);
     if (!d || !d.ok || !d.token) throw new Error('mint-mos edge: ' + ((d && d.error) || res.status));
     return d;
+  }
+
+  // [2.43.728] PACIENCIA ESCALONADA CON TECHO. Al despertar el movil el socket esta
+  // muerto y el POST se cancela solo aunque la Edge este sana (medido: 387-859ms).
+  // 2 intentos 5s -> 8s (espera 0.5s) = 13.5s de techo. El 2o intento sale con
+  // conexion FRESCA (cache:'no-store') y es el que cura el socket muerto.
+  // OJO: el techo importa tanto como el reintento. Un plan 6/9/12 daba 28.4s y dejaba
+  // a MOS medio minuto con todo girando: parecia colgado aunque el auth ya hubiera
+  // resuelto. Este es el techo aprobado por el dueno.
+  async function _mintConReintentosMOS(deviceId) {
+    const planes = [{ t: 5000, espera: 500 }, { t: 8000, espera: 0 }];
+    let ultimo;
+    for (let i = 0; i < planes.length; i++) {
+      try { return await _mintViaEdgeMOS(deviceId, planes[i].t); }
+      catch (e) { ultimo = e; if (planes[i].espera) await new Promise(r => setTimeout(r, planes[i].espera)); }
+    }
+    throw ultimo;
   }
 
   // Devuelve el token cacheado (válido), o lo mintea via Edge. Si la Edge falla →
@@ -180,7 +198,7 @@ const API = (() => {
     if (_mintInFlight) return _mintInFlight;
     _mintInFlight = (async () => {
       try {
-        const d = await _mintViaEdgeMOS(_mosDeviceId());
+        const d = await _mintConReintentosMOS(_mosDeviceId());
         const n = Math.floor(Date.now() / 1000);
         _sbTok.token = d.token; _sbTok.exp = d.exp || (n + 1800);
         _agendarRefreshMOS();
@@ -220,7 +238,7 @@ const API = (() => {
     _refreshTid = setTimeout(async () => {
       _refreshTid = null;
       try {
-        const d = await _mintViaEdgeMOS(_mosDeviceId());
+        const d = await _mintConReintentosMOS(_mosDeviceId());
         const n = Math.floor(Date.now() / 1000);
         _sbTok.token = d.token; _sbTok.exp = d.exp || (n + 1800);
         _agendarRefreshMOS();

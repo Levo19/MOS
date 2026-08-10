@@ -1,1 +1,1 @@
-{"version":"2.43.727","build":"2.43.727 tramos: clic en un tramo ahora lo EDITA (el id llegaba al handler y se ignoraba, siempre abria \"nuevo\") + boton ✏ en la lista de tramos"}
+{"version":"2.43.728","build":"2.43.728 tramos: los extremos abierto/cerrado ahora SE DIBUJAN en la escalera [0-100) y el boton dice Sin cambios hasta que edites algo de verdad"}
