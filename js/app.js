@@ -4260,7 +4260,7 @@ const MOS = (() => {
     // (＋ contextual, con escalera viva + lista + eliminar) — no el modal producto viejo
     const cells = _segLadderCells(
       regiones, pcKg, cmap,
-      sidEsc => `event.stopPropagation();MOS.abrirModalSatelite('tramo','${idProdEsc}')`,
+      sidEsc => `event.stopPropagation();MOS.abrirModalSatelite('tramo','${idProdEsc}','${sidEsc}')`,
       `event.stopPropagation();MOS.abrirModalSatelite('tramo','${idProdEsc}')`
     );
     const axis = _segLadderAxis(regiones);
@@ -18563,8 +18563,10 @@ const MOS = (() => {
         segs = typeof raw === 'string' && raw ? JSON.parse(raw) : (Array.isArray(raw) ? raw : []);
       } catch(_) { segs = []; }
       _satState.segs = Array.isArray(segs) ? segs : [];
+      const _segEd = (typeof editarProd === 'string' && editarProd) ? (_satState.segs || []).find(s => String(s.id) === String(editarProd)) : null;
+      _satState.editSegId = _segEd ? String(_segEd.id) : null;
       const pc = parseFloat(padre.precioVenta) || 0;
-      tit.textContent = '📊 Nuevo tramo de precio';
+      tit.textContent = _segEd ? '📊 Editar tramo' : '📊 Nuevo tramo de precio';
       her.classList.remove('hidden');
       her.textContent = `Los tramos viven por grupo (sku_base) · precio canónico S/ ${pc.toFixed(2)}/kg`;
       body.innerHTML = `
@@ -18596,7 +18598,8 @@ const MOS = (() => {
           <div id="satEscalera" class="flex gap-1 mt-1"></div></div>
         <div><label class="lbl">Tramos existentes del grupo</label>
           <div id="satTramosLista" class="space-y-1.5 mt-1"></div></div>`;
-      btn.textContent = 'Guardar tramo';
+      btn.textContent = _segEd ? 'Guardar cambios' : 'Guardar tramo';
+      if (_segEd) _satTramoCargarEnForm(_segEd);
       openModal('modalSatelite');
       _satTramoPreview();
       _satTramosListaRender();
@@ -18885,10 +18888,34 @@ const MOS = (() => {
       return `<div class="flex items-center gap-2 rounded-lg px-3 py-2" style="background:#0e1626;border:1px solid #28344c">
         <span class="text-[11px] font-mono text-slate-300">${lbl}</span>
         <span class="text-[11px] font-bold" style="color:${aj >= 0 ? '#34d399' : '#fbbf24'}">${aj >= 0 ? '+' : ''}${aj}% → S/ ${(pc*(1+aj/100)).toFixed(2)}/kg</span>
-        <button class="cat-btn cat-btn-trash sm" style="margin-left:auto" title="Eliminar tramo"
+        <button class="cat-btn sm" style="margin-left:auto" title="Editar este tramo" onclick="MOS._satTramoEditar('${String(s.id || '').replace(/'/g,'')}')">✏</button>
+        <button class="cat-btn cat-btn-trash sm" title="Eliminar tramo"
                 onclick="MOS._satTramoEliminar('${String(s.id || '').replace(/'/g,'')}')">${_svgIcon('trash')}</button>
       </div>`;
     }).join('');
+  }
+  function _satTramoCargarEnForm(seg) {
+    if (!seg) return;
+    _satState.editSegId = String(seg.id);
+    const minG = +seg.min || 0, maxG = +seg.max || 0;
+    const enKg = minG % 1000 === 0 && maxG % 1000 === 0 && maxG >= 1000;
+    const um = $('satTramoUm'); if (um) um.value = enKg ? 'kg' : 'g';
+    const div = enKg ? 1000 : 1;
+    const d = $('satDesde'); if (d) d.value = minG / div;
+    const hh = $('satHasta'); if (hh) hh.value = maxG / div;
+    const a = $('satAjuste'); if (a) a.value = parseFloat(seg.ajustePct) || 0;
+    const bi = $('satMinIncl'); if (bi) { const inc = seg.minIncl !== false; bi.dataset.incl = inc ? '1' : '0'; bi.textContent = inc ? '[' : '('; }
+    const bx = $('satMaxIncl'); if (bx) { const inc = !!seg.maxIncl; bx.dataset.incl = inc ? '1' : '0'; bx.textContent = inc ? ']' : ')'; }
+    const t = $('satTitulo'); if (t) t.textContent = '📊 Editar tramo';
+    const b = $('satGuardarBtn'); if (b) b.textContent = 'Guardar cambios';
+    try { _satTramoPreview(); } catch(_) {}
+  }
+  function _satTramoEditar(idSeg) {
+    const st = _satState; if (!st || st.tipo !== 'tramo') return;
+    const seg = (st.segs || []).find(s => String(s.id) === String(idSeg));
+    if (!seg) { toast('Tramo no encontrado', 'error'); return; }
+    _satTramoCargarEnForm(seg);
+    try { if ($('satDesde')) $('satDesde').focus(); } catch(_) {}
   }
   async function _satTramoEliminar(idSeg) {
     const st = _satState;
@@ -19104,10 +19131,11 @@ const MOS = (() => {
       if (isNaN(desde) || desde < 0)        { toast('⚠ Desde es requerido', 'error'); return; }
       if (isNaN(hasta) || hasta <= desde)   { toast('⚠ Hasta debe ser mayor que Desde', 'error'); return; }
       if (isNaN(aj))                        { toast('⚠ El ajuste % es requerido', 'error'); return; }
-      const solapa = (_satState.segs || []).some(s => desde < (s.max ?? Infinity) && hasta > (s.min || 0));
+      const _edId = _satState.editSegId || null;
+      const solapa = (_satState.segs || []).some(s => String(s.id) !== String(_edId) && desde < (s.max ?? Infinity) && hasta > (s.min || 0));
       if (solapa) { toast('⚠ El tramo se solapa con uno existente — elimínalo de la lista de abajo y créalo de nuevo', 'error'); return; }
-      const nuevo = { id: 'SEG' + Date.now(), min: desde, max: hasta, minIncl, maxIncl, ajustePct: aj };
-      const segs = (_satState.segs || []).concat([nuevo]);
+      const nuevo = { id: _edId || ('SEG' + Date.now()), min: desde, max: hasta, minIncl, maxIncl, ajustePct: aj };
+      const segs = _edId ? (_satState.segs || []).map(s => String(s.id) === String(_edId) ? nuevo : s) : (_satState.segs || []).concat([nuevo]);
       _satGuardando = true;
       cerrarModalSatelite();
       toast('Guardando tramo…', 'info');
@@ -19116,7 +19144,7 @@ const MOS = (() => {
           _source: 'MOS_MODAL_SATELITE',
           skuBase: skuPadre, idProducto: padre.idProducto, segmentos: segs
         });
-        toast('📊 Tramo guardado ✓', 'ok');
+        toast(_edId ? '📊 Tramo actualizado ✓' : '📊 Tramo guardado ✓', 'ok');
         S.loaded['catalogo'] = false;
         await loadCatalogo(true);
         _pulseCatalogoCard(padre.idProducto);
@@ -47331,7 +47359,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     scanCodigo, genCodigoUnico,   // [catálogo v4] escáner generalizado + generador con prefijo
     scanBuscarCatalogo, abrirPlusContextual, _cerrarPlusCtx, abrirEditarProducto,           // [catálogo v4] buscador cámara + ＋ contextual
     abrirModalSatelite, cerrarModalSatelite, guardarSatelite,          // [catálogo v4] modales satélite
-    _satDerivadoPreview, _satPorcionInput, _satPrecioInput, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satEquivToggle, _satBracket,
+    _satDerivadoPreview, _satPorcionInput, _satPrecioInput, _satTramoPreview, _satValidarCodigo, _satTramoEliminar, _satTramoEditar, _satEquivToggle, _satBracket,
     _presSetFamilia, _presSetModelo, _presMostrarOtro, _presOtroInput, _presRecomponer, _presNombreManual, _presPrecioManual,   // [pres-v1] picker presentación
     _presCodigoSufijo, _presContenidoAuto, _presNombreCompuesto, _presDescriptorSugerido,                    // [pres-v1] helpers (test/uso)
     prodToggleEnvasable,                                               // [catálogo v4] toggle granel en creación

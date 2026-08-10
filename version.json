@@ -1,1 +1,1 @@
-{"version":"2.43.726","build":"2.43.726 ROLLBACK de la resiliencia 725: dejaba a MOS en \"verificando dispositivo\" sin resolver. Vuelve al comportamiento estable de 724 mientras se corrige."}
+{"version":"2.43.727","build":"2.43.727 tramos: clic en un tramo ahora lo EDITA (el id llegaba al handler y se ignoraba, siempre abria \"nuevo\") + boton ✏ en la lista de tramos"}
