@@ -17,16 +17,16 @@
 //   │ 14s a 16s (3s de margen) y ya no cierra a ciegas: consulta la GRACIA.
 //   ├─ 3) GRACIA EN VEZ DE PORTAZO (_entrarEnGracia) ───────────────────────────
 //   │ Si el verify FALLA POR RED (timeout/abort/5xx) y existe una verificación
-//   │ previa EXITOSA de ESTE MISMO deviceId con ≤8h (UN TURNO), la app OPERA en modo
+//   │ previa EXITOSA de ESTE MISMO deviceId EL MISMO DIA (TZ Lima), la app OPERA en modo
 //   │ "verificando…" (chip discreto) mientras reintenta en background (3s/8s/20s
 //   │ y luego cada 60s). BLOQUEA sólo si: (a) no hay verificación previa válida,
 //   │ (b) el servidor RESPONDE un veredicto de no-autorizado (ese camino nunca
 //   │ pasa por aquí: va por _procesarRespuestaVerify y bloquea igual que siempre),
-//   │ o (c) la verificación previa supera las 8h. Un HTTP 4xx (el server habló)
+//   │ o (c) la verificacion previa NO es de hoy (Lima). Un HTTP 4xx (el server hablo)
 //   │ tampoco da gracia. JAMÁS se opera con un equipo que el servidor rechazó.
 //   │ LÍMITE HONESTO: el marcador vive en localStorage (forjable con devtools +
 //   │ red cortada). Es el mismo nivel de confianza del fail-soft offline que el
-//   │ módulo ya documentaba; se acota a 8h, se BORRA en _invalidarCache ante
+//   │ modulo ya documentaba; muere a medianoche Lima, se BORRA en _invalidarCache ante
 //   │ cualquier veredicto de bloqueo, y cada 60s se re-consulta al servidor.
 //   └─ DESPLIEGUE: las 3 apps deben bumpear su pin ?v= de device-auth.js.
 // v1.0.29 — 2026-07-16 — [fix 500x S4] CANCELADO_AUTO (solicitud del día que expiró sin aprobar)
@@ -242,7 +242,7 @@
   // [v1.0.14] Versión honesta del módulo. Las 3 apps lo cargan vía CDN con un
   // pin ?v= en su <script>; si ese pin miente, ESTA constante revela la versión
   // REAL servida. Se loguea al boot (init) como "[DeviceAuth] vX en <app>".
-  var _VERSION = '1.0.35';
+  var _VERSION = '1.0.37';
 
   var _config = null;
   var _state = {
@@ -833,7 +833,23 @@
   // [v1.0.1 BUG FIX] El script se carga en <head> → document.body puede no
   // existir cuando _renderOverlay corre. Helper que espera a que body esté
   // listo antes de hacer appendChild. Si ya existe, append inmediato.
+  // [v1.0.36] Overlay vigente + borrado de TODAS las copias. Ver la nota larga en
+  // _renderOverlay: con el modulo cargado en <head>, los appends se difieren y se
+  // pueden acumular dos overlays con el mismo id.
+  var _ovActual = null;
+  function _quitarOverlays() {
+    try {
+      var l = document.querySelectorAll('#' + OVERLAY_ID);
+      for (var i = 0; i < l.length; i++) { if (l[i].parentNode) l[i].parentNode.removeChild(l[i]); }
+    } catch (_) {
+      var e0 = document.getElementById(OVERLAY_ID);
+      if (e0 && e0.parentNode) e0.parentNode.removeChild(e0);
+    }
+  }
+
   function _appendCuandoListo(node, contenedor) {
+    // [v1.0.36] Un overlay que quedo obsoleto mientras esperaba a <body> NO aterriza.
+    if (node && node.id === OVERLAY_ID && _ovActual && node !== _ovActual) return;
     var target = contenedor || _config.uiContainer || document.body;
     if (target) {
       target.appendChild(node);
@@ -841,6 +857,9 @@
     }
     // Body aún no existe — esperar DOMContentLoaded
     var attach = function() {
+      // [v1.0.36] revalidar: entre el agendado y el DOMContentLoaded el overlay pudo
+      // quedar obsoleto (otro _renderOverlay). Si ya no es el vigente, se descarta.
+      if (node && node.id === OVERLAY_ID && _ovActual && node !== _ovActual) return;
       var t2 = _config.uiContainer || document.body;
       if (t2) t2.appendChild(node);
       else setTimeout(attach, 50);  // último recurso
@@ -864,13 +883,14 @@
     if (_state.estado !== 'ACTIVO' && document.documentElement) {
       document.documentElement.classList.add('da-pre-block');
     }
-    var existing = document.getElementById(OVERLAY_ID);
-    if (existing) existing.remove();
+    // [v1.0.36] Quitar TODAS las copias, no solo la primera.
+    _quitarOverlays();
     // [v1.0.16 BUG 1] Re-render limpia los nodos viejos del UUID (el DOM anterior
     // se descarta); registramos los nuevos para que _setDeviceId los refresque.
     _state.devIdNodes = [];
     var ov = document.createElement('div');
     ov.id = OVERLAY_ID;
+    _ovActual = ov;   // [v1.0.36] el unico overlay que tiene derecho a aterrizar
     var actions = '';
     if (opts.actions) {
       opts.actions.forEach(function(a) {
@@ -908,8 +928,8 @@
     }
   }
   function _ocultarOverlay() {
-    var ov = document.getElementById(OVERLAY_ID);
-    if (ov) ov.remove();
+    _quitarOverlays();      // [v1.0.36] todas las copias, no solo la primera
+    _ovActual = null;
     // [v1.0.2] Quitar bloqueo de la app — pointer-events y blur vuelven al estado normal
     _desbloquearApp();
     // [v1.0.6 BUG R1 FIX] Quitar pre-block del <html> SOLO si estado es ACTIVO.
@@ -979,7 +999,7 @@
         document.documentElement.classList.remove('da-pre-block');
         huboGate = true;
       }
-      try { var ov = document.getElementById(OVERLAY_ID); if (ov && ov.parentNode) { ov.parentNode.removeChild(ov); huboGate = true; } } catch(_) {}
+      try { if (document.querySelectorAll('#' + OVERLAY_ID).length) { _quitarOverlays(); _ovActual = null; huboGate = true; } } catch(_) {}
       if (huboGate) {
         try { console.warn('[DeviceAuth] gate/overlay re-tapado bajo estado ACTIVO (carrera) → re-levantado (anti-stuck).'); } catch(_) {}
         _desbloquearApp();
@@ -1523,14 +1543,9 @@
   // modo "verificando…" y reintenta sola en background. El bloqueo se reserva para
   // lo que de verdad es bloqueo. Ver la cabecera del archivo para la política.
   // ══════════════════════════════════════════════════════════════════════════
-  // VENTANA DE GRACIA = 8 HORAS = UN TURNO. Decisión del dueño (opción A), no 24h.
-  // POR QUÉ 8h: cubre el caso real que motivó todo esto —el equipo verificó al abrir
-  // en la mañana y sufre un hipo de red al mediodía, dentro del MISMO turno— y a la vez
-  // cierra casi todo el hueco de falsificación: el marcador vive en localStorage, así
-  // que alguien con devtools Y la red cortada podría forjarlo; con 8h esa ventana no
-  // sobrevive a un cambio de turno ni a la noche. Al día siguiente el equipo SIEMPRE
-  // tiene que hablar con el servidor antes de operar.
-  var _GRACIA_MS = 8 * 60 * 60 * 1000;
+  // TOPE DURO del reloj (segunda condicion de _graciaElegible). NO es la politica:
+  // la politica es "hasta el fin del dia". Esto solo acota un reloj manipulado.
+  var _GRACIA_TOPE_MS = 26 * 60 * 60 * 1000;
   var _GRACIA_PLAN = [1500, 5000, 15000];           // 3 reintentos escalonados
   var _GRACIA_LATIDO_MS = 30000;                    // luego, re-consulta cada 30s
 
@@ -1546,22 +1561,36 @@
     return true;
   }
 
-  // ¿Hay una verificación previa VÁLIDA (mismo deviceId) y RECIENTE (≤8h)?
+  // Corresponde gracia? POLITICA DEL DUENO: "ingreso, me verifica, y sin estorbarme
+  // HASTA QUE ACABE EL DIA, y asi cada dia". O sea: NO es una ventana rodante de N
+  // horas, es el DIA CALENDARIO de Lima. A medianoche de Lima caduca sola y el primer
+  // arranque del dia siguiente exige verificacion fresca contra el servidor.
+  // Se exigen DOS condiciones a la vez, y por eso se guardan los dos datos:
+  //   (1) FECHA-LIMA de la ultima verificacion exitosa === hoy en Lima.
+  //       Es la semantica exacta de "hasta que acabe el dia". (Con la politica previa
+  //       de 8h rodantes esta marca MENTIA -a las 23:00 "hoy" podia ser de las 00:30-
+  //       y por eso la habia quitado; con "fin del dia" vuelve a ser la correcta.)
+  //   (2) TOPE DURO por timestamp: <=26h. La fecha sale del reloj del equipo, asi que
+  //       un reloj atrasado/manipulado podria decir "hoy" indefinidamente. 26h deja
+  //       holgura al dia mas largo (cambios de hora, husos) sin permitir eternidad.
+  // Si falta cualquiera de las dos, NO hay gracia.
   function _graciaElegible() {
     try {
       if (!_config || !_config.storageKeys || !_state.deviceId) return false;
-      // El cache debe pertenecer a ESTE deviceId (el multi-store ya lo resolvió).
+      // El cache debe pertenecer a ESTE deviceId (el multi-store ya lo resolvio).
       if (_lsGet(_config.storageKeys.lastVerifyDeviceId) !== _state.deviceId) return false;
+      // (1) mismo dia calendario en Lima
+      var dLima = _lsGet(_config.storageKeys.lastVerifyDate);
+      if (!dLima || dLima !== _fechaHoyLima()) return false;
+      // (2) tope duro por timestamp
       var ts = parseInt(_lsGet(_kOkMs()) || '0', 10);
       if (ts > 0) {
         if (ts > Date.now() + 60000) return false;          // marca en el futuro = basura
-        return (Date.now() - ts) <= _GRACIA_MS;
+        return (Date.now() - ts) <= _GRACIA_TOPE_MS;
       }
-      // [v1.0.32] SIN marca ms → NO hay gracia. El bootstrap por fecha-Lima que tenía
-      // la 1.0.30 ('verificado HOY') era compatible con una ventana de 24h, pero con 8h
-      // mentiría: 'hoy' a las 23:00 puede ser una verificación de las 00:30. Un equipo
-      // que aún no escribió la marca (primer arranque tras este deploy) simplemente no
-      // recibe gracia esa vez; en cuanto verifica bien una sola vez, ya la tiene.
+      // Sin timestamp no se puede aplicar el tope duro (2) -> no hay gracia. Un equipo
+      // que aun no escribio la marca (primer arranque tras este deploy) simplemente no
+      // la recibe esa vez; en cuanto verifica bien una sola vez, ya la tiene.
       return false;
     } catch (_) { return false; }
   }
@@ -1604,7 +1633,7 @@
     _state.gracia = true;
     _state.graciaPaso = 0;
     _state.estado = 'ACTIVO';       // hereda el veredicto previo, NO lo inventa
-    try { console.warn('[DeviceAuth] GRACIA (' + motivo + '): verificación previa válida ≤8h y el servidor no responde → la app opera mientras se reverifica en background.'); } catch (_) {}
+    try { console.warn('[DeviceAuth] GRACIA (' + motivo + '): verificacion previa valida de HOY y el servidor no responde → la app opera mientras se reverifica en background.'); } catch (_) {}
     _ocultarOverlay();              // bajo ACTIVO quita da-pre-block + dispara deviceauth:authorized
     _chipGracia(true);
     if (_config.onAuth) { try { _config.onAuth(); } catch (_) {} }
@@ -1684,7 +1713,7 @@
   // [v1.0.30] 14000 → 16000. registrar_dispositivo (5s) + verificar_dispositivo (8s)
   // en serie son 13s en el PEOR caso: con 14s el watchdog cerraba fail-closed ANTES
   // de que el verify llegara a responder. 16s deja 3s de margen real.
-  var _WATCHDOG_MS = 7000;
+  var _WATCHDOG_MS = 5000;
   // Timeout del verify: GENEROSO a proposito. NO tiene que caber dentro del deadline
   // -- son dos relojes distintos (ver _consultarBackend). Recortarlo convierte
   // 'servidor lento' en 'sin red', y eso le regala gracia a un equipo que el
@@ -1848,7 +1877,7 @@
       return Promise.reject(e);
     }
     // [v1.0.30] GRACIA: el fallo fue de RED (sin veredicto del servidor) Y este
-    // equipo tiene una verificación previa válida ≤8h → operar en modo
+    // equipo tiene una verificacion previa valida de HOY (Lima) -> operar en modo
     // "verificando…" con reintentos, en vez de la pantalla de bloqueo.
     // Si el servidor RESPONDIÓ (HTTP 4xx) o no hay verificación previa → portazo.
     if (_esFalloDeRed(e) && _graciaElegible()) {

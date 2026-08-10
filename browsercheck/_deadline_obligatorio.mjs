@@ -11,8 +11,17 @@ import http from 'http';
 
 const SP = 'C:/Users/ISO/AppData/Local/Temp/claude/C--Users-ISO/e8682971-fe93-47c3-b8de-b8dd5c509f30/scratchpad';
 const ARBOL = process.argv[2] || 'mos731';
+const APP = (process.argv[3] || 'mos').toLowerCase();
+const PERFIL = {
+  mos: { dev: '7e57c1a0-de1c-4a7e-b0de-c47a10906474', k: { id: 'mos_device_id',       fecha: 'mos_device_auth_date_lima',        devid: 'mos_device_auth_devid' } },
+  wh:  { dev: '7e57c1a0-de1c-4a7e-b0de-c47a10906475', k: { id: 'wh_device_id',        fecha: 'wh_device_auth_date_lima',         devid: 'wh_device_auth_devid' } },
+  me:  { dev: '7e57c1a0-de1c-4a7e-b0de-c47a10906476', k: { id: 'mosexpress_deviceId', fecha: 'mosexpress_device_auth_date_lima', devid: 'mosexpress_device_auth_id' } },
+  go:  { dev: '7e57c1a0-de00-4c1a-9de0-7e57c1a0de00', k: { id: 'mosgo_deviceId',       fecha: 'mosgo_device_auth_date_lima',      devid: 'mosgo_device_auth_id' } }
+}[APP];
+// device-auth.js NO vive en el repo de WH/ME: es el asset compartido del repo MOS.
+const DA_LOCAL = 'C:/Users/ISO/ecosistema MOS/ProyectoMOS/assets/auth/device-auth.js';
 const LIVE = path.join(SP, 'mos_live');
-const DEV = '7e57c1a0-de1c-4a7e-b0de-c47a10906474';
+const DEV = PERFIL.dev;
 const PORT = 4143;
 const SB = 'rzbzdeipbtqkzjqdchqk.supabase.co';
 const TOPE_MS = 12000;
@@ -35,19 +44,26 @@ async function medir(browser, etiqueta, { colgarRed, cacheHoy, devIdFalso, asent
   const errs = []; page.on('pageerror', e => errs.push(String(e.message || e)));
   if (colgarRed) await ctx.route(u => String(u).includes(SB), () => {});
   await ctx.route('**/levo19.github.io/MOS/assets/**', route => {
-    const rel = new URL(route.request().url()).pathname.replace('/MOS/', '');
+    const u = route.request().url();
+    if (u.includes('/auth/device-auth.js')) {
+      route.fulfill({ status: 200, contentType: 'application/javascript', body: fs.readFileSync(DA_LOCAL, 'utf8') });
+      return;
+    }
+    const rel = new URL(u).pathname.replace('/MOS/', '');
     const f = path.join(LIVE, rel);
     route.fulfill({ status: 200, contentType: 'application/javascript', body: fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '' });
   });
   const id = devIdFalso || DEV;
-  await page.addInitScript(([d, cache]) => {
-    localStorage.setItem('mos_device_id', d);
+  await page.addInitScript(([d, cache, k]) => {
+    localStorage.setItem(k.id, d);
     if (cache) {
-      localStorage.setItem('mos_device_auth_devid', d);
-      localStorage.setItem('mos_device_auth_date_lima', new Date().toLocaleString('en-CA', { timeZone: 'America/Lima' }).slice(0, 10));
-      localStorage.setItem('mos_device_auth_date_lima_ok_ms', String(Date.now()));
+      const ayer = cache === 'ayer';
+      const ms = Date.now() - (ayer ? 20 * 3600 * 1000 : 0);
+      localStorage.setItem(k.devid, d);
+      localStorage.setItem(k.fecha, new Date(ms).toLocaleString('en-CA', { timeZone: 'America/Lima' }).slice(0, 10));
+      localStorage.setItem(k.fecha + '_ok_ms', String(ms));
     }
-  }, [id, !!cacheHoy]);
+  }, [id, cacheHoy || false, PERFIL.k]);
 
   const t0 = Date.now();
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
@@ -63,7 +79,10 @@ async function medir(browser, etiqueta, { colgarRed, cacheHoy, devIdFalso, asent
   // [seguridad] La gracia es PROVISIONAL: si el servidor alcanza a responder, su
   // veredicto llega despues y manda. Para juzgar 'bloquea al no autorizado' hay que
   // mirar el estado ASENTADO, no el primero que aparece.
-  if (asentar) await page.waitForTimeout(18000);
+  // El estado se fija ANTES de repintar (a proposito: asi nunca queda colgado en
+  // VERIFICANDO aunque el pintado falle). Damos 1.5s para que el repintado aterrice
+  // antes de juzgar lo que VE el usuario.
+  await page.waitForTimeout(asentar ? 18000 : 1500);
   const ui = await page.evaluate(() => {
     const ov = document.getElementById('deviceAuthOverlay');
     const da = window.DeviceAuth; const st = da && da.estado ? da.estado() : null;
@@ -81,13 +100,14 @@ async function medir(browser, etiqueta, { colgarRed, cacheHoy, devIdFalso, asent
   fs.cpSync(path.join(SP, ARBOL), LIVE, { recursive: true });
   const srv = servir();
   const browser = await chromium.launch({ headless: true });
-  console.log(`\n### PRUEBA OBLIGATORIA · árbol ${ARBOL} · tope ${TOPE_MS}ms ###`);
+  console.log(`\n### PRUEBA OBLIGATORIA · árbol ${ARBOL} · tope ${TOPE_MS}ms · app=${APP} ###`);
   let ok = true;
 
   const casos = [
     ['RED COLGADA + verificación previa de hoy ', { colgarRed: true, cacheHoy: true }, 'gracia'],
     ['RED COLGADA + sin verificación previa    ', { colgarRed: true, cacheHoy: false }, 'bloqueo'],
-    ['RED COLGADA + equipo desconocido         ', { colgarRed: true, cacheHoy: false, devIdFalso: 'dead0000-0000-4000-8000-' + String(Date.now()).slice(-12) }, 'bloqueo']
+    ['RED COLGADA + equipo desconocido         ', { colgarRed: true, cacheHoy: false, devIdFalso: 'dead0000-0000-4000-8000-' + String(Date.now()).slice(-12) }, 'bloqueo'],
+    ['RED COLGADA + verificación de AYER (Lima) ', { colgarRed: true, cacheHoy: 'ayer' }, 'bloqueo']
   ];
   for (const [et, cfg, espera] of casos) {
     const r = await medir(browser, et, cfg);
