@@ -10171,8 +10171,10 @@ const MOS = (() => {
       st._costosAplicados[cod] = bruto;
       (async () => { try {
         await guardarCostosGuia();
-        await API.post('aplicarCostosCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: [{ codProducto: cod, costoUnitario: bruto }] });
-      } catch (e) { toast('⚠ El costo no se pudo persistir aún: ' + (e.message || e), 'error'); } })();
+        const _r1 = await API.post('aplicarCostosCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: [{ codProducto: cod, costoUnitario: bruto }] });
+        if (!_r1 || _r1.ok === false) throw new Error((_r1 && _r1.error) || 'el servidor no aplicó el costo');
+      } catch (e) { delete st._costosAplicados[cod];   // [C1] soltar el latch: sin esto el costo se perdía en silencio
+        toast('⚠ El costo no se pudo persistir aún: ' + (e.message || e), 'error'); } })();
     }
     S._paso2Origen = { fuente: st.fuente, idGuia: st.idGuia };
     _paso2Abrir([item], st.idGuia, { modo: 'uno', lineaIdx: i, titulo: l.descripcion || cod });
@@ -10836,7 +10838,8 @@ const MOS = (() => {
     try {
       await guardarCostosGuia(silent);
       const apiItems = pend.map(x => ({ codProducto: x.codProducto, costoUnitario: x.costoNuevo })).filter(x => x.codProducto && x.costoUnitario > 0);
-      await API.post('aplicarCostosCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: apiItems });
+      const _r2 = await API.post('aplicarCostosCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: apiItems });
+      if (!_r2 || _r2.ok === false) throw new Error((_r2 && _r2.error) || 'el servidor no aplicó los costos');
       if (silent) _sello('☁ guardado', 'is-ok');
       else toast(`✓ ${items.length} costo(s) en el catálogo — ahora publica los precios con 💰 en cada línea`, 'ok', 4500);
     } catch (e) {
