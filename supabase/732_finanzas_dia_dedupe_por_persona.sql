@@ -1,0 +1,5 @@
+-- 732 · Decisión del dueño: dos trabajos el mismo día = DOS tarjetas separadas; el admin decide qué paga.
+-- finanzas_dia deduplicaba por NOMBRE: el almacenero "Jesus" (S/14.10 de envasado) desaparecía porque
+-- el vendedor "Jesus" de ZONA-02 ganaba el row_number, y el rol se resolvía por nombre → la fila del
+-- vendedor salía etiquetada ALMACENERO. Ahora partition by id_personal+rol y el rol de la fila manda.
+-- Efecto: el gasto de personal del día deja de estar subestimado y dos homónimos NUNCA se mezclan.
