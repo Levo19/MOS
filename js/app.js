@@ -37362,6 +37362,87 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return 'OTRO';
   }
 
+  // ── [734 · zona] Personal del día agrupado POR ZONA (pedido del dueño) ─────
+  // Los cajeros/vendedores de POS salían mezclados: no se veía a qué grupo
+  // pertenece cada quien ni con qué reglas se le paga. Ahora cada zona abre su
+  // propio bucket con encabezado: nombre bonito + cuántos son + meta/comisión
+  // VIGENTES de esa zona + la venta de zona del día.
+  // Fuentes (ninguna consulta nueva):
+  //   · nombre bonito + meta + comisión → cfgData.zonas (getZonas → mos.zonas_lista,
+  //     campo politicaJSON = mos.zonas.politica_json, la MISMA fuente que paga el bono
+  //     tras el SQL 729: sin política ⇒ meta NULL y comisión 0, y aquí se ve el aviso).
+  //   · venta de la zona del día → ev.kpis.ventaZona, que ya viene en personal_dia_lista.
+  // Esto es SOLO agrupación y presentación: no toca un solo cálculo de pago.
+  let _finZonasPidiendo = false;
+  function _finZonaKey(s) { return String(s == null ? '' : s).trim().toUpperCase(); }
+  function _finMiles(n) {
+    const v = parseFloat(n);
+    if (!isFinite(v)) return '—';
+    try { return Math.round(v).toLocaleString('es-PE'); } catch(_) { return String(Math.round(v)); }
+  }
+  // politicaJSON llega como TEXTO (zonas_lista devuelve politica_json::text) y,
+  // por el defecto histórico del 728, pudo quedar doble-codificado. Se desenvuelve
+  // hasta 3 veces; si no resulta un objeto, se trata como "sin política".
+  function _finZonaPolitica(raw) {
+    let v = raw;
+    for (let i = 0; i < 3 && typeof v === 'string'; i++) {
+      const t = v.trim();
+      if (!t) return null;
+      try { v = JSON.parse(t); } catch(_) { return null; }
+    }
+    return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null;
+  }
+  function _finZonaInfo(idZona) {
+    const k = _finZonaKey(idZona);
+    const z = (cfgData.zonas || []).find(x => _finZonaKey(x.idZona) === k || _finZonaKey(x.nombre) === k) || null;
+    const pol  = z ? _finZonaPolitica(z.politicaJSON) : null;
+    const meta = pol ? parseFloat(pol.metaDiaria) : NaN;
+    const pct  = pol ? parseFloat(pol.comisionExcedentePct) : NaN;
+    return {
+      conocida: !!z,
+      nombre:   (z && z.nombre) ? String(z.nombre) : String(idZona || ''),
+      meta:     (isFinite(meta) && meta > 0) ? meta : null,
+      pct:      (isFinite(pct)  && pct  >= 0) ? pct  : null
+    };
+  }
+  // Encabezado compacto de un bucket de zona (una sola fila que envuelve en 390px).
+  function _finZonaHdr(info, nPersonas, ventaZona) {
+    const sinZona = !!info.sinZona;
+    let reglas;
+    if (sinZona) {
+      reglas = '<span class="fin-zgrp-warn">sin zona en la sesión del día</span>';
+    } else if (!info.conocida) {
+      reglas = '<span class="fin-zgrp-warn">zona no encontrada en Infraestructura</span>';
+    } else if (info.meta === null && info.pct === null) {
+      reglas = '<span class="fin-zgrp-warn" title="mos.zonas.politica_json vacía: el bono de esta zona sale 0 (SQL 729). Configúrala en Config → Infraestructura.">⚠ sin política configurada</span>';
+    } else {
+      const m = info.meta === null
+        ? '<b class="fin-zgrp-falta">sin meta</b>'
+        : '<b>S/ ' + _finMiles(info.meta) + '</b>';
+      const c = info.pct === null
+        ? '<b class="fin-zgrp-falta">sin %</b>'
+        : '<b>' + info.pct + '%</b>';
+      reglas = '<span class="fin-zgrp-regla" title="Meta diaria y comisión sobre el excedente vigentes para esta zona (Config → Infraestructura).">🎯 ' + m + ' <i>meta</i> · 💸 ' + c + ' <i>comisión</i></span>';
+    }
+    let venta = '';
+    if (!sinZona) {
+      const v = parseFloat(ventaZona);
+      const vOk = isFinite(v) ? v : 0;
+      const avance = (info.meta && info.meta > 0) ? Math.round(vOk / info.meta * 100) : null;
+      venta = '<span class="fin-zgrp-venta' + (avance !== null && avance >= 100 ? ' ok' : '') + '"'
+            + ' title="Venta de la zona en el día (kpis.ventaZona de la mega tabla)">'
+            + 'S/ ' + _finMiles(vOk)
+            + (avance !== null ? ' <i>' + avance + '%</i>' : '')
+            + '</span>';
+    }
+    return '<div class="fin-zgrp"' + (sinZona ? ' data-sinzona="1"' : '') + '>'
+         + '<span class="fin-zgrp-ico">' + (sinZona ? '❔' : '📍') + '</span>'
+         + '<span class="fin-zgrp-nom">' + _escapeHtml(info.nombre) + '</span>'
+         + '<span class="fin-zgrp-n" title="personas en esta zona">' + nPersonas + '</span>'
+         + reglas + venta
+         + '</div>';
+  }
+
   function _finRenderPersonal(pl, fecha) {
     const cont = $('finPersonalList');
     const tot  = $('finPersonalTotal');
@@ -37387,6 +37468,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     pl.personalDetalle.forEach(p => {
       grupos[_finClasificarRol(p.rol)].push(p);
     });
+
+    // [734 · zona] El nombre bonito y la política salen de cfgData.zonas, que
+    // normalmente ya viene del prefetch de Config. Si por lo que sea aún no está,
+    // se pide UNA vez por la misma vía que usa el panel (getZonas) y se repinta:
+    // así el encabezado no miente diciendo "sin política" cuando solo faltaba el cache.
+    if (!Array.isArray(cfgData.zonas) || !cfgData.zonas.length) {
+      if (!_finZonasPidiendo) {
+        _finZonasPidiendo = true;
+        API.get('getZonas', {}).then(r => {
+          _finZonasPidiendo = false;
+          if (Array.isArray(r) && r.length) {
+            cfgData.zonas = r;
+            try { if (cont.dataset.fecha === fecha) _pintarConResumenes(_evalState.resumenes || cachedResumenes || []); } catch(_) {}
+          }
+        }).catch(() => { _finZonasPidiendo = false; });
+      }
+    }
 
     const cacheKey = 'mos_fin_resum_' + fecha;
     let cachedResumenes = null;
@@ -37423,23 +37521,61 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             <span class="fin-pers-group-sub">S/ ${subtotal.toFixed(2)}</span>
           </div>
           <div class="fin-pers-group-list">
-            ${(() => {
-              // [zona] dentro del área, ordenar por zona y separar con un divisor
-              // cuando hay >1 zona (si es una sola, no mete ruido).
-              const _zonaDe = (p) => { const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null; return String(p.zona || (ev && ev.zona) || '').trim(); };
-              const zonas = new Set(arr.map(_zonaDe).filter(Boolean));
-              const multi = zonas.size > 1;
-              const ordenado = multi ? arr.slice().sort((a, b) => _zonaDe(a).localeCompare(_zonaDe(b))) : arr;
-              let lastZ = null;
-              return ordenado.map(p => {
-                const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
-                let div = '';
-                if (multi) { const z = _zonaDe(p) || '—'; if (z !== lastZ) { lastZ = z; div = `<div style="grid-column:1/-1;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:.3px;margin:6px 2px 0">📍 ${_escapeHtml(z)}</div>`; } }
-                return div + _finRenderPersonalCard(p, ev, fecha, area);
-              }).join('');
-            })()}
+            ${_finRenderZonaBuckets(arr, area, byNombre, byIdPersonal, fecha)}
           </div>
         </div>`;
+    }
+
+    // [734 · zona] Reparte a las personas del área en buckets por zona.
+    // Orden: zonas por nombre; dentro de cada zona, personas por nombre;
+    // "Sin zona asignada" SIEMPRE al final y visible (nunca escondido).
+    // Si en el área nadie tiene zona (Almacén / Otros) se pinta plano: el
+    // encabezado no debe robarle espacio a las filas cuando no aporta nada.
+    function _finRenderZonaBuckets(arr, area, byNombre, byIdPersonal, fecha) {
+      const evDe = (p) => byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
+      // La zona real del día vive en la mega tabla (liquidaciones_dia.zona →
+      // zonaSesion / kpis.zonaPrincipal). p.zona de finanzas_dia llega SIEMPRE vacío,
+      // por eso el separador viejo no se activaba nunca y todo salía mezclado.
+      const zonaDe = (p) => {
+        const ev = evDe(p);
+        const z = (ev && (ev.zonaSesion || (ev.kpis && ev.kpis.zonaPrincipal))) || p.zona || (ev && ev.zona) || '';
+        return String(z).trim();
+      };
+      const porNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' });
+      const pintar = (p) => _finRenderPersonalCard(p, evDe(p), fecha, area);
+      // Solo POS (cajeros/vendedores) se agrupa por zona: es donde la zona manda el pago.
+      // En Almacén / Otros la zona no paga nada — pintar su encabezado sería ruido (y peor:
+      // insinuaría que a un almacenero le aplica la meta/comisión de una zona de venta).
+      if (area !== 'POS' || !arr.some(p => zonaDe(p))) return arr.slice().sort(porNombre).map(pintar).join('');
+
+      const buckets = new Map();
+      arr.forEach(p => {
+        const z = zonaDe(p);
+        const k = z ? _finZonaKey(z) : '__SINZONA__';
+        if (!buckets.has(k)) buckets.set(k, { id: z, personas: [], venta: 0 });
+        const b = buckets.get(k);
+        b.personas.push(p);
+        // La venta es de la ZONA (misma para todas sus filas); si alguna fila viene
+        // sin recomputar todavía trae 0 → gana la mayor, que es la del recompute vivo.
+        const ev = evDe(p);
+        const v = (ev && ev.kpis) ? parseFloat(ev.kpis.ventaZona) : NaN;
+        if (isFinite(v) && v > b.venta) b.venta = v;
+      });
+
+      const lista = Array.from(buckets.entries()).map(([k, b]) => ({
+        b,
+        info: (k === '__SINZONA__')
+          ? { conocida: true, sinZona: true, nombre: 'Sin zona asignada', meta: null, pct: null }
+          : _finZonaInfo(b.id)
+      }));
+      lista.sort((x, y) => {
+        if (x.info.sinZona !== y.info.sinZona) return x.info.sinZona ? 1 : -1;
+        return String(x.info.nombre).localeCompare(String(y.info.nombre), 'es', { sensitivity: 'base' });
+      });
+      return lista.map(({ b, info }) =>
+        _finZonaHdr(info, b.personas.length, b.venta)
+        + b.personas.slice().sort(porNombre).map(pintar).join('')
+      ).join('');
     }
 
     function _pintarConResumenes(resumenes) {
