@@ -138,3 +138,15 @@ en js/*.js + index.html + sw.js.
   eliminados; autocierres no-op (trigger 21:00 neutralizado).
 PENDIENTE ecosistema (no-WH): purga física de los .gs muertos restantes del proyecto Apps
 Script de WH (inalcanzables desde la app) + rastros de ME/MOS según su propio inventario.
+
+## 2026-08-10 — MOS: sacar Tailwind del CDN (PENDIENTE, alta prioridad de rendimiento)
+El panel carga `https://cdn.tailwindcss.com` (index.html:13), que compila el CSS EN EL NAVEGADOR
+y deja un MutationObserver global sobre `<html>`: recompila ante cualquier cambio del DOM.
+Medido con perfil CDP a 4x: la función `pf` cuesta 17 118 ms en el arranque + 13 336 ms al
+renderizar Finanzas (lo siguiente en la lista: 2 269 ms), 166 callbacks / 6 976 ms de CPU y
+769 KB de CSS generado en vivo. Bloqueando el CDN, el JS identificable cae de ~24 s a ~1,3 s.
+Escala con el tamaño del DOM (+41 % en 20 navegaciones) → **es la degradación después de ~40
+minutos abierto: un clic que cae dentro de una tarea larga no se procesa.**
+Reconocimiento hecho: NO hay tailwind.config ni theme.extend; las clases viajan completas en
+strings; solo 2 se arman por fragmentos (app.js:7915 y 7938, ambas con `style` inline al lado).
+→ Plan completo, medición y checklist de verificación en **RETOMA_tailwind_build_estatico.md**.
