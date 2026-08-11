@@ -1,0 +1,6 @@
+-- 735 · El sueldo se contaba DOS VECES el día de pago: una por v_gasto_personal (liquidaciones_dia)
+-- y otra como gasto categoría JORNALES en mos.gastos, que alimenta gastosFijos y totalGastos.
+-- Efecto medido: 5-ago costos fijos S/481.60 en vez de 240.80, punto de equilibrio S/2,416 y una
+-- "pérdida" de S/416.67 que no existió; 3-ago S/980.80 en vez de 180.
+-- finanzas_dia ahora excluye JORNALES del bloque de gastos: el personal entra SOLO por
+-- gasto_personal (bruto, asignado al día trabajado). La fila JORNALES queda como comprobante de caja.

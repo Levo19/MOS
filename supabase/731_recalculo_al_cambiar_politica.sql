@@ -1,0 +1,6 @@
+-- 731 · Cambiar meta/comisión de una zona RECALCULA los días afectados al instante (pedido del dueño).
+-- Dentro de mos.actualizar_zona, tras registrar la política: recorre las liquidaciones PENDIENTES de
+-- esa zona desde la fecha de vigencia (tope 7 días) y llama mos.recomputar_dia por persona.
+-- PAGADA/VETADA nunca se tocan (recomputar_dia ya las blinda). El recálculo va en un bloque
+-- exception-when-others: si algo falla, el guardado de la zona NO se cae.
+-- Ver la definición viva con la marca [731].

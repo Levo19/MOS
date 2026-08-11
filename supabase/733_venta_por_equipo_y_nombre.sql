@@ -1,0 +1,7 @@
+-- 733 · La venta de cada persona se atribuye por EQUIPO + NOMBRE EXACTO (decisión del dueño).
+-- Antes _norm_nom borraba las tildes: "Jesús" y "Jesus" (dos personas) se fusionaban y cada uno
+-- figuraba con la venta cobrada de AMBOS (S/304.50 en vez de 285.20 y 19.30). Como el bono es
+-- proporcional a lo cobrado, el día que la zona alcance la meta el pool se habría pagado DOS VECES.
+-- La extensión de dispositivo queda cubierta: los equipos de una misma persona-día
+-- (mos.accesos_dispositivos por id_dia) suman en una sola tarjeta.
+-- Se exige tambien el nombre porque los equipos SI se comparten entre turnos (536 casos/30d).

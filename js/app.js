@@ -37272,7 +37272,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const persSub = $('finPersonalSub');
     if (persSub) {
       const n = pl.personas || 0;
-      persSub.textContent = n > 0 ? `${n} persona${n !== 1 ? 's' : ''} hoy` : 'Sin personal todavía';
+      // [738] Dos verdades en una línea: el pill es el GASTO (lo que la empresa debe);
+      // si hubo consumo a crédito, aquí se dice cuánto de eso sale de verdad en efectivo.
+      const _consDia = parseFloat(pl._consumoPersonalDia) || 0;
+      const _base = n > 0 ? `${n} persona${n !== 1 ? 's' : ''} hoy` : 'Sin personal todavía';
+      const _caja = (_consDia > 0 && n > 0)
+        ? ` · S/ ${((parseFloat(pl.gastoPersonal) || 0) - _consDia).toFixed(2)} sale de caja`
+        : '';
+      persSub.textContent = _base + _caja;
+      persSub.title = _consDia > 0
+        ? `Gasto de personal S/ ${(parseFloat(pl.gastoPersonal) || 0).toFixed(2)} − consumo a crédito S/ ${_consDia.toFixed(2)} (se cobra en la liquidación) = efectivo S/ ${((parseFloat(pl.gastoPersonal) || 0) - _consDia).toFixed(2)}`
+        : '';
     }
 
     // Gastos list (con modo slim cuando no hay)
@@ -37541,20 +37551,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const subtotal = arr.reduce((s, p) => {
         if (p.vetada) return s;
         const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
-        // [422] NETO de consumo a crédito del día: es lo que REALMENTE se le paga en
-        // efectivo (el consumo se descuenta al liquidar → marcar_pagos registra el
-        // gasto por el neto). Así el header cuadra con la caja y con el pago real.
+        // [738] El GASTO del área es el BRUTO: lo que la empresa debe por el trabajo
+        // (sueldo + comisión + envasado). El consumo a crédito es una VENTA ya cobrada
+        // por planilla: baja el EFECTIVO que sale de caja, no el costo laboral → dos números.
         const _cons = (ev && ev.creditosDia && parseFloat(ev.creditosDia.total)) || 0;
-        const real = ((ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0)) - _cons;
-        return s + real;
-      }, 0);
+        const real = ((ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0));
+        s.bruto += real; s.cons += _cons; return s;
+      }, { bruto: 0, cons: 0 });
       return `
         <div class="fin-pers-group" data-area="${area}">
           <div class="fin-pers-group-hdr">
             <span class="fin-pers-group-ico">${icono}</span>
             <span class="fin-pers-group-tit">${titulo}</span>
             <span class="fin-pers-group-count">${arr.length}</span>
-            <span class="fin-pers-group-sub">S/ ${subtotal.toFixed(2)}</span>
+            <span class="fin-pers-group-sub" title="Gasto de personal del área: lo que la empresa debe por el trabajo de hoy">S/ ${subtotal.bruto.toFixed(2)}</span>
+            ${subtotal.cons > 0 ? '<span class="fin-pers-group-caja" title="Lo que realmente sale de caja: el consumo a crédito se cobra descontándolo del sueldo">· caja S/ ' + (subtotal.bruto - subtotal.cons).toFixed(2) + '</span>' : ''}
           </div>
           <div class="fin-pers-group-list">
             ${_finRenderZonaBuckets(arr, area, byNombre, byIdPersonal, fecha)}
@@ -37668,16 +37679,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           (grupos[area] || []).forEach(p => {
             if (p.vetada) return; // vetados no cuentan
             const ev = byIdPersonal[p.idPersonal] || byNombre[String(p.nombre || '').toLowerCase().trim()] || null;
-            // [422] NETO: gasto de personal REAL = lo pagado − lo consumido a crédito
-            // ese día. Propaga a Gasto Personal / Costos Fijos / Punto de Equilibrio,
-            // que así reflejan la caja real (el gasto de marcar_pagos ya es el neto).
+            // [738] BRUTO: el gasto de personal del P&L es lo que la empresa DEBE pagar
+            // por el trabajo. El consumo a crédito NO lo abarata: es una venta cobrada por
+            // planilla. Restarlo aquí hacía que el Punto de Equilibrio saliera más bajo del real.
             const _cons = (ev && ev.creditosDia && parseFloat(ev.creditosDia.total)) || 0;
-            const real = ((ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0)) - _cons;
+            const real = ((ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0));
             totalReal += real;
             totalConsumo += _cons;
           });
         });
         if (tot) _animateCount(tot, totalReal, { prefix: 'S/ ' });
+        // [738] El consumo viaja en el objeto para que el subtítulo diga cuánto sale de caja.
+        try { if (typeof _finPL !== 'undefined' && _finPL) _finPL._consumoPersonalDia = Math.round(totalConsumo * 100) / 100; } catch(_){}
 
         // Propagar al objeto pl + re-render de los KPIs dependientes
         try {
