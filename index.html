@@ -355,6 +355,18 @@
     /* Buttons */
     .btn-primary { background: var(--accent); color: white; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: 500; transition: opacity .15s; cursor: pointer; border: none; }
     .btn-primary:hover { opacity: .85; }
+    /* [735 · perf] El clic SIEMPRE tiene respuesta visible, aunque el dato tarde.
+       :active lo pinta el navegador en el pointerdown (antes de que corra JS), así
+       que el botón responde incluso si el hilo principal está ocupado. .btn-busy lo
+       pone el handler en el mismo frame del clic y añade el spinner. */
+    .btn-primary:active { transform: scale(.955); opacity: .9; }
+    .btn-busy { position: relative; opacity: .75; pointer-events: none; }
+    .btn-busy::after {
+      content: ""; position: absolute; right: 6px; top: 50%; width: 11px; height: 11px;
+      margin-top: -5.5px; border: 2px solid currentColor; border-right-color: transparent;
+      border-radius: 50%; animation: spin .6s linear infinite;
+    }
+    .btn-busy { padding-right: 24px; }
     .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 16px; font-size: 14px; cursor: pointer; transition: all .15s; }
     .btn-ghost:hover { border-color: #334155; color: #e2e8f0; }
 
@@ -20447,7 +20459,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.736';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.737';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -20726,7 +20738,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.736"></script>
+<script src="js/api.js?v=2.43.737"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -20742,7 +20754,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.736"></script>
+<script src="js/app.js?v=2.43.737"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

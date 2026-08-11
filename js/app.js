@@ -1112,7 +1112,7 @@ const MOS = (() => {
       API.get('getRotacion', {}),
       API.get('getAlertasWarehouse', {}),
       API.get('getMermasWarehouse', { estado: 'PENDIENTE' }),
-      API.get('getProductos', {})
+      _getProductosCompartido()
     ]);
 
     // Eco status en paralelo pero sin bloquear el resto
@@ -1618,7 +1618,7 @@ const MOS = (() => {
     try {
       // [rev.687] getCategorias eliminado: S.categorias quedó sin lectores tras el 640
       const [freshProd, freshEquiv] = await Promise.all([
-        API.get('getProductos', {}),
+        _getProductosCompartido(),
         API.get('getEquivalencias', { activo: '1' }).catch(() => [])
       ]);
       // [FIX 500x BUG-1] freshProd null = hipo transitorio de Supabase (_conFallbackMOS ya NO cae a GAS y
@@ -1663,8 +1663,23 @@ const MOS = (() => {
     }
   }
 
-  // ── Refresh silencioso del catálogo cada 60s ────────────────
+  // ── Refresh silencioso del catálogo ─────────────────────────
   let _catRefreshTimer = null;
+
+  // [735 · perf] getProductos baja productos_master_rls: 5.8 MB por llamada. En el
+  // arranque la piden A LA VEZ loadDashboard y _catalogoRefreshSilencioso → 11.6 MB
+  // por dos respuestas idénticas (medido: 2× productos_master_rls en el boot). Este
+  // helper comparte la petición EN VUELO: dos llamadas simultáneas = una sola descarga.
+  // No cachea nada más allá de eso — una llamada posterior vuelve a pedir fresco.
+  let _prodEnVuelo = null;
+  function _getProductosCompartido() {
+    if (_prodEnVuelo) return _prodEnVuelo;
+    const p = API.get('getProductos', {});
+    _prodEnVuelo = p;
+    const soltar = () => { if (_prodEnVuelo === p) _prodEnVuelo = null; };
+    p.then(soltar, soltar);
+    return p;
+  }
 
   async function _catalogoRefreshSilencioso() {
     if (!API.isConfigured()) return;
@@ -1672,7 +1687,7 @@ const MOS = (() => {
     iconBusy('catalogo', true); // Spinner mini en el ícono del sidebar
     try {
       const [freshProd, freshEquiv] = await Promise.all([
-        API.get('getProductos', {}),
+        _getProductosCompartido(),
         API.get('getEquivalencias', { activo: '1' }).catch(() => [])
       ]);
       // [FIX 500x BUG-1] refresh silencioso: si freshProd es null (hipo transitorio), NO recomputar el diff
@@ -2046,7 +2061,18 @@ const MOS = (() => {
   function _startCatRefresh() {
     _stopCatRefresh();
     _catalogoRefreshSilencioso(); // precarga inmediata
-    _catRefreshTimer = setInterval(_catalogoRefreshSilencioso, 60000);
+    // [735 · perf] La red de seguridad pasa de 60s a 10min. Medido: cada tick baja
+    // productos_master_rls, que pesa 5.8 MB por llamada — a 60s eso son ~5.8 MB/min,
+    // ~270 MB en una sesión de 47 min (coincide con los 396 MB de recursos que midió
+    // el dueño), más el JSON.parse y el diff completo del catálogo en el hilo principal.
+    // Y era redundante: mos.catalogo_meta tiene triggers tg_bump_catversion_* en
+    // productos, equivalencias, categorias, precio_tramos, promociones, proveedores,
+    // zonas, estaciones, series e impresoras — o sea, CUALQUIER cambio del catálogo
+    // sube la versión. El poller por-versión (_catVerPoll, 45s, RPC minúscula) + el
+    // realtime de mos.catalogo_meta + el chequeo al recuperar foco ya re-pullan dirigido
+    // a cambios reales. Este timer solo cubre el caso extremo "el poller de versión
+    // también falló"; a 10min sigue cubriéndolo y quita el 90% del tráfico.
+    _catRefreshTimer = setInterval(_catalogoRefreshSilencioso, 10 * 60 * 1000);
     _startCatVerPoll();           // poller por-versión (re-pull dirigido a cambios reales)
     // [Realtime catálogo] PUSH ~0s: el evento UPDATE de mos.catalogo_meta despierta el MISMO
     // poller money-safe (_catVerPoll: lee versión, compara baseline, difiere si hay edición
@@ -7742,7 +7768,15 @@ const MOS = (() => {
             S._opsData = r; _almSaveCache('opsData', r);
             _opsPopulateDetCacheFromData(r);
             try { almRenderOps(); } catch {}
-            if (!traeDet) _opsPrefetchTodosLosDetalles();
+            // [735 · perf] NO prefetchear aquí el detalle línea-por-línea. Medido en el
+            // arranque del panel: 139 de las 216 requests del boot (64%) eran
+            // `operacion_detalle` disparadas desde acá, y mientras drenaban, las RPC del
+            // modal Auditar pasaban de ~260 ms a ~2.4 s (creditos_personal 2440 ms,
+            // liq_dia_bon_san 2445 ms). Nadie está mirando Almacén→Operaciones en el
+            // arranque. Se difiere: el detalle lo cargan igual almLoadOps() (al abrir la
+            // pestaña Operaciones y en su auto-refresh de 60s) y _mesaPrefetchLineas()
+            // (al abrir la Mesa de compras), que son los dos únicos consumidores reales.
+            if (!traeDet) S._opsDetDiferido = true;
           }
         })(),
         // Resumen — insights / sugerencias
@@ -7990,8 +8024,10 @@ const MOS = (() => {
         S._opsIdsVistos = idsActuales;
         almRenderOps();
         if (!esPrimerCarga && idsNuevos.length > 0) _opsBeep('ping');
-        // Si vino sin detalle (endpoint viejo) → prefetch silencioso en background
-        if (!traeDetalle) _opsPrefetchTodosLosDetalles();
+        // Si vino sin detalle (endpoint viejo) → prefetch silencioso en background.
+        // [735] Acá SÍ: el usuario está mirando la pestaña Operaciones. Lo que se quitó
+        // fue el disparo desde _prefetchAlmacen (arranque), donde nadie lo mira.
+        if (!traeDetalle) { S._opsDetDiferido = false; _opsPrefetchTodosLosDetalles(); }
       } else if (!S._opsData) {
         const lst = $('almOpsList');
         if (lst) lst.innerHTML = '<div class="alm-ops-empty"><div class="alm-ops-empty-emoji">⚠</div>Error cargando operaciones</div>';
@@ -37966,7 +38002,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
                 style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;"
                 title="Espiar a ${_escapeHtml(p.nombre)} (audio + GPS)">🕵️</button>
             </div>
-            ${idForEval ? `<button onclick="MOS.abrirAuditar('${idForEval}')" class="btn-primary text-xs whitespace-nowrap px-3 py-1.5">Auditar</button>` : ''}
+            ${idForEval ? `<button onclick="MOS.abrirAuditar('${idForEval}', this)" class="btn-primary text-xs whitespace-nowrap px-3 py-1.5">Auditar</button>` : ''}
             <div class="flex gap-1 mt-1">
               ${esBloqueado
                 ? `<button onclick="event.stopPropagation();MOS.finLiberarDispositivosUsuario('${_escAttrJs(p.nombre || '')}')"
@@ -39275,7 +39311,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
                   style="background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);color:#a5b4fc;font-size:11px;"
                   title="Espiar a ${r.nombre} (audio + GPS)">🕵️</button>
               </div>
-              <button onclick="MOS.abrirAuditar('${r.idPersonal}')" class="btn-primary text-xs whitespace-nowrap">Auditar</button>
+              <button onclick="MOS.abrirAuditar('${r.idPersonal}', this)" class="btn-primary text-xs whitespace-nowrap">Auditar</button>
             </div>
           </div>
         </div>`;
@@ -39311,46 +39347,119 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // ── Modal Auditar ────────────────────────────────────────────
-  async function abrirAuditar(idPersonal) {
-    let r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
-    // [unif modal 2026-07-18] SIEMPRE refrescar de getResumenTodosDia (120) al abrir, para que ESTE modal
-    // muestre EXACTO lo mismo que el lápiz de Liquidaciones (mismo dinero Y mismo score). El cache
-    // `mos_fin_resum_` lo escriben tanto 120 como getPersonalDiaFast (105, que trae score stub 0) → sin este
-    // refresco, abrir desde "Personal del día" podía mostrar un score distinto al del lápiz. Online-only;
-    // si falla (offline) cae al cache/_evalState de abajo.
-    if (navigator.onLine) {
-      try {
-        const fresh = await API.get('getResumenTodosDia', { fecha: _evalState.fecha });
-        if (Array.isArray(fresh) && fresh.length) {
-          _evalState.resumenes = fresh;
-          try { localStorage.setItem('mos_fin_resum_' + _evalState.fecha, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
-          r = fresh.find(x => x.idPersonal === idPersonal) || r;
-        }
-      } catch {}
-    }
-    // Si no está en _evalState (módulo Evaluaciones nunca abierto), hidratar
-    // desde cache de Cierre/Finanzas, y si tampoco, fetch directo.
+  // [735 · perf] EL CLIC DEBE RESPONDER EN EL MISMO FRAME.
+  // Antes esta función era `async` y su PRIMERA instrucción era
+  // `await API.get('getResumenTodosDia')`: el modal no aparecía hasta que la red
+  // contestaba y el botón NO cambiaba ni un píxel mientras tanto. Medido (localhost,
+  // CPU throttling 4x): primer feedback visual = NINGUNO, modal a 519-666 ms; y con
+  // la tormenta de RPC del arranque saturando la conexión las mismas RPC del modal
+  // subieron a 2.4 s. Por eso el dueño lo tocaba 3 veces "porque no reacciona" — y
+  // eso disparaba 3 pipelines completas (3x resumen_todos_dia + 3x creditos_personal
+  // + 3x liq_dia_bon_san, medido).
+  // Ahora: (1) feedback en el botón SÍNCRONO, sin ningún await por delante;
+  //        (2) el modal abre YA con el resumen que ya está en memoria/cache — el
+  //            MISMO objeto con el que se pintó la card que se acaba de tocar;
+  //        (3) el refresco de getResumenTodosDia sigue existiendo (paridad exacta con
+  //            el lápiz de Liquidaciones) pero corre DETRÁS y repinta solo lo de
+  //            lectura (título, KPIs, liquidación), nunca lo que el admin escribió;
+  //        (4) guard de re-entrada + dedupe: clics repetidos no duplican red.
+  let _auditAbriendo = null;   // idPersonal con apertura en vuelo
+  let _auditRefresco = null;   // { fecha, p } refresco compartido de getResumenTodosDia
+
+  function _auditBtnBusy(btn, on) {
+    if (!btn || !btn.classList) return;
+    if (on) { btn.classList.add('btn-busy'); btn.setAttribute('aria-busy', 'true'); }
+    else    { btn.classList.remove('btn-busy'); btn.removeAttribute('aria-busy'); }
+  }
+  // El botón que disparó el clic: las cards pasan `this`; para llamadas programáticas
+  // (lápiz de Liquidaciones, notificaciones) lo ubicamos por su onclick.
+  function _auditBtnDe(idPersonal, btnEl) {
+    if (btnEl && btnEl.tagName === 'BUTTON') return btnEl;
+    try {
+      const esc = String(idPersonal).replace(/["\\]/g, '\\$&');
+      return document.querySelector('button[onclick*="abrirAuditar(\'' + esc + '\'"]');
+    } catch (_) { return null; }
+  }
+  // Estado "cargando" del modal — solo se usa cuando NO hay absolutamente nada en
+  // memoria ni en cache (módulo Evaluaciones nunca abierto). Aun así el clic responde.
+  function _auditPintarCargando(idPersonal) {
+    const t = $('auditTitle'); if (t) t.textContent = '🎯 Auditar…';
+    const s = $('auditSubtitle');
+    if (s) s.innerHTML = '<span class="inline-block animate-spin">⌛</span> Cargando el día…';
+    const ip = $('auditIdPersonal'); if (ip) ip.value = idPersonal;
+    const k = $('auditKpis');
+    if (k) k.innerHTML = '<div class="fin-skel" style="height:38px"></div>'
+                       + '<div class="fin-skel" style="height:38px"></div>'
+                       + '<div class="fin-skel" style="height:38px"></div>';
+  }
+  // Un solo getResumenTodosDia en vuelo por fecha: 3 clics = 1 request, no 3.
+  function _auditRefrescarResumenes(fecha) {
+    if (_auditRefresco && _auditRefresco.fecha === fecha) return _auditRefresco.p;
+    const p = API.get('getResumenTodosDia', { fecha }).then(fresh => {
+      if (Array.isArray(fresh) && fresh.length) {
+        _evalState.resumenes = fresh;
+        try { localStorage.setItem('mos_fin_resum_' + fecha, JSON.stringify({ ts: Date.now(), data: fresh })); } catch (_) {}
+        return fresh;
+      }
+      return null;
+    });
+    _auditRefresco = { fecha, p };
+    const soltar = () => { if (_auditRefresco && _auditRefresco.p === p) _auditRefresco = null; };
+    p.then(soltar, soltar);
+    return p;
+  }
+
+  function abrirAuditar(idPersonal, btnEl) {
+    const btn = _auditBtnDe(idPersonal, btnEl);
+    // (1) GUARD DE RE-ENTRADA — el 2º y 3er clic solo re-confirman el feedback.
+    if (_auditAbriendo === idPersonal) { _auditBtnBusy(btn, true); return; }
+    _auditAbriendo = idPersonal;
+    // (2) FEEDBACK INMEDIATO — síncrono, no hay ningún await por delante.
+    _auditBtnBusy(btn, true);
+
+    // (3) Lo que YA tenemos: memoria → cache del día en localStorage.
+    let r = (_evalState.resumenes || []).find(x => x.idPersonal === idPersonal);
     if (!r) {
       try {
         const raw = localStorage.getItem('mos_fin_resum_' + _evalState.fecha);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed?.data)) _evalState.resumenes = parsed.data;
+          if (Array.isArray(parsed && parsed.data)) {
+            _evalState.resumenes = parsed.data;
+            r = parsed.data.find(x => x.idPersonal === idPersonal);
+          }
         }
-      } catch {}
-      r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
+      } catch (_) {}
     }
-    if (!r) {
-      try {
-        const fresh = await API.get('getResumenTodosDia', { fecha: _evalState.fecha });
-        if (Array.isArray(fresh)) {
-          _evalState.resumenes = fresh;
-          try { localStorage.setItem('mos_fin_resum_' + _evalState.fecha, JSON.stringify({ ts: Date.now(), data: fresh })); } catch {}
-        }
-      } catch {}
-      r = _evalState.resumenes.find(x => x.idPersonal === idPersonal);
-    }
-    if (!r) { toast('Personal no encontrado', 'error'); return; }
+    // (4) Pintar YA (mismo frame del clic).
+    if (r) _auditPintarModal(r, idPersonal, false);
+    else   _auditPintarCargando(idPersonal);
+    openModal('modalAuditar');
+
+    // (5) Refresco DETRÁS — mismo dato que el lápiz de Liquidaciones.
+    (async () => {
+      let fresh = null;
+      try { if (navigator.onLine) fresh = await _auditRefrescarResumenes(_evalState.fecha); } catch (_) {}
+      if (_auditAbriendo === idPersonal) _auditAbriendo = null;
+      _auditBtnBusy(btn, false);
+      const modal = $('modalAuditar');
+      const idEl  = $('auditIdPersonal');
+      // El modal pudo cerrarse o saltar a otra persona mientras la red respondía.
+      if (!modal || modal.classList.contains('hidden')) return;
+      if (!idEl || String(idEl.value) !== String(idPersonal)) return;
+      const rf = fresh ? fresh.find(x => x.idPersonal === idPersonal) : null;
+      if (rf) { _auditPintarModal(rf, idPersonal, !!r); return; }
+      if (!r) { toast('Personal no encontrado', 'error'); closeModal('modalAuditar'); }
+    })();
+  }
+
+  // Pinta el modal desde un resumen `r`.
+  //   esRefresco=false → apertura: pinta TODO (incluidos los campos editables).
+  //   esRefresco=true  → llegó el dato fresco con el modal ya abierto: se refresca
+  //                      SOLO lo de lectura. Nunca se pisa lo que el admin escribió
+  //                      (comentario, bonificación, sanción, sliders, checks).
+  function _auditPintarModal(r, idPersonal, esRefresco) {
+    if (!r) return;
     // [RONDA 7 · FIX bono-fecha] CONGELAR la fecha del día que se está auditando,
     // en un campo que NINGÚN proceso de fondo (polling 30s, re-render de Personal
     // del Día que es HOY) puede pisar. El bono/descuento SIEMPRE se graba a ESTE día.
@@ -39388,39 +39497,74 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       + (areaApp ? ` · ${areaApp}` : '') + ` · ${contexto}`;
     $('auditIdPersonal').value = r.idPersonal;
     $('auditRol').value = r.rol || '';
-    $('auditComentario').value = '';
-
-    // Pre-cargar acumulado del día (MAX/OR) para que el admin continúe, no empiece de cero
-    const limpAcum = Math.round(((r.manual && r.manual.limpiezaPct) || 0) / 10) * 10;
-    const limpProfAcum = Math.round(((r.manual && r.manual.limpiezaProfPct) || 0) / 10) * 10;
-    $('auditLimpieza').value = String(limpAcum);
-    $('auditLimpiezaProf').value = String(limpProfAcum);
-    updateRateSlider('auditLimpieza', 'auditLimpiezaVal');
-    updateRateSlider('auditLimpiezaProf', 'auditLimpiezaProfVal');
-
-    // Pre-marcar checks ya cumplidos en evaluaciones previas
-    _evalState.auditChecks = Object.assign({}, (r.manual && r.manual.checksAcum) || {});
-
-    $('auditTogComision').classList.add('on');
-    $('auditTogMeta').classList.add('on');
-    // [v2.41.60] Mostrar bonificacion/sancion ACTUALES de LIQUIDACIONES_DIA
-    // como prellenado en el modal. Admin ve lo que ya está y decide mantener
-    // o cambiar. Si valor previo era sanción, abrir en pestaña sanción;
-    // si era bonificación, abrir en bonificación; si ambos > 0, sanción.
-    // [v2.41.63] _ajusteTocado: tracker para diferenciar "admin no tocó el
-    // ajuste" (preservar bon/san en LIQUIDACIONES_DIA) vs "admin lo editó
-    // explícitamente a 0/vacío" (resetear). Sin esto, borrar el 44 no funcionaba.
-    _evalState.auditAjusteTocado = false;
-    // [v2.43.373] limpiar los dos campos independientes (se prellenan abajo con los
-    // valores actuales de LIQUIDACIONES_DIA vía getLiqDiaBonSan).
-    ['auditBonifMonto','auditBonifMotivoInp','auditSancionMonto','auditSancionMotivoInp'].forEach(id => {
-      const el = $(id); if (el) el.value = '';
-    });
     _evalState.auditR = r;
+
+    if (esRefresco) {
+      // Solo si NADA fue tocado: nunca pisamos lo que el admin ya movió.
+      const pf = _evalState.auditPrefill;
+      const slL = $('auditLimpieza'), slP = $('auditLimpiezaProf');
+      const intacto = pf && slL && slP
+        && String(slL.value) === pf.limp
+        && String(slP.value) === pf.limpProf
+        && JSON.stringify(_evalState.auditChecks || {}) === pf.checks;
+      if (intacto) {
+        const limpAcum = Math.round(((r.manual && r.manual.limpiezaPct) || 0) / 10) * 10;
+        const limpProfAcum = Math.round(((r.manual && r.manual.limpiezaProfPct) || 0) / 10) * 10;
+        slL.value = String(limpAcum);
+        slP.value = String(limpProfAcum);
+        updateRateSlider('auditLimpieza', 'auditLimpiezaVal');
+        updateRateSlider('auditLimpiezaProf', 'auditLimpiezaProfVal');
+        _evalState.auditChecks = Object.assign({}, (r.manual && r.manual.checksAcum) || {});
+        _evalState.auditPrefill = {
+          limp: String(limpAcum), limpProf: String(limpProfAcum),
+          checks: JSON.stringify(_evalState.auditChecks)
+        };
+      }
+    }
+
+    if (!esRefresco) {
+      $('auditComentario').value = '';
+      // Pre-cargar acumulado del día (MAX/OR) para que el admin continúe, no empiece de cero
+      const limpAcum = Math.round(((r.manual && r.manual.limpiezaPct) || 0) / 10) * 10;
+      const limpProfAcum = Math.round(((r.manual && r.manual.limpiezaProfPct) || 0) / 10) * 10;
+      $('auditLimpieza').value = String(limpAcum);
+      $('auditLimpiezaProf').value = String(limpProfAcum);
+      updateRateSlider('auditLimpieza', 'auditLimpiezaVal');
+      updateRateSlider('auditLimpiezaProf', 'auditLimpiezaProfVal');
+
+      // Pre-marcar checks ya cumplidos en evaluaciones previas
+      _evalState.auditChecks = Object.assign({}, (r.manual && r.manual.checksAcum) || {});
+      // [735] Huella del prellenado: si al llegar el dato fresco los controles siguen
+      // exactamente así, es que el admin no los tocó y se pueden completar con el valor
+      // real (el lápiz de Liquidaciones abre con un resumen sintético en 0).
+      _evalState.auditPrefill = {
+        limp: String(limpAcum), limpProf: String(limpProfAcum),
+        checks: JSON.stringify(_evalState.auditChecks)
+      };
+
+      $('auditTogComision').classList.add('on');
+      $('auditTogMeta').classList.add('on');
+      // [v2.41.60] Mostrar bonificacion/sancion ACTUALES de LIQUIDACIONES_DIA
+      // como prellenado en el modal. Admin ve lo que ya está y decide mantener
+      // o cambiar. Si valor previo era sanción, abrir en pestaña sanción;
+      // si era bonificación, abrir en bonificación; si ambos > 0, sanción.
+      // [v2.41.63] _ajusteTocado: tracker para diferenciar "admin no tocó el
+      // ajuste" (preservar bon/san en LIQUIDACIONES_DIA) vs "admin lo editó
+      // explícitamente a 0/vacío" (resetear). Sin esto, borrar el 44 no funcionaba.
+      _evalState.auditAjusteTocado = false;
+      // [v2.43.373] limpiar los dos campos independientes (se prellenan abajo con los
+      // valores actuales de LIQUIDACIONES_DIA vía getLiqDiaBonSan).
+      ['auditBonifMonto','auditBonifMotivoInp','auditSancionMonto','auditSancionMotivoInp'].forEach(id => {
+        const el = $(id); if (el) el.value = '';
+      });
+    }
+
     _renderAuditKpis(r);
     _renderAuditChecklist(r.rol);
     _renderAuditLiquidacion();
-    openModal('modalAuditar');
+    // En un refresco los dos fetches de abajo YA corrieron en la apertura: no se repiten.
+    if (esRefresco) return;
+
     // [421] Refresco EN TIEMPO REAL de los tickets a crédito DEL DÍA del modal (una
     // venta a crédito recién emitida ese día aparece al toque; getCreditosPersonal
     // trae fecha por ticket → se filtra al día auditado). Guard por idPersonal+fecha.
