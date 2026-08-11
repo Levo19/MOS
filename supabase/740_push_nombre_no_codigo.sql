@@ -1,0 +1,53 @@
+-- ═══════════════════════════════════════════════════════════════════════
+-- 740 · Los avisos push dicen el NOMBRE, no el código interno
+-- ═══════════════════════════════════════════════════════════════════════
+-- APLICADO EN PRODUCCIÓN el 2026-08-11 mediante el patcher
+-- `supabase/740_push_nombre_no_codigo.js` (parche sobre la definición VIVA con
+-- pg_get_functiondef, dentro de begin/commit y con verificación previa).
+-- Este archivo es el REGISTRO — no reejecutar a ciegas.
+--
+-- Luis: "en el caso de preingreso no me aparece el nombre del proveedor, solo
+--        el código de proveedor".
+--
+-- ── wh.crear_preingreso ───────────────────────────────────────────────────
+-- ANTES: 'cuerpo', coalesce(nullif(v_prov,''),'proveedor')||' · S/ '||coalesce(v_monto::text,'0')
+--        → «PROV078 · S/ 60»
+-- AHORA:
+--   'cuerpo',
+--   coalesce(
+--     (select nullif(btrim(pr.nombre),'') from mos.proveedores pr
+--       where btrim(pr.id_proveedor) = btrim(v_prov) limit 1),
+--     case when nullif(btrim(v_prov),'') is not null
+--          then 'prov. '||btrim(v_prov) else 'Proveedor sin identificar' end
+--   )
+--   ||' · S/ '||to_char(coalesce(v_monto,0),'FM999999990.00')
+--   ||case when nullif(btrim(v_usuario),'') is not null then ' · '||btrim(v_usuario) else '' end
+--        → «SABINA · S/ 60.00 · SERGIO BAILON»
+--
+-- El fallback importa: un código sin ficha muestra «prov. PROV078» (se entiende
+-- que es un código huérfano) y jamás queda mudo.
+--
+-- ── wh.registrar_merma (mismo defecto, encontrado al revisar) ─────────────
+-- ANTES: coalesce(nullif(v_cod,''),'producto')||' · '||v_cant||' · '||v_motivo
+--        → mostraba el CÓDIGO DE BARRAS del producto
+-- AHORA: la descripción del catálogo (mos.productos por codigo_barra o sku_base),
+--        con el código como respaldo, cantidad a 2 decimales y motivo.
+--
+-- ── Verificación hecha (datos reales, sin enviar ningún push) ─────────────
+--   PROV078 · S/ 60      →  SABINA · S/ 60.00 · SERGIO BAILON
+--   PROV026 · S/ 600     →  CHAVO · S/ 600.00 · Jorgenis Gonzalez
+--   PROV031 · S/ 0       →  CULEBRA (WANTAN) · S/ 0.00 · Jorgenis Gonzalez
+--   PROV036 · S/ 1244.9  →  DICOLACSUR · S/ 1244.90 · SERGIO BAILON
+--   código sin ficha     →  prov. PROV999
+--   proveedor vacío      →  Proveedor sin identificar
+--
+-- ── Comprobar que sigue vivo ──────────────────────────────────────────────
+--   select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname='wh' and p.proname in ('crear_preingreso','registrar_merma')
+--      and pg_get_functiondef(p.oid) like '%mos.proveedores%'
+--       or pg_get_functiondef(p.oid) like '%mos.productos pm%';
+--
+-- RELACIONADO: MOS 2.43.740 — la misma notificación llegaba DOS veces
+--   (el SDK de Firebase la mostraba y además llamaba a onBackgroundMessage).
+--   Ver browsercheck/_740_sw_push_no_duplica.mjs.
+-- ═══════════════════════════════════════════════════════════════════════

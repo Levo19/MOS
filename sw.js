@@ -21,23 +21,31 @@ try {
   });
 
   const _fcmMsg = firebase.messaging();
+
+  // ⚠️ [740] NO llamar showNotification aquí para los avisos VISIBLES: llegaban DOS veces.
+  // El SDK de Firebase, al recibir un push cuyo payload trae `notification`, PRIMERO la
+  // muestra él mismo y RECIÉN DESPUÉS invoca este handler (firebase-messaging-compat
+  // 10.12.0: `n.notification && await showNotification(...)` seguido de
+  // `t.onBackgroundMessageHandler && ...`). Así que mostrarla aquí otra vez la duplica —
+  // y como la del SDK no lleva `tag`, tampoco se colapsaban entre sí.
+  // La Edge `push` ya manda webpush.notification con título, cuerpo, icon, badge y vibrate,
+  // así que la que muestra el SDK se ve exactamente igual que la que mostrábamos nosotros.
+  // Este handler queda SOLO para los comandos data-only (sin `notification`), que el SDK
+  // no muestra: ahí sí hay que reenviarlos al cliente.
   _fcmMsg.onBackgroundMessage(payload => {
-    const title = payload.notification?.title || 'MOS';
-    const body  = payload.notification?.body  || '';
-    self.registration.showNotification(title, {
-      body,
-      icon:    'https://levo19.github.io/MOS/icons/icon-192.png',
-      badge:   'https://levo19.github.io/MOS/icons/icon-192.png',
-      tag:     'mos-push',
-      vibrate: [200, 100, 200]
-    });
+    if (payload.data && payload.data.action) {
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+        clients.forEach(c => c.postMessage({ type: 'mos_command', data: payload.data }));
+      });
+    }
+    // Aviso visible → ya lo mostró el SDK. No hacer nada más.
   });
 } catch (err) {
   // FCM no disponible — la app sigue actualizándose y operando.
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.43.739';
+const VERSION = '2.43.740';
 const CACHE   = 'mos-v' + VERSION;
 // ⚠️ Los assets propios versionados (app.js/api.js) DEBEN cachearse con EL MISMO
 // `?v=` que index.html usa en su <script src>, o el match offline falla por

@@ -39127,16 +39127,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             }
           } catch(_) {}
         }
-        try {
-          const reg = await navigator.serviceWorker.ready;
-          reg.showNotification(t, {
-            body: b,
-            icon:  'https://levo19.github.io/MOS/icons/icon-192.png',
-            badge: 'https://levo19.github.io/MOS/icons/icon-192.png',
-            vibrate: [200, 100, 200],
-            tag: 'mos-push'
-          });
-        } catch(_) {}
+        // [740] NO se muestra además la notificación del sistema. `onMessage` solo corre
+        // cuando hay una pestaña de MOS VISIBLE (el SDK reparte así: cliente visible →
+        // onMessage; si no → notificación de fondo). Estando el panel a la vista, el toast
+        // de arriba YA es el aviso; sumarle la del sistema hacía que el mismo mensaje
+        // apareciera dos veces. Con el panel en segundo plano nada de esto corre y la
+        // notificación del sistema llega igual.
       });
     }
 
