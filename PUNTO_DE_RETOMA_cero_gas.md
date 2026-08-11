@@ -150,3 +150,17 @@ minutos abierto: un clic que cae dentro de una tarea larga no se procesa.**
 Reconocimiento hecho: NO hay tailwind.config ni theme.extend; las clases viajan completas en
 strings; solo 2 se arman por fragmentos (app.js:7915 y 7938, ambas con `style` inline al lado).
 → Plan completo, medición y checklist de verificación en **RETOMA_tailwind_build_estatico.md**.
+
+## 2026-08-11 — Notificaciones entre apps (PENDIENTE, con diseño listo)
+(a) El duplicado de notificaciones arreglado en MOS 2.43.740 sigue vivo en MosExpress/sw.js:18 y
+warehouseMos/sw.js:18. Ahí el handler SÍ reenvía comandos data-only → corrección condicional
+(quitar solo el showNotification del camino visible), no borrarlo. Ojo con el deep-link de ME.
+(b) Pedido nuevo: avisar a ME cuando cambia un precio, avisar a ME del preingreso (además del
+ticket impreso que ya sale) y avisar a WH del PN.
+HALLAZGO que cambia el diseño: la audiencia por ROL no alcanza a ME — `roles:[CAJERO,VENDEDOR]`
+resuelve **0 tokens** porque push_tokens_para cruza contra mos.personal y los cajeros/vendedores de
+ME son identidades virtuales MEX:NOMBRE|ZONA. Hay que dirigir por APP: mosExpress=13 tokens,
+warehouseMos=6. Segmentar por zona exigiría extender push_tokens_para (hoy no existe).
+Los precios salen EN RÁFAGA al aplicar una compra (medido: 9 cambios en 5 min el 07/08) → propuesta
+de cola + cron cada 5 min sobre mos.historial_precio_costo en vez de push por cambio.
+→ Diseño completo, mediciones y plan en **RETOMA_notificaciones_entre_apps.md**.
