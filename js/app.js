@@ -37558,12 +37558,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         const real = ((ev && typeof ev.totalDia === 'number') ? ev.totalDia : (parseFloat(p.monto) || 0));
         s.bruto += real; s.cons += _cons; return s;
       }, { bruto: 0, cons: 0 });
+      // [739] El chip de conteo no puede contradecir al dinero: los vetados salen
+      // del subtotal pero seguian contando en el numero, y quedaba "8" al lado de
+      // un total que era de 5 personas. Se dice cuantos son y cuantos no cobran.
+      const _vet = arr.reduce((n, p) => n + (p.vetada ? 1 : 0), 0);
       return `
         <div class="fin-pers-group" data-area="${area}">
           <div class="fin-pers-group-hdr">
             <span class="fin-pers-group-ico">${icono}</span>
             <span class="fin-pers-group-tit">${titulo}</span>
-            <span class="fin-pers-group-count">${arr.length}</span>
+            <span class="fin-pers-group-count"${_vet > 0 ? ' style="background:rgba(239,68,68,.14);color:#fca5a5" title="' + _vet + ' vetada(s) no cobran: quedan ' + (arr.length - _vet) + ' de ' + arr.length + ' en el gasto"' : ''}>${_vet > 0 ? (arr.length - _vet) + '/' + arr.length : arr.length}</span>
             <span class="fin-pers-group-sub" title="Gasto de personal del área: lo que la empresa debe por el trabajo de hoy">S/ ${subtotal.bruto.toFixed(2)}</span>
             ${subtotal.cons > 0 ? '<span class="fin-pers-group-caja" title="Lo que realmente sale de caja: el consumo a crédito se cobra descontándolo del sueldo">· caja S/ ' + (subtotal.bruto - subtotal.cons).toFixed(2) + '</span>' : ''}
           </div>
