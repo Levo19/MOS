@@ -1,0 +1,54 @@
+-- ═══════════════════════════════════════════════════════════════════════
+-- 736 · La descripción del comprobante de pago dice la resta completa
+-- ═══════════════════════════════════════════════════════════════════════
+-- APLICADO EN PRODUCCIÓN el 2026-08-10 (parche sobre la definición VIVA de
+-- mos.marcar_pagos con pg_get_functiondef). Este archivo queda como REGISTRO
+-- del cambio: NO volver a ejecutarlo a ciegas — la función se sigue editando
+-- por parche incremental, así que un CREATE OR REPLACE con una copia vieja
+-- retrocedería todo lo posterior. Para reaplicar, verificar antes con:
+--
+--   select pg_get_functiondef(p.oid) from pg_proc p
+--    join pg_namespace n on n.oid = p.pronamespace
+--   where n.nspname = 'mos' and p.proname = 'marcar_pagos';
+--
+-- CONTEXTO (Luis, 2026-08-10):
+--   "en su liquidación se considera como un monto menos a pagar y está
+--    correcto, pero aquí como gasto fijo es lo que yo como empresa debo
+--    pagar... mientras que en la liquidación sí va el neto"
+--
+-- El gasto que marcar_pagos registra por el pago de una persona describía
+-- solo el monto final, sin decir de dónde salía. Cuando el trabajador había
+-- consumido a crédito, el número del comprobante no cuadraba con el sueldo
+-- que se le había anunciado y no había forma de reconstruir la diferencia
+-- desde el propio registro contable.
+--
+-- Ahora la descripción del gasto lleva la resta entera:
+--
+--   sueldo S/144.10 − consumo S/10.90 (3 por planilla) = caja S/133.20
+--
+-- Así el comprobante se explica solo: el BRUTO es el costo laboral (lo que
+-- va a P&L, costos fijos y punto de equilibrio — ver 735), y el neto es el
+-- efectivo que sale de caja. Dos verdades, ambas visibles, sin restas
+-- silenciosas.
+--
+-- Verificación de que sigue vivo:
+--   select count(*) from pg_proc p
+--    join pg_namespace n on n.oid = p.pronamespace
+--   where n.nspname = 'mos' and p.proname = 'marcar_pagos'
+--     and pg_get_functiondef(p.oid) like '%= caja S/%';   -- debe dar 1
+--
+-- Fragmento aplicado (dentro del armado de la descripción del gasto):
+--
+--   'sueldo S/' || to_char(v_total, 'FM999999990.00') ||
+--   case when v_consumo > 0
+--        then ' - consumo S/' || to_char(v_consumo, 'FM999999990.00') ||
+--             ' (' || v_n_consumo || ' por planilla) = caja S/' ||
+--             to_char(v_total - v_consumo, 'FM999999990.00')
+--        else '' end
+--
+-- RELACIONADO:
+--   735_jornal_no_se_cuenta_dos_veces.sql  — el jornal salía DOS veces en
+--                                            finanzas_dia (gasto + JORNALES)
+--   MOS 2.43.738/739                       — Personal del día muestra el
+--                                            gasto bruto y el efectivo a caja
+-- ═══════════════════════════════════════════════════════════════════════
