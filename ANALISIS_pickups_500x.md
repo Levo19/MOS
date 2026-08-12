@@ -58,6 +58,19 @@ Reusar el aviso llamativo que ya existe cuando entra un pickup. **Jamás perder 
 
 ### R10 · Ante un choque de copias, manda el SERVIDOR (avisando) · una lista, un operador a la vez.
 
+### R11 · SEPARAR ≠ DESPACHAR (12-ago, tarde)
+> "escanear en pickup es solo separar productos, este recién se despacha cuando se emite la guía de salida"
+> "si me dice al jalar que debo 20 nakamito, al escanear uno a uno solo debe ir diciendo 2/20, una barra de progreso porque estoy separando"
+
+El escaneo mueve SOLO la barra local (2/20). La deuda (`solicitado`) la mueven únicamente:
+la **emisión de la guía** (colapso 743/749) y la **absorción de pickups nuevos** (si entran 5 más,
+la barra pasa a 2/25 — ahí sí suena el aviso). La voz "lista actualizada" JAMÁS por el propio escaneo.
+**Implementado en 752 (SQL, APLICADO) + WH 2.13.550**: el seed del consolidador ya no consume la
+separación autoguardada (era deuda muerta sin guía + doble descuento al emitir), el neteo 540 de
+sombras va inline al absorber, el autosave devuelve `rev` y el front lo sella (eco propio = silencio),
+la fusión conserva baseline/mapa por-código locales, y el aviso suena solo si la deuda cambió.
+Suite ciclo **19/19** (asserts 18-19 = esta regla).
+
 ---
 
 ## 2. LO QUE ESTABA ROTO (diagnóstico cerrado, con evidencia)
