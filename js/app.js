@@ -44418,6 +44418,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const dia = _zpkDiaLbl(s);
     return (s.length >= 16 && s.charAt(10) === 'T') ? dia + ' · ' + s.slice(11, 16) : dia;
   }
+  // [C9] tsDespacho llega ISO con Z (lo sella el front de WH al escanear) → convertir a Lima;
+  // tsSolicitud llega naive-Lima ("YYYY-MM-DDTHH:MM") → el slice de _zpkFechaLbl ya es correcto.
+  function _zpkTsLbl(f){
+    const s = String(f || '');
+    if (!s) return '';
+    if (s.length > 16 && /(Z|[+-]\d{2}:?\d{2})$/.test(s)) {
+      try {
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) {
+          const dia = d.toLocaleDateString('es-PE', { weekday:'short', day:'2-digit', timeZone:'America/Lima' });
+          const hm  = d.toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone:'America/Lima' });
+          return dia + ' · ' + hm;
+        }
+      } catch(_){}
+    }
+    return _zpkFechaLbl(s);
+  }
   let _zpkLast = { zona: '', modo: 'pickup', data: null };   // [v2.43.379] para imprimir el rezagado
   async function zonaAbrirPickup(){
     const zona = S.zonaActual;
@@ -44521,6 +44538,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             </div>
             <div class="zpk-hist">
               <div class="zpk-htitle">${_zpkNum(sol)} pedido · ${_zpkNum(desp)} despachado · <b>${_zpkNum(pend)} pendiente</b></div>
+              ${(it.tsSolicitud || it.tsDespacho) ? `<div class="zpk-hts">🕐 pedido ${it.tsSolicitud ? _zpkTsLbl(it.tsSolicitud) : '—'} → ${it.tsDespacho ? 'salió ' + _zpkTsLbl(it.tsDespacho) : 'sin despacho aún'}</div>` : ''}
               ${hist}
             </div>
           </div>`;

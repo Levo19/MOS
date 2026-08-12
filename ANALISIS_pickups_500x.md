@@ -1,6 +1,6 @@
 # Revisión 500x · Pickups, acumulado, listas sombra y seguimiento en MOS
 
-**Última actualización**: 2026-08-11 (noche, WH cerrado hasta las 8am).
+**Última actualización**: 2026-08-12 — **C1–C9 CERRADOS**. Queda solo la paridad de horas en el rezagado (opcional, ver §3).
 Documento de trabajo: reglas del dueño + qué está corregido + qué falta. **Leer entero antes de tocar nada de este sector.**
 
 ---
@@ -70,24 +70,23 @@ Reusar el aviso llamativo que ya existe cuando entra un pickup. **Jamás perder 
 | C4 | **El saldo no se restaba al despachar**: se guardaba la lista con los despachados puestos; el colapso esperaba al consolidador | al retomar reaparecía todo marcado | ✅ 743 |
 | C5 | **El 2º despacho del día se descartaba**: el anti-duplicado tomaba *cualquier* guía de 90 min como reintento | Sergio despachaba un tramo y el siguiente no se aplicaba | ✅ 744 |
 | C6 | El historial nuevo usaba la hora de la guía, no la del escaneo | — | ✅ 745 |
-| **C7** | **Una sombra sin escanear se ANULA y su pedido se pierde**: no entra al acumulado | medido con la lista de Sergio: 3 identificados (21 uds) + 19 constancias → acumulado sin cambios (379 → 379) | ❌ **PENDIENTE** |
-| **C8** | **Dos fuentes de verdad**: el celular guarda la lista completa y la rehidrata sin contrastar `rev` | cada operador veía algo distinto | ❌ **PENDIENTE (front)** |
-| **C9** | La hora por línea no se muestra: ni en MOS ni en el detalle de guías de salida de **WH** (el dato **sí existe**: 36 líneas con 36 horas distintas) | verificado hoy | ❌ **PENDIENTE (vista MOS + vista WH)** |
+| **C7** | **Una sombra sin escanear se ANULA y su pedido se pierde**: no entra al acumulado | medido con la lista de Sergio: 3 identificados (21 uds) + 19 constancias → acumulado sin cambios (379 → 379) | ✅ 746/747 (vuelca al acumulado al cierre del día 23:00 Lima; aplicado en prod: +21 uds + 19 constancias) |
+| **C8** | **Dos fuentes de verdad**: el celular guarda la lista completa y la rehidrata sin contrastar `rev` | cada operador veía algo distinto | ✅ 749/750 + WH 2.13.548 (el payload solo aporta lo despachado; id de guía con firma de contenido; verificado en prod 751) |
+| **C9** | La hora por línea no se muestra: ni en MOS ni en el detalle de guías de salida de **WH** (el dato **sí existe**: 36 líneas con 36 horas distintas) | verificado 11-ago | ✅ 12-ago — MOS 2.43.741 (Zonas→pickup: "🕐 pedido → salió" por ítem, tsSolicitud/tsDespacho de la RPC 607; tsDespacho ISO-Z se convierte a Lima) + WH 2.13.549 (cabecera de guía con hora de emisión si el dato la trae; hora también en la tarjeta expandida). Las líneas colapsadas de WH ya la mostraban desde 2.13.524. |
 
 ---
 
 ## 3. QUÉ FALTA, EN ORDEN
 
-1. **C7 · La sombra siempre vuelca al acumulado** (R3, R5). Hoy: si `escaneado = 0` → ANULADA y se pierde.
-   Debe crear el `PCK-LSC` igual (sin guía) con lo pedido + constancias, para que el consolidador lo absorba.
-   Y el disparo pasa de "24 h desde que se creó" a **cierre del día**.
-2. **C8 · Front WH** (R9, R10): comparar `rev`, refrescar la lista abierta con aviso llamativo, reajustar la
-   deuda sin perder el avance, y matar la copia local al emitir la guía.
-3. **C9 · Mostrar la hora por producto en las DOS vistas** (R1, R6): MOS → Zonas → pickups, y el detalle
-   de guías de salida en **WH** (cabecera = hora de emisión; cada línea = su hora de escaneo).
-4. **Pruebas** (obligatorias antes de dar por cerrado): navegadores simultáneos con copias distintas,
-   autosaves concurrentes contra la consolidación, ciclo completo cierre→acumulado→despacho parcial→guía→retomar,
-   y capturas de cada pantalla.
+1. **(Opcional) Paridad de horas en el REZAGADO**: `wh.zona_rezagado_detalle` (SQL 295/575) no emite
+   `tsSolicitud`/`tsDespacho` ni hora por evento → la vista rezagado de MOS muestra solo el día.
+   Si el dueño quiere horas también ahí, hay que tocar la RPC (mismo patrón que 607).
+2. **Verificación visual en prod** (pendiente de la próxima jornada): abrir MOS → Zonas → pickup y
+   comprobar el renglón "🕐 pedido → salió" con datos reales; abrir en WH el detalle de una guía nueva
+   y ver la hora en cabecera y tarjeta expandida.
+
+Pruebas ya corridas: navegadores simultáneos (`_748_pickup_multiusuario.mjs` 15/15), ciclo completo
+17/17, candado 15/15, saldo 11/11, prod WH 2.13.548 verificado (`_751_wh_prod.mjs` 6/6, 0 pageerrors).
 
 ---
 
