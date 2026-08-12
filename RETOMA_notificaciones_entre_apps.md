@@ -1,7 +1,18 @@
 # PUNTO DE RETOMA · Notificaciones entre apps (MOS ↔ ME ↔ WH)
 
-**Estado**: diseñado y medido, sin implementar. Pedido de Luis el 2026-08-11.
-**Regla de oro**: nada de esto se activa sin su OK — cada aviso nuevo le suena el celular a gente real.
+**Estado**: ✅ **IMPLEMENTADO Y EN PROD (2026-08-12, autorizado por Luis "continuamos con el punto 2")**.
+- Duplicado ME/WH: muerto — ME 2.8.281 + WH 2.13.555 (mismo fix que MOS 740; ME lee el deep-link
+  también del shape `FCM_MSG` del SDK).
+- Preingreso → push a `apps:['mosExpress']` ("📦 Llegó mercadería al almacén"), además del ticket
+  y del aviso a MASTER/ADMIN — SQL 755 (`wh.crear_preingreso` con cuerpo calculado una vez).
+- Precios → cola `mos.notif_precio_pendiente` + trigger best-effort sobre `mos.historial_precio_costo`
+  (SOLO tipo='PRECIO') + `mos.cron_avisar_precios()` cada 5 min con el texto aprobado y dedup por
+  producto. Verificado en tx+rollback: 5 cambios → "4 productos: A, B, C… y 1 más"; COSTO no encola.
+- HALLAZGO colateral (no causado por esto): los push a Luis NO llegan desde la mañana del 12-ago —
+  su Chrome perdió la suscripción FCM (mismo evento que cerró sus pestañas); la instancia re-minta
+  tokens que nacen muertos (566 en el día). Remedio: re-registrar desde el navegador (MOS →
+  probar notificación / re-permitir). La Edge `push` NO desactiva tokens `unregistered` (wart menor;
+  se autocura porque la audiencia toma el último token por device).
 
 ---
 
@@ -112,9 +123,27 @@ reproduce la ráfaga tal cual.
 6. Verificación: enviar primero **solo al token de prueba** (la Edge acepta `tokens:[...]` explícitos)
    antes de abrir la audiencia real.
 
-### Decisiones pendientes de Luis
+### Decisiones YA TOMADAS por Luis (2026-08-11) — no volver a preguntar
 
-- **Agrupación de precios**: ¿una sola cada ~5 min (recomendado) o una por cambio?
-- **PN**: ¿avisar a los de WH cuando se REGISTRA (además del aviso a admin) o basta con el aviso que
-  ya existe cuando se APRUEBA?
-- ¿El aviso de precio debe listar los productos o basta el conteo?
+1. **Aviso de precios: AGRUPADO cada ~5 min**, con los nombres de los productos y corte con
+   "…y N más". Texto aprobado:
+   ```
+   💲 Precios actualizados
+   9 productos: ARROZ COSTEÑO 5KG, ACEITE PRIMOR 1L, AZUCAR RUBIA… y 6 más
+   ```
+   Un cambio suelto debe llegar igual (en ≤5 min), no solo las ráfagas.
+2. **PN: SOLO al aprobarse** — que es lo que ya funciona hoy (`wh.marcar_producto_nuevo_aprobado`
+   → `apps:['warehouseMos']`). **No** se agrega aviso a todo WH al registrar; el registro sigue
+   avisando solo a MASTER/ADMIN. Nada que hacer aquí.
+3. **Ejecución: nada se implementa por ahora.** Queda apuntado y se retoma cuando Luis lo pida.
+
+Con eso, el trabajo pendiente real se reduce a tres cosas, en este orden:
+
+| # | qué | por qué primero |
+|---|---|---|
+| 1 | Matar el duplicado en `MosExpress/sw.js` y `warehouseMos/sw.js` (sección A) | si no, cada aviso nuevo llega doble |
+| 2 | Preingreso → push a `apps:['mosExpress']` (una línea en `wh.crear_preingreso`) | barato y ya está decidido; el ticket impreso se queda |
+| 3 | Precios → `mos.notif_precio_pendiente` + trigger + `mos.cron_avisar_precios()` cada 5 min | el único que necesita obra nueva |
+
+En los tres: probar contra **un token de prueba** (la Edge acepta `tokens:[...]`) antes de abrir la
+audiencia real de 13 personas.
