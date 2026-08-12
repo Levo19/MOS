@@ -21,7 +21,7 @@ try {
 
   // ══ A. CICLO SOMBRA ══════════════════════════════════════════
   await c.query(`insert into wh.listas_sombra (id_lista, fecha_creacion, usuario_creador, items, estado, zona)
-    values ('LST606', now() - interval '2 hours', 'PRUEBA CLAUDE',
+    values ('LST606', now(), 'PRUEBA CLAUDE',   -- [747] del DIA EN CURSO: una sombra de ayer ya cumplio su cierre de dia y se vuelca sola
       '[{"skuBase":"LEV1499","nombre":"ACHIOTE 250GR","cantidad":10,"cantidadEscaneada":0,"codigosOriginales":["WHACXOVO250GR"]},
         {"skuBase":"","sinSku":true,"nombre":"COSA RARA ILEGIBLE","cantidad":7,"cantidadEscaneada":0}]'::jsonb,
       'DISPONIBLE', $1)`, [Z]);
