@@ -16871,13 +16871,23 @@ const MOS = (() => {
     return (n >= 2 && Math.abs(inv - n) < 1e-6) ? n : null;
   }
 
-  // Descriptor sugerido a partir del factor (editable por el usuario). '' si es un factor "raro".
-  function _presDescriptorSugerido(factor) {
+  // [742] Etiqueta de peso para un factor sobre granel (base = 1 kg): 0.06 → "60gr" · 1.5 → "1.5kg".
+  function _presPesoLbl(factor) {
     var f = parseFloat(factor) || 0;
+    if (!(f > 0)) return '';
+    if (f >= 1) return String(Math.round(f * 1000) / 1000).replace(/\.?0+$/, '') + 'kg';
+    return Math.round(f * 1000) + 'gr';
+  }
+  // Descriptor sugerido a partir del factor (editable por el usuario). '' si es un factor "raro".
+  // [742] esPeso=true (padre granel, fracción) → el descriptor ES el peso ("60gr"), no "1/60":
+  // para un granel que se vende por kilo, la porción se piensa en gramos, no en divisores.
+  function _presDescriptorSugerido(factor, esPeso) {
+    var f = parseFloat(factor) || 0;
+    if (esPeso && f > 0 && f < 1) return _presPesoLbl(f);
     if (f > 1 && Number.isInteger(f)) return _PRES_PACKS[f] || ('Pack x' + f);
     var n = _presDenominador(f);
     if (n) return _PRES_FRACC[n] || ('1/' + n);
-    return '';
+    return esPeso ? _presPesoLbl(f) : '';
   }
 
   // Sufijo de código derivado del factor: pack ×N → "X"+N · fracción 1/N → "D"+N · otro → "F"+factor×1000.
@@ -16907,7 +16917,9 @@ const MOS = (() => {
     // no unidades — "Pack x25 (25 kg)", jamás "(25 un)".
     var esGranelPadre = !!(_satState && _satState.padreGranel);
     if (f > 1) return (Number.isInteger(f) ? f : (Math.round(f * 100) / 100)) + (esGranelPadre ? ' kg' : ' un');
-    var kgBase = _pesoDesdeNombre(padreDesc);
+    // [742] un GRANEL se vende por kilo: su magnitud base ES 1 kg aunque el nombre no la
+    // diga — antes acá salía '' y el modal pedía "escribe el contenido en el descriptor".
+    var kgBase = esGranelPadre ? 1 : _pesoDesdeNombre(padreDesc);
     if (!kgBase) return '';
     return _presFmtContenidoKg(kgBase * f);
   }
@@ -18598,6 +18610,7 @@ const MOS = (() => {
           <div class="flex gap-2 mb-2">
             <button type="button" id="presFamPack" class="flex-1 py-2 rounded-lg text-xs font-bold border" onclick="MOS._presSetFamilia('pack')">🧱 Pack (×N)</button>
             <button type="button" id="presFamFrac" class="flex-1 py-2 rounded-lg text-xs font-bold border" onclick="MOS._presSetFamilia('frac')">✂️ Fracción (÷N)</button>
+            ${_satState.padreGranel ? `<button type="button" id="presFamPeso" class="flex-1 py-2 rounded-lg text-xs font-bold border" onclick="MOS._presSetFamilia('peso')">⚖️ Por peso</button>` : ''}
           </div>
           <div id="presChips" class="flex flex-wrap gap-1.5"></div>
           <input id="presOtro" type="number" step="0.001" min="0" class="inp w-full hidden mt-1.5" oninput="MOS._presOtroInput()"></div>
@@ -18806,7 +18819,7 @@ const MOS = (() => {
     if (editarProd) {
       const f = parseFloat(editarProd.factorConversion) || 0;
       _satState.presFactor = f;
-      _satState.presFamilia = (f > 0 && f < 1) ? 'frac' : 'pack';
+      _satState.presFamilia = (f > 0 && f < 1) ? (_satState.padreGranel ? 'peso' : 'frac') : 'pack';
       _presRenderFamilia();
       const nm = $('satNombre'); if (nm) nm.value = editarProd.descripcion || '';
       const pi = $('satPrecio'); if (pi) pi.value = parseFloat(editarProd.precioVenta) || '';
@@ -18816,7 +18829,8 @@ const MOS = (() => {
       _satState.presNombreManual = true;   // en edición respetamos el nombre existente
       return;
     }
-    _satState.presFamilia = 'pack'; _satState.presFactor = 0;
+    // [742] un padre GRANEL casi siempre quiere porciones por peso → esa familia arranca elegida
+    _satState.presFamilia = _satState.padreGranel ? 'peso' : 'pack'; _satState.presFactor = 0;
     _presRenderFamilia();
   }
   function _presSetFamilia(fam) {
@@ -18826,21 +18840,26 @@ const MOS = (() => {
   }
   function _presRenderFamilia() {
     const fam = _satState.presFamilia || 'pack';
-    const bP = $('presFamPack'), bF = $('presFamFrac');
+    const bP = $('presFamPack'), bF = $('presFamFrac'), bW = $('presFamPeso');
     if (bP) bP.style.cssText = (fam === 'pack' ? _PRES_FAM_ON : _PRES_FAM_OFF);
     if (bF) bF.style.cssText = (fam === 'frac' ? _PRES_FAM_ON : _PRES_FAM_OFF);
+    if (bW) bW.style.cssText = (fam === 'peso' ? _PRES_FAM_ON : _PRES_FAM_OFF);
     _presRenderChips(fam);
   }
   function _presRenderChips(fam) {
     const cont = $('presChips'); if (!cont) return;
+    // [742] familia PESO (solo padres granel): se piensa en GRAMOS y el factor sale solo
+    // (60gr sobre base 1 kg → factor 0.06). Antes había que saber que 60gr = "÷16.67".
     const modelos = fam === 'pack'
       ? [[2, 'Dúo'], [3, 'Tripack'], [6, 'Sixpack'], [12, 'Docena']]
-      : [[0.5, 'Media'], [1 / 3, 'Tercio'], [0.25, 'Cuarto'], [0.125, 'Octavo']];
+      : fam === 'peso'
+        ? [[0.05, '50gr'], [0.1, '100gr'], [0.25, '250gr'], [0.5, '500gr']]
+        : [[0.5, 'Media'], [1 / 3, 'Tercio'], [0.25, 'Cuarto'], [0.125, 'Octavo']];
     const cur = parseFloat(_satState.presFactor) || 0;
     let html = modelos.map(function (mm) {
       const f = mm[0], lbl = mm[1];
       const activo = cur && Math.abs(cur - f) < 1e-6;
-      const et = fam === 'pack' ? ('×' + f) : ('÷' + Math.round(1 / f));
+      const et = fam === 'pack' ? ('×' + f) : (fam === 'peso' ? ('×' + f + ' kg') : ('÷' + Math.round(1 / f)));
       const st = activo ? 'background:#0f2f22;border-color:#34d399;color:#eafff5' : 'background:#1e293b;border-color:#334155;color:#cbd5e1';
       return `<button type="button" class="px-2.5 py-1 rounded-full text-xs font-bold border" style="${st}" onclick="MOS._presSetModelo(${f})">${lbl} <span class="opacity-60">${et}</span></button>`;
     }).join('');
@@ -18850,13 +18869,18 @@ const MOS = (() => {
   function _presMostrarOtro() {
     const o = $('presOtro'); if (!o) return;
     o.classList.remove('hidden');
-    o.placeholder = (_satState.presFamilia === 'pack') ? 'Nº de unidades (ej 5)' : 'Divisor (ej 8 = octavo)';
+    o.placeholder = (_satState.presFamilia === 'pack') ? 'Nº de unidades (ej 5)'
+                  : (_satState.presFamilia === 'peso') ? 'Gramos (ej 60)'
+                  : 'Divisor (ej 8 = octavo)';
     o.value = ''; try { o.focus(); } catch (_) {}
   }
   function _presOtroInput() {
     const n = parseFloat($('presOtro')?.value) || 0;
     if (n <= 0) return;
-    const factor = (_satState.presFamilia === 'pack') ? n : (1 / n);
+    // [742] en PESO se teclean GRAMOS → factor = gr/1000 (base granel = 1 kg)
+    const factor = (_satState.presFamilia === 'pack') ? n
+                 : (_satState.presFamilia === 'peso') ? (n / 1000)
+                 : (1 / n);
     _presAplicar(factor);
   }
   async function _presSetModelo(factor) {
@@ -18868,25 +18892,30 @@ const MOS = (() => {
     const padre = _satState.padre;
     _satState.presFactor = factor;
     _presRenderChips(_satState.presFamilia);
+    const esFrac = (factor > 0 && factor < 1);
+    // [742] sobre un GRANEL toda fracción se describe por PESO ("60gr"), venga de la
+    // familia peso o de un divisor tecleado en Otro — jamás "1/60".
+    const esPeso = !!_satState.padreGranel && esFrac;
     const di = $('presDescriptor');
-    if (di && !_satState.presDescManual) di.value = _presDescriptorSugerido(factor);
+    if (di && !_satState.presDescManual) di.value = _presDescriptorSugerido(factor, esPeso);
     const contenido = _presContenidoAuto(padre.descripcion, factor);
     const cont = $('presContenido');
-    const esFrac = (factor > 0 && factor < 1);
     if (cont) {
-      if (contenido && esFrac) cont.textContent = 'Contenido: ' + contenido + ' · baja el stock del padre en ' + factor + ' (verás decimales)';   // [punto 17] aviso stock decimal
+      if (contenido && esFrac) cont.textContent = 'Contenido: ' + contenido + ' · baja el stock del padre en ' + (Math.round(factor * 10000) / 10000) + ' kg (verás decimales)';   // [punto 17] aviso stock decimal
       else if (contenido) cont.textContent = 'Contenido: ' + contenido;
       else if (esFrac) cont.textContent = '⚠ El padre no tiene magnitud (kg/gr) en el nombre — escribe el contenido en el descriptor';
       else cont.textContent = '';
     }
     if (!_satState.presNombreManual) {
-      const nm = $('satNombre'); if (nm) nm.value = _presNombreCompuesto(padre.descripcion, di ? di.value : '', contenido);
+      // [742] si el descriptor YA es el peso ("60gr"), no repetir el contenido en el nombre
+      const nm = $('satNombre'); if (nm) nm.value = _presNombreCompuesto(padre.descripcion, di ? di.value : '', esPeso ? '' : contenido);
     }
     const precioPadre = parseFloat(padre.precioVenta) || 0;
     const ph = $('satPrecioHint'), pi = $('satPrecio');
     if (precioPadre > 0 && factor > 0) {
       const sug = Math.round(precioPadre * factor * 100) / 100;
-      if (ph) ph.innerHTML = `Ref: ${factor > 1 ? (factor + '×') : ('×' + factor)} S/${precioPadre.toFixed(2)} = <b style="color:#34d399">S/ ${sug.toFixed(2)}</b> · pones el tuyo`;
+      const fLbl = Math.round(factor * 10000) / 10000;   // [742] antes salía ×0.016666666666666666
+      if (ph) ph.innerHTML = `Ref: ${factor > 1 ? (fLbl + '×') : ('×' + fLbl)} S/${precioPadre.toFixed(2)} = <b style="color:#34d399">S/ ${sug.toFixed(2)}</b> · pones el tuyo${esPeso ? ` <span style="color:#94a3b8">(${_presPesoLbl(factor)} de 1 kg)</span>` : ''}`;
       // Actualiza la sugerencia al cambiar de modelo, salvo que el usuario ya haya tecleado su precio.
       if (pi && (!pi.value || _satState.presPrecioAuto)) { pi.value = sug.toFixed(2); _satState.presPrecioAuto = true; }
     }
@@ -18898,7 +18927,9 @@ const MOS = (() => {
     _satState.presDescManual = true;
     if (_satState.presNombreManual) return;
     const padre = _satState.padre;
-    const contenido = _presContenidoAuto(padre.descripcion, _satState.presFactor);
+    const f = parseFloat(_satState.presFactor) || 0;
+    // [742] granel + fracción: el descriptor lleva el peso → no duplicarlo como contenido
+    const contenido = (_satState.padreGranel && f > 0 && f < 1) ? '' : _presContenidoAuto(padre.descripcion, f);
     const nm = $('satNombre'); if (nm) nm.value = _presNombreCompuesto(padre.descripcion, $('presDescriptor')?.value || '', contenido);
   }
   function _presNombreManual() { _satState.presNombreManual = true; }
