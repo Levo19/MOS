@@ -148,6 +148,28 @@ try {
   ok('[752] neteo 540 INLINE al absorber sombra: 25+1−4=22, la separación sigue intacta',
      !!it5 && Number(it5.solicitado) === 22 && Number(it5.despachado) === 2,
      it5 && `sol ${it5.solicitado} desp ${it5.despachado}`);
+
+  // ══ 12. [753] SOLTAR = la separación nunca existió ══════════════
+  await c.query(`update wh.pickups set estado='EN_PROCESO', atendido_por='PRUEBA CLAUDE', items =
+    '[{"skuBase":"LEV1499","nombre":"ACHIOTE 250GR","solicitado":22,"despachado":9,"tsDespacho":"2026-08-12T10:00:00.000Z","codigosOriginales":["WHACXOVO250GR"]}]'::jsonb
+    where id_pickup=$1`, [ACUM]);
+  const lib = (await q(`select wh.liberar_pickup(jsonb_build_object('idPickup',$1::text)) r`, [ACUM]))[0].r;
+  const acL = (await q(`select estado, atendido_por, items from wh.pickups where id_pickup=$1`, [ACUM]))[0];
+  const itL = (acL.items || []).find(i => i.skuBase === 'LEV1499');
+  ok('[753] soltar manual: separación descartada (9→0, sin tsDespacho), deuda intacta (22), PENDIENTE sin candado',
+     lib.ok === true && acL.estado === 'PENDIENTE' && acL.atendido_por === '' &&
+     !!itL && Number(itL.solicitado) === 22 && Number(itL.despachado) === 0 && itL.tsDespacho === undefined,
+     itL && `estado ${acL.estado} sol ${itL.solicitado} desp ${itL.despachado} ts ${itL.tsDespacho}`);
+  await c.query(`update wh.pickups set estado='EN_PROCESO', atendido_por='PRUEBA CLAUDE',
+    ultima_actividad = now() - interval '2 hours', items =
+    '[{"skuBase":"LEV1499","nombre":"ACHIOTE 250GR","solicitado":22,"despachado":5,"tsDespacho":"2026-08-12T10:00:00.000Z","codigosOriginales":["WHACXOVO250GR"]}]'::jsonb
+    where id_pickup=$1`, [ACUM]);
+  await q(`select wh.consolidar_pickup_zona($1, wh._bucket_dom((now() at time zone 'America/Lima')::date))`, [Z]);
+  const acV = (await q(`select estado, items from wh.pickups where id_pickup=$1`, [ACUM]))[0];
+  const itV = (acV.items || []).find(i => i.skuBase === 'LEV1499');
+  ok('[753] candado vencido (1h) = soltar: separación descartada, PENDIENTE con deuda completa',
+     acV.estado === 'PENDIENTE' && !!itV && Number(itV.solicitado) === 22 && Number(itV.despachado) === 0,
+     itV && `estado ${acV.estado} sol ${itV.solicitado} desp ${itV.despachado}`);
 } finally {
   await c.query('rollback');
   console.log('\nROLLBACK OK — nada persistió · FALLOS:', fallos, 'de', n);
