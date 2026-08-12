@@ -4039,7 +4039,9 @@ const MOS = (() => {
                          onclick="event.stopPropagation();MOS.abrirEditarProducto('${d.idProducto}')"
                          title="Tocar para editar (ahí vive su precio)">${hlD}</span></div>
                     <div class="flex items-center gap-2 mt-0.5">
-                      ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
+                      ${d.codigoBarra ? `<button type="button" class="pres-code" style="cursor:pointer;background:none;border:none;padding:0;font:inherit;color:inherit"
+                      onclick="event.stopPropagation();MOS.verCodigoBarra('${_escAttrJs(String(d.codigoBarra))}','${_escAttrJs(d.descripcion || '')}','${d.factorConversion && parseFloat(d.factorConversion) !== 1 ? 'presentación' : 'derivado'}')"
+                      title="Ver código de barra en grande">▌${d.codigoBarra}<span class="cat-cod-ico">▐│▌║▏</span></button>` : ''}
                       <span class="pres-factor">×${factor}</span>
                       <span class="pres-factor" style="${presUniBg}">${presUniIcon} ${presUnidad}</span>
                     </div>
@@ -4082,6 +4084,9 @@ const MOS = (() => {
                 <span>↳ 🧱 ×${pf}</span>
                 <span class="cat-nombre-edit" onclick="event.stopPropagation();MOS.abrirEditarProducto('${pp.idProducto}')"
                       title="Tocar para editar">${_highlight(pp.descripcion || pp.idProducto, words)}</span>
+                ${pp.codigoBarra ? `<button type="button" class="pres-code" style="cursor:pointer;background:none;border:none;padding:0;font:inherit;color:inherit"
+                      onclick="event.stopPropagation();MOS.verCodigoBarra('${_escAttrJs(String(pp.codigoBarra))}','${_escAttrJs(pp.descripcion || '')}','presentación')"
+                      title="Ver código de barra en grande">▌${pp.codigoBarra}</button>` : ''}
                 <span style="margin-left:auto;color:#34d399;font-weight:700;cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${pp.idProducto}')">${fmtMoney(pp.precioVenta)}</span>
                 ${_esMasterSession() ? `<button type="button" class="toggle-sw sm ${ppAct ? 'on' : ''}" data-pid="${pp.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${pp.idProducto}', false)"
@@ -4108,7 +4113,9 @@ const MOS = (() => {
               </div>
               <div class="flex items-center gap-2 mt-1 flex-wrap" style="font-size:10px;color:#64748b">
                 <span>1 u = ${porcion} kg del granel</span>
-                ${d.codigoBarra ? `<span class="pres-code">▌${d.codigoBarra}</span>` : ''}
+                ${d.codigoBarra ? `<button type="button" class="pres-code" style="cursor:pointer;background:none;border:none;padding:0;font:inherit;color:inherit"
+                      onclick="event.stopPropagation();MOS.verCodigoBarra('${_escAttrJs(String(d.codigoBarra))}','${_escAttrJs(d.descripcion || '')}','${d.factorConversion && parseFloat(d.factorConversion) !== 1 ? 'presentación' : 'derivado'}')"
+                      title="Ver código de barra en grande">▌${d.codigoBarra}<span class="cat-cod-ico">▐│▌║▏</span></button>` : ''}
                 ${_envaseChipHtml(d)}
               </div>
               ${packs}
