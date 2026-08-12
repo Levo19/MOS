@@ -366,27 +366,36 @@ function buildTSPLMembreteMe(producto: any, _allEnvTokens: string[][], cfg: Drif
   // ── BARCODE IZQUIERDA (ancho capado) + código + [⧉/▫ tipo-código][ME] a la DERECHA ──
   let codigo = String((producto.esSkuBase ? producto.skuBase : producto.codigoBarra) || producto.codigoBarra || producto.skuBase || producto.codigo || producto.idProducto || '').replace(/"/g, '');
   if (!codigo) codigo = 'SIN-CODIGO';
-  // Ancho del barcode CAPADO (Code C para numéricos) → deja lugar fijo a [cuadritos][ME] a la derecha.
+  // [756] Módulo del barcode: 2 puntos SIEMPRE que quepa en el ANCHO TOTAL de la etiqueta.
+  // Antes se capaba a 288 dots para no invadir la zona fija del [⧉/▫][ME]: un código
+  // alfanumérico largo (P-ORGENT-F60) caía a módulo 1 (0.125mm) y ni cámara ni lector
+  // lo leían. Ahora: si el barcode ancho invade esa zona, el indicador [⧉/▫][ME] BAJA
+  // a la línea del texto (que tiene espacio de sobra) y el barcode respira.
   const esNum = /^\d+$/.test(codigo);
   const mods = ((esNum ? (Math.ceil(codigo.length / 2) + (codigo.length % 2)) : codigo.length) * 11) + 35;
-  const nb = (mods * 2 <= 288) ? 2 : 1;
+  const nb = (mods * 2 <= 376) ? 2 : 1;
+  const bcW = mods * nb;
   const bcH = 56, bcX = 12;
   const bcY = TOP + TOPZONE_H + 4;
   bytes = bytes.concat(strToBytes('BARCODE ' + bcX + ',' + bcY + ',"128",' + bcH + ',0,0,' + nb + ',' + nb + ',"' + codigo + '"\r\n'));
   bytes = bytes.concat(strToBytes('TEXT ' + bcX + ',' + (bcY + bcH + 4) + ',"1",0,1,1,"' + codigo + '"\r\n'));
   // Indicador de TIPO de código que ACOMPAÑA al "ME": 2 cuadritos = multi-código
-  // (canónico+equivalentes, imprime el skuBase) · 1 cuadrito = código único. Posición fija → siempre entra.
+  // (canónico+equivalentes, imprime el skuBase) · 1 cuadrito = código único.
   const sq = (x: number, y: number, s: number) => {
     bytes = bytes.concat(strToBytes('BAR ' + x + ',' + y + ',' + s + ',2\r\n'));
     bytes = bytes.concat(strToBytes('BAR ' + x + ',' + (y + s - 2) + ',' + s + ',2\r\n'));
     bytes = bytes.concat(strToBytes('BAR ' + x + ',' + y + ',2,' + s + '\r\n'));
     bytes = bytes.concat(strToBytes('BAR ' + (x + s - 2) + ',' + y + ',2,' + s + '\r\n'));
   };
-  const indX = 300, indY = bcY + 14;
+  // [756] barcode angosto → indicador al costado (como siempre) · barcode ancho → indicador
+  // en la línea del texto del código (el texto Font 1 de un código largo ocupa ~100-150 dots).
+  const indAbajo = (bcX + bcW) > 288;
+  const indX = indAbajo ? 300 : 300;
+  const indY = indAbajo ? (bcY + bcH + 2) : (bcY + 14);
   if (producto.esSkuBase) { sq(indX, indY + 6, 14); sq(indX + 8, indY, 14); }   // ⧉ dos cuadritos (multi)
   else { sq(indX + 4, indY + 3, 14); }                                          // un cuadrito (único)
-  // "ME" sin caja, a la derecha del indicador (Font 4)
-  bytes = bytes.concat(strToBytes('TEXT 338,' + (bcY + 14) + ',"4",0,1,1,"ME"\r\n'));
+  // "ME" a la derecha del indicador (Font 4 al costado · Font 3 compacto en la línea de texto)
+  bytes = bytes.concat(strToBytes('TEXT 338,' + (indAbajo ? (bcY + bcH + 2) : (bcY + 14)) + ',"' + (indAbajo ? '3' : '4') + '",0,1,1,"ME"\r\n'));
   bytes = bytes.concat(strToBytes('PRINT 1,1\r\n'));
   return bytes;
 }
