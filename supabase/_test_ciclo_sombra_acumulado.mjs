@@ -122,6 +122,32 @@ try {
   await q(`select wh.consolidar_pickup_zona($1::text, wh._bucket_dom((now() at time zone 'America/Lima')::date))`, [Z]);
   const rez = (await q(`select estado from wh.pickups where id_pickup = 'PCK-ACU-' || $1::text || '-2026-07-19'`, [Z]))[0];
   ok('acumulado: week-death → semana vieja pasa a REZAGADO (lista de compra del lunes)', rez.estado === 'REZAGADO');
+
+  // ══ 11. [752] SEPARAR ≠ DESPACHAR ══════════════════════════════
+  // El despachado del acumulado es SEPARACIÓN autoguardada (sin guía): el consolidador
+  // no debe consumirla como deuda pagada. La deuda solo la mueven la emisión (743/749)
+  // y la absorción de pickups nuevos (neteo 540 inline).
+  await c.query(`update wh.pickups set estado='EN_PROCESO', atendido_por='PRUEBA CLAUDE', items =
+    '[{"skuBase":"LEV1499","nombre":"ACHIOTE 250GR","solicitado":20,"despachado":2,"codigosOriginales":["WHACXOVO250GR"]}]'::jsonb
+    where id_pickup=$1`, [ACUM]);
+  await c.query(`insert into wh.pickups (id_pickup, fuente, estado, items, id_zona, creado_por, fecha_creado, ultima_actividad)
+    values ('PKT752CAJA','ME_CIERRE_CAJA','PENDIENTE',
+      '[{"skuBase":"LEV1499","nombre":"ACHIOTE 250GR","solicitado":5,"despachado":0,"codigosOriginales":["WHACXOVO250GR"]}]'::jsonb,
+      $1,'Mia', now(), now())`, [Z]);
+  const ac4 = (await q(`select items from wh.pickups where id_pickup=$1`, [ACUM]))[0];
+  const it4 = (ac4.items || []).find(i => i.skuBase === 'LEV1499');
+  ok('[752] pickup nuevo en plena jalada: deuda 20+5=25 y la separación (2) se ARRASTRA intacta',
+     !!it4 && Number(it4.solicitado) === 25 && Number(it4.despachado) === 2,
+     it4 && `sol ${it4.solicitado} desp ${it4.despachado}`);
+  await c.query(`insert into wh.pickups (id_pickup, fuente, estado, items, id_zona, creado_por, fecha_creado, ultima_actividad)
+    values ('PCK-LSC-LST752','LISTA_IA','PENDIENTE',
+      '[{"skuBase":"LEV1499","nombre":"ACHIOTE 250GR","solicitado":1,"despachado":4,"codigosOriginales":["WHACXOVO250GR"]}]'::jsonb,
+      $1,'PRUEBA CLAUDE', now(), now())`, [Z]);
+  const ac5 = (await q(`select items from wh.pickups where id_pickup=$1`, [ACUM]))[0];
+  const it5 = (ac5.items || []).find(i => i.skuBase === 'LEV1499');
+  ok('[752] neteo 540 INLINE al absorber sombra: 25+1−4=22, la separación sigue intacta',
+     !!it5 && Number(it5.solicitado) === 22 && Number(it5.despachado) === 2,
+     it5 && `sol ${it5.solicitado} desp ${it5.despachado}`);
 } finally {
   await c.query('rollback');
   console.log('\nROLLBACK OK — nada persistió · FALLOS:', fallos, 'de', n);
