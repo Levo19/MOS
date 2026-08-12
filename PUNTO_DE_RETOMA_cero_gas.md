@@ -1,5 +1,21 @@
 # PUNTO DE RETOMA — Corte total GAS (ecosistema MOS) — 2026-07-05
 
+> ## ⚠️ CENSO 2026-08-12 — este documento quedó VIEJO; estado REAL verificado (grep + DB):
+> **YA RESUELTO** (no re-hacer): tickets Z-cierre/pago/costos → Edge imprimir (interceptores vivos en
+> api.js post:, Z reusa turno.html iframe) · OCR comprobante/jefa → Edge ia · editarPNCantidad (F6) ·
+> espía/audio chunks → Edge espia-chunk (las 3 apps; MOS sin sendBeacon) · notificaciones_log (2,728
+> filas) + reenviar · solicitar/extender horario (RPCs mos.* existen) · sugerencia_precio_individual
+> (RPC existe) · promociones (recreadas en panel) · ME bridge membrete → MembreteSystem centralizado ·
+> ME turno.html sin api= · ME API_URL = sentinela 'CERO_GAS_SUPABASE' · WH clienteInbox → RPC
+> cliente_inbox_polling · WH photos.js → Storage (/render/image) · portales WH sin script.google.com.
+> **PENDIENTE REAL**: (1) historial_personal (columna+backfill del Sheet PERSONAL_MASTER) ·
+> (2) dual-writes GAS-primero de MOS (pedidos/pagos/provprod/gastos/eval/jornadas) → directo puro +
+> apagar sync Hoja→SB — EL corazón restante, dinero, sesión dedicada · (3) Block 9 dead-code de MOS
+> (const GAS_URL api.js:5, fall-throughs _postMOS/get, ~50 brazos muertos _conFallbackMOS, bloque
+> if(false) device-auth, input cfgGasUrl) · (4) WH diagnósticos internos (portar o retirar) ·
+> (5) verificación FÍSICA de tickets Z/pago/costos (ya portados, falta imprimir 1 de cada uno) ·
+> (6) grep final = 0 + borrar GAS+Sheets (dueño).
+
 > Objetivo: MOS + ME + WH 100% Supabase, **cero-GAS, cero-fallback, cero-Sheet**. GAS+Sheets se borran.
 > Estado boot verificado por web-check (Playwright real): **MOS ✅ · ME ✅ · WH ✅ cero fetches a script.google.com**.
 > Harness de verificación: `browsercheck/` → `node check.js gaskill_{mos,me,wh}.json`.
