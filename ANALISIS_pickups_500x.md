@@ -1,96 +1,106 @@
-# Revisión 500x · Pickups, acumulado y listas sombra
+# Revisión 500x · Pickups, acumulado, listas sombra y seguimiento en MOS
 
-**Fecha**: 2026-08-11 · **Estado**: diagnóstico cerrado · parte corregida (SQL 741), parte pendiente (front WH).
-
----
-
-## 1. Las escenas del 10–11 de agosto, organizadas
-
-| # | Lo que se vio | Causa |
-|---|---|---|
-| E1 | A **Jorgenis** el acumulado de zona1 le salía en **0 productos**; a **Jesús** también 0; a **Luis** sí le aparecían | C3 + C4 |
-| E2 | A **Sergio** se le quedó **atorada** la lista de ayer; entró en otro dispositivo y ahí sí la vio | C1 + C2 |
-| E3 | "A ratos se ponía en cero y otras veces sí había productos" | C3 (cada refresco traía la copia de otro dispositivo) |
-| E4 | **ZONA-02 con dos acumulados vivos** (02-ago 200 items + 09-ago 113) | C2 |
-| E5 | Sergio despachó parcial, **emitió la guía**, y al retomar **reaparecían los ya despachados** como si estuvieran separados otra vez | **C4** |
-| E6 | Miedo real a **duplicar productos en la guía de salida** → se paró todo y se trabajó con listas sombra | consecuencia de E5 |
+**Última actualización**: 2026-08-11 (noche, WH cerrado hasta las 8am).
+Documento de trabajo: reglas del dueño + qué está corregido + qué falta. **Leer entero antes de tocar nada de este sector.**
 
 ---
 
-## 2. Las causas (cadena, no cinco bugs sueltos)
+## 1. LAS REGLAS DEL DUEÑO (fuente de verdad — Luis, 11-ago)
 
-### C1 · El candado nunca vencía  — CORREGIDO (741)
-El TTL es `ultima_actividad < now() - 1 hora`, pero **el propio consolidador estampaba
-`ultima_actividad = now()`** en el acumulado, en los rezagados y hasta al liberar — cada vez que
-corría, por cualquier zona. El reloj se reiniciaba solo, sin que nadie tocara nada. Por eso la
-pantalla mostraba "hace 2m" en listas que nadie había abierto, y por eso a Sergio no se le soltaba.
+### R1 · Al operador de WH, SALDO. A MOS, la historia completa.
+> "solo debería aparecerle al operador **lo que falta**, no lo que fue despachado"
+> "yo quiero que el json del acumulado tenga **todo**, lo pedido y lo despachado, sea entendible el producto o no. Así en MOS puedo ver cuándo me pidieron y cuánto, e igual cuándo y cuánto se despachó"
 
-### C2 · El consolidador se rendía ante el candado — CORREGIDO (741)
-`consolidar_pickup_zona` hacía `return skip EN_PROCESO`. Con la lista tomada:
-no se absorbían los cierres de caja nuevos **y** no moría el acumulado de la semana anterior.
-De ahí los dos acumulados de ZONA-02 y la sensación de "vendió zona1 y no llegó la lista".
+### R2 · Nunca viaja un negativo. Deuda es deuda.
+> "supongamos que de los 10 pedidos escanea 15, entonces **no debe nada**. No quiero que viaje un negativo. ¿Por qué? Facil: **no quiero que ese −5 mate una deuda de días atrás**"
 
-### C3 · El autosave pisaba la lista entera — CORREGIDO (741)
-`guardar_progreso_pickup` hacía `items = <lo que manda el dispositivo>`. Si a un operador le
-llegaron productos mientras tenía la lista abierta, **su copia vieja los borraba para todos**.
-Eso es exactamente E1 y E3: cada dispositivo imponía su versión, y el último en guardar ganaba.
+Piso 0 **por producto**. Un exceso no acredita, no compensa otro producto y no toca días anteriores.
+El operador **siempre** puede enviar más de lo que le piden si quiere — eso se registra, pero no genera saldo a favor.
 
-### C4 · DOS FUENTES DE VERDAD — **PENDIENTE, es la raíz que queda**
-El front guarda el pickup completo en `localStorage['wh_despacho_pickup_activo']` y lo **rehidrata
-al arrancar sin contrastarlo con el servidor** (`js/app.js:12327`, `12455`).
+### R3 · Cuándo entra una lista sombra al acumulado
+| caso | cuándo |
+|---|---|
+| escaneó **y emitió** la salida | **en ese momento** el acumulado se actualiza |
+| escaneó pero la dejó jalada +1h **sin emitir** | se devuelve y queda **como no escaneado** (nunca hubo salida) |
+| **no escaneó nada** | al **cierre del día (~11pm)** se va al acumulado |
+| el operador se equivocó de lista | la **elimina** antes: así nunca entra al ciclo |
 
-Existe una reconciliación (`_reconciliarPickupActivo`, `js/app.js:14635`) pero es **heurística por
-fechas**: suelta la copia local solo si el pickup desapareció de la lista o si `fechaAtendido` es
-posterior a cuando lo tomé. **El acumulado semanal nunca desaparece** — por diseño de cuenta
-corriente [603] queda PENDIENTE y visible. Basta que el refresco no llegue, que la respuesta tarde,
-o que se retome sin pasar por ese refresco, para que la copia local sobreviva **con los despachados
-ya convertidos en guía**. Eso es E5, y el riesgo de duplicar de E6.
+### R4 · El acumulado se despacha N VECES
+> "la lista acumulada tiene nakamito y zuko; despacho nakamito, emito guía, no despacho nada de zuko → el acumulado **al toque** se actualiza y me aparece **solo zuko**"
 
-Y con C3 corregido el daño cambia de forma pero no desaparece: el autosave ya no borra productos,
-pero **sí puede reimponer un `despachado` zombi** sobre la deuda real.
+Al soltar y volver a jalar, solo debe aparecer zuko. Se despacha de a pocos, sin límite de veces.
+
+### R5 · "No se entiende" viaja también al acumulado
+Lo que la IA no pudo cruzar con el catálogo se conserva **con el nombre tal como lo pidieron**.
+> "pusieron **siyau**, obviamente no lo encuentra porque el producto se llama **siyao**; normal que quede en la sección *no se entiende*. Así en MOS el registro dice que solicitaron *siyau*, y si el operador despacha *siyao* que sí existe, igual dirá qué día y hora despachó"
+
+Nunca suma deuda ni KPIs: es **constancia** del pedido.
+
+### R6 · Trazabilidad con HORA REAL
+> "cuando escaneo un producto se guarda la hora y día, pero cuando pasa a emitirse la guía **parece que se chanca con la hora de la cabecera**. En MOS zonas debo poder ver la hora en que fueron despachados esos 15"
+
+Cada línea con **su** hora de escaneo. Y la hora en que se **pidió** (para una sombra: cuándo la leyó la IA).
+En MOS → Zonas → pickups: *"me solicitaron tal día y hora 10, se despachó tal día y hora 15"*.
+
+**También en WH**, en el detalle de las guías de salida ya registradas: la **cabecera** lleva la hora de
+emisión, y **cada producto** su propia hora de escaneo. No solo en MOS.
+
+### R7 · Un solo acumulado por zona · candado que se suelta a la hora
+> "no puede haber dos acumulados, solo uno por zona" · "si el usuario tiene una lista atorada simplemente se desatora a la 1 hora de la última actividad"
+
+### R8 · TODO EN TIEMPO REAL
+> "si un operador tomó una lista pickup **todos** los operadores de WH deben enterarse en tiempo real. Lo mismo si algo cambió en el acumulado. Los datos que viajan a MOS/zona/pickup también"
+
+### R9 · El refresco NO interrumpe al operador
+> "si de golpe el servidor envía nueva data, simplemente avisa al que está con el pickup abierto **'esta lista fue actualizada'** con un efecto bien llamativo, pero el operador puede seguir atendiendo. Si debía 20 nakamitos y escaneó 20, y en el nuevo pickup le piden 5, su barra aparece que **faltan 5**: visualmente se ajusta la deuda"
+
+Reusar el aviso llamativo que ya existe cuando entra un pickup. **Jamás perder el avance del operador.**
+
+### R10 · Ante un choque de copias, manda el SERVIDOR (avisando) · una lista, un operador a la vez.
 
 ---
 
-## 3. La regla de negocio que hay que respetar (Luis, textual)
+## 2. LO QUE ESTABA ROTO (diagnóstico cerrado, con evidencia)
 
-> "se supone que para que se despache parcial o todo, esto se resta y solo debería aparecerle al
-> operador **lo que falta**, no lo que fue despachado"
-
-> "si en la lista sombra me piden 20 nakamito pero yo despacho 10, entonces debo 10. Esos 3 datos se
-> agregan al acumulado. Si en el acumulado dice que ayer me pidieron 5 y hoy 20 y hoy despacharon
-> 10 → **en el acumulado el operador solo debe ver: debes 15**. La trazabilidad (5 de ayer + 10 que
-> faltó despachar) va en el **JSON que se muestra en MOS**."
-
-Es decir: **al operador, saldo. A MOS, historia completa.**
+| # | Falla | Evidencia | Estado |
+|---|---|---|---|
+| C1 | **El candado nunca vencía**: el consolidador estampaba `ultima_actividad = now()` en cada corrida, reiniciando el reloj de la hora sin que nadie tocara nada | todo decía "hace 2m"; a Sergio no se le soltaba | ✅ 741 |
+| C2 | **El consolidador se rendía ante el candado** (`return skip EN_PROCESO`): con la lista tomada no absorbía cierres de caja ni mataba la semana vieja | ZONA-02 con 2 acumulados (200 + 113) | ✅ 741 |
+| C3 | **El autosave pisaba la lista entera** (`items = <copia del celular>`) | Jorgenis y Jesús veían 0; Luis veía productos | ✅ 741 |
+| C4 | **El saldo no se restaba al despachar**: se guardaba la lista con los despachados puestos; el colapso esperaba al consolidador | al retomar reaparecía todo marcado | ✅ 743 |
+| C5 | **El 2º despacho del día se descartaba**: el anti-duplicado tomaba *cualquier* guía de 90 min como reintento | Sergio despachaba un tramo y el siguiente no se aplicaba | ✅ 744 |
+| C6 | El historial nuevo usaba la hora de la guía, no la del escaneo | — | ✅ 745 |
+| **C7** | **Una sombra sin escanear se ANULA y su pedido se pierde**: no entra al acumulado | medido con la lista de Sergio: 3 identificados (21 uds) + 19 constancias → acumulado sin cambios (379 → 379) | ❌ **PENDIENTE** |
+| **C8** | **Dos fuentes de verdad**: el celular guarda la lista completa y la rehidrata sin contrastar `rev` | cada operador veía algo distinto | ❌ **PENDIENTE (front)** |
+| **C9** | La hora por línea no se muestra: ni en MOS ni en el detalle de guías de salida de **WH** (el dato **sí existe**: 36 líneas con 36 horas distintas) | verificado hoy | ❌ **PENDIENTE (vista MOS + vista WH)** |
 
 ---
 
-## 4. Plan de reparación
+## 3. QUÉ FALTA, EN ORDEN
 
-### Ya aplicado (SQL 741 + cron) — 15/15 pruebas propias + 17/17 de la suite de regresión
-- el candado se suelta solo a la hora de inactividad **real** (`wh.cron_liberar_pickups_atorados`, cada 15 min)
-- consolidar y rezagar ya **no** tocan el reloj del candado
-- el consolidador ya no se rinde: absorbe y mata la semana vieja aunque la lista esté tomada
-- el autosave **fusiona por producto**: no borra lo que su copia no traía, y el botón − sigue pudiendo corregir hacia abajo
+1. **C7 · La sombra siempre vuelca al acumulado** (R3, R5). Hoy: si `escaneado = 0` → ANULADA y se pierde.
+   Debe crear el `PCK-LSC` igual (sin guía) con lo pedido + constancias, para que el consolidador lo absorba.
+   Y el disparo pasa de "24 h desde que se creó" a **cierre del día**.
+2. **C8 · Front WH** (R9, R10): comparar `rev`, refrescar la lista abierta con aviso llamativo, reajustar la
+   deuda sin perder el avance, y matar la copia local al emitir la guía.
+3. **C9 · Mostrar la hora por producto en las DOS vistas** (R1, R6): MOS → Zonas → pickups, y el detalle
+   de guías de salida en **WH** (cabecera = hora de emisión; cada línea = su hora de escaneo).
+4. **Pruebas** (obligatorias antes de dar por cerrado): navegadores simultáneos con copias distintas,
+   autosaves concurrentes contra la consolidación, ciclo completo cierre→acumulado→despacho parcial→guía→retomar,
+   y capturas de cada pantalla.
 
-### Pendiente — C4, el cruce de las dos fuentes de verdad
-1. **Versión de lista (`rev`)**: cada escritura del servidor sobre `wh.pickups.items` incrementa un
-   contador. El front manda el `rev` que tiene; si el servidor está más adelantado, **su copia local
-   se descarta y se recarga** (avisando al operador), en vez de imponerse.
-2. **Al emitir la guía, la copia local muere**: hoy depende de una heurística de fechas. Debe ser
-   explícito: cerrado con éxito → `_clearPickup()` sin condiciones.
-3. **El checklist muestra el SALDO**, no el histórico: lo despachado en guías anteriores no vuelve a
-   aparecer como pendiente. La trazabilidad (pedido, despachado, fecha, guía) viaja en el JSON y se
-   ve en MOS.
-4. **Guard anti-duplicado en la emisión**: si una guía ya cubrió esas líneas, no se puede volver a
-   emitir sobre el mismo tramo.
+---
 
-### Cómo se va a probar (antes de tocar producción)
-- **SQL**: pruebas en transacción + rollback (ya hay `_test_741_pickup.mjs` y la suite de 17).
-- **Multi-operador con Playwright**: tres navegadores con copias distintas de la misma lista
-  (uno viejo con 0 items, uno con despachados zombis, uno al día) → verificar que ninguno borra ni
-  resucita nada, con capturas de cada pantalla.
-- **Estrés**: autosaves concurrentes de varios dispositivos sobre la misma lista + consolidación
-  entrando en medio, verificando que la deuda final cuadre exactamente con `pedido − despachado`.
-- **Ciclo completo**: cierre de caja → acumulado → despacho parcial → guía → retomar → confirmar que
-  solo aparece el saldo y que la guía no repite líneas.
+## 4. YA APLICADO Y PROBADO (11-ago)
+
+`741` candado real + cron cada 15 min + consolidador que no se rinde + autosave que fusiona ·
+`742` `rev` por lista + historial de movimientos por producto ·
+`743` colapso a saldo al despachar (R1, R2, R4) ·
+`744` reintento por **contenido**, no por tiempo ·
+`745` hora real del escaneo en el historial (R6).
+
+Pruebas: `_test_741_pickup.mjs` **15/15** · `_test_743_saldo.mjs` **11/11** (escenario exacto de Sergio) ·
+`_test_ciclo_sombra_acumulado.mjs` **17/17**. Todo en transacción + rollback.
+
+Estado de los datos tras los arreglos: **un solo acumulado por zona**, ningún candado puesto,
+ZONA-01 con 379 productos y ZONA-02 con 139, todos con deuda real y sin despachados pegados.
