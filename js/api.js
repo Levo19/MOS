@@ -3342,6 +3342,16 @@ const API = (() => {
       } catch (_) { return null; }
     },
     get:  (action, p = {}) => {
+      // [758 · CERO-GAS] getHistorialPersonal → mos.historial_personal (backfill congelado del Sheet
+      // PERSONAL_MASTER el 12-ago; era el ÚLTIMO dato que vivía solo en la Hoja). Contrato _fetch('GET').
+      if (action === 'getHistorialPersonal') {
+        return (async () => {
+          const r = await _sbRpcMOS('historial_personal', { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r.data;
+        })();
+      }
       // [NIVEL 1 corte-GAS · CERO-GAS] getOperacionDetalle (drill-down voucher) → RPC mos.operacion_detalle (368).
       // Replica el contrato de _fetch('GET'): lanza si {ok:false}, devuelve r.data. Sin fallback GAS.
       if (action === 'getOperacionDetalle') {
