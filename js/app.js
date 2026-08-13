@@ -10869,8 +10869,12 @@ const MOS = (() => {
         /* Se reserva el carril del brazo a la derecha: el conjunto [overlay|brazo]
            queda centrado y —clave— el overlay NO se mueve al plegar/desplegar,
            sólo se extiende o se recoge el apéndice. */
-        #modalCostosGuiaUnif { padding-right: 348px !important; }
-        #modalCostosGuiaUnif .p1-box { max-width: min(1060px, calc(100vw - 396px)); }
+        /* [771] el aire para el brazo se reserva SOLO cuando el brazo está abierto:
+           con la carta recogida (o sin foto) el overlay vuelve al centro real —
+           antes el padding fijo lo dejaba pegado a la izquierda con hueco al lado. */
+        #modalCostosGuiaUnif { transition: padding .42s cubic-bezier(.22,1,.36,1); }
+        #modalCostosGuiaUnif:has(.p1-box.is-arm-open) { padding-right: 348px !important; }
+        #modalCostosGuiaUnif:has(.p1-box.is-arm-open) .p1-box { max-width: min(1060px, calc(100vw - 396px)); }
       }
       @media (prefers-reduced-motion: reduce) {
         #modalCostosGuiaUnif .p1-carta, #modalCostosGuiaUnif .p1-carta-in, #modalCostosGuiaUnif .p1-carta-tab { transition: none !important; }
