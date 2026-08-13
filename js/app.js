@@ -11215,7 +11215,12 @@ const MOS = (() => {
         // NO la congelamos: la dejamos seguir al canónico (contrato MARGEN si aplica).
         const auto = _precioAutoDe(j);
         const divergente = (auto == null) || (Math.abs(j.precio - auto) >= 0.01);
-        patch = divergente ? { idProducto: j.id, modoVenta: 'FIJO' } : (m != null && m > -100 && m < 100 ? { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' } : null);
+        // [777] el FIJO también guarda SU margen de contrato (directiva del dueño: "al
+        // publicar se guardan TODOS los márgenes") — FIJO manda en la cascada (el precio
+        // no se pisa), pero el margen queda registrado para juzgar la próxima compra.
+        patch = divergente
+          ? (m != null && m > -100 && m < 100 ? { idProducto: j.id, modoVenta: 'FIJO', margenPct: _r1(m) } : { idProducto: j.id, modoVenta: 'FIJO' })
+          : (m != null && m > -100 && m < 100 ? { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' } : null);
       } else {
         patch = (m != null && m > -100 && m < 100) ? { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' } : null;
       }
@@ -11229,6 +11234,9 @@ const MOS = (() => {
     await Promise.all(canon.map(j => _pub(j, false)));   // canónicos: su cascada corre PRIMERO
     for (const j of pres) { await _pub(j, true); }        // presentaciones: DESPUÉS y en orden → el manual gana
     if (margenFallo) toast(`⚠ ${margenFallo} precio(s) se publicaron pero su contrato no se guardó — reabre y guarda de nuevo`, 'error', 5000);
+    // [777] la Mesa cuenta los precios desde S._cotejoGuias: sin re-consultar, la card
+    // seguía diciendo "faltan N precios" con el precio recién publicado. Best-effort.
+    try { _mesaPrefetchCotejo(); } catch(_){}
   }
 
   // [H8] Guardar desde el CATÁLOGO (modo catálogo del editor unificado): publica y cierra, sin Mesa.
