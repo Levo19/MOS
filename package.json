@@ -4,7 +4,8 @@
   "description": "MOS Admin PWA — InversionMos ecosystem hub",
   "scripts": {
     "dev": "npx serve -l 4040 .",
-    "start": "npx serve -l 4040 ."
+    "start": "npx serve -l 4040 .",
+    "tw": "npx -y tailwindcss@3.4.17 -i src/tw.css -o css/tw.css --content \"index.html,js/app.js,js/api.js,assets/**/*.js\" --minify"
   },
   "devDependencies": {
     "live-server": "^1.2.2",

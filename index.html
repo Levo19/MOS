@@ -10,7 +10,17 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.json">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- [755] Tailwind ya NO viene del CDN de desarrollo (cdn.tailwindcss.com).
+       Ese script traía el COMPILADOR entero al navegador, leía el DOM y recompilaba en
+       cada pintada con un MutationObserver global sobre <html>: 17 s de CPU en el arranque,
+       13 s al renderizar Finanzas, y peor cuanto más crecía el DOM (de ahí que el panel se
+       degradara a los 40 minutos abierto). Ahora el CSS se hornea con el CLI (ver
+       css/README-tw.md) y viaja como hoja estática: <link> más abajo, al FINAL del <head>.
+       ⚠️ El <link> va después de la hoja a mano de este archivo A PROPÓSITO: el CDN
+       inyectaba su <style> al final del <head>, o sea DESPUÉS del bloque de estilos
+       propios, y por lo tanto las utilidades de Tailwind le ganaban a las clases de la casa
+       en igualdad de especificidad (`.card-sm` vs `.p-3`). Ponerlo aquí arriba invertiría
+       esa cascada y cambiaría el aspecto de media interfaz. -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <!-- JsBarcode — códigos de barra digitales en el catálogo -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
@@ -14640,6 +14650,11 @@
     @keyframes zpkSkel { to { background-position:-200% 0; } }
     .zpk-empty { text-align:center; color:#64748b; padding:40px 16px; font-size:.9rem; }
   </style>
+  <!-- [755] Tailwind horneado (reemplaza a cdn.tailwindcss.com). Va ÚLTIMO en el <head>
+       para reproducir exactamente la cascada que había: el CDN appendeaba su <style> al
+       final del head, después de la hoja de arriba. El `?v=` se bumpea junto con
+       sw.js + version.json + el ?v= de app.js/api.js. Regenerar: css/README-tw.md. -->
+  <link rel="stylesheet" href="css/tw.css?v=2.43.743">
 </head>
 <body class="h-full">
 

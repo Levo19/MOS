@@ -1,0 +1,8 @@
+/* Entrada del build estatico de Tailwind para el panel MOS.
+   Sin personalizaciones: el panel siempre uso el tema por defecto de Tailwind v3
+   (no hay tailwind.config, ni theme.extend, ni darkMode en todo el repo), asi que
+   el CSS horneado tiene que salir exactamente del preset por defecto.
+   Regenerar con el comando de css/README-tw.md cada vez que se agreguen clases nuevas. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
