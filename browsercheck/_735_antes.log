@@ -1,0 +1,60 @@
+base = http://127.0.0.1:57383/ · cpuThrottle = 4x · navs = 20
+
+── tras BOOT ── {"iv":16,"ivMade":16,"ivKilled":0,"to":5,"toMade":152,"lis":58,"lisRm":8,"lisNet":50,"dom":9799,"heapMB":37.9,"canales":null}
+✓ Personal del día pintó
+── tras FINANZAS ── {"iv":17,"ivMade":17,"ivKilled":0,"to":4,"toMade":236,"lis":78,"lisRm":19,"lisNet":59,"dom":10134,"heapMB":37.6,"canales":null}
+longtasks boot+finanzas: n=185 · total=74710ms · >200ms=99
+  top: 6897ms@69138 3743ms@833 2571ms@31865 2479ms@8460 2178ms@64741 1941ms@11482 1504ms@24787 1440ms@45600 1350ms@60316 1299ms@63221 1253ms@52971 1228ms@30217
+
+══ CLIC AUDITAR [1er clic] ══
+ feedback visual : null ms
+ modal visible   : 519 ms
+ long tasks      : n=12 total=3144ms max=1626ms
+ red disparada   : [{"u":"/rest/v1/rpc/operacion_detalle","ms":168,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":180,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":227,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":205,"st":200},{"u":"/rest/v1/rpc/resumen_todos_dia","ms":278,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":241,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":2534,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":2364,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":2356,"st":200},{"u":"/rest/v1/rpc/creditos_personal","ms":2440,"st":200},{"u":"/rest/v1/rpc/liq_dia_bon_san","ms":2445,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":397,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":317,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":323,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":320,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":157,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":165,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":155,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":205,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":153,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":154,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":164,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":160,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":181,"st":200}]
+
+══ CLIC AUDITAR [2do clic (cache caliente)] ══
+ feedback visual : null ms
+ modal visible   : 666 ms
+ long tasks      : n=12 total=4226ms max=2187ms
+ red disparada   : [{"u":"/rest/v1/rpc/operacion_detalle","ms":169,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":205,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":225,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":254,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":198,"st":200},{"u":"/rest/v1/rpc/resumen_todos_dia","ms":333,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":588,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":580,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":556,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":458,"st":200},{"u":"/rest/v1/rpc/creditos_personal","ms":256,"st":200},{"u":"/rest/v1/rpc/liq_dia_bon_san","ms":255,"st":200},{"u":"/rest/v1/rpc/finanzas_dia","ms":492,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":369,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":342,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":354,"st":200},{"u":"/rest/v1/rpc/operacion_detalle","ms":354,"st":200},{"u":"/rest/v1/rpc/personal_dia_lista","ms":2515,"st":200}]
+
+══ TRIPLE CLIC ══ {
+ "total": 31,
+ "resumen": {
+  "/rest/v1/rpc/cierres_caja": 1,
+  "/rest/v1/rpc/operacion_detalle": 13,
+  "/rest/v1/rpc/resumen_todos_dia": 3,
+  "/rest/v1/rpc/creditos_personal": 3,
+  "/rest/v1/rpc/liq_dia_bon_san": 3,
+  "/rest/v1/rpc/finanzas_dia": 1,
+  "/rest/v1/rpc/dispositivos_bloqueados": 1,
+  "/rest/v1/rpc/personal_dia_lista": 1,
+  "/rest/v1/rpc/finanzas_rango": 1,
+  "./version.json?t=1786406120530": 1,
+  "/rest/v1/rpc/catalogo_version": 1,
+  "/rest/v1/rpc/wh_productos_nuevos": 1,
+  "/rest/v1/rpc/accesos_duplicados_dia": 1
+ }
+}
+
+── tras 20 navegaciones ── {"iv":16,"ivMade":17,"ivKilled":1,"to":2,"toMade":472,"lis":108,"lisRm":69,"lisNet":39,"dom":14328,"heapMB":20.9,"canales":null}
+ intervalos vivos por origen:
+     1× async function _cargarFlagsMOS() { try { const res = await _sbFetchTimeout(`${
+     1× function () { try { if (localStorage.getItem('mos_no_autoreload') === '1')
+     1× () => { if (S.cfgTab !== 'personal') return; ['mosExpress', 'warehouseMos', 'MOS
+     1× () => { _cjCreditosState.enVueloTick++; const cont = document.getElementById('cj
+     1× function() { // [v1.0.10 BUG H consistent] Saltar heartbeat si pestaña oculta 
+     1× () => _reg?.update().catch(() => {})
+     1× function _mosForzarSiVencio() { if (!_mosUpdPendienteDesde) return; if (Date.n
+     1× async function _watchVersionJson() { let remoteVer = null; try { // [2
+     1× async function _mosHeartbeat() { try { const ses = S.session; if (!ses 
+     1× async function _cajasRefreshSilencioso() { if (!API.isConfigured()) return; if (
+     1× async function _catalogoRefreshSilencioso() { if (!API.isConfigured()) return; _
+     1× async function _catVerPoll() { if (!S.session) return; if (document.visibilitySt
+     1× () => { // Solo refresh si la app sigue activa (visible) y hay sesión if (!S
+     1× () => { loadProveedores().catch(() => {}); }
+     1× function() { if (document.hidden) return; // [perf] no consulta con la pestaña ocu
+     1× async function _refreshEcoStatus() { try { const eco = await API.get('getEcoSt
+
+errs: 0 pageerrors
+duración total del run: 242s

@@ -1,0 +1,51 @@
+base = http://127.0.0.1:54908/ · cpuThrottle = 4x · navs = 20
+
+── tras BOOT ── {"iv":16,"ivMade":16,"ivKilled":0,"to":3,"toMade":116,"lis":60,"lisRm":8,"lisNet":52,"dom":9799,"heapMB":65.4,"canales":null}
+✓ Personal del día pintó
+── tras FINANZAS ── {"iv":17,"ivMade":17,"ivKilled":0,"to":2,"toMade":148,"lis":75,"lisRm":14,"lisNet":61,"dom":10134,"heapMB":20.4,"canales":null}
+longtasks boot+finanzas: n=73 · total=15410ms · >200ms=21
+  top: 2108ms@22689 1019ms@25001 689ms@21999 647ms@1942 600ms@12938 567ms@200 476ms@11773 440ms@7144 360ms@2788 321ms@13539 317ms@10756 316ms@6299
+
+══ CLIC AUDITAR [1er clic] ══
+ feedback visual : 129 ms
+ modal visible   : 130 ms
+ long tasks      : n=4 total=1054ms max=537ms
+ red disparada   : [{"u":"/rest/v1/rpc/creditos_personal","ms":1790,"st":200},{"u":"/rest/v1/rpc/liq_dia_bon_san","ms":1790,"st":200}]
+
+══ CLIC AUDITAR [2do clic (cache caliente)] ══
+ feedback visual : 83 ms
+ modal visible   : 83 ms
+ long tasks      : n=3 total=299ms max=123ms
+ red disparada   : [{"u":"/rest/v1/rpc/creditos_personal","ms":147,"st":200},{"u":"/rest/v1/rpc/liq_dia_bon_san","ms":147,"st":200},{"u":"/rest/v1/rpc/resumen_todos_dia","ms":280,"st":200},{"u":"/rest/v1/rpc/seguridad_alertas","ms":406,"st":200},{"u":"/rest/v1/rpc/listar_dispositivos","ms":412,"st":200}]
+
+══ TRIPLE CLIC ══ {
+ "total": 4,
+ "resumen": {
+  "/rest/v1/rpc/creditos_personal": 1,
+  "/rest/v1/rpc/liq_dia_bon_san": 1,
+  "/rest/v1/rpc/resumen_todos_dia": 1,
+  "/rest/v1/rpc/cierres_caja": 1
+ }
+}
+
+── tras 20 navegaciones ── {"iv":16,"ivMade":17,"ivKilled":1,"to":2,"toMade":203,"lis":75,"lisRm":34,"lisNet":41,"dom":14328,"heapMB":20.5,"canales":null}
+ intervalos vivos por origen:
+     1× async function _cargarFlagsMOS() { try { const res = await _sbFetchTimeout(`${
+     1× function () { try { if (localStorage.getItem('mos_no_autoreload') === '1')
+     1× () => { if (S.cfgTab !== 'personal') return; ['mosExpress', 'warehouseMos', 'MOS
+     1× () => { _cjCreditosState.enVueloTick++; const cont = document.getElementById('cj
+     1× () => _reg?.update().catch(() => {})
+     1× function _mosForzarSiVencio() { if (!_mosUpdPendienteDesde) return; if (Date.n
+     1× async function _watchVersionJson() { let remoteVer = null; try { // [2
+     1× async function _mosHeartbeat() { try { const ses = S.session; if (!ses 
+     1× async function _cajasRefreshSilencioso() { if (!API.isConfigured()) return; if (
+     1× async function _catalogoRefreshSilencioso() { if (!API.isConfigured()) return; _
+     1× async function _catVerPoll() { if (!S.session) return; if (document.visibilitySt
+     1× () => { // Solo refresh si la app sigue activa (visible) y hay sesión if (!S
+     1× () => { loadProveedores().catch(() => {}); }
+     1× function() { // [v1.0.10 BUG H consistent] Saltar heartbeat si pestaña oculta 
+     1× function() { if (document.hidden) return; // [perf] no consulta con la pestaña ocu
+     1× async function _refreshEcoStatus() { try { const eco = await API.get('getEcoSt
+
+errs: 0 pageerrors
+duración total del run: 126s
