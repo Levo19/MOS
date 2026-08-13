@@ -7904,10 +7904,20 @@ const MOS = (() => {
       el.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">✅ Sin sugerencias por ahora — todo en orden</div>';
       return;
     }
-    const sevColor = { CRITICA: 'rose', ALTA: 'amber', MEDIA: 'indigo', BAJA: 'slate' };
+    // [755] Clases COMPLETAS, no armadas por pedazos: Tailwind ya no se compila en el
+    // navegador (CDN) sino que se hornea en css/tw.css con el escáner estático, y ese
+    // escáner solo ve clases literales. Un `border-${c}-500/30` se purgaba y la tarjeta
+    // quedaba sin borde. Cualquier color nuevo que se agregue aquí exige regenerar el CSS
+    // (ver css/README-tw.md).
+    const sevBorde = {
+      CRITICA: 'border-rose-500/30',
+      ALTA:    'border-amber-500/30',
+      MEDIA:   'border-indigo-500/30',
+      BAJA:    'border-slate-500/30'
+    };
     const sevIcon  = { CRITICA: '🚨', ALTA: '⚠️', MEDIA: '💡', BAJA: 'ℹ️' };
     el.innerHTML = insights.map(i => {
-      const c = sevColor[i.severidad] || 'slate';
+      const c = sevBorde[i.severidad] || 'border-slate-500/30';
       const icon = sevIcon[i.severidad] || '•';
       // Botón "Crear pedido" para insights de reposición
       let actionBtn = '';
@@ -7919,7 +7929,7 @@ const MOS = (() => {
       const productoHeader = i.producto
         ? `<div class="text-sm font-bold text-slate-100 mb-1 truncate">${i.producto}${i.codigoBarra ? ` <span class="text-[10px] text-slate-500 font-mono">▌${i.codigoBarra}</span>` : ''}</div>`
         : '';
-      return `<div class="card-sm border-${c}-500/30 p-3" style="border-left:3px solid var(--accent)">
+      return `<div class="card-sm ${c} p-3" style="border-left:3px solid var(--accent)">
         <div class="flex items-start gap-2">
           <span>${icon}</span>
           <div class="flex-1 min-w-0">
@@ -7940,9 +7950,15 @@ const MOS = (() => {
       el.innerHTML = '<div class="text-xs text-slate-600 italic py-3 text-center">✅ Sin alertas operativas</div>';
       return;
     }
-    const sevColor = { CRITICA: 'rose', ALTA: 'amber', MEDIA: 'indigo' };
+    // [755] Mismo motivo que en _almRenderInsights: clases literales para que el escáner
+    // estático de Tailwind (css/tw.css) las conserve.
+    const sevBorde = {
+      CRITICA: 'border-rose-500/30',
+      ALTA:    'border-amber-500/30',
+      MEDIA:   'border-indigo-500/30'
+    };
     el.innerHTML = alertas.map(a => `
-      <div class="card-sm p-3 border-${sevColor[a.severidad] || 'slate'}-500/30" style="border-left:3px solid #f59e0b">
+      <div class="card-sm p-3 ${sevBorde[a.severidad] || 'border-slate-500/30'}" style="border-left:3px solid #f59e0b">
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0 flex-1">
             <div class="text-sm font-semibold text-slate-200">${a.mensaje}</div>

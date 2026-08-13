@@ -58,6 +58,9 @@ const ASSETS  = [
   './liquidacion.html',
   './js/app.js?v=' + VERSION,
   './js/api.js?v=' + VERSION,
+  // [755] Tailwind horneado: antes venía del CDN (que además ni offline servía).
+  // Mismo trato que app.js/api.js — el `?v=` DEBE coincidir con el de index.html.
+  './css/tw.css?v=' + VERSION,
   './manifest.json',
   './version.json',
   // [v2.43.149] Cachear módulos centralizados también — con cache-buster
