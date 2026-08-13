@@ -2925,6 +2925,9 @@ const API = (() => {
   const _MOS_DIRECT_REQUIRED = { crearPromocion: 1, actualizarPromocion: 1, eliminarPromocion: 1, promoDescartar: 1, crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1,
     // [759] cutover final: sin token/RPC → LANZAN (jamás GAS, que ya es solo un proxy por morir)
     crearPedido: 1, actualizarPedido: 1, registrarPago: 1, agregarProductoProveedor: 1, actualizarProductoProveedor: 1, ppSetBultoGlobal: 1, registrarGasto: 1, eliminarGasto: 1,
+    // [Block 9 · fuga cazada por el censo] estas 2 tienen gate ()=>true pero sin REQUIRED caían a
+    // GAS cuando el mint fallaba (401) — la ÚLTIMA vía por la que el panel aún podía hablarle a GAS.
+    recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
     codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, cotejoCostosGuias: 1, guiaPreview: 1,
