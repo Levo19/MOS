@@ -18,11 +18,22 @@
 > marcar_pagos (574→86) y apagaron MOS_JORNADAS/PAGOS_JORNAL_DIRECTO en prod → 17 funciones
 > restauradas con _restore_759.mjs (extrae la def del ÚLTIMO archivo numerado que la define) y
 > suites DESARMADAS (no re-aplican SQL, dejan flags en 1). NO correr suites viejas sin revisar.
-> **Queda**: (3) Block 9 dead-code de MOS (const GAS_URL api.js:5, rama dualwrite de _postMOS,
-> fall-throughs, ~50 brazos muertos _conFallbackMOS, if(false) device-auth, input cfgGasUrl) ·
-> (4) WH diagnósticos internos · (5) verificación FÍSICA tickets Z/pago (dueño) · (6) decisión
-> crons GAS de liquidaciones (_liqDiaCronDiario 23:30 / cerrarSemanaAutomatico escriben la Hoja
-> muerta; ver quién crea jornadas AUTO al morir GAS) · (7) grep final = 0 + borrar GAS+Sheets.
+> ~~(3) Block 9~~ ✅ MOS 2.43.747: 141 líneas purgadas (gates dualwrite, rama dwGate, ping
+> setHorarioApp, modal cfgGasUrl entero, saveConfig/testConnection) + espiaConfig cableado
+> (mos.espia_config) + fuga sellada (recalcularStockMinMaxAuto/wh_getRotacionSemanal caían a
+> GAS con mint 401 → _MOS_DIRECT_REQUIRED). Verificado navegador real: 9 vistas + 3 escrituras,
+> 0 GAS, 0 errores.
+> ~~(4) diagnósticos WH~~ ✅ censo: fail-closed sin GAS desde 2.13.459 (panel QA marginal) —
+> retirar la UI en la limpieza final de WH, sin obra.
+> ~~(6) crons GAS liq~~ ✅ censo: mos.jornadas muerta desde 04-jul (legacy del rediseño 735-739);
+> liquidaciones_dia viva y autoalimentada (13 personas el 12-ago) + snapshot semanal en pg_cron
+> activo. Los crons GAS son zombis de la Hoja muerta — nada que portar.
+> **PARA EL FUNERAL (lo único que queda)**: (a) dar destino a las 11 acciones del fall-through
+> (lápida en api.js sobre _fetch): 3 de tributario SIN RPC (tribHistorico12meses, tribOCRMasivo,
+> tribReprocesarOCR — portar u ocultar botones), 2 admin de triggers GAS (cierreNocturnoTodos,
+> setupCierreNocturnoTrigger — retirar botones, el cron vive en pg_cron), 6 brazos de respaldo
+> (retirar) · (b) recién entonces: fall-throughs→throw, borrar _fetch/getUrl/GAS_URL · (c) grep=0
+> en los 3 frontends · (d) verificación física tickets Z/pago (dueño) · (e) borrar GAS+Sheets.
 
 > Objetivo: MOS + ME + WH 100% Supabase, **cero-GAS, cero-fallback, cero-Sheet**. GAS+Sheets se borran.
 > Estado boot verificado por web-check (Playwright real): **MOS ✅ · ME ✅ · WH ✅ cero fetches a script.google.com**.
