@@ -2595,6 +2595,13 @@ const API = (() => {
       if (r == null) return null;
       return r;   // {ok, data:{ "<idGuia>": {n, ts} }}
     }
+    // [767] costos YA COTEJADOS de una guía (para re-hidratar el Paso 1 de compras
+    // EN ZONA: sus líneas no guardan monto). Lectura PURA.
+    if (action === 'costosRegistradosGuia') {
+      const r = await _sbRpcMOS('costos_registrados_guia', { p: { idGuia: p.idGuia } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:[{idProducto, sku, valor, ts}]}
+    }
     // [v5 §10 · curvas] series precio/costo del producto (historial_cambios). PURA.
     if (action === 'historialPrecioCosto') {
       const r = await _sbRpcMOS('historial_precio_costo', { p: { idProducto: p.idProducto } }, 'mos');
@@ -2966,7 +2973,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, cotejoCostosGuias: 1, guiaPreview: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaPreview: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.

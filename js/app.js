@@ -9695,14 +9695,63 @@ const MOS = (() => {
       const primero = nombres[0].split(/\s+/).slice(0,2).join(' ');
       return nombres.length > 1 ? (primero + ' y ' + (nombres.length - 1) + ' más') : primero;
     })();
-    document.getElementById('opsCostosTitulo').textContent = 'Compra ' + op.idGuia + (_resumen ? ' · ' + _resumen.toUpperCase() : '');
-    document.getElementById('opsCostosSubtitle').textContent = (_prov ? '🏭 ' + _prov + ' · ' : '') + _lin.length + ' línea(s)';
+    // [767] título HUMANO: quién (proveedor o zona), jamás el código interno de la guía
+    // (reclamo del dueño 13-ago: "un código tan largo — con el nombre del proveedor me basta").
+    const _esZonaT = String(op.tipo || '').toUpperCase() === 'ENTRADA_LIBRE' || (op.fuente && op.fuente !== 'WH' && !op.idProveedor && !op.nombreProveedor);
+    const _quien = _esZonaT ? ('Compra en ' + String(op.idZonaCanonNom || op.idZona || 'zona').trim())
+                            : ('Compra ' + (_prov || '—'));
+    document.getElementById('opsCostosTitulo').textContent = _quien + (_resumen ? ' · ' + _resumen.toUpperCase() : '');
+    document.getElementById('opsCostosSubtitle').textContent =
+      (_esZonaT ? ('🏬 ' + String(op.idZonaCanonNom || op.idZona || '').trim() + (op.usuario ? ' · 👤 ' + String(op.usuario).trim() : '') + ' · ')
+                : (_prov ? '🏭 ' + _prov + ' · ' : '')) + _lin.length + ' línea(s)';
     modal.classList.remove('hidden');
     modal.style.zIndex = '9700'; // [E] por encima de la Mesa (z-9500) que queda atenuada detrás
     // [E · suavizar] fade de entrada (antes aparecía de golpe = parpadeo)
     modal.style.animation = 'none'; void modal.offsetWidth; modal.style.animation = 'p1FadeIn .26s ease';
     const _box = modal.firstElementChild; if (_box) { _box.style.animation = 'p1BoxIn .34s cubic-bezier(.22,1,.36,1)'; }
     _renderModalCostosCompleto(op);
+    _p1HidratarCostosME(op);   // [767] compras EN ZONA: re-pintar costos ya cotejados (async, no bloquea)
+  }
+
+  // [767] Re-hidratar el Paso 1 con los costos YA COTEJADOS de la guía.
+  // Las líneas de una compra EN ZONA (me.guias_detalle) no guardan monto: al reabrir,
+  // el formulario decía "Falta costo" con el trabajo ya hecho (caso AJO zona02 13-ago:
+  // Javier cotejó S/5.50 y la Mesa decía 1/1, pero el modal mostraba 0.00). Se leen los
+  // últimos COSTO del historial de ESTA guía y se pre-llenan los montos. La guarda
+  // _costosAplicados se siembra con esos valores para que el autosave NO re-postee lo
+  // ya cotejado (re-postear movería el reloj del cotejo y resetearía el conteo de
+  // precios del 766). Si el admin edita el monto, fluye normal.
+  async function _p1HidratarCostosME(op) {
+    const st = S._costosGuiaState;
+    if (!st || String(st.fuente || '').toUpperCase() !== 'ME') return;
+    let regs = [];
+    try {
+      const r = await API.post('costosRegistradosGuia', { idGuia: st.idGuia });
+      regs = (r && (r.data || r)) || [];
+    } catch(_) { return; }
+    if (!Array.isArray(regs) || !regs.length) return;
+    if (S._costosGuiaState !== st) return;   // el modal cambió de guía mientras cargaba
+    const idx = _prodIndex();
+    let hubo = false;
+    st._costosAplicados = st._costosAplicados || {};
+    (st.lineas || []).forEach(l => {
+      if (l.inputValue !== '' && l.inputValue != null) return;   // el admin ya escribió — no pisar
+      const cod = String(l.codigoBarra || l.codigoProducto || l.codProducto || '').trim();
+      const p = (cod && idx.byCod.get(cod)) || idx.byId.get(String(l.idCanonico || '')) || null;
+      const reg = regs.find(x =>
+        (p && x.idProducto && String(x.idProducto) === String(p.idProducto)) ||
+        (p && x.sku && String(x.sku) === String(p.skuBase || '')) ||
+        (x.idProducto && String(x.idProducto) === String(l.idCanonico || '')));
+      if (!reg) return;
+      const unit = parseFloat(reg.valor) || 0;
+      if (!(unit > 0)) return;
+      const cant = parseFloat(l.cantidad) || 1;
+      l.inputValue = +(unit * cant).toFixed(2);
+      l._costoRegistrado = true;
+      st._costosAplicados[cod] = _r1(unit);
+      hubo = true;
+    });
+    if (hubo) _renderModalCostosCompleto(op);
   }
 
   // Re-render completo del modal (subheader + body + footer). Usado tras
