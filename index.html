@@ -18103,27 +18103,12 @@
   </div>
 </div>
 
-<!-- Config Modal -->
-<div class="modal-backdrop hidden" id="modalConfig">
-  <div class="modal-box p-6">
-    <div class="flex items-center justify-between mb-5">
-      <h2 class="font-bold text-lg text-white">⚙️ Configuración</h2>
-      <button onclick="MOS.closeModal('modalConfig')" class="modal-close-x">×</button>
-    </div>
-    <div class="space-y-4">
-      <div>
-        <label class="lbl">URL del Web App de MOS (GAS)</label>
-        <input id="cfgGasUrl" class="inp" type="url" placeholder="https://script.google.com/macros/s/...">
-        <p class="text-xs text-slate-500 mt-1">Obtenla en Implementar → Web App en tu proyecto GAS de ProyectoMOS.</p>
-      </div>
-      <div id="cfgTestResult" class="hidden text-xs p-3 rounded-lg"></div>
-      <div class="flex gap-2 pt-2">
-        <button onclick="MOS.testConnection()" class="btn-ghost flex-1">Probar conexión</button>
-        <button onclick="MOS.saveConfig()" class="btn-primary flex-1">Guardar</button>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- [BLOCK 9 · 2026-08-12] "Config Modal" (#modalConfig) ELIMINADO. Su único contenido era el input
+     #cfgGasUrl ("URL del Web App de MOS (GAS)") + los botones Probar conexión / Guardar, que llamaban
+     a MOS.testConnection()/MOS.saveConfig() → API.setUrl(), un no-op desde que la URL de GAS quedó fija
+     en código. Ningún call-site lo abría (no existía openModal('modalConfig')) y GAS ya no recibe nada
+     del panel: la Configuración VIVA es la vista `config` del nav, que no usa nada de esto. -->
+<!-- ⚠️ No reutilizar los ids cfgGasUrl / cfgTestResult: quedaron retirados junto con el modal. -->
 
 <!-- [§11 · purga] modalPrecioRapido eliminado (reemplazado por el editor unificado _paso2Abrir modo catalogo) -->
 
@@ -20820,9 +20805,11 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
         console.warn('[EditorAdhesivos] MOS_API no disponible — setup iconos omitido');
       }
     } catch(e) { console.warn('[EditorAdhesivos] setup err:', e.message); }
-    var urlAbrir = (typeof GAS_URL !== 'undefined') ? GAS_URL : (window.GAS_URL || '');
-    window.EDITOR_BACKEND_URL = urlAbrir;
-    EditorAdhesivos.abrir({ backendUrl: urlAbrir });
+    // [BLOCK 9 · 2026-08-12] Se eliminó el plumbing `backendUrl`/`EDITOR_BACKEND_URL`: apuntaba a GAS_URL,
+    // que NUNCA fue global (es un const dentro del IIFE de api.js) → ya resolvía a '' desde siempre. Del lado
+    // del editor solo alimentaba `POST_URL_FALLBACK` (editor.js:27/155), una variable que se asigna y jamás
+    // se lee. Todo el CRUD/impresión del editor va por window.MOS_API (cableado arriba a adhesivoEditorBackend).
+    EditorAdhesivos.abrir({});
   }
 
   // Exponer fallback global SIEMPRE (resiliente, no depende de MOS)

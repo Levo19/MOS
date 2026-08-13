@@ -5,7 +5,9 @@ const API = (() => {
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
 
   function getUrl()      { return GAS_URL; }
-  function setUrl()      { /* URL fija en código */ }
+  // [BLOCK 9] setUrl() ELIMINADA: era un no-op ({ /* URL fija en código */ }) y su único consumidor —
+  // el modal #modalConfig con el input cfgGasUrl— murió en esta misma purga. GAS_URL/getUrl/_fetch SIGUEN
+  // porque el fall-through de escritura/lectura no se pudo cerrar todavía (ver la lápida sobre _fetch).
   function isConfigured(){ return true; }
 
   // [v2.43.63] Timeout 45s vía AbortController. Antes el fetch quedaba colgado
@@ -41,6 +43,21 @@ const API = (() => {
     });
   }
 
+  // ⚠️ [BLOCK 9 · 2026-08-12] `_fetch` SIGUE VIVO A PROPÓSITO — no borrarlo todavía.
+  // El Block 9 cerró el andamiaje dual-write y el resto del plumbing muerto, pero el censo de acciones
+  // (grep de API.post/API.get en app.js + index.html, cruzado contra los interceptores, _MOS_POST_DIRECTO
+  // y _MOS_ADMIN_RPC) dejó 10 acciones LLAMADAS y SIN CABLEAR que aterrizan en los dos fall-throughs
+  // (`_postMOS` final y el final del dispatcher `get`). Convertirlos en throw ruidoso las rompería:
+  //   · Sin ruta directa (romperían de verdad): tribHistorico12meses · tribOCRMasivo · tribReprocesarOCR ·
+  //     cierreNocturnoTodos + setupCierreNocturnoTrigger (estos dos gobiernan TRIGGERS de Apps Script:
+  //     no tienen equivalente Supabase; su destino es retirar los botones o mover el cron a pg_cron).
+  //   · Brazo de respaldo de un camino directo que ya es el primario (romperían solo si el directo falla):
+  //     espiaCrearSesion (mos.espia_crear_sesion primero) · tribReintentarCPE (API.cpeReconciliar primero) ·
+  //     tribReconciliarCPEs (bucle Supabase primero) · wh_crearLoteAdhesivo + wh_imprimirSubLoteAdhesivo
+  //     (Edge print-adhesivo primero; solo se usa el brazo si la RPC devuelve *_OFF por kill-switch).
+  // Cuando esas 10 estén migradas o retiradas: cerrar ambos fall-throughs con un throw
+  // ('CERO-GAS: escritura/lectura no cableada: '+action) y recién ahí borrar _fetch, _fetchConTimeout,
+  // getUrl y GAS_URL. Mientras tanto, GAS ya NO recibe nada en el happy path del panel.
   async function _fetch(method, params) {
     const url = getUrl();
     if (!url) throw new Error('GAS URL no configurada. Abre ⚙️ Configuración.');
@@ -472,30 +489,12 @@ const API = (() => {
   // Default OFF (mos_proveedores_directo / proveedoresDirecto ausente) → INERTE: crearProveedor/actualizarProveedor
   // van por GAS, bit-idéntico a hoy. Activación = ver RUNBOOK_cutover_escritura_proveedores.md (flag + sync-off).
   function _mosProveedoresDirecto() { return !!_mosFlag('mos_proveedores_directo', 'proveedoresDirecto'); }
-  // ════════════════════════════════════════════════════════════════════
-  // [DUAL-WRITE · PROVEEDORES] Gate SEPARADO y PREFERIDO sobre el directo-puro de arriba. Default OFF → INERTE.
-  // DIFERENCIA CRÍTICA entre los dos modos de escritura de proveedores:
-  //   · _mosProveedoresDirecto (DIRECTO-PURO): escribe SOLO Supabase (NO GAS). Exige apagar el sync de
-  //     proveedores (MOS_SYNC_OFF_TABLAS) o el sync Hoja→sombra pisa lo escrito directo. Un device viejo que
-  //     escriba por GAS→Hoja con el sync apagado PIERDE el dato (incidente del 2026-06-15). PELIGROSO.
-  //   · _mosProveedoresDualWrite (DUAL-WRITE, ESTE): escribe PRIMERO por GAS (Hoja = verdad + _dualWriteMOS de
-  //     GAS espeja la sombra), y SOLO si GAS devolvió ok hace ADEMÁS un upsert best-effort directo a la misma
-  //     RPC para asegurar que la sombra quede fresca aunque el urlfetch de GAS haya fallado por cuota. El sync
-  //     NO se apaga; un device viejo NO rompe nada (la Hoja sigue siendo verdad). SEGURO.
-  // Orden CRÍTICO: GAS primero, Supabase después → la sombra NUNCA queda ADELANTE de la Hoja. Si GAS falla, NO
-  // se hace el write directo (comportamiento = hoy). El upsert directo es fire-and-forget: su fallo NO afecta
-  // el retorno ni lanza (el sync/GAS reconcilia). Activación = solo prender este flag (ver RUNBOOK §DUAL-WRITE).
-  function _mosProveedoresDualWrite() { return !!_mosFlag('mos_proveedores_dualwrite', 'proveedoresDualWrite'); }
-  // [DUAL-WRITE · LOTE EXTENDIDO] Gates dedicados por-módulo, MISMO patrón y semántica que _mosProveedoresDualWrite:
-  // GAS escribe PRIMERO (Hoja = verdad + sus hooks: recompute liquidación/push/enforcement horario) y SOLO si GAS
-  // devolvió ok se hace un upsert best-effort a la MISMA RPC (sombra fresca, aditivo). El sync NO se apaga; un device
-  // viejo no rompe nada. Orden CRÍTICO: GAS primero, Supabase después → la sombra NUNCA queda ADELANTE de la Hoja.
-  // Default OFF (flag ausente) → INERTE: _postMOS ni evalúa esta rama → la acción va recto a GAS, bit-idéntico a hoy.
-  function _mosPedidosDualWrite()  { return !!_mosFlag('mos_pedidos_dualwrite',  'pedidosDualWrite'); }
-  function _mosProvProdDualWrite() { return !!_mosFlag('mos_provprod_dualwrite', 'provprodDualWrite'); }
-  function _mosGastosDualWrite()   { return !!_mosFlag('mos_gastos_dualwrite',   'gastosDualWrite'); }
-  function _mosJornadasDualWrite() { return !!_mosFlag('mos_jornadas_dualwrite', 'jornadasDualWrite'); }
-  function _mosEvalDualWrite()     { return !!_mosFlag('mos_eval_dualwrite',     'evalDualWrite'); }
+  // [BLOCK 9 · 2026-08-12] LÁPIDA: los 6 gates `_mos*DualWrite` (proveedores/pedidos/provprod/gastos/
+  // jornadas/eval) fueron ELIMINADOS. El modo dual-write (GAS escribe primero = verdad, Supabase espeja)
+  // murió con el cutover [759]: sus flags `mos_*_dualwrite` nunca existieron en mos.config ni en get_flags,
+  // el mapa `_MOS_POST_DUALWRITE` quedó vacío y todas esas acciones viven hoy en `_MOS_POST_DIRECTO` con
+  // gate =1 + `_MOS_DIRECT_REQUIRED` (sin token → LANZAN, jamás GAS). NO reintroducirlos: revivir un
+  // dual-write re-abre el camino de escritura por GAS, que ya no recibe nada del panel.
   function _mosPedidosDirecto()     { return !!_mosFlag('mos_pedidos_directo',     'pedidosDirecto'); }
   function _mosPagosDirecto()       { return !!_mosFlag('mos_pagos_directo',       'pagosDirecto'); }
   function _mosProvProdDirecto()    { return !!_mosFlag('mos_provprod_directo',    'provprodDirecto'); }
@@ -2902,22 +2901,14 @@ const API = (() => {
     // NOTA: los editores admin (crear/actualizar/eliminarPersonalMaster, crear/actualizarZona, setConfig) YA son
     //   cero-GAS vía `_MOS_ADMIN_RPC` en API.post (se resuelve ANTES de _postMOS) → NO necesitan entrada acá.
     //   El fix real de zonas fue la política (SQL 399: politicaJSON string→jsonb). Sync Hoja apagado (397/…).
-    // [DUAL-WRITE] pedidos/pagos/provprod/gastos/horario: SIN entrada acá → su escritura va SIEMPRE por
-    // GAS (dual-write espeja la sombra). recomputarLiquidacionDia tampoco (incompatible).
+    // [759] pedidos/pagos/provprod/gastos SÍ tienen entrada acá desde el cutover final (arriba, gate =1):
+    // el modo dual-write murió y su escritura va DIRECTA. recomputarLiquidacionDia también está cableada.
   };
 
-  // Acciones que soportan DUAL-WRITE (GAS primero = verdad, luego espejo best-effort a Supabase), CADA UNA con
-  // su gate dedicado (default OFF). DISTINTO del directo-puro de _MOS_POST_DIRECTO: aquí GAS SIEMPRE escribe.
-  // Con el gate OFF (default) _postMOS ni siquiera evalúa esta rama → va por el camino de hoy (solo GAS).
-  // PRECEDENCIA: el dual-write se evalúa ANTES que el directo-puro y, si está ON, NO se entra al directo-puro
-  // (son modos mutuamente excluyentes para la misma acción). Reactivar más módulos = agregar entradas acá.
-  // [759] VACÍO A PROPÓSITO — el modo dual-write MURIÓ con el cutover final del 2026-08-12.
-  // Sus flags mos_*_dualwrite nunca existieron en mos.config ni en get_flags (inflipeables
-  // server-side); todas sus acciones viven ahora en _MOS_POST_DIRECTO con gate =1 y en
-  // _MOS_DIRECT_REQUIRED (sin token → LANZAN, jamás GAS). Se conserva el objeto (y la rama
-  // que lo evalúa en _postMOS) hasta el Block 9, donde se borra junto con el resto del
-  // andamiaje GAS. NO agregar entradas: revivir un dual-write re-introduce el camino GAS.
-  const _MOS_POST_DUALWRITE = {};
+  // [BLOCK 9 · 2026-08-12] LÁPIDA: el mapa `_MOS_POST_DUALWRITE` (ya vacío desde [759]) y la rama que lo
+  // evaluaba en `_postMOS` fueron ELIMINADOS. El modo dual-write —GAS escribe primero = verdad, Supabase
+  // espeja best-effort— era el último andamiaje que mantenía una escritura por GAS en el panel. Hoy toda
+  // escritura entra por `_MOS_POST_DIRECTO` (RPC directa) y, si no commitea, `_MOS_DIRECT_REQUIRED` LANZA.
 
   // [SHADOW-CRÍTICAS] Acciones cuya escritura DEBE vivir en Supabase (la sombra es la verdad que leen las otras
   // apps en tiempo real) y cuyo sync Hoja→sombra es NO confiable (puede estar caído sin avisar). Para estas, si
@@ -2956,48 +2947,21 @@ const API = (() => {
     // [cero-GAS dueño 2026-07-17] escrituras de dispositivos (panel admin): sin token/RPC → LANZA, jamás GAS.
     crearDispositivo: 1, aprobarDispositivoPendiente: 1, revocarDispositivo: 1, forzarPushDispositivo: 1, forzarWizardDispositivo: 1 };
 
-  // POST con escritura directa opcional. Con el gate de la acción OFF (default) es IDÉNTICO a hoy: ni
-  // siquiera evalúa el directo → va recto a _fetch('POST') → GAS. Con el gate ON + token + RPC viva, escribe
-  // directo; si el directo dice "no commiteó" (null) → GAS (salvo shadow-críticas, que lanzan); si lanza
-  // (negocio/timeout) → PROPAGA (no GAS).
+  // POST con escritura directa. Con el gate de la acción ON (la norma tras [759]) + token + RPC viva, escribe
+  // directo; si el directo dice "no commiteó" (null) y la acción es shadow-crítica → LANZA; si lanza
+  // (negocio/timeout) → PROPAGA. Sin gate cableado quedaría el fall-through histórico a GAS (ver el final).
   async function _postMOS(action, p) {
-    // ── [DUAL-WRITE] Modo PREFERIDO y SEGURO (gate dedicado, default OFF). Se evalúa ANTES que el directo-puro.
-    //   1) GAS primero (AWAIT): escribe la Hoja = VERDAD y devuelve su shape (idéntico a hoy) + corre su propio
-    //      _dualWriteMOS → espeja la sombra. Ese resultado es el que se DEVUELVE al front.
-    //   2) SOLO si GAS resolvió ok: best-effort fire-and-forget _postDirectoMOS → upsert directo a la MISMA RPC
-    //      mos.crear_proveedor/actualizar_proveedor, para asegurar la sombra fresca aunque el urlfetch de GAS
-    //      haya fallado por cuota. Su fallo (.catch) NO propaga, NO afecta el retorno (el sync/GAS reconcilia).
-    //   3) Si GAS LANZA (red/negocio/timeout): se PROPAGA tal cual (comportamiento de hoy) y NO se escribe
-    //      directo → la sombra NUNCA queda ADELANTE de la Hoja. _postDirectoMOS reusa p.localId (estampado por
-    //      GAS o estable) → si llega a commitear, dedupea contra lo que el _dualWriteMOS de GAS ya espejó.
-    const dwGate = _MOS_POST_DUALWRITE[action];
-    if (dwGate && dwGate()) {
-      const res = await _fetch('POST', { action, ...p });   // GAS = verdad; lanza ⇒ propaga (no se escribe directo)
-      try {
-        const pr = _postDirectoMOS(action, p);              // best-effort: upsert a la sombra (puede ser null→no-op)
-        if (pr && typeof pr.then === 'function') pr.then(function(){}, function(){});  // swallow async (null/throw)
-      } catch (_) { /* swallow sync throw: el espejo a la sombra es best-effort, jamás afecta el retorno */ }
-      return res;                                            // shape GAS, bit-idéntico a la rama de hoy
-    }
-
+    // [BLOCK 9] la rama dual-write (GAS primero + espejo best-effort) se ELIMINÓ acá: era la única escritura
+    // por GAS que le quedaba al panel y su mapa estaba vacío desde [759]. Ver la lápida junto a _MOS_POST_DIRECTO.
     const gate = _MOS_POST_DIRECTO[action];
     if (gate && gate()) {
       // throws de _postDirectoMOS se PROPAGAN (negocio = mismo error que GAS; timeout = anti-duplicado).
       const d = await _postDirectoMOS(action, p);
       if (d != null) {
-        // [CAVEAT-CLOSE HORARIOS] ⚠️ INALCANZABLE en el modelo dual-write: setHorarioApp ya NO está en
-        // _MOS_POST_DIRECTO (su escritura va SIEMPRE por GAS), así que `gate` es undefined y nunca se entra
-        // acá. Se conserva por si se re-introdujera escritura-directa-pura de horario. Detalle histórico:
-        // El directo escribe SOLO la sombra Supabase (mos.config_horarios_apps),
-        // pero la ENFORCEMENT de horario en WH/ME (resolverHorarioPersonal/verificarHorario) lee la HOJA
-        // GAS, NO Supabase. Además GAS dispara push a admins + invalida la cache de horario de WH. Para no
-        // dejar la hoja desfasada (WH/ME aplicarían el horario VIEJO) ni perder el push/invalidación,
-        // disparamos GAS setHorarioApp FIRE-AND-FORGET tras el directo OK. GAS reescribe la hoja (idempotente)
-        // + push + invalida cache; el sync hoja→Supabase reconcilia (upsert onConflict=app, sin duplicar).
-        // El UI ya resolvió con el directo (optimista); este ping es best-effort y NO bloquea ni revierte.
-        if (action === 'setHorarioApp') {
-          try { _fetch('POST', { action, ...p }).catch(function(){}); } catch (_) {}
-        }
+        // [BLOCK 9] se eliminó el ping fire-and-forget a GAS `setHorarioApp` que corría acá tras el directo OK.
+        // Quedó obsoleto por partida doble: (a) setHorarioApp se resuelve ANTES, en _MOS_ADMIN_RPC
+        // (mos.actualizar_horario_app) → nunca llegaba a este punto; (b) la enforcement de horario de WH/ME ya
+        // lee Supabase (resolver_horario_personal/verificarHorario migrados), no la Hoja.
         return d;   // éxito directo (data desempaquetada == shape GAS)
       }
       // null → no commiteó (flag server OFF / sin token / no cableada).
@@ -3233,7 +3197,6 @@ const API = (() => {
 
   return {
     getUrl,
-    setUrl,
     isConfigured,
     // [F6 push] Registro de token FCM directo a Supabase (mos.registrar_push_token). Aditivo al GAS.
     registrarPushTokenSB: (p = {}) => _sbRpcMOS('registrar_push_token', { p }, 'mos'),
@@ -3721,6 +3684,18 @@ const API = (() => {
           return r;   // {ok, data} o {ok:false, error} — el front lee d.ok/d.error
         })();
       }
+      // [BLOCK 9 · cero-GAS] espiaConfig → mos.espia_config (SQL 228). Era la ÚNICA acción del espía que seguía
+      // saliendo por el fall-through GAS: el master la pide al abrir el WebRTC para conocer los iceServers/TURN.
+      // Contrato _fetch('POST'): devuelve r.data = {iceServers,tieneTurn,ttlSesionMs,ahora}. Si lanza (sin token /
+      // APP_NO_AUTORIZADA), el call-site ya tiene su catch y sigue con los STUN públicos locales.
+      if (action === 'espiaConfig') {
+        return (async () => {
+          const r = await _sbRpcMOS('espia_config', { p: p || {} }, 'mos');
+          if (r == null) throw new Error('Sin conexión con el servidor');
+          if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+          return r.data;
+        })();
+      }
       // [cero-GAS F4] espiaListarChunks → mos.espia_listar_chunks (el admin ve los chunks migrados a Storage).
       if (action === 'espiaListarChunks') {
         return (async () => {
@@ -3979,13 +3954,7 @@ const API = (() => {
       // (la escritura va por GAS; la lectura usa los gates *Lectura de abajo). Se exponen solo para diagnóstico.
       // EXCEPCIÓN: proveedoresDirecto SÍ gobierna la escritura directa (piloto re-cableado en _MOS_POST_DIRECTO).
       proveedoresDirecto: _mosProveedoresDirecto,  // ¿escritura DIRECTO-PURO de proveedores ON? (gate de crear/actualizarProveedor; exige sync-off)
-      proveedoresDualWrite: _mosProveedoresDualWrite, // ¿escritura DUAL-WRITE de proveedores ON? (GAS verdad + espejo best-effort; NO apaga sync) — diagnóstico/test
-      // [DUAL-WRITE · LOTE EXTENDIDO] gates dedicados (default OFF). GAS verdad + espejo best-effort, NO apaga sync.
-      pedidosDualWrite:   _mosPedidosDualWrite,    // ¿escritura DUAL-WRITE de pedidos ON? (crearPedido) — diagnóstico/test
-      provprodDualWrite:  _mosProvProdDualWrite,   // ¿escritura DUAL-WRITE de proveedor-producto ON? (agregar/actualizar) — diagnóstico/test
-      gastosDualWrite:    _mosGastosDualWrite,     // ¿escritura DUAL-WRITE de gastos ON? (registrar/eliminar; DINERO) — diagnóstico/test
-      jornadasDualWrite:  _mosJornadasDualWrite,   // ¿escritura DUAL-WRITE de jornadas ON? (registrar/eliminar/rehabilitar; DINERO) — diagnóstico/test
-      evalDualWrite:      _mosEvalDualWrite,       // ¿escritura DUAL-WRITE de evaluaciones ON? (crearEvaluacion) — diagnóstico/test
+      // [BLOCK 9] los 6 diagnósticos `*DualWrite` salieron junto con sus gates (modo dual-write muerto).
       pedidosDirecto:     _mosPedidosDirecto,      // (diagnóstico) ¿flag mos_pedidos_directo ON?
       pagosDirecto:       _mosPagosDirecto,        // (diagnóstico) ¿flag mos_pagos_directo ON?
       provprodDirecto:    _mosProvProdDirecto,     // (diagnóstico) ¿flag mos_provprod_directo ON?

@@ -16794,39 +16794,10 @@ const MOS = (() => {
   }
 
 
-  function saveConfig() {
-    const url = ($('cfgGasUrl')?.value || '').trim();
-    API.setUrl(url);
-    closeModal('modalConfig');
-    setStatus(!!url);
-    if (url) {
-      toast('URL guardada. Actualizando datos...', 'ok');
-      S.loaded = {};
-      loadView(S.view);
-    } else {
-      const b = $('bannerNoUrl'); if (b) b.classList.remove('hidden');
-    }
-  }
-
-  async function testConnection() {
-    const url = ($('cfgGasUrl')?.value || '').trim();
-    if (!url) { toast('Ingresa la URL primero', 'error'); return; }
-    API.setUrl(url);
-    const tr = $('cfgTestResult');
-    if (tr) { tr.classList.remove('hidden'); tr.style.background = '#0f172a'; tr.textContent = 'Probando...'; }
-    try {
-      const d = await API.get('getConfig', {});
-      if (tr) {
-        tr.style.background = '#052e16'; tr.style.border = '1px solid #14532d'; tr.style.color = '#86efac';
-        tr.textContent = '✓ Conexión exitosa — ' + (d?.EMPRESA_NOMBRE || 'MOS');
-      }
-    } catch (e) {
-      if (tr) {
-        tr.style.background = '#450a0a'; tr.style.border = '1px solid #7f1d1d'; tr.style.color = '#fca5a5';
-        tr.textContent = '✗ Error: ' + e.message;
-      }
-    }
-  }
+  // [BLOCK 9 · 2026-08-12] saveConfig() y testConnection() ELIMINADAS junto con el modal #modalConfig que
+  // las invocaba (index.html). Leían el input #cfgGasUrl y llamaban a API.setUrl(), que es un no-op desde
+  // que la URL de GAS quedó fija en código; además referenciaban #bannerNoUrl, un banner que ya no existe.
+  // Nada más las llamaba (solo los dos onclick del modal retirado). La Configuración viva es la vista `config`.
 
   // ── Product modal — helpers ────────────────────────────────
   let _prodTipo = 'normal';
@@ -47741,7 +47712,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirAuditoriaAdmin, _audAdmExportCSV,
     // [v2.41.85] Proyección — roadmap estratégico
     abrirProyeccion, _proyToggle, _proyResetEstado, _proyExportar,
-    saveConfig, testConnection, closeModal, openEcoModal,
+    closeModal, openEcoModal,   // [BLOCK 9] saveConfig/testConnection retiradas con el modal #modalConfig
     filterCatalogo, catMostrarMas, _catCardClick, _catSfx, _catRipple,
     verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
