@@ -8,13 +8,21 @@
 > (RPC existe) · promociones (recreadas en panel) · ME bridge membrete → MembreteSystem centralizado ·
 > ME turno.html sin api= · ME API_URL = sentinela 'CERO_GAS_SUPABASE' · WH clienteInbox → RPC
 > cliente_inbox_polling · WH photos.js → Storage (/render/image) · portales WH sin script.google.com.
-> **PENDIENTE REAL**: (1) historial_personal (columna+backfill del Sheet PERSONAL_MASTER) ·
-> (2) dual-writes GAS-primero de MOS (pedidos/pagos/provprod/gastos/eval/jornadas) → directo puro +
-> apagar sync Hoja→SB — EL corazón restante, dinero, sesión dedicada · (3) Block 9 dead-code de MOS
-> (const GAS_URL api.js:5, fall-throughs _postMOS/get, ~50 brazos muertos _conFallbackMOS, bloque
-> if(false) device-auth, input cfgGasUrl) · (4) WH diagnósticos internos (portar o retirar) ·
-> (5) verificación FÍSICA de tickets Z/pago/costos (ya portados, falta imprimir 1 de cada uno) ·
-> (6) grep final = 0 + borrar GAS+Sheets (dueño).
+> **PENDIENTE REAL** *(actualizado 2026-08-12 noche tras cutover 759)*:
+> ~~(1) historial_personal~~ ✅ SQL 758 + MOS 2.43.745 (backfill congelado: 2 eventos).
+> ~~(2) dual-writes~~ ✅ [759] MOS 2.43.746: las 5 acciones que saltaban a GAS-proxy
+> (crearPedido/registrarPago/agregarProductoProveedor/registrarGasto/eliminarGasto + reparadas
+> actualizarPedido/ppSetBultoGlobal) van directo, todas en _MOS_DIRECT_REQUIRED; mapa dual-write
+> VACIADO. GAS ya no recibe NINGUNA escritura del panel. ⚠️ INCIDENTE esa noche: las suites
+> validate_mos_84/86 + apply_mos_81 re-aplicaban SQL viejo (create or replace) → pisaron
+> marcar_pagos (574→86) y apagaron MOS_JORNADAS/PAGOS_JORNAL_DIRECTO en prod → 17 funciones
+> restauradas con _restore_759.mjs (extrae la def del ÚLTIMO archivo numerado que la define) y
+> suites DESARMADAS (no re-aplican SQL, dejan flags en 1). NO correr suites viejas sin revisar.
+> **Queda**: (3) Block 9 dead-code de MOS (const GAS_URL api.js:5, rama dualwrite de _postMOS,
+> fall-throughs, ~50 brazos muertos _conFallbackMOS, if(false) device-auth, input cfgGasUrl) ·
+> (4) WH diagnósticos internos · (5) verificación FÍSICA tickets Z/pago (dueño) · (6) decisión
+> crons GAS de liquidaciones (_liqDiaCronDiario 23:30 / cerrarSemanaAutomatico escriben la Hoja
+> muerta; ver quién crea jornadas AUTO al morir GAS) · (7) grep final = 0 + borrar GAS+Sheets.
 
 > Objetivo: MOS + ME + WH 100% Supabase, **cero-GAS, cero-fallback, cero-Sheet**. GAS+Sheets se borran.
 > Estado boot verificado por web-check (Playwright real): **MOS ✅ · ME ✅ · WH ✅ cero fetches a script.google.com**.
