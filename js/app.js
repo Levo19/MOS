@@ -9743,9 +9743,19 @@ const MOS = (() => {
         (p && x.sku && String(x.sku) === String(p.skuBase || '')) ||
         (x.idProducto && String(x.idProducto) === String(l.idCanonico || '')));
       if (!reg) return;
+      // [768] bonificación registrada → restaurar la marca (sin monto)
+      if (reg.bonificacion) {
+        l._bonif = true;
+        l._costoRegistrado = true;
+        st._costosAplicados[cod] = 'BONIF';
+        hubo = true;
+        return;
+      }
       const unit = parseFloat(reg.valor) || 0;
       if (!(unit > 0)) return;
       const cant = parseFloat(l.cantidad) || 1;
+      // [768] el registro guarda el costo FINAL (con IGV y percepción ya sumados);
+      // se re-pinta plano: monto total = unit × cant, sin flags que lo re-inflen.
       l.inputValue = +(unit * cant).toFixed(2);
       l._costoRegistrado = true;
       st._costosAplicados[cod] = _r1(unit);
@@ -9859,7 +9869,8 @@ const MOS = (() => {
     const st = S._costosGuiaState;
     const tieneFoto = !!(st.foto && String(st.foto).trim());
     const totLin = (st.lineas || []).length;
-    const conCosto = (st.lineas || []).filter(l => parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
+    // [768] hecha = costo escrito O bonificación marcada
+    const conCosto = (st.lineas || []).filter(l => l._bonif || parseFloat(l.precioUnitario) > 0 || (l.inputValue !== '' && l.inputValue != null && parseFloat(l.inputValue) > 0)).length;
     const pct = totLin > 0 ? Math.round((conCosto / totLin) * 100) : 0;
     // [717] La foto YA NO vive acá: se mudó a la carta lateral (≥768px) y al thumb
     //   del header (móvil). El subheader queda sólo con chip + modos + progreso.
@@ -9986,9 +9997,9 @@ const MOS = (() => {
       ? `<div class="cl-foto" onclick="event.stopPropagation();MOS.abrirFotoOverlay('${fotoSafe}')"><img src="${_escapeHtml(fotoUrl)}" loading="lazy" onerror="this.parentNode.classList.add('cl-foto-err')"></div>`
       : `<div class="cl-foto cl-foto-empty">📦</div>`;
     const preciada = _costoLineaPreciada(l, prodCat, brutoUnit);
-    // estado de la fila: falta costo → costo listo → precio puesto
-    const rowState = preciada ? 'is-done' : (brutoUnit > 0 ? 'is-cost' : 'is-nocost');
-    const chipHtml = _costosChipHTML(brutoUnit, preciada);
+    // estado de la fila: falta costo → costo listo (o 🎁 bonif) → precio puesto
+    const rowState = preciada ? 'is-done' : ((brutoUnit > 0 || l._bonif) ? 'is-cost' : 'is-nocost');
+    const chipHtml = _costosChipHTML(brutoUnit, preciada, l._bonif);
     // Bloque IMPACTO (margen actual + sugerido)
     let margenInfoHtml = '';
     try {
@@ -10055,23 +10066,45 @@ const MOS = (() => {
                 ${bloqueSugerido || '<span class="alm-v-impacto-hint" style="margin-left:auto;opacity:.5">escribe el costo →</span>'}
               </div>`;
             }
-            margenInfoHtml = `<div class="alm-v-impacto">${filaMargen}${filaPrecio}</div>`;
+            // [768] VEREDICTO a simple vista (regla del dueño): con el costo puesto,
+            // ¿hay que entrar a precios o no? Tres estados, una sola línea clara.
+            let veredicto = '';
+            if (brutoUnit > 0) {
+              if (margenObjetivo === null) {
+                veredicto = `<div class="cl-verdict cl-verdict-warn">⚠ Sin margen registrado — pon el precio para crear el contrato</div>`;
+              } else if (margenConCostoNuevo !== null) {
+                const diffV = margenConCostoNuevo - margenObjetivo;
+                veredicto = (diffV < -2)
+                  ? `<div class="cl-verdict cl-verdict-bad">⚠ El margen cae: objetivo <b>${margenObjetivo.toFixed(1)}%</b> → real <b>${margenConCostoNuevo.toFixed(1)}%</b> — ajusta el precio o acepta el nuevo margen</div>`
+                  : `<div class="cl-verdict cl-verdict-ok">✓ Margen ${margenObjetivo.toFixed(1)}% se mantiene — nada que hacer</div>`;
+              }
+            }
+            margenInfoHtml = `<div class="alm-v-impacto">${filaMargen}${filaPrecio}${veredicto}</div>`;
           }
         }
       }
     } catch(_) {}
-    // [721] SUGERENCIA (no verdad): el costo que el producto ya tiene en el catálogo.
-    //   Se ofrece como chip que al tocarlo RELLENA el campo; el admin lo edita o lo
-    //   ignora. Nunca marca la compra como cotejada por sí solo — eso lo decide el
-    //   admin al confirmar. Sólo se muestra si la línea aún no tiene monto escrito.
-    const costoCat = prodCat ? (parseFloat(prodCat.precioCosto) || 0) : 0;
-    const sugCatHtml = (costoCat > 0 && !(brutoUnit > 0))
-      ? `<button type="button" class="cl-sugcat" title="Rellenar con el costo que este producto tiene hoy en el catálogo (puedes editarlo)"
-           onclick="event.stopPropagation();MOS._costosUsarCostoCatalogo(${i},${costoCat})">📚 catálogo: S/ ${_money(costoCat).toFixed(2)}<span class="cl-sugcat-cta">usar</span></button>`
-      : '';
+    // [768] MURIÓ el chip "📚 catálogo: usar" (pedido del dueño): el costo de una compra
+    // se escribe SÍ o SÍ desde la factura — el catálogo no es fuente de cotejo.
+    // [768] Toggles por línea (solo mientras NO está hecha): cada producto declara cómo entra.
+    const hecha = _costoLineaHecha(l, st);
+    const modoLin = l._modo || st.inputMode;
+    const igvLin  = l._igv || st.igvMode;
+    const togglesHtml = hecha ? '' : `<div class="cl-toggles" id="costoGuiaTgl_${i}">
+      <button type="button" class="clt${l._bonif ? ' clt-on' : ''}" title="Mercadería regalada por el proveedor — entra sin costo y el costo del catálogo NO cambia"
+        onclick="event.stopPropagation();MOS._costosTglBonif(${i})">🎁 Bonificación</button>
+      <button type="button" class="clt" title="¿El número que escribes es el TOTAL de la línea o el precio UNITARIO?"
+        onclick="event.stopPropagation();MOS._costosTglModo(${i})">${modoLin === 'TOTAL' ? 'Σ Monto total' : '· Unitario'}</button>
+      <button type="button" class="clt${igvLin === 'SIN' ? ' clt-on' : ''}" title="¿El número ya incluye IGV? Si no, se le agrega 18% (el costo final SIEMPRE incluye IGV)"
+        onclick="event.stopPropagation();MOS._costosTglIgv(${i})">${igvLin === 'INCLUIDO' ? 'IGV incluido' : '+18% IGV'}</button>
+      <span class="clt${l._percPct ? ' clt-on' : ''}" title="Percepción del IGV cobrada por el proveedor — SUMA al costo"
+        onclick="event.stopPropagation();MOS._costosTglPerc(${i})">⊕ Percepción${l._percPct ? `
+          <input type="number" class="clt-pct" value="${l._percPct}" step="0.5" min="0.5" max="10" inputmode="decimal"
+            onclick="event.stopPropagation()" onchange="MOS._costosPercSet(${i}, this.value)"><b>%</b>` : ''}</span>
+    </div>`;
     // [703 · móvil] La línea nace PLEGADA cuando ya tiene costo: check verde + costo grande.
     // Tocarla la re-abre (_costosLineaExpandir). En PC el plegado no aplica (CSS).
-    const plegada = brutoUnit > 0 ? ' is-collapsed' : '';
+    const plegada = hecha ? ' is-collapsed' : '';
     const descPlano = String((descBad && prodCat) ? prodCat.descripcion : (descRaw || (prodCat && prodCat.descripcion) || l.codigoProducto || l.codigoBarra || ''));
     return `<div class="alm-v-costo-line ${rowState}${plegada}" id="costoGuiaLinea_${i}" style="animation-delay:${Math.min(i,12)*30}ms">
       <div class="cl-head" onclick="MOS._costosLineaExpandir(${i})">
@@ -10081,12 +10114,15 @@ const MOS = (() => {
           <div class="cl-desc" title="${_escapeHtml(descPlano)}">${desc}${equivBadge}</div>
           <div class="cl-cod">▌ ${cod} · <b>${cant}u</b></div>
         </div>
-        <span class="cl-sum" id="costoGuiaSum_${i}">${brutoUnit > 0 ? '✓ S/ ' + _money(brutoUnit).toFixed(2) : ''}</span>
+        <span class="cl-sum" id="costoGuiaSum_${i}">${l._bonif ? '🎁 gratis' : (brutoUnit > 0 ? '✓ S/ ' + _money(brutoUnit).toFixed(2) : '')}</span>
         <span class="cl-chip" id="costoGuiaChip_${i}">${chipHtml}</span>
       </div>
-      <div class="cl-money">
+      ${togglesHtml}
+      ${l._bonif ? `<div class="cl-bonif-note">🎁 <b>Bonificación</b> — entra gratis; el costo del catálogo no cambia.
+        <button type="button" class="cl-bonif-quitar" onclick="event.stopPropagation();MOS._costosTglBonif(${i})">quitar</button></div>`
+      : `<div class="cl-money">
         <label class="cl-field">
-          <span class="cl-label">Monto ${placeholder.toLowerCase()}</span>
+          <span class="cl-label">Monto ${(modoLin === 'TOTAL' ? 'total' : 'unit')}${igvLin === 'SIN' ? ' · sin IGV' : ''}${l._percPct ? ' · +percep.' : ''}</span>
           <span class="ci${brutoUnit > 0 ? ' has-val' : ''}" id="costoGuiaCi_${i}">
             <span class="ci-cur">S/</span>
             <input type="number" step="0.01" min="0" class="alm-v-costo-input"
@@ -10105,8 +10141,7 @@ const MOS = (() => {
           <span class="cl-label">Costo unitario</span>
           <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
         </div>
-      </div>
-      ${sugCatHtml}
+      </div>`}
       <button type="button" class="cl-next" id="costoGuiaNext_${i}" onclick="MOS._costosSiguiente(${i})">✓ Listo · siguiente producto →</button>
       ${margenInfoHtml}
       <div class="cl-actions" id="costoGuiaAcc_${i}">${_costosLineaAccionesHTML(l, i, brutoUnit)}</div>
@@ -10172,7 +10207,7 @@ const MOS = (() => {
     const ls = st.lineas || [];
     for (let k = 1; k <= ls.length; k++) {
       const j = (desde + k) % ls.length;
-      if (!(_costosGuiaCalcularBruto(ls[j], st) > 0)) return j;
+      if (!_costoLineaHecha(ls[j], st)) return j;   // [768] bonif también cuenta como hecha
     }
     return -1;
   }
@@ -10206,7 +10241,7 @@ const MOS = (() => {
   function _costosCtaUpd() {
     const st = S._costosGuiaState; if (!st) return;
     const ls = st.lineas || [];
-    const falta = ls.filter(l => !(_costosGuiaCalcularBruto(l, st) > 0)).length;
+    const falta = ls.filter(l => !_costoLineaHecha(l, st)).length;   // [768]
     const cta = document.getElementById('costosCtaGuiada');
     if (cta) {
       cta.innerHTML = falta > 0 ? `→ Siguiente sin costo <b>(${falta})</b>` : '✓ Listo · cerrar la compra';
@@ -10236,7 +10271,8 @@ const MOS = (() => {
     return Math.abs(venta - _r1(brutoUnit / (1 - margen / 100))) <= 0.1;
   }
   // Chip de estado de la fila: Falta costo → Costo listo → Precio puesto.
-  function _costosChipHTML(brutoUnit, preciada) {
+  function _costosChipHTML(brutoUnit, preciada, bonif) {
+    if (bonif) return '<span class="clc clc-cost">🎁 Bonificación ✓</span>';   // [768]
     if (preciada) return '<span class="clc clc-done">✓ Precio puesto</span>';
     if (brutoUnit > 0) return '<span class="clc clc-cost">● Costo listo</span>';
     return '<span class="clc clc-pend">Falta costo</span>';
@@ -10246,7 +10282,8 @@ const MOS = (() => {
   // precio → "💰 Poner precio". Con precio puesto → PINTA el precio (S/ + margen + # presentaciones) para
   // leerlo de un vistazo; un toque = ✎ ajustar. Todo abre el editor de precio ENCIMA del modal de costos.
   function _costosLineaAccionesHTML(l, i, brutoUnit) {
-    if (!(brutoUnit > 0)) return '<div class="cl-price-hint">✎ Escribe el monto y aparece “Poner precio”</div>';
+    if (l && l._bonif) return '';   // [768] bonificación: el costo no cambió — no hay precio que revisar
+    if (!(brutoUnit > 0)) return '<div class="cl-price-hint">✎ Escribe el monto — o marca 🎁 si vino de regalo</div>';
     const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
     const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod) || {};
     if (_costoLineaPreciada(l, p, brutoUnit)) {
@@ -10477,6 +10514,22 @@ const MOS = (() => {
       #modalCostosGuiaUnif .alm-v-costo-line.is-cost { border-color: rgba(251,191,36,.32); background: linear-gradient(180deg,rgba(30,41,59,.65),rgba(251,191,36,.05)); }
       #modalCostosGuiaUnif .alm-v-costo-line.is-done { border-color: rgba(52,211,153,.34); background: linear-gradient(180deg,rgba(30,41,59,.65),rgba(52,211,153,.06)); }
       #modalCostosGuiaUnif .cl-price-hint { flex: 1; font-size: 11px; font-weight: 700; color: #5f7192; background: transparent; border: 1px dashed #3a4a6b; border-radius: 10px; padding: 9px 13px; text-align: center; }
+      /* ── [768] toggles por línea: cómo entra el producto ── */
+      #modalCostosGuiaUnif .cl-toggles { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 4px; }
+      #modalCostosGuiaUnif .clt { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 800; color: #93a4c2; background: rgba(148,163,184,.08); border: 1px solid #2b3852; border-radius: 999px; padding: 5px 11px; cursor: pointer; user-select: none; transition: .14s; letter-spacing: .01em; }
+      #modalCostosGuiaUnif .clt:hover { border-color: #46587e; color: #cbd5e1; }
+      #modalCostosGuiaUnif .clt:active { transform: scale(.96); }
+      #modalCostosGuiaUnif .clt.clt-on { background: linear-gradient(180deg,rgba(52,211,153,.2),rgba(52,211,153,.08)); border-color: rgba(52,211,153,.55); color: #34d399; box-shadow: 0 2px 10px -4px rgba(52,211,153,.4); }
+      #modalCostosGuiaUnif .clt-pct { width: 42px; background: #0e1626; border: 1px solid rgba(52,211,153,.4); border-radius: 7px; color: #34d399; font-weight: 800; font-size: 11px; padding: 2px 5px; text-align: center; -moz-appearance: textfield; }
+      #modalCostosGuiaUnif .clt-pct::-webkit-outer-spin-button, #modalCostosGuiaUnif .clt-pct::-webkit-inner-spin-button { -webkit-appearance: none; }
+      #modalCostosGuiaUnif .cl-bonif-note { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 700; color: #34d399; background: linear-gradient(180deg,rgba(52,211,153,.12),rgba(52,211,153,.04)); border: 1px solid rgba(52,211,153,.35); border-radius: 11px; padding: 10px 13px; margin: 2px 0 4px; }
+      #modalCostosGuiaUnif .cl-bonif-quitar { margin-left: auto; flex: none; font-size: 10px; font-weight: 800; color: #93a4c2; background: #0e1626; border: 1px solid #28344c; border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+      #modalCostosGuiaUnif .cl-bonif-quitar:hover { color: #f87171; border-color: rgba(248,113,113,.4); }
+      /* ── [768] veredicto de margen: ¿hay que entrar a precios? ── */
+      #modalCostosGuiaUnif .cl-verdict { width: 100%; font-size: 11px; font-weight: 750; border-radius: 9px; padding: 7px 11px; margin-top: 6px; line-height: 1.35; }
+      #modalCostosGuiaUnif .cl-verdict-ok  { color: #34d399; background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.25); }
+      #modalCostosGuiaUnif .cl-verdict-warn{ color: #fbbf24; background: rgba(251,191,36,.09); border: 1px solid rgba(251,191,36,.32); }
+      #modalCostosGuiaUnif .cl-verdict-bad { color: #f87171; background: rgba(248,113,113,.09); border: 1px solid rgba(248,113,113,.35); animation: pulse 2.2s infinite; }
       #modalCostosGuiaUnif .cl-priced { flex: 1; display: flex; align-items: center; gap: 11px; background: linear-gradient(180deg,rgba(52,211,153,.16),rgba(52,211,153,.07)); border: 1px solid rgba(52,211,153,.45); border-radius: 11px; padding: 8px 13px; cursor: pointer; transition: .15s; }
       #modalCostosGuiaUnif .cl-priced:hover { border-color: #34d399; box-shadow: 0 4px 14px -6px rgba(52,211,153,.5); }
       #modalCostosGuiaUnif .clp-p { font-size: 17px; font-weight: 900; color: #34d399; font-family: ui-monospace,monospace; line-height: 1; }
@@ -10915,6 +10968,7 @@ const MOS = (() => {
     if (!st) return;
     const _sello = (txt, cls) => { const e = document.getElementById('costosSaveState'); if (e) { e.textContent = txt; e.className = 'p1-save ' + (cls || ''); } };
     const lineas = (st.lineas || []).filter(l => {
+      if (l._bonif) return true;   // [768] bonificación: se registra sin monto
       const v = parseFloat(l.inputValue != null && l.inputValue !== '' ? l.inputValue : l.precioUnitario);
       return v > 0;
     });
@@ -10926,26 +10980,35 @@ const MOS = (() => {
       const cod = String(l.codigoBarra || l.codigoProducto || l.codProducto || '').trim();
       const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod) || {};
       const bruto = (function(){ try { return _costosGuiaCalcularBruto(l, st) || parseFloat(l.inputValue) || 0; } catch(_) { return parseFloat(l.inputValue) || 0; } })();
-      return { idCanonico: p.idProducto || l.idCanonico || cod, codProducto: cod, costoNuevo: _r1(bruto), costoAnterior: parseFloat(p.precioCosto) || 0 };
-    }).filter(x => x.costoNuevo > 0);
+      // [768] características de la entrada — viajan a meta del historial (auditoría)
+      return { idCanonico: p.idProducto || l.idCanonico || cod, codProducto: cod,
+               costoNuevo: l._bonif ? 0 : _r1(bruto), costoAnterior: parseFloat(p.precioCosto) || 0,
+               _bonif: !!l._bonif, _percPct: parseFloat(l._percPct) || 0,
+               _sinIgv: ((l._igv || st.igvMode) === 'SIN'), _modo: (l._modo || st.inputMode) };
+    }).filter(x => x._bonif || x.costoNuevo > 0);
     if (!items.length) { if (silent) { _sello('☁ se guarda solo', ''); return; } toast('⚠ Sin líneas válidas', 'error'); return; }
     // [703 · autoguardado] En modo silencioso solo se envían las líneas cuyo costo CAMBIÓ desde el
     // último envío (misma guarda `_costosAplicados` que usa el 💰 por línea) → salir de un campo ya
-    // guardado no re-postea nada.
+    // guardado no re-postea nada. [768] la bonificación usa la marca 'BONIF'.
     st._costosAplicados = st._costosAplicados || {};
-    const pend = silent ? items.filter(x => st._costosAplicados[x.codProducto] !== x.costoNuevo) : items;
+    const _guardVal = x => x._bonif ? 'BONIF' : x.costoNuevo;
+    const pend = silent ? items.filter(x => st._costosAplicados[x.codProducto] !== _guardVal(x)) : items;
     if (silent && !pend.length) { _sello('☁ guardado', 'is-ok'); return; }
     // reflejar el costo nuevo en memoria (para que el 💰 por línea sugiera con lo nuevo)
-    pend.forEach(x => { const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
+    // [768] bonificación NO toca el costo en memoria (no cambia el costo del catálogo)
+    pend.forEach(x => { if (x._bonif) return; const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
     // [v2.43.603 · pedido del dueño] YA NO se abre el overlay de precios en lote (era un
     // tercer modal confuso): esto aplica LOS COSTOS y te quedas en la guía — los
     // PRECIOS se publican con el botón 💰 de cada línea (directo al editor de ese producto).
-    pend.forEach(x => { st._costosAplicados[x.codProducto] = x.costoNuevo; });
+    pend.forEach(x => { st._costosAplicados[x.codProducto] = _guardVal(x); });
     if (!silent) toast(`🏭 Aplicando ${items.length} costo(s) al catálogo…`, 'info');
     else _sello('⏳ guardando…', 'is-busy');
     try {
       await guardarCostosGuia(silent);
-      const apiItems = pend.map(x => ({ codProducto: x.codProducto, costoUnitario: x.costoNuevo })).filter(x => x.codProducto && x.costoUnitario > 0);
+      // [768] las características viajan con cada ítem (bonificación registra costo 0 sin tocar catálogo)
+      const apiItems = pend.map(x => ({ codProducto: x.codProducto, costoUnitario: x.costoNuevo,
+        bonificacion: !!x._bonif, percepcionPct: x._percPct || 0, sinIgv: !!x._sinIgv, modo: x._modo || '' }))
+        .filter(x => x.codProducto && (x.bonificacion || x.costoUnitario > 0));
       const _r2 = await API.post('aplicarCostosCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: apiItems });
       if (!_r2 || _r2.ok === false) throw new Error((_r2 && _r2.error) || 'el servidor no aplicó los costos');
       if (silent) _sello('☁ guardado', 'is-ok');
@@ -12157,6 +12220,9 @@ const MOS = (() => {
     // [766] con rastro de cotejo disponible, mandan las colocaciones REALES;
     // el conteo heurístico del loop queda solo para guías pre-rastro (cotN=0).
     if (cotN > 0) conPrecio = Math.min(totalCosteados, cotP);
+    // [768] simétrico para COSTOS: el rastro también cuenta bonificaciones (línea
+    // costeada en S/0 que el conteo por monto de línea jamás vería).
+    if (cotN > 0) conCosto = Math.max(conCosto, Math.min(total, cotN));
     let fase, tone, ico, label;
     // [721] en zona la palabra es COTEJAR: la guía es una presunción hasta que el admin la revisa
     const verbo = esME ? 'Falta cotejar' : 'Falta costear';
@@ -12886,13 +12952,29 @@ const MOS = (() => {
   // Convierte el valor que tipeó el usuario en precio UNITARIO BRUTO (con IGV).
   // Es el valor que se guarda como precioCosto.
   function _costosGuiaCalcularBruto(linea, st) {
+    // [768] BONIFICACIÓN: entra gratis — no hay monto que calcular (la línea cuenta
+    // como hecha vía _costoLineaHecha, y el costo del catálogo NO se toca).
+    if (linea && linea._bonif) return 0;
     const v = parseFloat(linea.inputValue) || 0;
     if (v <= 0) return 0;
     const cant = parseFloat(linea.cantidad) || 1;
-    // 1) Si el usuario declaró "Sin IGV", el valor que metió es neto → agregarle IGV
-    const valorConIgv = st.igvMode === 'INCLUIDO' ? v : v * (1 + _IGV_RATE);
+    // [768] los toggles POR LÍNEA mandan sobre el modo global (cada producto puede
+    // entrar distinto: monto/unitario, con/sin IGV, con percepción).
+    const igvMode = (linea && linea._igv) || st.igvMode;
+    const inputMode = (linea && linea._modo) || st.inputMode;
+    // 1) Si se declaró "Sin IGV", el valor es neto → agregarle IGV (el costo SIEMPRE
+    //    incluye IGV — regla del dueño: "así lo vendo yo").
+    const valorConIgv = igvMode === 'INCLUIDO' ? v : v * (1 + _IGV_RATE);
     // 2) Si era el TOTAL de la línea, dividir entre la cantidad
-    return st.inputMode === 'TOTAL' ? (valorConIgv / cant) : valorConIgv;
+    const unit = inputMode === 'TOTAL' ? (valorConIgv / cant) : valorConIgv;
+    // 3) [768] PERCEPCIÓN: suma al costo (decisión del dueño — "lo que me cuesta de caja").
+    const perc = parseFloat(linea && linea._percPct) || 0;
+    return perc > 0 ? unit * (1 + perc / 100) : unit;
+  }
+
+  // [768] ¿la línea ya está resuelta en el Paso 1? Costo escrito O bonificación marcada.
+  function _costoLineaHecha(l, st) {
+    return !!(l && l._bonif) || (_costosGuiaCalcularBruto(l, st) > 0);
   }
 
   // [v41.21] Redirigir abrirCostosGuia al overlay del voucher en modo costos.
@@ -12905,6 +12987,7 @@ const MOS = (() => {
     const st = S._costosGuiaState;
     if (st.inputMode === modo) return;
     st.lineas.forEach(l => {
+      if (l._bonif || l._modo || l._igv || l._percPct) return;   // [768] línea con toggle propio: no seguir al global
       const brutoUnit = _costosGuiaCalcularBruto(l, st);
       const cant = parseFloat(l.cantidad) || 1;
       const valorBase = st.igvMode === 'INCLUIDO' ? brutoUnit : (brutoUnit / (1 + _IGV_RATE));
@@ -12918,6 +13001,7 @@ const MOS = (() => {
     const st = S._costosGuiaState;
     if (st.igvMode === modo) return;
     st.lineas.forEach(l => {
+      if (l._bonif || l._modo || l._igv || l._percPct) return;   // [768] línea con toggle propio: no seguir al global
       const brutoUnit = _costosGuiaCalcularBruto(l, st);
       const cant = parseFloat(l.cantidad) || 1;
       const valorBase = modo === 'INCLUIDO' ? brutoUnit : (brutoUnit / (1 + _IGV_RATE));
@@ -12925,6 +13009,48 @@ const MOS = (() => {
     });
     st.igvMode = modo;
     _costosGuiaReRender();
+  }
+
+  // ───────── [768] Toggles POR LÍNEA: bonificación · monto/unit · IGV · percepción ─────────
+  // Cada producto puede entrar distinto. Visibles SOLO mientras la línea no tiene costo;
+  // al quedar hecha desaparecen (ya no hay nada que declarar).
+  function _costosTglBonif(i) {
+    const st = S._costosGuiaState; const l = st && st.lineas[i]; if (!l) return;
+    l._bonif = !l._bonif;
+    if (l._bonif) { l.inputValue = ''; }
+    _costosGuiaReRender();
+    _costosAplicarDebounce();                 // registra (o no) la bonificación
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
+  function _costosTglModo(i) {
+    const st = S._costosGuiaState; const l = st && st.lineas[i]; if (!l || l._bonif) return;
+    const cur = l._modo || st.inputMode;
+    const nuevo = cur === 'TOTAL' ? 'UNIT' : 'TOTAL';
+    const cant = parseFloat(l.cantidad) || 1;
+    const v = parseFloat(l.inputValue) || 0;
+    if (v > 0) l.inputValue = +(nuevo === 'TOTAL' ? v * cant : v / cant).toFixed(2);   // mismo costo, otra unidad
+    l._modo = nuevo;
+    _costosGuiaReRender();
+  }
+  function _costosTglIgv(i) {
+    const st = S._costosGuiaState; const l = st && st.lineas[i]; if (!l || l._bonif) return;
+    // flip de INTERPRETACIÓN (¿el número escrito incluye IGV?) — el valor no se convierte
+    l._igv = ((l._igv || st.igvMode) === 'INCLUIDO') ? 'SIN' : 'INCLUIDO';
+    _costosGuiaReRender();
+    _costosAplicarDebounce();
+  }
+  function _costosTglPerc(i) {
+    const st = S._costosGuiaState; const l = st && st.lineas[i]; if (!l || l._bonif) return;
+    l._percPct = l._percPct ? null : 2;       // 2% típico; editable en el chip
+    _costosGuiaReRender();
+    _costosAplicarDebounce();
+  }
+  function _costosPercSet(i, v) {
+    const st = S._costosGuiaState; const l = st && st.lineas[i]; if (!l) return;
+    const n = parseFloat(v);
+    l._percPct = (n > 0 && n <= 10) ? n : 2;
+    _costosGuiaReRender();
+    _costosAplicarDebounce();
   }
 
   // [v5 §11] Re-render del Paso 1 (modal unificado). El modal-split viejo fue eliminado.
@@ -13201,7 +13327,7 @@ const MOS = (() => {
     if (!st) return;
     const total = st.lineas.length;
     let conCosto = 0;
-    st.lineas.forEach(l => { if (_costosGuiaCalcularBruto(l, st) > 0) conCosto++; });
+    st.lineas.forEach(l => { if (_costoLineaHecha(l, st)) conCosto++; });   // [768] bonif cuenta
     const cont = $('costosGuiaProgreso');
     if (!cont) return;
     const pct = total > 0 ? Math.round((conCosto / total) * 100) : 0;
@@ -48840,7 +48966,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [703] Paso 1 móvil-first: cabecera plegable, filas plegables, flujo guiado y autoguardado
     _costosToggleAvanzado, _costosLineaExpandir, _costosInputFocus, _costosInputBlur, _costosInputKey,
     _costosSiguiente, _costosSiguientePendiente, _costosAplicarAlCatalogo,
-    _costosUsarCostoCatalogo,   // [721] chip "catálogo: S/ x.xx" → rellena el campo (sugerencia editable)
+    _costosUsarCostoCatalogo,   // [721] legado (el chip murió en 768; la fn queda por compat)
+    _costosTglBonif, _costosTglModo, _costosTglIgv, _costosTglPerc, _costosPercSet,   // [768] toggles por línea
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     _p1CartaToggle,   // [717] pestañita ⟨ ⟩ de la carta lateral de la factura
