@@ -9695,15 +9695,14 @@ const MOS = (() => {
       const primero = nombres[0].split(/\s+/).slice(0,2).join(' ');
       return nombres.length > 1 ? (primero + ' y ' + (nombres.length - 1) + ' más') : primero;
     })();
-    // [767] título HUMANO: quién (proveedor o zona), jamás el código interno de la guía
-    // (reclamo del dueño 13-ago: "un código tan largo — con el nombre del proveedor me basta").
+    // [767/770] título LIMPIO (feedback del dueño): SOLO el nombre del proveedor (o la
+    // zona), y abajo la palabra "Compra" — los productos ya se ven en las líneas.
     const _esZonaT = String(op.tipo || '').toUpperCase() === 'ENTRADA_LIBRE' || (op.fuente && op.fuente !== 'WH' && !op.idProveedor && !op.nombreProveedor);
-    const _quien = _esZonaT ? ('Compra en ' + String(op.idZonaCanonNom || op.idZona || 'zona').trim())
-                            : ('Compra ' + (_prov || '—'));
-    document.getElementById('opsCostosTitulo').textContent = _quien + (_resumen ? ' · ' + _resumen.toUpperCase() : '');
+    document.getElementById('opsCostosTitulo').textContent =
+      _esZonaT ? String(op.idZonaCanonNom || op.idZona || 'Zona').trim() : (_prov || 'Compra');
     document.getElementById('opsCostosSubtitle').textContent =
-      (_esZonaT ? ('🏬 ' + String(op.idZonaCanonNom || op.idZona || '').trim() + (op.usuario ? ' · 👤 ' + String(op.usuario).trim() : '') + ' · ')
-                : (_prov ? '🏭 ' + _prov + ' · ' : '')) + _lin.length + ' línea(s)';
+      'Compra' + (_esZonaT ? (' en zona' + (op.usuario ? ' · 👤 ' + String(op.usuario).trim() : '')) : '')
+      + ' · ' + _lin.length + ' producto' + (_lin.length === 1 ? '' : 's');
     modal.classList.remove('hidden');
     modal.style.zIndex = '9700'; // [E] por encima de la Mesa (z-9500) que queda atenuada detrás
     // [E · suavizar] fade de entrada (antes aparecía de golpe = parpadeo)
@@ -9881,36 +9880,29 @@ const MOS = (() => {
     //   MURIÓ por pedido del dueño: su lugar lo ocupan ahora los totales en vivo.
     //   (El chip de OCR del voucher de Almacén es otro, vive en _renderVoucher.)
     // Progreso visual — SIEMPRE visible (fuera del bloque plegable): es la brújula del flujo.
-    const progCls = pct === 100 ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
-    const progreso = `<div id="costosGuiaProgreso" class="ops-prog-bar">
-      <div class="ops-prog-fill" style="width:${pct}%"></div>
-      <div class="ops-prog-text">
-        <span class="${progCls}"><b>${pct === 100 ? '✓ ' : ''}${conCosto}/${totLin}</b> con costo · ${pct}%</span>
-        ${pct < 100 ? `<span class="alm-v-progreso-faltan">⚠ faltan ${totLin - conCosto}</span>` : ''}
-      </div>
-    </div>`;
-    // [769] MURIERON los toggles globales Monto/IGV (pedido del dueño: cada producto ya
-    // declara lo suyo en su card — el global era doble cruce de información). El header
-    // queda con UNA sola barra: el ACUMULADO de lo realmente pagado (cada línea entra con
-    // su IGV y su percepción ya sumados; las bonificaciones suman S/ 0) + progreso + sello.
+    // [769/770] MURIERON los toggles globales Y la barra de progreso duplicada (decía lo
+    // mismo que los chips). El header es UNA sola banda: contadores modernos a la
+    // izquierda + el ACUMULADO de lo realmente pagado (cada línea entra con su IGV y su
+    // percepción ya sumados; las bonificaciones suman S/ 0) + sello de guardado.
     let _tBruto = 0;
     (st.lineas || []).forEach(l => { _tBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
     const _tNeto = _tBruto / (1 + _IGV_RATE);
     const _hTot = (st.lineas || []).length;
     const _hConCosto = (st.lineas || []).filter(l => _costoLineaHecha(l, st)).length;
     const _hPrec = (st.lineas || []).filter(l => l._precioListo > 0).length;
+    const _pillCls = (_hConCosto === _hTot && _hTot > 0) ? 'is-ok' : (_hConCosto > 0 ? 'is-mid' : 'is-empty');
     const acum = `<div class="p1-acum">
+      <span class="p1-hd-chips">
+        <span id="costosMiniProg" class="p1-prog-pill ${_pillCls}" title="Productos con costo puesto">📦 <b>${_hConCosto}/${_hTot}</b></span>
+        <span id="costosPrecioProg" class="p1-precio-prog" title="${_hPrec} de ${_hTot} productos con precio publicado">💰 <b>${_hPrec}/${_hTot}</b></span>
+      </span>
       <div class="p1-tot-head">
         <span class="p1-tot-main"><span class="ops-tot-lbl ops-tot-bruto">💵 Total pagado</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${_money(_tBruto).toFixed(2)}</b></span>
         <span class="p1-tot-sub"><span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${_money(_tNeto).toFixed(2)}</b><span class="ops-tot-sep">·</span><span class="ops-tot-lbl">IGV</span> <b id="costosGuiaTotalIgv">S/ ${_money(_tBruto - _tNeto).toFixed(2)}</b></span>
       </div>
-      <span class="p1-hd-chips">
-        <span id="costosMiniProg" class="p1-mini-prog" title="Productos con costo">${_hConCosto}/${_hTot}</span>
-        <span id="costosPrecioProg" class="p1-precio-prog" title="${_hPrec} de ${_hTot} productos con precio publicado">💰 <b>${_hPrec}/${_hTot}</b></span>
-        <span id="costosSaveState" class="p1-save">☁ se guarda solo</span>
-      </span>
+      <span id="costosSaveState" class="p1-save">☁ se guarda solo</span>
     </div>`;
-    return `<div class="flex flex-col gap-2">${acum}${progreso}</div>`;
+    return `<div class="flex flex-col gap-2">${acum}</div>`;
   }
 
   // [703] Plegar/desplegar el bloque avanzado del Paso 1 (foto de factura + modos de monto/IGV).
@@ -10082,8 +10074,8 @@ const MOS = (() => {
         onclick="event.stopPropagation();MOS._costosTglBonif(${i})">🎁 Bonificación</button>
       <button type="button" class="clt clt-sel" title="¿El número que escribes es el TOTAL de la línea o el precio UNITARIO? Toca para cambiar"
         onclick="event.stopPropagation();MOS._costosTglModo(${i})">${modoLin === 'TOTAL' ? 'Σ Monto total' : '· Unitario'}<b class="clt-swap">⇄</b></button>
-      <button type="button" class="clt clt-sel${igvLin === 'SIN' ? ' clt-sel-warn' : ''}" title="¿El número ya incluye IGV? Si no, se le agrega 18% (el costo final SIEMPRE incluye IGV). Toca para cambiar"
-        onclick="event.stopPropagation();MOS._costosTglIgv(${i})">${igvLin === 'INCLUIDO' ? 'IGV incluido' : 'sin IGV → +18%'}<b class="clt-swap">⇄</b></button>
+      <button type="button" class="clt clt-sel${igvLin === 'SIN' ? ' clt-sel-warn' : ''}" title="¿El número ya incluye el IGV (18%)? Si marcas sin IGV, el sistema se lo agrega. Toca para cambiar"
+        onclick="event.stopPropagation();MOS._costosTglIgv(${i})">${igvLin === 'INCLUIDO' ? 'IGV 18% incluido' : 'sin IGV'}<b class="clt-swap">⇄</b></button>
       <span class="clt${l._percPct ? ' clt-on' : ''}" title="Percepción del IGV cobrada por el proveedor — SUMA al costo"
         onclick="event.stopPropagation();MOS._costosTglPerc(${i})">⊕ Percepción${percBadge}</span>
     </div>`;
@@ -10231,8 +10223,13 @@ const MOS = (() => {
       cta.innerHTML = falta > 0 ? `→ Siguiente sin costo <b>(${falta})</b>` : '✓ Listo · cerrar la compra';
       cta.classList.toggle('is-done', falta === 0);
     }
+    // [770] misma píldora del header (formato unificado con _costosGuiaUpdProgreso)
     const mini = document.getElementById('costosMiniProg');
-    if (mini) mini.textContent = (ls.length - falta) + '/' + ls.length;
+    if (mini) {
+      const hechas = ls.length - falta;
+      mini.innerHTML = `📦 <b>${hechas}/${ls.length}</b>`;
+      mini.className = 'p1-prog-pill ' + ((hechas === ls.length && ls.length > 0) ? 'is-ok' : (hechas > 0 ? 'is-mid' : 'is-empty'));
+    }
   }
   // [703] El costo se aplica SOLO al catálogo (mismas RPCs que el botón viejo) tras 1.2s
   // sin ediciones. Reemplaza al botón "✓ Aplicar costos al catálogo" que el dueño quitó.
@@ -10529,6 +10526,14 @@ const MOS = (() => {
       #modalCostosGuiaUnif .cl-bonif-note { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 700; color: #34d399; background: linear-gradient(180deg,rgba(52,211,153,.12),rgba(52,211,153,.04)); border: 1px solid rgba(52,211,153,.35); border-radius: 11px; padding: 10px 13px; margin: 2px 0 4px; }
       #modalCostosGuiaUnif .cl-bonif-quitar { margin-left: auto; flex: none; font-size: 10px; font-weight: 800; color: #93a4c2; background: #0e1626; border: 1px solid #28344c; border-radius: 8px; padding: 4px 10px; cursor: pointer; }
       #modalCostosGuiaUnif .cl-bonif-quitar:hover { color: #f87171; border-color: rgba(248,113,113,.4); }
+      /* ── [770] header único: píldoras de progreso + Total pagado ── */
+      #modalCostosGuiaUnif .p1-acum { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      #modalCostosGuiaUnif .p1-prog-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; border-radius: 999px; padding: 5px 12px; letter-spacing: .01em; transition: .2s; }
+      #modalCostosGuiaUnif .p1-prog-pill.is-empty { color: #93a4c2; background: rgba(148,163,184,.1); border: 1px solid rgba(148,163,184,.28); }
+      #modalCostosGuiaUnif .p1-prog-pill.is-mid   { color: #fbbf24; background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.4); }
+      #modalCostosGuiaUnif .p1-prog-pill.is-ok    { color: #34d399; background: rgba(52,211,153,.13); border: 1px solid rgba(52,211,153,.45); box-shadow: 0 2px 10px -5px rgba(52,211,153,.5); }
+      #modalCostosGuiaUnif .p1-acum .p1-tot-head { margin-left: auto; text-align: right; }
+      #modalCostosGuiaUnif .p1-acum .p1-save { flex: none; }
       /* ── [768] veredicto de margen: ¿hay que entrar a precios? ── */
       #modalCostosGuiaUnif .cl-verdict { width: 100%; font-size: 11px; font-weight: 750; border-radius: 9px; padding: 7px 11px; margin-top: 6px; line-height: 1.35; }
       #modalCostosGuiaUnif .cl-verdict-ok  { color: #34d399; background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.25); }
@@ -13340,19 +13345,11 @@ const MOS = (() => {
     const total = st.lineas.length;
     let conCosto = 0;
     st.lineas.forEach(l => { if (_costoLineaHecha(l, st)) conCosto++; });   // [768] bonif cuenta
-    const cont = $('costosGuiaProgreso');
-    if (!cont) return;
-    const pct = total > 0 ? Math.round((conCosto / total) * 100) : 0;
-    const completo = (conCosto === total);
-    // [703 · fix] Antes esto pisaba el innerHTML entero de .ops-prog-bar y BORRABA la barra de
-    // relleno (.ops-prog-fill) en el primer tecleo: el progreso quedaba en texto plano sin barra.
-    // Ahora se repinta con la MISMA estructura del render.
-    const progCls = completo ? 'alm-v-prog-ok' : (conCosto > 0 ? 'alm-v-prog-parcial' : 'alm-v-prog-empty');
-    cont.innerHTML = `<div class="ops-prog-fill" style="width:${pct}%"></div>
-      <div class="ops-prog-text">
-        <span class="${progCls}"><b>${completo ? '✓ ' : ''}${conCosto}/${total}</b> con costo · ${pct}%</span>
-        ${!completo ? `<span class="alm-v-progreso-faltan">⚠ faltan ${total - conCosto}</span>` : ''}
-      </div>`;
+    // [770] la barra duplicada MURIÓ: el progreso vive en la píldora 📦 del header
+    const pill = $('costosMiniProg');
+    if (!pill) return;
+    pill.innerHTML = `📦 <b>${conCosto}/${total}</b>`;
+    pill.className = 'p1-prog-pill ' + ((conCosto === total && total > 0) ? 'is-ok' : (conCosto > 0 ? 'is-mid' : 'is-empty'));
   }
 
   // [v2.41.54] Autoguardado por línea — debounce 1.5s tras último cambio
