@@ -1228,7 +1228,7 @@ const API = (() => {
         else if (action === 'eliminarAdhesivoPlantilla')     r = await _sbRpcMOS('adhesivo_plantilla_eliminar', { p: params });
         else if (esImpresion)                                r = await _adhPlantillaImprimirEdge(params);
         if (r != null) return r;   // shape RAW directo (RPCs/Edge ya devuelven {ok,...})
-        if (esImpresion) return { ok: false, error: 'No se pudo confirmar la impresión por Supabase. Reintentá (no se reimprimió por GAS para evitar duplicado).' };
+        if (esImpresion) return { ok: false, error: 'No se pudo confirmar la impresión por Supabase. Reintenta (no se reimprimió por GAS para evitar duplicado).' };
       } catch (e) {
         if (esImpresion) return { ok: false, error: 'Error de impresión: ' + (e && e.message || e) + ' — reintentá (no se reimprimió por GAS).' };
         /* CRUD → GAS raw (red de seguridad) */
@@ -3006,7 +3006,7 @@ const API = (() => {
       // null → no commiteó (flag server OFF / sin token / no cableada).
       // SHADOW-CRÍTICA: no caer a GAS en silencio (escribiría la Hoja pero NO la sombra → no se propaga).
       if (_MOS_DIRECT_REQUIRED[action]) {
-        throw new Error('SIN_CONEXION_SUPABASE: el cambio no se guardó directo. Reintentá (no se usó GAS para evitar que no se propague a WH/MOS).');
+        throw new Error('SIN_CONEXION_SUPABASE: el cambio no se guardó directo. Reintenta (no se usó GAS para evitar que no se propague a WH/MOS).');
       }
       // resto → GAS, seguro.
     }

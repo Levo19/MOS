@@ -27640,7 +27640,7 @@ const MOS = (() => {
         .filter((c, i, arr) => arr.findIndex(x => String(x.idCaja) === String(c.idCaja)) === i);
 
       if (!abiertas.length && !cerradas.length) {
-        cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty">⚠ No hay cajas hoy.<br><span class="text-xs opacity-70">Pedile a un cajero que abra caja primero.</span></div>';
+        cajasDiv.innerHTML = '<div class="cj-asignar-inline-empty">⚠ No hay cajas hoy.<br><span class="text-xs opacity-70">Pide a un cajero que abra caja primero.</span></div>';
         return;
       }
       let html = '';
