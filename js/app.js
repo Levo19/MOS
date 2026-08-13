@@ -9889,30 +9889,19 @@ const MOS = (() => {
         ${pct < 100 ? `<span class="alm-v-progreso-faltan">⚠ faltan ${totLin - conCosto}</span>` : ''}
       </div>
     </div>`;
-    // [721] HEADER ÚNICO: toggles + TOTALES EN VIVO. El total subió del pie a acá
-    //   (reemplaza la frase "📸 Compara con la factura…", que el dueño mandó matar)
-    //   para que modo, IGV y plata se lean de un vistazo en la misma zona.
+    // [769] MURIERON los toggles globales Monto/IGV (pedido del dueño: cada producto ya
+    // declara lo suyo en su card — el global era doble cruce de información). El header
+    // queda con UNA sola barra: el ACUMULADO de lo realmente pagado (cada línea entra con
+    // su IGV y su percepción ya sumados; las bonificaciones suman S/ 0) + progreso + sello.
     let _tBruto = 0;
     (st.lineas || []).forEach(l => { _tBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
     const _tNeto = _tBruto / (1 + _IGV_RATE);
-    // [722] los chips de progreso y el sello ☁ también viven acá: el pie MURIÓ entero
-    //   ("no quiero nada que me estorbe como pie de modal, deja que los productos fluyan").
     const _hTot = (st.lineas || []).length;
-    const _hConCosto = (st.lineas || []).filter(l => _costosGuiaCalcularBruto(l, st) > 0).length;
+    const _hConCosto = (st.lineas || []).filter(l => _costoLineaHecha(l, st)).length;
     const _hPrec = (st.lineas || []).filter(l => l._precioListo > 0).length;
-    const toggles = `<div class="ops-toggles-grid">
-      <div class="ops-tg-group">
-        <span class="ops-tg-lbl">Monto</span>
-        <button onclick="MOS._costosGuiaSetMode('TOTAL')"    class="ops-tg-btn ${st.inputMode === 'TOTAL' ? 'is-active' : ''}">Total</button>
-        <button onclick="MOS._costosGuiaSetMode('UNITARIO')" class="ops-tg-btn ${st.inputMode === 'UNITARIO' ? 'is-active' : ''}">Unit</button>
-      </div>
-      <div class="ops-tg-group">
-        <span class="ops-tg-lbl">IGV</span>
-        <button onclick="MOS._costosGuiaSetIgv('INCLUIDO')" class="ops-tg-btn ${st.igvMode === 'INCLUIDO' ? 'is-active' : ''}">Incluido</button>
-        <button onclick="MOS._costosGuiaSetIgv('SIN_IGV')"  class="ops-tg-btn ${st.igvMode === 'SIN_IGV'  ? 'is-active' : ''}">Sin</button>
-      </div>
+    const acum = `<div class="p1-acum">
       <div class="p1-tot-head">
-        <span class="p1-tot-main"><span class="ops-tot-lbl ops-tot-bruto">Total</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${_money(_tBruto).toFixed(2)}</b></span>
+        <span class="p1-tot-main"><span class="ops-tot-lbl ops-tot-bruto">💵 Total pagado</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${_money(_tBruto).toFixed(2)}</b></span>
         <span class="p1-tot-sub"><span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${_money(_tNeto).toFixed(2)}</b><span class="ops-tot-sep">·</span><span class="ops-tot-lbl">IGV</span> <b id="costosGuiaTotalIgv">S/ ${_money(_tBruto - _tNeto).toFixed(2)}</b></span>
       </div>
       <span class="p1-hd-chips">
@@ -9921,18 +9910,7 @@ const MOS = (() => {
         <span id="costosSaveState" class="p1-save">☁ se guarda solo</span>
       </span>
     </div>`;
-    // [703 · móvil] En pantallas chicas la foto (190px) + chip + toggles se comían el 60% del alto y
-    // dejaban ~1 línea visible con 34 productos. Ahora viven en un bloque PLEGABLE; lo único fijo es
-    // la barra de progreso "N/M con costo". En PC el bloque está siempre abierto (CSS).
-    const modoLbl = st.inputMode === 'TOTAL' ? 'Total' : 'Unitario';
-    const igvLbl  = st.igvMode === 'INCLUIDO' ? 'IGV incl.' : 'sin IGV';
-    const abierto = !!S._p1AdvOpen;
-    const toggle = `<button type="button" class="p1-adv-toggle" id="p1AdvToggle" onclick="MOS._costosToggleAvanzado()"
-        title="Foto de la factura y modo de monto/IGV">
-      <span class="p1-adv-lbl">Monto ${modoLbl} · ${igvLbl}</span>
-      <span class="p1-adv-caret">${abierto ? '▴' : '▾'}</span>
-    </button>`;
-    return `<div class="flex flex-col gap-2">${toggle}<div class="p1-adv${abierto ? ' open' : ''}" id="p1Adv">${fotoHtml}${toggles}</div>${progreso}</div>`;
+    return `<div class="flex flex-col gap-2">${acum}${progreso}</div>`;
   }
 
   // [703] Plegar/desplegar el bloque avanzado del Paso 1 (foto de factura + modos de monto/IGV).
@@ -10089,18 +10067,25 @@ const MOS = (() => {
     // [768] Toggles por línea (solo mientras NO está hecha): cada producto declara cómo entra.
     const hecha = _costoLineaHecha(l, st);
     const modoLin = l._modo || st.inputMode;
-    const igvLin  = l._igv || st.igvMode;
+    const igvLin  = (l._igv || st.igvMode) === 'INCLUIDO' ? 'INCLUIDO' : 'SIN';
+    // [769] chips claros (feedback UI/UX del dueño):
+    //  · modo e IGV son SELECTORES (siempre pintados con su valor actual + ⇄ para cambiar),
+    //    no on/off plomos — se lee de un vistazo cómo se interpretará el número.
+    //  · percepción activa = badge con el % DENTRO del chip y una ✕ chica para editarlo.
+    const percBadge = !l._percPct ? '' : (l._percEdit
+      ? `<input type="number" class="clt-pct" value="${l._percPct}" step="0.5" min="0.5" max="10" inputmode="decimal" autofocus
+           onclick="event.stopPropagation()" onchange="MOS._costosPercSet(${i}, this.value)" onblur="MOS._costosPercSet(${i}, this.value)">`
+      : `<span class="clt-badge">${l._percPct}%<i class="clt-badge-x" title="Editar el %"
+           onclick="event.stopPropagation();MOS._costosPercEditar(${i})">✕</i></span>`);
     const togglesHtml = hecha ? '' : `<div class="cl-toggles" id="costoGuiaTgl_${i}">
       <button type="button" class="clt${l._bonif ? ' clt-on' : ''}" title="Mercadería regalada por el proveedor — entra sin costo y el costo del catálogo NO cambia"
         onclick="event.stopPropagation();MOS._costosTglBonif(${i})">🎁 Bonificación</button>
-      <button type="button" class="clt" title="¿El número que escribes es el TOTAL de la línea o el precio UNITARIO?"
-        onclick="event.stopPropagation();MOS._costosTglModo(${i})">${modoLin === 'TOTAL' ? 'Σ Monto total' : '· Unitario'}</button>
-      <button type="button" class="clt${igvLin === 'SIN' ? ' clt-on' : ''}" title="¿El número ya incluye IGV? Si no, se le agrega 18% (el costo final SIEMPRE incluye IGV)"
-        onclick="event.stopPropagation();MOS._costosTglIgv(${i})">${igvLin === 'INCLUIDO' ? 'IGV incluido' : '+18% IGV'}</button>
+      <button type="button" class="clt clt-sel" title="¿El número que escribes es el TOTAL de la línea o el precio UNITARIO? Toca para cambiar"
+        onclick="event.stopPropagation();MOS._costosTglModo(${i})">${modoLin === 'TOTAL' ? 'Σ Monto total' : '· Unitario'}<b class="clt-swap">⇄</b></button>
+      <button type="button" class="clt clt-sel${igvLin === 'SIN' ? ' clt-sel-warn' : ''}" title="¿El número ya incluye IGV? Si no, se le agrega 18% (el costo final SIEMPRE incluye IGV). Toca para cambiar"
+        onclick="event.stopPropagation();MOS._costosTglIgv(${i})">${igvLin === 'INCLUIDO' ? 'IGV incluido' : 'sin IGV → +18%'}<b class="clt-swap">⇄</b></button>
       <span class="clt${l._percPct ? ' clt-on' : ''}" title="Percepción del IGV cobrada por el proveedor — SUMA al costo"
-        onclick="event.stopPropagation();MOS._costosTglPerc(${i})">⊕ Percepción${l._percPct ? `
-          <input type="number" class="clt-pct" value="${l._percPct}" step="0.5" min="0.5" max="10" inputmode="decimal"
-            onclick="event.stopPropagation()" onchange="MOS._costosPercSet(${i}, this.value)"><b>%</b>` : ''}</span>
+        onclick="event.stopPropagation();MOS._costosTglPerc(${i})">⊕ Percepción${percBadge}</span>
     </div>`;
     // [703 · móvil] La línea nace PLEGADA cuando ya tiene costo: check verde + costo grande.
     // Tocarla la re-abre (_costosLineaExpandir). En PC el plegado no aplica (CSS).
@@ -10142,7 +10127,6 @@ const MOS = (() => {
           <div class="alm-v-costo-helper" id="costoGuiaSubtot_${i}">${helper}</div>
         </div>
       </div>`}
-      <button type="button" class="cl-next" id="costoGuiaNext_${i}" onclick="MOS._costosSiguiente(${i})">✓ Listo · siguiente producto →</button>
       ${margenInfoHtml}
       <div class="cl-actions" id="costoGuiaAcc_${i}">${_costosLineaAccionesHTML(l, i, brutoUnit)}</div>
     </div>`;
@@ -10283,7 +10267,18 @@ const MOS = (() => {
   // leerlo de un vistazo; un toque = ✎ ajustar. Todo abre el editor de precio ENCIMA del modal de costos.
   function _costosLineaAccionesHTML(l, i, brutoUnit) {
     if (l && l._bonif) return '';   // [768] bonificación: el costo no cambió — no hay precio que revisar
-    if (!(brutoUnit > 0)) return '<div class="cl-price-hint">✎ Escribe el monto — o marca 🎁 si vino de regalo</div>';
+    if (!(brutoUnit > 0)) {
+      // [769] hint INTELIGENTE (pedido del dueño): la frase se arma con los toggles activos
+      // — dice exactamente qué número se espera y qué le hará el sistema.
+      const st = S._costosGuiaState || {};
+      const modo = (l && l._modo) || st.inputMode || 'TOTAL';
+      const igv  = ((l && l._igv) || st.igvMode) === 'SIN' ? 'SIN' : 'INCLUIDO';
+      const perc = parseFloat(l && l._percPct) || 0;
+      let frase = modo === 'TOTAL' ? '✎ Escribe el MONTO TOTAL de la línea' : '✎ Escribe el precio UNITARIO';
+      frase += igv === 'SIN' ? ' sin IGV — le agrego el 18%' : ' (con IGV incluido)';
+      if (perc > 0) frase += ` · le sumaré ${perc}% de percepción`;
+      return `<div class="cl-price-hint">${frase}</div>`;
+    }
     const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
     const p = (S.productos || []).find(x => String(x.codigoBarra || '').trim() === cod) || {};
     if (_costoLineaPreciada(l, p, brutoUnit)) {
@@ -10520,6 +10515,15 @@ const MOS = (() => {
       #modalCostosGuiaUnif .clt:hover { border-color: #46587e; color: #cbd5e1; }
       #modalCostosGuiaUnif .clt:active { transform: scale(.96); }
       #modalCostosGuiaUnif .clt.clt-on { background: linear-gradient(180deg,rgba(52,211,153,.2),rgba(52,211,153,.08)); border-color: rgba(52,211,153,.55); color: #34d399; box-shadow: 0 2px 10px -4px rgba(52,211,153,.4); }
+      /* [769] SELECTOR (modo/IGV): siempre pintado con su valor vigente + ⇄ — no es on/off */
+      #modalCostosGuiaUnif .clt.clt-sel { background: linear-gradient(180deg,rgba(96,165,250,.16),rgba(96,165,250,.06)); border-color: rgba(96,165,250,.45); color: #93c5fd; }
+      #modalCostosGuiaUnif .clt.clt-sel:hover { border-color: #60a5fa; color: #bfdbfe; }
+      #modalCostosGuiaUnif .clt.clt-sel-warn { background: linear-gradient(180deg,rgba(251,191,36,.16),rgba(251,191,36,.06)); border-color: rgba(251,191,36,.5); color: #fbbf24; }
+      #modalCostosGuiaUnif .clt-swap { font-style: normal; font-size: 10px; opacity: .65; margin-left: 2px; }
+      /* [769] badge del % de percepción: vive DENTRO del chip, con ✕ chica para editar */
+      #modalCostosGuiaUnif .clt-badge { position: relative; display: inline-flex; align-items: center; background: rgba(52,211,153,.22); border: 1px solid rgba(52,211,153,.5); border-radius: 999px; padding: 1px 9px 1px 7px; font-size: 10px; font-weight: 900; color: #6ee7b7; margin-left: 3px; }
+      #modalCostosGuiaUnif .clt-badge-x { position: absolute; top: -6px; right: -6px; width: 13px; height: 13px; display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 8px; font-weight: 900; color: #0b1220; background: #93a4c2; border-radius: 50%; cursor: pointer; line-height: 1; }
+      #modalCostosGuiaUnif .clt-badge-x:hover { background: #cbd5e1; }
       #modalCostosGuiaUnif .clt-pct { width: 42px; background: #0e1626; border: 1px solid rgba(52,211,153,.4); border-radius: 7px; color: #34d399; font-weight: 800; font-size: 11px; padding: 2px 5px; text-align: center; -moz-appearance: textfield; }
       #modalCostosGuiaUnif .clt-pct::-webkit-outer-spin-button, #modalCostosGuiaUnif .clt-pct::-webkit-inner-spin-button { -webkit-appearance: none; }
       #modalCostosGuiaUnif .cl-bonif-note { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 700; color: #34d399; background: linear-gradient(180deg,rgba(52,211,153,.12),rgba(52,211,153,.04)); border: 1px solid rgba(52,211,153,.35); border-radius: 11px; padding: 10px 13px; margin: 2px 0 4px; }
@@ -13049,8 +13053,16 @@ const MOS = (() => {
     const st = S._costosGuiaState; const l = st && st.lineas[i]; if (!l) return;
     const n = parseFloat(v);
     l._percPct = (n > 0 && n <= 10) ? n : 2;
+    l._percEdit = false;   // [769] cerrar el modo edición del badge
     _costosGuiaReRender();
     _costosAplicarDebounce();
+  }
+  // [769] ✕ del badge de percepción → abre la edición del % en el mismo chip
+  function _costosPercEditar(i) {
+    const st = S._costosGuiaState; const l = st && st.lineas[i]; if (!l) return;
+    l._percEdit = true;
+    _costosGuiaReRender();
+    try { const tgl = document.getElementById('costoGuiaTgl_' + i); const inp = tgl && tgl.querySelector('.clt-pct'); if (inp) { inp.focus(); inp.select(); } } catch(_){}
   }
 
   // [v5 §11] Re-render del Paso 1 (modal unificado). El modal-split viejo fue eliminado.
@@ -48967,7 +48979,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _costosToggleAvanzado, _costosLineaExpandir, _costosInputFocus, _costosInputBlur, _costosInputKey,
     _costosSiguiente, _costosSiguientePendiente, _costosAplicarAlCatalogo,
     _costosUsarCostoCatalogo,   // [721] legado (el chip murió en 768; la fn queda por compat)
-    _costosTglBonif, _costosTglModo, _costosTglIgv, _costosTglPerc, _costosPercSet,   // [768] toggles por línea
+    _costosTglBonif, _costosTglModo, _costosTglIgv, _costosTglPerc, _costosPercSet, _costosPercEditar,   // [768/769] toggles por línea
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     _p1CartaToggle,   // [717] pestañita ⟨ ⟩ de la carta lateral de la factura
