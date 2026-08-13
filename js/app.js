@@ -12076,6 +12076,13 @@ const MOS = (() => {
     // muestra "falta cotejar", que es el estado honesto por defecto)
     const cot = (S._cotejoGuias && S._cotejoGuias[op.idGuia]) || null;
     const nCotejadas = esME ? Math.min(total, parseInt((cot && cot.n) || 0, 10) || 0) : 0;
+    // [766] PRECIOS = COLOCACIONES reales (pedido del dueño 13-ago): un producto
+    // cuenta solo si hay un evento PRECIO (colocado o confirmado en Paso 2/catálogo)
+    // POSTERIOR al cotejo de costo de ESTA guía — cot.p lo trae el RPC. La heurística
+    // vieja ("el precio ya cuadra con el margen") marcaba ✓ compras que nadie revisó;
+    // queda SOLO como fallback para guías costeadas antes de que existiera el rastro.
+    const cotN = parseInt((cot && cot.n) || 0, 10) || 0;
+    const cotP = Math.min(cotN, parseInt((cot && cot.p) || 0, 10) || 0);
     let conCosto = 0, conPrecio = 0, totalCosteados = 0;
     lineas.forEach((l, i) => {
       const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
@@ -12098,6 +12105,9 @@ const MOS = (() => {
       const sug = _r1(costo / (1 - margen / 100));
       if (Math.abs(venta - sug) <= 0.1) conPrecio++;   // precio fresco respecto al costo
     });
+    // [766] con rastro de cotejo disponible, mandan las colocaciones REALES;
+    // el conteo heurístico del loop queda solo para guías pre-rastro (cotN=0).
+    if (cotN > 0) conPrecio = Math.min(totalCosteados, cotP);
     let fase, tone, ico, label;
     // [721] en zona la palabra es COTEJAR: la guía es una presunción hasta que el admin la revisa
     const verbo = esME ? 'Falta cotejar' : 'Falta costear';
@@ -12151,8 +12161,10 @@ const MOS = (() => {
   //   queda (correctamente) en "Falta cotejar".
   async function _mesaPrefetchCotejo() {
     S._cotejoGuias = S._cotejoGuias || {};
+    // [766] ahora se pide para TODAS las compras (antes solo ME): las de proveedor
+    // también necesitan cot.p para la barra de PRECIOS por colocación real.
     const ids = _comprasFlat()
-      .filter(op => String(op.fuente || '').toUpperCase() === 'ME' && op.idGuia)
+      .filter(op => op.idGuia)
       .map(op => op.idGuia);
     const unicos = [...new Set(ids)].slice(0, 400);
     if (!unicos.length) return;
