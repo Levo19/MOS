@@ -11126,7 +11126,10 @@ const MOS = (() => {
         : costoBase * r.factor;
       costByIdx[i] = costo;
       let margen = (sp.margenPct != null && sp.margenPct !== '') ? parseFloat(sp.margenPct) : margenC;
-      if (margen == null) { try { const mi = _calcularMargenInfo(sp); margen = mi ? parseFloat(mi.objetivo) : null; } catch(_){} }
+      // [775] SIN DEFAULTS (doctrina): sin margen propio ni heredado del padre, se respeta
+      // el PRECIO ACTUAL del satélite (margen real derivado de él) — jamás el 25% de política.
+      const _pAct = parseFloat(sp.precioVenta) || 0;
+      if (margen == null && _pAct > 0 && costo > 0) margen = (1 - costo / _pAct) * 100;
       const sugerido = (margen != null && margen < 100 && costo > 0) ? _r1(costo / (1 - margen / 100)) : null;
       const ico = r.tipo === 'der' ? '🥄' : (r.tipo === 'presDer' ? '🧱' : (String(sp.unidad || '').toUpperCase() === 'KGM' ? '🥄' : '🧱'));
       return { p: sp, tipo: r.tipo, factor: r.factor, costo: _r1(costo), margen, sugerido, ico,
@@ -11250,8 +11253,13 @@ const MOS = (() => {
     const draft = _p2DraftLoad(S._paso2DraftKey);
     const filas = items.map(x => {
       const p = S.productos.find(y => y.idProducto === x.idCanonico) || {};
-      const mi = (function(){ try { return _calcularMargenInfo(p); } catch(_) { return null; } })();
-      const margenC = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : (mi ? parseFloat(mi.objetivo) : null);
+      // [775] SIN DEFAULTS (doctrina del dueño): el margen-contrato es SOLO el registrado
+      // en el producto. El fallback a _calcularMargenInfo metía el 25% default de la
+      // política → a un producto SIN margen le sugería 0.30/33% inventados en vez de
+      // respetar su precio actual. Caminos: (a) sin contrato → manda el PRECIO ACTUAL y
+      // publicar crea el primer contrato; (b) margen cae → sugerido = costo/(1−m);
+      // (c) costo bajó → mismo cálculo sugiere BAJAR el precio para respetar el contrato.
+      const margenC = (p.margenPct != null && p.margenPct !== '') ? parseFloat(p.margenPct) : null;
       const tieneCostoPrevio = (parseFloat(x.costoAnterior) || 0) > 0;
       const costoNuevo = parseFloat(x.costoNuevo) || 0;
       const precioActual = parseFloat(p.precioVenta) || 0;
@@ -11353,7 +11361,9 @@ const MOS = (() => {
     const bodyHtml = (esCat || esUno) ? filaHtml(filas[0], 0, true) : _p2ListaHtml();
     const footer = esUno
       ? `<button onclick="MOS._p2CerrarUno()" class="flex-1 rounded-xl py-2.5 text-xs font-bold" style="background:#131d30;border:1px solid #28344c;color:#93a4c2">← Volver a la compra</button>
-         <button onclick="MOS._p2GuardarUnoDirecto()" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">✓ Publicar precio al catálogo</button>`
+         <button onclick="MOS._p2GuardarUnoDirecto()" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">${filas[0] && filas[0].margenC == null
+           ? '✓ Publicar precio Y MARGEN (primer contrato)'   /* [775] camino a: nace el contrato */
+           : '✓ Publicar precio al catálogo'}</button>`
       : esCat
       ? `<button onclick="MOS._paso2CerrarAMesa()" class="flex-1 rounded-xl py-2.5 text-xs font-bold" style="background:#131d30;border:1px solid #28344c;color:#93a4c2">Cancelar</button>
          <button onclick="MOS._p2GuardarCatalogo()" class="rounded-xl py-2.5 px-4 text-xs font-extrabold" style="flex:2;background:linear-gradient(180deg,#34d399,#059669);color:#04140d">✓ Guardar precio y margen</button>`
