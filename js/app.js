@@ -10050,7 +10050,9 @@ const MOS = (() => {
                   : `<div class="cl-verdict cl-verdict-ok">✓ Margen ${margenObjetivo.toFixed(1)}% se mantiene — nada que hacer</div>`;
               }
             }
-            margenInfoHtml = `<div class="alm-v-impacto">${filaMargen}${filaPrecio}${veredicto}</div>`;
+            // [773] el veredicto va FUERA del bloque impacto: la línea plegada esconde
+            // el detalle pero el veredicto (la decisión) debe verse SIEMPRE.
+            margenInfoHtml = `<div class="alm-v-impacto">${filaMargen}${filaPrecio}</div>${veredicto}`;
           }
         }
       }
@@ -10092,7 +10094,7 @@ const MOS = (() => {
           <div class="cl-desc" title="${_escapeHtml(descPlano)}">${desc}${equivBadge}</div>
           <div class="cl-cod">▌ ${cod} · <b>${cant}u</b></div>
         </div>
-        <span class="cl-sum" id="costoGuiaSum_${i}">${l._bonif ? '🎁 gratis' : (brutoUnit > 0 ? '✓ S/ ' + _money(brutoUnit).toFixed(2) : '')}</span>
+        <span class="cl-sum" id="costoGuiaSum_${i}">${l._bonif ? '🎁 gratis' : (brutoUnit > 0 ? `✓ ${cant}u × S/ ${_money(brutoUnit).toFixed(2)} <b class="cl-sum-tot">S/ ${_money(brutoUnit * cant).toFixed(2)}</b>` : '')}</span>
         <span class="cl-chip" id="costoGuiaChip_${i}">${chipHtml}</span>
       </div>
       ${togglesHtml}
@@ -10165,10 +10167,23 @@ const MOS = (() => {
   function _costosInputBlur(i) {
     const st = S._costosGuiaState; if (!st) return;
     const l = (st.lineas || [])[i]; if (!l) return;
-    const bruto = _costosGuiaCalcularBruto(l, st) || 0;
-    const row = document.getElementById('costoGuiaLinea_' + i);
-    if (row) row.classList.toggle('is-collapsed', bruto > 0);
     _costosAplicarDebounce();
+    // [773] re-pintar la LÍNEA COMPLETA (no solo pedacitos): así los toggles se esconden
+    // al instante al quedar el costo, y el veredicto + botón 💰 aparecen sin salir y
+    // volver a entrar. El pequeño delay deja aterrizar el click en la ✕ del monto
+    // (blur → repaint inmediato destruía el botón antes del click).
+    clearTimeout(l._repT); l._repT = setTimeout(() => _costosLineaRepaint(i), 180);
+  }
+  // [773] Reemplaza el nodo de la línea i por su render fresco (estado real).
+  function _costosLineaRepaint(i) {
+    const st = S._costosGuiaState; if (!st) return;
+    const l = (st.lineas || [])[i]; if (!l) return;
+    const row = document.getElementById('costoGuiaLinea_' + i); if (!row) return;
+    if (row.contains(document.activeElement)) return;   // el admin volvió a entrar — no pisar
+    const op = _findOpByKey(st.fuente + '_' + st.idGuia); if (!op) return;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = _renderCostosLineaItem(op, l, i, st);
+    if (tmp.firstElementChild) row.replaceWith(tmp.firstElementChild);
   }
   // Tocar una línea plegada la vuelve a abrir con el cursor listo.
   function _costosLineaExpandir(i) {
@@ -10527,6 +10542,8 @@ const MOS = (() => {
       #modalCostosGuiaUnif .cl-bonif-note { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 700; color: #34d399; background: linear-gradient(180deg,rgba(52,211,153,.12),rgba(52,211,153,.04)); border: 1px solid rgba(52,211,153,.35); border-radius: 11px; padding: 10px 13px; margin: 2px 0 4px; }
       #modalCostosGuiaUnif .cl-bonif-quitar { margin-left: auto; flex: none; font-size: 10px; font-weight: 800; color: #93a4c2; background: #0e1626; border: 1px solid #28344c; border-radius: 8px; padding: 4px 10px; cursor: pointer; }
       #modalCostosGuiaUnif .cl-bonif-quitar:hover { color: #f87171; border-color: rgba(248,113,113,.4); }
+      /* [773] cantidad × unitario = total en la sumita de la línea */
+      #modalCostosGuiaUnif .cl-sum-tot { margin-left: 6px; padding-left: 7px; border-left: 1px solid rgba(52,211,153,.35); font-size: 12.5px; color: #6ee7b7; }
       /* ── [770] header único: píldoras de progreso + Total pagado ── */
       #modalCostosGuiaUnif .p1-acum { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
       #modalCostosGuiaUnif .p1-prog-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; border-radius: 999px; padding: 5px 12px; letter-spacing: .01em; transition: .2s; }
@@ -13252,7 +13269,11 @@ const MOS = (() => {
     const _chip = $('costoGuiaChip_' + idx); if (_chip) _chip.innerHTML = _costosChipHTML(brutoUnit, _prec);
     const _row = $('costoGuiaLinea_' + idx); if (_row) { _row.classList.remove('is-nocost', 'is-cost', 'is-done'); _row.classList.add(_prec ? 'is-done' : (brutoUnit > 0 ? 'is-cost' : 'is-nocost')); }
     // [703] resumen plegado de la línea (✓ S/ x.xx) + CTA guiada del pie
-    const _sum = $('costoGuiaSum_' + idx); if (_sum) _sum.textContent = brutoUnit > 0 ? '✓ S/ ' + _money(brutoUnit).toFixed(2) : '';
+    const _sum = $('costoGuiaSum_' + idx);
+    if (_sum) {
+      const _cantS = parseFloat(linea.cantidad) || 1;   // [773] cantidad × unitario = total, en vivo
+      _sum.innerHTML = brutoUnit > 0 ? `✓ ${_cantS}u × S/ ${_money(brutoUnit).toFixed(2)} <b class="cl-sum-tot">S/ ${_money(brutoUnit * _cantS).toFixed(2)}</b>` : '';
+    }
     try { _costosCtaUpd(); } catch(_){}
     // Recalcular totales
     let totalBruto = 0;
