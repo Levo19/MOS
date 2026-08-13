@@ -10093,8 +10093,13 @@ const MOS = (() => {
             // ¿hay que entrar a precios o no? Tres estados, una sola línea clara.
             let veredicto = '';
             if (brutoUnit > 0) {
+              // [778] contrato zombi: la sugerencia del objetivo se aleja >50% del precio
+              // actual → el contrato es de otra época; el mensaje correcto es RENOVARLO.
+              const _zombi = (ventaSugerida !== null && ventaActual > 0 && Math.abs(ventaSugerida - ventaActual) / ventaActual > 0.5);
               if (margenObjetivo === null) {
                 veredicto = `<div class="cl-verdict cl-verdict-warn">⚠ Sin margen registrado — pon el precio para crear el contrato</div>`;
+              } else if (_zombi) {
+                veredicto = `<div class="cl-verdict cl-verdict-warn">⚠ Margen de contrato desactualizado (${margenObjetivo.toFixed(1)}% es de otra época) — entra a precios para renovarlo${margenConCostoNuevo !== null ? ` · margen real hoy: <b>${margenConCostoNuevo.toFixed(1)}%</b>` : ''}</div>`;
               } else if (margenConCostoNuevo !== null) {
                 const diffV = margenConCostoNuevo - margenObjetivo;
                 veredicto = (diffV < -2)
@@ -11137,7 +11142,13 @@ const MOS = (() => {
       const _pAct = parseFloat(sp.precioVenta) || 0;
       const _esFijo = String(sp.modoVenta || '').toUpperCase() === 'FIJO';
       if ((_esFijo || margen == null) && _pAct > 0 && costo > 0) margen = (1 - costo / _pAct) * 100;
-      const sugerido = (margen != null && margen < 100 && costo > 0) ? _r1(costo / (1 - margen / 100)) : null;
+      let sugerido = (margen != null && margen < 100 && costo > 0) ? _r1(costo / (1 - margen / 100)) : null;
+      // [778] contrato zombi también acá: sugerencia a >50% del precio actual = margen
+      // de otra época → se respeta el precio actual del satélite (margen real).
+      if (sugerido != null && _pAct > 0 && Math.abs(sugerido - _pAct) / _pAct > 0.5) {
+        margen = (costo > 0) ? (1 - costo / _pAct) * 100 : margen;
+        sugerido = (margen != null && margen < 100 && costo > 0) ? _r1(costo / (1 - margen / 100)) : null;
+      }
       const ico = r.tipo === 'der' ? '🥄' : (r.tipo === 'presDer' ? '🧱' : (String(sp.unidad || '').toUpperCase() === 'KGM' ? '🥄' : '🧱'));
       return { p: sp, tipo: r.tipo, factor: r.factor, costo: _r1(costo), costoAnt: _r1(costoAnt), margen, sugerido, ico,
                precioActual: parseFloat(sp.precioVenta) || 0,
@@ -11281,8 +11292,16 @@ const MOS = (() => {
       const margenActual = (precioActual > 0 && parseFloat(x.costoAnterior) > 0)
         ? (1 - parseFloat(x.costoAnterior) / precioActual) * 100
         : (margenC != null ? margenC : null);
-      const sugerido = (margenC != null && margenC < 100 && costoNuevo > 0)
+      let sugerido = (margenC != null && margenC < 100 && costoNuevo > 0)
         ? _r1(costoNuevo / (1 - margenC / 100)) : null;
+      // [778] CONTRATO ZOMBI: si la sugerencia del contrato se aleja >50% del precio
+      // actual, ese margen nació en otra época (caso AJO: contrato 93.8% de cuando el
+      // costo era 0.40 → sugería S/ 88.70 con costo 5.50). No se obedece a ciegas:
+      // manda el PRECIO ACTUAL y su margen real; al publicar, el contrato se renueva.
+      let contratoZombi = false;
+      if (sugerido != null && precioActual > 0 && Math.abs(sugerido - precioActual) / precioActual > 0.5) {
+        contratoZombi = true; sugerido = null;
+      }
       let precioEd = (sugerido != null ? sugerido : (precioActual > 0 ? precioActual : null));
       if (esCat && precioActual > 0) precioEd = precioActual;   // catálogo: arranca en el precio actual
       let margenEd = (precioEd > 0 && costoNuevo > 0) ? (1 - costoNuevo / precioEd) * 100 : margenC;
@@ -11298,7 +11317,7 @@ const MOS = (() => {
         if (draft.sat) satelites.forEach(s => { const ds = s.p && draft.sat[s.p.idProducto]; if (ds) { if (ds.precio > 0) { s.precioEd = ds.precio; s.manual = !!ds.manual; if (s.costo > 0) s.margen = (1 - s.costo / ds.precio) * 100; } if (ds.incluido != null) s.incluido = ds.incluido; } });
       }
       const listo = (precioEd > 0 && (tieneCostoPrevio || _touched || esCat));
-      return { x, p, margenC, sugerido, tieneCostoPrevio, satelites, precioActual, margenActual, precioEd, margenEd, costoNuevo, listo, _touched };
+      return { x, p, margenC, sugerido, contratoZombi, tieneCostoPrevio, satelites, precioActual, margenActual, precioEd, margenEd, costoNuevo, listo, _touched };
     });
     window._paso2Filas = filas;
     const kpi = (lbl, val, hero) => `<div class="p2-kpi${hero ? ' p2-kpi-hero' : ''}"><span class="p2-kl">${lbl}</span>${val}</div>`;
@@ -11332,6 +11351,7 @@ const MOS = (() => {
           ${kpi(esCat ? 'Precio nuevo' : (f.tieneCostoPrevio ? 'Precio sugerido' : 'Precio nuevo'), `<b id="p2pr_${i}" class="p2-hero-v">${f.precioEd != null ? 'S/ ' + f.precioEd : 'define'}</b>`, true)}
         </div>
         ${(!f.tieneCostoPrevio && !esCat) ? `<div class="p2-firstcost">⚠ Primer costo registrado — al definir el precio NACE su contrato de margen.</div>` : ''}
+        ${f.contratoZombi ? `<div class="p2-firstcost">⚠ El margen de contrato guardado (${(+f.margenC).toFixed(1)}%) es de otra época — con el costo de hoy daría un precio absurdo. Se respeta el PRECIO ACTUAL; al publicar, el margen que ves queda de contrato nuevo.</div>` : ''}
         ${(esCat || exp) ? '' : `<button class="p2-toggle" onclick="MOS._p2Toggle(${i})"><span>📈 Ajustar precio ↔ margen · ver curvas</span><span class="p2-chev">▾</span></button>`}
         <div class="p2-editor" id="p2ed_${i}"${(esCat || exp) ? '' : ' hidden'}>
           <div class="p2-chart-wrap"><canvas id="p2cv_${i}" class="p2-canvas"></canvas>
