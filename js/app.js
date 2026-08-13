@@ -11118,23 +11118,30 @@ const MOS = (() => {
     if (esSatelite) return [];
     let rows; try { rows = _qpBuildRows(p) || []; } catch(_) { rows = []; }
     const costoBase = parseFloat(x.costoNuevo) || 0;
-    const costByIdx = {};
+    const costoAntBase = parseFloat(x.costoAnterior) || 0;   // [776] para el tachado "antes → ahora"
+    const costByIdx = {}, costAntByIdx = {};
     return rows.map((r, i) => {
       const sp = r.p || {};
       const costo = (r.tipo === 'presDer' && r.parentIdx != null && costByIdx[r.parentIdx] != null)
         ? costByIdx[r.parentIdx] * r.factor
         : costoBase * r.factor;
       costByIdx[i] = costo;
+      const costoAnt = (r.tipo === 'presDer' && r.parentIdx != null && costAntByIdx[r.parentIdx] != null)
+        ? costAntByIdx[r.parentIdx] * r.factor
+        : costoAntBase * r.factor;
+      costAntByIdx[i] = costoAnt;
       let margen = (sp.margenPct != null && sp.margenPct !== '') ? parseFloat(sp.margenPct) : margenC;
       // [775] SIN DEFAULTS (doctrina): sin margen propio ni heredado del padre, se respeta
       // el PRECIO ACTUAL del satélite (margen real derivado de él) — jamás el 25% de política.
+      // [776] FIJO = precio manual intocable por cascada → SIEMPRE se respeta su precio actual.
       const _pAct = parseFloat(sp.precioVenta) || 0;
-      if (margen == null && _pAct > 0 && costo > 0) margen = (1 - costo / _pAct) * 100;
+      const _esFijo = String(sp.modoVenta || '').toUpperCase() === 'FIJO';
+      if ((_esFijo || margen == null) && _pAct > 0 && costo > 0) margen = (1 - costo / _pAct) * 100;
       const sugerido = (margen != null && margen < 100 && costo > 0) ? _r1(costo / (1 - margen / 100)) : null;
       const ico = r.tipo === 'der' ? '🥄' : (r.tipo === 'presDer' ? '🧱' : (String(sp.unidad || '').toUpperCase() === 'KGM' ? '🥄' : '🧱'));
-      return { p: sp, tipo: r.tipo, factor: r.factor, costo: _r1(costo), margen, sugerido, ico,
+      return { p: sp, tipo: r.tipo, factor: r.factor, costo: _r1(costo), costoAnt: _r1(costoAnt), margen, sugerido, ico,
                precioActual: parseFloat(sp.precioVenta) || 0,
-               // [H · toggle por satélite] por defecto se APLICA si hay sugerido; se puede apagar (excluir) o editar (→MANUAL)
+               // [776] el toggle murió: lo que se ve en el card ES lo que se publica
                incluido: (sugerido != null && sugerido > 0),
                precioEd: (sugerido != null ? sugerido : null),
                manual: false };
@@ -11272,10 +11279,9 @@ const MOS = (() => {
       if (esCat && precioActual > 0) precioEd = precioActual;   // catálogo: arranca en el precio actual
       let margenEd = (precioEd > 0 && costoNuevo > 0) ? (1 - costoNuevo / precioEd) * 100 : margenC;
       const satelites = _paso2Satelites(x, p, margenC);
-      // [fix P2 · dinero] en CATÁLOGO el usuario edita solo el precio del canónico → satélites OPT-IN
-      // (apagados por defecto), para no re-publicar/resetear satélites (incl. MANUALes) sin querer.
-      // En COMPRA sí arrancan encendidos (cambió el costo → la cascada es deseada).
-      if (esCat) satelites.forEach(s => { s.incluido = false; });
+      // [776] el opt-in de catálogo murió con el toggle: los cards v2 muestran EXACTO
+      // lo que se publicará (los FIJO/sin-margen respetan su precio actual [775/776],
+      // así que ya no hay clobber sorpresa que justificara apagarlos).
       let _touched = false;
       // [H2] aplicar borrador guardado (si existe) para esta guía
       if (draft) {
@@ -11333,23 +11339,9 @@ const MOS = (() => {
           <div class="p2-bidir-hint">↔ Bidireccional: cambias el precio → recalcula el margen · cambias el margen → recalcula el precio. ESE margen queda de contrato.</div>
           ${_p2TramosHTML(f, i)}
           ${(f.satelites && f.satelites.length) ? `
-          <button class="p2-repartir" onclick="MOS._p2Repartir(${i})" title="Aplica el margen del padre a los satélites activos y no manuales">📊 Repartir este margen a los satélites activos</button>
           <div class="p2-sats">
-            <div class="p2-sats-lbl">${f.satelites.length} satélite(s) · el margen se HEREDA del padre — enciende para aplicar, edita el precio para MANUAL, apaga para no tocarlo</div>
-            ${f.satelites.map((s, j) => `
-            <div class="p2-sat${s.incluido ? '' : ' off'}" id="p2sat_${i}_${j}" style="border-left-color:${s.tipo === 'der' ? '#a855f7' : '#34d399'}">
-              <div class="p2-sat-l">
-                <button type="button" class="p2-sat-sw${s.incluido ? ' on' : ''}" onclick="MOS._p2SatToggle(${i},${j})" title="Aplicar / no aplicar este satélite"><span></span></button>
-                <span class="p2-sat-name">${s.ico} ${_escapeHtml(s.p.descripcion || s.p.idProducto)}</span>
-              </div>
-              <div class="p2-sat-r">
-                <span class="p2-sat-meta">×${s.factor} · costo ${s.costo}</span>
-                <span class="p2-sat-old">S/${s.precioActual || '—'}→</span>
-                <span class="p2-sat-cur">S/</span>
-                <input class="p2-sat-inp" id="p2si_${i}_${j}" type="number" step="0.1" min="0" value="${s.precioEd != null ? s.precioEd : ''}" ${s.incluido ? '' : 'disabled'} oninput="MOS._p2SatPrecio(${i},${j})" placeholder="—">
-                <span class="p2-sat-mchip qp-mode-chip${s.manual ? ' man' : ''}" id="p2sm_${i}_${j}">${s.manual ? 'MANUAL ' + (s.margen != null ? s.margen.toFixed(0) + '%' : '') : (s.margen != null ? (+s.margen).toFixed(0) + '%' : 'AUTO')}</span>
-              </div>
-            </div>`).join('')}
+            <div class="p2-sats-lbl">${f.satelites.length} presentación(es)/derivado(s) · el precio <s>tachado</s> se reemplaza por la sugerencia que respeta su margen — toca ✕ para rechazarla (vuelve el actual, editable) · escribir un precio = MANUAL · al publicar se guardan TODOS (precios + márgenes)</div>
+            ${f.satelites.map((s, j) => _p2SatCardHTML(f, s, i, j)).join('')}
           </div>` : ''}
         </div>
       </div>`;
@@ -11525,6 +11517,53 @@ const MOS = (() => {
   }
 
   // [H · toggle por satélite] editar el precio de un satélite → pasa a MANUAL (su margen se recalcula y SE MUESTRA).
+  // ───────── [776] Cards v2 de satélites: análisis completo, sin toggle ─────────
+  // Cada presentación/derivado muestra: tipo legible · costo (tachado si cambió) ·
+  // precio (tachado → sugerencia que respeta SU margen, con ✕ para rechazar) · margen.
+  // Lo que se ve ES lo que se publica al dar "Publicar precio y margen".
+  function _p2SatCardHTML(f, s, i, j) {
+    const nombre = _escapeHtml(s.p.descripcion || s.p.idProducto);
+    const tipoLbl = s.tipo === 'der' ? '🥄 DERIVADO' : (s.tipo === 'presDer' ? '🧱 PRES. DE DERIVADO' : '🧱 PRESENTACIÓN');
+    const costoCambia = s.costoAnt > 0 && Math.abs(s.costo - s.costoAnt) >= 0.01;
+    const pAct = parseFloat(s.precioActual) || 0;
+    const sug = (s.precioEd != null) ? +s.precioEd : null;
+    // sugerencia "viva" = aún no rechazada/editada Y realmente cambia el precio
+    const conSug = !s.manual && sug != null && pAct > 0 && Math.abs(sug - pAct) >= 0.01;
+    const margenTxt = s.margen != null ? (+s.margen).toFixed(1) + '%' : '—';
+    const precioHtml = conSug
+      ? `<s class="p2sv2-old">S/ ${pAct.toFixed(2)}</s><span class="p2sv2-chip">S/ ${sug.toFixed(2)}<i class="p2sv2-x" title="Rechazar la sugerencia: vuelve S/ ${pAct.toFixed(2)} (editable) y el margen se ajusta" onclick="MOS._p2SatQuitarSug(${i},${j})">✕</i></span>`
+      : `<span class="p2sv2-edit">S/ <input class="p2-sat-inp" id="p2si_${i}_${j}" type="number" step="0.1" min="0" value="${s.precioEd != null ? s.precioEd : (pAct || '')}" oninput="MOS._p2SatPrecio(${i},${j})" placeholder="—"></span>`;
+    return `<div class="p2sv2${s.tipo === 'der' ? ' is-der' : ''}" id="p2sat_${i}_${j}">
+      <div class="p2sv2-head"><span class="p2sv2-tipo">${tipoLbl}</span><span class="p2sv2-name" title="${nombre}">${nombre}</span></div>
+      <div class="p2sv2-body">
+        <div class="p2sv2-cell"><span class="p2sv2-lbl">Costo ×${s.factor}</span>
+          <span class="p2sv2-val">${costoCambia ? `<s class="p2sv2-old">S/ ${(+s.costoAnt).toFixed(2)}</s> ` : ''}<b>S/ ${(+s.costo).toFixed(2)}</b></span></div>
+        <div class="p2sv2-cell p2sv2-grow"><span class="p2sv2-lbl">Precio</span>
+          <span class="p2sv2-val">${precioHtml}</span></div>
+        <div class="p2sv2-cell"><span class="p2sv2-lbl">Margen</span>
+          <span class="p2sv2-val"><b id="p2sm_${i}_${j}" class="${s.manual ? 'man' : ''}">${s.manual ? 'MANUAL ' : ''}${margenTxt}</b></span></div>
+      </div>
+    </div>`;
+  }
+  // [776] ✕ = rechazar la sugerencia: vuelve el precio ACTUAL (primer dato, editable)
+  // y el margen SE AJUSTA a él — el camino "quito la raya" que pidió el dueño.
+  function _p2SatQuitarSug(i, j) {
+    const f = (window._paso2Filas || [])[i]; const s = f && f.satelites && f.satelites[j]; if (!s) return;
+    const pAct = parseFloat(s.precioActual) || 0;
+    s.precioEd = pAct > 0 ? _r1(pAct) : null;
+    s.manual = true;
+    if (s.precioEd > 0 && s.costo > 0) s.margen = (1 - s.costo / s.precioEd) * 100;
+    _p2SatRepaint(i, j);
+    _p2DraftSaveDebounced();
+    try { const inp = document.getElementById('p2si_' + i + '_' + j); if (inp) { inp.focus(); inp.select(); } } catch(_){}
+  }
+  function _p2SatRepaint(i, j) {
+    const f = (window._paso2Filas || [])[i]; const s = f && f.satelites && f.satelites[j]; if (!s) return;
+    const el = document.getElementById('p2sat_' + i + '_' + j); if (!el) return;
+    const tmp = document.createElement('div'); tmp.innerHTML = _p2SatCardHTML(f, s, i, j);
+    if (tmp.firstElementChild) el.replaceWith(tmp.firstElementChild);
+  }
+
   function _p2SatPrecio(fi, sj) {
     const f = (window._paso2Filas || [])[fi]; const s = f && f.satelites && f.satelites[sj]; if (!s) return;
     const inp = document.getElementById('p2si_' + fi + '_' + sj);
@@ -12100,6 +12139,28 @@ const MOS = (() => {
       .p2-repartir:hover{background:rgba(124,179,240,.2);border-color:#7cb3f0}
       .p2-sats{display:flex;flex-direction:column;gap:6px;border-top:1px dashed #28344c;padding-top:9px}
       .p2-sats-lbl{font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#5f7192;line-height:1.45}
+      /* ── [776] cards v2 de presentaciones/derivados: grandes, análisis completo ── */
+      .p2sv2{background:linear-gradient(180deg,rgba(30,41,59,.6),rgba(15,23,42,.4));border:1px solid #263450;border-left:3px solid #34d399;border-radius:12px;padding:10px 13px;margin-top:8px}
+      .p2sv2.is-der{border-left-color:#a855f7}
+      .p2sv2-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;min-width:0}
+      .p2sv2-tipo{flex:none;font-size:8.5px;font-weight:900;letter-spacing:.05em;color:#34d399;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3);border-radius:999px;padding:2px 8px}
+      .p2sv2.is-der .p2sv2-tipo{color:#c4b5fd;background:rgba(168,85,247,.12);border-color:rgba(168,85,247,.35)}
+      .p2sv2-name{font-size:11.5px;font-weight:750;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .p2sv2-body{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+      .p2sv2-cell{display:flex;flex-direction:column;gap:3px}
+      .p2sv2-grow{flex:1;min-width:150px}
+      .p2sv2-lbl{font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#5f7192}
+      .p2sv2-val{display:flex;align-items:center;gap:7px;font-size:13px;color:#e2e8f0}
+      .p2sv2-val b{font-weight:900}
+      .p2sv2-old{color:#7b8aa6;font-size:11px;text-decoration:line-through;text-decoration-color:rgba(248,113,113,.7);text-decoration-thickness:1.5px}
+      .p2sv2-chip{position:relative;display:inline-flex;align-items:center;font-size:13.5px;font-weight:900;color:#34d399;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.45);border-radius:9px;padding:4px 12px}
+      .p2sv2-x{position:absolute;top:-7px;right:-7px;width:15px;height:15px;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:9px;font-weight:900;color:#0b1220;background:#93a4c2;border-radius:50%;cursor:pointer;line-height:1}
+      .p2sv2-x:hover{background:#f87171;color:#fff}
+      .p2sv2-edit{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#93a4c2}
+      .p2sv2 .p2-sat-inp{width:76px;background:#0e1626;border:1px solid #2b3852;border-radius:8px;color:#e2e8f0;font-weight:800;font-size:13px;padding:5px 8px;text-align:right}
+      .p2sv2 .p2-sat-inp:focus{border-color:#34d399;outline:none}
+      .p2sv2 #p2sm_0_0{}
+      .p2sv2 b.man{color:#fbbf24}
       .p2-sat{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 9px;background:#0b1425;border:1px solid #1e293b;border-left:2px solid #34d399;border-radius:9px;transition:opacity .18s}
       .p2-sat.off{opacity:.42}
       .p2-sat-l{display:flex;align-items:center;gap:7px;flex:1;min-width:120px}
@@ -49071,6 +49132,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _costosUsarCostoCatalogo,   // [721] legado (el chip murió en 768; la fn queda por compat)
     _costosTglBonif, _costosTglModo, _costosTglIgv, _costosTglPerc, _costosPercSet, _costosPercEditar,   // [768/769] toggles por línea
     _p1CartaFotoPick,   // [774] cambiar el comprobante desde la carta
+    _p2SatQuitarSug,    // [776] rechazar sugerencia del satélite (✕ de la raya)
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     _p1CartaToggle,   // [717] pestañita ⟨ ⟩ de la carta lateral de la factura
