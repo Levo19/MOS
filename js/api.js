@@ -2919,6 +2919,7 @@ const API = (() => {
     aplicarCostosCompra:         () => true,   // mos.aplicar_costos_compra (431) · v5 Paso1 · PURA
     quitarCostoCompra:           () => true,   // mos.quitar_costo_compra (556) · deshacer retroactivo de costo
     cotejoCostosGuias:           () => true,   // mos.cotejo_costos_guias (721) · cotejo por guía · LECTURA PURA
+    costosRegistradosGuia:       () => true,   // mos.costos_registrados_guia (767) · re-hidrata Paso 1 EN ZONA · LECTURA PURA
     historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
     guiaPreview:                 () => true,   // wh.guia_preview (578) · preview de guía en el overlay · PURA
     wh_auditarStockGlobal:       () => true,   // mos.wh_auditar_cuadre (381)
