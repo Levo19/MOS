@@ -9709,20 +9709,20 @@ const MOS = (() => {
     modal.style.animation = 'none'; void modal.offsetWidth; modal.style.animation = 'p1FadeIn .26s ease';
     const _box = modal.firstElementChild; if (_box) { _box.style.animation = 'p1BoxIn .34s cubic-bezier(.22,1,.36,1)'; }
     _renderModalCostosCompleto(op);
-    _p1HidratarCostosME(op);   // [767] compras EN ZONA: re-pintar costos ya cotejados (async, no bloquea)
+    _p1HidratarCostos(op);   // [767/772] re-pintar costos ya cotejados (async, no bloquea)
   }
 
   // [767] Re-hidratar el Paso 1 con los costos YA COTEJADOS de la guía.
   // Las líneas de una compra EN ZONA (me.guias_detalle) no guardan monto: al reabrir,
-  // el formulario decía "Falta costo" con el trabajo ya hecho (caso AJO zona02 13-ago:
-  // Javier cotejó S/5.50 y la Mesa decía 1/1, pero el modal mostraba 0.00). Se leen los
-  // últimos COSTO del historial de ESTA guía y se pre-llenan los montos. La guarda
-  // _costosAplicados se siembra con esos valores para que el autosave NO re-postee lo
-  // ya cotejado (re-postear movería el reloj del cotejo y resetearía el conteo de
-  // precios del 766). Si el admin edita el monto, fluye normal.
-  async function _p1HidratarCostosME(op) {
+  // el formulario decía "Falta costo" con el trabajo ya hecho (caso AJO zona02 13-ago).
+  // [772] Ahora corre para TODAS las fuentes: en guías WH la línea sí guarda monto,
+  // PERO una BONIFICACIÓN vive solo en el historial (línea en 0) — sin esto, reabrir
+  // una guía de proveedor con bonif decía "Falta costo" mientras la Mesa decía 1/1.
+  // La guarda _costosAplicados se siembra con lo registrado para que el autosave NO
+  // re-postee (re-postear movería el reloj del cotejo y resetearía el conteo 766).
+  async function _p1HidratarCostos(op) {
     const st = S._costosGuiaState;
-    if (!st || String(st.fuente || '').toUpperCase() !== 'ME') return;
+    if (!st) return;
     let regs = [];
     try {
       const r = await API.post('costosRegistradosGuia', { idGuia: st.idGuia });
@@ -9735,6 +9735,7 @@ const MOS = (() => {
     st._costosAplicados = st._costosAplicados || {};
     (st.lineas || []).forEach(l => {
       if (l.inputValue !== '' && l.inputValue != null) return;   // el admin ya escribió — no pisar
+      if (l._bonif) return;                                       // ya restaurada
       const cod = String(l.codigoBarra || l.codigoProducto || l.codProducto || '').trim();
       const p = (cod && idx.byCod.get(cod)) || idx.byId.get(String(l.idCanonico || '')) || null;
       const reg = regs.find(x =>
@@ -12243,7 +12244,9 @@ const MOS = (() => {
     else if (conCosto < total) { fase = 'pendiente'; tone = 'rose'; ico = '⏳'; label = conCosto > 0 ? `${verbo} · ${total - conCosto} de ${total}` : `${verbo} · 0/${total}`; }
     else {                       // todos los costos hechos
       const faltanPrecio = totalCosteados - conPrecio;
-      if (totalCosteados > 0 && faltanPrecio <= 0) { fase = 'finalizado'; tone = 'em'; ico = '✓'; label = 'Finalizado'; }
+      // [772] totalCosteados puede ser 0 legítimamente (compra 100% bonificación: costos
+      // hechos, ningún precio que revisar) → también es Finalizado, no "Procesado" eterno.
+      if (faltanPrecio <= 0) { fase = 'finalizado'; tone = 'em'; ico = '✓'; label = 'Finalizado'; }
       else { fase = 'procesado'; tone = 'blue'; ico = '💰'; label = faltanPrecio > 0 ? `Procesado · faltan ${faltanPrecio} precio${faltanPrecio !== 1 ? 's' : ''}` : 'Procesado'; }
     }
     return { fase, tone, ico, label,
