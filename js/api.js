@@ -2654,6 +2654,26 @@ const API = (() => {
       if (r == null) return null;
       return r;   // {ok:true, data:{igvFavor,igvEmitido,balanceNetoIGV,totalVentas,rentaMensual,...cpe/guia buckets}}
     }
+    // [761 · CERO-GAS] tribHistorico12meses: en GAS era solo un loop de 12× tribResumenMes
+    // (CentroTributario.gs:156) — la RPC ya es directa, así que el loop vive acá. Secuencial
+    // a propósito: 12 RPCs en ráfaga paralela castigan la instancia sin necesidad (es un chart).
+    if (action === 'tribHistorico12meses') {
+      const _labels = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+      const _hoy = new Date();
+      const _out = [];
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(_hoy.getFullYear(), _hoy.getMonth() - i, 1);
+        try {
+          const r = await _sbRpcMOS('trib_resumen_mes', { p: { mes: d.getMonth() + 1, anio: d.getFullYear() } }, 'mos');
+          if (r && r.ok && r.data) {
+            _out.push({ mes: d.getMonth() + 1, anio: d.getFullYear(), label: _labels[d.getMonth()],
+              igvFavor: r.data.igvFavor, igvEmitido: r.data.igvEmitido, balance: r.data.balanceNetoIGV,
+              ventas: r.data.totalVentas, renta: r.data.rentaMensual });
+          }
+        } catch (_) { /* mes sin datos → se omite, igual que GAS */ }
+      }
+      return { ok: true, data: _out };
+    }
     if (action === 'tribIGVFavorMes') {
       const r = await _sbRpcMOS('igv_favor_mes', { p: { mes: p.mes, anio: p.anio } }, 'wh');
       if (r == null) return null;
@@ -2886,6 +2906,7 @@ const API = (() => {
     wh_reconciliarStockProducto: () => true,   // ⚠️stock · mos.wh_reconciliar_stock_producto (381)
     wh_reconciliarStockMasivo:   () => true,   // ⚠️stock · mos.wh_reconciliar_stock_masivo (381)
     tribResumenMes:              () => true,   // mos.trib_resumen_mes (382)
+    tribHistorico12meses:        () => true,   // [761] loop client-side de 12× trib_resumen_mes
     tribIGVFavorMes:             () => true,   // wh.igv_favor_mes (382)
     tribIGVEmitidoMes:           () => true,   // me.cpe_trazabilidad (382)
     tribLimpiarVentasHuerfanas:  () => true,   // mos.limpiar_ventas_huerfanas (382)
@@ -2946,7 +2967,7 @@ const API = (() => {
     // [Revisión 100x 2026-07-19 · CERO-GAS boot] las lecturas tributarias del prefetch de login
     // corrían ANTES del mint del token → null → caían al fallback GAS. Directo-requerido:
     // null LANZA (el prefetch tiene catch; el módulo carga al abrirlo con token ya listo).
-    tribResumenMes: 1, tribIGVFavorMes: 1, tribIGVEmitidoMes: 1,
+    tribResumenMes: 1, tribIGVFavorMes: 1, tribIGVEmitidoMes: 1, tribHistorico12meses: 1,
     // [cero-GAS dueño 2026-07-17] escrituras de dispositivos (panel admin): sin token/RPC → LANZA, jamás GAS.
     crearDispositivo: 1, aprobarDispositivoPendiente: 1, revocarDispositivo: 1, forzarPushDispositivo: 1, forzarWizardDispositivo: 1 };
 
