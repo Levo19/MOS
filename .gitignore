@@ -18,3 +18,4 @@ supabase/*.js
 browsercheck/_hap_prof_*/
 browsercheck/*.png
 browsercheck/_hap_*.txt
+.claude/
