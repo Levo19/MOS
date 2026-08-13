@@ -2800,6 +2800,21 @@ const API = (() => {
     // ver RUNBOOK. Prenderlo SIN apagar el sync → el sync Hoja→sombra pisa lo escrito directo (incoherencia).
     crearProveedor:             _mosProveedoresDirecto,
     actualizarProveedor:        _mosProveedoresDirecto,
+    // [759 · CUTOVER FINAL DE ESCRITURAS 2026-08-12] Las últimas 5 acciones que aún saltaban a
+    // GAS — que era un MERO PROXY: con MOS_*_DIRECTO=1 (confirmado en mos.config) GAS escribía
+    // SOLO a Supabase vía _sbEscribirDirectoMOS, ni tocaba la Hoja (sync apagado en las 27
+    // tablas desde 2026-07-09). Este flip elimina el salto intermedio: MISMO RPC destino,
+    // misma data, menos latencia. Todas van también en _MOS_DIRECT_REQUIRED (sin token →
+    // LANZA; jamás caen a GAS en silencio). De paso REPARA dos acciones rotas en ambos
+    // caminos (sin case en el router GAS): actualizarPedido y ppSetBultoGlobal.
+    crearPedido:                 _mosPedidosDirecto,
+    actualizarPedido:            _mosPedidosDirecto,
+    registrarPago:               _mosPagosDirecto,      // ⚠️DINERO · RPC exige localId (lo estampa _mosLocalId)
+    agregarProductoProveedor:    _mosProvProdDirecto,
+    actualizarProductoProveedor: _mosProvProdDirecto,   // normalmente la intercepta _MOS_ADMIN_RPC antes; red por si acaso
+    ppSetBultoGlobal:            _mosProvProdDirecto,
+    registrarGasto:              _mosGastosDirecto,     // ⚠️DINERO
+    eliminarGasto:               _mosGastosDirecto,     // ⚠️DINERO · delete atómico idempotente
     // [CUTOVER DELETE-SAFE · DINERO] eval + jornadas en DIRECTO-PURO. Habilitado SOLO si el gate DIRECTO está ON
     // (default OFF) Y el dual-write de ese módulo está OFF (el dual-write se evalúa antes y, si está ON, gana).
     // Estado de cutover esperado: mos_*_dualwrite=0 + mos_*_directo=1. Ahora es SEGURO porque la RPC server-side
@@ -2896,31 +2911,13 @@ const API = (() => {
   // Con el gate OFF (default) _postMOS ni siquiera evalúa esta rama → va por el camino de hoy (solo GAS).
   // PRECEDENCIA: el dual-write se evalúa ANTES que el directo-puro y, si está ON, NO se entra al directo-puro
   // (son modos mutuamente excluyentes para la misma acción). Reactivar más módulos = agregar entradas acá.
-  const _MOS_POST_DUALWRITE = {
-    crearProveedor:      _mosProveedoresDualWrite,
-    actualizarProveedor: _mosProveedoresDualWrite,
-    // [DUAL-WRITE · LOTE EXTENDIDO] Mismas reglas: GAS primero (verdad + hooks), espejo best-effort después.
-    // Cada action tiene case en el router GAS (Code.gs) Y branch cableado en _postDirectoMOS. Gate dedicado, OFF.
-    // pedidos (81): SOLO crearPedido. actualizarPedido NO va: no existe case en el router GAS (Code.gs) →
-    //   con el gate ON GAS respondería "acción no reconocida" → _fetch lanzaría → CAMBIARÍA el comportamiento.
-    crearPedido:                 _mosPedidosDualWrite,
-    // proveedor-producto (81): agregar/actualizar comparten la RPC mos.upsert_proveedor_producto en el dispatcher.
-    //   eliminarProductoProveedor NO va: no existe RPC mos.eliminar_proveedor_producto ni branch en _postDirectoMOS.
-    agregarProductoProveedor:    _mosProvProdDualWrite,
-    actualizarProductoProveedor: _mosProvProdDualWrite,
-    // gastos (83) ⚠️DINERO: GAS escribe igual que hoy; el espejo es aditivo a la sombra (idempotente por local_id+PK).
-    registrarGasto:              _mosGastosDualWrite,
-    eliminarGasto:               _mosGastosDualWrite,
-    // jornadas (84) ⚠️DINERO jornal: registrarJornada la llama el front hoy; eliminar/rehabilitar son FORWARD-LOOKING
-    //   (el front no las llama hoy, pero el case GAS y el branch dispatcher existen → inertes hasta que se usen).
-    //   importarJornadasDesdeCajas YA va cero-GAS: intercept dedicado → mos.importar_jornadas_desde_cajas (378).
-    registrarJornada:            _mosJornadasDualWrite,
-    eliminarJornada:             _mosJornadasDualWrite,
-    rehabilitarJornada:          _mosJornadasDualWrite,
-    // evaluaciones (82): GAS sigue corriendo _liqDiaRecomputar/_liqDiaSetBonSan (hooks DINERO); el espejo es aditivo.
-    //   SEGURO en dual-write (a diferencia del directo-puro, que se los saltaría).
-    crearEvaluacion:             _mosEvalDualWrite
-  };
+  // [759] VACÍO A PROPÓSITO — el modo dual-write MURIÓ con el cutover final del 2026-08-12.
+  // Sus flags mos_*_dualwrite nunca existieron en mos.config ni en get_flags (inflipeables
+  // server-side); todas sus acciones viven ahora en _MOS_POST_DIRECTO con gate =1 y en
+  // _MOS_DIRECT_REQUIRED (sin token → LANZAN, jamás GAS). Se conserva el objeto (y la rama
+  // que lo evalúa en _postMOS) hasta el Block 9, donde se borra junto con el resto del
+  // andamiaje GAS. NO agregar entradas: revivir un dual-write re-introduce el camino GAS.
+  const _MOS_POST_DUALWRITE = {};
 
   // [SHADOW-CRÍTICAS] Acciones cuya escritura DEBE vivir en Supabase (la sombra es la verdad que leen las otras
   // apps en tiempo real) y cuyo sync Hoja→sombra es NO confiable (puede estar caído sin avisar). Para estas, si
@@ -2935,6 +2932,8 @@ const API = (() => {
   // está en SYNC_OFF, así que un write GAS NO propaga a la tabla que lee la mega tabla → desync
   // silencioso (peor que fallar). Con la identidad MEX:NOMBRE|ZONA, además, el GAS mis-llavearía.
   const _MOS_DIRECT_REQUIRED = { crearPromocion: 1, actualizarPromocion: 1, eliminarPromocion: 1, promoDescartar: 1, crearProveedor: 1, actualizarProveedor: 1, crearEstacion: 1, actualizarEstacion: 1, crearSerie: 1, actualizarSerie: 1, vetarLiquidacionDia: 1, desvetarLiquidacionDia: 1, marcarPagos: 1, anularPago: 1, crearEvaluacion: 1, registrarJornada: 1, eliminarJornada: 1, rehabilitarJornada: 1, recomputarLiquidacionDia: 1,
+    // [759] cutover final: sin token/RPC → LANZAN (jamás GAS, que ya es solo un proxy por morir)
+    crearPedido: 1, actualizarPedido: 1, registrarPago: 1, agregarProductoProveedor: 1, actualizarProductoProveedor: 1, ppSetBultoGlobal: 1, registrarGasto: 1, eliminarGasto: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
     codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, cotejoCostosGuias: 1, guiaPreview: 1,
