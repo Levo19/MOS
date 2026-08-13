@@ -1,0 +1,425 @@
+{
+  "errores": [],
+  "consola": [
+    "[390] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[390] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[390] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[768] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[768] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[1280] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216.",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()",
+    "[1280] Failed to load resource: the server responded with a status of 401 ()"
+  ],
+  "pasos": [
+    {
+      "ancho": "390",
+      "paso": "principal",
+      "overflow": {
+        "scrollW": 390,
+        "inner": 390,
+        "bodyW": 390
+      },
+      "estado": {
+        "hero": "S/ 168.39",
+        "veredicto": "✨ A tu favor · crédito fiscal arrastrable",
+        "favor": "S/ 580.83",
+        "contra": "S/ 412.44",
+        "renta": "S/ 137.98",
+        "ventas": "S/ 9,198.85",
+        "mes": "agosto 2026",
+        "sparks": 4,
+        "chartBands": 12,
+        "histSub": "sep 25 → ago 26 · IGV a favor vs en contra"
+      }
+    },
+    {
+      "ancho": "390",
+      "paso": "overlay favor",
+      "overflow": {
+        "scrollW": 390,
+        "inner": 390,
+        "bodyW": 390
+      },
+      "filas": 14,
+      "chips": 6,
+      "abierto": true
+    },
+    {
+      "ancho": "390",
+      "paso": "overlay emitido",
+      "overflow": {
+        "scrollW": 390,
+        "inner": 390,
+        "bodyW": 390
+      },
+      "filas": 10,
+      "chips": 6,
+      "abierto": true
+    },
+    {
+      "ancho": "390",
+      "paso": "overlay renta",
+      "overflow": {
+        "scrollW": 390,
+        "inner": 390,
+        "bodyW": 390
+      },
+      "filas": 0,
+      "chips": 0,
+      "abierto": true
+    },
+    {
+      "ancho": "390",
+      "paso": "overlay ventas",
+      "overflow": {
+        "scrollW": 390,
+        "inner": 390,
+        "bodyW": 390
+      },
+      "filas": 0,
+      "chips": 1,
+      "abierto": true
+    },
+    {
+      "ancho": "390",
+      "paso": "lightbox",
+      "fotoReal": true,
+      "overflow": {
+        "scrollW": 390,
+        "inner": 390,
+        "bodyW": 390
+      },
+      "zoom": "182%"
+    },
+    {
+      "ancho": "390",
+      "paso": "menu acciones",
+      "items": 5,
+      "overflow": {
+        "scrollW": 390,
+        "inner": 390,
+        "bodyW": 390
+      }
+    },
+    {
+      "ancho": "390",
+      "paso": "final",
+      "overflow": {
+        "scrollW": 390,
+        "inner": 390,
+        "bodyW": 390
+      },
+      "bodyOverflowRestaurado": "(vacío)"
+    },
+    {
+      "ancho": "768",
+      "paso": "principal",
+      "overflow": {
+        "scrollW": 768,
+        "inner": 768,
+        "bodyW": 768
+      },
+      "estado": {
+        "hero": "S/ 168.39",
+        "veredicto": "✨ A tu favor · crédito fiscal arrastrable",
+        "favor": "S/ 580.83",
+        "contra": "S/ 412.44",
+        "renta": "S/ 137.98",
+        "ventas": "S/ 9,198.85",
+        "mes": "agosto 2026",
+        "sparks": 4,
+        "chartBands": 12,
+        "histSub": "sep 25 → ago 26 · IGV a favor vs en contra"
+      }
+    },
+    {
+      "ancho": "768",
+      "paso": "overlay favor",
+      "overflow": {
+        "scrollW": 768,
+        "inner": 768,
+        "bodyW": 768
+      },
+      "filas": 14,
+      "chips": 6,
+      "abierto": true
+    },
+    {
+      "ancho": "768",
+      "paso": "overlay emitido",
+      "overflow": {
+        "scrollW": 768,
+        "inner": 768,
+        "bodyW": 768
+      },
+      "filas": 10,
+      "chips": 6,
+      "abierto": true
+    },
+    {
+      "ancho": "768",
+      "paso": "overlay renta",
+      "overflow": {
+        "scrollW": 768,
+        "inner": 768,
+        "bodyW": 768
+      },
+      "filas": 0,
+      "chips": 0,
+      "abierto": true
+    },
+    {
+      "ancho": "768",
+      "paso": "overlay ventas",
+      "overflow": {
+        "scrollW": 768,
+        "inner": 768,
+        "bodyW": 768
+      },
+      "filas": 0,
+      "chips": 1,
+      "abierto": true
+    },
+    {
+      "ancho": "768",
+      "paso": "lightbox",
+      "fotoReal": true,
+      "overflow": {
+        "scrollW": 768,
+        "inner": 768,
+        "bodyW": 768
+      },
+      "zoom": "182%"
+    },
+    {
+      "ancho": "768",
+      "paso": "menu acciones",
+      "items": 5,
+      "overflow": {
+        "scrollW": 768,
+        "inner": 768,
+        "bodyW": 768
+      }
+    },
+    {
+      "ancho": "768",
+      "paso": "final",
+      "overflow": {
+        "scrollW": 768,
+        "inner": 768,
+        "bodyW": 768
+      },
+      "bodyOverflowRestaurado": "(vacío)"
+    },
+    {
+      "ancho": "1280",
+      "paso": "principal",
+      "overflow": {
+        "scrollW": 1280,
+        "inner": 1280,
+        "bodyW": 1280
+      },
+      "estado": {
+        "hero": "S/ 168.39",
+        "veredicto": "✨ A tu favor · crédito fiscal arrastrable",
+        "favor": "S/ 580.83",
+        "contra": "S/ 412.44",
+        "renta": "S/ 137.98",
+        "ventas": "S/ 9,198.85",
+        "mes": "agosto 2026",
+        "sparks": 4,
+        "chartBands": 12,
+        "histSub": "sep 25 → ago 26 · IGV a favor vs en contra"
+      }
+    },
+    {
+      "ancho": "1280",
+      "paso": "overlay favor",
+      "overflow": {
+        "scrollW": 1280,
+        "inner": 1280,
+        "bodyW": 1280
+      },
+      "filas": 14,
+      "chips": 6,
+      "abierto": true
+    },
+    {
+      "ancho": "1280",
+      "paso": "overlay emitido",
+      "overflow": {
+        "scrollW": 1280,
+        "inner": 1280,
+        "bodyW": 1280
+      },
+      "filas": 10,
+      "chips": 6,
+      "abierto": true
+    },
+    {
+      "ancho": "1280",
+      "paso": "overlay renta",
+      "overflow": {
+        "scrollW": 1280,
+        "inner": 1280,
+        "bodyW": 1280
+      },
+      "filas": 0,
+      "chips": 0,
+      "abierto": true
+    },
+    {
+      "ancho": "1280",
+      "paso": "overlay ventas",
+      "overflow": {
+        "scrollW": 1280,
+        "inner": 1280,
+        "bodyW": 1280
+      },
+      "filas": 0,
+      "chips": 1,
+      "abierto": true
+    },
+    {
+      "ancho": "1280",
+      "paso": "lightbox",
+      "fotoReal": true,
+      "overflow": {
+        "scrollW": 1280,
+        "inner": 1280,
+        "bodyW": 1280
+      },
+      "zoom": "182%"
+    },
+    {
+      "ancho": "1280",
+      "paso": "menu acciones",
+      "items": 5,
+      "overflow": {
+        "scrollW": 1280,
+        "inner": 1280,
+        "bodyW": 1280
+      }
+    },
+    {
+      "ancho": "1280",
+      "paso": "final",
+      "overflow": {
+        "scrollW": 1280,
+        "inner": 1280,
+        "bodyW": 1280
+      },
+      "bodyOverflowRestaurado": "(vacío)"
+    }
+  ],
+  "gate": {
+    "estabaBloqueado": true
+  },
+  "mock": "mock instalado"
+}

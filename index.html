@@ -3379,174 +3379,672 @@
     .cj-vuelo-reciente-monto { color: #fbbf24; font-weight: 700; }
     .cj-vuelo-reciente-cajero { color: #94a3b8; font-size: 10px; }
     .cj-vuelo-reciente-hora { color: #cbd5e1; font-size: 10px; font-weight: 600; }
-    /* [v2.41.92] CENTRO TRIBUTARIO — KPI cards + balance + mini cards */
-    .trib-kpi-card {
-      padding: 18px 20px; border-radius: 18px; position: relative; overflow: hidden;
-      border: 1px solid; transition: transform .15s, box-shadow .15s;
+    /* ═══════════════════════════════════════════════════════════════════════
+       [v2.44 · REDISEÑO] CENTRO TRIBUTARIO — piel "WOW"
+       ───────────────────────────────────────────────────────────────────────
+       Rediseño de PIEL + UX: la lógica de datos no cambia, esto solo viste lo
+       que _tribRender ya calcula. Lenguaje: glass sutil sobre el slate del
+       panel (rgba blanco 4-8% + blur), bordes translúcidos, radios 14-18px,
+       el glow SOLO como sombra del color semántico, transiciones 200-280ms
+       cubic-bezier(.16,1,.3,1) y entrada staggered de 40ms.
+
+       PALETA SEMÁNTICA — validada con el validador de la skill dataviz contra
+       la superficie real de las cards (#0d1526):
+         · favor   #34d399   · en contra #fb7185 (texto/chips/glow)
+         · renta   #a78bfa   · ventas    #60a5fa
+       PERO en el gráfico del histórico, donde favor y "en contra" son DOS
+       series lado a lado, el par #34d399/#fb7185 colapsa en deuteranopía
+       (ΔE 4.6, por debajo del piso 8). Se re-escalona el rosa a #f43f5e para
+       el RELLENO de barra: mismo hue, un paso más profundo → ΔE 12.0 deutan y
+       37.6 en visión normal. Por eso hay dos variables (--trib-contra para
+       texto/chip y --trib-contra-mk para la marca del gráfico).
+       Ninguna otra pareja de estos hues comparte gráfico: renta y ventas viven
+       en cards separadas con ícono + etiqueta (el color NUNCA carga solo el
+       significado) y cada sparkline es de una sola serie.
+       ─────────────────────────────────────────────────────────────────────── */
+    :root {
+      --trib-favor:     #34d399;
+      --trib-contra:    #fb7185;
+      --trib-contra-mk: #f43f5e;   /* solo relleno de barra — ver nota CVD arriba */
+      --trib-renta:     #a78bfa;
+      --trib-ventas:    #60a5fa;
+      --trib-ink1:      #e2e8f0;
+      --trib-ink2:      #94a3b8;
+      --trib-ink3:      #64748b;
+      --trib-surf:      #0d1526;   /* superficie efectiva de las cards (para contraste) */
+      --trib-glass:     rgba(255,255,255,.045);
+      --trib-glass-hi:  rgba(255,255,255,.075);
+      --trib-line:      rgba(255,255,255,.09);
+      --trib-grid:      #1e293b;
+      --trib-ease:      cubic-bezier(.16,1,.3,1);
     }
-    .trib-kpi-card:hover { transform: translateY(-2px); }
-    .trib-kpi-favor {
-      background: linear-gradient(135deg, rgba(16,185,129,.12), rgba(5,150,105,.08));
-      border-color: rgba(52,211,153,.3);
-      box-shadow: 0 4px 18px -8px rgba(16,185,129,.4);
+
+    /* ── Barra superior: título + selector de mes + acciones ─────────────── */
+    .trib-topbar {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
     }
-    .trib-kpi-pagar {
-      background: linear-gradient(135deg, rgba(245,158,11,.12), rgba(217,119,6,.08));
-      border-color: rgba(251,191,36,.3);
-      box-shadow: 0 4px 18px -8px rgba(245,158,11,.4);
+    .trib-title {
+      font-size: 1.3rem; font-weight: 900; color: #f1f5f9;
+      display: flex; align-items: center; gap: 8px; letter-spacing: -.01em;
     }
-    .trib-kpi-label {
-      font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
-      text-transform: uppercase; color: #94a3b8;
+    .trib-title-ico { font-size: 1.5rem; line-height: 1; }
+    .trib-sub { font-size: 11.5px; color: var(--trib-ink3); margin-top: 2px; }
+    .trib-topbar-right { display: flex; align-items: center; gap: 8px; }
+
+    /* Selector de mes en chips ‹ agosto 2026 › */
+    .trib-mespicker {
+      display: flex; align-items: center; gap: 2px;
+      background: var(--trib-glass); border: 1px solid var(--trib-line);
+      border-radius: 999px; padding: 3px; backdrop-filter: blur(10px);
     }
-    .trib-kpi-monto {
-      font-size: 2rem; font-weight: 900; margin-top: 4px;
-      font-variant-numeric: tabular-nums; line-height: 1.1;
+    .trib-mes-nav {
+      width: 30px; height: 30px; border-radius: 999px; border: none;
+      background: transparent; color: var(--trib-ink2);
+      font-size: 17px; font-weight: 900; line-height: 1; cursor: pointer;
+      transition: background .2s var(--trib-ease), color .2s var(--trib-ease), transform .2s var(--trib-ease);
     }
-    .trib-kpi-favor .trib-kpi-monto { color: #34d399; }
-    .trib-kpi-pagar .trib-kpi-monto { color: #fbbf24; }
-    .trib-kpi-monto.bump { animation: tribBump .4s ease-out; }
+    .trib-mes-nav:hover:not(:disabled) { background: var(--trib-glass-hi); color: #fff; }
+    .trib-mes-nav:active:not(:disabled) { transform: scale(.9); }
+    .trib-mes-nav:disabled { opacity: .28; cursor: default; }
+    .trib-mes-label {
+      border: none; background: transparent; cursor: pointer;
+      color: var(--trib-ink1); font-size: 12.5px; font-weight: 800;
+      padding: 0 10px; height: 30px; min-width: 108px; white-space: nowrap;
+      text-transform: capitalize; letter-spacing: .01em;
+      transition: color .2s var(--trib-ease);
+    }
+    .trib-mes-label:hover { color: #fff; }
+    .trib-mes-select-oculto { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+    .trib-icon-btn {
+      width: 34px; height: 34px; border-radius: 11px;
+      background: var(--trib-glass); border: 1px solid var(--trib-line);
+      color: var(--trib-ink2); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 15px; font-weight: 900;
+      transition: background .22s var(--trib-ease), color .22s var(--trib-ease), transform .22s var(--trib-ease);
+    }
+    .trib-icon-btn:hover { background: var(--trib-glass-hi); color: #fff; }
+    .trib-icon-btn:active { transform: scale(.92); }
+    .trib-icon-btn.girando svg { animation: tribSpin .7s linear infinite; }
+    @keyframes tribSpin { to { transform: rotate(360deg); } }
+
+    /* Popover genérico (menú de mes y menú ⋯ de acciones) */
+    /* z-index: el badge flotante de seguridad vive en 99988 y taparía menús y
+       overlays. Se sigue la convención de los modales del panel (adhesivo usa
+       99990): overlay 99989 · lightbox 99991 · popover 99985. */
+    .trib-pop {
+      position: absolute; z-index: 99985; min-width: 210px; max-width: min(300px, calc(100vw - 24px));
+      background: rgba(13,21,38,.96); backdrop-filter: blur(18px);
+      border: 1px solid var(--trib-line); border-radius: 14px;
+      padding: 6px; box-shadow: 0 24px 60px -18px rgba(0,0,0,.85);
+      animation: tribPopIn .2s var(--trib-ease) both;
+    }
+    @keyframes tribPopIn { from { opacity: 0; transform: translateY(-6px) scale(.97); } to { opacity: 1; transform: none; } }
+    .trib-pop-item {
+      display: flex; align-items: center; gap: 9px; width: 100%;
+      background: transparent; border: none; cursor: pointer;
+      color: var(--trib-ink1); font-size: 12.5px; font-weight: 700;
+      text-align: left; padding: 10px 11px; border-radius: 10px; min-height: 40px;
+      transition: background .18s var(--trib-ease), color .18s var(--trib-ease);
+    }
+    .trib-pop-item:hover { background: var(--trib-glass-hi); color: #fff; }
+    .trib-pop-item.activo { background: rgba(52,211,153,.14); color: var(--trib-favor); }
+    .trib-pop-item span.ico { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
+    .trib-pop-sep { height: 1px; background: var(--trib-line); margin: 5px 8px; }
+    .trib-pop-cap {
+      font-size: 9.5px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase;
+      color: var(--trib-ink3); padding: 8px 11px 4px;
+    }
+
+    /* ── HERO: el balance del mes ─────────────────────────────────────────
+       Una sola cifra héroe por vista (regla de la skill): el balance neto.
+       Verde esmeralda si el saldo está A FAVOR, rosa si está EN CONTRA; el
+       veredicto en palabras acompaña SIEMPRE al color (nunca color solo). */
+    .trib-hero {
+      position: relative; overflow: hidden;
+      border-radius: 18px; padding: 22px 24px 18px;
+      background: linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
+      border: 1px solid var(--trib-line);
+      backdrop-filter: blur(14px);
+      text-align: center; margin-bottom: 14px;
+      animation: tribRise .5s var(--trib-ease) both;
+      transition: box-shadow .5s var(--trib-ease), border-color .5s var(--trib-ease);
+    }
+    .trib-hero.es-favor  { border-color: rgba(52,211,153,.28); box-shadow: 0 20px 60px -30px rgba(52,211,153,.85); }
+    .trib-hero.es-contra { border-color: rgba(251,113,133,.28); box-shadow: 0 20px 60px -30px rgba(251,113,133,.85); }
+    /* Halo suave detrás de la cifra — decorativo, no transporta dato */
+    .trib-hero-glow {
+      position: absolute; left: 50%; top: 12%; width: 340px; height: 190px;
+      transform: translateX(-50%); pointer-events: none; z-index: 0;
+      border-radius: 50%; filter: blur(56px); opacity: .32;
+      transition: background .5s var(--trib-ease);
+    }
+    .trib-hero.es-favor  .trib-hero-glow { background: radial-gradient(circle, rgba(52,211,153,.85), transparent 70%); }
+    .trib-hero.es-contra .trib-hero-glow { background: radial-gradient(circle, rgba(251,113,133,.85), transparent 70%); }
+    .trib-hero > *:not(.trib-hero-glow) { position: relative; z-index: 1; }
+    .trib-hero-eyebrow {
+      font-size: 10px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase;
+      color: var(--trib-ink3);
+    }
+    .trib-hero-num {
+      /* Cifra héroe: sans del sistema y figuras PROPORCIONALES (tabular-nums
+         afloja los dígitos a este tamaño). */
+      font-size: clamp(2.6rem, 11vw, 4.1rem); font-weight: 900; line-height: 1.02;
+      margin: 6px 0 2px; letter-spacing: -.035em; color: #f1f5f9;
+      transition: color .4s var(--trib-ease), text-shadow .4s var(--trib-ease);
+    }
+    .trib-hero.es-favor  .trib-hero-num { color: var(--trib-favor);  text-shadow: 0 0 42px rgba(52,211,153,.45); }
+    .trib-hero.es-contra .trib-hero-num { color: var(--trib-contra); text-shadow: 0 0 42px rgba(251,113,133,.45); }
+    .trib-hero-num.bump { animation: tribBump .5s var(--trib-ease); }
     @keyframes tribBump {
-      0%   { transform: scale(1); }
-      50%  { transform: scale(1.1); filter: brightness(1.3); }
-      100% { transform: scale(1); }
+      0% { transform: scale(1); } 42% { transform: scale(1.045); } 100% { transform: scale(1); }
     }
-    .trib-kpi-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
-    .trib-kpi-progress {
-      height: 5px; background: rgba(15,23,42,.6); border-radius: 99px;
-      margin: 10px 0 12px; overflow: hidden;
+    .trib-hero-verdict {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 12.5px; font-weight: 800; padding: 5px 14px; border-radius: 999px;
+      border: 1px solid transparent; margin-top: 4px;
     }
-    .trib-kpi-progress-fill { height: 100%; transition: width .6s ease; box-shadow: 0 0 8px currentColor; }
-    .trib-kpi-btn {
-      font-size: 11px; font-weight: 700; color: #cbd5e1;
-      background: rgba(15,23,42,.5); padding: 5px 12px; border-radius: 99px;
-      border: 1px solid rgba(255,255,255,.05); cursor: pointer;
+    .trib-hero.es-favor  .trib-hero-verdict { color: var(--trib-favor);  background: rgba(52,211,153,.11);  border-color: rgba(52,211,153,.3); }
+    .trib-hero.es-contra .trib-hero-verdict { color: var(--trib-contra); background: rgba(251,113,133,.11); border-color: rgba(251,113,133,.3); }
+    .trib-hero-break {
+      font-size: 12px; color: var(--trib-ink2); margin-top: 9px; line-height: 1.5;
+      display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
     }
-    .trib-kpi-btn:hover { background: rgba(15,23,42,.8); color: #fff; }
+    .trib-hero-break b { font-weight: 800; font-variant-numeric: tabular-nums; }
+    .trib-hero-break .op { color: var(--trib-ink3); font-weight: 900; }
+    .trib-hero-bar {
+      height: 4px; background: rgba(255,255,255,.06); border-radius: 999px;
+      margin: 14px auto 7px; overflow: hidden; max-width: 460px;
+    }
+    .trib-hero-bar-fill {
+      height: 100%; border-radius: 999px;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      transition: width .9s var(--trib-ease);
+    }
+    .trib-hero-foot { font-size: 11px; color: var(--trib-ink3); }
+    .trib-hero-foot strong { color: var(--trib-ink2); font-weight: 800; }
 
-    .trib-balance-card {
-      padding: 20px 24px; border-radius: 18px;
-      background: linear-gradient(135deg, #0f172a, #1e293b);
-      border: 2px solid #475569; position: relative; text-align: center;
+    /* ── Grid de 4 stat-cards ─────────────────────────────────────────────
+       Contrato de stat tile: etiqueta · valor · delta vs mes anterior ·
+       sparkline de 12 puntos (serie única → sin leyenda, el título nombra). */
+    .trib-stats {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px; margin-bottom: 14px;
     }
-    .trib-balance-label {
-      font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
-      text-transform: uppercase; color: #94a3b8;
+    .trib-stat {
+      position: relative; overflow: hidden; text-align: left;
+      border-radius: 16px; padding: 14px 15px 12px;
+      background: linear-gradient(160deg, rgba(255,255,255,.05), rgba(255,255,255,.012));
+      border: 1px solid var(--trib-line); backdrop-filter: blur(12px);
+      cursor: pointer; width: 100%; min-width: 0;
+      animation: tribRise .45s var(--trib-ease) both;
+      transition: transform .24s var(--trib-ease), box-shadow .24s var(--trib-ease), border-color .24s var(--trib-ease);
     }
-    .trib-balance-monto {
-      font-size: 2.6rem; font-weight: 900; color: #f1f5f9;
-      font-variant-numeric: tabular-nums; line-height: 1.1; margin: 4px 0;
+    .trib-stat:nth-child(1) { animation-delay: .04s; }
+    .trib-stat:nth-child(2) { animation-delay: .08s; }
+    .trib-stat:nth-child(3) { animation-delay: .12s; }
+    .trib-stat:nth-child(4) { animation-delay: .16s; }
+    .trib-stat:hover  { transform: translateY(-3px); }
+    .trib-stat:active { transform: scale(.985); }
+    .trib-stat::after {   /* filo superior con el color semántico */
+      content: ''; position: absolute; inset: 0 0 auto 0; height: 2px;
+      background: currentColor; opacity: .55;
     }
-    .trib-balance-monto.positivo { color: #fbbf24; }
-    .trib-balance-monto.negativo { color: #34d399; }
-    .trib-balance-sub { font-size: 12px; color: #94a3b8; }
-    .trib-balance-bar {
-      height: 4px; background: rgba(255,255,255,.08); border-radius: 99px;
-      margin-top: 12px; overflow: hidden;
+    .trib-stat.t-favor  { color: var(--trib-favor); }
+    .trib-stat.t-contra { color: var(--trib-contra); }
+    .trib-stat.t-renta  { color: var(--trib-renta); }
+    .trib-stat.t-ventas { color: var(--trib-ventas); }
+    .trib-stat.t-favor:hover  { border-color: rgba(52,211,153,.34);  box-shadow: 0 16px 40px -24px rgba(52,211,153,.9); }
+    .trib-stat.t-contra:hover { border-color: rgba(251,113,133,.34); box-shadow: 0 16px 40px -24px rgba(251,113,133,.9); }
+    .trib-stat.t-renta:hover  { border-color: rgba(167,139,250,.34); box-shadow: 0 16px 40px -24px rgba(167,139,250,.9); }
+    .trib-stat.t-ventas:hover { border-color: rgba(96,165,250,.34);  box-shadow: 0 16px 40px -24px rgba(96,165,250,.9); }
+    .trib-stat-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .trib-stat-ico {
+      width: 26px; height: 26px; border-radius: 9px; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 14px; background: rgba(255,255,255,.07); line-height: 1;
+      border: 1px solid currentColor;
     }
-    .trib-balance-bar-fill {
-      height: 100%; background: linear-gradient(90deg, #38bdf8, #6366f1);
-      transition: width .6s ease;
+    .trib-stat-lbl {
+      font-size: 9.5px; font-weight: 900; letter-spacing: .085em; text-transform: uppercase;
+      color: var(--trib-ink2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .trib-stat-val {
+      /* valor de stat tile: figuras proporcionales (no tabular) */
+      font-size: 1.5rem; font-weight: 900; color: #f1f5f9; line-height: 1.12;
+      margin-top: 9px; letter-spacing: -.02em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .trib-stat-sub {
+      font-size: 10.5px; color: var(--trib-ink3); margin-top: 3px; line-height: 1.35;
+      min-height: 28px; overflow-wrap: anywhere;
+    }
+    .trib-stat-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin-top: 8px; }
+    .trib-stat-delta {
+      font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 999px;
+      background: rgba(255,255,255,.05); color: var(--trib-ink2);
+      white-space: nowrap; font-variant-numeric: tabular-nums; flex-shrink: 0;
+    }
+    .trib-stat-delta.mejor { background: rgba(52,211,153,.13);  color: var(--trib-favor); }
+    .trib-stat-delta.peor  { background: rgba(251,113,133,.13); color: var(--trib-contra); }
+    /* Micro-sparkline: 12 puntos, línea en el hue de la card + wash 10%,
+       último punto en el acento con anillo de superficie. */
+    .trib-stat-spark { position: relative; width: 84px; height: 30px; flex-shrink: 0; }
+    .trib-stat-spark svg { display: block; width: 100%; height: 100%; overflow: visible; }
+    .trib-stat-dot {
+      position: absolute; width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor; box-shadow: 0 0 0 2px var(--trib-surf);
+      transform: translate(-50%, -50%); pointer-events: none;
+    }
+    .trib-stat-cta {
+      font-size: 10px; font-weight: 800; color: var(--trib-ink3); margin-top: 8px;
+      display: flex; align-items: center; gap: 4px;
+      transition: color .22s var(--trib-ease), gap .22s var(--trib-ease);
+    }
+    .trib-stat:hover .trib-stat-cta { color: currentColor; gap: 7px; }
+
+    /* ── Franja de alerta accionable ──────────────────────────────────── */
+    .trib-alert {
+      display: flex; align-items: center; gap: 13px; width: 100%; text-align: left;
+      border-radius: 15px; padding: 13px 16px; margin-bottom: 14px; cursor: pointer;
+      background: linear-gradient(135deg, rgba(251,146,60,.13), rgba(251,146,60,.03));
+      border: 1px solid rgba(251,146,60,.32); color: #fdba74;
+      animation: tribRise .45s var(--trib-ease) .2s both;
+      transition: transform .22s var(--trib-ease), box-shadow .22s var(--trib-ease);
+    }
+    .trib-alert:hover { transform: translateY(-2px); box-shadow: 0 16px 40px -24px rgba(251,146,60,.9); }
+    .trib-alert:active { transform: scale(.99); }
+    .trib-alert-ico { font-size: 22px; line-height: 1; flex-shrink: 0; }
+    .trib-alert-n {
+      font-size: 1.15rem; font-weight: 900; color: #fdba74; line-height: 1;
+      min-width: 30px; text-align: center; flex-shrink: 0;
+    }
+    .trib-alert-txt { flex: 1; min-width: 0; }
+    /* lbl y sub son <span>: sin display:block se pegarían en una sola línea */
+    .trib-alert-lbl { display: block; font-size: 10px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; color: #fdba74; }
+    .trib-alert-sub { display: block; font-size: 11px; color: var(--trib-ink2); margin-top: 2px; overflow-wrap: anywhere; }
+
+    /* ── Panel del histórico 12 meses ─────────────────────────────────── */
+    .trib-panel {
+      border-radius: 18px; padding: 16px 18px 14px; margin-bottom: 14px;
+      background: linear-gradient(160deg, rgba(255,255,255,.042), rgba(255,255,255,.012));
+      border: 1px solid var(--trib-line); backdrop-filter: blur(12px);
+      animation: tribRise .45s var(--trib-ease) .24s both;
+    }
+    .trib-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+    .trib-panel-title { font-size: 13px; font-weight: 900; color: #f1f5f9; letter-spacing: -.005em; }
+    .trib-panel-sub { font-size: 10.5px; color: var(--trib-ink3); }
+    .trib-chart { position: relative; margin-top: 10px; }
+    .trib-chart svg { display: block; width: 100%; height: auto; }
+    .trib-chart-band { fill: transparent; cursor: pointer; }
+    .trib-chart-band:hover { fill: rgba(255,255,255,.035); }
+    .trib-legend {
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+      padding-top: 10px; margin-top: 8px; border-top: 1px solid var(--trib-line);
+      font-size: 10.5px; color: var(--trib-ink2); font-weight: 700;
+    }
+    .trib-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .trib-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+    .trib-linekey { width: 16px; height: 2px; border-radius: 2px; background: #cbd5e1; flex-shrink: 0; }
+    /* Tooltip del chart — mejora la lectura, nunca es la única vía: bajo el
+       gráfico vive la tabla equivalente (regla de accesibilidad de dataviz). */
+    .trib-tt {
+      position: absolute; z-index: 20; pointer-events: none; opacity: 0;
+      background: rgba(2,8,23,.96); border: 1px solid var(--trib-line);
+      border-radius: 11px; padding: 9px 11px; min-width: 148px;
+      box-shadow: 0 18px 44px -18px rgba(0,0,0,.9);
+      transition: opacity .16s var(--trib-ease);
+    }
+    .trib-tt.visible { opacity: 1; }
+    .trib-tt-mes { font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; color: var(--trib-ink3); margin-bottom: 5px; }
+    .trib-tt-row { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--trib-ink2); padding: 1.5px 0; }
+    .trib-tt-row b { margin-left: auto; color: var(--trib-ink1); font-weight: 800; font-variant-numeric: tabular-nums; }
+    .trib-tabla-tog {
+      background: transparent; border: none; cursor: pointer; margin-top: 10px;
+      font-size: 10.5px; font-weight: 800; color: var(--trib-ink3); padding: 6px 0;
+      transition: color .2s var(--trib-ease);
+    }
+    .trib-tabla-tog:hover { color: var(--trib-ink1); }
+    .trib-tabla-wrap { margin-top: 6px; overflow-x: auto; overscroll-behavior-x: contain; }
+    .trib-tabla { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+    .trib-tabla th, .trib-tabla td { padding: 5px 8px; text-align: right; white-space: nowrap; }
+    .trib-tabla th { color: var(--trib-ink3); font-weight: 800; font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--trib-line); }
+    .trib-tabla td { color: var(--trib-ink2); border-bottom: 1px solid rgba(255,255,255,.045); }
+    .trib-tabla th:first-child, .trib-tabla td:first-child { text-align: left; }
+
+    /* ── Overlay + sheet (drill-down) ─────────────────────────────────── */
+    .trib-ov {
+      position: fixed; inset: 0; z-index: 99989;
+      display: flex; align-items: center; justify-content: center; padding: 22px;
+      background: rgba(2,8,23,.68); backdrop-filter: blur(14px);
+      animation: tribFadeIn .22s var(--trib-ease) both;
+    }
+    .trib-ov.cerrando { animation: tribFadeOut .2s ease both; }
+    @keyframes tribFadeIn  { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes tribFadeOut { to { opacity: 0; } }
+    .trib-sheet {
+      display: flex; flex-direction: column; width: 100%; max-width: 880px;
+      max-height: 90%; min-height: 0; overflow: hidden;
+      border-radius: 20px; border: 1px solid var(--trib-line);
+      background: linear-gradient(170deg, #101a2e, #0a1120);
+      box-shadow: 0 40px 90px -30px rgba(0,0,0,.9);
+      animation: tribSheetIn .34s var(--trib-ease) both;
+    }
+    @keyframes tribSheetIn { from { opacity: 0; transform: translateY(20px) scale(.975); } to { opacity: 1; transform: none; } }
+    .trib-ov.cerrando .trib-sheet { animation: tribSheetOut .22s ease both; }
+    @keyframes tribSheetOut { to { opacity: 0; transform: translateY(14px) scale(.985); } }
+    .trib-sheet-grab { display: none; }
+    .trib-sheet-head {
+      flex-shrink: 0; padding: 16px 18px 12px;
+      border-bottom: 1px solid var(--trib-line);
+      background: linear-gradient(180deg, rgba(255,255,255,.045), transparent);
+    }
+    .trib-sheet-top { display: flex; align-items: flex-start; gap: 12px; }
+    .trib-sheet-ico {
+      width: 38px; height: 38px; border-radius: 13px; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 19px;
+      background: rgba(255,255,255,.06); border: 1px solid var(--trib-line);
+    }
+    .trib-sheet-tt { flex: 1; min-width: 0; }
+    .trib-sheet-title { font-size: 14px; font-weight: 900; color: #f1f5f9; letter-spacing: -.005em; }
+    .trib-sheet-sub { font-size: 11px; color: var(--trib-ink3); margin-top: 2px; overflow-wrap: anywhere; }
+    .trib-sheet-tot { text-align: right; flex-shrink: 0; }
+    .trib-sheet-tot-lbl { font-size: 9px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; color: var(--trib-ink3); }
+    .trib-sheet-tot-val { font-size: 1.25rem; font-weight: 900; line-height: 1.15; letter-spacing: -.02em; }
+    .trib-sheet-close {
+      width: 36px; height: 36px; border-radius: 12px; flex-shrink: 0; cursor: pointer;
+      background: rgba(255,255,255,.06); border: 1px solid var(--trib-line);
+      color: var(--trib-ink2); font-size: 15px; font-weight: 900;
+      transition: background .2s var(--trib-ease), color .2s var(--trib-ease), transform .2s var(--trib-ease);
+    }
+    .trib-sheet-close:hover { background: rgba(255,255,255,.12); color: #fff; }
+    .trib-sheet-close:active { transform: scale(.9); }
+    .trib-sheet-body {
+      flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      padding: 14px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    }
+    .trib-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 11px; }
+    .trib-chip {
+      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+      font-size: 11px; font-weight: 800; padding: 7px 12px; min-height: 34px;
+      border-radius: 999px; border: 1px solid var(--trib-line);
+      background: rgba(255,255,255,.04); color: var(--trib-ink2);
+      transition: background .2s var(--trib-ease), color .2s var(--trib-ease), border-color .2s var(--trib-ease), transform .2s var(--trib-ease);
+    }
+    .trib-chip:hover { background: rgba(255,255,255,.09); color: var(--trib-ink1); }
+    .trib-chip:active { transform: scale(.95); }
+    .trib-chip b { font-weight: 900; font-variant-numeric: tabular-nums; }
+    .trib-chip.on { background: rgba(255,255,255,.13); color: #f1f5f9; border-color: rgba(255,255,255,.22); }
+    .trib-chip .pip { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .trib-search {
+      width: 100%; margin-top: 9px; min-height: 40px;
+      background: rgba(255,255,255,.045); border: 1px solid var(--trib-line);
+      border-radius: 12px; padding: 9px 13px; color: var(--trib-ink1); font-size: 12.5px;
+      transition: border-color .2s var(--trib-ease), background .2s var(--trib-ease);
+    }
+    .trib-search::placeholder { color: var(--trib-ink3); }
+    .trib-search:focus { outline: none; border-color: rgba(96,165,250,.5); background: rgba(255,255,255,.07); }
+
+    /* Card de guía / CPE dentro del overlay */
+    .trib-gcard {
+      display: flex; align-items: center; gap: 12px; padding: 11px 12px;
+      border-radius: 14px; margin-bottom: 8px; min-width: 0;
+      background: rgba(255,255,255,.032); border: 1px solid var(--trib-line);
+      animation: tribRise .4s var(--trib-ease) both;
+      transition: background .22s var(--trib-ease), border-color .22s var(--trib-ease), transform .22s var(--trib-ease);
+    }
+    .trib-gcard:hover { background: rgba(255,255,255,.06); transform: translateX(2px); }
+    .trib-gcard.sin-foto { border-color: rgba(251,191,36,.28); background: rgba(251,191,36,.045); }
+    .trib-gthumb {
+      width: 46px; height: 60px; border-radius: 9px; flex-shrink: 0; cursor: pointer;
+      background: #0b1322; border: 1px solid var(--trib-line);
+      padding: 0; overflow: hidden; position: relative;
+      transition: transform .22s var(--trib-ease), border-color .22s var(--trib-ease);
+    }
+    .trib-gthumb:hover { transform: scale(1.06); border-color: rgba(96,165,250,.55); }
+    .trib-gthumb:active { transform: scale(.97); }
+    .trib-gthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .trib-gthumb .lupa {
+      position: absolute; inset: auto 0 0 0; font-size: 9px; text-align: center;
+      background: rgba(2,8,23,.75); color: #cbd5e1; padding: 2px 0;
+      opacity: 0; transition: opacity .22s var(--trib-ease);
+    }
+    .trib-gthumb:hover .lupa { opacity: 1; }
+    .trib-gnofoto {
+      width: 46px; height: 60px; border-radius: 9px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 19px;
+      background: rgba(251,191,36,.08); border: 1px dashed rgba(251,191,36,.35); color: #fbbf24;
+    }
+    .trib-gmain { flex: 1; min-width: 0; }
+    .trib-gid { font-size: 12.5px; font-weight: 800; color: #f1f5f9; overflow-wrap: anywhere; }
+    .trib-gmeta {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      font-size: 10px; color: var(--trib-ink3); margin-top: 3px;
+    }
+    .trib-gmeta code { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--trib-ink2); }
+    .trib-gaviso { font-size: 10.5px; color: #fbbf24; margin-top: 4px; font-weight: 700; }
+    .trib-gright { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+    .trib-gchip {
+      font-size: 11.5px; font-weight: 900; padding: 4px 10px; border-radius: 999px;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .trib-gchip.a-favor   { background: rgba(52,211,153,.13);  color: var(--trib-favor); }
+    .trib-gchip.en-contra { background: rgba(251,113,133,.13); color: var(--trib-contra); }
+    .trib-gchip.neutro    { background: rgba(255,255,255,.05); color: var(--trib-ink3); }
+    .trib-gocr { font-size: 9.5px; font-weight: 700; white-space: nowrap; }
+    .trib-gocr.ok    { color: var(--trib-favor); }
+    .trib-gocr.warn  { color: #fbbf24; }
+    .trib-gocr.error { color: var(--trib-contra); }
+    .trib-gocr.info  { color: var(--trib-ink3); }
+    .trib-gbtn {
+      width: 34px; height: 34px; border-radius: 11px; flex-shrink: 0; cursor: pointer;
+      background: rgba(96,165,250,.11); border: 1px solid rgba(96,165,250,.28);
+      color: #93c5fd; font-size: 13px; font-weight: 900;
+      transition: background .2s var(--trib-ease), color .2s var(--trib-ease), transform .2s var(--trib-ease);
+    }
+    .trib-gbtn:hover { background: rgba(96,165,250,.24); color: #fff; }
+    .trib-gbtn:active { transform: scale(.9); }
+    .trib-gbtn.girando { animation: tribSpin .7s linear infinite; }
+    .trib-vacio { text-align: center; padding: 34px 12px; color: var(--trib-ink3); font-size: 12px; }
+    .trib-vacio-ico { font-size: 30px; display: block; margin-bottom: 8px; opacity: .55; }
+    .trib-grupo-cap {
+      font-size: 9.5px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase;
+      color: var(--trib-ink3); margin: 14px 0 7px; display: flex; align-items: center; gap: 8px;
+    }
+    .trib-grupo-cap::after { content: ''; flex: 1; height: 1px; background: var(--trib-line); }
+
+    /* Bloque explicativo (usado en el overlay de Renta) */
+    .trib-calc {
+      border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
+      background: rgba(167,139,250,.07); border: 1px solid rgba(167,139,250,.24);
+    }
+    .trib-calc-row {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+      padding: 7px 0; font-size: 12px; color: var(--trib-ink2);
+      border-bottom: 1px solid rgba(255,255,255,.05);
+    }
+    .trib-calc-row:last-child { border-bottom: none; }
+    .trib-calc-row b { color: var(--trib-ink1); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .trib-calc-row.total { padding-top: 11px; margin-top: 4px; border-top: 1px solid rgba(167,139,250,.3); border-bottom: none; }
+    .trib-calc-row.total b { color: var(--trib-renta); font-size: 1.05rem; }
+    .trib-nota {
+      font-size: 10.5px; color: var(--trib-ink3); line-height: 1.55; margin-top: 10px;
+      padding: 10px 12px; border-radius: 11px; background: rgba(255,255,255,.03);
+      border: 1px solid var(--trib-line);
     }
 
-    .trib-mini-card {
-      padding: 12px 14px; border-radius: 14px;
-      background: linear-gradient(135deg, #1e293b, #0f172a);
-      border: 1px solid #334155;
+    /* ── Lightbox del comprobante (análisis visual) ───────────────────── */
+    .trib-lb {
+      position: fixed; inset: 0; z-index: 99991; overflow: hidden;
+      background: rgba(2,6,15,.95); backdrop-filter: blur(10px);
+      display: flex; align-items: center; justify-content: center;
+      animation: tribFadeIn .2s var(--trib-ease) both;
+      touch-action: none;
     }
-    .trib-mini-card.trib-mini-alert {
-      border-color: #f87171;
-      background: linear-gradient(135deg, rgba(248,113,113,.12), rgba(127,29,29,.06));
-      animation: tribAlertPulse 2.4s ease-in-out infinite;
+    .trib-lb-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+    .trib-lb-img {
+      max-width: 94vw; max-height: 78vh; object-fit: contain; border-radius: 8px;
+      box-shadow: 0 40px 90px rgba(0,0,0,.85); user-select: none; -webkit-user-drag: none;
+      transform-origin: center center; will-change: transform;
+      transition: transform .22s var(--trib-ease);
     }
-    @keyframes tribAlertPulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(248,113,113,.4); }
-      50%      { box-shadow: 0 0 0 6px rgba(248,113,113,0); }
+    .trib-lb-img.arrastrando { transition: none; cursor: grabbing; }
+    .trib-lb-cap {
+      position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); left: 14px; right: 66px;
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      font-size: 11.5px; font-weight: 800; color: #e2e8f0;
+      background: rgba(2,8,23,.72); border: 1px solid var(--trib-line);
+      border-radius: 18px; padding: 8px 14px; backdrop-filter: blur(10px);
     }
-    .trib-mini-icon { font-size: 1.2rem; line-height: 1; }
-    .trib-mini-lbl {
-      font-size: 9.5px; font-weight: 800; letter-spacing: .06em;
-      text-transform: uppercase; color: #94a3b8; margin-top: 2px;
+    .trib-lb-cap .igv { color: var(--trib-favor); }
+    .trib-lb-x {
+      position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px;
+      width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+      /* fondo opaco oscuro: el comprobante suele ser papel blanco y un botón
+         translúcido claro encima desaparecía */
+      background: rgba(2,8,23,.78); border: 1px solid rgba(255,255,255,.18);
+      backdrop-filter: blur(10px);
+      color: #fff; font-size: 17px; font-weight: 900;
+      transition: background .2s var(--trib-ease), transform .2s var(--trib-ease);
     }
-    .trib-mini-val {
-      font-size: 1.2rem; font-weight: 900; color: #e2e8f0; line-height: 1.1;
-      font-variant-numeric: tabular-nums;
+    .trib-lb-x:hover { background: rgba(2,8,23,.95); }
+    .trib-lb-x:active { transform: scale(.9); }
+    .trib-lb-tools {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      display: flex; align-items: center; gap: 6px; padding: 6px;
+      background: rgba(2,8,23,.78); border: 1px solid var(--trib-line);
+      border-radius: 999px; backdrop-filter: blur(12px);
     }
-    .trib-mini-sub { font-size: 10px; color: #64748b; margin-top: 2px; }
+    .trib-lb-btn {
+      min-width: 44px; height: 44px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+      background: transparent; border: none; color: #e2e8f0; font-size: 14px; font-weight: 800;
+      transition: background .2s var(--trib-ease), transform .2s var(--trib-ease);
+    }
+    .trib-lb-btn:hover { background: rgba(255,255,255,.12); }
+    .trib-lb-btn:active { transform: scale(.9); }
+    .trib-lb-zoom { font-size: 11px; font-weight: 800; color: var(--trib-ink2); min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+    .trib-lb-err { color: #fca5a5; font-weight: 800; font-size: 13px; text-align: center; padding: 20px; }
 
-    .trib-action-btn {
-      font-size: 12px; font-weight: 700;
-      background: linear-gradient(135deg, #1e293b, #334155);
-      color: #cbd5e1; padding: 8px 14px; border-radius: 10px;
-      border: 1px solid #475569; cursor: pointer; transition: all .15s;
+    /* ── Skeletons de carga ───────────────────────────────────────────── */
+    .trib-sk { border-radius: 16px; background: rgba(255,255,255,.035); position: relative; overflow: hidden; }
+    .trib-sk::after {
+      content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.06), transparent);
+      animation: tribShimmer 1.5s infinite;
     }
-    .trib-action-btn:hover { background: linear-gradient(135deg, #334155, #475569); color: #fff; }
+    @keyframes tribShimmer { to { transform: translateX(100%); } }
+    .trib-sk-hero { height: 210px; border-radius: 18px; margin-bottom: 14px; }
+    .trib-sk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .trib-sk-card { height: 148px; }
+    .trib-sk-panel { height: 250px; border-radius: 18px; }
 
-    .trib-details {
-      margin-bottom: 8px; border: 1px solid #334155; border-radius: 12px;
-      background: rgba(15,23,42,.4); overflow: hidden;
+    @keyframes tribRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+    /* ── Responsive: 4 → 2 → 1 · overlays como bottom-sheet en móvil ──── */
+    @media (max-width: 1024px) {
+      .trib-stats, .trib-sk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
-    .trib-details-summary {
-      cursor: pointer; padding: 12px 16px;
-      font-size: 12.5px; font-weight: 700; color: #e2e8f0;
-      list-style: none; display: flex; justify-content: space-between; align-items: center;
+    @media (max-width: 640px) {
+      .trib-topbar { align-items: stretch; }
+      .trib-topbar-right { width: 100%; justify-content: space-between; }
+      .trib-mespicker { flex: 1; justify-content: space-between; }
+      .trib-mes-label { flex: 1; }
+      .trib-hero { padding: 20px 16px 16px; }
+      .trib-panel { padding: 14px 13px 12px; }
+      /* Overlay → bottom-sheet con drag-handle y safe-area iOS */
+      .trib-ov { padding: 0; align-items: flex-end; }
+      .trib-sheet {
+        max-width: none; max-height: 92%; height: 92%;
+        border-radius: 22px 22px 0 0; border-bottom: none;
+        animation: tribSheetUp .38s var(--trib-ease) both;
+      }
+      @keyframes tribSheetUp { from { transform: translateY(100%); } to { transform: none; } }
+      .trib-ov.cerrando .trib-sheet { animation: tribSheetDown .24s ease both; }
+      @keyframes tribSheetDown { to { transform: translateY(100%); } }
+      .trib-sheet-grab {
+        display: block; width: 42px; height: 4px; border-radius: 999px;
+        background: rgba(255,255,255,.22); margin: 9px auto 2px; flex-shrink: 0;
+        cursor: grab; touch-action: none;
+      }
+      .trib-sheet-head { padding: 6px 15px 11px; }
+      .trib-sheet-body { padding: 12px 15px calc(26px + env(safe-area-inset-bottom, 0px)); }
+      .trib-sheet-tot-val { font-size: 1.05rem; }
+      .trib-stat-spark { width: 68px; }
     }
-    .trib-details-summary::after {
-      content: '▾'; font-size: 0.9rem; color: #94a3b8;
-      transition: transform .2s;
+    @media (max-width: 520px) {
+      .trib-stats, .trib-sk-grid { grid-template-columns: minmax(0, 1fr); }
+      .trib-sk-card { height: 120px; }
+      .trib-stat-sub { min-height: 0; }
+      /* Encabezado del sheet: el total baja a su propia línea para que el
+         título no quede exprimido a dos renglones. */
+      .trib-sheet-top { flex-wrap: wrap; }
+      /* basis 0 (no auto): si no, el título largo se lleva la fila entera y
+         el ícono y la ✕ caen cada uno a su propio renglón. */
+      .trib-sheet-tt { flex: 1 1 0; min-width: 0; }
+      .trib-sheet-ico, .trib-sheet-close { flex: 0 0 auto; }
+      .trib-sheet-tot {
+        order: 4; flex-basis: 100%; text-align: left; margin-top: 8px;
+        display: flex; align-items: baseline; gap: 8px;
+      }
+      .trib-sheet-tot-lbl { align-self: center; }
+      /* Card de guía/CPE: monto y estado pasan a una segunda fila alineados
+         bajo el texto, así el identificador entra completo en una sola línea. */
+      .trib-gcard { flex-wrap: wrap; row-gap: 6px; }
+      .trib-gmain { flex: 1 1 120px; }
+      .trib-gbtn { order: 2; }
+      .trib-gright {
+        order: 3; flex-basis: 100%; flex-direction: row; align-items: center;
+        justify-content: flex-start; gap: 9px; padding-left: 58px;
+      }
     }
-    .trib-details[open] .trib-details-summary::after { transform: rotate(180deg); }
-    .trib-details-body {
-      padding: 8px 16px 16px; border-top: 1px solid #334155;
-      font-size: 11.5px; color: #cbd5e1;
+    /* Punteros gruesos (táctil): todo objetivo tocable llega a 44px */
+    @media (pointer: coarse) {
+      .trib-chip { min-height: 44px; padding: 10px 14px; }
+      .trib-gbtn, .trib-icon-btn, .trib-sheet-close { width: 44px; height: 44px; }
+      .trib-mes-nav { width: 44px; height: 44px; }
+      .trib-mes-label { height: 44px; }
+      .trib-pop-item { min-height: 46px; }
     }
-    .trib-row {
-      display: flex; align-items: center; gap: 8px; padding: 8px 0;
-      border-bottom: 1px solid rgba(71,85,105,.4);
-      font-size: 11.5px;
+    @media (prefers-reduced-motion: reduce) {
+      .trib-hero, .trib-stat, .trib-panel, .trib-alert, .trib-gcard,
+      .trib-ov, .trib-sheet, .trib-pop, .trib-lb { animation: none !important; }
+      .trib-sk::after { animation: none; }
+      .trib-stat:hover, .trib-alert:hover, .trib-gcard:hover { transform: none; }
     }
-    .trib-row:last-child { border-bottom: none; }
-    .trib-row-icon { font-size: 1.1rem; }
-    .trib-row-data { flex: 1; min-width: 0; }
-    .trib-row-data strong { color: #f1f5f9; }
-    .trib-row-data small { color: #94a3b8; }
-    .trib-row-monto { font-weight: 800; color: #fbbf24; font-variant-numeric: tabular-nums; }
-    .trib-row-est-ok    { color: #34d399; }
-    .trib-row-est-warn  { color: #fbbf24; }
-    .trib-row-est-error { color: #f87171; }
-    .trib-row-est-info  { color: #94a3b8; }
-    .trib-btn-mini {
-      font-size: 10px; font-weight: 700;
-      padding: 3px 8px; border-radius: 6px; cursor: pointer;
-      background: rgba(59,130,246,.15); color: #93c5fd; border: 1px solid rgba(59,130,246,.3);
+    /* Canal de respaldo cuando el color no está disponible (forced-colors) */
+    @media (forced-colors: active) {
+      .trib-hero, .trib-stat, .trib-panel, .trib-sheet { border: 1px solid CanvasText; }
     }
-    .trib-btn-mini:hover { background: rgba(59,130,246,.3); color: #fff; }
 
     /* Tooltip ⓘ inline para explicar cada KPI */
     .trib-tip {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 14px; height: 14px; border-radius: 50%;
-      background: rgba(148,163,184,.2); color: #94a3b8;
+      width: 15px; height: 15px; border-radius: 50%;
+      background: rgba(148,163,184,.18); color: var(--trib-ink2);
       font-size: 9px; font-weight: 900; cursor: help;
-      margin-left: 4px; transition: all .15s;
-      font-style: normal;
+      margin-left: 4px; transition: all .2s var(--trib-ease);
+      font-style: normal; flex-shrink: 0;
     }
     .trib-tip:hover {
-      background: rgba(251,191,36,.3); color: #fbbf24;
+      background: rgba(96,165,250,.28); color: #93c5fd;
       transform: scale(1.15);
     }
     .trib-tip:hover::after {
       content: attr(data-tip);
       position: absolute; max-width: 280px;
-      background: #0f172a; color: #e2e8f0;
-      padding: 8px 12px; border-radius: 8px;
-      font-size: 11px; font-weight: 500; line-height: 1.4;
-      letter-spacing: 0;
-      box-shadow: 0 8px 24px rgba(0,0,0,.4);
-      border: 1px solid #475569;
+      background: rgba(2,8,23,.97); color: var(--trib-ink1);
+      padding: 9px 12px; border-radius: 10px;
+      font-size: 11px; font-weight: 500; line-height: 1.45;
+      letter-spacing: 0; text-transform: none;
+      box-shadow: 0 18px 40px -14px rgba(0,0,0,.85);
+      border: 1px solid var(--trib-line);
       z-index: 100;
-      margin-top: 18px; margin-left: -120px;
-      animation: tribTipFade .2s ease-out;
+      margin-top: 20px; margin-left: -120px;
+      animation: tribTipFade .2s var(--trib-ease);
       white-space: normal;
       pointer-events: none;
     }
@@ -3555,113 +4053,47 @@
       100% { opacity: 1; transform: translateY(0); }
     }
 
-    /* Botón ? grande del header */
+    /* Botón ? del header + panel de ayuda expandible */
     .trib-help-btn {
-      width: 26px; height: 26px; border-radius: 50%;
-      background: linear-gradient(135deg, #f59e0b, #d97706);
-      color: #422006; font-size: 14px; font-weight: 900;
-      border: none; cursor: pointer; margin-left: 4px;
-      box-shadow: 0 2px 8px rgba(251,191,36,.4);
-      transition: transform .15s;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: rgba(255,255,255,.07); border: 1px solid var(--trib-line);
+      color: var(--trib-ink2); font-size: 12px; font-weight: 900;
+      cursor: pointer; margin-left: 2px; flex-shrink: 0;
+      transition: transform .22s var(--trib-ease), background .22s var(--trib-ease), color .22s var(--trib-ease);
     }
-    .trib-help-btn:hover { transform: scale(1.1) rotate(8deg); }
+    .trib-help-btn:hover { transform: scale(1.12); background: rgba(255,255,255,.14); color: #fff; }
     .trib-help-close {
-      background: transparent; border: none; color: #94a3b8;
-      font-size: 18px; cursor: pointer;
+      background: transparent; border: none; color: var(--trib-ink2);
+      font-size: 17px; cursor: pointer; line-height: 1;
     }
     .trib-help-close:hover { color: #fff; }
-
-    /* Panel de ayuda expandible */
     .trib-ayuda-panel {
-      background: linear-gradient(135deg, rgba(251,191,36,.06), rgba(245,158,11,.03));
-      border: 1px solid rgba(251,191,36,.25);
-      border-radius: 14px; padding: 14px 16px; margin-bottom: 14px;
-      animation: tribAyudaSlide .35s cubic-bezier(.16,1,.3,1) both;
+      background: rgba(255,255,255,.035);
+      border: 1px solid var(--trib-line);
+      border-radius: 16px; padding: 14px 16px; margin-bottom: 14px;
+      animation: tribAyudaSlide .35s var(--trib-ease) both;
     }
     @keyframes tribAyudaSlide {
-      0%   { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
-      100% { opacity: 1; max-height: 600px; }
+      0%   { opacity: 0; transform: translateY(-8px); }
+      100% { opacity: 1; transform: none; }
     }
     .trib-ayuda-header {
       display: flex; justify-content: space-between; align-items: center;
-      font-size: 13px; color: #fbbf24; margin-bottom: 8px;
+      font-size: 12.5px; font-weight: 800; color: var(--trib-ink1); margin-bottom: 8px;
     }
-    .trib-ayuda-body {
-      font-size: 11.5px; color: #cbd5e1; line-height: 1.55;
-    }
-    .trib-ayuda-row { padding: 6px 0; border-bottom: 1px solid rgba(251,191,36,.1); }
+    .trib-ayuda-body { font-size: 11.5px; color: var(--trib-ink2); line-height: 1.6; }
+    .trib-ayuda-row { padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
     .trib-ayuda-row:last-child { border-bottom: none; }
-    .trib-ayuda-row strong { color: #fde047; }
+    .trib-ayuda-row strong { color: var(--trib-ink1); }
     .trib-ayuda-row.trib-ayuda-tip {
-      background: rgba(52,211,153,.08); border-radius: 8px;
-      padding: 8px 12px; margin-top: 6px; border: 1px solid rgba(52,211,153,.2);
+      background: rgba(52,211,153,.07); border-radius: 11px;
+      padding: 9px 12px; margin-top: 7px; border: 1px solid rgba(52,211,153,.2);
     }
-    .trib-ayuda-row.trib-ayuda-tip strong { color: #34d399; }
+    .trib-ayuda-row.trib-ayuda-tip strong { color: var(--trib-favor); }
     .trib-ayuda-row code {
-      background: rgba(15,23,42,.7); padding: 1px 6px; border-radius: 4px;
-      font-size: 10px; color: #fbbf24;
+      background: rgba(2,8,23,.7); padding: 1px 6px; border-radius: 5px;
+      font-size: 10px; color: var(--trib-ventas);
     }
-
-    /* Histórico chart modal */
-    .trib-hist-modal {
-      position: fixed; inset: 0; z-index: 9000;
-      background: rgba(0,0,0,.75); backdrop-filter: blur(6px);
-      display: flex; align-items: center; justify-content: center; padding: 16px;
-    }
-    .trib-hist-card {
-      background: linear-gradient(135deg, #0f172a, #1e293b);
-      border: 1px solid #475569; border-radius: 18px;
-      padding: 20px 24px; max-width: 720px; width: 100%;
-      max-height: 92vh; overflow-y: auto;
-      animation: tribAyudaSlide .35s ease-out both;
-    }
-    .trib-hist-grid {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-      margin-bottom: 12px;
-    }
-    .trib-hist-stat {
-      background: rgba(15,23,42,.5); padding: 10px;
-      border-radius: 10px; text-align: center; border: 1px solid #334155;
-    }
-    .trib-hist-stat-lbl { font-size: 9.5px; color: #94a3b8; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .04em; }
-    .trib-hist-stat-val { font-size: 1.15rem; font-weight: 900;
-      color: #f1f5f9; font-variant-numeric: tabular-nums; margin-top: 2px; }
-    .trib-hist-chart {
-      background: rgba(15,23,42,.4); border-radius: 12px; padding: 12px;
-      margin: 12px 0; border: 1px solid #334155;
-    }
-    .trib-hist-bar-row {
-      display: flex; align-items: center; gap: 8px; padding: 5px 0;
-      font-size: 10.5px;
-    }
-    .trib-hist-bar-mes { width: 50px; color: #94a3b8; font-weight: 700; }
-    .trib-hist-bar-cont {
-      flex: 1; height: 22px; background: rgba(15,23,42,.7); border-radius: 6px;
-      position: relative; overflow: hidden;
-    }
-    .trib-hist-bar-favor, .trib-hist-bar-pagar {
-      position: absolute; top: 1px; height: 10px; border-radius: 4px;
-      transition: width .8s cubic-bezier(.16,1,.3,1);
-    }
-    .trib-hist-bar-favor {
-      background: linear-gradient(90deg, #10b981, #34d399); top: 1px;
-    }
-    .trib-hist-bar-pagar {
-      background: linear-gradient(90deg, #f59e0b, #fbbf24); top: 12px;
-    }
-    .trib-hist-bar-val {
-      width: 95px; text-align: right; font-weight: 700;
-      color: #cbd5e1; font-variant-numeric: tabular-nums;
-    }
-    .trib-hist-bar-val small { color: #94a3b8; font-weight: 500; }
-    .trib-hist-leg {
-      display: flex; gap: 16px; justify-content: center; padding-top: 8px;
-      border-top: 1px solid #334155; margin-top: 8px;
-      font-size: 10.5px; color: #94a3b8;
-    }
-    .trib-hist-leg-item { display: flex; align-items: center; gap: 6px; }
-    .trib-hist-leg-dot { width: 10px; height: 10px; border-radius: 50%; }
 
     /* [v2.41.91] Confetti micro para cruces de hitos S/ 1k / 2k / 3k */
     .cj-confetti-particle {
@@ -15413,31 +15845,41 @@
          emitidos por ME via NubeFact) + Renta MYPE + Histórico 12 meses.
     ════════════════════════════════════════════════════════════════ -->
     <section id="view-tributario" class="view hidden">
-      <!-- Header -->
-      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div>
-          <h1 class="text-xl font-black text-slate-100 flex items-center gap-2">
-            <span class="text-2xl">📊</span> Centro Tributario
-            <button onclick="MOS.tribToggleAyuda()" class="trib-help-btn" title="¿Cómo entender este panel?">?</button>
+      <!-- ── Barra superior: identidad + selector de mes + acciones ⋯ ────── -->
+      <div class="trib-topbar">
+        <div style="min-width:0">
+          <h1 class="trib-title">
+            <span class="trib-title-ico">🧮</span> Centro Tributario
+            <button onclick="MOS.tribToggleAyuda()" class="trib-help-btn" title="¿Cómo entender este panel?" aria-label="Ayuda">?</button>
           </h1>
-          <p id="tribSub" class="text-xs text-slate-500">Cargando balance del mes...</p>
+          <p id="tribSub" class="trib-sub">Cargando balance del mes...</p>
         </div>
-        <div class="flex items-center gap-2">
-          <select id="tribMesSelect" class="bg-slate-800 border border-slate-700 text-slate-100 text-xs rounded-lg px-3 py-2"
-                  onchange="MOS.tribCargar()">
+        <div class="trib-topbar-right">
+          <!-- Chips ‹ mes año ›. El <select> sigue existiendo (oculto) porque
+               tribCargar() lee de él: es la única fuente del mes elegido. -->
+          <div class="trib-mespicker">
+            <button class="trib-mes-nav" id="tribMesPrev" onclick="MOS.tribMesShift(-1)" aria-label="Mes anterior">‹</button>
+            <button class="trib-mes-label" id="tribMesLabel" onclick="MOS.tribMesMenu(event)" aria-haspopup="menu">—</button>
+            <button class="trib-mes-nav" id="tribMesNext" onclick="MOS.tribMesShift(1)" aria-label="Mes siguiente">›</button>
+          </div>
+          <select id="tribMesSelect" class="trib-mes-select-oculto" onchange="MOS.tribCargar()" tabindex="-1" aria-hidden="true">
             <!-- opciones inyectadas por JS -->
           </select>
-          <button onclick="MOS.tribCargar()" class="bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs font-bold px-3 py-2 rounded-lg flex items-center gap-1">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.65 4.36A9 9 0 0 0 20.5 15"/></svg>
-            Actualizar
+          <button id="tribBtnRefrescar" onclick="MOS.tribCargar()" class="trib-icon-btn" title="Actualizar" aria-label="Actualizar">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.65 4.36A9 9 0 0 0 20.5 15"/></svg>
           </button>
+          <button id="tribAccionesBtn" onclick="MOS.tribAccionesMenu(event)" class="trib-icon-btn" title="Acciones del módulo" aria-haspopup="menu">⋯</button>
         </div>
       </div>
 
-      <!-- KPI Hero — 2 cards principales en flex -->
-      <div id="tribLoading" class="text-center py-12 text-slate-500 text-sm">
-        <svg class="w-8 h-8 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-        Cargando datos tributarios...
+      <!-- Skeletons de carga — mantienen el layout, sin salto al llegar el dato -->
+      <div id="tribLoading">
+        <div class="trib-sk trib-sk-hero"></div>
+        <div class="trib-sk-grid">
+          <div class="trib-sk trib-sk-card"></div><div class="trib-sk trib-sk-card"></div>
+          <div class="trib-sk trib-sk-card"></div><div class="trib-sk trib-sk-card"></div>
+        </div>
+        <div class="trib-sk trib-sk-panel"></div>
       </div>
 
       <div id="tribContent" class="hidden">
@@ -15445,116 +15887,131 @@
         <div id="tribAyuda" class="trib-ayuda-panel hidden">
           <div class="trib-ayuda-header">
             <strong>💡 ¿Cómo leer este panel?</strong>
-            <button onclick="MOS.tribToggleAyuda()" class="trib-help-close">✕</button>
+            <button onclick="MOS.tribToggleAyuda()" class="trib-help-close" aria-label="Cerrar ayuda">✕</button>
           </div>
           <div class="trib-ayuda-body">
             <div class="trib-ayuda-row">
               <strong>💚 IGV A FAVOR:</strong> total del IGV que <em>pagaste</em> a tus proveedores este mes (en sus facturas). SUNAT te lo devuelve restándolo del IGV que tienes que pagar. Se calcula automáticamente leyendo las fotos de boletas/facturas en las guías INGRESO_PROVEEDOR del almacén.
             </div>
             <div class="trib-ayuda-row">
-              <strong>💰 IGV A PAGAR:</strong> total del IGV que <em>cobraste</em> a tus clientes en boletas y facturas emitidas (CPE). Es el IGV bruto que deberías a SUNAT antes de restar el IGV a favor.
+              <strong>💰 IGV EN CONTRA:</strong> total del IGV que <em>cobraste</em> a tus clientes en boletas y facturas emitidas (CPE). Es el IGV bruto que deberías a SUNAT antes de restar el IGV a favor.
             </div>
             <div class="trib-ayuda-row">
-              <strong>⚖ BALANCE NETO:</strong> <code>IGV a pagar − IGV a favor</code>. Es lo que realmente le debes a SUNAT este mes. Si sale negativo, tienes <em>crédito fiscal</em> arrastrable al mes siguiente.
+              <strong>⚖ BALANCE DEL MES:</strong> <code>IGV a favor − IGV en contra</code>. Si sale positivo tienes <em>crédito fiscal</em> arrastrable al mes siguiente; si sale negativo, eso es lo que le debes a SUNAT.
             </div>
             <div class="trib-ayuda-row">
-              <strong>📈 RENTA MYPE:</strong> 1.5% de tus ventas. Régimen MYPE Tributario. Se declara con el PDT 621 junto con el IGV cada mes.
+              <strong>📈 RENTA MYPE:</strong> 1.5% de tus ventas del mes. Régimen MYPE Tributario, pago a cuenta. Se declara con el PDT 621 junto con el IGV cada mes.
             </div>
             <div class="trib-ayuda-row">
               <strong>🧾 ESTADO CPE:</strong> Las boletas y facturas que emitiste van a NubeFact, que las envía a SUNAT. Estados: 🟢 emitidos (SUNAT los aceptó) · 🟡 pendientes (NubeFact reintenta solo) · 🔴 error (necesitan tu atención).
             </div>
             <div class="trib-ayuda-row trib-ayuda-tip">
-              <strong>📌 TIP:</strong> Subir todas las fotos de boletas de proveedores en cada guía. El sistema lee el IGV automáticamente con IA (Claude). Si la foto está borrosa o la boleta no tiene IGV, lo marca pero no la cuenta.
+              <strong>📌 TIP:</strong> Subir todas las fotos de boletas de proveedores en cada guía. El sistema lee el IGV automáticamente con IA. Si la foto está borrosa o la boleta no tiene IGV, lo marca pero no la cuenta.
             </div>
           </div>
         </div>
 
-        <!-- 2 cards grandes lado a lado -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-          <div class="trib-kpi-card trib-kpi-favor">
-            <div class="trib-kpi-label">
-              💚 IGV A FAVOR
-              <span class="trib-tip" data-tip="Lo que pagaste de IGV a tus proveedores. SUNAT te lo devuelve restándolo del IGV que pagas.">ⓘ</span>
+        <!-- ── HERO: cuánto está a favor y cuánto en contra ─────────────── -->
+        <section class="trib-hero" id="tribHero">
+          <div class="trib-hero-glow" id="tribHeroGlow"></div>
+          <div class="trib-hero-eyebrow" id="tribHeroEyebrow">Balance de IGV del mes</div>
+          <div class="trib-hero-num" id="tribBalanceNeto">S/ 0.00</div>
+          <div class="trib-hero-verdict" id="tribHeroVeredicto">—</div>
+          <div class="trib-hero-break" id="tribHeroDesglose"></div>
+          <div class="trib-hero-bar"><div class="trib-hero-bar-fill" id="tribPeriodoBar" style="width:0%"></div></div>
+          <div class="trib-hero-foot" id="tribBalanceSub">—</div>
+        </section>
+
+        <!-- ── 4 stat-cards · cada una abre su overlay ──────────────────── -->
+        <div class="trib-stats">
+          <button type="button" class="trib-stat t-favor" onclick="MOS.tribAbrirIGVFavor()">
+            <div class="trib-stat-top">
+              <span class="trib-stat-ico">💚</span>
+              <span class="trib-stat-lbl">IGV a favor</span>
+              <span class="trib-tip" data-tip="Lo que pagaste de IGV a tus proveedores. SUNAT te lo devuelve restándolo del IGV que debes pagar.">ⓘ</span>
             </div>
-            <div class="trib-kpi-monto" id="tribIGVFavor">S/ 0.00</div>
-            <div class="trib-kpi-sub" id="tribIGVFavorSub">— guías leídas</div>
-            <div class="trib-kpi-progress"><div class="trib-kpi-progress-fill bg-emerald-500" id="tribIGVFavorBar" style="width:0%"></div></div>
-            <button onclick="MOS.tribAbrirIGVFavor()" class="trib-kpi-btn">Ver detalle →</button>
-          </div>
-          <div class="trib-kpi-card trib-kpi-pagar">
-            <div class="trib-kpi-label">
-              💰 IGV A PAGAR
-              <span class="trib-tip" data-tip="IGV bruto que cobraste a clientes en boletas y facturas. Solo CPE emitidos cuentan.">ⓘ</span>
+            <div class="trib-stat-val" id="tribIGVFavor">S/ 0.00</div>
+            <div class="trib-stat-sub" id="tribIGVFavorSub">— guías leídas</div>
+            <div class="trib-stat-foot">
+              <span class="trib-stat-delta" id="tribFavorDelta">—</span>
+              <span class="trib-stat-spark" id="tribFavorSpark"></span>
             </div>
-            <div class="trib-kpi-monto" id="tribIGVPagar">S/ 0.00</div>
-            <div class="trib-kpi-sub" id="tribIGVPagarSub">— CPE emitidos</div>
-            <div class="trib-kpi-progress"><div class="trib-kpi-progress-fill bg-amber-500" id="tribIGVPagarBar" style="width:0%"></div></div>
-            <button onclick="MOS.tribAbrirIGVEmitido()" class="trib-kpi-btn">Ver CPE →</button>
-          </div>
-        </div>
+            <div class="trib-stat-cta">Ver guía por guía <span>→</span></div>
+          </button>
 
-        <!-- Balance neto destacado -->
-        <div class="trib-balance-card">
-          <div class="trib-balance-label">
-            ⚖ BALANCE NETO IGV (a pagar SUNAT)
-            <span class="trib-tip" data-tip="Lo que realmente debes pagar a SUNAT este mes. Si es negativo, tienes crédito fiscal arrastrable al próximo mes.">ⓘ</span>
-          </div>
-          <div class="trib-balance-monto" id="tribBalanceNeto">S/ 0.00</div>
-          <div class="trib-balance-sub" id="tribBalanceSub">Vence en — días · — del — del mes</div>
-          <div class="trib-balance-bar"><div class="trib-balance-bar-fill" id="tribPeriodoBar" style="width:0%"></div></div>
-        </div>
+          <button type="button" class="trib-stat t-contra" onclick="MOS.tribAbrirIGVEmitido()">
+            <div class="trib-stat-top">
+              <span class="trib-stat-ico">❤️</span>
+              <span class="trib-stat-lbl">IGV en contra</span>
+              <span class="trib-tip" data-tip="IGV bruto que cobraste a clientes en boletas y facturas emitidas. Solo los CPE emitidos cuentan.">ⓘ</span>
+            </div>
+            <div class="trib-stat-val" id="tribIGVPagar">S/ 0.00</div>
+            <div class="trib-stat-sub" id="tribIGVPagarSub">— CPE emitidos</div>
+            <div class="trib-stat-foot">
+              <span class="trib-stat-delta" id="tribEmitidoDelta">—</span>
+              <span class="trib-stat-spark" id="tribEmitidoSpark"></span>
+            </div>
+            <div class="trib-stat-cta">Ver los comprobantes <span>→</span></div>
+          </button>
 
-        <!-- Mini cards: Renta + CPE Status + Alertas -->
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mt-3 mb-3">
-          <div class="trib-mini-card">
-            <div class="trib-mini-icon">📈</div>
-            <div class="trib-mini-lbl">Ventas mes</div>
-            <div class="trib-mini-val" id="tribVentas">S/ 0</div>
-            <div class="trib-mini-sub" id="tribVentasSub">Renta 1.5%: S/ 0</div>
-          </div>
-          <div class="trib-mini-card">
-            <div class="trib-mini-icon">🧾</div>
-            <div class="trib-mini-lbl">Estado CPE</div>
-            <div class="trib-mini-val" id="tribCPEStatus">— emitidos</div>
-            <div class="trib-mini-sub" id="tribCPESub">— pendientes · — error</div>
-          </div>
-          <div class="trib-mini-card trib-mini-alert" id="tribAlertCard" style="display:none">
-            <div class="trib-mini-icon">🚨</div>
-            <div class="trib-mini-lbl">Atención</div>
-            <div class="trib-mini-val" id="tribAlertCount">0</div>
-            <div class="trib-mini-sub" id="tribAlertSub">CPE / OCR pendientes</div>
-          </div>
-        </div>
+          <button type="button" class="trib-stat t-renta" onclick="MOS.tribAbrirRenta()">
+            <div class="trib-stat-top">
+              <span class="trib-stat-ico">🏛️</span>
+              <span class="trib-stat-lbl">Renta del mes</span>
+              <span class="trib-tip" data-tip="Pago a cuenta del Impuesto a la Renta: 1.5% de las ventas del mes (Régimen MYPE Tributario).">ⓘ</span>
+            </div>
+            <div class="trib-stat-val" id="tribRenta">S/ 0.00</div>
+            <div class="trib-stat-sub" id="tribRentaSub">Régimen MYPE · 1.5% de ventas</div>
+            <div class="trib-stat-foot">
+              <span class="trib-stat-delta" id="tribRentaDelta">—</span>
+              <span class="trib-stat-spark" id="tribRentaSpark"></span>
+            </div>
+            <div class="trib-stat-cta">Cómo se calcula <span>→</span></div>
+          </button>
 
-        <!-- Acciones rápidas -->
-        <div class="flex gap-2 mb-4 flex-wrap">
-          <button onclick="MOS.tribOCRMasivo()" class="trib-action-btn" title="Procesa con Claude todas las fotos de boletas/facturas de proveedor del mes que aún no tengan OCR">
-            🤖 Procesar OCR masivo del mes
-          </button>
-          <button onclick="MOS.tribReconciliarCPEs()" class="trib-action-btn">
-            🔄 Reconciliar CPE con SUNAT
-          </button>
-          <button onclick="MOS.tribLimpiarHuerfanas()" class="trib-action-btn">
-            🧹 Limpiar ventas huérfanas
-          </button>
-          <button onclick="MOS.tribAbrirHistorico()" class="trib-action-btn">
-            📊 Histórico 12 meses
-          </button>
-          <button onclick="MOS.tribExportarExcel()" class="trib-action-btn" style="background:linear-gradient(135deg,#10b981,#059669)" title="Descarga compras + ventas + resumen tributario del mes en Excel">
-            📥 Exportar Excel del mes
+          <button type="button" class="trib-stat t-ventas" onclick="MOS.tribAbrirVentas()">
+            <div class="trib-stat-top">
+              <span class="trib-stat-ico">📈</span>
+              <span class="trib-stat-lbl">Ventas del mes</span>
+              <span class="trib-tip" data-tip="Total facturado del mes. Es la base sobre la que se calcula el pago a cuenta de renta.">ⓘ</span>
+            </div>
+            <div class="trib-stat-val" id="tribVentas">S/ 0.00</div>
+            <div class="trib-stat-sub" id="tribVentasSub">— del mes transcurrido</div>
+            <div class="trib-stat-foot">
+              <span class="trib-stat-delta" id="tribVentasDelta">—</span>
+              <span class="trib-stat-spark" id="tribVentasSpark"></span>
+            </div>
+            <div class="trib-stat-cta">Ver el detalle <span>→</span></div>
           </button>
         </div>
 
-        <!-- Listas detalladas (cards expandibles) -->
-        <details class="trib-details">
-          <summary class="trib-details-summary">📋 IGV a favor — boletas/facturas de proveedores OCR'd</summary>
-          <div id="tribIGVFavorList" class="trib-details-body">Cargando...</div>
-        </details>
+        <!-- Franja de alerta accionable (abre el overlay de IGV a favor filtrado) -->
+        <button type="button" class="trib-alert" id="tribAlertCard" style="display:none" onclick="MOS.tribAbrirIGVFavor('PENDIENTES')">
+          <span class="trib-alert-ico">🚨</span>
+          <span class="trib-alert-n" id="tribAlertCount">0</span>
+          <span class="trib-alert-txt">
+            <span class="trib-alert-lbl">Dinero en juego</span>
+            <span class="trib-alert-sub" id="tribAlertSub">CPE / OCR pendientes</span>
+          </span>
+          <span style="font-size:16px;flex-shrink:0">→</span>
+        </button>
 
-        <details class="trib-details">
-          <summary class="trib-details-summary">🧾 CPE emitidos — estado de boletas y facturas</summary>
-          <div id="tribIGVEmitidoList" class="trib-details-body">Cargando...</div>
-        </details>
+        <!-- Proyección de cierre de mes (la llena _tribRender; oculta si el mes ya cerró) -->
+        <div id="tribProyeccion" style="display:none"></div>
+
+        <!-- ── Histórico 12 meses ───────────────────────────────────────── -->
+        <section class="trib-panel" id="tribHistPanel">
+          <div class="trib-panel-head">
+            <div>
+              <div class="trib-panel-title">📊 Los últimos 12 meses</div>
+              <div class="trib-panel-sub" id="tribHistSub">Cargando histórico...</div>
+            </div>
+            <div class="trib-panel-sub" id="tribHistResumen"></div>
+          </div>
+          <div id="tribHistBody">
+            <div class="trib-sk" style="height:220px"></div>
+          </div>
+        </section>
       </div>
     </section>
 

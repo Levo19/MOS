@@ -33203,24 +33203,46 @@ const MOS = (() => {
   // ═══════════════════════════════════════════════════════════════
   const _tribState = { mes: null, anio: null, data: null, busy: false };
 
+  // Nombres de mes en español neutral — el label del chip los usa en minúscula
+  // y el <select> oculto en la forma corta (nunca se ve, pero queda legible).
+  const _TRIB_MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const _TRIB_MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  // Skeleton de carga. Se re-inyecta en cada carga porque el manejador de error
+  // pisa el contenedor con el mensaje de fallo.
+  const _TRIB_SK_HTML =
+    '<div class="trib-sk trib-sk-hero"></div>' +
+    '<div class="trib-sk-grid">' +
+      '<div class="trib-sk trib-sk-card"></div><div class="trib-sk trib-sk-card"></div>' +
+      '<div class="trib-sk trib-sk-card"></div><div class="trib-sk trib-sk-card"></div>' +
+    '</div>' +
+    '<div class="trib-sk trib-sk-panel"></div>';
+
   async function _loadTributario() {
     _finBeep && _finBeep('nav');
-    // Inicializar selector de mes (12 meses hacia atrás)
+    // Inicializar selector de mes (12 meses hacia atrás). El <select> quedó
+    // OCULTO pero sigue siendo la única fuente de verdad del mes elegido:
+    // tribCargar() lee de él y los chips ‹ › solo mueven su selectedIndex.
     const sel = $('tribMesSelect');
     if (sel && !sel.options.length) {
       const hoy = new Date();
       for (let i = 0; i < 12; i++) {
         const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
         const m = d.getMonth() + 1, a = d.getFullYear();
-        const nombres = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
         const opt = document.createElement('option');
         opt.value = m + '|' + a;
-        opt.textContent = nombres[d.getMonth()] + ' ' + a;
+        opt.textContent = _TRIB_MESES_CORTO[d.getMonth()] + ' ' + a;
         if (i === 0) opt.selected = true;
         sel.appendChild(opt);
       }
     }
+    _tribPintarMes();
     await tribCargar();
+    // El histórico son 12 RPCs SECUENCIALES (api.js 761): va en segundo plano y
+    // alimenta tres consumidores de una sola vez — sparklines de las cards,
+    // deltas vs mes anterior y el panel de 12 meses. Cache con TTL: entrar y
+    // salir del módulo no lo vuelve a pedir.
+    _tribHistCargar();
   }
 
   async function tribCargar() {
@@ -33232,426 +33254,1126 @@ const MOS = (() => {
     const esMismoMes = _tribState.data && _tribState.mes === mes && _tribState.anio === anio;
     _tribState.mes = mes; _tribState.anio = anio;
     _tribState.busy = true;
+    _tribPintarMes();
 
     // [v2.41.93] Si ya tenemos data precargada del mismo mes (de boot),
     // renderizar al instante y refrescar en background — sensación instantánea.
     if (esMismoMes) {
-      _tribRender(_tribState.data);
+      _tribRender(_tribState.data, { sonar: true });
       $('tribLoading').classList.add('hidden');
       $('tribContent').classList.remove('hidden');
       // Refresh silencioso en bg
       iconBusy('tributario', true);
+      _tribGirando(true);
       try {
         const res = await API.post('tribResumenMes', { mes, anio });
         const d = (res && res.data) ? res.data : (res || {});
         _tribState.data = d;
-        _tribRender(d);
+        _tribRender(d);   // sin sonido: es refresco silencioso, no una acción del usuario
       } catch(_) {}
-      finally { iconBusy('tributario', false); _tribState.busy = false; }
+      finally { iconBusy('tributario', false); _tribGirando(false); _tribState.busy = false; }
       return;
     }
 
-    // Sin cache: loading visible
+    // Sin cache: skeletons visibles (se re-inyectan porque el handler de error
+    // los reemplaza por el mensaje de fallo).
+    $('tribLoading').innerHTML = _TRIB_SK_HTML;
     $('tribLoading').classList.remove('hidden');
     $('tribContent').classList.add('hidden');
     iconBusy('tributario', true);
+    _tribGirando(true);
 
     try {
       const res = await API.post('tribResumenMes', { mes, anio });
       const d = (res && res.data) ? res.data : (res || {});
       _tribState.data = d;
-      _tribRender(d);
+      _tribRender(d, { sonar: true });
       $('tribLoading').classList.add('hidden');
       $('tribContent').classList.remove('hidden');
+      // El histórico ya cacheado se re-pinta para mover el punto destacado de
+      // las sparklines al mes recién elegido.
+      _tribPintarDeltasYSparks();
+      _tribPintarHistorico();
     } catch(e) {
       console.error('[Tributario] cargar:', e);
-      $('tribLoading').textContent = '❌ Error cargando: ' + (e.message || e);
+      $('tribLoading').innerHTML =
+        '<div class="trib-vacio"><span class="trib-vacio-ico">⚠</span>No se pudo cargar el mes<br>' +
+        '<span style="color:#fb7185">' + _escapeHtml(String(e && e.message ? e.message : e)) + '</span></div>';
     } finally {
       iconBusy('tributario', false);
+      _tribGirando(false);
       _tribState.busy = false;
     }
+  }
+
+  // El botón ↻ gira mientras hay un fetch en vuelo (feedback sin bloquear).
+  function _tribGirando(on) {
+    const b = $('tribBtnRefrescar');
+    if (b) b.classList.toggle('girando', !!on);
+  }
+
+  // ── Selector de mes en chips ‹ agosto 2026 › ────────────────────────
+  // El <select> oculto manda; estas funciones solo lo mueven y repintan.
+  function _tribPintarMes() {
+    const sel = $('tribMesSelect');
+    const lbl = $('tribMesLabel');
+    if (!sel || !lbl || !sel.options.length) return;
+    const parts = String(sel.value || '').split('|');
+    const m = parseInt(parts[0], 10), a = parseInt(parts[1], 10);
+    lbl.textContent = (m >= 1 && m <= 12) ? (_TRIB_MESES[m - 1] + ' ' + a) : (sel.selectedOptions[0]?.textContent || '—');
+    // index 0 = mes actual; index 11 = el más antiguo de la ventana.
+    const prev = $('tribMesPrev'), next = $('tribMesNext');
+    if (prev) prev.disabled = sel.selectedIndex >= sel.options.length - 1;
+    if (next) next.disabled = sel.selectedIndex <= 0;
+  }
+
+  // dir -1 = hacia atrás en el tiempo (el <select> está ordenado del más
+  // reciente al más antiguo, por eso el índice va al revés que el calendario).
+  function tribMesShift(dir) {
+    const sel = $('tribMesSelect');
+    if (!sel || !sel.options.length) return;
+    const nuevo = sel.selectedIndex + (dir < 0 ? 1 : -1);
+    if (nuevo < 0 || nuevo >= sel.options.length) return;
+    sel.selectedIndex = nuevo;
+    _finBeep && _finBeep('click');
+    _tribPintarMes();
+    tribCargar();
+  }
+
+  function tribMesMenu(ev) {
+    const sel = $('tribMesSelect');
+    if (!sel || !sel.options.length) return;
+    const items = [];
+    for (let i = 0; i < sel.options.length; i++) {
+      const parts = String(sel.options[i].value).split('|');
+      const m = parseInt(parts[0], 10), a = parts[1];
+      items.push({
+        ico: i === 0 ? '•' : '',
+        txt: (m >= 1 && m <= 12 ? _TRIB_MESES[m - 1] : '?') + ' ' + a,
+        activo: i === sel.selectedIndex,
+        fn: () => { sel.selectedIndex = i; _tribPintarMes(); tribCargar(); }
+      });
+    }
+    _tribPopover(ev, items, 'Elegir mes');
+  }
+
+  // Menú ⋯ del módulo: las acciones de siempre (OCR, reconciliar, huérfanas,
+  // exportar) reubicadas fuera de la vista principal.
+  function tribAccionesMenu(ev) {
+    _tribPopover(ev, [
+      { ico: '🤖', txt: 'Re-encolar OCR del mes',      fn: () => tribOCRMasivo() },
+      { ico: '🔄', txt: 'Reconciliar CPE con SUNAT',   fn: () => tribReconciliarCPEs() },
+      { ico: '📥', txt: 'Exportar Excel del mes',      fn: () => tribExportarExcel() },
+      { sep: true },
+      { ico: '📊', txt: 'Recargar histórico 12 meses', fn: () => { _tribHistCargar(true); toast('📊 Recalculando 12 meses...', 'info'); } },
+      { ico: '🧹', txt: 'Limpiar ventas huérfanas',    fn: () => tribLimpiarHuerfanas() }
+    ], 'Acciones');
+  }
+
+  // Popover genérico anclado al botón que lo disparó. Se cierra al primer
+  // click fuera o con Escape (un solo popover vivo a la vez).
+  let _tribPopEl = null;
+  function _tribPopover(ev, items, titulo) {
+    _tribPopCerrar();
+    const ancla = ev && ev.currentTarget ? ev.currentTarget : (ev && ev.target);
+    const pop = document.createElement('div');
+    pop.className = 'trib-pop';
+    _tribPopEl = pop;
+    if (titulo) {
+      const cap = document.createElement('div');
+      cap.className = 'trib-pop-cap';
+      cap.textContent = titulo;
+      pop.appendChild(cap);
+    }
+    items.forEach(it => {
+      if (it.sep) { const s = document.createElement('div'); s.className = 'trib-pop-sep'; pop.appendChild(s); return; }
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'trib-pop-item' + (it.activo ? ' activo' : '');
+      const ico = document.createElement('span');
+      ico.className = 'ico';
+      ico.textContent = it.ico || '';
+      const txt = document.createElement('span');
+      txt.textContent = it.txt;
+      b.appendChild(ico); b.appendChild(txt);
+      b.onclick = () => { _tribPopCerrar(); _finBeep && _finBeep('click'); try { it.fn(); } catch (e) { console.warn('[Tributario menú]', e); } };
+      pop.appendChild(b);
+    });
+    document.body.appendChild(pop);
+    // Anclaje: bajo el botón, alineado a la derecha si no cabe.
+    const r = ancla && ancla.getBoundingClientRect ? ancla.getBoundingClientRect() : { left: 12, bottom: 60, right: 200 };
+    const w = pop.offsetWidth;
+    let left = r.left;
+    if (left + w > window.innerWidth - 12) left = Math.max(12, window.innerWidth - w - 12);
+    pop.style.left = left + 'px';
+    pop.style.top  = (r.bottom + window.scrollY + 8) + 'px';
+    setTimeout(() => {
+      document.addEventListener('click', _tribPopFuera, true);
+      document.addEventListener('keydown', _tribPopEsc, true);
+    }, 0);
+  }
+  function _tribPopFuera(e) { if (_tribPopEl && !_tribPopEl.contains(e.target)) _tribPopCerrar(); }
+  function _tribPopEsc(e) { if (e.key === 'Escape') _tribPopCerrar(); }
+  function _tribPopCerrar() {
+    if (!_tribPopEl) return;
+    _tribPopEl.remove(); _tribPopEl = null;
+    document.removeEventListener('click', _tribPopFuera, true);
+    document.removeEventListener('keydown', _tribPopEsc, true);
   }
 
   function _tribFmtSoles(n) {
     return 'S/ ' + (parseFloat(n) || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function _tribCountUp(el, target) {
+  // Cuenta ascendente sobre un elemento. `fmt` permite formatear algo que no
+  // sea dinero (por ejemplo un porcentaje); por defecto es soles.
+  // Respeta prefers-reduced-motion: ahí escribe el valor final de una.
+  function _tribCountUp(el, target, fmt) {
     if (!el) return;
+    const f = fmt || _tribFmtSoles;
+    const fin = Number(target) || 0;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      el.textContent = f(fin); el.dataset.cur = fin; return;
+    }
     const start = parseFloat(el.dataset.cur || 0);
-    const duration = 800;
+    if (Math.abs(fin - start) < 0.005) { el.textContent = f(fin); el.dataset.cur = fin; return; }
+    const duration = 780;
     const t0 = performance.now();
     function step(t) {
       const p = Math.min(1, (t - t0) / duration);
-      const e = 1 - Math.pow(1 - p, 3); // ease-out cubic
-      const v = start + (target - start) * e;
-      el.textContent = _tribFmtSoles(v);
+      const e = 1 - Math.pow(2, -9 * p);   // ease-out exponencial: arranca fuerte y frena
+      const v = start + (fin - start) * e;
+      el.textContent = f(p >= 1 ? fin : v);
       if (p < 1) requestAnimationFrame(step);
-      else el.dataset.cur = target;
+      else el.dataset.cur = fin;
     }
     requestAnimationFrame(step);
   }
 
-  function _tribRender(d) {
+  // Formato compacto para ejes y etiquetas del chart (S/ 12.4k). En las cards
+  // y en el HERO siempre va el monto completo: acá solo se comprimen las
+  // marcas del gráfico, donde el espacio manda.
+  function _tribFmtCorto(n) {
+    const v = Math.abs(Number(n) || 0);
+    const signo = (Number(n) || 0) < 0 ? '-' : '';
+    if (v >= 1000000) return signo + (v / 1000000).toFixed(v >= 10000000 ? 0 : 1).replace('.0', '') + 'M';
+    if (v >= 1000)    return signo + (v / 1000).toFixed(v >= 10000 ? 0 : 1).replace('.0', '') + 'k';
+    return signo + v.toFixed(0);
+  }
+
+  // ═══ HISTÓRICO 12 MESES · una sola descarga, tres consumidores ═══════
+  // (sparklines de las cards · deltas vs mes anterior · panel de 12 meses)
+  let _tribHist = null;
+  let _tribHistTs = 0;
+  let _tribHistBusy = false;
+
+  async function _tribHistCargar(force) {
+    if (_tribHistBusy) return _tribHist;
+    if (!force && _tribHist && (Date.now() - _tribHistTs) < 600000) {
+      _tribPintarHistorico(); _tribPintarDeltasYSparks(); return _tribHist;
+    }
+    _tribHistBusy = true;
+    try {
+      const res = await API.post('tribHistorico12meses', {});
+      const arr = (res && res.data) ? res.data : res;
+      if (Array.isArray(arr) && arr.length) {
+        // Convención de signo del módulo: positivo = A FAVOR. El backend
+        // devuelve `balance` como emitido − favor ("lo que debes"), así que
+        // acá se calcula el complemento para que HERO, cards y chart hablen
+        // todos el mismo idioma.
+        _tribHist = arr.map(m => Object.assign({}, m, {
+          balFavor: (Number(m.igvFavor) || 0) - (Number(m.igvEmitido) || 0)
+        }));
+        _tribHistTs = Date.now();
+      }
+    } catch (e) {
+      console.warn('[Tributario histórico]', e && e.message ? e.message : e);
+    } finally {
+      _tribHistBusy = false;
+    }
+    _tribPintarHistorico();
+    _tribPintarDeltasYSparks();
+    return _tribHist;
+  }
+
+  // Índice del mes que está seleccionado dentro de la ventana del histórico.
+  function _tribHistIdx() {
+    if (!_tribHist) return -1;
+    return _tribHist.findIndex(m => m.mes === _tribState.mes && m.anio === _tribState.anio);
+  }
+
+  // ── Micro-sparkline (SVG a mano, sin librerías) ─────────────────────
+  // Serie ÚNICA → sin leyenda: el título de la card ya nombra qué se grafica.
+  // preserveAspectRatio="none" estira el viewBox al ancho real; el trazo se
+  // mantiene en 2px con vector-effect y el punto destacado va como elemento
+  // HTML (un <circle> se deformaría en óvalo bajo ese estiramiento).
+  function _tribSpark(el, serie, color, idxDestacado) {
+    if (!el) return;
+    const vals = (serie || []).map(v => Number(v) || 0);
+    if (vals.length < 2) { el.innerHTML = ''; return; }
+    const n = vals.length;
+    const max = Math.max.apply(null, vals);
+    const min = Math.min.apply(null, vals.concat([0]));
+    const span = (max - min) || 1;
+    const px = i => (i / (n - 1)) * 100;
+    const py = v => 26 - ((v - min) / span) * 23;
+    const pts = vals.map((v, i) => px(i).toFixed(2) + ',' + py(v).toFixed(2));
+    const linea = 'M' + pts.join(' L');
+    const area  = linea + ' L100,28 L0,28 Z';
+    const idx = (idxDestacado != null && idxDestacado >= 0 && idxDestacado < n) ? idxDestacado : (n - 1);
+    el.innerHTML =
+      '<svg viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true" focusable="false">' +
+        '<path d="' + area + '" fill="' + color + '" opacity=".10"></path>' +
+        '<path d="' + linea + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" ' +
+              'stroke-linecap="round" opacity=".6" vector-effect="non-scaling-stroke"></path>' +
+      '</svg>' +
+      '<span class="trib-stat-dot" style="left:' + px(idx).toFixed(2) + '%;top:' + ((py(vals[idx]) / 28) * 100).toFixed(2) + '%"></span>';
+  }
+
+  // ── Delta vs el mes anterior ────────────────────────────────────────
+  // `masEsMejor` dice si subir es bueno (IGV a favor sí, IGV en contra no):
+  // el color del chip sigue esa semántica, NUNCA el signo a secas. El texto
+  // lleva flecha + porcentaje, así el color nunca carga solo el significado.
+  function _tribDelta(el, actual, previo, masEsMejor) {
+    if (!el) return;
+    el.classList.remove('mejor', 'peor');
+    if (previo == null || !isFinite(previo)) { el.textContent = '—'; el.title = 'Sin mes anterior con el que comparar'; return; }
+    const a = Number(actual) || 0, p = Number(previo) || 0;
+    const dif = a - p;
+    if (Math.abs(dif) < 0.005) { el.textContent = '= igual'; el.title = 'Igual que el mes anterior'; return; }
+    const pct = p !== 0 ? (dif / Math.abs(p)) * 100 : null;
+    el.textContent = (dif > 0 ? '▲ ' : '▼ ') + (pct != null ? Math.abs(pct).toFixed(0) + '%' : _tribFmtCorto(Math.abs(dif)));
+    el.title = 'vs mes anterior · ' + (dif > 0 ? '+' : '−') + _tribFmtSoles(Math.abs(dif));
+    el.classList.add((dif > 0) === !!masEsMejor ? 'mejor' : 'peor');
+  }
+
+  // Pinta deltas + sparklines de las 4 cards a partir del histórico cacheado.
+  // Si el histórico aún no llegó, deja los guiones: nunca inventa una tendencia.
+  function _tribPintarDeltasYSparks() {
+    if (!_tribHist || !_tribHist.length) return;
+    const i = _tribHistIdx();
+    const prev = (i > 0) ? _tribHist[i - 1] : null;
+    const d = _tribState.data || {};
+    _tribDelta($('tribFavorDelta'),   d.igvFavor,     prev ? prev.igvFavor   : null, true);
+    _tribDelta($('tribEmitidoDelta'), d.igvEmitido,   prev ? prev.igvEmitido : null, false);
+    _tribDelta($('tribRentaDelta'),   d.rentaMensual, prev ? prev.renta      : null, false);
+    _tribDelta($('tribVentasDelta'),  d.totalVentas,  prev ? prev.ventas     : null, true);
+    _tribSpark($('tribFavorSpark'),   _tribHist.map(m => m.igvFavor),   '#34d399', i);
+    _tribSpark($('tribEmitidoSpark'), _tribHist.map(m => m.igvEmitido), '#fb7185', i);
+    _tribSpark($('tribRentaSpark'),   _tribHist.map(m => m.renta),      '#a78bfa', i);
+    _tribSpark($('tribVentasSpark'),  _tribHist.map(m => m.ventas),     '#60a5fa', i);
+  }
+
+  function _tribRender(d, opts) {
     if (!d) return;
-    const nombres = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-    $('tribSub').textContent = 'Balance de ' + nombres[d.mes - 1] + ' ' + d.anio + ' · día ' + d.diaActual + ' de ' + d.ultimoDia;
+    const o = opts || {};
+    const mesNom = _TRIB_MESES[(d.mes || 1) - 1];
+    $('tribSub').textContent = mesNom + ' ' + d.anio + ' · día ' + d.diaActual + ' de ' + d.ultimoDia;
 
-    // KPI principales con countUp
-    _tribCountUp($('tribIGVFavor'), d.igvFavor);
-    _tribCountUp($('tribIGVPagar'), d.igvEmitido);
-    $('tribIGVFavorSub').textContent = (d.guiasConIGV || 0) + ' de ' + (d.guiasMes || 0) + ' guías con IGV recuperable' +
-                                      (d.guiasSinFoto > 0 ? ' · ' + d.guiasSinFoto + ' s/foto' : '');
-    $('tribIGVPagarSub').textContent = (d.cpeEmitidos || 0) + ' / ' + (d.cpeTotal || 0) + ' CPE emitidos';
+    // ── HERO: cuánto está a favor y cuánto en contra ──────────────────
+    // El backend entrega balanceNetoIGV = emitido − favor ("lo que debes").
+    // El panel habla al revés a propósito, porque la pregunta del dueño es
+    // "¿cuánto está a MI favor?": aFavor = favor − emitido.
+    const aFavor = (d.igvFavor || 0) - (d.igvEmitido || 0);
+    const esFavor = aFavor >= 0;
+    const hero = $('tribHero');
+    if (hero) {
+      hero.classList.toggle('es-favor', esFavor);
+      hero.classList.toggle('es-contra', !esFavor);
+    }
+    const numEl = $('tribBalanceNeto');
+    _tribCountUp(numEl, Math.abs(aFavor));
+    if (numEl) { numEl.classList.remove('bump'); void numEl.offsetWidth; numEl.classList.add('bump'); }
+    $('tribHeroEyebrow').textContent = 'Balance de IGV · ' + mesNom + ' ' + d.anio;
+    $('tribHeroVeredicto').innerHTML = esFavor
+      ? '<span>✨</span> A tu favor · crédito fiscal arrastrable'
+      : '<span>⚠</span> En contra · esto le debes a SUNAT';
+    // Desglose: los montos salen de _tribFmtSoles (solo dígitos y S/) → seguro.
+    $('tribHeroDesglose').innerHTML =
+      '<span>IGV a favor <b style="color:var(--trib-favor)">' + _tribFmtSoles(d.igvFavor) + '</b></span>' +
+      '<span class="op">−</span>' +
+      '<span>IGV en contra <b style="color:var(--trib-contra)">' + _tribFmtSoles(d.igvEmitido) + '</b></span>';
 
-    const pctFavor = d.guiasMes > 0 ? (d.guiasConIGV / d.guiasMes) * 100 : 0;
-    const pctPagar = d.cpeTotal > 0 ? (d.cpeEmitidos / d.cpeTotal) * 100 : 0;
-    $('tribIGVFavorBar').style.width = pctFavor.toFixed(0) + '%';
-    $('tribIGVPagarBar').style.width = pctPagar.toFixed(0) + '%';
-
-    // Balance neto
-    const balanceEl = $('tribBalanceNeto');
-    _tribCountUp(balanceEl, Math.abs(d.balanceNetoIGV));
-    balanceEl.classList.toggle('positivo', d.balanceNetoIGV >= 0);
-    balanceEl.classList.toggle('negativo', d.balanceNetoIGV < 0);
-    balanceEl.classList.remove('bump'); void balanceEl.offsetWidth; balanceEl.classList.add('bump');
-    if (d.balanceNetoIGV < 0) {
-      $('tribBalanceSub').innerHTML = '✨ <strong>Crédito fiscal a favor</strong> · arrastrable al mes siguiente';
+    // Pie del hero: vencimiento SUNAT (solo tiene sentido si hay algo que pagar).
+    if (esFavor) {
+      $('tribBalanceSub').innerHTML = 'Se arrastra como crédito fiscal al mes siguiente · nada que pagar por IGV';
     } else {
-      // [fix] guardar contra fecha ausente/mala del server → antes mostraba "Vence: Invalid Date · faltan undefined días".
+      // [fix] guarda contra fecha ausente/mala del server → antes mostraba
+      // "Vence: Invalid Date · faltan undefined días".
       const fecha = new Date(d.fechaVencimiento);
       const fechaOk = d.fechaVencimiento != null && d.fechaVencimiento !== '' && !isNaN(fecha.getTime());
       const dias = Number.isFinite(d.diasParaVencer) ? d.diasParaVencer : null;
       if (fechaOk) {
         const fStr = fecha.toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
-        $('tribBalanceSub').innerHTML = 'Vence: <strong>' + fStr + '</strong>' + (dias != null ? ' · faltan ' + dias + ' días' : '');
+        $('tribBalanceSub').innerHTML = 'Vence: <strong>' + _escapeHtml(fStr) + '</strong>' + (dias != null ? ' · faltan ' + dias + ' días' : '');
       } else {
         $('tribBalanceSub').innerHTML = 'Vence según el cronograma SUNAT del mes siguiente';
       }
     }
     $('tribPeriodoBar').style.width = (d.pctMes || 0) + '%';
 
-    // Mini cards
-    $('tribVentas').textContent = _tribFmtSoles(d.totalVentas);
-    $('tribVentasSub').textContent = 'Renta MYPE 1.5%: ' + _tribFmtSoles(d.rentaMensual);
-    $('tribCPEStatus').textContent = (d.cpeEmitidos || 0) + ' emitidos';
-    $('tribCPESub').textContent = (d.cpePendientes || 0) + ' pendientes · ' + (d.cpeErrores || 0) + ' error';
+    // ── Las 4 stat-cards ──────────────────────────────────────────────
+    _tribCountUp($('tribIGVFavor'),  d.igvFavor);
+    _tribCountUp($('tribIGVPagar'),  d.igvEmitido);
+    _tribCountUp($('tribRenta'),     d.rentaMensual);
+    _tribCountUp($('tribVentas'),    d.totalVentas);
+    $('tribIGVFavorSub').textContent = (d.guiasConIGV || 0) + ' de ' + (d.guiasMes || 0) + ' guías con IGV recuperable' +
+                                      (d.guiasSinFoto > 0 ? ' · ' + d.guiasSinFoto + ' sin foto' : '');
+    $('tribIGVPagarSub').textContent = (d.cpeEmitidos || 0) + ' de ' + (d.cpeTotal || 0) + ' CPE emitidos' +
+                                      (d.cpeErrores > 0 ? ' · ' + d.cpeErrores + ' con error' : '') +
+                                      (d.cpePendientes > 0 ? ' · ' + d.cpePendientes + ' pendientes' : '');
+    // Tasa derivada del propio dato (no hardcodeada): si el backend cambiara
+    // el régimen, el subtítulo lo dice solo.
+    const tasaRenta = (d.totalVentas > 0) ? (d.rentaMensual / d.totalVentas) * 100 : 1.5;
+    $('tribRentaSub').textContent = 'Pago a cuenta MYPE · ' + tasaRenta.toFixed(2).replace(/\.?0+$/, '') + '% de las ventas';
+    $('tribVentasSub').textContent = 'Base de la renta · ' + (d.pctMes || 0) + '% del mes transcurrido';
 
-    // [v2.42.11] Alertas accionables — cada una con monto en juego + botón directo
+    // ── Franja de alerta accionable ───────────────────────────────────
     const alertas = (d.cpeErrores || 0) + (d.guiasIlegibles || 0) + (d.guiasSinFoto || 0);
     if (alertas > 0) {
       $('tribAlertCard').style.display = '';
       $('tribAlertCount').textContent = alertas;
       const partes = [];
-      // Estimación de IGV perdido por guías sin foto / ilegibles
-      // (proporcional al ratio promedio del mes)
+      // Estimación del IGV que se está perdiendo (proporcional al promedio del mes)
       const igvPromedioPorGuia = (d.guiasConIGV > 0) ? (d.igvFavor / d.guiasConIGV) : 0;
-      if (d.cpeErrores > 0)    partes.push('🔴 ' + d.cpeErrores + ' CPE error');
-      if (d.guiasIlegibles > 0) {
-        const perdidaEstim = (d.guiasIlegibles * igvPromedioPorGuia).toFixed(0);
-        partes.push('🔴 ' + d.guiasIlegibles + ' ilegibles · puedes recuperar ~S/ ' + perdidaEstim);
-      }
-      if (d.guiasSinFoto > 0) {
-        const perdidaEstim = (d.guiasSinFoto * igvPromedioPorGuia).toFixed(0);
-        partes.push('🟡 ' + d.guiasSinFoto + ' s/foto · ~S/ ' + perdidaEstim + ' en juego');
-      }
+      if (d.cpeErrores > 0)     partes.push(d.cpeErrores + ' CPE con error');
+      if (d.guiasIlegibles > 0) partes.push(d.guiasIlegibles + ' ilegibles · recuperables ~' + _tribFmtSoles(d.guiasIlegibles * igvPromedioPorGuia));
+      if (d.guiasSinFoto > 0)   partes.push(d.guiasSinFoto + ' sin comprobante · ~' + _tribFmtSoles(d.guiasSinFoto * igvPromedioPorGuia) + ' en juego');
       $('tribAlertSub').textContent = partes.join(' · ');
     } else {
       $('tribAlertCard').style.display = 'none';
     }
 
-    // [v2.42.11] Proyección de cierre de mes — solo si NO es fin de mes
+    // ── Proyección de cierre (solo si el mes sigue abierto) ───────────
     const proy = _tribCalcProyeccion(d);
-    let proyEl = $('tribProyeccion');
-    if (!proyEl && proy && d.pctMes < 95) {
-      // Crear el elemento si no existe (primera vez)
-      const after = $('tribAlertCard') || $('tribIGVFavor')?.closest('section');
-      if (after) {
-        proyEl = document.createElement('div');
-        proyEl.id = 'tribProyeccion';
-        proyEl.style.cssText = 'background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(79,70,229,.05));border:1px solid rgba(99,102,241,.4);border-radius:14px;padding:14px 16px;margin:10px 0;display:flex;align-items:center;gap:14px;animation:scaleIn .35s cubic-bezier(.34,1.56,.64,1)';
-        after.parentNode.insertBefore(proyEl, after.nextSibling);
-      }
-    }
+    const proyEl = $('tribProyeccion');
     if (proyEl) {
       if (!proy || d.pctMes >= 95) {
         proyEl.style.display = 'none';
       } else {
-        proyEl.style.display = 'flex';
-        const signo = proy.balanceNetoProy >= 0 ? 'pagar' : 'a favor';
-        const color = proy.balanceNetoProy >= 0 ? '#fbbf24' : '#34d399';
-        proyEl.innerHTML = `
-          <span style="font-size:28px">🔮</span>
-          <div style="flex:1">
-            <div style="font-size:11px;font-weight:900;color:#a5b4fc;text-transform:uppercase;letter-spacing:.05em">Proyección fin de mes</div>
-            <div style="font-size:13px;color:#cbd5e1;margin-top:2px">
-              Al ritmo actual (${d.pctMes.toFixed(0)}% del mes) cierras con
-              <strong style="color:${color}">S/ ${Math.abs(proy.balanceNetoProy).toFixed(0)}</strong> IGV ${signo}
-            </div>
-            <div style="font-size:10px;color:#94a3b8;margin-top:1px">
-              Compras proy. S/ ${proy.igvFavorProy.toFixed(0)} · Ventas proy. S/ ${proy.igvEmitidoProy.toFixed(0)} · Faltan ${proy.diasRestantes} día${proy.diasRestantes === 1 ? '' : 's'}
-            </div>
-          </div>`;
+        const favorProy = (proy.igvFavorProy || 0) - (proy.igvEmitidoProy || 0);
+        const cierraFavor = favorProy >= 0;
+        proyEl.style.display = '';
+        proyEl.className = 'trib-alert';
+        proyEl.style.background = 'linear-gradient(135deg, rgba(129,140,248,.13), rgba(129,140,248,.03))';
+        proyEl.style.borderColor = 'rgba(129,140,248,.3)';
+        proyEl.style.cursor = 'default';
+        proyEl.innerHTML =
+          '<span class="trib-alert-ico">🔮</span>' +
+          '<span class="trib-alert-txt">' +
+            '<span class="trib-alert-lbl" style="color:#a5b4fc">Proyección de cierre</span>' +
+            '<span class="trib-alert-sub">Al ritmo de hoy (' + (d.pctMes || 0) + '% del mes) cierras con ' +
+              '<b style="color:' + (cierraFavor ? 'var(--trib-favor)' : 'var(--trib-contra)') + '">' + _tribFmtSoles(Math.abs(favorProy)) + '</b> ' +
+              (cierraFavor ? 'a favor' : 'en contra') +
+              ' · faltan ' + proy.diasRestantes + ' día' + (proy.diasRestantes === 1 ? '' : 's') +
+            '</span>' +
+          '</span>';
       }
+    }
+
+    // Sonido: solo cuando el usuario pidió el mes (no en refrescos silenciosos).
+    if (o.sonar) _finBeep && _finBeep(esFavor ? 'kpi-up' : 'kpi-down');
+
+    _tribPintarDeltasYSparks();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // SHEET GENÉRICO DE DRILL-DOWN
+  // Un solo componente para los 4 overlays del módulo. En escritorio es una
+  // card centrada; en móvil (CSS ≤640px) baja como bottom-sheet con
+  // drag-handle, respeta env(safe-area-inset-bottom) y su scroll interno lleva
+  // overscroll-behavior:contain para no arrastrar el body.
+  // ═══════════════════════════════════════════════════════════════════
+  const _tribSheetsAbiertos = [];
+  let _tribBodyOverflowPrev = null;
+
+  function _tribBloquearScroll(bloquear) {
+    if (bloquear) {
+      if (_tribBodyOverflowPrev === null) _tribBodyOverflowPrev = document.body.style.overflow || '';
+      document.body.style.overflow = 'hidden';
+    } else if (_tribSheetsAbiertos.length === 0 && !document.getElementById('tribLightbox')) {
+      document.body.style.overflow = _tribBodyOverflowPrev || '';
+      _tribBodyOverflowPrev = null;
     }
   }
 
-  // [v2.42.10] Estado del filtro del detalle IGV a favor
-  const _tribIGVFiltro = { estado: 'TODOS' }; // TODOS · PROCESADO · SIN_IGV · ILEGIBLE · SIN_FOTO
+  function _tribSheetEl(id, sel) {
+    const ov = document.getElementById(id);
+    return ov ? ov.querySelector(sel) : null;
+  }
 
-  async function tribAbrirIGVFavor() {
-    const cont = $('tribIGVFavorList');
-    cont.innerHTML = '<div class="text-slate-500 text-xs">Cargando guías...</div>';
-    const det = cont.closest('details'); if (det) det.open = true;
-    // [v2.42.12] Si ya tenemos precarga del mes actual, usar instant
+  function _tribSheetAbrir(id, o) {
+    // Si ya estaba abierto (por ejemplo un reintento que reabre la lista),
+    // se reemplaza sin animación de cierre para que no parpadee.
+    const viejo = document.getElementById(id);
+    if (viejo) { viejo.remove(); const k = _tribSheetsAbiertos.indexOf(id); if (k >= 0) _tribSheetsAbiertos.splice(k, 1); }
+
+    const ov = document.createElement('div');
+    ov.className = 'trib-ov';
+    ov.id = id;
+    ov.setAttribute('role', 'dialog');
+    ov.setAttribute('aria-modal', 'true');
+    ov.setAttribute('aria-label', o.titulo || 'Detalle');
+    ov.innerHTML =
+      '<div class="trib-sheet">' +
+        '<div class="trib-sheet-grab" data-trib-grab="1"></div>' +
+        '<div class="trib-sheet-head">' +
+          '<div class="trib-sheet-top">' +
+            '<span class="trib-sheet-ico">' + (o.icono || '📄') + '</span>' +
+            '<div class="trib-sheet-tt">' +
+              '<div class="trib-sheet-title">' + _escapeHtml(o.titulo || '') + '</div>' +
+              '<div class="trib-sheet-sub" data-trib-sub="1">' + (o.sub || '') + '</div>' +
+            '</div>' +
+            (o.totalLbl
+              ? '<div class="trib-sheet-tot">' +
+                  '<div class="trib-sheet-tot-lbl">' + _escapeHtml(o.totalLbl) + '</div>' +
+                  '<div class="trib-sheet-tot-val" data-trib-tot="1" style="color:' + (o.totalColor || '#f1f5f9') + '">' + (o.totalVal || '—') + '</div>' +
+                '</div>'
+              : '') +
+            '<button type="button" class="trib-sheet-close" data-trib-cerrar="1" aria-label="Cerrar">✕</button>' +
+          '</div>' +
+          (o.tools ? '<div data-trib-tools="1">' + o.tools + '</div>' : '') +
+        '</div>' +
+        '<div class="trib-sheet-body" data-trib-body="1">' + (o.body || '') + '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    _tribSheetsAbiertos.push(id);
+    _tribBloquearScroll(true);
+
+    // Cerrar: click en el backdrop, en la ✕, o Escape.
+    ov.addEventListener('click', (e) => {
+      if (e.target === ov || (e.target.closest && e.target.closest('[data-trib-cerrar]'))) {
+        _tribSheetCerrar(id);
+        return;
+      }
+      if (typeof o.onClick === 'function') o.onClick(e);
+    });
+    if (_tribSheetsAbiertos.length === 1) document.addEventListener('keydown', _tribSheetEsc, true);
+
+    // Arrastre hacia abajo para descartar (solo donde el handle es visible: móvil).
+    const grab = ov.querySelector('[data-trib-grab]');
+    const sheet = ov.querySelector('.trib-sheet');
+    if (grab && sheet) {
+      let y0 = null;
+      grab.addEventListener('pointerdown', (e) => {
+        y0 = e.clientY;
+        sheet.style.transition = 'none';
+        try { grab.setPointerCapture(e.pointerId); } catch (_) {}
+      });
+      grab.addEventListener('pointermove', (e) => {
+        if (y0 == null) return;
+        const dy = Math.max(0, e.clientY - y0);
+        sheet.style.transform = 'translateY(' + dy + 'px)';
+        sheet.style.opacity = String(Math.max(.4, 1 - dy / 420));
+      });
+      const soltar = (e) => {
+        if (y0 == null) return;
+        const dy = Math.max(0, e.clientY - y0);
+        y0 = null;
+        sheet.style.transition = '';
+        if (dy > 100) { _tribSheetCerrar(id); return; }
+        sheet.style.transform = '';
+        sheet.style.opacity = '';
+      };
+      grab.addEventListener('pointerup', soltar);
+      grab.addEventListener('pointercancel', soltar);
+    }
+
+    _finBeep && _finBeep('click');
+    return ov;
+  }
+
+  function _tribSheetEsc(e) {
+    if (e.key !== 'Escape') return;
+    // El lightbox está por encima: si está abierto, Escape lo cierra a él.
+    if (document.getElementById('tribLightbox')) return;
+    const ultimo = _tribSheetsAbiertos[_tribSheetsAbiertos.length - 1];
+    if (ultimo) { e.stopPropagation(); _tribSheetCerrar(ultimo); }
+  }
+
+  function _tribSheetCerrar(id) {
+    const ov = document.getElementById(id);
+    const k = _tribSheetsAbiertos.indexOf(id);
+    if (k >= 0) _tribSheetsAbiertos.splice(k, 1);
+    if (_tribSheetsAbiertos.length === 0) document.removeEventListener('keydown', _tribSheetEsc, true);
+    if (!ov) { _tribBloquearScroll(false); return; }
+    ov.classList.add('cerrando');
+    setTimeout(() => { ov.remove(); _tribBloquearScroll(false); }, 230);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // OVERLAY 1 · IGV A FAVOR — guía por guía, con la foto del comprobante
+  // ═══════════════════════════════════════════════════════════════════
+  // Filtros: TODOS · CON_IGV · SIN_IGV · ILEGIBLE · SIN_FOTO · PENDIENTES
+  // (PENDIENTES = todo lo que aún puede convertirse en dinero recuperado;
+  //  es a donde salta la franja de alerta de la vista principal).
+  const _tribIGVFiltro = { estado: 'TODOS' };
+  let _tribIGVBusq = '';
+
+  // [v2.42.12] Precarga del IGV a favor — se llena al iniciar sesión Admin
+  // o al cambiar de mes. Permite que el overlay abra sin esperar el roundtrip.
+  let _tribIGVFavorPrecargado = null;
+  let _tribIGVFavorListaCache = [];
+
+  async function tribAbrirIGVFavor(filtroInicial) {
+    _tribIGVFiltro.estado = filtroInicial || 'TODOS';
+    _tribIGVBusq = '';
+    const d = _tribState.data || {};
+    const mesNom = _TRIB_MESES[(_tribState.mes || 1) - 1] + ' ' + (_tribState.anio || '');
+    _tribSheetAbrir('tribOvFavor', {
+      icono: '💚',
+      titulo: 'IGV a favor · guía por guía',
+      sub: 'Comprobantes de proveedor de ' + _escapeHtml(mesNom) + ' — ordenados por el IGV que recuperas',
+      totalLbl: 'Total a favor',
+      totalVal: _tribFmtSoles(d.igvFavor || 0),
+      totalColor: 'var(--trib-favor)',
+      tools: '<div class="trib-chips" data-trib-chips="1"></div>' +
+             '<input class="trib-search" id="tribBuscarFavor" type="search" inputmode="search" autocomplete="off" placeholder="Buscar por guía, serie o número...">',
+      body: '<div class="trib-vacio"><span class="trib-vacio-ico">⏳</span>Cargando las guías del mes...</div>',
+      onClick: _tribFavorClick
+    });
+    const inp = $('tribBuscarFavor');
+    if (inp) inp.addEventListener('input', () => {
+      _tribIGVBusq = inp.value || '';
+      _tribRenderIGVFavorDetalle(_tribIGVFavorListaCache);
+    });
+
+    // Instantáneo con la precarga del mes; refresco silencioso por detrás.
     if (_tribIGVFavorPrecargado && _tribIGVFavorPrecargado.mes === _tribState.mes
         && _tribIGVFavorPrecargado.anio === _tribState.anio) {
       _tribIGVFavorListaCache = _tribIGVFavorPrecargado.lista;
       _tribRenderIGVFavorDetalle(_tribIGVFavorPrecargado.lista);
-      // Aún así refrescar en background por si hubo cambios desde la precarga
       _tribFetchIGVFavor(true);
       return;
     }
     await _tribFetchIGVFavor(false);
   }
 
-  // [v2.42.12] Fetch separado para reusar entre precarga y abrir manual.
-  // El bug: el backend tribIGVFavorMes devuelve directo {ok,data:{guias:[]}},
-  // pero API.post desempaqueta d.data → frontend recibe {guias:[]} directo.
-  // Antes leíamos res?.data?.guias (undefined) cuando debe ser res?.guias.
+  // [v2.42.12] Fetch separado para reusar entre precarga y apertura manual.
+  // El backend tribIGVFavorMes devuelve {ok,data:{guias:[]}} y API.post
+  // desempaqueta d.data → acá llega {guias:[]} directo.
   async function _tribFetchIGVFavor(silent) {
-    const cont = $('tribIGVFavorList');
     try {
       const res = await API.post('tribIGVFavorMes', { mes: _tribState.mes, anio: _tribState.anio });
-      // [v2.42.12 fix] res ya es el data desempaquetado (API.post hace return d.data)
       const lista = (res?.guias) || (res?.data?.guias) || [];
       _tribIGVFavorListaCache = lista;
-      // Actualizar precarga global
       _tribIGVFavorPrecargado = { mes: _tribState.mes, anio: _tribState.anio, lista };
-      if (cont) _tribRenderIGVFavorDetalle(lista);
+      if (document.getElementById('tribOvFavor')) _tribRenderIGVFavorDetalle(lista);
     } catch(e) {
+      const cont = _tribSheetEl('tribOvFavor', '[data-trib-body]');
       if (!silent && cont) {
-        cont.innerHTML = '<div class="text-red-400 text-xs">❌ ' + (e.message || e) + '</div>';
+        cont.innerHTML = '<div class="trib-vacio"><span class="trib-vacio-ico">⚠</span>' +
+                         _escapeHtml(String(e && e.message ? e.message : e)) + '</div>';
       }
     }
   }
 
-  // [v2.42.12] Precarga del IGV a favor — se llena al iniciar sesión Admin
-  // o al cambiar de mes en el panel. Permite que al abrir el detalle no
-  // espere el roundtrip a WH.
-  let _tribIGVFavorPrecargado = null;
-
-  let _tribIGVFavorListaCache = [];
+  // Estado de una guía, con una sola regla en un solo lugar.
+  function _tribClasifGuia(g) {
+    if (!g.tieneFoto) return 'SIN_FOTO';
+    const e = String(g.ocrEstado || '').toUpperCase();
+    if (e === 'SIN_IGV') return 'SIN_IGV';
+    if (e === 'ILEGIBLE' || e === 'NO_COMPROBANTE') return 'ILEGIBLE';
+    if (e === 'PROCESADO') return ((g.igvRecuperable || 0) > 0) ? 'CON_IGV' : 'SIN_IGV';
+    return 'PROCESANDO';   // foto subida, el pipeline aún no la leyó
+  }
 
   function _tribRenderIGVFavorDetalle(lista) {
-    const cont = $('tribIGVFavorList');
+    const cont = _tribSheetEl('tribOvFavor', '[data-trib-body]');
+    const chipsCont = _tribSheetEl('tribOvFavor', '[data-trib-chips]');
     if (!cont) return;
+    lista = Array.isArray(lista) ? lista : [];
+
     if (!lista.length) {
-      cont.innerHTML = '<div class="text-slate-500 text-xs italic">Sin guías de ingreso proveedor en este mes</div>';
+      if (chipsCont) chipsCont.innerHTML = '';
+      cont.innerHTML = '<div class="trib-vacio"><span class="trib-vacio-ico">📭</span>' +
+                       'Sin guías de ingreso de proveedor en este mes</div>';
       return;
     }
-    // Aplicar filtro
-    const filtro = _tribIGVFiltro.estado;
+
+    // Contadores por estado (sobre la lista COMPLETA: los chips no dependen
+    // del filtro activo, si no el usuario perdería la referencia).
+    const cont_ = { TODOS: lista.length, CON_IGV: 0, SIN_IGV: 0, ILEGIBLE: 0, SIN_FOTO: 0, PROCESANDO: 0 };
+    lista.forEach(g => { cont_[_tribClasifGuia(g)]++; });
+    cont_.PENDIENTES = cont_.ILEGIBLE + cont_.SIN_FOTO + cont_.PROCESANDO;
+
+    if (chipsCont) {
+      const mk = (key, label, n, color) =>
+        '<button type="button" class="trib-chip' + (_tribIGVFiltro.estado === key ? ' on' : '') + '" data-filtro="' + key + '">' +
+          (color ? '<span class="pip" style="background:' + color + '"></span>' : '') +
+          _escapeHtml(label) + ' <b>' + n + '</b>' +
+        '</button>';
+      chipsCont.innerHTML =
+        mk('TODOS',      'Todas',        cont_.TODOS,      '') +
+        mk('CON_IGV',    'Con IGV',      cont_.CON_IGV,    '#34d399') +
+        mk('SIN_IGV',    'Sin IGV',      cont_.SIN_IGV,    '#64748b') +
+        mk('ILEGIBLE',   'Ilegibles',    cont_.ILEGIBLE,   '#fb7185') +
+        mk('SIN_FOTO',   'Sin foto',     cont_.SIN_FOTO,   '#fbbf24') +
+        (cont_.PENDIENTES > 0 ? mk('PENDIENTES', 'Recuperables', cont_.PENDIENTES, '#f59e0b') : '');
+    }
+
+    // Filtro + búsqueda
+    const f = _tribIGVFiltro.estado;
+    const q = _tribIGVBusq.trim().toLowerCase();
     const filtrada = lista.filter(g => {
-      if (filtro === 'TODOS') return true;
-      if (filtro === 'PROCESADO')  return g.ocrEstado === 'PROCESADO' && g.igvRecuperable > 0;
-      if (filtro === 'SIN_IGV')    return g.ocrEstado === 'SIN_IGV';
-      if (filtro === 'ILEGIBLE')   return g.ocrEstado === 'ILEGIBLE' || g.ocrEstado === 'NO_COMPROBANTE' || (g.tieneFoto && !g.ocrEstado);
-      if (filtro === 'SIN_FOTO')   return !g.tieneFoto;
-      return true;
+      const cls = _tribClasifGuia(g);
+      const pasaF = (f === 'TODOS') || (f === 'PENDIENTES' ? (cls === 'ILEGIBLE' || cls === 'SIN_FOTO' || cls === 'PROCESANDO') : cls === f);
+      if (!pasaF) return false;
+      if (!q) return true;
+      const heno = [g.idGuia, g.serie, g.numero, g.razonSocial, g.rucEmisor].map(v => String(v || '').toLowerCase()).join(' ');
+      return heno.indexOf(q) >= 0;
     });
-
-    // Contadores por estado para los chips
-    let cTodo = lista.length, cProc = 0, cSinIGV = 0, cIleg = 0, cSinFoto = 0;
-    lista.forEach(g => {
-      if (g.ocrEstado === 'PROCESADO' && g.igvRecuperable > 0) cProc++;
-      else if (g.ocrEstado === 'SIN_IGV') cSinIGV++;
-      else if (g.ocrEstado === 'ILEGIBLE' || g.ocrEstado === 'NO_COMPROBANTE' || (g.tieneFoto && !g.ocrEstado)) cIleg++;
-      else if (!g.tieneFoto) cSinFoto++;
-    });
-
-    // Chips de filtro
-    const mkChip = (key, label, count, color) => {
-      const active = filtro === key;
-      const bg = active ? color : 'rgba(71,85,105,.3)';
-      const tc = active ? '#0f172a' : color;
-      return `<button onclick="MOS._tribSetIGVFiltro('${key}')"
-        style="background:${bg};color:${tc};border:1px solid ${color};padding:4px 10px;border-radius:99px;font-size:10.5px;font-weight:800;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:4px;margin-right:4px;margin-bottom:4px"
-        title="${label}">
-        ${label} <span style="opacity:.8">·</span> <span style="font-weight:900">${count}</span>
-      </button>`;
-    };
-    const chipsHtml = `<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(71,85,105,.3)">
-      ${mkChip('TODOS',     'Todos',         cTodo,    '#64748b')}
-      ${mkChip('PROCESADO', '🟢 Con IGV',    cProc,    '#10b981')}
-      ${mkChip('SIN_IGV',   '⊘ Sin IGV',     cSinIGV,  '#94a3b8')}
-      ${mkChip('ILEGIBLE',  '🔴 Ilegibles',  cIleg,    '#ef4444')}
-      ${mkChip('SIN_FOTO',  '⚪ Sin foto',   cSinFoto, '#f59e0b')}
-    </div>`;
 
     if (!filtrada.length) {
-      cont.innerHTML = chipsHtml + '<div class="text-slate-500 text-xs italic text-center py-4">Sin guías con este filtro</div>';
+      cont.innerHTML = '<div class="trib-vacio"><span class="trib-vacio-ico">🔍</span>Ninguna guía con este filtro</div>';
       return;
     }
 
-    // Agrupar por proveedor (razonSocial > idProveedor)
-    const grupos = {};
-    filtrada.forEach(g => {
-      const key = (g.razonSocial && g.razonSocial.trim()) || g.idProveedor || '(Sin proveedor)';
-      if (!grupos[key]) grupos[key] = { nombre: key, ruc: g.rucEmisor || '', items: [], totalIGV: 0, totalDoc: 0 };
-      grupos[key].items.push(g);
-      grupos[key].totalIGV += g.igvRecuperable || 0;
-      grupos[key].totalDoc += g.total || 0;
-      if (!grupos[key].ruc && g.rucEmisor) grupos[key].ruc = g.rucEmisor;
+    // Orden: primero el dinero. Dentro del mismo IGV, la más reciente arriba.
+    const ordenada = filtrada.slice().sort((a, b) => {
+      const dif = (b.igvRecuperable || 0) - (a.igvRecuperable || 0);
+      if (Math.abs(dif) > 0.004) return dif;
+      return String(b.fecha || '').localeCompare(String(a.fecha || ''));
     });
-    // Sort grupos por totalIGV desc (más relevante arriba)
-    const ordenados = Object.values(grupos).sort((a, b) => b.totalIGV - a.totalIGV);
 
-    const gruposHtml = ordenados.map(grupo => {
-      const itemsHtml = grupo.items.map(g => {
-        const estCls = g.ocrEstado === 'PROCESADO' ? 'trib-row-est-ok'
-                     : g.ocrEstado === 'SIN_IGV'   ? 'trib-row-est-info'
-                     : (g.ocrEstado === 'ILEGIBLE' || g.ocrEstado === 'NO_COMPROBANTE') ? 'trib-row-est-error'
-                     : 'trib-row-est-warn';
-        const estTxt = g.ocrEstado === 'PROCESADO' ? '🟢 ' + (g.confidence || 0) + '%'
-                     : g.ocrEstado === 'SIN_IGV'   ? '⊘ sin IGV'
-                     : g.ocrEstado === 'ILEGIBLE'  ? '🔴 ilegible'
-                     : g.ocrEstado === 'NO_COMPROBANTE' ? '🔴 no es comprob.'
-                     : g.tieneFoto ? '🟡 procesando' : '⚪ s/foto';
-        // Thumbnail clickeable si hay foto
-        const fotoHtml = g.urlFoto
-          ? `<button onclick="MOS.tribAbrirFotoComprobante('${_escapeHtml(g.urlFoto)}','${_escapeHtml(g.idGuia)}')"
-                style="background:none;border:none;cursor:pointer;padding:0;flex-shrink:0"
-                title="Ver comprobante">
-              <img src="${_escapeHtml(g.urlFoto)}" alt="📄"
-                   style="width:36px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #334155;background:#0f172a"
-                   loading="lazy"
-                   onerror="this.style.display='none'">
-            </button>`
-          : `<span style="width:36px;height:48px;display:flex;align-items:center;justify-content:center;background:#1e293b;border-radius:6px;border:1px solid #334155;flex-shrink:0;font-size:18px;color:#475569">📄</span>`;
-        const fechaCmp = g.fechaComprobante || (g.fecha ? new Date(g.fecha).toLocaleDateString('es-PE') : '');
-        const serieNum = (g.serie || '') + (g.numero ? '-' + g.numero : '');
-        return `<div class="trib-row" style="padding:8px 10px;gap:10px">
-          ${fotoHtml}
-          <div class="trib-row-data" style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:12px;color:#e2e8f0">${_escapeHtml(g.idGuia)}</div>
-            <div style="font-size:10px;color:#94a3b8;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-              <span>${_escapeHtml(fechaCmp)}</span>
-              ${serieNum ? `<span>· <span style="font-family:monospace">${_escapeHtml(serieNum)}</span></span>` : ''}
-              ${g.total > 0 ? `<span>· Doc S/ ${g.total.toFixed(2)}</span>` : ''}
-            </div>
-          </div>
-          <div style="text-align:right;flex-shrink:0">
-            <div style="font-weight:900;font-size:13px;color:${g.igvRecuperable > 0 ? '#34d399' : '#475569'}">
-              ${g.igvRecuperable > 0 ? _tribFmtSoles(g.igvRecuperable) : '—'}
-            </div>
-            <div class="${estCls}" style="font-size:9.5px;margin-top:2px">${estTxt}</div>
-          </div>
-          ${g.tieneFoto ? `<button class="trib-btn-mini" title="Re-procesar OCR" onclick="MOS.tribReprocesarOCR('${_escapeHtml(g.idGuia)}')">↻</button>` : ''}
-        </div>`;
-      }).join('');
+    // La RPC wh.igv_favor_mes NO devuelve proveedor (ni razón social ni RUC):
+    // por eso la lista es plana. Si algún día el payload los trae, el
+    // agrupador de abajo los usa sin tocar nada más.
+    const conProveedor = ordenada.some(g => String(g.razonSocial || '').trim());
+    let html = '';
+    if (conProveedor) {
+      const grupos = new Map();
+      ordenada.forEach(g => {
+        const key = String(g.razonSocial || '').trim() || 'Sin proveedor identificado';
+        if (!grupos.has(key)) grupos.set(key, []);
+        grupos.get(key).push(g);
+      });
+      let i = 0;
+      grupos.forEach((items, nombre) => {
+        const totIGV = items.reduce((s, g) => s + (g.igvRecuperable || 0), 0);
+        html += '<div class="trib-grupo-cap">🏢 ' + _escapeHtml(nombre) + ' · ' + _tribFmtSoles(totIGV) + '</div>';
+        items.forEach(g => { html += _tribGuiaCard(g, i++); });
+      });
+    } else {
+      ordenada.forEach((g, i) => { html += _tribGuiaCard(g, i); });
+    }
 
-      return `<div style="margin-bottom:12px;border:1px solid #1e293b;border-radius:10px;overflow:hidden;background:rgba(15,23,42,.4)">
-        <div style="padding:8px 12px;background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(5,150,105,.05));border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px">
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:900;font-size:13px;color:#f1f5f9">🏢 ${_escapeHtml(grupo.nombre)}</div>
-            <div style="font-size:10px;color:#94a3b8">
-              ${grupo.ruc ? `RUC ${_escapeHtml(grupo.ruc)} · ` : ''}${grupo.items.length} documento${grupo.items.length === 1 ? '' : 's'}
-            </div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">IGV total</div>
-            <div style="font-weight:900;font-size:14px;color:#34d399">${_tribFmtSoles(grupo.totalIGV)}</div>
-          </div>
-        </div>
-        <div style="padding:4px">${itemsHtml}</div>
-      </div>`;
-    }).join('');
+    const totalFiltrado = ordenada.reduce((s, g) => s + (g.igvRecuperable || 0), 0);
+    html += '<div class="trib-nota">Mostrando <b style="color:var(--trib-ink1)">' + ordenada.length + '</b> de ' + lista.length +
+            ' guías · IGV en pantalla <b style="color:var(--trib-favor)">' + _tribFmtSoles(totalFiltrado) + '</b>. ' +
+            'El OCR corre solo: al subir la foto de un comprobante el pipeline la lee y suma el IGV. ' +
+            'El botón ↻ vuelve a encolarla.</div>';
+    cont.innerHTML = html;
+    cont.scrollTop = 0;
+  }
 
-    cont.innerHTML = chipsHtml + gruposHtml;
+  // Card de una guía. `i` solo sirve para el retraso escalonado de entrada.
+  function _tribGuiaCard(g, i) {
+    const cls = _tribClasifGuia(g);
+    const igv = g.igvRecuperable || 0;
+    const retraso = Math.min(i, 16) * 25;
+    const id = _escapeHtml(String(g.idGuia || ''));
+
+    const foto = g.urlFoto
+      ? '<button type="button" class="trib-gthumb" data-foto="' + id + '" title="Ver el comprobante en grande">' +
+          '<img src="' + _escapeHtml(g.urlFoto) + '" alt="Comprobante de ' + id + '" loading="lazy" ' +
+               'onerror="this.style.display=\'none\';this.parentElement.textContent=\'📄\'">' +
+          '<span class="lupa">🔍</span>' +
+        '</button>'
+      : '<span class="trib-gnofoto" aria-hidden="true">📵</span>';
+
+    const estados = {
+      CON_IGV:    ['ok',    '🟢 leído' + (g.confidence ? ' ' + g.confidence + '%' : '')],
+      SIN_IGV:    ['info',  '⊘ sin IGV'],
+      ILEGIBLE:   ['error', '🔴 ilegible'],
+      SIN_FOTO:   ['warn',  '⚪ sin foto'],
+      PROCESANDO: ['warn',  '🟡 en cola']
+    };
+    const est = estados[cls] || estados.PROCESANDO;
+
+    const chip = igv > 0
+      ? '<span class="trib-gchip a-favor">' + _tribFmtSoles(igv) + ' a favor</span>'
+      : '<span class="trib-gchip neutro">sin IGV</span>';
+
+    const fechaCmp = g.fechaComprobante || (g.fecha ? new Date(g.fecha).toLocaleDateString('es-PE') : '');
+    const serieNum = String(g.serie || '') + (g.numero ? '-' + g.numero : '');
+    const meta = [];
+    if (fechaCmp)  meta.push('<span>' + _escapeHtml(String(fechaCmp)) + '</span>');
+    if (serieNum)  meta.push('<code>' + _escapeHtml(serieNum) + '</code>');
+    if (g.total > 0) meta.push('<span>Doc ' + _tribFmtSoles(g.total) + '</span>');
+
+    const aviso = (cls === 'SIN_FOTO')
+      ? '<div class="trib-gaviso">⚠ Sin comprobante — no analizable. Sube la foto en la guía y el IGV entra solo.</div>'
+      : (cls === 'ILEGIBLE' ? '<div class="trib-gaviso">⚠ La IA no pudo leer la foto — reencólala con ↻ o vuelve a fotografiarla.</div>' : '');
+
+    return '<div class="trib-gcard' + (cls === 'SIN_FOTO' ? ' sin-foto' : '') + '" data-guia="' + id + '" style="animation-delay:' + retraso + 'ms">' +
+      foto +
+      '<div class="trib-gmain">' +
+        '<div class="trib-gid">' + id + '</div>' +
+        '<div class="trib-gmeta">' + meta.join('<span>·</span>') + '</div>' +
+        aviso +
+      '</div>' +
+      '<div class="trib-gright">' + chip + '<span class="trib-gocr ' + est[0] + '">' + est[1] + '</span></div>' +
+      (g.tieneFoto ? '<button type="button" class="trib-gbtn" data-reocr="' + id + '" title="Volver a leer este comprobante">↻</button>' : '') +
+    '</div>';
+  }
+
+  // Delegación de clicks del overlay (nada de onclick con URLs dentro: el id
+  // de la guía viaja en el data-attr y la URL se busca en la caché).
+  function _tribFavorClick(e) {
+    const t = e.target;
+    const chip = t.closest && t.closest('[data-filtro]');
+    if (chip) { _tribSetIGVFiltro(chip.getAttribute('data-filtro')); return; }
+    const thumb = t.closest && t.closest('[data-foto]');
+    if (thumb) {
+      const g = _tribIGVFavorListaCache.find(x => String(x.idGuia) === thumb.getAttribute('data-foto'));
+      if (g) tribAbrirFotoComprobante(g.urlFoto, g.idGuia, g.igvRecuperable);
+      return;
+    }
+    const re = t.closest && t.closest('[data-reocr]');
+    if (re) { re.classList.add('girando'); tribReprocesarOCR(re.getAttribute('data-reocr')); return; }
   }
 
   function _tribSetIGVFiltro(estado) {
     _tribIGVFiltro.estado = estado;
+    _finBeep && _finBeep('click');
     _tribRenderIGVFavorDetalle(_tribIGVFavorListaCache);
   }
 
-  // [v2.42.10] Overlay para ver el comprobante en grande con zoom
-  function tribAbrirFotoComprobante(url, idGuia) {
+  // ═══════════════════════════════════════════════════════════════════
+  // LIGHTBOX del comprobante — análisis visual (zoom rueda/pinch/doble tap)
+  // ═══════════════════════════════════════════════════════════════════
+  const _tribLB = { escala: 1, tx: 0, ty: 0, punteros: new Map(), dist0: 0, esc0: 1, ultimoTap: 0, arrastre: null };
+
+  function tribAbrirFotoComprobante(url, idGuia, igv) {
     if (!url) return;
-    _finBeep && _finBeep('tap');
-    let overlay = document.getElementById('tribFotoOverlay');
-    if (!overlay) {
-      overlay = document.createElement('div');
-      overlay.id = 'tribFotoOverlay';
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(8px);cursor:pointer';
-      overlay.onclick = (e) => { if (e.target === overlay || e.target.classList.contains('trib-foto-close')) overlay.remove(); };
-      document.body.appendChild(overlay);
-    }
-    overlay.innerHTML = `
-      <button class="trib-foto-close" style="position:absolute;top:20px;right:20px;background:rgba(255,255,255,.15);color:#fff;width:44px;height:44px;border-radius:50%;border:none;font-size:18px;cursor:pointer;font-weight:800">✕</button>
-      <div style="position:absolute;top:20px;left:20px;background:rgba(0,0,0,.6);color:#fff;padding:8px 14px;border-radius:99px;font-size:12px;font-weight:700">📄 ${_escapeHtml(idGuia || 'Comprobante')}</div>
-      <img src="${_escapeHtml(url)}" alt="Comprobante"
-           style="max-width:95vw;max-height:90vh;object-fit:contain;border-radius:8px;box-shadow:0 30px 60px rgba(0,0,0,.7)"
-           onerror="this.parentElement.innerHTML='<div style=color:#fca5a5;font-weight:700>⚠ No se pudo cargar la foto</div>'">`;
+    _finBeep && _finBeep('click');
+    const viejo = document.getElementById('tribLightbox');
+    if (viejo) viejo.remove();
+
+    _tribLB.escala = 1; _tribLB.tx = 0; _tribLB.ty = 0; _tribLB.punteros.clear();
+
+    const lb = document.createElement('div');
+    lb.id = 'tribLightbox';
+    lb.className = 'trib-lb';
+    lb.innerHTML =
+      '<div class="trib-lb-stage" data-lb-stage="1">' +
+        '<img class="trib-lb-img" id="tribLightboxImg" alt="Comprobante de ' + _escapeHtml(String(idGuia || '')) + '" ' +
+             'src="' + _escapeHtml(url) + '" draggable="false">' +
+      '</div>' +
+      '<div class="trib-lb-cap">' +
+        '<span>📄 ' + _escapeHtml(String(idGuia || 'Comprobante')) + '</span>' +
+        ((igv || 0) > 0 ? '<span class="igv">· ' + _tribFmtSoles(igv) + ' a favor</span>' : '') +
+      '</div>' +
+      '<button type="button" class="trib-lb-x" data-lb-cerrar="1" aria-label="Cerrar">✕</button>' +
+      '<div class="trib-lb-tools">' +
+        '<button type="button" class="trib-lb-btn" data-lb-zoom="-1" aria-label="Alejar">−</button>' +
+        '<span class="trib-lb-zoom" id="tribLightboxZoom">100%</span>' +
+        '<button type="button" class="trib-lb-btn" data-lb-zoom="1" aria-label="Acercar">+</button>' +
+        '<button type="button" class="trib-lb-btn" data-lb-reset="1" aria-label="Restablecer">⟲</button>' +
+        '<a class="trib-lb-btn" href="' + _escapeHtml(url) + '" target="_blank" rel="noopener" ' +
+           'style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none" aria-label="Abrir original">⧉</a>' +
+      '</div>';
+    document.body.appendChild(lb);
+    _tribBloquearScroll(true);
+
+    const img = document.getElementById('tribLightboxImg');
+    img.addEventListener('error', () => {
+      const st = lb.querySelector('[data-lb-stage]');
+      if (st) st.innerHTML = '<div class="trib-lb-err">⚠ No se pudo cargar la foto del comprobante</div>';
+    });
+
+    lb.addEventListener('click', (e) => {
+      if (e.target.closest('[data-lb-cerrar]')) { _tribCerrarLightbox(); return; }
+      const z = e.target.closest('[data-lb-zoom]');
+      if (z) { _tribLBZoom(parseInt(z.getAttribute('data-lb-zoom'), 10) > 0 ? 1.35 : 1 / 1.35); return; }
+      if (e.target.closest('[data-lb-reset]')) { _tribLB.escala = 1; _tribLB.tx = 0; _tribLB.ty = 0; _tribLBAplicar(); return; }
+      // Click en el fondo (no en la imagen ni en la barra) cierra.
+      if (e.target === lb || e.target.hasAttribute('data-lb-stage')) _tribCerrarLightbox();
+    });
+
+    // Rueda del mouse = zoom continuo.
+    lb.addEventListener('wheel', (e) => { e.preventDefault(); _tribLBZoom(e.deltaY < 0 ? 1.14 : 1 / 1.14); }, { passive: false });
+    // Doble click (escritorio) alterna 1x ↔ 2.4x.
+    img.addEventListener('dblclick', (e) => { e.preventDefault(); _tribLBDobleTap(); });
+
+    // Pinch (2 dedos) y arrastre (1 dedo con zoom).
+    img.addEventListener('pointerdown', (e) => {
+      _tribLB.punteros.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { img.setPointerCapture(e.pointerId); } catch (_) {}
+      if (_tribLB.punteros.size === 2) {
+        const p = [..._tribLB.punteros.values()];
+        _tribLB.dist0 = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+        _tribLB.esc0 = _tribLB.escala;
+        _tribLB.arrastre = null;
+      } else if (_tribLB.escala > 1.01) {
+        _tribLB.arrastre = { x: e.clientX, y: e.clientY, tx: _tribLB.tx, ty: _tribLB.ty };
+        img.classList.add('arrastrando');
+      }
+    });
+    img.addEventListener('pointermove', (e) => {
+      if (!_tribLB.punteros.has(e.pointerId)) return;
+      _tribLB.punteros.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (_tribLB.punteros.size === 2) {
+        const p = [..._tribLB.punteros.values()];
+        const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1;
+        _tribLB.escala = Math.min(6, Math.max(1, _tribLB.esc0 * (d / _tribLB.dist0)));
+        _tribLBAplicar(true);
+      } else if (_tribLB.arrastre) {
+        _tribLB.tx = _tribLB.arrastre.tx + (e.clientX - _tribLB.arrastre.x);
+        _tribLB.ty = _tribLB.arrastre.ty + (e.clientY - _tribLB.arrastre.y);
+        _tribLBAplicar(true);
+      }
+    });
+    const soltar = (e) => {
+      _tribLB.punteros.delete(e.pointerId);
+      if (_tribLB.punteros.size < 2) { _tribLB.arrastre = null; img.classList.remove('arrastrando'); }
+      // Doble tap táctil: dos toques sueltos en menos de 300ms.
+      if (e.pointerType === 'touch') {
+        const ahora = Date.now();
+        if (ahora - _tribLB.ultimoTap < 300) { _tribLBDobleTap(); _tribLB.ultimoTap = 0; }
+        else _tribLB.ultimoTap = ahora;
+      }
+    };
+    img.addEventListener('pointerup', soltar);
+    img.addEventListener('pointercancel', soltar);
+
+    document.addEventListener('keydown', _tribLBTecla, true);
   }
 
+  function _tribLBTecla(e) {
+    if (!document.getElementById('tribLightbox')) return;
+    if (e.key === 'Escape') { e.stopPropagation(); _tribCerrarLightbox(); }
+    else if (e.key === '+' || e.key === '=') _tribLBZoom(1.35);
+    else if (e.key === '-' || e.key === '_') _tribLBZoom(1 / 1.35);
+    else if (e.key === '0') { _tribLB.escala = 1; _tribLB.tx = 0; _tribLB.ty = 0; _tribLBAplicar(); }
+  }
+
+  function _tribLBDobleTap() {
+    if (_tribLB.escala > 1.05) { _tribLB.escala = 1; _tribLB.tx = 0; _tribLB.ty = 0; }
+    else _tribLB.escala = 2.4;
+    _tribLBAplicar();
+  }
+
+  function _tribLBZoom(factor) {
+    _tribLB.escala = Math.min(6, Math.max(1, _tribLB.escala * factor));
+    if (_tribLB.escala <= 1.01) { _tribLB.tx = 0; _tribLB.ty = 0; }
+    _tribLBAplicar();
+  }
+
+  function _tribLBAplicar(sinTransicion) {
+    const img = document.getElementById('tribLightboxImg');
+    if (!img) return;
+    img.classList.toggle('arrastrando', !!sinTransicion);
+    img.style.transform = 'translate(' + _tribLB.tx.toFixed(1) + 'px,' + _tribLB.ty.toFixed(1) + 'px) scale(' + _tribLB.escala.toFixed(3) + ')';
+    img.style.cursor = _tribLB.escala > 1.01 ? 'grab' : 'zoom-in';
+    const z = document.getElementById('tribLightboxZoom');
+    if (z) z.textContent = Math.round(_tribLB.escala * 100) + '%';
+  }
+
+  function _tribCerrarLightbox() {
+    const lb = document.getElementById('tribLightbox');
+    document.removeEventListener('keydown', _tribLBTecla, true);
+    if (lb) lb.remove();
+    _tribBloquearScroll(false);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // OVERLAY 2 · IGV EN CONTRA — los CPE que emitiste (boletas y facturas)
+  // ═══════════════════════════════════════════════════════════════════
+  let _tribCPECache = [];
+  let _tribCPEViaSupa = false;
+  const _tribCPEFiltro = { estado: 'TODOS' };
+  let _tribCPEBusq = '';
+
   async function tribAbrirIGVEmitido() {
-    const cont = $('tribIGVEmitidoList');
-    cont.innerHTML = '<div class="text-slate-500 text-xs">Cargando CPE...</div>';
-    const det = cont.closest('details'); if (det) det.open = true;
+    _tribCPEFiltro.estado = 'TODOS';
+    _tribCPEBusq = '';
+    const d = _tribState.data || {};
+    const mesNom = _TRIB_MESES[(_tribState.mes || 1) - 1] + ' ' + (_tribState.anio || '');
+    _tribSheetAbrir('tribOvEmitido', {
+      icono: '🧾',
+      titulo: 'IGV en contra · comprobante por comprobante',
+      sub: 'Boletas y facturas emitidas en ' + _escapeHtml(mesNom) + ' — con su estado real en SUNAT',
+      totalLbl: 'Total en contra',
+      totalVal: _tribFmtSoles(d.igvEmitido || 0),
+      totalColor: 'var(--trib-contra)',
+      tools: '<div class="trib-chips" data-trib-chips="1"></div>' +
+             '<input class="trib-search" id="tribBuscarCPE" type="search" inputmode="search" autocomplete="off" placeholder="Buscar por correlativo o cliente...">',
+      body: '<div class="trib-vacio"><span class="trib-vacio-ico">⏳</span>Cargando los comprobantes del mes...</div>',
+      onClick: _tribCPEClick
+    });
+    const inp = $('tribBuscarCPE');
+    if (inp) inp.addEventListener('input', () => { _tribCPEBusq = inp.value || ''; _tribRenderCPEDetalle(); });
+    await _tribFetchCPE();
+  }
+
+  // Fetch de los CPE del mes. Sin cambios de ruta: PRIMERO Supabase
+  // (me.cpe_trazabilidad, estado fiscal completo y cero-GAS); si no hay
+  // token/red, cae al endpoint tribIGVEmitidoMes.
+  async function _tribFetchCPE() {
+    const cont = _tribSheetEl('tribOvEmitido', '[data-trib-body]');
     try {
-      // [TRAZABILIDAD cero-GAS] PRIMERO Supabase (me.cpe_trazabilidad): estado fiscal completo, sin GAS.
-      // Rango del mes seleccionado. Si no hay token/red → fallback al endpoint GAS (tribIGVEmitidoMes).
       const _mm = String(_tribState.mes).padStart(2, '0');
       const _desde = `${_tribState.anio}-${_mm}-01`;
       const _ult = new Date(_tribState.anio, _tribState.mes, 0).getDate();
       const _hasta = `${_tribState.anio}-${_mm}-${String(_ult).padStart(2, '0')}`;
-      let lista = null, _viaSupa = false;
+      let lista = null;
+      _tribCPEViaSupa = false;
       try {
         const sup = await API.cpeTrazabilidad(_desde, _hasta);
-        if (sup && sup.ok && Array.isArray(sup.cpe)) { lista = sup.cpe; _viaSupa = true; }
+        if (sup && sup.ok && Array.isArray(sup.cpe)) { lista = sup.cpe; _tribCPEViaSupa = true; }
       } catch (_) {}
       if (lista === null) {
         const res = await API.post('tribIGVEmitidoMes', { mes: _tribState.mes, anio: _tribState.anio });
         lista = (res?.cpe) || (res?.data?.cpe) || [];
       }
-      if (!lista.length) {
-        cont.innerHTML = '<div class="text-slate-500 text-xs italic">Sin CPE emitidos este mes</div>';
-        return;
-      }
-      cont.innerHTML = (_viaSupa ? '<div class="text-[10px] text-emerald-400/70 mb-1 px-1">⚡ trazado directo de Supabase</div>' : '') + lista.map(c => {
-        const _est = String(c.nfEstado || '');
-        const _rech = _est === 'RECHAZADO' || _est === 'RECHAZADO_SUNAT' || _est === 'ERROR';
-        const estCls = _est === 'EMITIDO' ? 'trib-row-est-ok' : _rech ? 'trib-row-est-error' : 'trib-row-est-warn';
-        // [TRAZABILIDAD] distinguir aceptado-NubeFact (firmado/generado) de aceptado-SUNAT (CDR). Las filas de
-        // Supabase traen las banderas; las de GAS caen al estado plano.
-        let estTxt;
-        if (_viaSupa) {
-          if (c.aceptadoSunat) estTxt = '🟢 aceptado SUNAT';
-          else if (_rech) estTxt = '🔴 rechazado SUNAT' + (c.sunatDesc ? ' · ' + _escapeHtml(String(c.sunatDesc).slice(0, 40)) : '');
-          else if (c.aceptadoNubefact) estTxt = '🟡 en NubeFact · pendiente SUNAT';
-          else estTxt = '⚪ sin emitir';
-        } else {
-          estTxt = _est === 'EMITIDO' ? '🟢 emitido' : _est === 'RECHAZADO_SUNAT' ? '🔴 rechazado SUNAT'
-                 : _est === 'ERROR' ? '🔴 error' : _est === 'PENDIENTE' ? '🟡 pendiente' : '⚪ ' + (_est || 'sin estado');
-        }
-        const _refLocal = c.refLocal || '';
-        const _noEmitido = _est !== 'EMITIDO';
-        return `<div class="trib-row">
-          <span class="trib-row-icon">${c.tipo === 'FACTURA' ? '📋' : '🧾'}</span>
-          <div class="trib-row-data">
-            <strong>${_escapeHtml(c.correlativo)}</strong> · ${_escapeHtml(c.cliente || 'sin cliente')}
-            <br><small>${(new Date(c.fecha)).toLocaleString('es-PE')} · ${_escapeHtml(c.tipo)}${c.enlaceCdr ? ' · <a href="'+_escapeHtml(c.enlaceCdr)+'" target="_blank" style="color:#34d399">CDR</a>' : ''}${c.enlacePdf ? ' · <a href="'+_escapeHtml(c.enlacePdf)+'" target="_blank" style="color:#60a5fa">PDF</a>' : ''}</small>
-          </div>
-          <span class="trib-row-monto">${_tribFmtSoles(c.total)}</span>
-          <span class="${estCls}" style="font-size:10.5px">${estTxt}</span>
-          ${_noEmitido ? `<button class="trib-btn-mini" onclick="MOS.tribReintentarCPE('${_escapeHtml(c.idVenta)}', '${_escapeHtml(c.correlativo)}', '${_escapeHtml(c.tipo)}', '${_escapeHtml(_refLocal)}')">🔄</button>` : ''}
-        </div>`;
-      }).join('');
+      _tribCPECache = lista;
+      _tribRenderCPEDetalle();
     } catch(e) {
-      cont.innerHTML = '<div class="text-red-400 text-xs">❌ ' + (e.message || e) + '</div>';
+      if (cont) cont.innerHTML = '<div class="trib-vacio"><span class="trib-vacio-ico">⚠</span>' +
+                                 _escapeHtml(String(e && e.message ? e.message : e)) + '</div>';
     }
+  }
+
+  // Estado fiscal de un CPE, con una sola regla en un solo lugar.
+  function _tribClasifCPE(c) {
+    const e = String(c.nfEstado || '').toUpperCase();
+    if (e.indexOf('BAJA') === 0) return 'BAJA';
+    if (e === 'RECHAZADO' || e === 'RECHAZADO_SUNAT' || e === 'ERROR') return 'RECHAZADO';
+    if (c.aceptadoSunat) return 'ACEPTADO';
+    if (c.aceptadoNubefact || e === 'PENDIENTE' || e === 'EMITIDO') return 'PENDIENTE';
+    return 'SIN_EMITIR';
+  }
+
+  // IGV incluido en el total del comprobante. me.cpe_trazabilidad NO devuelve
+  // el IGV desagregado (solo `total`), así que se deriva con la misma fórmula
+  // que ya usa tribExportarExcel: total × 18 / 118. Por eso el chip dice "≈".
+  function _tribIGVdeCPE(c) {
+    if (c.igv != null && isFinite(parseFloat(c.igv))) return _money(parseFloat(c.igv));
+    return _money((parseFloat(c.total) || 0) * 0.18 / 1.18);
+  }
+
+  function _tribRenderCPEDetalle() {
+    const cont = _tribSheetEl('tribOvEmitido', '[data-trib-body]');
+    const chipsCont = _tribSheetEl('tribOvEmitido', '[data-trib-chips]');
+    if (!cont) return;
+    const lista = Array.isArray(_tribCPECache) ? _tribCPECache : [];
+
+    if (!lista.length) {
+      if (chipsCont) chipsCont.innerHTML = '';
+      cont.innerHTML = '<div class="trib-vacio"><span class="trib-vacio-ico">📭</span>Sin CPE emitidos este mes</div>';
+      return;
+    }
+
+    const cnt = { TODOS: lista.length, ACEPTADO: 0, PENDIENTE: 0, RECHAZADO: 0, SIN_EMITIR: 0, BAJA: 0 };
+    lista.forEach(c => { cnt[_tribClasifCPE(c)]++; });
+
+    if (chipsCont) {
+      const mk = (key, label, n, color) => (n > 0 || key === 'TODOS')
+        ? '<button type="button" class="trib-chip' + (_tribCPEFiltro.estado === key ? ' on' : '') + '" data-cpefiltro="' + key + '">' +
+            (color ? '<span class="pip" style="background:' + color + '"></span>' : '') +
+            _escapeHtml(label) + ' <b>' + n + '</b></button>'
+        : '';
+      chipsCont.innerHTML =
+        mk('TODOS',      'Todos',            cnt.TODOS,      '') +
+        mk('ACEPTADO',   'Aceptados SUNAT',  cnt.ACEPTADO,   '#34d399') +
+        mk('PENDIENTE',  'Pendientes',       cnt.PENDIENTE,  '#fbbf24') +
+        mk('RECHAZADO',  'Rechazados',       cnt.RECHAZADO,  '#fb7185') +
+        mk('SIN_EMITIR', 'Sin emitir',       cnt.SIN_EMITIR, '#64748b') +
+        mk('BAJA',       'Dados de baja',    cnt.BAJA,       '#64748b');
+    }
+
+    const f = _tribCPEFiltro.estado;
+    const q = _tribCPEBusq.trim().toLowerCase();
+    const filtrada = lista.filter(c => {
+      if (f !== 'TODOS' && _tribClasifCPE(c) !== f) return false;
+      if (!q) return true;
+      return [c.correlativo, c.cliente, c.clienteDoc, c.tipo].map(v => String(v || '').toLowerCase()).join(' ').indexOf(q) >= 0;
+    });
+
+    if (!filtrada.length) {
+      cont.innerHTML = '<div class="trib-vacio"><span class="trib-vacio-ico">🔍</span>Ningún comprobante con este filtro</div>';
+      return;
+    }
+
+    const estados = {
+      ACEPTADO:   ['ok',    '🟢 aceptado SUNAT'],
+      PENDIENTE:  ['warn',  '🟡 en NubeFact · pendiente SUNAT'],
+      RECHAZADO:  ['error', '🔴 rechazado SUNAT'],
+      SIN_EMITIR: ['info',  '⚪ sin emitir'],
+      BAJA:       ['info',  '⊘ dado de baja']
+    };
+
+    let html = _tribCPEViaSupa
+      ? '<div class="trib-nota" style="margin:0 0 10px">⚡ Estado fiscal trazado en directo desde Supabase (me.cpe_trazabilidad)</div>'
+      : '';
+    let totIGV = 0;
+
+    filtrada.forEach((c, i) => {
+      const cls = _tribClasifCPE(c);
+      const est = estados[cls] || estados.SIN_EMITIR;
+      const igv = _tribIGVdeCPE(c);
+      totIGV = _money(totIGV + igv);
+      const esFactura = String(c.tipo || '').toUpperCase() === 'FACTURA';
+      const fecha = c.fecha ? new Date(c.fecha) : null;
+      const fStr = (fecha && !isNaN(fecha.getTime())) ? fecha.toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      const detSunat = (cls === 'RECHAZADO' && c.sunatDesc)
+        ? '<div class="trib-gaviso" style="color:#fb7185">⚠ ' + _escapeHtml(String(c.sunatDesc).slice(0, 120)) + '</div>' : '';
+      const meta = [];
+      if (fStr) meta.push('<span>' + _escapeHtml(fStr) + '</span>');
+      meta.push('<span>' + (esFactura ? 'Factura' : 'Boleta') + '</span>');
+      meta.push('<span>Total ' + _tribFmtSoles(c.total) + '</span>');
+
+      html +=
+        '<div class="trib-gcard" data-cpe="' + _escapeHtml(String(c.idVenta || c.refLocal || i)) + '" style="animation-delay:' + (Math.min(i, 16) * 25) + 'ms">' +
+          '<span class="trib-gnofoto" style="background:rgba(255,255,255,.05);border:1px solid var(--trib-line);color:var(--trib-ink2);width:42px;height:52px">' +
+            (esFactura ? '📋' : '🧾') + '</span>' +
+          '<div class="trib-gmain">' +
+            '<div class="trib-gid">' + _escapeHtml(String(c.correlativo || '(sin correlativo)')) + '</div>' +
+            '<div class="trib-gmeta">' + meta.join('<span>·</span>') + '</div>' +
+            '<div class="trib-gmeta" style="margin-top:2px">👤 ' + _escapeHtml(String(c.cliente || 'sin cliente')) +
+              (c.clienteDoc ? ' <code>' + _escapeHtml(String(c.clienteDoc)) + '</code>' : '') + '</div>' +
+            detSunat +
+          '</div>' +
+          '<div class="trib-gright">' +
+            '<span class="trib-gchip en-contra" title="IGV incluido en el total (18%)">' + _tribFmtSoles(igv) + ' en contra</span>' +
+            '<span class="trib-gocr ' + est[0] + '">' + est[1] + '</span>' +
+          '</div>' +
+          (c.enlacePdf ? '<button type="button" class="trib-gbtn" data-pdf="' + _escapeHtml(String(c.enlacePdf)) + '" title="Abrir el PDF del comprobante">📄</button>' : '') +
+          (cls !== 'ACEPTADO' && cls !== 'BAJA'
+            ? '<button type="button" class="trib-gbtn" data-recpe="' + _escapeHtml(String(c.idVenta || '')) + '" ' +
+              'data-corr="' + _escapeHtml(String(c.correlativo || '')) + '" data-tipo="' + _escapeHtml(String(c.tipo || '')) + '" ' +
+              'data-ref="' + _escapeHtml(String(c.refLocal || '')) + '" title="Consultar el estado real en SUNAT">🔄</button>'
+            : '') +
+        '</div>';
+    });
+
+    html += '<div class="trib-nota">Mostrando <b style="color:var(--trib-ink1)">' + filtrada.length + '</b> de ' + lista.length +
+            ' comprobantes · IGV en pantalla <b style="color:var(--trib-contra)">' + _tribFmtSoles(totIGV) + '</b>. ' +
+            'El IGV por línea se deriva del total (18% incluido), igual que el Excel del mes: la trazabilidad de CPE ' +
+            'guarda el total, no el desagregado. El total del encabezado sí viene del cálculo fiscal del backend.</div>';
+    cont.innerHTML = html;
+    cont.scrollTop = 0;
+  }
+
+  function _tribCPEClick(e) {
+    const t = e.target;
+    const chip = t.closest && t.closest('[data-cpefiltro]');
+    if (chip) { _tribCPEFiltro.estado = chip.getAttribute('data-cpefiltro'); _finBeep && _finBeep('click'); _tribRenderCPEDetalle(); return; }
+    const pdf = t.closest && t.closest('[data-pdf]');
+    if (pdf) { _finBeep && _finBeep('click'); window.open(pdf.getAttribute('data-pdf'), '_blank', 'noopener'); return; }
+    const re = t.closest && t.closest('[data-recpe]');
+    if (re) {
+      re.classList.add('girando');
+      tribReintentarCPE(re.getAttribute('data-recpe'), re.getAttribute('data-corr'), re.getAttribute('data-tipo'), re.getAttribute('data-ref'));
+      return;
+    }
+  }
+
+  // Refresco en sitio del overlay de CPE (sin cerrarlo y volverlo a abrir).
+  function _tribRefrescarEmitido() {
+    if (document.getElementById('tribOvEmitido')) _tribFetchCPE();
   }
 
   async function tribReprocesarOCR(idGuia) {
@@ -33664,12 +34386,16 @@ const MOS = (() => {
       // mostraba "OCR falló" en operaciones EXITOSAS. `res` ES el data ya desempaquetado.
       const res = await API.post('tribReprocesarOCR', { idGuia });
       const d = (res && res.data) ? res.data : (res || {});
-      toast('✓ OCR ' + (d.estado || 'reprocesado') + (d.igvRecuperable > 0 ? ' · IGV ' + _tribFmtSoles(d.igvRecuperable) : ''), 'success');
+      // [762] El botón ya no procesa: RE-ENCOLA. El pipeline server-side lee la
+      // foto solo, así que el mensaje útil es data.nota (cuánto va a tardar).
+      toast('✓ ' + (d.nota || ('OCR ' + (d.estado || 'reencolado'))) +
+            (d.igvRecuperable > 0 ? ' · IGV ' + _tribFmtSoles(d.igvRecuperable) : ''), 'success', 6000);
       _finBeep && _finBeep('success');
     } catch(e) {
       toast('OCR falló: ' + (e.message || e), 'warn');
     } finally {
-      tribCargar(); // refresh siempre
+      tribCargar();                    // refresca los KPIs siempre
+      _tribFetchIGVFavor(true);        // y la lista del overlay si está abierto
     }
   }
 
@@ -33701,7 +34427,9 @@ const MOS = (() => {
     } catch(e) {
       toast('Reintento falló: ' + (e.message || e), 'warn');
     } finally {
-      tribAbrirIGVEmitido();
+      // Refresca la lista EN SITIO: antes se volvía a abrir el overlay entero
+      // (parpadeo + se perdían filtro y búsqueda).
+      _tribRefrescarEmitido();
     }
   }
 
@@ -33737,7 +34465,8 @@ const MOS = (() => {
       }
       toast('✓ ' + emitidos + ' emitidos · ' + rechazados + ' rechazados · ' + sinCambio + ' sin cambio' + (viaSupa ? ' ⚡' : ''), 'success');
       _finBeep && _finBeep('success');
-      tribAbrirIGVEmitido();
+      tribCargar();
+      _tribRefrescarEmitido();
     } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
   }
 
@@ -33846,29 +34575,23 @@ const MOS = (() => {
   async function tribOCRMasivo() {
     const auth = await pedirAuth({ accion: 'TRIBUTARIO_OCR_MASIVO', refDocumento: _tribState.mes + '/' + _tribState.anio });
     if (!auth) return;
-    if (!await _modalConfirm('¿Procesar con Claude todas las fotos de boletas/facturas SIN OCR del mes ' + _tribState.mes + '/' + _tribState.anio + '?\n\nPuede tardar 1-2 minutos (30 guías ≈ 60s).', { warning: true, titulo: 'OCR masivo del mes', okText: 'Procesar' })) return;
-    toast('🤖 Procesando OCR del mes... espera 1-2 min', 'info');
+    if (!await _modalConfirm('¿Volver a encolar todas las fotos de boletas/facturas de proveedor SIN leer del mes ' + _tribState.mes + '/' + _tribState.anio + '?\n\nEl pipeline las procesa solo, en tandas cada 10 minutos.', { warning: true, titulo: 'Re-encolar OCR del mes', okText: 'Encolar' })) return;
+    toast('🤖 Encolando las fotos del mes...', 'info');
     try {
       const res = await API.post('tribOCRMasivo', {
         mes: _tribState.mes, anio: _tribState.anio, soloSinProcesar: true
       });
       const s = res?.data || res || {};
-      if (s.ok || s.procesadas !== undefined) {
-        toast('✓ OCR: ' + (s.procesadas || 0) + ' procesadas · ' + (s.conIGV || 0) + ' con IGV (' + _tribFmtSoles(s.totalIGVRecuperado || 0) + ')' +
-              (s.sinIGV ? ' · ' + s.sinIGV + ' sin IGV' : '') +
-              (s.ilegibles ? ' · ' + s.ilegibles + ' ilegibles' : '') +
-              (s.errores ? ' · ' + s.errores + ' errores' : ''), 'success');
+      // [762] Ya no procesa en línea: re-encola y el cron server-side lee. La
+      // respuesta útil es data.nota / data.encoladas.
+      if (s.nota || s.encoladas !== undefined || s.procesadas !== undefined) {
+        toast('✓ ' + (s.nota || ((s.encoladas != null ? s.encoladas : s.procesadas) + ' guías encoladas')), 'success', 7000);
         _finBeep && _finBeep('success');
       } else {
         toast('OCR masivo falló: ' + (res?.error || 'sin detalle'), 'warn');
       }
-      tribCargar(); // refresh KPIs con el IGV nuevo
-      // [v2.42.10] Si el detalle IGV a favor está abierto, refrescar también
-      const detalle = document.querySelector('#tribIGVFavorList');
-      const det = detalle && detalle.closest('details');
-      if (det && det.open) {
-        setTimeout(() => tribAbrirIGVFavor(), 400);
-      }
+      tribCargar();                 // refresh de KPIs
+      _tribFetchIGVFavor(true);     // y de la lista del overlay si está abierta
     } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
   }
 
@@ -33884,94 +34607,354 @@ const MOS = (() => {
     } catch(e) { toast('Error: ' + (e.message || e), 'error'); }
   }
 
-  // [v2.41.93] Histórico 12 meses con chart de barras dual + stats agregados
-  async function tribAbrirHistorico() {
-    // Construir modal
-    let modal = $('tribHistModal');
-    if (modal) modal.remove();
-    modal = document.createElement('div');
-    modal.id = 'tribHistModal';
-    modal.className = 'trib-hist-modal';
-    modal.innerHTML = `
-      <div class="trib-hist-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <h2 style="font-size:1.2rem;font-weight:900;color:#f1f5f9">📊 Histórico 12 meses</h2>
-          <button onclick="document.getElementById('tribHistModal').remove()" style="background:transparent;border:none;color:#94a3b8;font-size:1.5rem;cursor:pointer">✕</button>
-        </div>
-        <div id="tribHistContent">
-          <div class="text-center py-8 text-slate-500 text-sm">
-            <svg class="w-6 h-6 animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-            Cargando histórico (12 meses)...
-          </div>
-        </div>
-      </div>`;
-    // Click outside cierra
-    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-    document.body.appendChild(modal);
-    _finBeep && _finBeep('expand');
+  // ═══════════════════════════════════════════════════════════════════
+  // HISTÓRICO 12 MESES · gráfico SVG a mano (sin librerías: CSP + peso)
+  // ───────────────────────────────────────────────────────────────────
+  // Forma elegida: columnas agrupadas favor/en-contra + línea del balance,
+  // TODO sobre UN SOLO eje (mismas unidades, soles) — nunca dos escalas.
+  // La renta va como franja aparte abajo: es otra magnitud y merece su
+  // propio eje, que es exactamente por lo que NO se dibuja en el mismo plot.
+  // El viewBox se genera al ancho medido del contenedor (1 unidad = 1 px)
+  // para que los textos no se deformen al escalar.
+  // ═══════════════════════════════════════════════════════════════════
+  const _TRIB_C_FAVOR   = '#34d399';
+  const _TRIB_C_CONTRA  = '#f43f5e';   // paso más profundo del rosa: ver nota CVD en el CSS
+  const _TRIB_C_BALANCE = '#cbd5e1';   // derivado y acromático a propósito: no compite con las series
+  const _TRIB_C_RENTA   = '#a78bfa';
+  const _TRIB_C_GRID    = '#1e293b';
+  const _TRIB_C_EJE     = '#475569';
+  const _TRIB_C_TXT     = '#64748b';
 
-    try {
-      const res = await API.post('tribHistorico12meses', {});
-      const data = (res?.data || res) || [];
-      if (!data.length) {
-        $('tribHistContent').innerHTML = '<div class="text-slate-500 text-center py-6">Sin datos para mostrar</div>';
-        return;
-      }
-      // Stats agregados
-      const totalFavor   = data.reduce((s, m) => s + (m.igvFavor || 0), 0);
-      const totalEmitido = data.reduce((s, m) => s + (m.igvEmitido || 0), 0);
-      const totalNeto    = totalEmitido - totalFavor;
-      const totalVentas  = data.reduce((s, m) => s + (m.ventas || 0), 0);
-      const totalRenta   = data.reduce((s, m) => s + (m.renta || 0), 0);
-      const promVentas   = data.length > 0 ? totalVentas / data.length : 0;
+  // Marcas de eje redondeadas (0 / 2k / 4k ...) que cubren [min,max].
+  function _tribTicks(min, max, n) {
+    const span = (max - min) || 1;
+    const bruto = span / Math.max(1, n);
+    const mag = Math.pow(10, Math.floor(Math.log10(bruto)));
+    const paso = [1, 2, 2.5, 5, 10].map(k => k * mag).find(s => s >= bruto) || 10 * mag;
+    const lo = Math.floor(min / paso) * paso;
+    const hi = Math.ceil(max / paso) * paso;
+    const marcas = [];
+    for (let v = lo; v <= hi + paso * 0.001; v += paso) marcas.push(+v.toFixed(6));
+    return { lo, hi: (hi === lo ? lo + paso : hi), marcas };
+  }
 
-      // Max bar para escalar
-      const maxBar = Math.max(...data.map(m => Math.max(m.igvFavor || 0, m.igvEmitido || 0)), 1);
+  // Barra con el extremo de dato redondeado (4px) y escuadra en la línea base.
+  function _tribBarPath(x, y, w, h, r) {
+    if (!(h > 0.6)) return '';
+    const rr = Math.min(r, w / 2, h);
+    return 'M' + x + ',' + (y + h) +
+           ' L' + x + ',' + (y + rr) +
+           ' Q' + x + ',' + y + ' ' + (x + rr) + ',' + y +
+           ' L' + (x + w - rr) + ',' + y +
+           ' Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + rr) +
+           ' L' + (x + w) + ',' + (y + h) + ' Z';
+  }
 
-      const barsHTML = data.map(m => {
-        const wF = Math.round(((m.igvFavor   || 0) / maxBar) * 100);
-        const wP = Math.round(((m.igvEmitido || 0) / maxBar) * 100);
-        return `<div class="trib-hist-bar-row">
-          <div class="trib-hist-bar-mes">${m.label} ${String(m.anio).slice(-2)}</div>
-          <div class="trib-hist-bar-cont">
-            <div class="trib-hist-bar-favor" style="width:${wF}%" title="IGV a favor: ${_tribFmtSoles(m.igvFavor)}"></div>
-            <div class="trib-hist-bar-pagar" style="width:${wP}%" title="IGV a pagar: ${_tribFmtSoles(m.igvEmitido)}"></div>
-          </div>
-          <div class="trib-hist-bar-val">
-            ${_tribFmtSoles(m.balance)}<br><small>${_tribFmtSoles(m.ventas)}</small>
-          </div>
-        </div>`;
-      }).join('');
+  let _tribHistRO = null;
+  let _tribHistTimer = null;
+  let _tribHistW = 0;   // ancho del último render: el chart solo se rehace si CAMBIA
 
-      $('tribHistContent').innerHTML = `
-        <div class="trib-hist-grid">
-          <div class="trib-hist-stat">
-            <div class="trib-hist-stat-lbl">IGV pagado total</div>
-            <div class="trib-hist-stat-val" style="color:#fbbf24">${_tribFmtSoles(totalNeto)}</div>
-          </div>
-          <div class="trib-hist-stat">
-            <div class="trib-hist-stat-lbl">Ventas total</div>
-            <div class="trib-hist-stat-val">${_tribFmtSoles(totalVentas)}</div>
-          </div>
-          <div class="trib-hist-stat">
-            <div class="trib-hist-stat-lbl">Renta total</div>
-            <div class="trib-hist-stat-val" style="color:#34d399">${_tribFmtSoles(totalRenta)}</div>
-          </div>
-        </div>
-        <div class="trib-hist-chart">
-          ${barsHTML}
-          <div class="trib-hist-leg">
-            <div class="trib-hist-leg-item"><span class="trib-hist-leg-dot" style="background:#34d399"></span>IGV favor</div>
-            <div class="trib-hist-leg-item"><span class="trib-hist-leg-dot" style="background:#fbbf24"></span>IGV emitido</div>
-            <div class="trib-hist-leg-item"><span style="color:#cbd5e1">Balance neto · Ventas mes</span></div>
-          </div>
-        </div>
-        <p style="font-size:11px;color:#64748b;text-align:center;margin-top:8px">
-          Promedio mensual de ventas: <strong style="color:#cbd5e1">${_tribFmtSoles(promVentas)}</strong>
-        </p>`;
-    } catch(e) {
-      $('tribHistContent').innerHTML = '<div class="text-red-400 text-center py-6">❌ ' + (e.message || e) + '</div>';
+  function _tribPintarHistorico() {
+    const cont = $('tribHistBody');
+    if (!cont) return;
+    const data = _tribHist;
+    const sub = $('tribHistSub');
+    const resumen = $('tribHistResumen');
+
+    if (!data || !data.length) {
+      if (_tribHistBusy) return;   // sigue en vuelo: se queda el skeleton
+      cont.innerHTML = '<div class="trib-vacio"><span class="trib-vacio-ico">📉</span>Sin histórico disponible</div>';
+      if (sub) sub.textContent = 'No se pudo calcular el histórico';
+      return;
     }
+
+    const n = data.length;
+    const totFavor  = data.reduce((s, m) => s + (m.igvFavor || 0), 0);
+    const totContra = data.reduce((s, m) => s + (m.igvEmitido || 0), 0);
+    const totRenta  = data.reduce((s, m) => s + (m.renta || 0), 0);
+    const netoFavor = totFavor - totContra;
+    if (sub) sub.textContent = data[0].label + ' ' + String(data[0].anio).slice(-2) + ' → ' +
+                               data[n - 1].label + ' ' + String(data[n - 1].anio).slice(-2) + ' · IGV a favor vs en contra';
+    if (resumen) {
+      resumen.innerHTML = 'Acumulado: <b style="color:' + (netoFavor >= 0 ? 'var(--trib-favor)' : 'var(--trib-contra)') + '">' +
+        _tribFmtSoles(Math.abs(netoFavor)) + '</b> ' + (netoFavor >= 0 ? 'a favor' : 'en contra') +
+        ' · renta <b style="color:var(--trib-renta)">' + _tribFmtSoles(totRenta) + '</b>';
+    }
+
+    // ── Geometría ────────────────────────────────────────────────────
+    const W = Math.max(280, Math.round(cont.clientWidth || 640));
+    _tribHistW = W;
+    const compacto = W < 560;
+    const padL = compacto ? 38 : 46, padR = 10, padT = 12, padB = 22;
+    const H = compacto ? 170 : 206;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const banda = plotW / n;
+
+    let maxV = 1, minV = 0;
+    data.forEach(m => {
+      maxV = Math.max(maxV, m.igvFavor || 0, m.igvEmitido || 0, m.balFavor || 0);
+      minV = Math.min(minV, m.balFavor || 0);
+    });
+    const t = _tribTicks(minV, maxV, compacto ? 3 : 4);
+    const y = v => padT + ((t.hi - v) / (t.hi - t.lo)) * plotH;
+    const y0 = y(0);
+
+    // Grosor de columna: nunca llena la banda — el aire restante es del diseño.
+    const bw = Math.max(4, Math.min(14, banda * 0.30));
+    const hueco = 2;   // separador de 2px en color de superficie entre columnas vecinas
+
+    let grid = '', barras = '', ejes = '', bandas = '', marcasX = '';
+    t.marcas.forEach(v => {
+      const yy = y(v).toFixed(1);
+      grid += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (W - padR) + '" y2="' + yy + '" stroke="' + _TRIB_C_GRID + '" stroke-width="1"></line>';
+      ejes += '<text x="' + (padL - 7) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end" font-size="9" fill="' + _TRIB_C_TXT + '" font-weight="700">' + _tribFmtCorto(v) + '</text>';
+    });
+    // Línea del cero, más marcada, si el dominio cruza a negativo.
+    if (t.lo < 0) grid += '<line x1="' + padL + '" y1="' + y0.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y0.toFixed(1) + '" stroke="' + _TRIB_C_EJE + '" stroke-width="1"></line>';
+
+    const puntos = [];
+    data.forEach((m, i) => {
+      const cx = padL + banda * i + banda / 2;
+      const xF = cx - hueco / 2 - bw;
+      const xC = cx + hueco / 2;
+      const hF = Math.max(0, y0 - y(m.igvFavor || 0));
+      const hC = Math.max(0, y0 - y(m.igvEmitido || 0));
+      barras += '<path d="' + _tribBarPath(xF, y0 - hF, bw, hF, 4) + '" fill="' + _TRIB_C_FAVOR + '"></path>';
+      barras += '<path d="' + _tribBarPath(xC, y0 - hC, bw, hC, 4) + '" fill="' + _TRIB_C_CONTRA + '"></path>';
+      puntos.push([cx, y(m.balFavor || 0)]);
+      // Etiqueta de mes: en pantalla angosta, una sí una no.
+      if (!compacto || i % 2 === 1) {
+        marcasX += '<text x="' + cx.toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="9" fill="' + _TRIB_C_TXT + '" font-weight="700">' +
+                   _escapeHtml(m.label) + '</text>';
+      }
+      bandas += '<rect class="trib-chart-band" data-mes="' + i + '" x="' + (padL + banda * i).toFixed(1) + '" y="' + padT + '" width="' + banda.toFixed(1) + '" height="' + plotH + '" rx="4"></rect>';
+    });
+
+    // Línea del balance (2px, mismas unidades y mismo eje que las columnas).
+    const linea = '<path d="M' + puntos.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L') + '" fill="none" stroke="' +
+                  _TRIB_C_BALANCE + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity=".9"></path>';
+    // Marcadores + etiqueta directa SOLO en dos sitios: el extremo y el final
+    // (etiquetar cada punto sería ruido; el resto lo cargan el tooltip y la tabla).
+    let iExt = 0;
+    data.forEach((m, i) => { if (Math.abs(m.balFavor || 0) > Math.abs(data[iExt].balFavor || 0)) iExt = i; });
+    let marcasLinea = '';
+    [iExt, n - 1].filter((v, i, a) => a.indexOf(v) === i).forEach(i => {
+      const p = puntos[i];
+      const col = (data[i].balFavor || 0) >= 0 ? _TRIB_C_FAVOR : _TRIB_C_CONTRA;
+      marcasLinea += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="4.5" fill="' + col + '" stroke="#0b1322" stroke-width="2"></circle>';
+    });
+    const pFin = puntos[n - 1];
+    const balFin = data[n - 1].balFavor || 0;
+    const etiqFin = '<text x="' + (pFin[0] - 6).toFixed(1) + '" y="' + (pFin[1] - 9).toFixed(1) + '" text-anchor="end" font-size="10" font-weight="800" fill="#cbd5e1">' +
+                    _tribFmtCorto(balFin) + '</text>';
+
+    // ── Franja de renta (magnitud distinta → gráfico aparte, eje propio) ──
+    const HR = 52, padTR = 14, plotHR = HR - padTR - 12;
+    const maxR = Math.max(1, ...data.map(m => m.renta || 0));
+    let barrasR = '', bandasR = '';
+    data.forEach((m, i) => {
+      const cx = padL + banda * i + banda / 2;
+      const h = ((m.renta || 0) / maxR) * plotHR;
+      const bwR = Math.max(4, Math.min(14, banda * 0.34));
+      barrasR += '<path d="' + _tribBarPath(cx - bwR / 2, padTR + plotHR - h, bwR, h, 3) + '" fill="' + _TRIB_C_RENTA + '" opacity=".9">' +
+                 '<title>' + _escapeHtml(m.label + ' ' + m.anio) + ' · renta ' + _tribFmtSoles(m.renta) + '</title></path>';
+      bandasR += '';
+    });
+
+    // ── Tabla equivalente: ningún valor queda encerrado en el hover ──────
+    let filas = '';
+    data.forEach(m => {
+      filas += '<tr><td>' + _escapeHtml(m.label + ' ' + String(m.anio).slice(-2)) + '</td>' +
+               '<td>' + _tribFmtSoles(m.igvFavor) + '</td>' +
+               '<td>' + _tribFmtSoles(m.igvEmitido) + '</td>' +
+               '<td style="color:' + ((m.balFavor || 0) >= 0 ? _TRIB_C_FAVOR : '#fb7185') + '">' + _tribFmtSoles(m.balFavor) + '</td>' +
+               '<td>' + _tribFmtSoles(m.ventas) + '</td>' +
+               '<td>' + _tribFmtSoles(m.renta) + '</td></tr>';
+    });
+
+    cont.innerHTML =
+      '<div class="trib-chart" id="tribChartWrap">' +
+        '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" ' +
+             'aria-label="IGV a favor y en contra de los últimos 12 meses, con la línea del balance">' +
+          grid + barras + linea + marcasLinea + etiqFin + ejes + marcasX + bandas +
+        '</svg>' +
+        '<div class="trib-panel-sub" style="margin-top:6px">Impuesto a la renta del mes (escala propia)</div>' +
+        '<svg viewBox="0 0 ' + W + ' ' + HR + '" width="100%" height="' + HR + '" role="img" aria-label="Impuesto a la renta mes a mes">' +
+          '<line x1="' + padL + '" y1="' + (padTR + plotHR) + '" x2="' + (W - padR) + '" y2="' + (padTR + plotHR) + '" stroke="' + _TRIB_C_GRID + '" stroke-width="1"></line>' +
+          barrasR + bandasR +
+        '</svg>' +
+        '<div class="trib-tt" id="tribChartTT"></div>' +
+      '</div>' +
+      '<div class="trib-legend">' +
+        '<span class="trib-legend-item"><span class="trib-swatch" style="background:' + _TRIB_C_FAVOR + '"></span>IGV a favor</span>' +
+        '<span class="trib-legend-item"><span class="trib-swatch" style="background:' + _TRIB_C_CONTRA + '"></span>IGV en contra</span>' +
+        '<span class="trib-legend-item"><span class="trib-linekey"></span>Balance del mes</span>' +
+        '<span class="trib-legend-item"><span class="trib-swatch" style="background:' + _TRIB_C_RENTA + '"></span>Renta</span>' +
+      '</div>' +
+      '<details><summary class="trib-tabla-tog">Ver la tabla con los 12 meses</summary>' +
+        '<div class="trib-tabla-wrap"><table class="trib-tabla">' +
+          '<thead><tr><th>Mes</th><th>A favor</th><th>En contra</th><th>Balance</th><th>Ventas</th><th>Renta</th></tr></thead>' +
+          '<tbody>' + filas + '</tbody>' +
+        '</table></div>' +
+      '</details>';
+
+    // Tooltip: hover en escritorio, tap en táctil. El valor nunca vive solo
+    // acá — la tabla de arriba es el gemelo accesible.
+    const wrap = $('tribChartWrap');
+    const tt = $('tribChartTT');
+    if (wrap && tt) {
+      const mostrar = (i, rect) => {
+        const m = data[i];
+        if (!m) return;
+        tt.innerHTML =
+          '<div class="trib-tt-mes">' + _escapeHtml(m.label + ' ' + m.anio) + '</div>' +
+          '<div class="trib-tt-row"><span class="trib-swatch" style="background:' + _TRIB_C_FAVOR + '"></span>A favor<b>' + _tribFmtSoles(m.igvFavor) + '</b></div>' +
+          '<div class="trib-tt-row"><span class="trib-swatch" style="background:' + _TRIB_C_CONTRA + '"></span>En contra<b>' + _tribFmtSoles(m.igvEmitido) + '</b></div>' +
+          '<div class="trib-tt-row"><span class="trib-linekey"></span>Balance<b style="color:' + ((m.balFavor || 0) >= 0 ? _TRIB_C_FAVOR : '#fb7185') + '">' + _tribFmtSoles(m.balFavor) + '</b></div>' +
+          '<div class="trib-tt-row"><span class="trib-swatch" style="background:' + _TRIB_C_RENTA + '"></span>Renta<b>' + _tribFmtSoles(m.renta) + '</b></div>' +
+          '<div class="trib-tt-row" style="opacity:.75">Ventas<b>' + _tribFmtSoles(m.ventas) + '</b></div>';
+        tt.classList.add('visible');
+        const wr = wrap.getBoundingClientRect();
+        const tw = tt.offsetWidth, th = tt.offsetHeight;
+        let left = (rect.left - wr.left) + rect.width / 2 - tw / 2;
+        left = Math.max(2, Math.min(left, wr.width - tw - 2));
+        tt.style.left = left + 'px';
+        tt.style.top = Math.max(2, (rect.top - wr.top) + rect.height / 2 - th / 2) + 'px';
+      };
+      wrap.querySelectorAll('.trib-chart-band').forEach(b => {
+        const i = parseInt(b.getAttribute('data-mes'), 10);
+        b.addEventListener('pointerenter', () => mostrar(i, b.getBoundingClientRect()));
+        b.addEventListener('pointerdown',  () => mostrar(i, b.getBoundingClientRect()));
+      });
+      wrap.addEventListener('pointerleave', () => tt.classList.remove('visible'));
+    }
+
+    // Re-render al cambiar el ancho (el viewBox se genera en píxeles reales).
+    if (!_tribHistRO && window.ResizeObserver) {
+      const panel = $('tribHistPanel');
+      if (panel) {
+        _tribHistRO = new ResizeObserver(() => {
+          clearTimeout(_tribHistTimer);
+          _tribHistTimer = setTimeout(() => {
+            // SOLO si cambió el ANCHO. Si se reaccionara también al alto, abrir
+            // el <details> de la tabla crecería el panel → re-render → la tabla
+            // se cerraría sola al instante.
+            const c = $('tribHistBody');
+            if (!c || S.view !== 'tributario') return;
+            if (Math.abs(Math.round(c.clientWidth) - _tribHistW) < 2) return;
+            _tribPintarHistorico();
+          }, 160);
+        });
+        _tribHistRO.observe(panel);
+      }
+    }
+  }
+
+  // El botón "Histórico" del menú ⋯ ya no abre un modal: el gráfico vive en
+  // la vista principal, así que lo lleva hasta él y lo resalta un instante.
+  function tribAbrirHistorico() {
+    const panel = $('tribHistPanel');
+    if (!panel) return;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    panel.style.transition = 'box-shadow .4s cubic-bezier(.16,1,.3,1)';
+    panel.style.boxShadow = '0 0 0 2px rgba(129,140,248,.5)';
+    setTimeout(() => { panel.style.boxShadow = ''; }, 1100);
+    _finBeep && _finBeep('click');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // OVERLAY 3 · RENTA — de dónde sale la cifra, con honestidad
+  // ═══════════════════════════════════════════════════════════════════
+  function tribAbrirRenta() {
+    const d = _tribState.data || {};
+    const ventas = d.totalVentas || 0;
+    const renta  = d.rentaMensual || 0;
+    // La tasa se DERIVA del dato del backend (mos.trib_resumen_mes calcula
+    // ventas × 0.015). Si algún día cambia el régimen, esto lo refleja solo.
+    const tasa = ventas > 0 ? (renta / ventas) * 100 : 1.5;
+    const mesNom = _TRIB_MESES[(_tribState.mes || 1) - 1] + ' ' + (_tribState.anio || '');
+
+    // Acumulado del año calendario seleccionado, desde el histórico cacheado.
+    let acumTxt = 'El acumulado del año aparece cuando termine de cargar el histórico de 12 meses.';
+    if (_tribHist && _tribHist.length) {
+      const delAnio = _tribHist.filter(m => m.anio === _tribState.anio);
+      if (delAnio.length) {
+        const acum = delAnio.reduce((s, m) => s + (m.renta || 0), 0);
+        const ventasAcum = delAnio.reduce((s, m) => s + (m.ventas || 0), 0);
+        acumTxt = 'En ' + _tribState.anio + ' llevas <b style="color:var(--trib-renta)">' + _tribFmtSoles(acum) + '</b> ' +
+                  'de pagos a cuenta sobre <b>' + _tribFmtSoles(ventasAcum) + '</b> de ventas, en ' + delAnio.length +
+                  ' mes' + (delAnio.length === 1 ? '' : 'es') + ' dentro de la ventana de 12 meses.';
+      }
+    }
+
+    _tribSheetAbrir('tribOvRenta', {
+      icono: '🏛️',
+      titulo: 'Impuesto a la renta · ' + mesNom,
+      sub: 'Pago a cuenta mensual del Régimen MYPE Tributario',
+      totalLbl: 'Renta del mes',
+      totalVal: _tribFmtSoles(renta),
+      totalColor: 'var(--trib-renta)',
+      body:
+        '<div class="trib-calc">' +
+          '<div class="trib-calc-row"><span>Base · ventas del mes registradas</span><b>' + _tribFmtSoles(ventas) + '</b></div>' +
+          '<div class="trib-calc-row"><span>Tasa aplicada · pago a cuenta MYPE</span><b>' + tasa.toFixed(2).replace(/\.?0+$/, '') + '%</b></div>' +
+          '<div class="trib-calc-row total"><span>Pago a cuenta del mes</span><b>' + _tribFmtSoles(renta) + '</b></div>' +
+        '</div>' +
+        '<div class="trib-nota">' + acumTxt + '</div>' +
+        '<div class="trib-nota">' +
+          '<b style="color:var(--trib-ink1)">Qué es y qué no es.</b> Esto es el <b>pago a cuenta</b> mensual: ' +
+          'el ' + tasa.toFixed(2).replace(/\.?0+$/, '') + '% de los ingresos netos del mes, que se declara con el PDT 621 junto con el IGV. ' +
+          '<b>No</b> es el impuesto anual definitivo: ese se calcula sobre la utilidad del ejercicio y en la ' +
+          'declaración anual se descuentan estos pagos a cuenta. ' +
+          'La base que usa el panel son las ventas del mes tal como quedaron registradas en el sistema ' +
+          '(<code>totalVentas</code> de <code>mos.trib_resumen_mes</code>): no descuenta notas de crédito ' +
+          'ni ajustes posteriores que no hayan pasado por ahí.' +
+        '</div>' +
+        '<div class="trib-nota">💡 A diferencia del IGV, la renta <b style="color:var(--trib-ink1)">no se compensa</b> ' +
+          'con lo que le pagas a tus proveedores: sube cuando suben tus ventas. Por eso vive en su propia card ' +
+          'y en su propia franja del gráfico, con escala aparte.</div>'
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // OVERLAY 4 · VENTAS — la base sobre la que se calcula todo lo demás
+  // ═══════════════════════════════════════════════════════════════════
+  function tribAbrirVentas() {
+    const d = _tribState.data || {};
+    const ventas = d.totalVentas || 0;
+    const cpeTot = d.cpeTotal || 0;
+    const ticket = cpeTot > 0 ? _money(ventas / cpeTot) : 0;
+    const mesNom = _TRIB_MESES[(_tribState.mes || 1) - 1] + ' ' + (_tribState.anio || '');
+    const proy = _tribCalcProyeccion(d);
+
+    _tribSheetAbrir('tribOvVentas', {
+      icono: '📈',
+      titulo: 'Ventas · ' + mesNom,
+      sub: 'De aquí salen el IGV en contra y el pago a cuenta de renta',
+      totalLbl: 'Ventas del mes',
+      totalVal: _tribFmtSoles(ventas),
+      totalColor: 'var(--trib-ventas)',
+      body:
+        '<div class="trib-calc" style="background:rgba(96,165,250,.07);border-color:rgba(96,165,250,.24)">' +
+          '<div class="trib-calc-row"><span>Comprobantes emitidos del mes</span><b>' + (d.cpeEmitidos || 0) + ' de ' + cpeTot + '</b></div>' +
+          '<div class="trib-calc-row"><span>Pendientes en NubeFact</span><b>' + (d.cpePendientes || 0) + '</b></div>' +
+          '<div class="trib-calc-row"><span>Con error · requieren atención</span><b style="color:' + ((d.cpeErrores || 0) > 0 ? 'var(--trib-contra)' : 'var(--trib-ink1)') + '">' + (d.cpeErrores || 0) + '</b></div>' +
+          '<div class="trib-calc-row"><span>Ticket promedio del mes</span><b>' + _tribFmtSoles(ticket) + '</b></div>' +
+          '<div class="trib-calc-row"><span>Mes transcurrido</span><b>' + (d.pctMes || 0) + '% · día ' + (d.diaActual || 0) + ' de ' + (d.ultimoDia || 0) + '</b></div>' +
+          (proy && d.pctMes < 95
+            ? '<div class="trib-calc-row total" style="border-top-color:rgba(96,165,250,.3)"><span>Proyección al cierre</span>' +
+              '<b style="color:var(--trib-ventas)">' + _tribFmtSoles(proy.ventasProy) + '</b></div>'
+            : '') +
+        '</div>' +
+        '<button type="button" class="trib-chip on" style="width:100%;justify-content:center;min-height:44px" ' +
+          'onclick="MOS._tribSheetCerrar(\'tribOvVentas\');MOS.tribAbrirIGVEmitido()">🧾 Ver los comprobantes uno por uno</button>' +
+        '<div class="trib-nota" style="margin-top:12px">' +
+          'Las ventas del mes son el total facturado que quedó registrado en el sistema. Sobre esa base salen dos cosas: ' +
+          'el <b style="color:var(--trib-contra)">IGV en contra</b> (el 18% incluido en cada comprobante) y el ' +
+          '<b style="color:var(--trib-renta)">pago a cuenta de renta</b>. La proyección extrapola el ritmo del mes ' +
+          'a los días que faltan — es una estimación, no un dato fiscal.' +
+        '</div>'
+    });
   }
 
   // [v2.41.93] Toggle panel ayuda
@@ -47923,6 +48906,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _loadTributario, tribCargar, tribAbrirIGVFavor, tribAbrirIGVEmitido,
     tribReprocesarOCR, tribReintentarCPE, tribReconciliarCPEs,
     tribLimpiarHuerfanas, tribAbrirHistorico,
+    // [v2.44 · rediseño] overlays de renta/ventas, selector de mes en chips,
+    // menú ⋯ de acciones y cierre de sheet (lo usa un botón del overlay Ventas)
+    tribAbrirRenta, tribAbrirVentas, tribMesShift, tribMesMenu,
+    tribAccionesMenu, _tribSheetCerrar,
     // [v2.41.93] Tributario polish
     tribToggleAyuda, _tribPrecargarBoot,
     // [v2.41.94] OCR masivo retroactivo
