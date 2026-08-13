@@ -9835,9 +9835,12 @@ const MOS = (() => {
         <span class="p1-carta-tab-ic">📄</span>
         <span class="p1-carta-tab-car">${S._p1CartaOff ? '⟩' : '⟨'}</span>
       </button>`;
+    // [774] cambiar el comprobante: solo guías de PROVEEDOR (las de zona no llevan foto)
+    const _puedeCambiar = String((S._costosGuiaState && S._costosGuiaState.fuente) || '').toUpperCase() !== 'ME';
     carta.innerHTML = `
       <div class="p1-carta-in">
-        <div class="p1-carta-head"><span>📄 Factura</span></div>
+        <div class="p1-carta-head"><span>📄 Factura</span>${_puedeCambiar
+          ? `<button type="button" class="p1-carta-swap" title="Cambiar el comprobante (cámara o galería) — el OCR releerá los datos tributarios" onclick="MOS._p1CartaFotoPick()">📷 Cambiar</button>` : ''}</div>
         <div class="p1-carta-foto" onclick="MOS.abrirFotoOverlay('${esc}')" title="Ampliar la factura (zoom)">
           <img src="${esc}" alt="Factura de la guía" loading="lazy" onerror="this.closest('.p1-carta-foto').classList.add('is-err')">
           <span class="p1-carta-foto-empty">📄 Sin vista previa · toca para abrir</span>
@@ -9845,6 +9848,55 @@ const MOS = (() => {
         </div>
         <div class="p1-carta-pie">Compárala con cada línea y escribe el monto.</div>
       </div>`;
+  }
+
+  // ───────── [774] Cambiar el comprobante de la guía desde el Paso 1 ─────────
+  // Sube la foto nueva (cámara o galería), actualiza wh.guias.foto y el trigger OCR
+  // [762] hace el resto: relee el comprobante y actualiza el IGV a favor en Tributos.
+  function _p1CartaFotoPick() {
+    const st = S._costosGuiaState; if (!st) return;
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*';   // el picker del sistema ofrece cámara Y galería
+    inp.onchange = () => { const f = inp.files && inp.files[0]; if (f) _p1CartaFotoSubir(f); };
+    inp.click();
+  }
+  async function _p1CartaFotoSubir(file) {
+    const st = S._costosGuiaState; if (!st) return;
+    const idGuia = st.idGuia;
+    toast('📷 Subiendo el comprobante…', 'info');
+    try {
+      const { b64, mime } = await _p1FotoComprimir(file);
+      const r = await API.post('guiaCambiarFoto', { idGuia, fotoBase64: b64, mimeType: mime, usuario: S.session?.nombre || '' });
+      const url = r && r.data && r.data.url;
+      if (!url) throw new Error((r && r.error) || 'el servidor no devolvió la URL');
+      if (S._costosGuiaState && S._costosGuiaState.idGuia === idGuia) S._costosGuiaState.foto = url;
+      const op = _findOpByKey(st.fuente + '_' + idGuia); if (op) op.foto = url;
+      _p1PintarCarta();
+      toast('✓ Comprobante cambiado — el OCR lo releerá en ~10 min y actualizará el IGV en Tributos', 'ok', 5500);
+    } catch (e) {
+      toast('⚠ No se pudo cambiar la foto: ' + (e.message || e), 'error', 5000);
+    }
+  }
+  // Redimensiona a máx 1800px (legible para el OCR, siempre < 4.5MB del Edge) → JPEG.
+  function _p1FotoComprimir(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const MAX = 1800;
+          let w = img.naturalWidth || 1, h = img.naturalHeight || 1;
+          const f = Math.min(1, MAX / Math.max(w, h));
+          w = Math.round(w * f); h = Math.round(h * f);
+          const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          const b64 = cv.toDataURL('image/jpeg', .88);
+          URL.revokeObjectURL(img.src);
+          resolve({ b64, mime: 'image/jpeg' });
+        } catch (e) { reject(e); }
+      };
+      img.onerror = () => reject(new Error('imagen ilegible'));
+      img.src = URL.createObjectURL(file);
+    });
   }
 
   function _p1CartaToggle() {
@@ -10872,7 +10924,10 @@ const MOS = (() => {
         #modalCostosGuiaUnif .p1-box.is-arm-open .p1-carta-tab { transform: translateX(302px); }
         #modalCostosGuiaUnif .p1-carta-tab:hover { background: #18304f; color: #34d399; }
         #modalCostosGuiaUnif .p1-carta-tab-car { font-size: 11px; color: #64748b; }
-        #modalCostosGuiaUnif .p1-carta-head { flex: none; font-size: 10px; font-weight: 800; color: #7c8db1; text-transform: uppercase; letter-spacing: .05em; }
+        #modalCostosGuiaUnif .p1-carta-head { flex: none; display: flex; align-items: center; justify-content: space-between; font-size: 10px; font-weight: 800; color: #7c8db1; text-transform: uppercase; letter-spacing: .05em; }
+        /* [774] botón cambiar comprobante */
+        #modalCostosGuiaUnif .p1-carta-swap { font-size: 9.5px; font-weight: 800; color: #93c5fd; background: rgba(96,165,250,.1); border: 1px solid rgba(96,165,250,.4); border-radius: 999px; padding: 3px 9px; cursor: pointer; text-transform: none; letter-spacing: 0; transition: .15s; }
+        #modalCostosGuiaUnif .p1-carta-swap:hover { border-color: #60a5fa; color: #bfdbfe; background: rgba(96,165,250,.18); }
         #modalCostosGuiaUnif .p1-carta-foto {
           position: relative; flex: 1 1 auto; min-height: 130px; border-radius: 10px; overflow: hidden;
           background: #060d1f; border: 1px solid #1c2b48; cursor: zoom-in;
@@ -49005,6 +49060,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _costosSiguiente, _costosSiguientePendiente, _costosAplicarAlCatalogo,
     _costosUsarCostoCatalogo,   // [721] legado (el chip murió en 768; la fn queda por compat)
     _costosTglBonif, _costosTglModo, _costosTglIgv, _costosTglPerc, _costosPercSet, _costosPercEditar,   // [768/769] toggles por línea
+    _p1CartaFotoPick,   // [774] cambiar el comprobante desde la carta
     _costosGuiaSugerirDebounce, _costosGuiaSugUpdate, _costosGuiaSugToggle,
     opsEntrarModoCostos, opsSalirModoCostos,
     _p1CartaToggle,   // [717] pestañita ⟨ ⟩ de la carta lateral de la factura

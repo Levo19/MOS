@@ -2608,6 +2608,36 @@ const API = (() => {
       if (r == null) return null;
       return r;   // {ok, data:{precioActual, costoActual, precios[], costos[]}}
     }
+    // [774] Cambiar el COMPROBANTE de una guía desde el Paso 1: sube la imagen a Storage
+    // (producto-fotos/guias/ — bucket con política para app=MOS; wh-fotos NO la tiene) y
+    // wh.guia_set_foto actualiza wh.guias.foto → el trigger [762] marca OCR PENDIENTE y
+    // el cron relee el comprobante (IGV a favor de Tributos) en ~10 min.
+    if (action === 'guiaCambiarFoto') {
+      const idGuia = String(p.idGuia || '').trim();
+      const b64raw = String(p.fotoBase64 || '').trim();
+      const mime = String(p.mimeType || 'image/jpeg');
+      if (!idGuia || !b64raw) throw new Error('Faltan idGuia/foto');
+      const token = await _mintTokenMOS();
+      if (!token) throw new Error('sin sesión de Storage — reintenta');
+      const ext = mime.includes('png') ? 'png' : 'jpg';
+      const clean = b64raw.replace(/^data:[^;]+;base64,/, '');
+      const path = `guias/${encodeURIComponent(idGuia)}/${Date.now()}.${ext}`;
+      const bin = Uint8Array.from(atob(clean), ch => ch.charCodeAt(0));
+      const res = await _sbFetchTimeout(`${_SB_URL}/storage/v1/object/producto-fotos/${path}`, {
+        method: 'POST',
+        headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': mime, 'x-upsert': 'true' },
+        body: bin
+      }, 30000);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error('storage ' + res.status + (body && body.message ? ': ' + body.message : ''));
+      }
+      const url = `${_SB_URL}/storage/v1/object/public/producto-fotos/${path}`;
+      const r = await _sbRpcMOS('guia_set_foto', { p: { idGuia, url, usuario: p.usuario || '' } }, 'wh');
+      if (r == null) throw new Error('sin token para actualizar la guía');
+      if (r.ok === false) throw new Error(r.error || 'no se pudo actualizar la guía');
+      return { ok: true, data: { url, ocr: 'PENDIENTE' } };
+    }
     // [Fase 3 · analítica] mini-preview de una guía de compra (para el punto de COSTO del overlay). Perfil wh.
     if (action === 'guiaPreview') {
       const r = await _sbRpcMOS('guia_preview', { p: { idGuia: p.idGuia } }, 'wh');
@@ -2920,6 +2950,7 @@ const API = (() => {
     quitarCostoCompra:           () => true,   // mos.quitar_costo_compra (556) · deshacer retroactivo de costo
     cotejoCostosGuias:           () => true,   // mos.cotejo_costos_guias (721) · cotejo por guía · LECTURA PURA
     costosRegistradosGuia:       () => true,   // mos.costos_registrados_guia (767) · re-hidrata Paso 1 EN ZONA · LECTURA PURA
+    guiaCambiarFoto:             () => true,   // wh.guia_set_foto (774) · Storage + trigger OCR 762 · escritura directa
     historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
     guiaPreview:                 () => true,   // wh.guia_preview (578) · preview de guía en el overlay · PURA
     wh_auditarStockGlobal:       () => true,   // mos.wh_auditar_cuadre (381)
@@ -2974,7 +3005,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaPreview: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, guiaPreview: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.
