@@ -1738,18 +1738,57 @@ const MOS = (() => {
     return p;
   }
 
+  // [784 · catálogo DELTA] baseline del server para pedir "solo lo que cambió desde…".
+  // Se persiste para sobrevivir F5. Ante CUALQUIER anomalía se vuelve al full de siempre.
+  const _CAT_DELTA_TS_KEY = 'MOS_CAT_DELTA_TS';
+  let _catDeltaTs = (function(){ try { return localStorage.getItem(_CAT_DELTA_TS_KEY) || null; } catch(_) { return null; } })();
+  function _catDeltaSetTs(ts) {
+    if (!ts) return;
+    _catDeltaTs = String(ts);
+    try { localStorage.setItem(_CAT_DELTA_TS_KEY, _catDeltaTs); } catch(_){}
+  }
+
   async function _catalogoRefreshSilencioso() {
     if (!API.isConfigured()) return;
     _refreshPNPendientes().catch(() => {});
     iconBusy('catalogo', true); // Spinner mini en el ícono del sidebar
     try {
+      // ── [784] Camino DELTA: hay catálogo en memoria + baseline → pedir solo cambios (KBs vs 5.8MB).
+      let productosDelta = null;
+      if (_catDeltaTs && Array.isArray(S.productos) && S.productos.length) {
+        try {
+          const d = await API.get('getProductosDelta', { desde: _catDeltaTs });
+          if (d && Array.isArray(d.productos) && d.serverTs) {
+            const elimSet = new Set((d.eliminados || []).map(String));
+            const updMap  = {};
+            d.productos.forEach(pr => { if (pr && pr.idProducto != null) updMap[String(pr.idProducto)] = pr; });
+            // Merge sobre COPIA: reemplaza cambiados, quita eliminados, agrega nuevos al final.
+            // Si un id está en AMBOS (borrado y re-creado en la misma ventana), la fila fresca
+            // GANA al tombstone: updMap salió de leer la tabla actual (el producto existe HOY).
+            const usados = new Set();
+            const merged = S.productos
+              .filter(pr => { const id = String(pr.idProducto); return !elimSet.has(id) || updMap[id]; })
+              .map(pr => {
+                const id = String(pr.idProducto);
+                if (updMap[id]) { usados.add(id); return updMap[id]; }
+                return pr;
+              });
+            Object.keys(updMap).forEach(id => { if (!usados.has(id)) merged.push(updMap[id]); });
+            productosDelta = merged;
+            _catDeltaSetTs(d.serverTs);
+          }
+        } catch(_) { productosDelta = null; }   // cualquier error → full de siempre
+      }
+
       const [freshProd, freshEquiv] = await Promise.all([
-        _getProductosCompartido(),
+        productosDelta ? Promise.resolve(productosDelta) : _getProductosCompartido(),
         API.get('getEquivalencias', { activo: '1' }).catch(() => [])
       ]);
       // [FIX 500x BUG-1] refresh silencioso: si freshProd es null (hipo transitorio), NO recomputar el diff
       // (marcaría TODO como removed y clobbearía el catálogo). Salir sin tocar nada.
       if (!Array.isArray(freshProd)) return;
+      // [784] Tras un FULL exitoso, sembrar el baseline con el reloj del SERVER (no del cliente).
+      if (!productosDelta) { try { _catDeltaSetTs(API.catalogoFullServerTs && API.catalogoFullServerTs()); } catch(_){} }
       const productos = freshProd;
 
       const equivMap = {};

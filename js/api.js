@@ -356,7 +356,28 @@ const API = (() => {
       return null;
     }
     const mapped = r.productos.map(_mapProdSnakeToHoja);
+    _catFullServerTs = (r._now != null) ? String(r._now) : _catFullServerTs;   // [784] baseline delta tras un full OK
     return _filtrarProdComoGAS(mapped, params);
+  }
+
+  // [784 · catálogo DELTA] Cambios desde `desde` (timestamp del server, no del cliente).
+  // Devuelve {productos:[shape-hoja], eliminados:[idProducto], serverTs} o null (→ caller usa full).
+  // Mismo gate de frescura que el full (jamás servir sombra muerta) y mismo mapper (shape idéntico).
+  let _catFullServerTs = null;
+  async function _getProductosDeltaDirecto(params) {
+    const desde = params && params.desde;
+    if (!desde) return null;
+    const r = await _sbRpcMOS('productos_master_delta', { p: { desde: String(desde) } });
+    if (r == null || r.ok !== true || !Array.isArray(r.productos)) return null;
+    if (r._fresh !== true) {
+      try { console.warn('[MOS catálogo delta] sombra STALE (_fresh=false) → full/fallback'); } catch (_) {}
+      return null;
+    }
+    return {
+      productos:  r.productos.map(_mapProdSnakeToHoja),
+      eliminados: Array.isArray(r.eliminados) ? r.eliminados.map(String) : [],
+      serverTs:   r.server_ts != null ? String(r.server_ts) : null
+    };
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -3245,6 +3266,8 @@ const API = (() => {
     // [CERO-GAS 2.43.777] getUrl BORRADO del export (la función murió en el funeral y el shorthand
     // `getUrl,` tumbaba TODO el módulo API al cargar — ReferenceError en producción).
     isConfigured,
+    // [784 · catálogo DELTA] reloj del server del último full OK (baseline inicial del delta).
+    catalogoFullServerTs: () => _catFullServerTs,
     // [F6 push] Registro de token FCM directo a Supabase (mos.registrar_push_token). Aditivo al GAS.
     registrarPushTokenSB: (p = {}) => _sbRpcMOS('registrar_push_token', { p }, 'mos'),
     // [F6 espía] Señalización WebRTC directo (mos.espia_*). APP_NO_AUTORIZADA/sin-token → null → caller cae a GAS.
@@ -3427,6 +3450,12 @@ const API = (() => {
       // Con el flag OFF (default) esto es IDÉNTICO a hoy: _conFallbackMOS NO entra al directo y va directo a GAS.
       if (action === 'getProductos') {
         return _conFallbackMOS(() => _getProductosDirecto(p));
+      }
+      // [784 · catálogo DELTA] Solo productos cambiados desde `desde` (updated_at server) +
+      // eliminados (tombstones) + server_ts para el próximo baseline. Un bump típico baja KBs
+      // en vez de los 5.8MB del full. El caller (app.js) cae a full ante null/anomalía.
+      if (action === 'getProductosDelta') {
+        return _conFallbackMOS(() => _getProductosDeltaDirecto(p));
       }
       // [FASE 1] getFinanzasRango → lectura directa (RPC finanzas_rango) con gate por-acción + frescura + fallback GAS.
       // Flag OFF (default) ⇒ IDÉNTICO a hoy (va directo a GAS). Devuelve {serie,totales,desde,hasta} igual que GAS.
