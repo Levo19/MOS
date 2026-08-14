@@ -216,7 +216,8 @@
     }
     /* [nav-scroll v2] Barra deslizable con el dedo: TODOS los módulos, íconos grandes,
        ~3-4 visibles a la vez + peek del siguiente (sensación de que hay más). */
-    #bottomnav { position: relative; }
+    /* OJO: NO poner position:relative aquí — pisa el `fixed` de Tailwind y la barra deja
+       de quedar pegada abajo. El `fixed` ya sirve de contenedor para los ::before/::after. */
     /* Fades en los bordes = pista visual de "sigue deslizando". No bloquean el toque. */
     #bottomnav::before, #bottomnav::after {
       content: ''; position: absolute; top: 0; bottom: 0; width: 22px; z-index: 2; pointer-events: none;
@@ -21076,7 +21077,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.783';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.784';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
