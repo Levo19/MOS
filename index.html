@@ -3470,6 +3470,21 @@
     .trib-icon-btn.girando svg { animation: tribSpin .7s linear infinite; }
     @keyframes tribSpin { to { transform: rotate(360deg); } }
 
+    /* [nav-reorg] Card de acceso a Facturación CPE dentro del Centro Tributario. */
+    .trib-fac-card {
+      width: 100%; display: flex; align-items: center; gap: 12px;
+      padding: 13px 16px; margin-bottom: 14px; border-radius: 14px; text-align: left;
+      background: var(--trib-glass); border: 1px solid var(--trib-line); cursor: pointer;
+      transition: background .22s var(--trib-ease), border-color .22s var(--trib-ease), transform .18s var(--trib-ease);
+    }
+    .trib-fac-card:hover { background: var(--trib-glass-hi); border-color: rgba(245,158,11,.4); }
+    .trib-fac-card:active { transform: scale(.99); }
+    .trib-fac-card-ico { font-size: 1.5rem; line-height: 1; flex-shrink: 0; }
+    .trib-fac-card-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .trib-fac-card-t { font-size: 14px; font-weight: 800; color: var(--trib-ink1); }
+    .trib-fac-card-s { font-size: 11px; color: var(--trib-ink3); }
+    .trib-fac-card-arrow { font-size: 18px; font-weight: 900; color: #f59e0b; flex-shrink: 0; }
+
     /* Popover genérico (menú de mes y menú ⋯ de acciones) */
     /* z-index: el badge flotante de seguridad vive en 99988 y taparía menús y
        overlays. Se sigue la convención de los modales del panel (adhesivo usa
@@ -15137,11 +15152,8 @@
       </span>
       <span class="nav-label whitespace-nowrap">Catálogo</span>
     </button>
-    <button data-view="almacen"     class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('almacen')">
-      <div class="nav-dot"></div>
-      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
-      <span class="nav-label whitespace-nowrap">Almacén</span>
-    </button>
+    <!-- [nav-reorg] Almacén salió del sidebar: se abre desde el módulo Zona (botón "🏠 Abrir Almacén")
+         y, con el flag Zona OFF, desde el bottom-sheet "Más" en móvil. Su vista/ruta siguen intactas. -->
     <!-- [RIZ Capa 4] Item Zona — gated por flag mosZonaModulo (oculto por default; init lo revela si el flag ON) -->
     <button data-view="zona" class="nav-item zona-nav-gated w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('zona')">
       <div class="nav-dot"></div>
@@ -15172,12 +15184,8 @@
       <span class="nav-label whitespace-nowrap">Tributario</span>
       <span id="tribNavBadge" class="fin-nav-badge hidden"></span>
     </button>
-    <!-- Facturación CPE — boletas/facturas SUNAT vía NubeFact (100% Supabase, fac.*) -->
-    <button data-view="facturacion" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm relative" onclick="MOS.nav('facturacion')">
-      <div class="nav-dot"></div>
-      <svg class="nav-icon shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
-      <span class="nav-label whitespace-nowrap">Facturación</span>
-    </button>
+    <!-- [nav-reorg] Facturación CPE salió del sidebar: se abre desde el Centro Tributario
+         (card "🧾 Facturación / Emitir CPE"). Su vista/ruta (view-facturacion) siguen intactas. -->
     <div class="mt-2 pt-2 border-t border-slate-800">
       <button data-view="config" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 text-sm" onclick="MOS.nav('config')">
         <div class="nav-dot"></div>
@@ -15614,6 +15622,11 @@
 
     <!-- ═══ VIEW: ALMACÉN ════════════════════════════════════ -->
     <section id="view-almacen" class="view">
+      <!-- [nav-reorg] Almacén se abre desde Zona (o desde el bottom-sheet "Más" cuando el flag Zona está OFF).
+           almVolver() decide el destino: Zona si el módulo está visible, si no Dashboard (anti-huérfano). -->
+      <button id="almBackBtn" type="button" onclick="MOS.almVolver()" class="alm-back-btn" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:12px;padding:8px 14px;font-size:13px;font-weight:700;color:#cbd5e1;background:#1e293b;border:1px solid #334155;border-radius:10px;cursor:pointer">
+        <span class="alm-back-lbl">← Zona</span>
+      </button>
       <div class="tab-scroll-wrap mb-3">
         <div class="alm-tab-bar w-max">
           <button class="alm-tab active" id="almTabResumen" onclick="MOS.setAlmTab('resumen')"><span class="alm-tab-emoji">📊</span>Resumen</button>
@@ -15898,6 +15911,16 @@
       </div>
 
       <div id="tribContent" class="hidden">
+        <!-- [nav-reorg] Entrada a Facturación CPE: antes era un ítem propio del sidebar; ahora vive
+             como card prominente dentro del Centro Tributario. La vista/ruta view-facturacion no cambió. -->
+        <button id="tribFacCard" type="button" onclick="MOS.nav('facturacion')" class="trib-fac-card">
+          <span class="trib-fac-card-ico">🧾</span>
+          <span class="trib-fac-card-txt">
+            <span class="trib-fac-card-t">Facturación / Emitir CPE</span>
+            <span class="trib-fac-card-s">Boletas y facturas electrónicas · SUNAT vía NubeFact</span>
+          </span>
+          <span class="trib-fac-card-arrow" aria-hidden="true">→</span>
+        </button>
         <!-- Panel de ayuda expandible (oculto por defecto, se abre con tap ?) -->
         <div id="tribAyuda" class="trib-ayuda-panel hidden">
           <div class="trib-ayuda-header">
@@ -16057,6 +16080,8 @@
         }
         .fac-chip{font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px}
       </style>
+      <!-- [nav-reorg] Facturación se abre desde el Centro Tributario: este botón regresa allí. -->
+      <button onclick="MOS.nav('tributario')" class="fac-btn-sec" style="margin-bottom:12px;display:inline-flex;align-items:center;gap:6px">← Tributario</button>
       <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
           <h1 class="text-xl font-black text-slate-100 flex items-center gap-2"><span class="text-2xl">🧾</span> Facturación CPE</h1>
@@ -17626,6 +17651,8 @@
               <button class="zona-btn-sec zona-btn-pickup" onclick="MOS.zonaAbrirPickup()" title="Pickup acumulado de la zona + historial por día (en vivo)">🛒 Pickup</button>
               <!-- [RIZ · TRASLADO VERIFICADO] Guías (solo zonas): badge rojo si hay pendientes por verificar. -->
               <button id="zonaBtnGuias" class="zona-btn-sec zona-guias-btn" onclick="MOS.trasAbrirGuias()" title="Guías de traslado por verificar / verificadas">🚚 Guías<span id="zonaGuiasBadge" class="zona-guias-badge" style="display:none">0</span></button>
+              <!-- [nav-reorg] Almacén salió del nav principal: se abre desde aquí. Su vista/ruta no cambió. -->
+              <button class="zona-btn-sec" onclick="MOS.nav('almacen')" title="Abrir el módulo Almacén (stock, operaciones, mermas, vencimientos)">🏠 Abrir Almacén</button>
             </div>
           </div>
           <div class="zhb-group">
@@ -18522,23 +18549,17 @@
         <span class="bnav-lbl">Catálogo</span>
       </div>
     </button>
-    <button data-view="almacen" class="bnav-btn" onclick="MOS.nav('almacen')">
+    <!-- [RIZ Capa 4] Bottom-nav Zona — gated por flag mosZonaModulo -->
+    <button data-view="zona" class="bnav-btn zona-nav-gated" onclick="MOS.nav('zona')">
       <div class="bnav-pill">
-        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
-        <span class="bnav-lbl">Almacén</span>
+        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M3 14h18"/><path d="M8 4v16"/></svg></span>
+        <span class="bnav-lbl">Zona</span>
       </div>
     </button>
     <button data-view="cajas" class="bnav-btn" onclick="MOS.nav('cajas')">
       <div class="bnav-pill">
         <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
         <span class="bnav-lbl">Cajas</span>
-      </div>
-    </button>
-    <!-- [RIZ Capa 4] Bottom-nav Zona — gated por flag mosZonaModulo -->
-    <button data-view="zona" class="bnav-btn zona-nav-gated" onclick="MOS.nav('zona')">
-      <div class="bnav-pill">
-        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M3 14h18"/><path d="M8 4v16"/></svg></span>
-        <span class="bnav-lbl">Zona</span>
       </div>
     </button>
     <button data-view="finanzas" class="bnav-btn" onclick="MOS.nav('finanzas')">
@@ -18549,14 +18570,77 @@
         <span id="finNavBadgeBnav" class="fin-nav-badge hidden"></span>
       </div>
     </button>
-    <button data-view="proveedores" class="bnav-btn" onclick="MOS.nav('proveedores')">
+    <!-- [nav-reorg] Tributario ahora es fijo en móvil (Facturación vive dentro de él). -->
+    <button data-view="tributario" class="bnav-btn" onclick="MOS.nav('tributario')">
+      <div class="bnav-pill" style="position:relative">
+        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l9-3 9 3v6c0 5.5-3.9 10.6-9 12-5.1-1.4-9-6.5-9-12V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
+        <span class="bnav-lbl">Tributario</span>
+        <span id="tribNavBadgeBnav" class="fin-nav-badge hidden"></span>
+      </div>
+    </button>
+    <!-- [nav-reorg] "Más": no navega a una vista; abre el bottom-sheet con Dashboard, Proveedores,
+         Almacén y (solo MASTER) Config. NO lleva data-view para no marcarse "activo" en nav(). -->
+    <button id="bnavMasBtn" class="bnav-btn" type="button" onclick="MOS.abrirMasMenu()">
       <div class="bnav-pill">
-        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2h-4v-7H10v7H6a2 2 0 0 1-2-2V9z"/></svg></span>
-        <span class="bnav-lbl">Proveedores</span>
+        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
+        <span class="bnav-lbl">Más</span>
       </div>
     </button>
   </div>
 </nav>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- BOTTOM-SHEET "MÁS" (móvil) — accesos secundarios              -->
+<!-- Se rellena/abre por JS (MOS.abrirMasMenu). El item Config solo  -->
+<!-- se inyecta si _esMasterSession()===true. Cierra tocando fuera   -->
+<!-- del panel o el botón ✕. z-index alto para tapar el bottomnav.   -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div id="masSheetOvl" class="mas-sheet-ovl" onclick="MOS.cerrarMasMenu(event)" aria-hidden="true">
+  <div class="mas-sheet" role="dialog" aria-modal="true" aria-label="Más accesos" onclick="event.stopPropagation()">
+    <div class="mas-sheet-grip"></div>
+    <div class="mas-sheet-head">
+      <span class="mas-sheet-title">Más accesos</span>
+      <button class="mas-sheet-x" type="button" onclick="MOS.cerrarMasMenu()" aria-label="Cerrar">✕</button>
+    </div>
+    <div id="masSheetGrid" class="mas-sheet-grid"><!-- items inyectados por JS --></div>
+  </div>
+</div>
+
+<style>
+  /* ── Bottom-sheet "Más" (solo móvil, coherente con .bnav-*) ───────────── */
+  .mas-sheet-ovl {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(2,8,23,.62); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    display: none; align-items: flex-end; justify-content: center;
+    opacity: 0; transition: opacity .22s ease;
+  }
+  .mas-sheet-ovl.show { display: flex; opacity: 1; }
+  .mas-sheet {
+    width: 100%; max-width: 560px;
+    background: rgba(10,17,35,.98); border-top: 1px solid #1e293b;
+    border-radius: 20px 20px 0 0; padding: 8px 16px calc(18px + env(safe-area-inset-bottom,0));
+    box-shadow: 0 -12px 40px rgba(0,0,0,.5);
+    transform: translateY(102%); transition: transform .28s cubic-bezier(.34,1.4,.5,1);
+  }
+  .mas-sheet-ovl.show .mas-sheet { transform: translateY(0); }
+  .mas-sheet-grip { width: 40px; height: 4px; border-radius: 999px; background: #334155; margin: 6px auto 10px; }
+  .mas-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .mas-sheet-title { font-size: 13px; font-weight: 800; color: #cbd5e1; letter-spacing: .01em; }
+  .mas-sheet-x {
+    width: 44px; height: 44px; border: none; background: transparent; color: #94a3b8;
+    font-size: 18px; cursor: pointer; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  }
+  .mas-sheet-x:active { background: rgba(148,163,184,.14); }
+  .mas-sheet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding-bottom: 6px; }
+  .mas-sheet-item {
+    min-height: 84px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+    padding: 12px 6px; border-radius: 16px; border: 1px solid #1e293b; background: rgba(30,41,59,.45);
+    color: #cbd5e1; cursor: pointer; transition: background .18s, transform .18s;
+  }
+  .mas-sheet-item:active { transform: scale(.95); background: rgba(51,65,85,.6); }
+  .mas-sheet-item .mas-sheet-ico { display: flex; align-items: center; justify-content: center; color: #ffd700; }
+  .mas-sheet-item .mas-sheet-lbl { font-size: 11.5px; font-weight: 700; text-align: center; line-height: 1.15; }
+</style>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- MODALS                                                     -->
@@ -20948,7 +21032,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.780';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.781';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21227,7 +21311,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.780"></script>
+<script src="js/api.js?v=2.43.781"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -21243,7 +21327,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.780"></script>
+<script src="js/app.js?v=2.43.781"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

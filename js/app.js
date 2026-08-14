@@ -201,7 +201,7 @@ const MOS = (() => {
     // que al regresar arranque sin un proveedor pre-seleccionado.
     // [v2.43.592] cerrarDetalleProveedor eliminado con la UI v1 (pv2 no necesita limpieza al salir).
     // Auto-refresh de almacén: arrancar/detener según vista
-    if (viewName === 'almacen') _almIniciarAutoRefresh();
+    if (viewName === 'almacen') { _almIniciarAutoRefresh(); _almAjustarBack(); }
     else _almDetenerAutoRefresh();
     // [RIZ live] Auto-refresh del panel Zona: arrancar solo en 'zona', detener al salir.
     if (viewName === 'zona') _zonaIniciarAutoRefresh();
@@ -570,6 +570,66 @@ const MOS = (() => {
         el.classList.toggle('zona-nav-shown', on);
       });
     } catch (_) {}
+  }
+
+  // [nav-reorg] ¿El módulo Zona está visible (flag ON)? Sirve para el anti-huérfano de Almacén:
+  // Almacén salió del nav principal y se entra desde Zona; si Zona está OFF, no debe quedar atrapado.
+  function _zonaModuloVisible() {
+    try { return !!document.querySelector('.zona-nav-gated.zona-nav-shown'); } catch (_) { return false; }
+  }
+
+  // [nav-reorg] Volver desde Almacén: a Zona si el módulo está activo; si no, a Dashboard
+  // (con Zona OFF el usuario llegó a Almacén por el bottom-sheet "Más", que sigue siendo su salida).
+  function almVolver() {
+    nav(_zonaModuloVisible() ? 'zona' : 'dashboard');
+  }
+
+  // [nav-reorg] Ajusta la etiqueta del botón volver de Almacén según el destino real.
+  function _almAjustarBack() {
+    try {
+      const lbl = document.querySelector('#almBackBtn .alm-back-lbl');
+      if (lbl) lbl.textContent = _zonaModuloVisible() ? '← Zona' : '← Inicio';
+    } catch (_) {}
+  }
+
+  // [nav-reorg] Bottom-sheet "Más" (móvil): accesos secundarios. Los ítems se generan aquí para
+  // poder ocultar Config a quien no es MASTER (mismo criterio que _aplicarVisibilidadConfig / _esMasterSession).
+  function abrirMasMenu() {
+    const ovl = document.getElementById('masSheetOvl');
+    const grid = document.getElementById('masSheetGrid');
+    if (!ovl || !grid) return;
+    // Definición de ítems. Config solo para MASTER estricto.
+    const items = [
+      { view: 'dashboard',   lbl: 'Dashboard',   ico: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>' },
+      { view: 'proveedores', lbl: 'Proveedores', ico: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>' },
+      { view: 'almacen',     lbl: 'Almacén',     ico: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>' }
+    ];
+    if (_esMasterSession()) {
+      items.push({ view: 'config', lbl: 'Configuración', ico: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2.5"/><circle cx="16" cy="12" r="2.5"/><circle cx="10" cy="18" r="2.5"/></svg>' });
+    }
+    grid.innerHTML = items.map(it =>
+      '<button type="button" class="mas-sheet-item" onclick="MOS.masNav(\'' + it.view + '\')">' +
+        '<span class="mas-sheet-ico">' + it.ico + '</span>' +
+        '<span class="mas-sheet-lbl">' + it.lbl + '</span>' +
+      '</button>'
+    ).join('');
+    ovl.classList.add('show');
+    ovl.setAttribute('aria-hidden', 'false');
+  }
+
+  // Cierra la hoja "Más". Si se llama desde el click del overlay, solo cierra al tocar el fondo
+  // (el panel interior detiene la propagación con event.stopPropagation en el HTML).
+  function cerrarMasMenu(ev) {
+    const ovl = document.getElementById('masSheetOvl');
+    if (!ovl) return;
+    ovl.classList.remove('show');
+    ovl.setAttribute('aria-hidden', 'true');
+  }
+
+  // Navega desde un ítem del sheet "Más" y cierra la hoja.
+  function masNav(view) {
+    cerrarMasMenu();
+    nav(view);
   }
 
   // ── LOGIN / LOCK ─────────────────────────────────────────────
@@ -49940,6 +50000,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     pv2,
     toast,
     init, nav, refresh, fabAction, iconBusy,
+    // [nav-reorg] Volver desde Almacén (anti-huérfano) + bottom-sheet "Más" (móvil)
+    almVolver, abrirMasMenu, cerrarMasMenu, masNav,
     // Facturación CPE (100% Supabase)
     setFacTab, facSetTipo, facDocInput, facAddItem, facDelItem, facItemInput,
     facLookup, facEmitir, facCargarHistorial, facAnular, _facReglasRefresh,
