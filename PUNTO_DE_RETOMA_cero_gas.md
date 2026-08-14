@@ -35,12 +35,21 @@
 > con throw 'CERO-GAS: … no cableada' · _fetch/_fetchConTimeout/getUrl/GAS_URL BORRADOS ·
 > (c) grep script.google.com = 0 en runtime MOS (solo comentarios). _conFallbackMOS ya estaba
 > limpio (sin brazos, doc estaba stale).
-> **QUEDA (WH+ME, NO es solo funeral — son migraciones vivas, ver secciones B/C/D)**:
-> WH: clienteInbox portal (GAS activo), prints cargadores/historial→Edge (prueba física dueño),
-> photos.js entidades→Storage, diagnósticos, chunks espía, brazo post()+cola offline+aviso fallback.
-> ME: bridge Membrete→Edge, turno.html Ticket-Z, solicitar/extenderHorario RPCs, chunks espía,
-> fallback arms dormidos. PORTALES CLIENTE: bloqueado por export del Sheet (dueño).
-> Al cerrar WH+ME: (d) verificación física tickets (dueño) · (e) borrar GAS+Sheets.
+> ✅ **WH+ME ENTERRADOS — verificado 14-ago (censo re-auditado contra el código real)**:
+> WH: clienteInbox → RPC `wh.cliente_inbox_polling` (SQL 407) · prints cargadores/historial → Edge
+> (2.13.489) · fotos entidades = SIN callers + fail-closed `_WH_NO_GAS` · diagnósticos = console-only
+> + fail-closed · chunks espía audio/video → Edge `espia-chunk` · post()/_doFetchWithRetry BORRADOS
+> (fall-through = throw cero-GAS) · cola offline sella `_viaDirecta`, legacy fail-closed (offline.js
+> ~698) · loginPersonal/autoCloseDayGuias ELIMINADOS.
+> ME: bridge Membrete `apiPost` fail-closed + impresión góndola → Edge `print-adhesivo` (edgeCall
+> con token ME) · turno.html 100% Supabase (`api=` eliminado; token pre-minteado + RPC me.datos_turno)
+> · solicitar/extenderHorario → `_RPC_DIRECT` en seguridad-modal.js (las 10 acciones cubiertas, apiPost
+> inalcanzable) · chunks espía → Edge · brazos venta/cobro/cierre/apertura/drain = throw/fail-closed
+> money-safe · API_URL = sentinela 'CERO_GAS_SUPABASE' sin ningún fetch.
+> Módulos compartidos (DeviceAuth/ExtensorHorario/seguridad/membrete): 100% Supabase; `mosGasUrl`
+> resuelve '' y no alimenta ningún fetch. grep `script.google.com` ejecutable = **0 en los 3 frontends**.
+> **QUEDA**: PORTALES CLIENTE (pedido/clientes/reporte.html — bloqueado por export del Sheet, dueño)
+> · (d) verificación física tickets (dueño) · (e) borrar GAS+Sheets (funeral del proyecto Apps Script).
 
 > Objetivo: MOS + ME + WH 100% Supabase, **cero-GAS, cero-fallback, cero-Sheet**. GAS+Sheets se borran.
 > Estado boot verificado por web-check (Playwright real): **MOS ✅ · ME ✅ · WH ✅ cero fetches a script.google.com**.
@@ -99,15 +108,8 @@ SQL 376-394 en prod. Deploys: **MOS 2.43.462, ME 2.8.164, WH 2.13.407** + Edge p
 
 ---
 
-## ORDEN RECOMENDADO PRÓXIMA SESIÓN
-1. **Backfills de datos** (readers ya listos): promociones, historial_personal (col+backfill), notif_log (tabla+write-path).
-2. **WH prints** (cargadores/historial) + **MOS prints** (Z-cierre/pago/costos) → Edge imprimir, **con el dueño imprimiendo 1 prueba de cada uno**.
-3. **OCR imagen** (MOS ocrComprobante/ticketJefa) → Edge ia, **con una foto de boleta de prueba**.
-4. **ME bridge Membrete + turno.html + solicitar/extenderHorario**.
-5. **photos.js → Storage** (WH) + **clienteInbox/portales** (necesita export Sheet).
-6. **Espía chunks → Storage+Edge** (3 apps, greenfield).
-7. **BLOCK 9 — quitar TODOS los brazos GAS/fallback + dead-code** (al final, apps sin uso, tras confirmar que todo lo anterior opera).
-8. Web-check final de las 3 apps + borrar GAS_URL/API_URL/MOS_GAS_URL.
+## ORDEN RECOMENDADO PRÓXIMA SESIÓN — ✅ TODO COMPLETADO 14-ago (ítems 1-8 verificados contra código real; el inventario de abajo queda como registro histórico)
+Solo queda: **PORTALES CLIENTE** (export Sheet del dueño) → después **borrar el proyecto GAS + Sheets** (funeral definitivo del backend viejo).
 
 Docs relacionados: `LISTA_0PCT_GAS.md`, `RUNBOOK_CORTE_GAS_TOTAL.md`. Memoria: `project_corte_gas_bloqueantes`, `architecture_mos_postdirecto_gate_obligatorio`.
 
