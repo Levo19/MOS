@@ -32363,6 +32363,7 @@ const MOS = (() => {
     try { clearInterval(_espiaV2._iceWatchdogTimer); } catch(_){}
     try { clearTimeout(_espiaV2._timeoutConectando); } catch(_){}
     try { clearTimeout(_espiaV2._renderTimeout); } catch(_){}
+    try { clearTimeout(_espiaV2._ctrlTimer); } catch(_){} // [v2.44] timer auto-hide de controles
     // Flush final ICE pendientes
     if (_espiaV2._iceQueue?.length && _espiaV2.sesionId && _espiaV2.token) {
       _espiaApiPost('espiaPushBatch', {
@@ -32385,232 +32386,213 @@ const MOS = (() => {
     _espiaV2 = null;
   }
 
+  // [v2.44] REDISEÑO INMERSIVO — visor edge-to-edge estilo consola de
+  // seguridad: MOSAICO de todas las cámaras activas del equipo (trasera +
+  // frontal + pantalla) a la vez, controles flotantes glass que se auto-ocultan,
+  // tap para expandir un tile a solo-pantalla, screenshot por tile y toggle de
+  // audio. Reusa las piezas vivas: live-dot, badge plataforma, badge sync/lag
+  // (#espiaV2SyncBadge), overlay standby, spinner conectando, panel GPS + audio
+  // (#espiaV2Wave/#espiaV2GpsInfo…). NO toca WebRTC/plumbing.
   function _espiaV2RenderModal() {
     if (!_espiaV2) return;
     // [v2.43.98] Auto-focus defensivo antes de render — por si llegamos acá
     // con focus en slot vacío (race entre RenderModal y AsignarTrack).
     _espiaV2AutoFocus();
-    const html = `<div id="espiaV2Modal" style="position:fixed;inset:0;background:rgba(0,0,0,.78);backdrop-filter:blur(10px);z-index:2147483646;display:flex;align-items:center;justify-content:center;padding:24px;animation:espiaV2In .35s cubic-bezier(.34,1.56,.64,1)">
-      <div class="espiaV2-card" style="width:100%;max-width:1280px;height:88vh;background:linear-gradient(180deg,#0a1424,#070d18);border:1px solid rgba(99,102,241,.4);border-radius:18px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 70px -10px rgba(99,102,241,.4),0 0 0 1px rgba(99,102,241,.15) inset"
-        onclick="event.stopPropagation()">
-        <!-- HEADER -->
-        <div class="espiaV2-header" style="padding:14px 20px;border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(99,102,241,.15),rgba(99,102,241,.03));display:flex;align-items:center;gap:14px;flex-shrink:0">
-          <div id="espiaV2Live" class="espia-live-dot" style="display:flex;align-items:center;gap:8px">
-            <span style="width:10px;height:10px;border-radius:50%;background:${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'};animation:espiaBreath 2s ease-in-out infinite;box-shadow:0 0 10px ${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'}"></span>
-            <span style="font-size:11px;font-weight:900;color:${_espiaV2.estado === 'live' ? '#10b981' : '#f59e0b'};letter-spacing:.5px">${_espiaV2.estado === 'live' ? 'EN VIVO' : 'CONECTANDO'}</span>
-          </div>
-          ${(() => {
-            // [v2.43.100] Badge de plataforma — el cliente reporta vía DataChannel
-            const c = _espiaV2.capabilities;
-            if (!c) return '';
-            const meta = c.plataforma === 'mobile' ? { icon: '📱', color: '244,114,182' }
-                       : c.plataforma === 'tablet' ? { icon: '📲', color: '139,92,246' }
-                       : { icon: '🖥️', color: '14,165,233' };
-            return `<div style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:20px;background:rgba(${meta.color},.15);color:rgba(${meta.color},1);border:1px solid rgba(${meta.color},.4);display:flex;align-items:center;gap:5px"
-                title="${_escapeHtml(c.modelo || '')} · ${c.camsTotales || 0} cam · pantalla=${c.tienePantalla ? 'sí' : 'no'}">
-                ${meta.icon} ${_escapeHtml((c.modelo || c.plataforma).toUpperCase())}
-              </div>`;
-          })()}
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:6px">
-              👤 ${_escapeHtml(_espiaV2.nombre)}
-            </div>
-            <div style="font-size:10px;color:#94a3b8;margin-top:1px">${_escapeHtml(_espiaV2.deviceId)}</div>
-          </div>
-          <div id="espiaV2SyncBadge" style="font-size:10px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.4)">
-            sync OK · ${_espiaV2.lagMs}ms
-          </div>
-          <button onclick="MOS.cerrarEspiaV2()" style="background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.4);color:#fca5a5;border-radius:8px;padding:6px 12px;font-size:14px;font-weight:900;cursor:pointer">✕</button>
+    // Defaults de vista (el objeto _espiaV2 se crea sin estos campos)
+    if (!_espiaV2.vista) _espiaV2.vista = 'mosaico';
+
+    const orden = ['pantalla', 'camara', 'camara2'];
+    const META = {
+      pantalla: { icon: '🖥️', label: 'Pantalla', color: '16,185,129' },
+      camara:   { icon: '📷', label: 'Trasera',  color: '99,102,241' },
+      camara2:  { icon: '🤳', label: 'Frontal',  color: '244,114,182' }
+    };
+    const s = _espiaV2.streams;
+    const caps = _espiaV2.capabilities;
+    const live = _espiaV2.estado === 'live';
+
+    // ── Qué tiles mostrar ──────────────────────────────────────────────
+    // activos = streams ya recibidos. esperados = lo que las capabilities
+    // predicen que llegará (para pintar placeholders con spinner mientras
+    // conecta). Unión ordenada; si aún no hay nada, un solo tile placeholder.
+    const activos = orden.filter(k => s[k]);
+    const esperados = [];
+    if (caps) {
+      if (caps.tienePantalla === true) esperados.push('pantalla');
+      if ((caps.camsTotales || 0) >= 1 || caps.esMobile) esperados.push('camara');
+      if ((caps.camsTotales || 0) >= 2) esperados.push('camara2');
+    }
+    let visibles = orden.filter(k => activos.indexOf(k) >= 0 || esperados.indexOf(k) >= 0);
+    if (!visibles.length) {
+      visibles = [(caps && caps.tienePantalla === false) ? 'camara' : 'pantalla'];
+    }
+
+    // ── Modo solo (tile expandido) ─────────────────────────────────────
+    const solo = _espiaV2.vista === 'solo' && _espiaV2.soloStream;
+    let tiles = visibles;
+    if (solo) {
+      let k = _espiaV2.soloStream;
+      if (orden.indexOf(k) < 0 || visibles.indexOf(k) < 0) k = visibles[0];
+      _espiaV2.soloStream = k;
+      tiles = [k];
+    }
+    const n = tiles.length;
+
+    // ── Tiles del mosaico ──────────────────────────────────────────────
+    const tilesHtml = tiles.map((k, i) => {
+      const m = META[k] || META.camara;
+      const stream = s[k];
+      const activo = !!stream;
+      return `<div class="espiaV2-tile" data-key="${k}" style="position:relative;background:#000;border-radius:${solo ? '0' : '14px'};overflow:hidden;border:${solo ? '0' : '1px solid rgba(' + m.color + ',.4)'};box-shadow:${solo ? 'none' : '0 12px 44px -14px rgba(' + m.color + ',.55),0 0 0 1px rgba(' + m.color + ',.08) inset'};${solo ? '' : 'cursor:pointer'};transition:border-color .3s,box-shadow .3s"
+        ${solo ? '' : `onclick="MOS._espiaV2ExpandirTile('${k}')"`}>
+        <video id="espiaV2Vid_${k}" autoplay playsinline muted style="width:100%;height:100%;object-fit:contain;background:#000;display:block"></video>
+        <div class="espiaV2-chip" style="position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;color:#fff;background:rgba(10,15,25,.55);padding:5px 11px;border-radius:20px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(${m.color},.5);letter-spacing:.3px;z-index:4">
+          <span style="font-size:13px">${m.icon}</span>${m.label}
+          <span title="${activo ? 'stream activo' : 'sin señal'}" style="width:7px;height:7px;border-radius:50%;background:${activo ? '#10b981' : '#64748b'};${activo ? 'box-shadow:0 0 8px #10b981;animation:espiaBreath 1.6s ease-in-out infinite' : ''}"></span>
         </div>
-        <!-- BODY -->
-        <div class="espiaV2-body" style="flex:1;display:flex;gap:14px;padding:14px;overflow:hidden">
-          <!-- Stream grande -->
-          ${(() => {
-            // [v2.43.97] Label dinámico según focus actual
-            const meta = {
-              pantalla: { icon: '🖥️', label: 'PANTALLA DEL DISPOSITIVO', color: '16,185,129', glow: '#10b98155' },
-              camara:   { icon: '📷', label: 'CÁMARA TRASERA',            color: '99,102,241', glow: '#6366f155' },
-              camara2:  { icon: '📸', label: 'CÁMARA FRONTAL',            color: '244,114,182', glow: '#f472b655' }
-            }[_espiaV2.focus] || { icon: '📷', label: 'CÁMARA', color: '99,102,241', glow: '#6366f155' };
-            return `<div id="espiaV2Big" style="flex:1;background:#020617;border-radius:12px;overflow:hidden;position:relative;border:2px solid rgba(${meta.color},.5);box-shadow:0 0 30px -10px ${meta.glow};transition:border-color .3s,box-shadow .3s">
-            <div id="espiaV2BigLabel" style="position:absolute;top:10px;left:12px;font-size:10px;font-weight:800;color:#fff;background:rgba(0,0,0,.65);padding:4px 10px;border-radius:6px;z-index:5;backdrop-filter:blur(4px)">
-              ${meta.icon} ${meta.label}
-            </div>`;
-          })()}
-            <button onclick="MOS._espiaV2Fullscreen()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:6px;padding:5px 9px;font-size:13px;cursor:pointer;z-index:5;backdrop-filter:blur(4px);transition:background .15s"
-                    onmouseover="this.style.background='rgba(99,102,241,.5)'"
-                    onmouseout="this.style.background='rgba(0,0,0,.5)'"
-                    title="Fullscreen">⌖</button>
-            <video id="espiaV2BigVideo" autoplay playsinline muted=false
-                   style="width:100%;height:100%;object-fit:contain;background:#000"></video>
-            ${!_espiaV2.streams[_espiaV2.focus] ? `
-              <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(135deg,#0f172a,#0a1424);color:#64748b">
-                <div style="width:50px;height:50px;border:3px solid rgba(99,102,241,.3);border-top-color:#6366f1;border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
-                <div style="margin-top:14px;font-size:11px;color:#94a3b8;font-weight:600">Conectando ${_espiaV2.focus}…</div>
-              </div>` : ''}
-            ${(() => {
-              // [v2.43.104] Overlay standby SOLO si el device reportó hidden hace <2 min.
-              // Después de 2 min de hidden sin recuperar, mostrar mensaje degradado
-              // ('probablemente no va a volver') en vez del "esperando reanudación" eterno.
-              if (_espiaV2.deviceVisible !== false) return '';
-              const hidd = _espiaV2._tsCambioVisibilidad ? (Date.now() - _espiaV2._tsCambioVisibilidad) : 0;
-              const segs = Math.floor(hidd / 1000);
-              const muyLargo = hidd > 120000; // 2 min
-              return `<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(2,6,23,.78);backdrop-filter:blur(8px);color:#e2e8f0;z-index:10">
-                <div style="font-size:48px;margin-bottom:8px">${muyLargo ? '⚠️' : '🌙'}</div>
-                <div style="font-size:16px;font-weight:800;color:${muyLargo ? '#f59e0b' : '#a5b4fc'};letter-spacing:.3px">${muyLargo ? 'STANDBY PROLONGADO' : 'DISPOSITIVO EN STANDBY'}</div>
-                <div style="margin-top:10px;font-size:11px;color:#94a3b8;max-width:280px;text-align:center;line-height:1.5">${muyLargo
-                  ? 'Pantalla bloqueada hace +' + Math.floor(segs/60) + 'min. Probablemente los tracks fueron liberados por el SO.<br>Tendrás que reiniciar el espía.'
-                  : 'El usuario bloqueó la pantalla o cambió de app.<br>El stream se reanudará al volver.'}</div>
-                <div style="margin-top:14px;display:flex;align-items:center;gap:8px;font-size:9px;color:#64748b">
-                  <span style="width:6px;height:6px;border-radius:50%;background:${muyLargo ? '#ef4444' : '#f59e0b'};animation:espiaBreath 1.5s ease-in-out infinite"></span>
-                  ${muyLargo ? 'sin señal del device' : 'esperando reanudación (' + segs + 's)'}
-                </div>
-              </div>`;
-            })()}
+        <button onclick="event.stopPropagation();MOS._espiaV2Captura('${k}')" title="Capturar imagen"
+          style="position:absolute;top:10px;right:10px;background:rgba(10,15,25,.55);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:11px;width:36px;height:36px;font-size:15px;cursor:pointer;z-index:4;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;transition:background .15s"
+          onmouseover="this.style.background='rgba(99,102,241,.6)'" onmouseout="this.style.background='rgba(10,15,25,.55)'">📸</button>
+        ${!solo ? `<div class="espiaV2-tile-hint" style="position:absolute;bottom:12px;right:12px;font-size:9px;font-weight:700;color:#e2e8f0;background:rgba(10,15,25,.5);padding:4px 9px;border-radius:14px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);z-index:4;letter-spacing:.3px;opacity:.85">⤢ ampliar</div>` : ''}
+        ${!activo ? `<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#0f172a,#05070d);color:#64748b">
+            <div style="width:46px;height:46px;border:3px solid rgba(${m.color},.25);border-top-color:rgba(${m.color},1);border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
+            <div style="margin-top:14px;font-size:11px;color:#94a3b8;font-weight:600">Conectando ${m.label.toLowerCase()}…</div>
+          </div>` : ''}
+      </div>`;
+    }).join('');
+
+    // ── Overlay STANDBY global (deviceVisible===false) ─────────────────
+    const standbyHtml = (_espiaV2.deviceVisible === false) ? (() => {
+      const hidd = _espiaV2._tsCambioVisibilidad ? (Date.now() - _espiaV2._tsCambioVisibilidad) : 0;
+      const segs = Math.floor(hidd / 1000);
+      const muyLargo = hidd > 120000; // 2 min
+      return `<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(2,6,23,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#e2e8f0;z-index:20">
+        <div style="font-size:52px;margin-bottom:10px">${muyLargo ? '⚠️' : '🌙'}</div>
+        <div style="font-size:17px;font-weight:800;color:${muyLargo ? '#f59e0b' : '#a5b4fc'};letter-spacing:.3px">${muyLargo ? 'STANDBY PROLONGADO' : 'DISPOSITIVO EN STANDBY'}</div>
+        <div style="margin-top:10px;font-size:12px;color:#94a3b8;max-width:300px;text-align:center;line-height:1.5">${muyLargo
+          ? 'Pantalla bloqueada hace +' + Math.floor(segs / 60) + 'min. Probablemente los tracks fueron liberados por el SO.<br>Tendrás que reiniciar el espía.'
+          : 'El usuario bloqueó la pantalla o cambió de app.<br>El stream se reanudará al volver.'}</div>
+        <div style="margin-top:14px;display:flex;align-items:center;gap:8px;font-size:10px;color:#64748b">
+          <span style="width:6px;height:6px;border-radius:50%;background:${muyLargo ? '#ef4444' : '#f59e0b'};animation:espiaBreath 1.5s ease-in-out infinite"></span>
+          ${muyLargo ? 'sin señal del device' : 'esperando reanudación (' + segs + 's)'}
+        </div>
+      </div>`;
+    })() : '';
+
+    // ── Badge de plataforma (reusa lógica existente) ───────────────────
+    const badgePlataforma = (() => {
+      const c = caps;
+      if (!c) return '';
+      const meta = c.plataforma === 'mobile' ? { icon: '📱', color: '244,114,182' }
+                 : c.plataforma === 'tablet' ? { icon: '📲', color: '139,92,246' }
+                 : { icon: '🖥️', color: '14,165,233' };
+      return `<div style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:20px;background:rgba(${meta.color},.15);color:rgba(${meta.color},1);border:1px solid rgba(${meta.color},.4);display:flex;align-items:center;gap:5px;white-space:nowrap"
+          title="${_escapeHtml(c.modelo || '')} · ${c.camsTotales || 0} cam · pantalla=${c.tienePantalla ? 'sí' : 'no'}">
+          ${meta.icon} ${_escapeHtml((c.modelo || c.plataforma).toUpperCase())}
+        </div>`;
+    })();
+
+    // ── Botones de salto entre cámaras (solo modo solo) ────────────────
+    const soloJumps = solo ? `<div style="display:flex;gap:5px;align-items:center">
+        ${visibles.map(k => {
+          const m = META[k] || META.camara;
+          const cur = k === _espiaV2.soloStream;
+          const on = !!s[k];
+          return `<button onclick="MOS._espiaV2SoloIr('${k}')" title="${m.label}"
+            style="background:${cur ? 'rgba(' + m.color + ',.9)' : 'rgba(255,255,255,.06)'};border:1px solid ${cur ? 'rgba(' + m.color + ',1)' : 'rgba(255,255,255,.14)'};color:#fff;border-radius:10px;width:34px;height:34px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:${on ? '1' : '.45'};transition:background .15s">${m.icon}</button>`;
+        }).join('')}
+      </div>` : '';
+
+    // Estilos base compartidos de los botones de la barra
+    const btnCss = 'border:1px solid rgba(255,255,255,.14);color:#e2e8f0;border-radius:11px;width:40px;height:40px;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,transform .1s';
+
+    const html = `<div id="espiaV2Modal" style="position:fixed;inset:0;background:#000;z-index:2147483646;overflow:hidden;animation:espiaV2In .3s ease-out">
+      <!-- STAGE: mosaico o solo -->
+      <div id="espiaV2Grid" data-n="${n}" ${solo ? 'data-solo="1"' : ''} style="position:absolute;inset:0;display:grid;gap:${solo ? '0' : '8px'};padding:${solo ? '0' : '8px'};box-sizing:border-box">
+        ${tilesHtml}
+      </div>
+      ${standbyHtml}
+      <!-- BARRA SUPERIOR FLOTANTE (glass, auto-hide) -->
+      <div id="espiaV2TopBar" class="espiaV2-ctl espiaV2-top" style="position:absolute;top:0;left:0;right:0;z-index:30;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top,0px));background:linear-gradient(180deg,rgba(3,6,13,.72),rgba(3,6,13,0))">
+        <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;background:rgba(12,17,28,.55);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:8px 13px;box-shadow:0 10px 34px -14px #000;min-width:0;max-width:calc(100% - 220px)">
+          <div id="espiaV2Live" style="display:flex;align-items:center;gap:9px;flex-shrink:0">
+            <span style="position:relative;width:11px;height:11px;display:inline-block">
+              <span style="position:absolute;inset:0;border-radius:50%;background:${live ? '#10b981' : '#f59e0b'};box-shadow:0 0 12px ${live ? '#10b981' : '#f59e0b'};animation:espiaBreath 2s ease-in-out infinite"></span>
+              ${live ? `<span style="position:absolute;inset:0;border-radius:50%;border:2px solid #10b981;animation:espiaPulse 1.8s ease-out infinite"></span>` : ''}
+            </span>
+            <span style="font-size:11px;font-weight:900;color:${live ? '#10b981' : '#f59e0b'};letter-spacing:.6px">${live ? 'EN VIVO' : 'CONECTANDO'}</span>
           </div>
-          <!-- Sidebar -->
-          <div class="espiaV2-side" style="width:260px;display:flex;flex-direction:column;gap:10px;flex-shrink:0">
-            <!-- Audio card -->
-            <div id="espiaV2AudioCard" style="background:#0f172a;border:1px solid rgba(34,211,238,.3);border-radius:10px;padding:11px;box-shadow:0 0 18px -8px #22d3ee44">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                <div style="font-size:9px;font-weight:800;color:#22d3ee;text-transform:uppercase;letter-spacing:.5px">🎤 AUDIO</div>
-                <button onclick="MOS._espiaV2ToggleMute()" id="espiaV2MuteBtn" style="background:none;border:0;color:#94a3b8;cursor:pointer;font-size:13px" title="Silenciar">🔊</button>
-              </div>
-              <canvas id="espiaV2Wave" width="232" height="40" style="width:100%;height:40px;background:#000;border-radius:6px"></canvas>
-              <div id="espiaV2AudioInfo" style="font-size:9px;color:#94a3b8;margin-top:5px;font-family:monospace">esperando…</div>
-              <audio id="espiaV2AudioEl" autoplay></audio>
-            </div>
-            <!-- Mini card (el OTRO stream — click swap) -->
-            <!-- [v2.43.91] El mini ahora muestra el stream que NO es el focus.
-                 Si focus=pantalla → mini=cámara. Si focus=cámara → mini=pantalla.
-                 Antes el mini era SIEMPRE cámara → al hacer swap a focus=cámara,
-                 grande y mini mostraban lo mismo (cámara) y "pantalla" desaparecía. -->
-            ${(() => {
-              // [v2.43.97/98] Mini = siguiente en el ciclo. Si solo hay 1 video,
-              // no renderizar el mini (sería redundante: grande y mini iguales).
-              const orden = ['pantalla', 'camara', 'camara2'];
-              const disponibles = orden.filter(k => !!_espiaV2.streams[k]);
-              if (disponibles.length <= 1) return '';
-              const idxActual = disponibles.indexOf(_espiaV2.focus);
-              const siguienteKey = disponibles[(idxActual + 1) % disponibles.length] || disponibles[0];
-              const metaPorTipo = {
-                pantalla: { icon: '🖥️', label: 'PANTALLA',     color: '16,185,129' },
-                camara:   { icon: '📷', label: 'CÁMARA TRASERA', color: '99,102,241' },
-                camara2:  { icon: '📸', label: 'CÁMARA FRONTAL', color: '244,114,182' }
-              };
-              const meta = metaPorTipo[siguienteKey] || metaPorTipo.camara;
-              const stream = _espiaV2.streams[siguienteKey];
-              const totalMostrable = disponibles.length;
-              return `<div id="espiaV2MiniCard" onclick="MOS._espiaV2Swap()" style="background:#0f172a;border:1px solid rgba(${meta.color},.3);border-radius:10px;padding:11px;cursor:pointer;transition:all .25s;box-shadow:0 0 18px -8px rgba(${meta.color},.28)"
-                onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 24px -6px rgba(${meta.color},.55)'"
-                onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 0 18px -8px rgba(${meta.color},.28)'">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-                  <div style="font-size:9px;font-weight:800;color:rgba(${meta.color},.95);text-transform:uppercase;letter-spacing:.5px">${meta.icon} ${meta.label}</div>
-                  <span style="font-size:8px;color:#64748b">${totalMostrable > 2 ? (disponibles.indexOf(siguienteKey)+1) + '/' + totalMostrable + ' · ' : ''}click=swap</span>
-                </div>
-                <video id="espiaV2MiniVideo" autoplay playsinline muted
-                       style="width:100%;height:90px;object-fit:cover;background:#000;border-radius:6px"></video>
-                ${!stream ? `
-                  <div style="position:relative;margin-top:-90px;height:90px;display:flex;align-items:center;justify-content:center;background:#020617;border-radius:6px">
-                    <div style="width:24px;height:24px;border:2px solid rgba(${meta.color},.3);border-top-color:rgba(${meta.color},1);border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
-                  </div>` : ''}
-              </div>`;
-            })()}
-            <!-- [v2.43.102] Cards 'no soportada' — solo en móviles donde tiene sentido -->
-            ${(() => {
-              const c = _espiaV2.capabilities;
-              if (!c) return '';
-              const cards = [];
-              // PANTALLA solo se muestra como "no soportada" en móvil/tablet.
-              // En desktop sin pantalla la causa real es probablemente otra
-              // (user rechazó, o no la pidió), no que la API falte.
-              if (c.tienePantalla === false && c.esMobile) {
-                cards.push({ icon: '🖥️', label: 'PANTALLA', motivo: 'No disponible en móviles (limitación del navegador)' });
-              }
-              // 2DA CÁMARA: solo en móvil. En desktop no es algo que se espera.
-              // [v2.43.107] Mensaje específico según dualFallReason del cliente
-              if (c.esMobile && c.dualIntentado) {
-                const ca = c.camsAbiertas || 0;
-                if (ca < 2) {
-                  const motivos = {
-                    'hardware_single_cam':       'Este dispositivo solo tiene 1 cámara',
-                    'deviceids_opacos':          'El navegador oculta el ID de la 2da cámara (faltan permisos)',
-                    'browser_no_permite_concurrent': 'El navegador no permite usar las 2 cámaras a la vez',
-                    'browser_devolvio_misma_cam': 'El navegador devolvió la misma cámara al pedir la otra',
-                  };
-                  const motivo = motivos[c.dualFallReason]
-                              || (c.dualFallReason?.startsWith('excepcion:') ? ('Error: ' + c.dualFallReason.substring(10)) : null)
-                              || 'No se pudo abrir la 2da cámara';
-                  cards.push({ icon: '📸', label: '2DA CÁMARA', motivo });
-                }
-              }
-              return cards.map(card => `
-                <div style="background:#0a0f1e;border:1px dashed rgba(100,116,139,.4);border-radius:10px;padding:11px;opacity:.65">
-                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                    <div style="font-size:9px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.5px">${card.icon} ${card.label}</div>
-                    <span style="font-size:8px;color:#475569">⛔ N/D</span>
-                  </div>
-                  <div style="font-size:9px;color:#64748b;line-height:1.4">${card.motivo}</div>
-                </div>`).join('');
-            })()}
-            <!-- GPS mini -->
-            <div style="background:#0f172a;border:1px solid rgba(236,72,153,.3);border-radius:10px;padding:11px;box-shadow:0 0 18px -8px #ec489944">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-                <div style="font-size:9px;font-weight:800;color:#ec4899;text-transform:uppercase;letter-spacing:.5px">📍 GPS</div>
-                <span id="espiaV2GpsDot" style="width:6px;height:6px;border-radius:50%;background:#475569"></span>
-              </div>
-              <div id="espiaV2GpsInfo" style="font-size:9px;color:#94a3b8;font-family:monospace;line-height:1.5">esperando…</div>
-              <div id="espiaV2GpsMap" style="margin-top:6px;height:80px;background:#020617;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#475569;font-size:20px">🗺️</div>
-              <!-- [v2.43.72] Fallback: si GPS en vivo no llega, ver último registrado -->
-              <button onclick="MOS.verUltimaUbicacionDispositivo('${_espiaV2.deviceId}')"
-                style="margin-top:8px;width:100%;background:linear-gradient(135deg,rgba(59,130,246,.15),rgba(14,165,233,.10));border:1px solid rgba(59,130,246,.45);color:#93c5fd;border-radius:8px;padding:6px 8px;font-size:9px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;letter-spacing:.3px;transition:all .2s"
-                onmouseover="this.style.background='linear-gradient(135deg,rgba(59,130,246,.25),rgba(14,165,233,.18))'"
-                onmouseout="this.style.background='linear-gradient(135deg,rgba(59,130,246,.15),rgba(14,165,233,.10))'"
-                title="Si el GPS en vivo no llega, mostrar la última ubicación conocida desde el historial">
-                🗺 ÚLTIMA UBICACIÓN
-              </button>
-            </div>
-            <!-- Stats -->
-            <div style="background:rgba(15,23,42,.5);border:1px solid #1e293b;border-radius:8px;padding:8px 10px;font-size:9px;color:#64748b;font-family:monospace;margin-top:auto">
-              <div>sesión: ${(_espiaV2.sesionId || '—').slice(0,20)}</div>
-              <div>estado: <span style="color:#a5b4fc">${_espiaV2.estado}</span></div>
-            </div>
+          ${badgePlataforma}
+          <div style="min-width:0">
+            <div style="font-size:13px;font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">👤 ${_escapeHtml(_espiaV2.nombre)}</div>
+            <div style="font-size:10px;color:#94a3b8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_escapeHtml(_espiaV2.deviceId)}</div>
           </div>
+          <div id="espiaV2SyncBadge" style="font-size:10px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.4);white-space:nowrap;flex-shrink:0">sync OK · ${_espiaV2.lagMs}ms</div>
+          ${soloJumps}
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;background:rgba(12,17,28,.55);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:6px 8px;box-shadow:0 10px 34px -14px #000;flex-shrink:0">
+          ${solo ? `<button onclick="MOS._espiaV2VolverMosaico()" title="Volver al mosaico" style="background:rgba(99,102,241,.2);${btnCss};width:auto;padding:0 13px;gap:6px;font-size:12px;font-weight:800;color:#c7d2fe;border-color:rgba(99,102,241,.4)">← Mosaico</button>` : ''}
+          <button onclick="MOS._espiaV2ToggleMute()" id="espiaV2MuteBtn" title="Silenciar audio" style="background:rgba(255,255,255,.06);${btnCss}"
+            onmouseover="this.style.background='rgba(34,211,238,.25)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">🔊</button>
+          <button onclick="MOS._espiaV2Captura()" title="Capturar imagen" style="background:rgba(255,255,255,.06);${btnCss}"
+            onmouseover="this.style.background='rgba(99,102,241,.3)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">📸</button>
+          <button onclick="MOS._espiaV2Fullscreen()" title="Pantalla completa" style="background:rgba(255,255,255,.06);${btnCss}"
+            onmouseover="this.style.background='rgba(255,255,255,.14)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">⛶</button>
+          <button onclick="MOS.cerrarEspiaV2()" title="Cerrar" style="background:rgba(248,113,113,.18);${btnCss};color:#fca5a5;border-color:rgba(248,113,113,.4)"
+            onmouseover="this.style.background='rgba(248,113,113,.32)'" onmouseout="this.style.background='rgba(248,113,113,.18)'">✕</button>
         </div>
       </div>
+      <!-- TELEMETRÍA FLOTANTE bottom-left (audio + GPS, auto-hide) -->
+      <div id="espiaV2Telemetry" class="espiaV2-ctl espiaV2-bot" style="position:absolute;left:14px;bottom:14px;width:230px;max-width:calc(100vw - 28px);display:flex;flex-direction:column;gap:8px;z-index:30;padding-bottom:env(safe-area-inset-bottom,0px)">
+        <div style="background:rgba(10,15,25,.62);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(34,211,238,.25);border-radius:14px;padding:10px 11px;box-shadow:0 10px 34px -14px #000">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">
+            <div style="font-size:9px;font-weight:800;color:#22d3ee;letter-spacing:.6px">🎤 AUDIO</div>
+            <div id="espiaV2AudioInfo" style="font-size:8px;color:#94a3b8;font-family:monospace">esperando…</div>
+          </div>
+          <canvas id="espiaV2Wave" width="206" height="34" style="width:100%;height:34px;background:#03060d;border-radius:8px;display:block"></canvas>
+        </div>
+        <div style="background:rgba(10,15,25,.62);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(236,72,153,.25);border-radius:14px;padding:10px 11px;box-shadow:0 10px 34px -14px #000">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:9px;font-weight:800;color:#ec4899;letter-spacing:.6px">📍 GPS</div>
+            <span id="espiaV2GpsDot" style="width:6px;height:6px;border-radius:50%;background:#475569"></span>
+          </div>
+          <div id="espiaV2GpsInfo" style="font-size:9px;color:#94a3b8;font-family:monospace;line-height:1.5">esperando…</div>
+          <div id="espiaV2GpsMap" style="margin-top:6px;height:80px;background:#03060d;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#475569;font-size:20px">🗺️</div>
+          <button onclick="MOS.verUltimaUbicacionDispositivo('${_espiaV2.deviceId}')"
+            style="margin-top:8px;width:100%;background:linear-gradient(135deg,rgba(59,130,246,.15),rgba(14,165,233,.10));border:1px solid rgba(59,130,246,.45);color:#93c5fd;border-radius:8px;padding:6px 8px;font-size:9px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;letter-spacing:.3px;transition:all .2s"
+            onmouseover="this.style.background='linear-gradient(135deg,rgba(59,130,246,.25),rgba(14,165,233,.18))'"
+            onmouseout="this.style.background='linear-gradient(135deg,rgba(59,130,246,.15),rgba(14,165,233,.10))'"
+            title="Si el GPS en vivo no llega, mostrar la última ubicación conocida desde el historial">🗺 ÚLTIMA UBICACIÓN</button>
+        </div>
+        <audio id="espiaV2AudioEl" autoplay></audio>
+      </div>
       <style>
-        @keyframes espiaV2In { from { opacity:0; transform:scale(.96) } to { opacity:1; transform:scale(1) } }
-        @keyframes espiaV2Out { to { opacity:0; transform:scale(.96) } }
+        @keyframes espiaV2In { from { opacity:0 } to { opacity:1 } }
+        @keyframes espiaV2Out { to { opacity:0 } }
         @keyframes espiaBreath { 0%,100% { transform:scale(1);opacity:.85 } 50% { transform:scale(1.3);opacity:1 } }
         @keyframes espiaSpin { to { transform:rotate(360deg) } }
-        #espiaV2Modal .espia-live-dot { transition:all .3s }
-        /* [responsive] Móvil / tablet vertical: modal a pantalla completa, cuerpo en columna,
-           video protagonista arriba y sidebar full-width con scroll. Sin vh/dvh (usa height:100%
-           sobre el overlay fixed inset:0). Solo overrides bajo el breakpoint → escritorio intacto. */
-        @media (max-width: 860px) {
-          #espiaV2Modal { padding:0 !important; }
-          #espiaV2Modal .espiaV2-card {
-            max-width:100% !important; width:100% !important; height:100% !important;
-            border-radius:0 !important; border:0 !important;
-          }
-          #espiaV2Modal .espiaV2-header {
-            flex-wrap:wrap !important; gap:8px !important; padding:10px 12px !important;
-            padding-top:calc(10px + env(safe-area-inset-top,0px)) !important;
-          }
-          #espiaV2Modal .espiaV2-body {
-            flex-direction:column !important; overflow-y:auto !important; overflow-x:hidden !important;
-            padding:10px !important; gap:10px !important; -webkit-overflow-scrolling:touch;
-            padding-bottom:calc(14px + env(safe-area-inset-bottom,0px)) !important;
-          }
-          #espiaV2Modal #espiaV2Big {
-            flex:none !important; width:100% !important; height:42vh !important; min-height:220px !important;
-          }
-          #espiaV2Modal .espiaV2-side { width:100% !important; }
+        @keyframes espiaPulse { 0% { transform:scale(1);opacity:.7 } 100% { transform:scale(2.6);opacity:0 } }
+        /* Auto-hide de controles flotantes (barra + telemetría) */
+        #espiaV2Modal .espiaV2-ctl { transition:opacity .4s ease, transform .4s ease }
+        #espiaV2Modal .espiaV2-top.espiaV2-oculto { opacity:0; transform:translateY(-115%); pointer-events:none }
+        #espiaV2Modal .espiaV2-bot.espiaV2-oculto { opacity:0; transform:translateY(22px); pointer-events:none }
+        /* Layout del mosaico según nº de tiles */
+        #espiaV2Grid { }
+        #espiaV2Grid[data-n="1"] { grid-template-columns:1fr; grid-template-rows:1fr }
+        #espiaV2Grid[data-n="2"] { grid-template-columns:1fr 1fr; grid-template-rows:1fr }
+        #espiaV2Grid[data-n="3"] { grid-template-columns:2fr 1fr; grid-template-rows:1fr 1fr }
+        #espiaV2Grid[data-n="3"] .espiaV2-tile:first-child { grid-row:1 / span 2 }
+        #espiaV2Grid[data-solo="1"] { grid-template-columns:1fr !important; grid-template-rows:1fr !important }
+        #espiaV2Grid .espiaV2-tile:hover .espiaV2-tile-hint { opacity:1 }
+        /* Vertical / pantallas angostas: apilar. Sin dvh (usa el fixed inset:0). */
+        @media (max-width: 760px), (orientation: portrait) {
+          #espiaV2Grid[data-n="2"] { grid-template-columns:1fr; grid-template-rows:1fr 1fr }
+          #espiaV2Grid[data-n="3"] { grid-template-columns:1fr; grid-template-rows:1.5fr 1fr 1fr }
+          #espiaV2Grid[data-n="3"] .espiaV2-tile:first-child { grid-row:auto }
+          #espiaV2Telemetry { width:190px }
         }
-        /* Landscape muy bajo (móvil horizontal): bajar el video para que la sidebar respire. */
-        @media (max-width: 860px) and (max-height: 520px) {
-          #espiaV2Modal #espiaV2Big { height:60vh !important; min-height:180px !important; }
+        @media (max-width: 480px) {
+          #espiaV2Telemetry #espiaV2GpsMap { height:64px }
         }
       </style>
     </div>`;
@@ -32619,23 +32601,110 @@ const MOS = (() => {
     document.body.insertAdjacentHTML('beforeend', html);
     // [v2.43.92] Cancelar setTimeout previo si renderModal corre múltiples veces
     // rápido (ej. cascada de ontrack + onconnectionstatechange + trackMap).
-    // Sin esto, N setTimeouts se acumulan haciendo trabajo redundante.
     if (_espiaV2._renderTimeout) clearTimeout(_espiaV2._renderTimeout);
     _espiaV2._renderTimeout = setTimeout(() => {
       if (!_espiaV2) return;
-      _espiaV2ActualizarStream(_espiaV2.focus, _espiaV2.streams[_espiaV2.focus]);
-      // [v2.43.97] Mini = siguiente en ciclo de los disponibles
-      const orden = ['pantalla', 'camara', 'camara2'];
-      const disp = orden.filter(k => !!_espiaV2.streams[k]);
-      if (disp.length >= 2) {
-        const idx = disp.indexOf(_espiaV2.focus);
-        const sigKey = disp[(idx + 1) % disp.length];
-        _espiaV2ActualizarStream(sigKey, _espiaV2.streams[sigKey], 'espiaV2MiniVideo');
-      }
-      _espiaV2VincularAudio();
-      _espiaV2DibujarWaveform();
-      _espiaV2RenderGpsMini();
+      _espiaV2CablearVideos();     // srcObject de CADA tile del mosaico
+      _espiaV2VincularAudio();     // <audio> → stream de audio
+      _espiaV2DibujarWaveform();   // waveform en #espiaV2Wave
+      _espiaV2RenderGpsMini();     // panel GPS
+      _espiaV2ArmarControles();    // auto-hide de barra + telemetría
     }, 30);
+  }
+
+  // Cablea el srcObject de cada <video> del mosaico a su MediaStream. Es el
+  // reemplazo del cableado BigVideo/MiniVideo anterior, ahora por-tile.
+  function _espiaV2CablearVideos() {
+    if (!_espiaV2) return;
+    ['pantalla', 'camara', 'camara2'].forEach(k => {
+      const stream = _espiaV2.streams[k];
+      const el = document.getElementById('espiaV2Vid_' + k);
+      if (el && stream && el.srcObject !== stream) el.srcObject = stream;
+    });
+  }
+
+  // Auto-hide de los controles flotantes: se ocultan tras 3s sin actividad y
+  // reaparecen con mousemove/touch/pointer/teclado. Los listeners viven en el
+  // nodo #espiaV2Modal, que se recrea en cada render (los viejos mueren con él);
+  // por eso re-armamos aquí y solo hay que limpiar el timer pendiente.
+  function _espiaV2ArmarControles() {
+    if (!_espiaV2) return;
+    const modal = document.getElementById('espiaV2Modal');
+    if (!modal) return;
+    try { clearTimeout(_espiaV2._ctrlTimer); } catch (_) {}
+    const ctls = () => modal.querySelectorAll('.espiaV2-ctl');
+    const mostrar = () => {
+      ctls().forEach(el => el.classList.remove('espiaV2-oculto'));
+      try { clearTimeout(_espiaV2._ctrlTimer); } catch (_) {}
+      _espiaV2._ctrlTimer = setTimeout(() => {
+        const m = document.getElementById('espiaV2Modal');
+        if (m) m.querySelectorAll('.espiaV2-ctl').forEach(el => el.classList.add('espiaV2-oculto'));
+      }, 3000);
+    };
+    _espiaV2._ctrlMostrar = mostrar;
+    const handler = () => mostrar();
+    ['mousemove', 'touchstart', 'pointerdown', 'keydown'].forEach(ev =>
+      modal.addEventListener(ev, handler, { passive: true }));
+    mostrar(); // arranca visible + arma el timer de ocultado
+  }
+
+  // Tap en un tile del mosaico → expandir a solo-pantalla inmersivo
+  function _espiaV2ExpandirTile(k) {
+    if (!_espiaV2) return;
+    _espiaSfx('whoosh');
+    _espiaV2.vista = 'solo';
+    _espiaV2.soloStream = k;
+    if (_espiaV2.streams[k]) _espiaV2.focus = k; // mantener focus coherente
+    _espiaV2RenderModal();
+  }
+  // Volver del modo solo al mosaico
+  function _espiaV2VolverMosaico() {
+    if (!_espiaV2) return;
+    _espiaSfx('pop');
+    _espiaV2.vista = 'mosaico';
+    _espiaV2RenderModal();
+  }
+  // Saltar a otra cámara dentro del modo solo
+  function _espiaV2SoloIr(k) {
+    if (!_espiaV2) return;
+    _espiaSfx('shimmer');
+    _espiaV2.soloStream = k;
+    if (_espiaV2.streams[k]) _espiaV2.focus = k;
+    _espiaV2RenderModal();
+  }
+
+  // Captura de pantalla del tile indicado (o del solo/focus actual) → PNG.
+  // Usa new Date() en runtime (permitido en navegador) para el nombre.
+  function _espiaV2Captura(k) {
+    if (!_espiaV2) return;
+    if (!k) k = (_espiaV2.vista === 'solo' && _espiaV2.soloStream) ? _espiaV2.soloStream : _espiaV2.focus;
+    let vid = document.getElementById('espiaV2Vid_' + k);
+    // Fallback: si el tile pedido no tiene imagen, tomar cualquiera con señal
+    if (!vid || !vid.videoWidth) {
+      const alt = ['pantalla', 'camara', 'camara2']
+        .map(x => document.getElementById('espiaV2Vid_' + x))
+        .find(v => v && v.videoWidth);
+      if (alt) vid = alt;
+    }
+    if (!vid || !vid.videoWidth) { toast('Sin imagen para capturar todavía', 'warn'); return; }
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = vid.videoWidth;
+      canvas.height = vid.videoHeight;
+      canvas.getContext('2d').drawImage(vid, 0, 0, canvas.width, canvas.height);
+      const d = new Date();
+      const p = (x) => String(x).padStart(2, '0');
+      const ts = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+      const nombre = String(_espiaV2.nombre || 'equipo').replace(/[^\w\-]+/g, '_').slice(0, 40);
+      const a = document.createElement('a');
+      a.download = `espia_${nombre}_${ts}.png`;
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+      _espiaSfx('chime');
+      toast('📸 Captura descargada', 'ok');
+    } catch (e) {
+      toast('No se pudo capturar: ' + (e?.message || e), 'error');
+    }
   }
 
   function _espiaV2ActualizarStream(tipoFocus, stream, elementId) {
@@ -32765,7 +32834,8 @@ const MOS = (() => {
   }
   function _espiaV2Fullscreen() {
     _espiaSfx('whoosh');
-    const wrap = document.getElementById('espiaV2Big');
+    // [v2.44] Visor ya es edge-to-edge → fullscreen del contenedor raíz completo.
+    const wrap = document.getElementById('espiaV2Modal') || document.getElementById('espiaV2Grid');
     if (!wrap) return;
     if (!document.fullscreenElement) {
       wrap.requestFullscreen?.().catch(() => {});
@@ -50218,6 +50288,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.43.57] Espía V2 — WebRTC 4 streams con efectos premium
     abrirEspiaV2, cerrarEspiaV2,
     _espiaV2Swap, _espiaV2ToggleMute, _espiaV2Fullscreen,
+    // [v2.44] Visor inmersivo mosaico: expandir/volver/saltar cámara + captura
+    _espiaV2ExpandirTile, _espiaV2VolverMosaico, _espiaV2SoloIr, _espiaV2Captura,
     // [v2.43.61] Timeline buffer histórico
     abrirTimelineBufferEspia, cerrarTimelineEspia,
     _espiaTimelineRecargar, _espiaTimelineReproducir,
