@@ -4044,10 +4044,9 @@ const MOS = (() => {
                       title="Ver código de barra en grande">▌${d.codigoBarra}<span class="cat-cod-ico">▐│▌║▏</span></button>` : ''}
                       <span class="pres-factor">×${factor}</span>
                       <span class="pres-factor" style="${presUniBg}">${presUniIcon} ${presUnidad}</span>
-                      ${String(d.modoVenta || '').toUpperCase() === 'FIJO'
-                        ? `<span class="pres-factor" style="background:rgba(251,191,36,.14);color:#fbbf24" title="Precio FIJO: puesto a mano — la cascada del canónico NO lo toca">📌 FIJO</span>`
-                        : `<span class="pres-factor" style="background:rgba(52,211,153,.1);color:#34d399;opacity:.8" title="Precio automático: sigue al canónico (canónico × factor o su margen)">⚙ auto</span>`}
                     </div>
+                    <!-- [772] el chip ⚙/📌 murió con la cascada: TODA presentación es de precio
+                         propio (fijo por definición); solo cambia en compras o editándola. -->
                     ${alertHtml ? `<div class="flex flex-wrap items-center gap-1 mt-1">${alertHtml}</div>` : ''}
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
@@ -4085,8 +4084,6 @@ const MOS = (() => {
               const ppAct = _isProdActivo(pp);
               return `<div class="flex items-center gap-2 mt-1${ppAct ? '' : ' opacity-60'}" style="margin-left:22px;font-size:11px;color:#94a3b8">
                 <span>↳ 🧱 ×${pf}</span>
-                ${String(pp.modoVenta || '').toUpperCase() === 'FIJO'
-                  ? `<span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:5px;background:rgba(251,191,36,.14);color:#fbbf24" title="Precio FIJO: puesto a mano — la cascada NO lo toca">📌</span>` : ''}
                 <span class="cat-nombre-edit" onclick="event.stopPropagation();MOS.abrirEditarProducto('${pp.idProducto}')"
                       title="Tocar para editar">${_highlight(pp.descripcion || pp.idProducto, words)}</span>
                 ${pp.codigoBarra ? `<button type="button" class="pres-code" style="cursor:pointer;background:none;border:none;padding:0;font:inherit;color:inherit"
@@ -11161,13 +11158,13 @@ const MOS = (() => {
         ? costAntByIdx[r.parentIdx] * r.factor
         : costoAntBase * r.factor;
       costAntByIdx[i] = costoAnt;
-      let margen = (sp.margenPct != null && sp.margenPct !== '') ? parseFloat(sp.margenPct) : margenC;
-      // [775] SIN DEFAULTS (doctrina): sin margen propio ni heredado del padre, se respeta
-      // el PRECIO ACTUAL del satélite (margen real derivado de él) — jamás el 25% de política.
-      // [776] FIJO = precio manual intocable por cascada → SIEMPRE se respeta su precio actual.
+      // [772] la herencia del margen del padre MURIÓ con la cascada: cada presentación
+      // se analiza por SU último margen registrado; sin margen propio, se respeta su
+      // PRECIO ACTUAL (margen real derivado). El card muestra el costo antes→ahora
+      // tachado para que el ajuste se haga en compras — modelo definitivo del dueño.
+      let margen = (sp.margenPct != null && sp.margenPct !== '') ? parseFloat(sp.margenPct) : null;
       const _pAct = parseFloat(sp.precioVenta) || 0;
-      const _esFijo = String(sp.modoVenta || '').toUpperCase() === 'FIJO';
-      if ((_esFijo || margen == null) && _pAct > 0 && costo > 0) margen = (1 - costo / _pAct) * 100;
+      if (margen == null && _pAct > 0 && costo > 0) margen = (1 - costo / _pAct) * 100;
       let sugerido = (margen != null && margen < 100 && costo > 0) ? _r1(costo / (1 - margen / 100)) : null;
       // [778] contrato zombi también acá: sugerencia a >50% del precio actual = margen
       // de otra época → se respeta el precio actual del satélite (margen real).
@@ -11252,12 +11249,11 @@ const MOS = (() => {
         // NO la congelamos: la dejamos seguir al canónico (contrato MARGEN si aplica).
         const auto = _precioAutoDe(j);
         const divergente = (auto == null) || (Math.abs(j.precio - auto) >= 0.01);
-        // [777] el FIJO también guarda SU margen de contrato (directiva del dueño: "al
-        // publicar se guardan TODOS los márgenes") — FIJO manda en la cascada (el precio
-        // no se pisa), pero el margen queda registrado para juzgar la próxima compra.
-        patch = divergente
-          ? (m != null && m > -100 && m < 100 ? { idProducto: j.id, modoVenta: 'FIJO', margenPct: _r1(m) } : { idProducto: j.id, modoVenta: 'FIJO' })
-          : (m != null && m > -100 && m < 100 ? { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' } : null);
+        // [772] TODA presentación es de precio propio (la cascada murió): siempre FIJO
+        // + su margen de contrato registrado, para que la próxima compra la juzgue.
+        patch = (m != null && m > -100 && m < 100)
+          ? { idProducto: j.id, modoVenta: 'FIJO', margenPct: _r1(m) }
+          : { idProducto: j.id, modoVenta: 'FIJO' };
       } else {
         patch = (m != null && m > -100 && m < 100) ? { idProducto: j.id, margenPct: _r1(m), modoVenta: 'MARGEN' } : null;
       }
@@ -11394,7 +11390,7 @@ const MOS = (() => {
           ${_p2TramosHTML(f, i)}
           ${(f.satelites && f.satelites.length) ? `
           <div class="p2-sats">
-            <div class="p2-sats-lbl">${f.satelites.length} presentación(es)/derivado(s) · el precio <s>tachado</s> se reemplaza por la sugerencia que respeta su margen — toca ✕ para rechazarla (vuelve el actual, editable) · escribir un precio = MANUAL · al publicar se guardan TODOS (precios + márgenes)</div>
+            <div class="p2-sats-lbl">${f.satelites.length} presentación(es)/derivado(s) · precio PROPIO: nada las mueve solas — si el costo cambió (tachado), la sugerencia respeta SU último margen; ✕ la rechaza (vuelve el actual, editable) · al publicar se guardan TODOS (precios + márgenes)</div>
             ${f.satelites.map((s, j) => _p2SatCardHTML(f, s, i, j)).join('')}
           </div>` : ''}
         </div>
