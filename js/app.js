@@ -25003,10 +25003,15 @@ const MOS = (() => {
     else if (tipo === 'laptop') devt = `<div class="devt laptop ${stateCls}"><div class="lid">${face}</div><div class="base"></div></div>`;
     else                        devt = `<div class="devt pc ${stateCls}"><div class="screen">${face}</div><div class="stand"></div><div class="foot"></div></div>`;
     // Cap del mockup: "Desktop MOS / Luis · master · 8m"
-    const tRel = act.label.replace('hace ', '').replace('inactivo ', '');
+    // [798 · tiempo real] Si el equipo está en el canal de PRESENCIA (conectado al segundo)
+    // o es este mismo navegador, el texto dice "en vivo" — antes usaba solo el último latido
+    // (ultima_conexion, hasta 10 min viejo) → un equipo LIVE mostraba "hace un día" en el texto
+    // aunque el badge dijera live. Ahora badge y texto coinciden y reflejan la presencia real.
+    const _liveReal = _esMiDispositivo(d) || _presTieneDevice(d.ID_Dispositivo);
+    const tRel = _liveReal ? '🔴 en vivo' : act.label.replace('hace ', '').replace('inactivo ', '');
     const capS = user
       ? `${user.split(/\s+/)[0]}${rol ? ` · <b style="color:#fdba74">${rol}</b>` : ''} · ${tRel}`
-      : act.label;
+      : (_liveReal ? '🔴 en vivo' : act.label);
     const cap = `<div class="cap"><div class="t">${d.Nombre_Equipo || '—'}</div><div class="s">${capS}</div></div>`;
     const master = _esMasterSession();
     const monitor = `<div class="monitor">`
@@ -32526,8 +32531,10 @@ const MOS = (() => {
         </div>`;
     })();
 
-    // ── Botones de salto entre cámaras (solo modo solo) ────────────────
-    const soloJumps = solo ? `<div style="display:flex;gap:5px;align-items:center">
+    // ── Botones de salto entre cámaras (solo modo solo Y si hay 2+ streams) ─────────
+    // [798] Con UNA sola cámara (celular típico) NO hay entre qué saltar → el botón sobraba
+    // y confundía junto al de "Rotar". Solo aparece si hay 2+ streams (ej. pantalla + cámara).
+    const soloJumps = (solo && visibles.length > 1) ? `<div style="display:flex;gap:5px;align-items:center">
         ${visibles.map(k => {
           const m = META[k] || META.camara;
           const cur = k === _espiaV2.soloStream;
