@@ -10400,23 +10400,44 @@ const MOS = (() => {
     (f.satelites || []).forEach(s => { if (s.incluido && s.precioEd > 0 && s.p && s.p.idProducto) jobs.push({ id: s.p.idProducto, precio: s.precioEd, margen: s.margen }); });
     const li = S._p2UnoLineaIdx;
     _p2CerrarUno();
+    // [779] OPTIMISTA (pedido del dueño: "demora en aparecer, no es tan optimista"):
+    // la línea del Paso 1 y la card de la Mesa se pintan YA; la red corre detrás y
+    // si falla, se REVIERTE con aviso claro. La verdad del server llega igual vía
+    // _mesaPrefetchCotejo al final de _p2Publicar.
+    const _pintarLinea = (listo) => {
+      const st = S._costosGuiaState;
+      if (!(st && st.lineas && st.lineas[li])) return;
+      st.lineas[li]._precioListo = listo ? f.precioEd : 0;
+      const _bruto = _costosGuiaCalcularBruto(st.lineas[li], st) || 0;
+      const acc = document.getElementById('costoGuiaAcc_' + li);
+      if (acc) acc.innerHTML = _costosLineaAccionesHTML(st.lineas[li], li, _bruto);
+      const _chip = document.getElementById('costoGuiaChip_' + li); if (_chip) _chip.innerHTML = _costosChipHTML(_bruto, !!listo);
+      const _row = document.getElementById('costoGuiaLinea_' + li);
+      if (_row) { _row.classList.remove('is-nocost', 'is-cost', 'is-done'); _row.classList.add(listo ? 'is-done' : (_bruto > 0 ? 'is-cost' : 'is-nocost')); }
+      _costosGuiaUpdPrecioProgreso();
+    };
+    _pintarLinea(true);
+    // Mesa: bump optimista del contador de precios de la guía origen (+1 producto)
+    const org = S._paso2Origen || {};
+    const _k = org.fuente && org.idGuia ? (org.fuente + '_' + org.idGuia) : null;
+    let _cotPrev = null;
+    if (org.idGuia && S._cotejoGuias && S._cotejoGuias[org.idGuia]) {
+      const cot = S._cotejoGuias[org.idGuia];
+      _cotPrev = { n: cot.n, p: cot.p, ts: cot.ts };
+      cot.p = Math.min(parseInt(cot.n || 0, 10) || 0, (parseInt(cot.p || 0, 10) || 0) + 1);
+      if (_k) { try { _mesaActualizarCard(_k); } catch(_){} }
+    }
     toast(jobs.length > 1 ? `Publicando precio + ${jobs.length - 1} presentación(es)…` : 'Publicando precio…', 'info');
     try {
       await _p2Publicar(jobs, 'MOS_PASO2');
-      const st = S._costosGuiaState;
-      if (st && st.lineas && st.lineas[li]) {
-        st.lineas[li]._precioListo = f.precioEd;
-        const _bruto = _costosGuiaCalcularBruto(st.lineas[li], st) || 0;
-        const acc = document.getElementById('costoGuiaAcc_' + li);
-        if (acc) acc.innerHTML = _costosLineaAccionesHTML(st.lineas[li], li, _bruto);
-        // [v2.43.615] pintar el estado "Precio puesto" en la línea (chip + color)
-        const _chip = document.getElementById('costoGuiaChip_' + li); if (_chip) _chip.innerHTML = _costosChipHTML(_bruto, true);
-        const _row = document.getElementById('costoGuiaLinea_' + li); if (_row) { _row.classList.remove('is-nocost', 'is-cost'); _row.classList.add('is-done'); }
-        _costosGuiaUpdPrecioProgreso();
-      }
       toast(`✓ Publicado al catálogo${jobs.length > 1 ? ' con ' + (jobs.length - 1) + ' presentación(es)' : ''}`, 'ok');
       try { renderCatalogo(); } catch(_){}
-    } catch (e) { toast('⚠ NO se publicó — reintenta: ' + (e.message || e), 'error'); }
+    } catch (e) {
+      // revertir lo optimista: la línea vuelve a "poner precio" y la Mesa a su conteo real
+      _pintarLinea(false);
+      if (_cotPrev && S._cotejoGuias && S._cotejoGuias[org.idGuia]) { S._cotejoGuias[org.idGuia] = _cotPrev; if (_k) { try { _mesaActualizarCard(_k); } catch(_){} } }
+      toast('⚠ NO se publicó — reintenta: ' + (e.message || e), 'error', 6000);
+    }
   }
   // [v2.43.603] progreso de precios · [703] vive como chip compacto en la barra sticky del pie
   function _costosGuiaUpdPrecioProgreso() {
