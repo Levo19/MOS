@@ -1574,6 +1574,15 @@ const MOS = (() => {
     }).join('') + '</span>';
   }
 
+  // [785] chip tributario junto al precio: Gravado 18% · EXO · INAF (los 3 únicos que
+  // aplican al catálogo — el IVAP del arroz lo paga el molino, no la reventa).
+  function _igvChipHTML(p) {
+    const t = parseInt(p.Tipo_IGV ?? p.tipoIGV ?? p.tipo_igv ?? 1, 10) || 1;
+    if (t === 2 || t === 9) return '<span class="igv-chip igv-exo" title="EXONERADO de IGV (Apéndice I) — se factura sin IGV">EXO</span>';
+    if (t === 3 || t === 11) return '<span class="igv-chip igv-inaf" title="INAFECTO al IGV (arroz pilado en reventa) — se factura sin IGV">INAF</span>';
+    return '<span class="igv-chip igv-grav" title="GRAVADO — IGV 18% incluido en el precio">18%</span>';
+  }
+
   function _renderMargenBadge(producto) {
     try {
       const mi = _calcularMargenInfo(producto);
@@ -4101,6 +4110,7 @@ const MOS = (() => {
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
                     <div class="${precioClass}" style="cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${d.idProducto}')">${fmtMoney(precioActual)}</div>
+                    ${_igvChipHTML(d)}
                     ${_renderMargenBadge(d)}
                     ${_renderRotChip(d, true)}
                     ${_rotZonasChipsHTML(d, true)}
@@ -4160,6 +4170,7 @@ const MOS = (() => {
                       title="Tocar para editar (ahí vive su precio)">${hlD}</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
                   <span style="color:#34d399;font-weight:800;font-size:12px;cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${d.idProducto}')">${fmtMoney(d.precioVenta)}</span>
+                  ${_igvChipHTML(d)}
                   ${_renderMargenBadge(d)}
                   ${_renderRotChip(d, true)}
                   ${_rotZonasChipsHTML(d, true)}
@@ -4203,6 +4214,7 @@ const MOS = (() => {
               <div class="flex items-center gap-1.5">
                 ${hasAnyAlert ? `<button type="button" class="cat-alert-icon" onclick="event.stopPropagation();MOS.toggleAlertPop('${eid}', event)" aria-label="Ver detalle de alertas">⚠</button>` : ''}
                 <div class="cat-price" data-cat-precio="${base.idProducto}" style="cursor:pointer" title="Curvas precio·costo + margen (contrato)" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas(&#39;${base.idProducto}&#39;)">${fmtMoney(base.precioVenta)}</div>
+                ${_igvChipHTML(base)}
               </div>
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
               ${_renderMargenBadge(base)}
