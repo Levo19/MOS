@@ -28,12 +28,19 @@
 > ~~(6) crons GAS liq~~ ✅ censo: mos.jornadas muerta desde 04-jul (legacy del rediseño 735-739);
 > liquidaciones_dia viva y autoalimentada (13 personas el 12-ago) + snapshot semanal en pg_cron
 > activo. Los crons GAS son zombis de la Hoja muerta — nada que portar.
-> **PARA EL FUNERAL (lo único que queda)**: (a) dar destino a las 11 acciones del fall-through
-> (lápida en api.js sobre _fetch): 3 de tributario SIN RPC (tribHistorico12meses, tribOCRMasivo,
-> tribReprocesarOCR — portar u ocultar botones), 2 admin de triggers GAS (cierreNocturnoTodos,
-> setupCierreNocturnoTrigger — retirar botones, el cron vive en pg_cron), 6 brazos de respaldo
-> (retirar) · (b) recién entonces: fall-throughs→throw, borrar _fetch/getUrl/GAS_URL · (c) grep=0
-> en los 3 frontends · (d) verificación física tickets Z/pago (dueño) · (e) borrar GAS+Sheets.
+> ~~**PARA EL FUNERAL**~~ ✅ **MOS ENTERRADO 14-ago (2.43.776)**: (a) las 3 tributarias migradas
+> (761 histórico / 762 reencolar OCR), triggers cron RETIRADOS (botones muertos, pg_cron manda),
+> 5 brazos de respaldo RETIRADOS (espía, tribReintentarCPE, tribReconciliarCPEs, adhesivos ×2 —
+> el orquestador GAS de lotes queda dead-code con lápida) · (b) fall-throughs POST/GET cerrados
+> con throw 'CERO-GAS: … no cableada' · _fetch/_fetchConTimeout/getUrl/GAS_URL BORRADOS ·
+> (c) grep script.google.com = 0 en runtime MOS (solo comentarios). _conFallbackMOS ya estaba
+> limpio (sin brazos, doc estaba stale).
+> **QUEDA (WH+ME, NO es solo funeral — son migraciones vivas, ver secciones B/C/D)**:
+> WH: clienteInbox portal (GAS activo), prints cargadores/historial→Edge (prueba física dueño),
+> photos.js entidades→Storage, diagnósticos, chunks espía, brazo post()+cola offline+aviso fallback.
+> ME: bridge Membrete→Edge, turno.html Ticket-Z, solicitar/extenderHorario RPCs, chunks espía,
+> fallback arms dormidos. PORTALES CLIENTE: bloqueado por export del Sheet (dueño).
+> Al cerrar WH+ME: (d) verificación física tickets (dueño) · (e) borrar GAS+Sheets.
 
 > Objetivo: MOS + ME + WH 100% Supabase, **cero-GAS, cero-fallback, cero-Sheet**. GAS+Sheets se borran.
 > Estado boot verificado por web-check (Playwright real): **MOS ✅ · ME ✅ · WH ✅ cero fetches a script.google.com**.
