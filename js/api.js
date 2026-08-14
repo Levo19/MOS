@@ -1,93 +1,15 @@
 // MOS Admin — api.js
-// Thin wrapper around the MOS GAS Web App URL
+// 100% Supabase (PostgREST + Edge Functions). GAS MURIÓ el 14-ago-2026.
 
 const API = (() => {
-  const GAS_URL = 'https://script.google.com/macros/s/AKfycbxalFhPdiVi_e4tq1f4ce6MHoLJb2_hwPts9bCttotlArIepooUwFpMl4nsX-3x4HfM/exec';
-
-  function getUrl()      { return GAS_URL; }
-  // [BLOCK 9] setUrl() ELIMINADA: era un no-op ({ /* URL fija en código */ }) y su único consumidor —
-  // el modal #modalConfig con el input cfgGasUrl— murió en esta misma purga. GAS_URL/getUrl/_fetch SIGUEN
-  // porque el fall-through de escritura/lectura no se pudo cerrar todavía (ver la lápida sobre _fetch).
+  // ⚰️ [FUNERAL GAS 14-ago-2026] Aquí vivieron GAS_URL, getUrl(), _fetchConTimeout() y
+  // _fetch() — la plomería del Apps Script. Los fall-throughs de lectura/escritura ahora
+  // LANZAN ('CERO-GAS: … no cableada'); las 10 acciones del censo fueron migradas
+  // (tributarias 761/762) o retiradas (triggers cron → pg_cron, 5 brazos de respaldo).
+  // El panel jamás vuelve a hablar con script.google.com.
   function isConfigured(){ return true; }
 
-  // [v2.43.63] Timeout 45s vía AbortController. Antes el fetch quedaba colgado
-  // PARA SIEMPRE cuando Chrome reportaba ERR_NETWORK_IO_SUSPENDED (red suspendida
-  // por ahorro de energía, pestaña inactiva, VPN intermitente, cable flojo).
-  // Spinner eterno + sin toast porque el await nunca resolvía ni rechazaba.
-  // Ahora abortamos a los 45s y throweamos error claro distinguible por el caller.
-  const DEFAULT_TIMEOUT_MS = 45000;
-
-  function _fetchConTimeout(url, opts, timeoutMs) {
-    return new Promise((resolve, reject) => {
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => {
-        ctrl.abort();
-        const err = new Error('Timeout: la conexión tardó más de ' + (timeoutMs/1000) + 's. Revisa tu red y vuelve a intentar.');
-        err.code = 'TIMEOUT';
-        reject(err);
-      }, timeoutMs);
-      fetch(url, Object.assign({}, opts, { signal: ctrl.signal }))
-        .then(res => { clearTimeout(tid); resolve(res); })
-        .catch(e => {
-          clearTimeout(tid);
-          // Distinguir abort por timeout (ya rechazado arriba) de errores de red
-          if (e.name === 'AbortError') return; // ya manejado
-          if (/NetworkError|Failed to fetch|ERR_NETWORK/i.test(e.message)) {
-            const ne = new Error('Sin red: el navegador no pudo enviar la petición (' + e.message + ')');
-            ne.code = 'NETWORK';
-            reject(ne);
-          } else {
-            reject(e);
-          }
-        });
-    });
-  }
-
-  // ⚠️ [BLOCK 9 · 2026-08-12] `_fetch` SIGUE VIVO A PROPÓSITO — no borrarlo todavía.
-  // El Block 9 cerró el andamiaje dual-write y el resto del plumbing muerto, pero el censo de acciones
-  // (grep de API.post/API.get en app.js + index.html, cruzado contra los interceptores, _MOS_POST_DIRECTO
-  // y _MOS_ADMIN_RPC) dejó 10 acciones LLAMADAS y SIN CABLEAR que aterrizan en los dos fall-throughs
-  // (`_postMOS` final y el final del dispatcher `get`). Convertirlos en throw ruidoso las rompería:
-  //   · Sin ruta directa (romperían de verdad): tribHistorico12meses · tribOCRMasivo · tribReprocesarOCR ·
-  //     cierreNocturnoTodos + setupCierreNocturnoTrigger (estos dos gobiernan TRIGGERS de Apps Script:
-  //     no tienen equivalente Supabase; su destino es retirar los botones o mover el cron a pg_cron).
-  //   · Brazo de respaldo de un camino directo que ya es el primario (romperían solo si el directo falla):
-  //     espiaCrearSesion (mos.espia_crear_sesion primero) · tribReintentarCPE (API.cpeReconciliar primero) ·
-  //     tribReconciliarCPEs (bucle Supabase primero) · wh_crearLoteAdhesivo + wh_imprimirSubLoteAdhesivo
-  //     (Edge print-adhesivo primero; solo se usa el brazo si la RPC devuelve *_OFF por kill-switch).
-  // Cuando esas 10 estén migradas o retiradas: cerrar ambos fall-throughs con un throw
-  // ('CERO-GAS: escritura/lectura no cableada: '+action) y recién ahí borrar _fetch, _fetchConTimeout,
-  // getUrl y GAS_URL. Mientras tanto, GAS ya NO recibe nada en el happy path del panel.
-  async function _fetch(method, params) {
-    const url = getUrl();
-    if (!url) throw new Error('GAS URL no configurada. Abre ⚙️ Configuración.');
-    // Check rápido de offline ANTES de gastar el timeout
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      const oe = new Error('Sin conexión a internet. Espera a recuperar señal y reintenta.');
-      oe.code = 'OFFLINE';
-      throw oe;
-    }
-
-    if (method === 'GET') {
-      const qs = new URLSearchParams(params).toString();
-      const res = await _fetchConTimeout(`${url}?${qs}`, {}, DEFAULT_TIMEOUT_MS);
-      const d   = await res.json();
-      if (!d.ok) throw new Error(d.error || 'Error del servidor');
-      return d.data;
-    } else {
-      // Inyectar contexto de auditoría (quién/cuándo/dónde) en cada POST
-      const audit = window.__MOS_AUDIT ? Object.assign({}, window.__MOS_AUDIT, { timestamp: new Date().toISOString() }) : null;
-      const body = audit && !params._audit ? Object.assign({ _audit: audit }, params) : params;
-      const res = await _fetchConTimeout(url, {
-        method:  'POST',
-        body:    JSON.stringify(body),
-        headers: { 'Content-Type': 'text/plain' }
-      }, DEFAULT_TIMEOUT_MS);
-      const d = await res.json();
-      if (!d.ok) throw new Error(d.error || 'Error del servidor');
-      return d.data;
-    }
-  }
+  // ⚰️ (aquí vivió _fetchConTimeout + _fetch — ver lápida del funeral arriba)
 
   // ════════════════════════════════════════════════════════════════════
   // [FASE 0B · migración MOS→Supabase] Infraestructura de LECTURA DIRECTA
@@ -3090,9 +3012,12 @@ const API = (() => {
       if (_MOS_DIRECT_REQUIRED[action]) {
         throw new Error('SIN_CONEXION_SUPABASE: el cambio no se guardó directo. Reintenta (no se usó GAS para evitar que no se propague a WH/MOS).');
       }
-      // resto → GAS, seguro.
+      // resto → throw (el fall-through a GAS MURIÓ).
     }
-    return _fetch('POST', { action, ...p });
+    // [FUNERAL GAS 14-ago] fall-through de ESCRITURA cerrado: las 10 acciones del censo
+    // fueron migradas (761/762 tributarias) o retiradas (triggers cron, 5 brazos de
+    // respaldo). Cualquier acción no cableada debe gritar, jamás hablar con GAS.
+    throw new Error('CERO-GAS: escritura no cableada a Supabase: ' + action);
   }
 
   // ── [INTERRUPTOR CENTRAL] Arranque: leer los flags de la flota una vez al cargar el módulo y refrescar cada
@@ -3724,7 +3649,9 @@ const API = (() => {
           return { base64: btoa(bin), mimeType: resp.headers.get('Content-Type') || 'audio/webm', size: bytes.length };
         })();
       }
-      return _fetch('GET',  { action, ...p });
+      // [FUNERAL GAS 14-ago] fall-through de LECTURA cerrado: toda lectura viva ya tiene
+      // su rama directa arriba. Acción desconocida = bug de cableado → gritar, jamás GAS.
+      return Promise.reject(new Error('CERO-GAS: lectura no cableada a Supabase: ' + action));
     },
     // [DUAL-WRITE] post → escritura directa Supabase SOLO para el catálogo (pilot, gate mos_catalogo_directo /
     // maestro). TODO el resto de escrituras (proveedores/pedidos/pago/provprod/gastos/eval/horario/jornadas/

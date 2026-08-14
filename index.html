@@ -15101,7 +15101,7 @@
        para reproducir exactamente la cascada que había: el CDN appendeaba su <style> al
        final del head, después de la hoja de arriba. El `?v=` se bumpea junto con
        sw.js + version.json + el ?v= de app.js/api.js. Regenerar: css/README-tw.md. -->
-  <link rel="stylesheet" href="css/tw.css?v=2.43.775">
+  <link rel="stylesheet" href="css/tw.css?v=2.43.776">
 </head>
 <body class="h-full">
 
@@ -20948,7 +20948,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.775';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.776';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21227,7 +21227,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.775"></script>
+<script src="js/api.js?v=2.43.776"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -21243,7 +21243,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.775"></script>
+<script src="js/app.js?v=2.43.776"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
@@ -23661,8 +23661,9 @@ ANULADOS     = 1 ticket (S/ 200 ignorados)
     </div>
     <div class="px-5 py-3 border-t border-slate-800 flex gap-2 flex-wrap">
       <button onclick="MOS.abrirCronStatus()" class="btn-ghost text-xs">↻ Refrescar</button>
-      <button onclick="MOS.cronReinstalarTrigger()" class="btn-ghost text-xs" style="border-color:rgba(99,102,241,.5);color:#a5b4fc">🔧 Reinstalar trigger 23h</button>
-      <button onclick="MOS.cronEjecutarAhora()" class="btn-primary text-xs ml-auto" style="background:linear-gradient(135deg,#7c3aed,#5b21b6)">▶ Ejecutar ahora</button>
+      <!-- [FUNERAL GAS 14-ago] murieron "Reinstalar trigger 23h" y "Ejecutar ahora":
+           gobernaban TRIGGERS de Apps Script; el cierre nocturno vive en pg_cron (Supabase). -->
+      <span class="text-[10px] text-slate-500 ml-auto self-center">⏱ el cierre nocturno corre solo en pg_cron</span>
     </div>
   </div>
 </div>

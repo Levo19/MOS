@@ -15180,20 +15180,12 @@ const MOS = (() => {
       }
 
       if (!viaSupabase) {
-        // FALLBACK GAS (flag server OFF) — path histórico con orquestación de sub-jobs.
-        const r = await API.post('wh_crearLoteAdhesivo', {
-          codigoBarra: codigoSnapshot, descripcion: descSnapshot, total: totalSnapshot,
-          usuario: _usrAdmin, origen: 'MOS', fechaEnvasado: fechaSnapshot, idempotencyKey
-        });
-        if (r && r.ok === false) throw new Error(r.error || 'Backend rechazó');
-        if (!_loteState) return;
-        _loteState.idLote      = r.idLote;
-        _loteState.total       = r.total || totalSnapshot;
-        _loteState.subJobSize  = r.subJobSize || 10;
-        _loteState.descripcion = r.descripcion || _loteState.descripcion;
-        _loteState.vto         = r.vto || _loteState.vto;
-        _loteRenderProgreso();
-        _loteOrquestar(r.idLote);
+        // [FUNERAL GAS 14-ago] el brazo GAS (wh_crearLoteAdhesivo + orquestación de
+        // sub-jobs) MURIÓ. La Edge print-adhesivo es el único camino; si el kill-switch
+        // está OFF, se avisa claro en vez de resucitar el path histórico.
+        _loteSetStatus('PAUSADO_ERROR', 'Impresión por Edge desactivada (kill-switch OFF en config) — reactívala; el camino GAS ya no existe');
+        if (_adhesivoState) _adhesivoState.imprimiendo = false;
+        return;
       }
     } catch(e) {
       _loteSetStatus('PAUSADO_ERROR', 'No se pudo crear el lote: ' + (e?.message || 'desconocido'));
@@ -31777,10 +31769,14 @@ const MOS = (() => {
             _espiaV2Cerrar('error_init');
             return;
           }
-        } catch (_) { /* → GAS */ }
+        } catch (_) { /* [FUNERAL GAS] sin brazo de respaldo: r queda null y se avisa abajo */ }
       }
       if (!r) {
-        r = await API.post('espiaCrearSesion', { masterId: _masterId, deviceId: idDispositivo, claveAdmin });
+        // [FUNERAL GAS 14-ago] el brazo API.post('espiaCrearSesion') murió — el directo
+        // (mos.espia_crear_sesion) es el ÚNICO camino; si no respondió, se reintenta.
+        toast('No se pudo iniciar el espía (sin respuesta del servidor) — reintenta', 'error', 6000);
+        _espiaV2Cerrar('error_init');
+        return;
       }
       console.log('[espia master] respuesta backend:', r);
       if (!r || !r.sesionId) {
@@ -34901,13 +34897,12 @@ const MOS = (() => {
         } else if (r && r.ok === false && r.error) {
           toast('SUNAT/NubeFact: ' + r.error, 'warn'); hecho = true;
         }
-        // r === null → infra (sin token/red) → cae a GAS abajo
+        // r === null → infra (sin token/red) → avisar y reintentar (sin brazo GAS)
       }
       if (!hecho) {
-        const res = await API.post('tribReintentarCPE', { idVenta });
-        const d = (res && res.data) ? res.data : (res || {});
-        toast('✓ CPE ' + (d.nuevoEstado || d.estado || 'reconciliado') + (d.aceptada ? ' · aceptado SUNAT' : ''), 'success');
-        _finBeep && _finBeep('success');
+        // [FUNERAL GAS 14-ago] el brazo API.post('tribReintentarCPE') murió — el camino
+        // es API.cpeReconciliar (Edge consultar + set_cpe_nf); sin token/red se reintenta.
+        toast('Sin respuesta del servidor — revisa conexión y reintenta', 'warn', 5000);
       }
     } catch(e) {
       toast('Reintento falló: ' + (e.message || e), 'warn');
@@ -34944,11 +34939,13 @@ const MOS = (() => {
         if (viaSupa || pend.length === 0) { viaSupa = true; }
       }
       if (!viaSupa) {
-        const res = await API.post('tribReconciliarCPEs', {});
-        const stats = res?.data || res || {};
-        emitidos = stats.emitidos || 0; rechazados = stats.rechazados || 0; sinCambio = stats.sin_cambio || 0;
+        // [FUNERAL GAS 14-ago] el brazo API.post('tribReconciliarCPEs') murió — el bucle
+        // Supabase (cpeTrazabilidad + cpeReconciliar) es el único camino; además el cron
+        // cpe-reconciliar corre cada hora solo.
+        toast('Sin respuesta del servidor — el cron horario reconcilia solo; reintenta si urge', 'warn', 6000);
+        return;
       }
-      toast('✓ ' + emitidos + ' emitidos · ' + rechazados + ' rechazados · ' + sinCambio + ' sin cambio' + (viaSupa ? ' ⚡' : ''), 'success');
+      toast('✓ ' + emitidos + ' emitidos · ' + rechazados + ' rechazados · ' + sinCambio + ' sin cambio ⚡', 'success');
       _finBeep && _finBeep('success');
       tribCargar();
       _tribRefrescarEmitido();
@@ -43920,31 +43917,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     body.innerHTML = cardTrigger + cardUltima + historial + triggers;
   }
+  // [FUNERAL GAS 14-ago] cronReinstalarTrigger y cronEjecutarAhora MURIERON: gobernaban
+  // TRIGGERS de Apps Script (setupCierreNocturnoTrigger / cierreNocturnoTodos). El cierre
+  // nocturno vive en pg_cron. Se conservan como no-op informativo por si algún acceso viejo
+  // (bookmark/atajo) los invoca — jamás vuelven a hablar con GAS.
   async function cronReinstalarTrigger() {
-    if (!await _modalConfirm('¿Reinstalar trigger 23h?\n\nBorra el actual y crea uno nuevo.', { warning: true, titulo: 'Reinstalar trigger' })) return;
-    try {
-      const res = await API.get('setupCierreNocturnoTrigger', {});
-      toast(res?.mensaje || '✓ Trigger reinstalado', 'ok', 4000);
-      abrirCronStatus();
-    } catch(e) {
-      toast('Error: ' + (e.message || e), 'error');
-    }
+    toast('⏱ El cierre nocturno ya no usa triggers de Apps Script — corre solo en pg_cron (Supabase)', 'info', 5000);
   }
   async function cronEjecutarAhora() {
-    if (!await _modalConfirm('¿Ejecutar cierre nocturno AHORA?\n\nCerrará sesiones WH + cajas ME + forzará logout en dispositivos.', { danger: true, titulo: 'Cierre nocturno manual', okText: 'Ejecutar ahora' })) return;
-    const btn = event && event.target;
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Ejecutando…'; }
-    try {
-      const res = await API.get('cierreNocturnoTodos', {});
-      const r = (res && res.data) || res || {};
-      const total = (r.wh?.cerradas || 0) + (r.me?.cerradas || 0) + (r.devices?.marcados || 0);
-      toast(`✓ Cierre ejecutado · ${total} elementos`, 'ok', 5000);
-      abrirCronStatus();
-    } catch(e) {
-      toast('Error: ' + (e.message || e), 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = '▶ Ejecutar ahora'; }
-    }
+    toast('⏱ El cierre nocturno corre solo en pg_cron — no hay ejecución manual por GAS', 'info', 5000);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
