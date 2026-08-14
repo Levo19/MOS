@@ -195,6 +195,16 @@ const MOS = (() => {
     // Módulo Evaluación eliminado — sus funciones viven en Finanzas
     // (Personal del Día) y en Configuración → Evaluación.
     if (viewName === 'evaluacion' || viewName === 'evaluación') viewName = 'finanzas';
+    // [797] Sincronizar el ESTADO ACTIVO del sidebar + bottomnav SIEMPRE, incluso si ya
+    // estamos en esa vista. Antes esto vivía DESPUÉS del early-return de abajo → al arrancar
+    // en 'dashboard' (S.view ya = 'dashboard') el boot llamaba nav('dashboard') pero cortaba
+    // sin iluminar el ícono; y clicar la vista actual "no reaccionaba". Ahora se re-afirma.
+    try {
+      document.querySelectorAll('#sidebar .nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
+      document.querySelectorAll('#bottomnav .bnav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
+      const _actBtn = document.querySelector('#bottomnav .bnav-btn.active');
+      if (_actBtn && _actBtn.scrollIntoView) { try { _actBtn.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (_) {} }
+    } catch (_) {}
     if (S.view === viewName) return;
 
     // Al SALIR del módulo proveedores, limpiar la selección activa para
