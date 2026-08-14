@@ -20,7 +20,8 @@ begin
     from (
       select upper(btrim(vd.cod_barras)) as cod,
              v.zona_id as zona,
-             round(sum(vd.cantidad) / 8.0, 1) as upsem
+             -- piso 0.1: si vendió ALGO en 8 semanas jamás debe salir "—" ("nunca se vendió")
+             greatest(round(sum(vd.cantidad) / 8.0, 1), 0.1) as upsem
         from me.ventas v
         join me.ventas_detalle vd on vd.id_venta = v.id_venta
        where v.fecha > now() - interval '56 days'
