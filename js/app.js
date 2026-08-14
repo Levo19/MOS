@@ -18983,6 +18983,9 @@ const MOS = (() => {
     if (!padre) { toast('Producto padre no encontrado', 'error'); return; }
     _satState = { tipo, padre, editar: editarProd || null };
     const tit = $('satTitulo'), ctx = $('satContexto'), her = $('satHerencia'), body = $('satBody'), btn = $('satGuardarBtn');
+    // [783] RESET del botón compartido: editar un tramo lo deja "Sin cambios que guardar"
+    // (disabled) y al reabrir el modal para algo NUEVO quedaba muerto (caso CHARQUI).
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = ''; }
     const tipoPadre = _prodTipoDe(padre);
     const igvTxt = (padre.Tipo_IGV || padre.tipoIGV) === '2' ? 'Exonerado' : (padre.Tipo_IGV || padre.tipoIGV) === '3' ? 'Inafecto' : 'IGV 18%';
     ctx.textContent = 'desde · ' + (padre.descripcion || idPadre) + (tipoPadre === 'envasable' ? ' (granel)' : '');
