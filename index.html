@@ -18629,7 +18629,9 @@
      ya existe (app.js carga antes del primer toque del usuario). */
   window._bnavTap = function(btn, view){
     try { if (navigator.vibrate) navigator.vibrate(12); } catch(_){}
-    try { if (window.MOS && MOS.nav) MOS.nav(view); } catch(_){}
+    // OJO: `MOS` es `const` global (NO window.MOS). Referenciarlo directo como hace el
+    // menú lateral. Con `window.MOS &&` la navegación NUNCA corría (window.MOS = undefined).
+    try { MOS.nav(view); } catch(e){ try { console.warn('[bnav] nav fallo:', e && e.message); } catch(_){ } }
     try { btn.scrollIntoView({ inline:'center', block:'nearest', behavior:'smooth' }); } catch(_){}
   };
 </script>
@@ -21077,7 +21079,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.784';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.785';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);

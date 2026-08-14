@@ -1,1 +1,1 @@
-{"version":"2.43.784","build":"2.43.784 corregida la barra inferior del movil: volvio a quedar fija abajo y responde al toque (un ajuste de estilo la habia despegado)."}
+{"version":"2.43.785","build":"2.43.785 corregida la navegacion de la barra inferior del movil: los botones ya llevan a cada modulo (antes vibraban pero no navegaban por un detalle tecnico en la referencia al menu)."}
