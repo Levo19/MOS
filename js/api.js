@@ -2595,6 +2595,12 @@ const API = (() => {
       if (r == null) return null;
       return r;   // {ok, data:{ "<idGuia>": {n, ts} }}
     }
+    // [775] rotación por zona (ventas ME 8 semanas, unidades/sem por código+zona). PURA.
+    if (action === 'rotacionZonasCatalogo') {
+      const r = await _sbRpcMOS('rotacion_zonas_catalogo', { p: {} }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:{items:[{cod,zona,upsem}], semanas}}
+    }
     // [767] costos YA COTEJADOS de una guía (para re-hidratar el Paso 1 de compras
     // EN ZONA: sus líneas no guardan monto). Lectura PURA.
     if (action === 'costosRegistradosGuia') {
@@ -2950,6 +2956,7 @@ const API = (() => {
     quitarCostoCompra:           () => true,   // mos.quitar_costo_compra (556) · deshacer retroactivo de costo
     cotejoCostosGuias:           () => true,   // mos.cotejo_costos_guias (721) · cotejo por guía · LECTURA PURA
     costosRegistradosGuia:       () => true,   // mos.costos_registrados_guia (767) · re-hidrata Paso 1 EN ZONA · LECTURA PURA
+    rotacionZonasCatalogo:       () => true,   // mos.rotacion_zonas_catalogo (775) · chips de zona · LECTURA PURA
     guiaCambiarFoto:             () => true,   // wh.guia_set_foto (774) · Storage + trigger OCR 762 · escritura directa
     historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
     guiaPreview:                 () => true,   // wh.guia_preview (578) · preview de guía en el overlay · PURA
@@ -3005,7 +3012,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, guiaPreview: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, guiaPreview: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.

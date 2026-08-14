@@ -1529,6 +1529,51 @@ const MOS = (() => {
   // (_renderRotChip) lo reemplazó en el card; el detalle vive en la analítica fusionada.
 
   // Render seguro del badge de margen (cualquier error aquí no debe romper el catálogo)
+  // ───────── [781] ROTACIÓN POR ZONA — chips en canónico/presentación/derivado ─────────
+  // Ventas ME de 8 semanas por código+zona (RPC 775). "Z2 —" gris = nunca se vendió ahí
+  // (pedido del dueño: verlo de un vistazo). Cache 30 min; el almacén ya tiene su chip.
+  async function _rotZonasEnsure() {
+    if (S._rotZonas || S._rotZonasLoading) return;
+    try {
+      const c = JSON.parse(localStorage.getItem('mos_rotz_cache_v1') || 'null');
+      if (c && c.ts && Date.now() - c.ts < 30 * 60 * 1000) { S._rotZonas = c.data; return; }
+    } catch(_){}
+    S._rotZonasLoading = true;
+    try {
+      const r = await API.post('rotacionZonasCatalogo', {});
+      const items = (r && r.data && r.data.items) || [];
+      const map = {}; const zonas = new Set();
+      items.forEach(x => {
+        const cod = String(x.cod || '').toUpperCase(); if (!cod) return;
+        (map[cod] = map[cod] || {})[x.zona] = parseFloat(x.upsem) || 0;
+        zonas.add(x.zona);
+      });
+      S._rotZonas = { map, zonas: [...zonas].sort() };
+      try { localStorage.setItem('mos_rotz_cache_v1', JSON.stringify({ ts: Date.now(), data: S._rotZonas })); } catch(_){}
+      try { renderCatalogo(); } catch(_){}
+    } catch(_){} finally { S._rotZonasLoading = false; }
+  }
+  function _rotZonasChipsHTML(p, esChild) {
+    const rz = S._rotZonas;
+    if (!rz || !rz.zonas || !rz.zonas.length) return '';
+    const cbs = [String(p.codigoBarra || '').trim().toUpperCase()].filter(Boolean);
+    // el canónico suma también sus códigos equivalentes (mismo producto físico)
+    const esCanon = (parseFloat(p.factorConversion) || 1) === 1 && !(p.codigoProductoBase && String(p.codigoProductoBase).trim());
+    if (esCanon) {
+      (S.equivMap?.[p.skuBase || p.idProducto] || []).forEach(e => {
+        const c = String((e && (e.codigoBarra || e.cod)) || e || '').trim().toUpperCase();
+        if (c && !cbs.includes(c)) cbs.push(c);
+      });
+    }
+    return `<span class="rz-strip${esChild ? ' rz-child' : ''}">` + rz.zonas.map(z => {
+      const n = Math.round(cbs.reduce((s, c) => s + ((rz.map[c] || {})[z] || 0), 0) * 10) / 10;
+      const lbl = 'Z' + String(z).replace(/\D+0?/g, '');
+      return n > 0
+        ? `<span class="rz-chip rz-on" title="${z}: ${n} unid/sem (últimas 8 semanas)">🏬${lbl} <b>${n}</b>/s</span>`
+        : `<span class="rz-chip rz-off" title="${z}: sin ventas en 8 semanas — nunca rotó aquí">🏬${lbl} —</span>`;
+    }).join('') + '</span>';
+  }
+
   function _renderMargenBadge(producto) {
     try {
       const mi = _calcularMargenInfo(producto);
@@ -1573,7 +1618,10 @@ const MOS = (() => {
   // Calcula info de margen actual + estado vs política. Retorna null si no aplica.
   function _calcularMargenInfo(producto) {
     const venta = parseFloat(producto.precioVenta) || 0;
-    const costo = parseFloat(producto.precioCosto) || 0;
+    // [781] costo DERIVADO: presentaciones/derivados no guardan costo propio — se
+    // deriva del canónico × factor (cadena) para que su margen también sea visible.
+    let costo = 0;
+    try { costo = _costoDerivado(producto) || 0; } catch(_) { costo = parseFloat(producto.precioCosto) || 0; }
     if (venta <= 0 || costo <= 0) return null;
     const margenReal = ((venta - costo) / venta) * 100;
     const pol = _resolverPoliticaProd(producto);
@@ -3674,6 +3722,8 @@ const MOS = (() => {
     const container = $('listCatalogo');
     if (!container) return;
 
+    // [781] rotación POR ZONA (lazy, cache 30 min) — chips 🏬Z1/Z2 en los cards
+    try { _rotZonasEnsure(); } catch(_){}
     // [v2.43.41] Disparar carga de rotación si no se hizo (lazy + safety net).
     // Si la precarga del login falló, garantizamos que al menos al entrar al
     // catálogo se reintente. Falla silencioso → muestra "sin rotación".
@@ -4051,7 +4101,9 @@ const MOS = (() => {
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
                     <div class="${precioClass}" style="cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${d.idProducto}')">${fmtMoney(precioActual)}</div>
+                    ${_renderMargenBadge(d)}
                     ${_renderRotChip(d, true)}
+                    ${_rotZonasChipsHTML(d, true)}
                     ${_esMasterSession() ? `<button type="button" class="toggle-sw sm ${presActivo ? 'on' : ''}" data-pid="${d.idProducto}"
                             onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
                             title="${presActivo ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>` : ''}${_togglesMosgoHtml(d, true)}
@@ -4089,7 +4141,10 @@ const MOS = (() => {
                 ${pp.codigoBarra ? `<button type="button" class="pres-code" style="cursor:pointer;background:none;border:none;padding:0;font:inherit;color:inherit"
                       onclick="event.stopPropagation();MOS.verCodigoBarra('${_escAttrJs(String(pp.codigoBarra))}','${_escAttrJs(pp.descripcion || '')}','presentación')"
                       title="Ver código de barra en grande">▌${pp.codigoBarra}</button>` : ''}
-                <span style="margin-left:auto;color:#34d399;font-weight:700;cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${pp.idProducto}')">${fmtMoney(pp.precioVenta)}</span>
+                <span style="margin-left:auto;display:flex;align-items:center;gap:5px">
+                  <span style="color:#34d399;font-weight:700;cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${pp.idProducto}')">${fmtMoney(pp.precioVenta)}</span>
+                  ${_renderMargenBadge(pp)}${_rotZonasChipsHTML(pp, true)}
+                </span>
                 ${_esMasterSession() ? `<button type="button" class="toggle-sw sm ${ppAct ? 'on' : ''}" data-pid="${pp.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${pp.idProducto}', false)"
                         title="${ppAct ? 'Apagar' : 'Prender'}"><span class="toggle-sw-knob"></span></button>` : ''}${_togglesMosgoHtml(pp, true)}
@@ -4105,7 +4160,9 @@ const MOS = (() => {
                       title="Tocar para editar (ahí vive su precio)">${hlD}</span>
                 <span style="margin-left:auto;display:flex;align-items:center;gap:6px">
                   <span style="color:#34d399;font-weight:800;font-size:12px;cursor:pointer" title="Curvas precio·costo + margen" onclick="event.stopPropagation();MOS.abrirModalPrecioCurvas('${d.idProducto}')">${fmtMoney(d.precioVenta)}</span>
+                  ${_renderMargenBadge(d)}
                   ${_renderRotChip(d, true)}
+                  ${_rotZonasChipsHTML(d, true)}
                 </span>
                 ${_esMasterSession() ? `<button type="button" class="toggle-sw sm ${dAct ? 'on' : ''}" data-pid="${d.idProducto}"
                         onclick="event.stopPropagation();MOS.toggleProductoActivo('${d.idProducto}', false)"
@@ -4150,6 +4207,7 @@ const MOS = (() => {
               ${base.precioCosto > 0 ? `<div class="cat-cost" data-cat-costo="${base.idProducto}">Costo: ${fmtMoney(base.precioCosto)}</div>` : ''}
               ${_renderMargenBadge(base)}
               ${_renderRotChip(base)}
+              ${_rotZonasChipsHTML(base)}
               <!-- [catálogo v4] botonera SVG (dibujo §05): toggle · 💰cascada · 📈grupo · 🖨 · 🗑master · ＋ -->
               <div class="flex gap-1.5 mt-1 items-center">
                 ${_esMasterSession() ? `<button type="button" class="toggle-sw ${activo ? 'on' : ''}" data-pid="${base.idProducto}"
