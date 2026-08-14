@@ -40722,8 +40722,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
       // [CERO-GAS] Registro de push token 100% Supabase (mos.push_tokens). Se eliminó el dual-write GAS
       // `registrarPushToken` (se escribía en ambos en cada login). Best-effort.
+      // [792 · BUG ESPÍA] MOS NUNCA mandaba deviceId → los 725 tokens MOS quedaban con
+      // device_id='' → mos.fcm_token_dispositivo (busca por device_id) no los hallaba →
+      // push_fallo al espiar cualquier equipo MOS ("ni abre"). ME/WH sí lo mandaban.
       if (API.registrarPushTokenSB) {
-        API.registrarPushTokenSB({ token, usuario: nombre, appOrigen: 'MOS',
+        let _devId = '';
+        try { _devId = _getOrCreateDeviceId() || (S.session && S.session.deviceId) || ''; } catch(_) { _devId = (S.session && S.session.deviceId) || ''; }
+        API.registrarPushTokenSB({ token, usuario: nombre, appOrigen: 'MOS', deviceId: _devId,
           dispositivo: navigator.userAgent.substring(0, 150) }).catch(() => {});
       }
 
