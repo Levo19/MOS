@@ -4044,6 +4044,9 @@ const MOS = (() => {
                       title="Ver código de barra en grande">▌${d.codigoBarra}<span class="cat-cod-ico">▐│▌║▏</span></button>` : ''}
                       <span class="pres-factor">×${factor}</span>
                       <span class="pres-factor" style="${presUniBg}">${presUniIcon} ${presUnidad}</span>
+                      ${String(d.modoVenta || '').toUpperCase() === 'FIJO'
+                        ? `<span class="pres-factor" style="background:rgba(251,191,36,.14);color:#fbbf24" title="Precio FIJO: puesto a mano — la cascada del canónico NO lo toca">📌 FIJO</span>`
+                        : `<span class="pres-factor" style="background:rgba(52,211,153,.1);color:#34d399;opacity:.8" title="Precio automático: sigue al canónico (canónico × factor o su margen)">⚙ auto</span>`}
                     </div>
                     ${alertHtml ? `<div class="flex flex-wrap items-center gap-1 mt-1">${alertHtml}</div>` : ''}
                   </div>
@@ -4082,6 +4085,8 @@ const MOS = (() => {
               const ppAct = _isProdActivo(pp);
               return `<div class="flex items-center gap-2 mt-1${ppAct ? '' : ' opacity-60'}" style="margin-left:22px;font-size:11px;color:#94a3b8">
                 <span>↳ 🧱 ×${pf}</span>
+                ${String(pp.modoVenta || '').toUpperCase() === 'FIJO'
+                  ? `<span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:5px;background:rgba(251,191,36,.14);color:#fbbf24" title="Precio FIJO: puesto a mano — la cascada NO lo toca">📌</span>` : ''}
                 <span class="cat-nombre-edit" onclick="event.stopPropagation();MOS.abrirEditarProducto('${pp.idProducto}')"
                       title="Tocar para editar">${_highlight(pp.descripcion || pp.idProducto, words)}</span>
                 ${pp.codigoBarra ? `<button type="button" class="pres-code" style="cursor:pointer;background:none;border:none;padding:0;font:inherit;color:inherit"
