@@ -1749,16 +1749,52 @@ const API = (() => {
     }
     // [Etapa 4] NV→CPE. ⚠️ El front manda idVenta/serie/clienteNom; la RPC espera idVentaNV/serieNueva/clienteNombre.
     if (action === 'meConvertirNVaCPE') {
+      // [786] Conversión NV→CPE COMPLETA desde MOS — funciona con CAJA CERRADA (la RPC
+      // no tiene candado de caja). Bugs cazados: el handler viejo NO reenviaba claveAdmin
+      // (la RPC la re-verifica → rechazo seguro) y NO EMITÍA (solo convertía → el CPE
+      // quedaba PENDIENTE eterno). Ahora el mismo trío probado del POS de ME:
+      // (1) me.convertir_nv_cpe atómico (anula NV + crea CPE + correlativo por serie de
+      //     la ZONA de la venta — la serie no se pide, se resuelve sola) →
+      // (2) Edge emitir-cpe (NubeFact, token en secret) →
+      // (3) me.set_cpe_nf. Si la emisión falla, queda PENDIENTE y la reconciliación
+      //     horaria lo re-emite sola.
       const out = await _sbRpcMEWrite('convertir_nv_cpe', { p: {
         idVentaNV: String(p.idVenta || p.idVentaNV || ''),
         tipoDocNuevo: p.tipoDocNuevo,
-        serieNueva: p.serieNueva != null ? p.serieNueva : (p.serie || ''),
         clienteDoc: p.clienteDoc != null ? String(p.clienteDoc) : '',
         clienteNombre: p.clienteNombre != null ? p.clienteNombre : (p.clienteNom != null ? p.clienteNom : ''),
         clienteDireccion: p.clienteDireccion != null ? p.clienteDireccion : (p.direccion || ''),
-        usuario: _mosUsuario(p), rol: p.rol || '', autorizadoPor: p.autorizadoPor || null
+        usuario: _mosUsuario(p), rol: p.rol || 'ADMIN',
+        claveAdmin: p.claveAdmin || '', app: 'MOS'
       } });
-      return _desempacarME(out);
+      const d = _desempacarME(out);
+      if (d == null) throw new Error('Sin conexión con Supabase — reintenta (si la NV quedó convertida, el reintento recupera el MISMO comprobante)');
+      if (String(d.nfEstado || '') === 'EMITIDO') {
+        return { ok: true, data: { correlativo: d.correlativoNuevo, nfEstado: 'EMITIDO', dedup: true } };
+      }
+      let nf = { nf_estado: 'PENDIENTE', nf_hash: '', nf_enlace: '', nf_qr: '' };
+      try {
+        const tk = await _mintTokenMOS();
+        const er = await _sbFetchTimeout(`${_SB_URL}/functions/v1/emitir-cpe`, {
+          method: 'POST',
+          headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: d.ventaBase, correlativo: d.correlativoNuevo })
+        }, 15000);
+        const ed = await er.json().catch(() => null);
+        if (ed && ed.ok) {
+          nf = { nf_estado: ed.estado || (ed.aceptada ? 'EMITIDO' : 'PENDIENTE'), nf_hash: ed.hash || '',
+                 nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '',
+                 aceptada: (ed.estado === 'EMITIDO') || ed.aceptada === true, consultado: true };
+        } else if (ed && ed.rechazadoPorSunat) {
+          nf = { nf_estado: 'RECHAZADO', nf_hash: ed.hash || '', nf_enlace: ed.enlace || '', nf_qr: ed.qrString || '',
+                 aceptada: false, consultado: true, sunat_desc: ed.sunatDescription || '' };
+        }
+      } catch (_) { /* queda PENDIENTE → la reconciliación lo re-emite */ }
+      try { await _sbRpcMEWrite('set_cpe_nf', { p_ref_local: d.refLocal, p_nf: nf }); } catch (_) {}
+      if (nf.nf_estado === 'RECHAZADO') {
+        throw new Error('⛔ SUNAT rechazó el comprobante: ' + (nf.sunat_desc || 'revisa los datos del cliente'));
+      }
+      return { ok: true, data: { correlativo: d.correlativoNuevo, nfEstado: nf.nf_estado, enlace: nf.nf_enlace } };
     }
 
     if (action === 'aprobarExtensionHorario' || action === 'rechazarExtensionHorario') {

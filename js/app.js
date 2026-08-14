@@ -29353,7 +29353,9 @@ const MOS = (() => {
     $('tkConvDoc').value      = t.clienteDoc || '';
     $('tkConvNombre').value   = t.cliente || '';
     $('tkConvDireccion').value = '';
-    $('tkConvSerie').value     = '';
+    // [786] serie automática por zona de la venta — informativo, ya no se tipea
+    const _ser = $('tkConvSerie');
+    if (_ser) { _ser.value = 'automática · según la zona de la venta'; _ser.disabled = true; }
     $('tkConvClienteInfo').classList.add('hidden');
     _tkConvSetTipo('BOLETA');
     openModal('modalTkConvertirCPE');
@@ -29425,7 +29427,7 @@ const MOS = (() => {
     const doc  = ($('tkConvDoc').value || '').trim();
     const nom  = ($('tkConvNombre').value || '').trim();
     const dir  = ($('tkConvDireccion').value || '').trim();
-    const ser  = ($('tkConvSerie').value || '').trim();
+    // [786] la serie ya NO se pide: la RPC la resuelve por la ZONA de la venta (regla 585)
 
     const _tkTotal = Number(t.total ?? t.monto ?? t.Total ?? 0);
     // [validaciones SUNAT · paridad ME/MOS — el backend fac.emitir_cpe las re-valida server-side]
@@ -29438,7 +29440,6 @@ const MOS = (() => {
       if (!(doc.length === 8 || doc.length === 11)) { toast('Boleta > S/700: identifica al cliente (DNI 8 o RUC 11)', 'error'); return; }
       if (!nom) { toast('Boleta > S/700: ingresa el nombre', 'error'); return; }
     }
-    if (!ser) { toast('Ingresa la serie', 'error'); return; }
 
     if (!await _modalConfirm(`¿Emitir ${tipo} en SUNAT para ${nom}?\n\nLa NV original quedará anulada.`, { warning: true, titulo: 'Emitir CPE', okText: 'Emitir' })) return;
 
@@ -29449,10 +29450,12 @@ const MOS = (() => {
     if (btn) { btn.disabled = true; btn.textContent = 'Emitiendo...'; }
     try {
       const r = await API.post('meConvertirNVaCPE', {
-        idVenta: t.idVenta, tipoDocNuevo: tipo, serie: ser,
+        idVenta: t.idVenta, tipoDocNuevo: tipo,
         clienteDoc: doc, clienteNom: nom, direccion: dir, claveAdmin: auth.clave
       });
-      toast('✓ CPE emitido', 'success');
+      const dd = (r && r.data) || {};
+      // feedback honesto (paridad ME): con estado EMITIDO ya está firmado; PENDIENTE = en cola
+      toast(`✓ ${tipo} ${dd.correlativo || ''} ` + (dd.nfEstado === 'EMITIDO' ? '· firmada por SUNAT' : '· en cola de SUNAT (se confirma sola)'), 'success', 5500);
       closeModal('modalTkConvertirCPE');
       await _cajasRefreshSilencioso?.();
       if (S.view === 'finanzas') finCargar?.();
