@@ -48,8 +48,12 @@
 > money-safe · API_URL = sentinela 'CERO_GAS_SUPABASE' sin ningún fetch.
 > Módulos compartidos (DeviceAuth/ExtensorHorario/seguridad/membrete): 100% Supabase; `mosGasUrl`
 > resuelve '' y no alimenta ningún fetch. grep `script.google.com` ejecutable = **0 en los 3 frontends**.
-> **QUEDA**: PORTALES CLIENTE (pedido/clientes/reporte.html — bloqueado por export del Sheet, dueño)
-> · (d) verificación física tickets (dueño) · (e) borrar GAS+Sheets (funeral del proyecto Apps Script).
+> ✅ **PORTALES CLIENTE también YA migrados (8-jul, censo stale)**: pedido.html/clientes.html/reporte.html
+> 100% Supabase (RPCs wh.cliente_* SQL 407/408 + Edge recibir-pedido; DEMO_MODE=false; verificado en el
+> deploy vivo). Tablas wh.clientes/pedidos_cliente(+items/adj) existen — solo hay 2 clientes de PRUEBA
+> (TESTSMOK126/JUANDIEG279): el Sheet de clientes nunca tuvo datos reales que migrar; los clientes reales
+> se registran por clientes.html. **QUEDA**: (d) verificación física tickets (dueño) · (e) **borrar
+> GAS+Sheets** — ya no hay NINGUNA dependencia; el funeral del proyecto Apps Script puede ejecutarse.
 
 > Objetivo: MOS + ME + WH 100% Supabase, **cero-GAS, cero-fallback, cero-Sheet**. GAS+Sheets se borran.
 > Estado boot verificado por web-check (Playwright real): **MOS ✅ · ME ✅ · WH ✅ cero fetches a script.google.com**.
