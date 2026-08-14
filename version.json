@@ -1,1 +1,1 @@
-{"version":"2.43.772","build":"2.43.772 el modal Producto nuevo manual ya no nace DETRAS del panel de productos nuevos (ambos compartian la misma capa y el panel, insertado despues, ganaba el empate — ahora el modal tiene capa propia encima)."}
+{"version":"2.43.773","build":"2.43.773 el modal Producto nuevo entrante (revisar: nuevo/equivalente/corregir) tambien nacia detras del panel 🆕 por el mismo empate de capas — capa propia encima, igual que el de crear manual. De paso: Decide que hacer y valida los datos (espanol neutral, sin voseo)."}
