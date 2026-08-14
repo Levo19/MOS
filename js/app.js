@@ -35497,10 +35497,52 @@ const MOS = (() => {
     return res || {};
   }
 
-  // localStorage safe con toast de aviso si falla (quota/private mode)
+  // ── [780] JANITOR de localStorage ──────────────────────────────────────────
+  // MOS acumula caches POR DÍA (mos_fin_pl_/rango_/resum_/evals_ + fecha) y POR GUÍA
+  // (borradores P2, latch mos_costos_aplicada_) que jamás morían: tras meses el quota
+  // de ~5MB revienta → "💾 No se pudo guardar cache local (QuotaExceededError)".
+  // Barre al arrancar (y en modo agresivo cuando un setItem falla por quota).
+  function _lsJanitor(agresivo) {
+    let borradas = 0;
+    const hoy = (function(){ try { return new Date().toISOString().slice(0, 10); } catch(_) { return ''; } })();
+    const kill = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || '';
+        try {
+          const mFecha = k.match(/^mos_(?:fin_pl_|fin_rango_|fin_resum_|evals_)(\d{4}-\d{2}-\d{2})$/);
+          if (mFecha) { if (mFecha[1] !== hoy) kill.push(k); continue; }        // fechadas: solo vive la de HOY
+          if (k.indexOf('mos_costos_aplicada_') === 0) {                        // latch por guía: 30 días
+            const ts = parseInt(localStorage.getItem(k), 10) || 0;
+            if (Date.now() - ts > 30 * 864e5) kill.push(k); continue;
+          }
+          if (k.indexOf('mos_p2_draft_') === 0) {                               // borrador P2: 7 días
+            const o = JSON.parse(localStorage.getItem(k) || '{}');
+            if (!o.ts || Date.now() - o.ts > 7 * 864e5) kill.push(k); continue;
+          }
+          if (/^mos_(liq_|alm_|pn_cache)/.test(k)) {                            // caches {ts}: 24h (agresivo: todas)
+            const o = JSON.parse(localStorage.getItem(k) || '{}');
+            if (agresivo || !o.ts || Date.now() - o.ts > 864e5) kill.push(k); continue;
+          }
+          if (agresivo && (k === 'mos_ops_det_cache_v1' || k === 'MOS_CAT_CACHE')) kill.push(k);   // re-descargables
+        } catch(_) { kill.push(k); }                                            // valor corrupto → fuera
+      }
+    } catch(_) {}
+    kill.forEach(k => { try { localStorage.removeItem(k); borradas++; } catch(_){} });
+    return borradas;
+  }
+  try { setTimeout(() => { const n = _lsJanitor(false); if (n) console.info('[janitor] localStorage: ' + n + ' clave(s) viejas barridas'); }, 2500); } catch(_){}
+
+  // localStorage safe: si revienta el quota, barre agresivo y REINTENTA; toast solo si aún falla
   function _liqLsSet(key, val) {
     try { localStorage.setItem(key, val); return true; }
     catch(e) {
+      try {
+        const n = _lsJanitor(true);                    // [780] liberar espacio y reintentar
+        localStorage.setItem(key, val);
+        console.info('[janitor] quota lleno → ' + n + ' claves barridas y reintento OK');
+        return true;
+      } catch(_) {}
       try { toast('💾 No se pudo guardar cache local (' + (e.name || 'error') + ')', 'warn', 4000); } catch(_){}
       return false;
     }
