@@ -214,13 +214,34 @@
       background: rgba(6,13,31,.92); border-top: 1px solid #1e293b;
       backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
     }
-    .bnav-inner { display: flex; align-items: center; }
-    .bnav-btn {
-      flex: 1 1 0; min-width: 0;
-      display: flex; flex-direction: column; align-items: center;
-      padding: 6px 0 8px; border: none; background: transparent;
-      color: #475569; cursor: pointer; transition: color .2s;
+    /* [nav-scroll v2] Barra deslizable con el dedo: TODOS los módulos, íconos grandes,
+       ~3-4 visibles a la vez + peek del siguiente (sensación de que hay más). */
+    #bottomnav { position: relative; }
+    /* Fades en los bordes = pista visual de "sigue deslizando". No bloquean el toque. */
+    #bottomnav::before, #bottomnav::after {
+      content: ''; position: absolute; top: 0; bottom: 0; width: 22px; z-index: 2; pointer-events: none;
     }
+    #bottomnav::before { left: 0;  background: linear-gradient(90deg, rgba(6,13,31,.96), transparent); }
+    #bottomnav::after  { right: 0; background: linear-gradient(270deg, rgba(6,13,31,.96), transparent); }
+    .bnav-inner {
+      display: flex; align-items: flex-start; gap: 2px;
+      padding-top: 8px;
+      overflow-x: auto; overflow-y: hidden;
+      scroll-snap-type: x proximity;
+      -webkit-overflow-scrolling: touch;   /* momentum iOS */
+      overscroll-behavior-x: contain;
+      scrollbar-width: none;               /* Firefox */
+    }
+    .bnav-inner::-webkit-scrollbar { display: none; }   /* WebKit */
+    .bnav-btn {
+      flex: 0 0 auto; width: 26vw; min-width: 80px; max-width: 116px;
+      scroll-snap-align: center;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 0 0 9px; border: none; background: transparent;
+      color: #475569; cursor: pointer; transition: color .2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .bnav-btn .bnav-icon svg { width: 27px; height: 27px; }   /* íconos más grandes */
     .bnav-pill {
       display: flex; flex-direction: column; align-items: center; gap: 3px;
       padding: 5px 6px 4px; border-radius: 12px;
@@ -235,7 +256,7 @@
     .bnav-btn.active { color: #020817; }
     .bnav-btn .bnav-icon { display: flex; align-items: center; justify-content: center; }
     .bnav-btn .bnav-lbl {
-      font-size: .56rem; font-weight: 700; letter-spacing: .01em;
+      font-size: .62rem; font-weight: 700; letter-spacing: .01em;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       max-width: 100%; line-height: 1.1;
     }
@@ -246,8 +267,8 @@
     }
 
     /* ═══ [responsive polish 2026-07-15] pulido móvil/tablet (aditivo, sin reconstruir) ═══ */
-    /* Bottom-nav: el label escala con el ancho para caber los 6 ítems sin truncar (antes "Proveedo…"). */
-    .bnav-btn .bnav-lbl { font-size: clamp(.44rem, 2.05vw, .58rem); }
+    /* [nav-scroll v2] La barra ahora es deslizable (no encaja ítems por compresión) → tamaño de label FIJO y legible. */
+    .bnav-btn .bnav-lbl { font-size: .62rem; }
     /* Red de seguridad anti-overflow horizontal en móvil/tablet (imágenes y tablas embebidas). */
     @media (max-width: 767px) {
       img, video { max-width: 100%; height: auto; }
@@ -18538,8 +18559,17 @@
 <!-- MOBILE BOTTOM NAV                                          -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <nav id="bottomnav" class="md:hidden fixed bottom-0 left-0 right-0 z-30">
+  <!-- [nav-scroll v2] Barra DESLIZABLE con el dedo: TODOS los módulos (Dashboard→Config).
+       ~3-4 visibles + peek del siguiente. Config lleva data-view="config" → _aplicarVisibilidadConfig
+       lo oculta para no-master (admin ve hasta Tributario). Cada toque: haptic + auto-centrado. -->
   <div class="bnav-inner px-1" style="padding-bottom:env(safe-area-inset-bottom,0)">
-    <button data-view="catalogo" class="bnav-btn" onclick="MOS.nav('catalogo')">
+    <button data-view="dashboard" class="bnav-btn" onclick="_bnavTap(this,'dashboard')">
+      <div class="bnav-pill">
+        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+        <span class="bnav-lbl">Inicio</span>
+      </div>
+    </button>
+    <button data-view="catalogo" class="bnav-btn" onclick="_bnavTap(this,'catalogo')">
       <div class="bnav-pill">
         <span class="bnav-icon" style="position:relative">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
@@ -18549,45 +18579,59 @@
         <span class="bnav-lbl">Catálogo</span>
       </div>
     </button>
-    <!-- [RIZ Capa 4] Bottom-nav Zona — gated por flag mosZonaModulo -->
-    <button data-view="zona" class="bnav-btn zona-nav-gated" onclick="MOS.nav('zona')">
+    <!-- [RIZ Capa 4] Zona — gated por flag mosZonaModulo. Almacén se abre DESDE aquí (no es item propio). -->
+    <button data-view="zona" class="bnav-btn zona-nav-gated" onclick="_bnavTap(this,'zona')">
       <div class="bnav-pill">
         <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M3 14h18"/><path d="M8 4v16"/></svg></span>
         <span class="bnav-lbl">Zona</span>
       </div>
     </button>
-    <button data-view="cajas" class="bnav-btn" onclick="MOS.nav('cajas')">
+    <button data-view="proveedores" class="bnav-btn" onclick="_bnavTap(this,'proveedores')">
+      <div class="bnav-pill">
+        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg></span>
+        <span class="bnav-lbl">Proveedores</span>
+      </div>
+    </button>
+    <button data-view="cajas" class="bnav-btn" onclick="_bnavTap(this,'cajas')">
       <div class="bnav-pill">
         <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
         <span class="bnav-lbl">Cajas</span>
       </div>
     </button>
-    <button data-view="finanzas" class="bnav-btn" onclick="MOS.nav('finanzas')">
+    <button data-view="finanzas" class="bnav-btn" onclick="_bnavTap(this,'finanzas')">
       <div class="bnav-pill" style="position:relative">
         <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
         <span class="bnav-lbl">Finanzas</span>
-        <!-- [v2.41.78] Badge bottom nav -->
         <span id="finNavBadgeBnav" class="fin-nav-badge hidden"></span>
       </div>
     </button>
-    <!-- [nav-reorg] Tributario ahora es fijo en móvil (Facturación vive dentro de él). -->
-    <button data-view="tributario" class="bnav-btn" onclick="MOS.nav('tributario')">
+    <!-- [nav-reorg] Tributario incluye Facturación adentro. -->
+    <button data-view="tributario" class="bnav-btn" onclick="_bnavTap(this,'tributario')">
       <div class="bnav-pill" style="position:relative">
         <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l9-3 9 3v6c0 5.5-3.9 10.6-9 12-5.1-1.4-9-6.5-9-12V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
         <span class="bnav-lbl">Tributario</span>
         <span id="tribNavBadgeBnav" class="fin-nav-badge hidden"></span>
       </div>
     </button>
-    <!-- [nav-reorg] "Más": no navega a una vista; abre el bottom-sheet con Dashboard, Proveedores,
-         Almacén y (solo MASTER) Config. NO lleva data-view para no marcarse "activo" en nav(). -->
-    <button id="bnavMasBtn" class="bnav-btn" type="button" onclick="MOS.abrirMasMenu()">
+    <!-- Config: SOLO master (data-view="config" → _aplicarVisibilidadConfig lo oculta para admin). -->
+    <button data-view="config" class="bnav-btn" onclick="_bnavTap(this,'config')">
       <div class="bnav-pill">
-        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
-        <span class="bnav-lbl">Más</span>
+        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2.5"/><circle cx="16" cy="12" r="2.5"/><circle cx="10" cy="18" r="2.5"/></svg></span>
+        <span class="bnav-lbl">Config</span>
       </div>
     </button>
   </div>
 </nav>
+<script>
+  /* [nav-scroll v2] Toque de la barra deslizable: haptic + navegar + auto-centrar el ítem.
+     Global independiente (no toca app.js). Se define YA en el parseo; al hacer clic MOS.nav
+     ya existe (app.js carga antes del primer toque del usuario). */
+  window._bnavTap = function(btn, view){
+    try { if (navigator.vibrate) navigator.vibrate(12); } catch(_){}
+    try { if (window.MOS && MOS.nav) MOS.nav(view); } catch(_){}
+    try { btn.scrollIntoView({ inline:'center', block:'nearest', behavior:'smooth' }); } catch(_){}
+  };
+</script>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- BOTTOM-SHEET "MÁS" (móvil) — accesos secundarios              -->
@@ -21032,7 +21076,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.781';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.782';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
