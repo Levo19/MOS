@@ -1,1 +1,1 @@
-{"version":"2.43.771","build":"2.43.771 fix del boton Guardar tramo muerto (caso charqui): editar un tramo dejaba el boton del modal en Sin-cambios-que-guardar (deshabilitado) y al reabrirlo para crear uno NUEVO nadie lo despertaba — ahora el modal resetea el boton al abrir, siempre."}
+{"version":"2.43.772","build":"2.43.772 el modal Producto nuevo manual ya no nace DETRAS del panel de productos nuevos (ambos compartian la misma capa y el panel, insertado despues, ganaba el empate — ahora el modal tiene capa propia encima)."}
