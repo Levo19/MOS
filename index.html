@@ -249,24 +249,26 @@
       max-width: 100%;
       transition: background .2s, transform .22s cubic-bezier(.34,1.56,.64,1), box-shadow .2s;
     }
-    /* [797] Estado ACTIVO WOW: pastilla dorada elevada con brillo, pop con rebote y halo. */
+    /* [799] Estado ACTIVO WOW — SIN halo hacia arriba (se recortaba contra el borde de la
+       barra deslizable y salía una "línea gruesa"). El brillo va HACIA ABAJO (dentro de la
+       barra, no se recorta) + gradiente vivo + reflejo interno (inset, nunca se recorta) +
+       rebote. La elevación es pequeña para caber sin corte. */
     .bnav-btn.active .bnav-pill {
-      background: linear-gradient(150deg,#ffe066 0%,#ffd11a 45%,#e0a812 100%);
-      transform: translateY(-7px) scale(1.06);
+      background: linear-gradient(150deg,#ffe680 0%,#ffcf1a 46%,#e0a200 100%);
+      transform: translateY(-4px) scale(1.08);
       box-shadow:
-        0 10px 24px -6px rgba(255,196,32,.65),   /* glow dorado hacia abajo */
-        0 0 20px -2px rgba(255,215,0,.55),        /* halo suave alrededor */
-        0 0 0 1.5px rgba(255,224,102,.6),         /* borde luminoso */
-        0 1.5px 0 rgba(255,255,255,.5) inset;     /* brillo superior */
-      animation: bnavPop .42s cubic-bezier(.34,1.7,.5,1);
+        0 4px 10px rgba(190,135,0,.4),            /* sombra/glow HACIA ABAJO (dentro de la barra) */
+        0 1.5px 0 rgba(255,255,255,.6) inset,     /* reflejo superior brillante (inset) */
+        0 -2px 4px rgba(150,100,0,.25) inset;     /* profundidad inferior (inset) */
+      animation: bnavPop .45s cubic-bezier(.34,1.75,.5,1);
     }
     .bnav-btn.active { color: #1a1204; }
-    .bnav-btn.active .bnav-icon svg { filter: drop-shadow(0 1px 1.5px rgba(90,60,0,.35)); stroke-width: 2.3; }
-    .bnav-btn.active .bnav-lbl { font-weight: 900; text-shadow: 0 1px 0 rgba(255,255,255,.25); }
+    .bnav-btn.active .bnav-icon svg { filter: drop-shadow(0 1px 1px rgba(120,80,0,.3)); stroke-width: 2.3; }
+    .bnav-btn.active .bnav-lbl { font-weight: 900; text-shadow: 0 1px 0 rgba(255,255,255,.3); }
     @keyframes bnavPop {
-      0%   { transform: translateY(0) scale(.9); }
-      55%  { transform: translateY(-11px) scale(1.16); }
-      100% { transform: translateY(-7px) scale(1.06); }
+      0%   { transform: translateY(0) scale(.94); }
+      55%  { transform: translateY(-6px) scale(1.17); }
+      100% { transform: translateY(-4px) scale(1.08); }
     }
     .bnav-btn .bnav-icon { display: flex; align-items: center; justify-content: center; }
     .bnav-btn .bnav-lbl {
@@ -21092,7 +21094,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.789';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.790';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
