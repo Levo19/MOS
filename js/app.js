@@ -18864,6 +18864,13 @@ const MOS = (() => {
     const p = S.productos.find(x => x.idProducto === idProducto);
     if (!p) return;
     const tipo = _prodTipoDe(p);
+    // [782] FIN DE LA BIFURCACIÓN (hallazgo del dueño, caso ají panca EXTRA): el TRAMO
+    // es cosa de productos que se venden PESADOS (unidad KGM — lo único que ME mira
+    // para cobrarlos), NO del toggle envasable (que solo habilita derivados). Antes un
+    // granel KGM sin envasable no podía crear tramos, y un envasable no-KGM podía
+    // crear tramos que el POS jamás cobraría.
+    const esKgm = (typeof _normalizarUnidad === 'function'
+      ? _normalizarUnidad(p.unidad || p.unidadMedida) : String(p.unidad || '').toUpperCase()) === 'KGM';
     const ops = [];
     if (tipo === 'envasable') {
       // [629 · regla del saco] El granel AHORA sí lleva presentación — siempre de PRECIO
@@ -18871,7 +18878,7 @@ const MOS = (() => {
       // candado viejo del menú quedó obsoleto junto con el del modal.
       ops.push({ k:'derivado',     ic:'🥄', t:'Derivado',     d:'fracción envasada del granel (250gr, 500gr…)' });
       ops.push({ k:'presentacion', ic:'📦', t:'Presentación FIJA', d:'saco/pack con precio de etiqueta (descuenta factor × kg)' });
-      ops.push({ k:'tramo',        ic:'📊', t:'Tramo',        d:'precio por rango de peso (descuento por volumen)' });
+      if (esKgm) ops.push({ k:'tramo', ic:'📊', t:'Tramo', d:'precio por rango de peso (descuento por volumen)' });
       ops.push({ k:'equivalente',  ic:'🏷️', t:'Equivalente',  d:'otro código de barra del mismo producto' });
     } else if (tipo === 'presentacion') {
       // [fix rev M3 · money-safe] el modelo de equivalencias cuelga del sku_base del GRUPO:
@@ -18881,6 +18888,8 @@ const MOS = (() => {
       return;
     } else { // canónico normal o derivado
       ops.push({ k:'presentacion', ic:'🧱', t:'Presentación', d:'pack ×N o fracción ÷N (precio propio)' });
+      // [782] canónico KGM sin envasable (ej. ají panca EXTRA): se vende pesado → SÍ lleva tramos
+      if (esKgm && tipo === 'normal') ops.push({ k:'tramo', ic:'📊', t:'Tramo', d:'precio por rango de peso (se cobra al pesar)' });
       ops.push({ k:'equivalente',  ic:'🏷️', t:'Equivalente',  d:'otro código de barra' });
     }
     const html = `<div id="plusCtxMenu" class="fixed z-[95] overflow-hidden cat-pop-std"
