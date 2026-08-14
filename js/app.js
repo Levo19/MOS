@@ -945,7 +945,22 @@ const MOS = (() => {
     _mosHbTimer = setInterval(_mosHeartbeat, 60 * 1000);
     // Pausar cuando la pestaña está oculta para no spamear
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') _mosHeartbeat();
+      if (document.visibilityState !== 'visible') return;
+      _mosHeartbeat();
+      // [796 · self-heal token] Re-registrar el push token al volver al frente (throttle 5 min).
+      // Sana los equipos cuyos tokens quedaron SIN device_id (pre-fix 779) o que nunca lo
+      // registraron, sin que el operador tenga que re-loguearse. _pushInit(false) usa el permiso
+      // ya concedido; si no hay permiso, no hace nada (best-effort). Antes: el token solo se
+      // registraba al login → equipos abiertos días quedaban sin token bueno (caso Liliana).
+      try {
+        if (S.session && S.session.nombre && typeof _pushInit === 'function') {
+          const _now = Date.now();
+          if (!window.__mosLastPushReReg || _now - window.__mosLastPushReReg > 5 * 60 * 1000) {
+            window.__mosLastPushReReg = _now;
+            _pushInit(S.session.nombre, S.session.rol, false);
+          }
+        }
+      } catch (_) {}
     });
   }
 

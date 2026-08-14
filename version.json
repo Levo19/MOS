@@ -1,1 +1,1 @@
-{"version":"2.43.786","build":"2.43.786 en el monitoreo ahora hay boton Rotar camara: en los celulares (que no pueden abrir frontal y trasera a la vez) el equipo cambia de camara al instante cuando lo pides, sin cortar la conexion. Icono claro de camara con flechas de rotacion."}
+{"version":"2.43.787","build":"2.43.787 los equipos con la app MOS ahora reparan solos su aviso (token) cada vez que se abre la app, sin necesidad de volver a iniciar sesion. Antes un equipo que quedaba abierto dias podia quedar sin token util y no se podia monitorear (caso de algunos celulares)."}
