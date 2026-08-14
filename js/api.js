@@ -3242,7 +3242,8 @@ const API = (() => {
   }
 
   return {
-    getUrl,
+    // [CERO-GAS 2.43.777] getUrl BORRADO del export (la función murió en el funeral y el shorthand
+    // `getUrl,` tumbaba TODO el módulo API al cargar — ReferenceError en producción).
     isConfigured,
     // [F6 push] Registro de token FCM directo a Supabase (mos.registrar_push_token). Aditivo al GAS.
     registrarPushTokenSB: (p = {}) => _sbRpcMOS('registrar_push_token', { p }, 'mos'),
