@@ -836,6 +836,14 @@
   var _colaRtOff     = null;    // unsubscribe del realtime inyectado por la app
   var _colaVivoHandler = null;  // handler de focus/visibilitychange (para removerlo)
   var _colaLegacyPurgado = false;
+  // [AUDITORIA 15-ago] Epoch de mutaciones locales + firma del ultimo pintado.
+  //  · epoch: si el operador agrega/quita MIENTRAS un `listar` viaja, la respuesta vieja
+  //    (emitida antes de la mutacion) pisaba la memoria y el item recien agregado
+  //    'desaparecia' hasta el siguiente poll. Ahora esa respuesta se descarta.
+  //  · firma: si el servidor devuelve exactamente lo mismo que ya se pinta, NO se repinta
+  //    (el innerHTML cada 4s devolvia el scroll al inicio mientras el operador revisaba).
+  var _colaEpoch = {};
+  var _colaFirma = {};
 
   // Identidad: se normaliza IGUAL que el servidor (trim + upper) para que la clave
   // de caché local coincida 1:1 con la fila del servidor.
@@ -948,13 +956,17 @@
     tipo = tipo || 'MEMBRETE_ME';
     if (!_colaServer()) { _colaCargar(tipo); _colaRepintar(tipo); return Promise.resolve(_colaMem[tipo]); }
     if (_colaSyncing[tipo]) return _colaSyncing[tipo];
+    var _ep = _colaEpoch[tipo] || 0;
     _colaSyncing[tipo] = _colaRpc('membrete_cola_listar', { tipo: tipo }).then(function(r) {
       _colaSyncing[tipo] = null;
+      // Hubo una mutacion local mientras esta respuesta viajaba -> esta vieja, se descarta.
+      if ((_colaEpoch[tipo] || 0) !== _ep) return _colaMem[tipo] || [];
       var items = (Array.isArray(r.items) ? r.items : []).map(_colaItemDeFila);
       _colaMem[tipo]   = items;
       _colaIdent[tipo] = _colaKey(tipo);
       _colaCacheGuardar(tipo, items);
-      _colaRepintar(tipo);
+      var firma = items.map(function(i) { return (i.idCola != null ? i.idCola : i.codigoBarra); }).join('|');
+      if (_colaFirma[tipo] !== firma) { _colaFirma[tipo] = firma; _colaRepintar(tipo); }
       return items;
     }).catch(function(e) {
       _colaSyncing[tipo] = null;
@@ -966,6 +978,7 @@
 
   // ── _colaAdd: OPTIMISTA. Pinta ya, RPC detrás; si falla revierte + toast.
   function _colaAdd(tipo, item) {
+    _colaEpoch[tipo] = (_colaEpoch[tipo] || 0) + 1; _colaFirma[tipo] = null;
     var arr = _colaCargar(tipo);
     arr.push(item);
     _colaCacheGuardar(tipo, arr);
@@ -996,6 +1009,7 @@
 
   // ── _colaDel: OPTIMISTA. Quita ya; si la RPC falla de verdad (red/permiso) lo repone.
   function _colaDel(tipo, item) {
+    _colaEpoch[tipo] = (_colaEpoch[tipo] || 0) + 1; _colaFirma[tipo] = null;
     var arr = _colaCargar(tipo);
     var idx = arr.indexOf(item);
     if (idx < 0) return Promise.resolve(false);
@@ -1019,6 +1033,7 @@
 
   // ── _colaClear: vacía local + servidor (lo llama el botón de imprimir la cola).
   function _colaClear(tipo) {
+    _colaEpoch[tipo] = (_colaEpoch[tipo] || 0) + 1; _colaFirma[tipo] = null;
     _colaMem[tipo]   = [];
     _colaIdent[tipo] = _colaKey(tipo);
     _colaCacheGuardar(tipo, []);
@@ -1040,6 +1055,9 @@
     if (!_colaServer()) return Promise.resolve(false);
     var cadena = Promise.resolve();
     (_colaMem[tipo] || []).forEach(function(it) {
+      // [AUDITORIA 15-ago] La fila vieja ya no existe (la borro `vaciar`): sin esto el item
+      // quedaba con un idCola muerto y era IMPOSIBLE de quitar (volvia cada 4s).
+      try { delete it.idCola; } catch(_) {}
       cadena = cadena.then(function() {
         return _colaRpc('membrete_cola_agregar', {
           tipo:        tipo,

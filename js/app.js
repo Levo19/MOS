@@ -311,7 +311,11 @@ const MOS = (() => {
           // [792] COLA DE MEMBRETES por usuario + zona (RPC mos.membrete_cola_*). Antes vivía
           // en localStorage por dispositivo y sin identidad → cola fantasma entre usuarios y
           // amo/esclavo ciegos entre sí. La zona del admin es la que tenga seleccionada.
-          zona:           function() { return (window.S && S.zonaActual) || ''; },
+          // [AUDITORIA 15-ago] Zona FIJA vacia en MOS: S.zonaActual arranca null y se rellena al
+          // entrar al panel de Zonas, asi que la identidad de la cola cambiaba sola y el admin
+          // veia "desaparecer" lo que habia encolado (seguia en el servidor, bajo otra clave).
+          // El admin no opera una zona: su cola se identifica solo por usuario.
+          zona:           function() { return ''; },
           rpc:            function(fn, p) { return API.rpcMos(fn, p || {}); },
           // [Membretes 100% Supabase] el modal imprime vía Edge print-adhesivo (mode:'crear-membrete').
           edgeCall:       function(body) { return API.printAdhesivoEdge(body); },
