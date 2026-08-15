@@ -32569,6 +32569,12 @@ const MOS = (() => {
         </div>`;
     })();
 
+    // [802] Nota "los celulares no comparten pantalla" — evita la confusión de "¿por qué no veo la
+    // pantalla?" al espiar un móvil (getDisplayMedia está bloqueado en navegadores móviles).
+    const notaPantalla = (caps && caps.tienePantalla === false)
+      ? `<div title="Los navegadores de celular no permiten capturar la pantalla; solo cámara y micrófono." style="font-size:9.5px;font-weight:700;padding:3px 9px;border-radius:20px;background:rgba(148,163,184,.14);color:#94a3b8;border:1px solid rgba(148,163,184,.3);display:flex;align-items:center;gap:4px;white-space:nowrap">📱 sin pantalla (límite del celular)</div>`
+      : '';
+
     // ── Botones de salto entre cámaras (solo modo solo Y si hay 2+ streams) ─────────
     // [798] Con UNA sola cámara (celular típico) NO hay entre qué saltar → el botón sobraba
     // y confundía junto al de "Rotar". Solo aparece si hay 2+ streams (ej. pantalla + cámara).
@@ -32611,6 +32617,7 @@ const MOS = (() => {
             <span style="font-size:11px;font-weight:900;color:${live ? '#10b981' : '#f59e0b'};letter-spacing:.6px">${live ? 'EN VIVO' : 'CONECTANDO'}</span>
           </div>
           ${badgePlataforma}
+          ${notaPantalla}
           <div style="min-width:0">
             <div style="font-size:13px;font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">👤 ${_escapeHtml(_espiaV2.nombre)}</div>
             <div style="font-size:10px;color:#94a3b8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_escapeHtml(_espiaV2.deviceId)}</div>
