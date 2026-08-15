@@ -19,3 +19,8 @@ browsercheck/_hap_prof_*/
 browsercheck/*.png
 browsercheck/_hap_*.txt
 .claude/
+
+# [AUDITORIA 15-ago] NUNCA versionar: respaldos con datos de personal/planilla, volcados
+# de trabajo y archivos de conexion. GitHub Pages sirve TODO el repo publicamente.
+supabase/_backups/
+uri.txt
