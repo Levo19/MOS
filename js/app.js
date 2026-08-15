@@ -945,6 +945,19 @@ const MOS = (() => {
       // [CERO-GAS / CERO-FALLBACK] Heartbeat SOLO directo: mos.estado_bloqueo_usuario (actualiza
       // ultima_conexion + chequea bloqueo). En error se salta este tick (reintenta en 60s); ya no cae al GAS.
       try { await API.estadoBloqueoMOS({ idPersonal: ses.idPersonal, nombre: ses.nombre || '', appOrigen: 'mos' }); } catch(_) {}
+      // [800] Refresco PERIÓDICO del push token (cada 30 min) mientras la app corre. FCM solo lo
+      // renueva el propio equipo (el server no puede); así el token nunca se pone viejo aunque el
+      // operador no re-abra ni re-loguee → deja de fallar "FCM 3x" por token caducado. _pushInit(false)
+      // usa el permiso ya dado; si no hay permiso, no hace nada (best-effort).
+      try {
+        if (ses.nombre && typeof _pushInit === 'function') {
+          const _now = Date.now();
+          if (!window.__mosLastPushPeriodic || _now - window.__mosLastPushPeriodic > 30 * 60 * 1000) {
+            window.__mosLastPushPeriodic = _now;
+            _pushInit(ses.nombre, ses.rol, false);
+          }
+        }
+      } catch(_) {}
     } catch(_) {}
   }
   function _startMosHeartbeat() {
