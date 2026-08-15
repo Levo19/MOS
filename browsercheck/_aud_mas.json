@@ -1,7 +1,0 @@
-{
-  "url": "https://levo19.github.io/MOS/index.html",
-  "localStorage": { "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906477" },
-  "waitMs": 15000,
-  "evalAfter": "(()=>{const btn=[...document.querySelectorAll('nav .bnav-btn')].find(b=>/M[aá]s/i.test(((b.querySelector('.bnav-lbl')||{}).textContent||'')));if(!btn)return {error:'sin boton Mas'};btn.click();const ovl=document.getElementById('masSheetOvl');const items=[...document.querySelectorAll('#masSheetGrid .mas-sheet-item')].map(i=>(i.textContent||'').trim());return {clickOk:true, sheetAbierto: !!(ovl&&ovl.classList.contains('show')), ariaHidden: ovl?ovl.getAttribute('aria-hidden'):null, items, tieneAlmacen: items.some(t=>/Almac/i.test(t))};})()",
-  "screenshot": "_aud_mas.png"
-}

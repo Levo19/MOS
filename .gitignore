@@ -24,3 +24,6 @@ browsercheck/_hap_*.txt
 # de trabajo y archivos de conexion. GitHub Pages sirve TODO el repo publicamente.
 supabase/_backups/
 uri.txt
+# Escenarios y salidas de browsercheck (el arnés .js SÍ se versiona)
+browsercheck/_aud_*.json
+browsercheck/*.log
