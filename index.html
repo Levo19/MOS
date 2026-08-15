@@ -545,7 +545,7 @@
        Scopeado a #infraContenedor para no filtrar al resto de la app. */
     #infraContenedor{ --cline2:#26375a;--cbrand:#4aa8ff;--cink:#eaf1fb;--cink3:#5f7290;
       --con-glow:rgba(16,185,129,.55);--csusp:#f97316;--cme:#7dd3fc;--cwh:#fbbf24;--cmos:#c4b5fd; }
-    #infraContenedor .fleet{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:14px}
+    #infraContenedor .fleet{display:grid;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));gap:14px}
     #infraContenedor .dev{position:relative;width:auto;background:linear-gradient(180deg,#0c1a31,#0a1526);border:1px solid var(--cline2);border-radius:15px;padding:16px 12px 12px;display:flex;flex-direction:column;align-items:center;gap:10px;transition:.18s}
     #infraContenedor .dev:hover{transform:translateY(-3px);border-color:var(--cbrand)}
     #infraContenedor .dev .pill{position:absolute;top:9px;left:9px;font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;z-index:3}
@@ -650,7 +650,8 @@
     .cfgpanel .chip.hor{color:#a5b4fc;background:rgba(99,102,241,.12);border-color:rgba(99,102,241,.35)}
     .cfgpanel .iconbtn{width:27px;height:27px;border-radius:8px;display:grid;place-items:center;background:#0c1a30;border:1px solid #26375a;color:#5f7290;cursor:pointer;font-size:12px}
     .cfgpanel .iconbtn:hover{color:#eaf1fb;border-color:#4aa8ff}
-    .cfgpanel .zone{background:linear-gradient(150deg,#0d2141,#0b1428);border:1px solid #26375a;border-radius:16px;padding:16px;margin-top:14px}
+    .cfgpanel .zone{background:linear-gradient(150deg,#0d2141,#0b1428);border:1px solid #26375a;border-radius:16px;padding:16px;margin-top:14px;box-shadow:0 10px 34px -14px rgba(0,0,0,.55),0 1px 0 rgba(255,255,255,.035) inset;transition:box-shadow .3s,transform .25s}
+    @media (hover:hover){.cfgpanel .zone:hover{box-shadow:0 16px 44px -14px rgba(0,0,0,.62),0 0 0 1px rgba(120,150,220,.12) inset}}
     .cfgpanel .zone.online{border-color:rgba(16,185,129,.4);box-shadow:0 0 16px rgba(16,185,129,.08)}
     .cfgpanel .zone.dim{opacity:.8}
     .cfgpanel .zone.vip{background:linear-gradient(135deg,#1a1410,#0d1526 55%,#161009);border:1.5px solid rgba(245,184,73,.42);box-shadow:0 0 22px rgba(245,184,73,.1)}
@@ -677,8 +678,8 @@
     .cfgpanel .pchip .pv{font-size:14px;font-weight:850;line-height:1;color:#eaf1fb}
     .cfgpanel .pchip .pl{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#5f7290;font-weight:700}
     .cfgpanel .pchip .pu{font-size:9px;color:#5f7290;text-transform:none}
-    .cfgpanel .stations{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:12px;margin-top:6px}
-    .cfgpanel .station{background:#0b1526;border:1px solid #1c2b45;border-radius:13px;padding:12px}
+    .cfgpanel .stations{display:grid;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));gap:12px;margin-top:6px}
+    .cfgpanel .station{background:linear-gradient(165deg,#0c1730,#0a1120);border:1px solid #1c2b45;border-radius:13px;padding:12px;box-shadow:0 6px 20px -10px rgba(0,0,0,.5),0 1px 0 rgba(255,255,255,.03) inset}
     .cfgpanel .station.online{border-color:rgba(16,185,129,.4);box-shadow:0 0 12px rgba(16,185,129,.12)}
     .cfgpanel .st-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
     .cfgpanel .st-head .sic{font-size:18px}
@@ -757,13 +758,13 @@
       .cfgpanel .zhead{flex-wrap:wrap}
       .cfgpanel .zctl{margin-left:auto}
       .cfgpanel .fleet{justify-content:center;gap:9px}
-      #infraContenedor .fleet{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+      #infraContenedor .fleet{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
       .cfgpanel .uactions{padding-left:13px}
       .cfgpanel .flow{flex-direction:column;gap:12px}
       .cfgpanel .step{padding:0 0 0 4px}
       .cfgpanel .step:not(:last-child)::after{content:"↓";right:auto;left:2px;top:auto;bottom:-9px}
     }
-    @media (min-width:601px) and (max-width:900px){#infraContenedor .fleet{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}}
+    @media (min-width:601px) and (max-width:900px){#infraContenedor .fleet{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}}
     @media (prefers-reduced-motion:reduce){#cfgPanelInfra *{animation:none!important}}
 
 
@@ -775,7 +776,7 @@
     .cfgpanel .kpi .kl{font-size:8.5px;text-transform:uppercase;letter-spacing:.09em;color:#5f7290;font-weight:700}
     .cfgpanel .sla{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;font-weight:700}
     /* ── [Rediseño Config] Tarjetas de las pestañas Categorías/Bancarios (mockup) ── */
-    .cfgpanel .grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+    .cfgpanel .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
     .cfgpanel .catcard{background:#0b1526;border:1px solid #1c2b45;border-radius:12px;padding:13px;cursor:pointer;transition:.15s}
     .cfgpanel .catcard:hover{border-color:#4aa8ff;transform:translateY(-2px)}
     .cfgpanel .catcard .ct{font-size:13.5px;font-weight:800;color:#eaf1fb}
@@ -21100,7 +21101,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.797';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.798';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
