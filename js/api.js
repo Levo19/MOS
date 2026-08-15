@@ -1527,7 +1527,7 @@ const API = (() => {
       const body = await res.json().catch(() => null);
       const bodyCode = parseInt((body && body.statusCode), 10) || res.status;
       if (bodyCode === 409 || (body && /duplicate/i.test(String(body.error || '')))) {
-        return { ok: true, path, url: `${_SB_URL}/storage/v1/object/public/producto-fotos/${path}`, preview: `${_SB_URL}/storage/v1/render/image/public/producto-fotos/${path}?width=800&quality=80` };
+        return { ok: true, path, url: `${_SB_URL}/storage/v1/object/public/producto-fotos/${path}`, preview: `${_SB_URL}/storage/v1/render/image/public/producto-fotos/${path}?width=800&height=800&resize=contain&quality=80` };
       }
       const err = new Error('storage upload ' + bodyCode + (body && body.message ? ': ' + body.message : ''));
       if (bodyCode >= 400 && bodyCode < 500 && bodyCode !== 429) err.permanente = true;
@@ -1536,7 +1536,7 @@ const API = (() => {
     return {
       ok: true, path,
       url:     `${_SB_URL}/storage/v1/object/public/producto-fotos/${path}`,
-      preview: `${_SB_URL}/storage/v1/render/image/public/producto-fotos/${path}?width=800&quality=80`
+      preview: `${_SB_URL}/storage/v1/render/image/public/producto-fotos/${path}?width=800&height=800&resize=contain&quality=80`
     };
   }
 
@@ -1864,16 +1864,10 @@ const API = (() => {
       if (data && data.alertaGenerada === undefined) {
         data.alertaGenerada = (p.imprimirMembretes === 'true' || p.imprimirMembretes === true);
       }
-      // [CERO-GAS etiqueta-nueva] Si el precio REALMENTE cambió → push a CAJERO/VENDEDOR ("imprime etiqueta").
-      // Reemplaza el push GAS MOS_ETIQUETA_NUEVA. Fire-and-forget, solo en cambio real (data.cambioPrecio).
-      try {
-        if (data && data.cambioPrecio) {
-          _pushEdgeAudiencia({ roles: ['CAJERO', 'VENDEDOR'] },
-            '🏷 Precio actualizado',
-            (data.descripcion || p.descripcion || 'Producto') + ' · S/ ' + Number(data.precioNuevo || p.precioNuevo || 0).toFixed(2) + ' · imprime etiqueta nueva',
-            { tipo: 'etiqueta_nueva', skuBase: data.skuBase || p.skuBase || '' });
-        }
-      } catch(_) {}
+      // [791] El push "🏷 Precio actualizado" se movió al SERVIDOR: trigger tg_precio_push
+      // sobre mos.historial_precio_costo → cubre TODOS los caminos (catálogo, Paso 2,
+      // registro PN) y llega a TODOS los dispositivos ME. Este intercept del front se
+      // retiró para no duplicar la notificación en los cambios hechos desde MOS.
       return data;   // {precioNuevo, presentacionesActualizadas, alertaGenerada} — el front no lo consume
     }
 
