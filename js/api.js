@@ -4100,6 +4100,9 @@ const API = (() => {
       almacenAjustar:  _almacenCrearAjuste,     // mos.almacen_crear_ajuste(p)  → {ok,...} (ALMACÉN: DELTA wh.stock + wh.ajustes + kardex WH; idempotente por idAjuste)
       pedirAlmacen:    _zonaPedirAlmacen,       // mos.zona_pedir_almacen(p)    → {ok,data} (Supabase-only + log)
       pickupDetalle:   async (p) => _sbRpcMOS('zona_pickup_detalle', { p: { zona: (p && p.zona) || '' } }, 'wh'), // wh.zona_pickup_detalle(p jsonb) → {ok,zona,bucket,items:[{...,historial:[{fecha,fuente,pedido}]}]}
+      // [790] ingresos de mercadería (proveedor/envasado) por sku de los últimos N días —
+      // alimenta el matiz PRIORIZADO ("🆕 ingresó") del semáforo del pickup.
+      ingresosRecientes: async (p) => _sbRpcMOS('ingresos_recientes', { p: { dias: (p && p.dias) || 3 } }, 'wh'),
       // [v2.43.379] Rezagado de la semana pasada (lo NO despachado) por zona, con historial. wh.zona_rezagado_detalle.
       rezagadoDetalle: async (p) => _sbRpcMOS('zona_rezagado_detalle', { p: { zona: (p && p.zona) || '' } }, 'wh'),
       marcarAccion:    _zonaMarcarAccion,       // mos.zona_marcar_accion(p {skuBase,accion}) → {ok,[dedup],data} (perro: NO muta stock)

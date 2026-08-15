@@ -47114,6 +47114,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     return _zpkFechaLbl(s);
   }
+  // [790] "hoy / ayer / hace Nd" para el chip de ingreso reciente.
+  function _zpkHaceIngLbl(ts){
+    try {
+      const d = Math.floor((Date.now() - new Date(String(ts).slice(0, 16)).getTime()) / 86400000);
+      return d <= 0 ? 'hoy' : d === 1 ? 'ayer' : 'hace ' + d + 'd';
+    } catch (_) { return ''; }
+  }
   let _zpkLast = { zona: '', modo: 'pickup', data: null };   // [v2.43.379] para imprimir el rezagado
   // [multi-zona] En ALMACÉN el pickup propio no existe (el almacén no se pide a sí mismo:
   // las ZONAS le piden a él). Ahí el overlay abre con PESTAÑAS, una por zona, mostrando
@@ -47123,9 +47130,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const nom = ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === id) || {}).nombre;
     return _esZonaAlmacen({ idZona: id, nombre: nom });
   }
+  // [790] PRIORIZADO: mapa sku → ingreso reciente (últimos 3 días, caché 5 min).
+  // Si un producto ADEUDADO acaba de ingresar al almacén, el semáforo lo sube y
+  // lo pinta con el matiz violeta "🆕 ingresó" — hay mercadería fresca, que salga ya.
+  let _zpkIng = null, _zpkIngTs = 0;
+  async function _zpkIngAsegurar(){
+    if (_zpkIng && (Date.now() - _zpkIngTs) < 300000) return;
+    try {
+      const r = await API.zona.ingresosRecientes({ dias: 3 });
+      const m = {};
+      (((r && r.items) || [])).forEach(i => { m[String(i.sku)] = i; });
+      _zpkIng = m; _zpkIngTs = Date.now();
+    } catch (_) { if (!_zpkIng) _zpkIng = {}; }
+  }
   async function _zpkCargar(zona){
     _zpkRender(zona, null, true, 'pickup');
     try {
+      await _zpkIngAsegurar();
       const r = await API.zona.pickupDetalle({ zona });
       if (!r || r.ok === false) throw new Error((r && r.error) || 'sin datos');
       _zpkLast = { zona, modo: 'pickup', data: r };
@@ -47252,7 +47273,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           let dias = 0;
           if (prim) { const t = new Date(String(prim).slice(0, 16)); if (!isNaN(t)) dias = Math.max(0, (ahora - t.getTime()) / 86400000); }
           const stock = (it.stockWh == null) ? null : (parseFloat(it.stockWh) || 0);
-          return { it, pend, veces: Math.max(1, peds.length), dias, stock, score: 0, nivel: 'ok' };
+          // [790] PRIORIZADO: ingresó al almacén en los últimos días Y la zona lo debe.
+          const ing = (pend > 0 && _zpkIng && _zpkIng[String(it.skuBase)]) || null;
+          return { it, pend, veces: Math.max(1, peds.length), dias, stock, ing, score: 0, nivel: 'ok' };
         });
         const mP = Math.max(1, ...enr.map(e => e.pend));
         const mV = Math.max(1, ...enr.map(e => e.veces));
@@ -47260,6 +47283,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         enr.forEach(e => {
           let s = 45 * (e.pend / mP) + 30 * (e.veces / mV) + 25 * (e.dias / mD);
           if (e.pend > 0 && e.stock !== null && e.stock > 0) s += (e.stock >= e.pend ? 15 : 8);
+          if (e.ing) s += 20;   // [790] mercadería fresca de un producto adeudado → sube
           e.score = s;
           e.nivel = s >= 70 ? 'rojo' : s >= 45 ? 'naranja' : s >= 25 ? 'ambar' : 'ok';
         });
@@ -47288,6 +47312,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         // todo el pendiente, ámbar=parcial, punteado=sin stock) · alerta pulsante cuando
         // el producto es crítico Y el almacén tiene stock (no hay excusa: reclamar).
         const chips = [
+          en.ing ? `<span class="zpk-chip zc-ing">🆕 ingresó ${_zpkHaceIngLbl(en.ing.ts)}</span>` : '',
           `<span class="zpk-chip">×${en.veces} ${en.veces === 1 ? 'pedido' : 'pedidos'}</span>`,
           en.dias >= 1 ? `<span class="zpk-chip">${Math.floor(en.dias)}d esperando</span>` : '',
           en.stock === null ? '' :
@@ -47357,7 +47382,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${tabsHtml}
         ${showKpis ? `<div class="zpk-kpis"><div><b>${nItems}</b><small>productos</small></div><div><b>${_zpkNum(total)}</b><small>uds ${esRez ? 'no despachadas' : 'pendientes'}</small></div>${(r && r._criticos) ? `<div><b class="zpk-kroj">${r._criticos}</b><small>críticos</small></div>` : ''}</div>` : ''}
         ${showKpis ? `<div class="zpk-actions">${accion}</div>` : ''}
-        ${showKpis && ((r && r.items) || []).length ? '<div class="zpk-leyenda">orden por urgencia 🔴→⚪ · deuda + veces pedido + días esperando + stock de almacén</div>' : ''}
+        ${showKpis && ((r && r.items) || []).length ? '<div class="zpk-leyenda">orden por urgencia 🔴→⚪ · deuda + veces pedido + días esperando + stock de almacén · 🆕 ingreso reciente adeudado sube</div>' : ''}
         ${showKpis && !(r && r.sin_rezagado) ? `<input class="zpk-search" placeholder="🔎 Buscar producto…" oninput="MOS.zonaPickupFiltrar(this.value)" autocomplete="off">` : ''}
         <div class="zpk-list">${body}${sinBody}</div>
       </div>`;
