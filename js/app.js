@@ -308,6 +308,11 @@ const MOS = (() => {
           origen:         'MOS',
           unwrapData:     true,
           endpointPrefix: 'wh_',
+          // [792] COLA DE MEMBRETES por usuario + zona (RPC mos.membrete_cola_*). Antes vivía
+          // en localStorage por dispositivo y sin identidad → cola fantasma entre usuarios y
+          // amo/esclavo ciegos entre sí. La zona del admin es la que tenga seleccionada.
+          zona:           function() { return (window.S && S.zonaActual) || ''; },
+          rpc:            function(fn, p) { return API.rpcMos(fn, p || {}); },
           // [Membretes 100% Supabase] el modal imprime vía Edge print-adhesivo (mode:'crear-membrete').
           edgeCall:       function(body) { return API.printAdhesivoEdge(body); },
           // [catálogo v4] 3ra opción del menú (solo derivados): adhesivo envasado vía

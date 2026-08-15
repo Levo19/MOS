@@ -7,6 +7,19 @@
  *
  *  API pública en window.MembreteSystem:
  *    iniciar({ apiPost, usuario, origen, unwrapData, endpointPrefix })
+ *
+ *    [792] Opciones NUEVAS de iniciar() — ambas OPCIONALES, con default seguro:
+ *      zona:     function() { return 'CENTRO'; }
+ *          Zona/almacén del operador. Junto con usuario() forma la IDENTIDAD de la
+ *          cola de membretes. Default: función que devuelve '' (cola sin zona).
+ *      rpc:      function(fnName, params) { return Promise<jsonb de la RPC mos.*>; }
+ *          Camino directo a las RPC `mos.membrete_cola_*` (SQL 792). Si la app NO
+ *          la inyecta, la cola cae al modo localStorage viejo (degradación elegante:
+ *          por dispositivo, sin identidad) para no romper apps sin wiring.
+ *      realtime: function(onChange) { ...; return function(){ ...desuscribir... }; }
+ *          OPCIONAL. Suscripción en vivo a mos.membrete_cola (amo ↔ esclavo). Si la
+ *          app no la inyecta, el modal hace polling cada 4s MIENTRAS está abierto.
+ *
  *    imprimirUnitario({ tipo, producto })
  *    imprimirCola({ tipo, productos })
  *    imprimirCalibradores({ cantidad })
@@ -29,7 +42,13 @@
     // [v1.9] La app puede inyectar un provider del catálogo. Útil para ME
     // donde el catálogo vive dentro de Vue (db.value.PRODUCTO_BASE) y no
     // es accesible vía window.
-    catalogoProvider: null  // function() { return { productos: [...], equivalencias: [...] } }
+    catalogoProvider: null, // function() { return { productos: [...], equivalencias: [...] } }
+    // [792] Identidad + transporte de la COLA DE MEMBRETES (ver cabecera del archivo).
+    // Defaults SEGUROS: sin zona y sin rpc → la cola se comporta como antes
+    // (localStorage local), así una app sin wiring no se rompe.
+    zona:           function() { return ''; },
+    rpc:            null,   // function(fnName, params) -> Promise<jsonb>
+    realtime:       null    // function(onChange) -> function unsubscribe
   };
 
   // ── [v1.10] Cache de prefetch (TTL 60s) — UX optimista ─────
@@ -590,6 +609,9 @@
     // El usuario los abre y los ve instantáneo desde cache.
     setTimeout(function() {
       try { prefetchTodo(); } catch(_) {}
+      // [792] Borrar UNA vez la cola vieja sin identidad (la del producto fantasma).
+      // NO se migra su contenido a propósito: podría ser de otro usuario del equipo.
+      try { _colaPurgarLegacy(); } catch(_) {}
     }, 1500);
   }
 
@@ -790,14 +812,286 @@
   // [v1.1] UI EMBEBIDAS — modal calibrar + cola + menú card
   // ════════════════════════════════════════════════════════════
 
-  // Cola persistente en localStorage. Cada item = producto a imprimir.
-  var COLA_KEY = 'mos_membrete_cola_';
+  // ════════════════════════════════════════════════════════════
+  // [792] COLA DE MEMBRETES — SERVER-FIRST (por usuario + zona)
+  // ════════════════════════════════════════════════════════════
+  // ANTES: la cola vivía SOLO en localStorage con la clave `mos_membrete_cola_<tipo>`
+  // → por DISPOSITIVO y SIN identidad. Consecuencias reales reportadas por el dueño:
+  //   · lo que encolaba un cajero le aparecía al SIGUIENTE usuario del mismo equipo
+  //     ("veo un producto que yo no agregué" = producto fantasma);
+  //   · el dispositivo AMO y el ESCLAVO nunca compartían cola (cada uno la suya, ciega).
+  // AHORA: la fuente de verdad son las RPC `mos.membrete_cola_*` (SQL 792), keyeadas
+  // por (tipo, zona, usuario) — el servidor normaliza trim+upper, así que amo y
+  // esclavo caen en la MISMA cola. localStorage queda SOLO como caché de arranque,
+  // ya con identidad en la clave. Si la app no inyecta `_config.rpc`, todo esto
+  // degrada elegante al comportamiento viejo (local, sin identidad) para no romperla.
+  var COLA_KEY       = 'mos_membrete_cola_';   // prefijo (clave vieja = prefijo + tipo)
+  var COLA_POLL_MS   = 4000;                   // polling mientras el modal está abierto
+  var COLA_TIPOS     = ['MEMBRETE_ME', 'MEMBRETE_WH'];
+  var _colaMem       = {};      // { tipo: [item, ...] } — lo que la UI pinta (optimista)
+  var _colaIdent     = {};      // { tipo: claveDeIdentidad } — con qué zona/usuario se llenó
+  var _colaSyncing   = {};      // { tipo: Promise } — de-dup de listar concurrentes
+  var _colaSubs      = [];      // suscriptores externos (ME usa esto para su contador)
+  var _colaPollTimer = null;
+  var _colaRtOff     = null;    // unsubscribe del realtime inyectado por la app
+  var _colaVivoHandler = null;  // handler de focus/visibilitychange (para removerlo)
+  var _colaLegacyPurgado = false;
 
-  function _colaCargar(tipo) {
-    try { return JSON.parse(localStorage.getItem(COLA_KEY + tipo) || '[]'); } catch(_) { return []; }
+  // Identidad: se normaliza IGUAL que el servidor (trim + upper) para que la clave
+  // de caché local coincida 1:1 con la fila del servidor.
+  function _colaNorm(s) { return String(s == null ? '' : s).trim().toUpperCase(); }
+  function _colaZona()    { try { return _colaNorm(typeof _config.zona    === 'function' ? _config.zona()    : ''); } catch(_) { return ''; } }
+  function _colaUsuario() { try { return _colaNorm(typeof _config.usuario === 'function' ? _config.usuario() : ''); } catch(_) { return ''; } }
+  // Sin rpc inyectada O sin usuario (la RPC agregar exige usuario) → modo local.
+  function _colaServer() { return typeof _config.rpc === 'function' && _colaUsuario() !== ''; }
+  // Clave de caché CON identidad — nunca más una cola compartida a ciegas.
+  function _colaKey(tipo) { return COLA_KEY + tipo + '_' + _colaZona() + '_' + _colaUsuario(); }
+
+  function _colaCacheLeer(tipo) {
+    try { var a = JSON.parse(localStorage.getItem(_colaKey(tipo)) || '[]'); return Array.isArray(a) ? a : []; }
+    catch(_) { return []; }
   }
+  function _colaCacheGuardar(tipo, arr) {
+    try { localStorage.setItem(_colaKey(tipo), JSON.stringify(arr || [])); } catch(_) {}
+  }
+
+  // [792] La clave VIEJA (sin identidad) es la del bug del fantasma. Se BORRA una vez
+  // y NO se migra su contenido: podría re-inyectar productos de OTRO usuario/turno.
+  function _colaPurgarLegacy() {
+    if (_colaLegacyPurgado) return;
+    _colaLegacyPurgado = true;
+    try {
+      var n = 0;
+      COLA_TIPOS.forEach(function(t) {
+        var raw = localStorage.getItem(COLA_KEY + t);
+        if (raw == null) return;
+        try { var a = JSON.parse(raw); if (Array.isArray(a)) n += a.length; } catch(_) {}
+        localStorage.removeItem(COLA_KEY + t);
+      });
+      if (n > 0) _toast('Se limpió una cola vieja de este equipo (' + n + ' ítems)');
+    } catch(_) {}
+  }
+
+  // Avisa a la app (ME pinta contador + estado "✓ En cola" de cada card).
+  function _colaNotificar(tipo) {
+    var items = _colaMem[tipo] || [];
+    for (var i = 0; i < _colaSubs.length; i++) {
+      try { _colaSubs[i](tipo, items.slice()); } catch(_) {}
+    }
+  }
+  // Repinta la lista del modal (si está abierto) + notifica suscriptores.
+  function _colaRepintar(tipo) {
+    try { _colaRefrescarLista(); } catch(_) {}
+    _colaNotificar(tipo);
+  }
+
+  // ── Lectura SÍNCRONA (lo que la UI pinta). Memoria → caché local si aún no cargó.
+  // Se conserva el nombre `_colaCargar` porque el resto del módulo ya lo usa.
+  // Si la IDENTIDAD cambió sin recargar la página (cambio de turno/zona en el mismo
+  // equipo) la memoria se descarta y se reseedea del caché de ESA identidad: nunca
+  // se le muestra al operador nuevo la cola del anterior (era exactamente el bug).
+  function _colaCargar(tipo) {
+    var k = _colaKey(tipo);
+    if (!_colaMem[tipo] || _colaIdent[tipo] !== k) {
+      _colaMem[tipo]   = _colaCacheLeer(tipo);
+      _colaIdent[tipo] = k;
+    }
+    return _colaMem[tipo];
+  }
+  // Escritura SÍNCRONA local (memoria + caché). NO toca el servidor: es el carril
+  // de la degradación elegante y el de los rollback optimistas.
   function _colaGuardar(tipo, arr) {
-    try { localStorage.setItem(COLA_KEY + tipo, JSON.stringify(arr || [])); } catch(_) {}
+    _colaMem[tipo]   = (arr || []).slice();
+    _colaIdent[tipo] = _colaKey(tipo);
+    _colaCacheGuardar(tipo, _colaMem[tipo]);
+  }
+
+  // ── Transporte a las RPC mos.membrete_cola_* ────────────────
+  // `tolerarNoOk`: para `quitar`, que devuelve ok:false cuando la fila YA no existía
+  // (borrada desde el otro dispositivo). Eso NO es un error: el borrado local es correcto.
+  function _colaRpc(fn, params, tolerarNoOk) {
+    if (typeof _config.rpc !== 'function') return Promise.reject(new Error('cola sin rpc'));
+    var p = {};
+    Object.keys(params || {}).forEach(function(k) { p[k] = params[k]; });
+    p.zona    = _colaZona();
+    p.usuario = _colaUsuario();
+    var envio;
+    // El wiring de la app puede lanzar en seco (DeviceAuth aún no cargado, etc.).
+    // Envolver acá evita que un throw síncrono escape del carril optimista.
+    try { envio = _config.rpc(fn, p); } catch (e) { return Promise.reject(e); }
+    return Promise.resolve(envio).then(function(r) {
+      if (!r) throw new Error('Sin respuesta del servidor');
+      if (r.ok === false && !tolerarNoOk) throw new Error(r.error || 'El servidor rechazó la operación');
+      return r;
+    });
+  }
+  function _colaDevice() {
+    try { return String(localStorage.getItem('mosexpress_deviceId') || localStorage.getItem('wh_deviceId') || localStorage.getItem('mos_deviceId') || ''); }
+    catch(_) { return ''; }
+  }
+  // Fila del servidor → item del front. El `payload` guarda el item COMPLETO
+  // (codigos[]/esSkuBase/precio/unidad) tal cual lo arma _construirItemCompleto.
+  function _colaItemDeFila(f) {
+    var base = (f && f.payload && typeof f.payload === 'object' && !Array.isArray(f.payload)) ? f.payload : {};
+    var out = {};
+    Object.keys(base).forEach(function(k) { out[k] = base[k]; });
+    out.codigoBarra = String((f && f.codigoBarra) || out.codigoBarra || '');
+    if (!out.descripcion) out.descripcion = String((f && f.descripcion) || '');
+    if (!out.skuBase && f && f.idProducto) out.skuBase = String(f.idProducto);
+    out.idCola = (f && f.id != null) ? f.id : null;   // id de la fila (para quitar exacto)
+    return out;
+  }
+
+  // ── _colaSync: trae la cola del servidor y repinta. Nunca rechaza: sin red la UI
+  // sigue con lo que tenga en memoria/caché (la cola no es dinero, no vale romper).
+  function _colaSync(tipo) {
+    tipo = tipo || 'MEMBRETE_ME';
+    if (!_colaServer()) { _colaCargar(tipo); _colaRepintar(tipo); return Promise.resolve(_colaMem[tipo]); }
+    if (_colaSyncing[tipo]) return _colaSyncing[tipo];
+    _colaSyncing[tipo] = _colaRpc('membrete_cola_listar', { tipo: tipo }).then(function(r) {
+      _colaSyncing[tipo] = null;
+      var items = (Array.isArray(r.items) ? r.items : []).map(_colaItemDeFila);
+      _colaMem[tipo]   = items;
+      _colaIdent[tipo] = _colaKey(tipo);
+      _colaCacheGuardar(tipo, items);
+      _colaRepintar(tipo);
+      return items;
+    }).catch(function(e) {
+      _colaSyncing[tipo] = null;
+      try { console.warn('[cola membretes] sync:', e && e.message); } catch(_) {}
+      return _colaCargar(tipo);
+    });
+    return _colaSyncing[tipo];
+  }
+
+  // ── _colaAdd: OPTIMISTA. Pinta ya, RPC detrás; si falla revierte + toast.
+  function _colaAdd(tipo, item) {
+    var arr = _colaCargar(tipo);
+    arr.push(item);
+    _colaCacheGuardar(tipo, arr);
+    _colaRepintar(tipo);
+    if (!_colaServer()) return Promise.resolve(true);
+    return _colaRpc('membrete_cola_agregar', {
+      tipo:        tipo,
+      codigoBarra: String(item.codigoBarra || ''),
+      idProducto:  String(item.skuBase || item.idProducto || ''),
+      descripcion: String(item.descripcion || ''),
+      payload:     item,
+      device:      _colaDevice()
+    }).then(function(r) {
+      if (r && r.id != null) item.idCola = r.id;
+      _colaCacheGuardar(tipo, _colaMem[tipo] || []);
+      return true;
+    }).catch(function(e) {
+      var cur = _colaMem[tipo] || [];
+      var i = cur.indexOf(item);
+      if (i >= 0) cur.splice(i, 1);
+      _colaCacheGuardar(tipo, cur);
+      _colaRepintar(tipo);
+      try { sonidos.error(); } catch(_) {}
+      _toast('❌ No se pudo agregar a la cola: ' + ((e && e.message) || 'sin conexión'), { error: true });
+      return false;
+    });
+  }
+
+  // ── _colaDel: OPTIMISTA. Quita ya; si la RPC falla de verdad (red/permiso) lo repone.
+  function _colaDel(tipo, item) {
+    var arr = _colaCargar(tipo);
+    var idx = arr.indexOf(item);
+    if (idx < 0) return Promise.resolve(false);
+    arr.splice(idx, 1);
+    _colaCacheGuardar(tipo, arr);
+    _colaRepintar(tipo);
+    if (!_colaServer()) return Promise.resolve(true);
+    var params = { tipo: tipo };
+    if (item.idCola != null) params.id = String(item.idCola);
+    else params.codigoBarra = String(item.codigoBarra || '');
+    return _colaRpc('membrete_cola_quitar', params, true).then(function() { return true; })
+      .catch(function(e) {
+        var cur = _colaMem[tipo] || [];
+        cur.splice(Math.min(idx, cur.length), 0, item);
+        _colaCacheGuardar(tipo, cur);
+        _colaRepintar(tipo);
+        _toast('❌ No se pudo quitar de la cola: ' + ((e && e.message) || 'sin conexión'), { error: true });
+        return false;
+      });
+  }
+
+  // ── _colaClear: vacía local + servidor (lo llama el botón de imprimir la cola).
+  function _colaClear(tipo) {
+    _colaMem[tipo]   = [];
+    _colaIdent[tipo] = _colaKey(tipo);
+    _colaCacheGuardar(tipo, []);
+    _colaRepintar(tipo);
+    if (!_colaServer()) return Promise.resolve(true);
+    return _colaRpc('membrete_cola_vaciar', { tipo: tipo }).then(function() { return true; })
+      .catch(function(e) {
+        // La cola local ya se vació (los membretes se fueron al lote). Que el servidor
+        // no confirme se avisa, pero NO se repone: reponer duplicaría la impresión.
+        _toast('⚠ Cola vaciada en este equipo · el servidor no confirmó (' + ((e && e.message) || 'sin conexión') + ')', { error: true });
+        return false;
+      });
+  }
+
+  // ── Restaurar la cola (rollback del botón imprimir cuando el lote NO se creó).
+  function _colaRestaurar(tipo, items) {
+    _colaGuardar(tipo, items || []);
+    _colaRepintar(tipo);
+    if (!_colaServer()) return Promise.resolve(false);
+    var cadena = Promise.resolve();
+    (_colaMem[tipo] || []).forEach(function(it) {
+      cadena = cadena.then(function() {
+        return _colaRpc('membrete_cola_agregar', {
+          tipo:        tipo,
+          codigoBarra: String(it.codigoBarra || ''),
+          idProducto:  String(it.skuBase || it.idProducto || ''),
+          descripcion: String(it.descripcion || ''),
+          payload:     it,
+          device:      _colaDevice()
+        }).catch(function() { /* best-effort: la cola local ya los tiene */ });
+      });
+    });
+    return cadena.then(function() { return true; });
+  }
+
+  // ── TIEMPO REAL ─────────────────────────────────────────────
+  // Preferencia: `_config.realtime(onChange)` inyectado por la app (amo ↔ esclavo al
+  // instante). Sin él: polling de 4s MIENTRAS el modal de cola está abierto (se corta
+  // al cerrarlo — nada de intervalos huérfanos) + sync al recuperar el foco.
+  function _colaVivoArrancar(tipo) {
+    _colaVivoParar();
+    if (typeof _config.realtime === 'function') {
+      try {
+        var off = _config.realtime(function() { _colaSync(_colaTipo()); });
+        _colaRtOff = (typeof off === 'function') ? off : null;
+      } catch(_) { _colaRtOff = null; }
+    }
+    if (!_colaRtOff) {
+      _colaPollTimer = setInterval(function() {
+        if (!document.getElementById('msColaOverlay')) { _colaVivoParar(); return; }
+        if (document.hidden) return;
+        _colaSync(_colaTipo());
+      }, COLA_POLL_MS);
+    }
+    _colaVivoHandler = function() {
+      if (document.hidden) return;
+      if (!document.getElementById('msColaOverlay')) return;
+      _colaSync(_colaTipo());
+    };
+    try {
+      window.addEventListener('focus', _colaVivoHandler);
+      document.addEventListener('visibilitychange', _colaVivoHandler);
+    } catch(_) {}
+  }
+  function _colaVivoParar() {
+    if (_colaPollTimer) { try { clearInterval(_colaPollTimer); } catch(_) {} _colaPollTimer = null; }
+    if (typeof _colaRtOff === 'function') { try { _colaRtOff(); } catch(_) {} }
+    _colaRtOff = null;
+    if (_colaVivoHandler) {
+      try { window.removeEventListener('focus', _colaVivoHandler); } catch(_) {}
+      try { document.removeEventListener('visibilitychange', _colaVivoHandler); } catch(_) {}
+      _colaVivoHandler = null;
+    }
   }
 
   // ── MODAL CALIBRAR ────────────────────────────────────────
@@ -1015,7 +1309,11 @@
       +     '</div>'
       +   '</div>'
       + '</div>');
+    // Pinta YA con lo que hay en memoria/caché (optimista) y sincroniza con el
+    // servidor detrás; además arranca el canal en vivo (realtime o polling 4s).
     _colaRefrescarLista();
+    _colaSync(tipo);
+    _colaVivoArrancar(tipo);
   }
   function _colaTipo() {
     var ov = document.getElementById('msColaOverlay');
@@ -1232,22 +1530,23 @@
   // [v2026-06-05 SENIOR AUDIT FIX] Agrega un producto completo a la cola
   // resolviendo equivalencias y construyendo item con codigos[]+esSkuBase.
   // Backend usa esos campos para decidir si imprimir 1 (ME) o N+1 (WH).
-  function _colaAgregarProducto(p) {
-    var tipo = _colaTipo();
+  // [792] `tipoForzado` (opcional): permite agregar a la cola SIN que el modal de cola
+  // esté abierto (lo usa ME desde las cards del historial de precios). Devuelve
+  // Promise<boolean> — true si quedó encolado (en servidor o local si no hay rpc).
+  function _colaAgregarProducto(p, tipoForzado) {
+    var tipo = tipoForzado || _colaTipo();
     var items = _colaCargar(tipo);
     var item = _construirItemCompleto(p);
     if (items.find(function(it) { return it.codigoBarra === item.codigoBarra && it.skuBase === item.skuBase; })) {
       _toast('⚠ Ya está en la cola', { error: true });
-      return;
+      return Promise.resolve(false);
     }
-    items.push(item);
-    _colaGuardar(tipo, items);
     sonidos.subjobDone();
     var inp = document.getElementById('msColaBusq');
     if (inp) inp.value = '';
     var sugs = document.getElementById('msColaSugs');
     if (sugs) sugs.style.display = 'none';
-    _colaRefrescarLista();
+    return _colaAdd(tipo, item);   // optimista: pinta ya, RPC detrás, revierte si falla
   }
 
   // [AUDIT FIX #A] handler robusto via índice — no requiere escapar inline
@@ -1290,9 +1589,9 @@
   function _colaQuitar(idx) {
     var tipo = _colaTipo();
     var items = _colaCargar(tipo);
-    items.splice(idx, 1);
-    _colaGuardar(tipo, items);
-    _colaRefrescarLista();
+    var item = items[idx];
+    if (!item) return;
+    _colaDel(tipo, item);   // optimista: quita ya, RPC detrás, repone si falla
   }
   function _colaImprimir() {
     var tipo = _colaTipo();
@@ -1313,17 +1612,20 @@
     // los membretes NO se pierden. En éxito el lote queda en historial; en red-incierta (.catch) el modal
     // muestra PAUSADO_ERROR con reintento idempotente (mismo idempotencyKey → sin duplicar).
     var _backupCola = itemsCompletos.slice();
-    _colaGuardar(tipo, []);
+    // [792] Vaciar = RPC `membrete_cola_vaciar` (no solo el localStorage): si no,
+    // el otro dispositivo del mismo operador seguiría viendo lo ya impreso.
+    _colaClear(tipo);
     _colaCerrar();
     imprimirMembrete({
       tipo: tipo, items: itemsCompletos,
       onReject: function () {
-        try { _colaGuardar(tipo, _backupCola); } catch (_) {}
+        try { _colaRestaurar(tipo, _backupCola); } catch (_) {}
         try { _toast('⚠ No se pudo crear el lote — los membretes siguen en la cola'); } catch (_) {}
       }
     });
   }
   function _colaCerrar() {
+    _colaVivoParar();   // [792] sin leaks: corta polling/realtime al cerrar el modal
     var ov = document.getElementById('msColaOverlay');
     if (ov) { ov.style.animation = 'ms-out .22s ease-out forwards'; setTimeout(function(){ ov.remove(); }, 220); }
   }
@@ -2091,6 +2393,29 @@
     abrirMenuProductoCard: abrirMenuProductoCard,
     abrirAlertasPrecio:   abrirAlertasPrecio,
     arrancarBadgeAlertas: arrancarBadgeAlertas,
+    // [792] COLA DE MEMBRETES por usuario+zona — API pública para las apps.
+    // ME la usa para su contador y el estado "✓ En cola" de cada card del historial.
+    colaSync:             function(tipo) { return _colaSync(tipo || 'MEMBRETE_ME'); },
+    colaItems:            function(tipo) { return (_colaCargar(tipo || 'MEMBRETE_ME') || []).slice(); },
+    colaTotal:            function(tipo) { return (_colaCargar(tipo || 'MEMBRETE_ME') || []).length; },
+    colaTiene:            function(tipo, codigoBarra) {
+                            var cb = String(codigoBarra == null ? '' : codigoBarra).trim();
+                            if (!cb) return false;
+                            return (_colaCargar(tipo || 'MEMBRETE_ME') || []).some(function(it) {
+                              return String(it.codigoBarra || '') === cb || String(it.skuBase || '') === cb;
+                            });
+                          },
+    // Agrega SIN necesidad de abrir el modal de cola. Promise<boolean>.
+    colaAgregar:          function(tipo, producto) { return _colaAgregarProducto(producto, tipo || 'MEMBRETE_ME'); },
+    // Suscripción a cambios de la cola. Devuelve función para desuscribirse.
+    colaSuscribir:        function(cb) {
+                            if (typeof cb !== 'function') return function() {};
+                            _colaSubs.push(cb);
+                            return function() {
+                              var i = _colaSubs.indexOf(cb);
+                              if (i >= 0) _colaSubs.splice(i, 1);
+                            };
+                          },
     // [v1.4] Historial de lotes (botón Cola Envasados/WH/ME)
     abrirHistorialLotes:  abrirHistorialLotes,
     _histRefrescar:       _histRefrescar,

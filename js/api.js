@@ -3929,6 +3929,11 @@ const API = (() => {
     adhesivoImprimirEdge: _adhesivoImprimirEdge,
     // [Membretes] Edge print-adhesivo genérico (modal compartido vía edgeCall).
     printAdhesivoEdge:    _printAdhesivoEdgeRaw,
+    // [792] RPC genérica al esquema `mos` con la convención {p: jsonb}. La usa el modal
+    // compartido de membretes para su cola por usuario+zona (mos.membrete_cola_*).
+    // Sin token (Edge mint caída) _sbRpcMOS devuelve null → el modal lo trata como fallo
+    // de transporte y revierte el optimismo con su propio toast.
+    rpcMos: async (fn, p) => _sbRpcMOS(fn, { p: p || {} }, 'mos'),
     // [Reparación #4] Imprime ticket ESC/POS (client-side) por la Edge `imprimir` (cero GAS).
     imprimirTicketEdge:   _imprimirTicketEdge,
     // [v2.43.380] Heartbeat MASTER/ADMIN + chequeo de bloqueo, DIRECTO a Supabase (cero-GAS).
