@@ -1,0 +1,7 @@
+{
+  "url": "https://levo19.github.io/MOS/index.html",
+  "localStorage": { "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906477" },
+  "waitMs": 15000,
+  "evalAfter": "(()=>{const vis=e=>{if(!e)return false;const r=e.getBoundingClientRect();const st=getComputedStyle(e);return r.width>0&&r.height>0&&st.display!=='none'&&st.visibility!=='hidden'};const bnav=[...document.querySelectorAll('nav .bnav-btn')].map(b=>({lbl:((b.querySelector('.bnav-lbl')||{}).textContent||'').trim(), view:b.getAttribute('data-view')||'(menu)', visible:vis(b)}));const zg=[...document.querySelectorAll('.zona-nav-gated')].map(e=>({shown:e.classList.contains('zona-nav-shown'), visible:vis(e)}));return {bnav, hayMas:bnav.some(b=>/M[aá]s/i.test(b.lbl)), zonaGated:zg, zonaVisible:zg.some(z=>z.visible), flagLS:localStorage.getItem('mos_zona_modulo'), sheet:!!document.querySelector('#masSheetOvl'), fnMas:typeof (window.MOS||{}).abrirMasMenu};})()",
+  "screenshot": "_aud_nav.png"
+}

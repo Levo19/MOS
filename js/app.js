@@ -45308,6 +45308,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (btn) btn.classList.toggle('hidden', !esMaster);
     } catch (_) {}
     _zonaInstalarRipple();
+    // [808] 🎯 Considerados: badge al entrar + poll de 60s (se apaga al salir de la vista Zona).
+    // _consPollIniciar ya dispara la primera lectura (y es idempotente: limpia el timer previo).
+    _consPollIniciar();
     await _zonaCargarPanel(force);
   }
   // [RIZ UX] Delegado único: ripple táctil al presionar cards/botones de la lista (no rompe onclicks).
@@ -45403,9 +45406,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       };
       document.addEventListener('visibilitychange', _zonaVisHandler);
     }
+    _consPollIniciar();   // [808] el badge de 🎯 Considerados vive mientras dure la vista Zona
   }
   function _zonaDetenerAutoRefresh() {
     if (_zonaAutoTimer) { clearInterval(_zonaAutoTimer); _zonaAutoTimer = null; }
+    _consPollDetener();   // [808] al salir de Zona el poll de considerados muere (sin timers huérfanos)
     _zonaTickFreshStop();
     // El visibilitychange handler es barato y chequea S.view==='zona' → lo dejamos registrado una vez.
   }
@@ -47152,17 +47157,101 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       _zpkIng = m; _zpkIngTs = Date.now();
     } catch (_) { if (!_zpkIng) _zpkIng = {}; }
   }
-  async function _zpkCargar(zona){
-    _zpkRender(zona, null, true, 'pickup');
+  // ── [808] OVERLAY EN VIVO (pedido del dueño) ───────────────────────────────
+  // Antes el overlay era una FOTO FIJA: se cargaba una vez y nunca más. Si WH emitía una guía
+  // de salida con el overlay abierto, MOS seguía mostrando la deuda vieja → el semáforo de
+  // urgencia y el ORDEN de la lista quedaban desactualizados justo cuando importan. Ahora:
+  //   · poll cada ZPK_POLL_MS de la zona/pestaña ACTIVA + refresco inmediato al recuperar foco;
+  //   · SILENCIOSO: el esqueleto solo aparece en la apertura y al cambiar de pestaña;
+  //   · repinta SOLO si la firma del contenido cambió (skuBase+pendiente+despachado + total),
+  //     y preserva scroll / desglose abierto / texto del buscador alrededor del repintado;
+  //   · guarda de GENERACIÓN: una respuesta vieja (cambio de pestaña / cierre) nunca pinta;
+  //   · TODO se corta en zonaCerrarPickup (cero timers y cero listeners huérfanos).
+  const ZPK_POLL_MS  = 20 * 1000;   // refresco en vivo del overlay abierto
+  const ZPK_FRESH_MS = 10 * 1000;   // tick chico que solo reescribe "actualizado hace Ns"
+  let _zpkPollTimer = null, _zpkFreshTimer = null, _zpkFocoHandler = null;
+  let _zpkGen = 0;                  // contador de generación (anti respuesta-vieja)
+  let _zpkSig = '';                 // firma del último contenido PINTADO
+  let _zpkOkTs = 0;                 // ts del último refresco EXITOSO (para el indicador honesto)
+  let _zpkSinConexion = false;      // el último refresco falló → el dato viejo sigue en pantalla
+  let _zpkRefrescando = false;
+  // Qué está REALMENTE abierto ahora. No se puede usar _zpkLast para esto: _zpkLast solo se
+  // actualiza ante una carga EXITOSA, así que si la apertura falla seguiría apuntando a la
+  // zona anterior y el poll refrescaría la zona equivocada bajo el header nuevo.
+  let _zpkZonaViva = '', _zpkModoVivo = 'pickup';
+  // Firma del contenido: si no cambia, el DOM no se toca (cero parpadeo, cero scroll perdido).
+  function _zpkFirma(r){
+    const items = (r && r.items) || [];
+    return items.map(it => String(it.skuBase || '') + ':' + _zpkNum(it.pendiente) + ':' + _zpkNum(it.despachado)).join('|')
+      + '#' + _zpkNum((r && r.total_pendiente) || 0);
+  }
+  // Indicador honesto junto al chip "en vivo". Sin conexión = el dato es viejo, se dice.
+  function _zpkFreshLbl(){
+    if (!_zpkOkTs) return _zpkSinConexion ? '· sin conexión' : '';
+    const s = Math.max(0, Math.round((Date.now() - _zpkOkTs) / 1000));
+    const base = s < 60 ? ('actualizado hace ' + s + 's') : ('actualizado hace ' + Math.floor(s / 60) + ' min');
+    return '· ' + base + (_zpkSinConexion ? ' · sin conexión' : '');
+  }
+  function _zpkPintarFresh(){
+    try {
+      const el = document.getElementById('zpkFresh');
+      if (el) el.textContent = _zpkFreshLbl();
+    } catch (_) {}
+  }
+  function _zpkPollIniciar(){
+    _zpkPollDetener();
+    _zpkPollTimer  = setInterval(_zpkPollTick, ZPK_POLL_MS);
+    _zpkFreshTimer = setInterval(_zpkPintarFresh, ZPK_FRESH_MS);
+    _zpkFocoHandler = () => { if (document.visibilityState === 'visible') _zpkPollTick(); };
+    window.addEventListener('focus', _zpkFocoHandler);
+    document.addEventListener('visibilitychange', _zpkFocoHandler);
+  }
+  function _zpkPollDetener(){
+    if (_zpkPollTimer)  { clearInterval(_zpkPollTimer);  _zpkPollTimer  = null; }
+    if (_zpkFreshTimer) { clearInterval(_zpkFreshTimer); _zpkFreshTimer = null; }
+    if (_zpkFocoHandler) {
+      window.removeEventListener('focus', _zpkFocoHandler);
+      document.removeEventListener('visibilitychange', _zpkFocoHandler);
+      _zpkFocoHandler = null;
+    }
+  }
+  function _zpkPollTick(){
+    // Red de seguridad: si el overlay ya no está en el DOM, el poll se apaga solo.
+    if (!document.getElementById('zonaPickupOverlay')) { _zpkPollDetener(); return; }
+    if (document.visibilityState !== 'visible') return;
+    if (_zpkRefrescando) return;
+    if (_zpkModoVivo !== 'pickup' || !_zpkZonaViva) return;   // en rezagado no se poll-ea
+    _zpkCargar(_zpkZonaViva, true);
+  }
+  // silencioso=true → refresco automático: sin esqueleto y sin borrar la vista si falla.
+  async function _zpkCargar(zona, silencioso){
+    const gen = ++_zpkGen;
+    if (!silencioso) {
+      _zpkSig = ''; _zpkOkTs = 0; _zpkSinConexion = false;
+      _zpkZonaViva = zona; _zpkModoVivo = 'pickup';
+      _zpkRender(zona, null, true, 'pickup');
+    }
+    _zpkRefrescando = true;
     try {
       await _zpkIngAsegurar();
       const r = await API.zona.pickupDetalle({ zona });
+      if (gen !== _zpkGen) return;   // cambió de pestaña / se cerró mientras viajaba: NO pintar
       if (!r || r.ok === false) throw new Error((r && r.error) || 'sin datos');
       _zpkLast = { zona, modo: 'pickup', data: r };
       // El badge de la pestaña se actualiza con el dato fresco recién cargado.
       if (_zpkTabs) { const t = _zpkTabs.find(x => x.id === zona); if (t) t.pend = r.total_pendiente || 0; }
+      _zpkOkTs = Date.now(); _zpkSinConexion = false;
+      const sig = _zpkFirma(r);
+      // Nada cambió de verdad → no se toca el DOM (el operador sigue leyendo tranquilo).
+      if (silencioso && sig === _zpkSig) { _zpkPintarFresh(); return; }
+      _zpkSig = sig;
       _zpkRender(zona, r, false, 'pickup');
-    } catch (e) { _zpkRender(zona, { _error: String(e && e.message || e) }, false, 'pickup'); }
+    } catch (e) {
+      if (gen !== _zpkGen) return;
+      // En el refresco automático NUNCA se borra la vista: queda el dato viejo + "sin conexión".
+      if (silencioso) { _zpkSinConexion = true; _zpkPintarFresh(); return; }
+      _zpkRender(zona, { _error: String(e && e.message || e) }, false, 'pickup');
+    } finally { _zpkRefrescando = false; }
   }
   async function zonaAbrirPickup(){
     let zona = S.zonaActual;
@@ -47178,11 +47267,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } else {
       _zpkTabs = null;
     }
+    _zpkPollIniciar();   // [808] el overlay queda vivo mientras esté abierto
     await _zpkCargar(zona);
   }
-  // Cambio de pestaña (solo existe en modo ALMACÉN).
+  // Cambio de pestaña (solo existe en modo ALMACÉN). Es una APERTURA: sí muestra esqueleto.
   function zonaPickupTab(z){
     if (!_zpkTabs || !_zpkTabs.some(t => t.id === z)) return;
+    _zpkPollIniciar();   // reinicia el reloj del poll sobre la pestaña recién elegida
     _zpkCargar(z);
   }
   // Badges de pendientes por pestaña, en segundo plano y de a una (no martillar la RPC).
@@ -47205,16 +47296,30 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   async function zonaAbrirRezagado(zonaArg){
     const zona = zonaArg || S.zonaActual || (_zpkLast && _zpkLast.zona);
     if (!zona) return;
+    // [808] El rezagado es una FOTO de la semana pasada (no cambia sola): se corta el poll en vivo
+    // y se consume una generación para que un refresco de pickup en vuelo no pise esta vista.
+    _zpkPollDetener();
+    const gen = ++_zpkGen;
+    _zpkSig = ''; _zpkOkTs = 0; _zpkSinConexion = false;
+    _zpkZonaViva = zona; _zpkModoVivo = 'rezagado';
     _zpkRender(zona, null, true, 'rezagado');
     try {
       const r = await API.zona.rezagadoDetalle({ zona });
+      if (gen !== _zpkGen) return;
       if (!r || r.ok === false) throw new Error((r && r.error) || 'sin datos');
       _zpkLast = { zona, modo: 'rezagado', data: r };
       _zpkRender(zona, r, false, 'rezagado');
-    } catch (e) { _zpkRender(zona, { _error: String(e && e.message || e) }, false, 'rezagado'); }
+    } catch (e) {
+      if (gen !== _zpkGen) return;
+      _zpkRender(zona, { _error: String(e && e.message || e) }, false, 'rezagado');
+    }
   }
   function zonaCerrarPickup(){
     _zpkTabs = null;   // [multi-zona] al cerrar, el prefetch en curso se detiene solo
+    _zpkPollDetener(); // [808] cero timers y cero listeners huérfanos
+    _zpkGen++;         //        y ninguna respuesta en vuelo puede repintar un overlay muerto
+    _zpkSig = ''; _zpkOkTs = 0; _zpkSinConexion = false;
+    _zpkZonaViva = ''; _zpkModoVivo = 'pickup';
     const ov = document.getElementById('zonaPickupOverlay');
     if (ov) { ov.classList.remove('zpk-in'); setTimeout(() => { try { ov.remove(); } catch(_){} }, 220); }
   }
@@ -47252,6 +47357,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     return _zpkCanonMap[String(sku || '').trim().toUpperCase()] || fb || sku;
   }
+  // Escape para selectores de atributo (CSS.escape donde exista; fallback conservador).
+  function _zpkCssEsc(s){ return (window.CSS && CSS.escape) ? CSS.escape(String(s)) : String(s).replace(/["\\]/g, '\\$&'); }
   function _zpkRender(zona, r, loading, modo){
     modo = modo || 'pickup';
     const esRez = modo === 'rezagado';
@@ -47263,6 +47370,19 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       document.body.appendChild(ov);
       requestAnimationFrame(() => ov.classList.add('zpk-in'));
     }
+    // [808] Antes de repintar guardamos LA LECTURA DEL OPERADOR: posición del scroll,
+    // qué desgloses tenía abiertos (por data-sku) y qué escribió en el buscador. Sin esto
+    // un refresco en vivo lo mandaba de vuelta al inicio de la lista a mitad de un reclamo.
+    let _scrollPrev = 0, _abiertosPrev = [], _buscaPrev = '';
+    try {
+      const _lstPrev = ov.querySelector('.zpk-list');
+      if (_lstPrev) _scrollPrev = _lstPrev.scrollTop || 0;
+      ov.querySelectorAll('.zpk-item.zpk-open').forEach(el => {
+        const sk = el.getAttribute('data-sku'); if (sk) _abiertosPrev.push(sk);
+      });
+      const _inPrev = ov.querySelector('.zpk-search');
+      if (_inPrev) _buscaPrev = _inPrev.value || '';
+    } catch (_) {}
     let body;
     if (loading) body = '<div class="zpk-skel"></div><div class="zpk-skel"></div><div class="zpk-skel"></div><div class="zpk-skel"></div>';
     else if (r && r._error) body = '<div class="zpk-empty">No se pudo cargar · ' + _esc(r._error) + '</div>';
@@ -47360,7 +47480,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const titulo = esRez ? `📦 ${_esc(zona)}` : `🛒 ${_esc(zona)}`;
     const subt = esRez
       ? `<span class="zpk-rez-dot"></span> Rezagado semana pasada${bucketLbl ? ' · ' + bucketLbl : ''}`
-      : `<span class="zpk-live"></span> Pickup acumulado · en vivo`;
+      // [808] junto al chip "en vivo", el indicador HONESTO de cuándo se refrescó de verdad
+      // (lo reescribe solo _zpkPintarFresh cada ZPK_FRESH_MS; marca "· sin conexión" si falló).
+      : `<span class="zpk-live"></span> Pickup acumulado · en vivo <span class="zpk-fresh" id="zpkFresh">${_esc(_zpkFreshLbl())}</span>`;
     const accion = esRez
       ? `<button class="zpk-act zpk-act-print" onclick="MOS.zonaImprimirRezagado()">🖨 Imprimir</button>
          <button class="zpk-act" onclick="MOS.zonaAbrirPickup()">↩ Esta semana</button>`
@@ -47395,6 +47517,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${showKpis && !(r && r.sin_rezagado) ? `<input class="zpk-search" placeholder="🔎 Buscar producto…" oninput="MOS.zonaPickupFiltrar(this.value)" autocomplete="off">` : ''}
         <div class="zpk-list">${body}${sinBody}</div>
       </div>`;
+    // [808] …y se la devolvemos: desgloses abiertos, buscador y scroll exactamente donde estaban.
+    try {
+      if (_abiertosPrev.length) {
+        _abiertosPrev.forEach(sk => {
+          const el = ov.querySelector('.zpk-item[data-sku="' + _zpkCssEsc(sk) + '"]');
+          if (el) el.classList.add('zpk-open');
+        });
+      }
+      if (_buscaPrev) {
+        const _in = ov.querySelector('.zpk-search');
+        if (_in) { _in.value = _buscaPrev; zonaPickupFiltrar(_buscaPrev); }
+      }
+      if (_scrollPrev) { const _lst = ov.querySelector('.zpk-list'); if (_lst) _lst.scrollTop = _scrollPrev; }
+    } catch (_) {}
   }
   // [v2.43.379] Imprime el rezagado (80mm, todo el ancho) por la Edge `imprimir` (cero-GAS).
   async function zonaImprimirRezagado(){
@@ -47479,6 +47615,183 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     t += '\n\n\n\n\x1d\x56\x00';
     return t;
   }
+  // ════════════ [808] 🎯 CONSIDERADOS — EN MOS, AL COSTADO DE PICKUP ════════════
+  // Hasta hoy esto solo se veía en WH. El dueño lo pidió también en MOS: cuando INGRESA
+  // mercadería que alguna zona ALGUNA VEZ debió (el backend cruza cada ingreso contra los
+  // rezagados de las últimas 4 semanas) y hoy nadie la está pidiendo, cae acá para que el
+  // admin decida: ✔ Atendido (ya salió) o ✕ Descartar. Backend wh.* ya vivo — MOS solo lee
+  // (wh.considerados_listar) y resuelve (wh.considerado_resolver); no se tocó nada del server.
+  // El overlay REUSA el lenguaje visual del pickup (clases zpk-*): mismo card, header, lista y pie.
+  const CONS_POLL_MS = 60 * 1000;   // refresco del badge mientras la vista Zona esté visible
+  let _consItems = [];              // último listado conocido (fuente del badge y del overlay)
+  let _consPollTimer = null;
+  let _consCargando = false;
+  let _consResolviendo = 0;   // resoluciones optimistas en vuelo: el poll no debe resucitar la fila
+  // "hoy / ayer / hace Nd" — espeja el rótulo de WH para que las dos apps hablen igual.
+  function _consHaceLbl(ts){
+    try {
+      const d = Math.floor((Date.now() - new Date(String(ts).slice(0, 16)).getTime()) / 86400000);
+      return d <= 0 ? 'hoy' : d === 1 ? 'ayer' : 'hace ' + d + 'd';
+    } catch (_) { return ''; }
+  }
+  // Semanas transcurridas desde el bucket (lunes) en que la zona quedó debiendo.
+  function _consSemanasLbl(bucket){
+    try {
+      const t = new Date(String(bucket).slice(0, 10) + 'T12:00:00').getTime();
+      if (isNaN(t)) return '';
+      const sem = Math.max(1, Math.round((Date.now() - t) / (7 * 86400000)));
+      return 'hace ' + sem + ' sem';
+    } catch (_) { return ''; }
+  }
+  function _consPintarBadge(){
+    const b = $('zonaConsidBadge');
+    if (!b) return;
+    const n = _consItems.length;
+    if (n > 0) { b.textContent = n > 99 ? '99+' : String(n); b.style.display = ''; }
+    else { b.style.display = 'none'; }
+  }
+  // Lectura del listado + badge. Silenciosa: un fallo NO rompe la vista Zona (el próximo tick reintenta).
+  async function _consBadgeRefrescar(){
+    if (_consCargando) return;
+    // Con un ✔/✕ en vuelo el servidor todavía no lo sabe: leer ahora repintaría la fila
+    // que el operador acaba de resolver. Se salta este tick; el siguiente ya trae la verdad.
+    if (_consResolviendo > 0) return;
+    // Mismo gate que _zonaAutoRefrescar: con el módulo Zona OFF no se toca la red.
+    try { if (!(API.zona && API.zona.moduloOn && API.zona.moduloOn())) return; } catch (_) { return; }
+    _consCargando = true;
+    try {
+      const r = await API.zona.consideradosListar();
+      if (r && r.ok !== false) {
+        _consItems = Array.isArray(r.items) ? r.items : [];
+        _consPintarBadge();
+      }
+    } catch (e) {
+      try { console.warn('[considerados] listar:', e && (e.message || e)); } catch (_) {}
+    } finally {
+      _consCargando = false;
+      // Si el overlay está abierto se repinta SIEMPRE (aunque la lectura haya fallado): así el
+      // esqueleto nunca se queda clavado — en el peor caso se ve lo último bueno que sí teníamos.
+      if (document.getElementById('zonaConsidOverlay')) _consRender(false);
+    }
+  }
+  function _consPollIniciar(){
+    _consPollDetener();
+    _consBadgeRefrescar();   // al entrar a la vista, el badge es fresco desde el primer segundo
+    _consPollTimer = setInterval(() => {
+      if (S.view !== 'zona') return;                       // fuera de la vista Zona no se martilla
+      if (document.visibilityState !== 'visible') return;  // ni con la pestaña en segundo plano
+      _consBadgeRefrescar();
+    }, CONS_POLL_MS);
+  }
+  function _consPollDetener(){
+    if (_consPollTimer) { clearInterval(_consPollTimer); _consPollTimer = null; }
+  }
+  function zonaAbrirConsiderados(){
+    _consRender(!_consItems.length);   // esqueleto solo si todavía no hay nada cargado
+    _consBadgeRefrescar();             // y siempre se pide el dato fresco al abrir
+  }
+  function zonaCerrarConsiderados(){
+    const ov = document.getElementById('zonaConsidOverlay');
+    if (!ov) return;
+    ov.id = '';   // el id se libera YA: reabrir durante el fade-out crea un overlay limpio, no revive el moribundo
+    ov.classList.remove('zpk-in');
+    setTimeout(() => { try { ov.remove(); } catch(_){} }, 220);
+  }
+  // Resolver OPTIMISTA: la fila se va al instante; si la RPC falla, vuelve con aviso.
+  // El id viaja por data-* (delegación) — nunca interpolado dentro de un onclick.
+  async function _consResolver(id, estado){
+    id = String(id || '');
+    estado = (estado === 'ATENDIDO') ? 'ATENDIDO' : 'DESCARTADO';
+    if (!id) return;
+    const prev = _consItems.slice();
+    const el = document.querySelector('#zonaConsidOverlay .zpk-cons[data-cid="' + _zpkCssEsc(id) + '"]');
+    if (el) {
+      el.style.transition = 'opacity .25s ease, transform .25s ease';
+      el.style.opacity = '0'; el.style.transform = 'translateX(16px)';
+      setTimeout(() => { try { el.remove(); } catch (_) {} }, 250);
+    }
+    _consItems = prev.filter(x => String(x.id) !== id);
+    _consPintarBadge();
+    _consResolviendo++;
+    try {
+      const usuario = (S.session && S.session.nombre) || '';
+      const r = await API.zona.consideradoResolver({ id, estado, usuario });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'sin respuesta');
+      toast(estado === 'ATENDIDO' ? '✔ Considerado atendido' : 'Considerado descartado',
+            estado === 'ATENDIDO' ? 'ok' : 'info', 2500);
+      // Si la lista quedó vacía, repintar para mostrar el estado vacío amable.
+      if (!_consItems.length) _consRender(false);
+    } catch (e) {
+      _consItems = prev;                 // el optimismo se revierte: la fila vuelve tal cual estaba
+      _consPintarBadge(); _consRender(false);
+      toast('No se pudo resolver el considerado · vuelve a intentar', 'error', 4500);
+    } finally { _consResolviendo = Math.max(0, _consResolviendo - 1); }
+  }
+  function _consRender(loading){
+    let ov = document.getElementById('zonaConsidOverlay');
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'zonaConsidOverlay'; ov.className = 'zpk-overlay';
+      ov.onclick = (e) => { if (e.target === ov) zonaCerrarConsiderados(); };
+      // Delegación única: sobrevive a cada repintado del innerHTML (sin listeners duplicados).
+      ov.addEventListener('click', (e) => {
+        const b = (e.target && e.target.closest) ? e.target.closest('.zpk-cbtn') : null;
+        if (!b) return;
+        e.stopPropagation();
+        _consResolver(b.getAttribute('data-cid'), b.getAttribute('data-estado'));
+      });
+      document.body.appendChild(ov);
+      requestAnimationFrame(() => ov.classList.add('zpk-in'));
+    }
+    let scrollPrev = 0;
+    try { const l = ov.querySelector('.zpk-list'); if (l) scrollPrev = l.scrollTop || 0; } catch (_) {}
+    let body;
+    if (loading) body = '<div class="zpk-skel"></div><div class="zpk-skel"></div><div class="zpk-skel"></div>';
+    else if (!_consItems.length) {
+      body = '<div class="zpk-empty">Sin considerados 🎉<br><small>cuando ingrese mercadería que alguna vez se debió, aparece aquí</small></div>';
+    } else {
+      body = _consItems.map(it => {
+        const zonas = (Array.isArray(it.zonas) ? it.zonas : []).map(z => {
+          const sem = _consSemanasLbl(z.bucket);
+          return `<span class="zpk-chip zc-cdeuda">${_esc(z.zona || '—')} debía ${_zpkNum(z.pend)}${sem ? ' · ' + _esc(sem) : ''}</span>`;
+        }).join('');
+        const chips = [
+          `<span class="zpk-chip zc-ing">🆕 ingresó ${_esc(_consHaceLbl(it.creado))}</span>`,
+          it.guiaTipo ? `<span class="zpk-chip">${_esc(it.guiaTipo)}</span>` : '',
+          zonas || '<span class="zpk-chip">fue solicitado en semanas pasadas</span>'
+        ].filter(Boolean).join('');
+        return `<div class="zpk-item zpk-cons" data-cid="${_esc(it.id)}">
+            <div class="zpk-headrow">
+              <div class="zpk-info">
+                <div class="zpk-name">🎯 ${_esc(it.nombre || it.skuBase || '—')}</div>
+                <div class="zpk-chips">${chips}</div>
+              </div>
+              <div class="zpk-qty"><b>${_zpkNum(it.cant)}</b><small>ingresó</small></div>
+              <div class="zpk-cbtns">
+                <button class="zpk-cbtn ok" data-cid="${_esc(it.id)}" data-estado="ATENDIDO" title="Ya lo atendí / ya salió">✔</button>
+                <button class="zpk-cbtn no" data-cid="${_esc(it.id)}" data-estado="DESCARTADO" title="Descartar">✕</button>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+    const n = _consItems.length;
+    // OJO: acá el card NO lleva el `onclick="event.stopPropagation()"` del pickup a propósito —
+    // cortaría el burbujeo y la delegación de .zpk-cbtn (que vive en el overlay) nunca dispararía.
+    // No hace falta: el cierre por "tocar fuera" ya exige e.target === ov.
+    ov.innerHTML = `<div class="zpk-card">
+        <div class="zpk-top">
+          <div><div class="zpk-zona">🎯 Considerados</div>
+               <div class="zpk-subt"><span class="zpk-live"></span> Ingresó lo que alguna vez se debió</div></div>
+          <button class="zpk-x" onclick="MOS.zonaCerrarConsiderados()" aria-label="Cerrar">✕</button>
+        </div>
+        ${(!loading && n) ? `<div class="zpk-kpis"><div><b>${n}</b><small>por decidir</small></div></div>` : ''}
+        ${(!loading && n) ? '<div class="zpk-leyenda">✔ Atendido = ya lo mandaste · ✕ Descartar = no aplica · expiran solos a los 7 días</div>' : ''}
+        <div class="zpk-list">${body}</div>
+      </div>`;
+    try { if (scrollPrev) { const l = ov.querySelector('.zpk-list'); if (l) l.scrollTop = scrollPrev; } } catch (_) {}
+  }
+
   // [RIZ #2] Imprime el ticket desde el ÍCONO del grupo ROTADO. Respeta el filtro "del día":
   //   · modo 'dia'   → imprime el ticket del día activo (fecha = día seleccionado).
   //   · modo 'todos' → imprime HOY (default), no el universo entero.
@@ -50491,6 +50804,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
     zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar, zonaPickupTab,
     zonaAbrirRezagado, zonaImprimirRezagado,
+    // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
+    zonaAbrirConsiderados, zonaCerrarConsiderados,
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
     // [RIZ #4] proveedores reales por canónico (lazy-load por card en ALMACEN)

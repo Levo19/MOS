@@ -4104,6 +4104,17 @@ const API = (() => {
       ingresosRecientes: async (p) => _sbRpcMOS('ingresos_recientes', { p: { dias: (p && p.dias) || 3 } }, 'wh'),
       // [v2.43.379] Rezagado de la semana pasada (lo NO despachado) por zona, con historial. wh.zona_rezagado_detalle.
       rezagadoDetalle: async (p) => _sbRpcMOS('zona_rezagado_detalle', { p: { zona: (p && p.zona) || '' } }, 'wh'),
+      // [808] 🎯 CONSIDERADOS — backend wh.* YA VIVO (lo alimenta el trigger de guía de ingreso:
+      // cruza lo que entra contra los rezagados de las últimas 4 semanas). MOS solo lo CONSUME:
+      //   consideradosListar()  → {ok, items:[{id,skuBase,nombre,cant,zonas:[{zona,bucket,pend}],guiaTipo,creado}], total}
+      //   consideradoResolver() → {ok, quitados, total}   (estado: 'ATENDIDO' | 'DESCARTADO')
+      // Mismo patrón que pickupDetalle: RPC del esquema 'wh' vía _sbRpcMOS (perfil explícito).
+      consideradosListar:  async ()  => _sbRpcMOS('considerados_listar', { p: {} }, 'wh'),
+      consideradoResolver: async (p) => _sbRpcMOS('considerado_resolver', { p: {
+        id:      String((p && p.id) || ''),
+        estado:  String((p && p.estado) || ''),
+        usuario: String((p && p.usuario) || '')
+      } }, 'wh'),
       marcarAccion:    _zonaMarcarAccion,       // mos.zona_marcar_accion(p {skuBase,accion}) → {ok,[dedup],data} (perro: NO muta stock)
       // [RIZ · CAPA 5] nuevos: lista de compras (lectura), impresión 80mm (Edge riz-print), IA real (Edge /functions/ia)
       listaCompras:    _zonaListaComprasDirecto,// mos.zona_lista_compras(p)    → {ok,data:{zona,semana,items:[...]},_fresh}
