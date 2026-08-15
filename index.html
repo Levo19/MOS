@@ -793,20 +793,22 @@
     #cfgPanelInfra::before{
       content:'';position:absolute;inset:0;z-index:-2;pointer-events:none;border-radius:16px;
       background-image:
-        radial-gradient(38% 44% at 25% 30%, rgba(45,212,191,.16), transparent 70%),   /* cian/teal HUD */
-        radial-gradient(42% 50% at 80% 20%, rgba(99,102,241,.15), transparent 72%),    /* índigo */
-        radial-gradient(46% 55% at 72% 90%, rgba(245,184,73,.09), transparent 75%),    /* dorado (autoridad) */
-        radial-gradient(40% 48% at 10% 88%, rgba(74,168,255,.10), transparent 72%);    /* azul (zonas) */
-      background-size:160% 160%;background-position:0% 0%;
-      animation:cfgAurora 48s ease-in-out infinite alternate;
+        radial-gradient(45% 52% at 22% 26%, rgba(45,212,191,.34), transparent 68%),    /* cian/teal HUD */
+        radial-gradient(50% 58% at 82% 16%, rgba(99,102,241,.32), transparent 70%),     /* índigo */
+        radial-gradient(52% 60% at 74% 92%, rgba(245,184,73,.20), transparent 74%),     /* dorado (autoridad) */
+        radial-gradient(46% 54% at 8% 90%, rgba(74,168,255,.24), transparent 70%),      /* azul (zonas) */
+        radial-gradient(40% 50% at 50% 55%, rgba(139,122,255,.14), transparent 75%);    /* violeta central */
+      background-size:190% 190%;background-position:0% 0%;
+      animation:cfgAurora 34s ease-in-out infinite alternate;
+      filter:saturate(1.15);
     }
-    @keyframes cfgAurora{0%{background-position:0% 0%}50%{background-position:100% 60%}100%{background-position:40% 100%}}
+    @keyframes cfgAurora{0%{background-position:0% 0%}33%{background-position:100% 45%}66%{background-position:30% 100%}100%{background-position:80% 20%}}
     #cfgPanelInfra::after{
       content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:16px;
-      background-image:radial-gradient(rgba(125,170,220,.055) 1px, transparent 1.5px);
-      background-size:22px 22px;
-      -webkit-mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.5) 45%,transparent 92%);
-              mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.5) 45%,transparent 92%);
+      background-image:radial-gradient(rgba(140,185,235,.11) 1px, transparent 1.6px);
+      background-size:20px 20px;
+      -webkit-mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.55) 50%,transparent 94%);
+              mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.55) 50%,transparent 94%);
     }
     /* la pseudo del panel NO la alcanza el blanket → apagado explícito */
     @media (prefers-reduced-motion:reduce){ #cfgPanelInfra::before{animation:none} }
@@ -850,16 +852,16 @@
       #cfgPanelInfra .zone{backdrop-filter:blur(3px) saturate(1.05);-webkit-backdrop-filter:blur(3px) saturate(1.05)}
     }
     @keyframes cfgAuraOnline{
-      0%,100%{box-shadow:0 12px 34px -14px rgba(0,0,0,.5),0 0 0 1px rgba(16,185,129,.16) inset,0 0 16px rgba(16,185,129,.08)}
-      50%{box-shadow:0 12px 34px -14px rgba(0,0,0,.5),0 0 0 1px rgba(16,185,129,.3) inset,0 0 30px rgba(16,185,129,.2)}
+      0%,100%{box-shadow:0 14px 38px -14px rgba(0,0,0,.55),0 0 0 1px rgba(16,185,129,.3) inset,0 0 26px rgba(16,185,129,.16)}
+      50%{box-shadow:0 14px 38px -14px rgba(0,0,0,.55),0 0 0 1.5px rgba(16,185,129,.55) inset,0 0 52px rgba(16,185,129,.4)}
     }
     @keyframes cfgAuraVip{
-      0%,100%{box-shadow:0 0 22px rgba(245,184,73,.1),0 0 0 1px rgba(245,184,73,.14) inset}
-      50%{box-shadow:0 0 36px rgba(245,184,73,.22),0 0 0 1px rgba(245,184,73,.28) inset}
+      0%,100%{box-shadow:0 14px 38px -14px rgba(0,0,0,.55),0 0 28px rgba(245,184,73,.2),0 0 0 1px rgba(245,184,73,.3) inset}
+      50%{box-shadow:0 14px 38px -14px rgba(0,0,0,.55),0 0 60px rgba(245,184,73,.42),0 0 0 1.5px rgba(245,184,73,.55) inset}
     }
     @keyframes cfgAuraGo{
-      0%,100%{box-shadow:0 0 20px rgba(143,122,255,.1),0 0 0 1px rgba(143,122,255,.16) inset}
-      50%{box-shadow:0 0 34px rgba(143,122,255,.22),0 0 0 1px rgba(143,122,255,.3) inset}
+      0%,100%{box-shadow:0 14px 38px -14px rgba(0,0,0,.55),0 0 26px rgba(143,122,255,.2),0 0 0 1px rgba(143,122,255,.3) inset}
+      50%{box-shadow:0 14px 38px -14px rgba(0,0,0,.55),0 0 56px rgba(143,122,255,.42),0 0 0 1.5px rgba(143,122,255,.55) inset}
     }
 
     /* ── (4) ENTRADA escalonada (suave) ─────────────────────────────────────────
@@ -904,7 +906,7 @@
        backdrop (aún más lenta = más barata). Sin scroll horizontal: backdrop
        inset:0 recortado a la caja; las entradas solo mueven en Y. */
     @media (max-width:600px){
-      #cfgPanelInfra::before{animation-duration:72s}
+      #cfgPanelInfra::before{animation-duration:40s}   /* [808b] móvil: aurora bien visible (era 72s, casi quieta) */
       #cfgPanelInfra .cmd{gap:7px}
       #cfgPanelInfra .stat{padding:8px 11px}
     }
@@ -21243,7 +21245,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.799';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.800';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
