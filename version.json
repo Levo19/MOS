@@ -1,1 +1,1 @@
-{"version":"2.43.795","build":"2.43.795 la barra de menu del movil ahora se distingue del contenido: flota con una sombra hacia arriba y un hilo dorado sutil en el borde, para que se lea como barra separada y no como continuacion de la vista."}
+{"version":"2.43.796","build":"2.43.796 dos cosas del panel de dispositivos: (1) los equipos MOS (seccion VIP) ahora tambien muestran sus chips de permisos (camara, micro, notif, GPS) como los de almacen y cajeros; (2) la zona MosGo ahora siempre aparece aunque no tenga equipos en ruta, con un aviso de que estan por conectarse."}

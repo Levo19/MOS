@@ -958,6 +958,17 @@ const MOS = (() => {
           }
         }
       } catch(_) {}
+      // [804] Reportar permisos del equipo MOS (para los chips del panel · sección VIP). Primer
+      // reporte pronto, luego cada 30 min (los onchange lo refrescan en el acto ante cambios).
+      try {
+        if (typeof _reportarPermisosMOS === 'function') {
+          const _n2 = Date.now();
+          if (!window.__mosLastPermsReport || _n2 - window.__mosLastPermsReport > 30 * 60 * 1000) {
+            window.__mosLastPermsReport = _n2;
+            _reportarPermisosMOS();
+          }
+        }
+      } catch(_) {}
     } catch(_) {}
   }
   function _startMosHeartbeat() {
@@ -22143,16 +22154,23 @@ const MOS = (() => {
   // [636] 🛵 Zona GO (MosGo) — MISMO lenguaje visual que las demás zonas (cards de
   // dispositivo dibujadas con halo/avatar/botonera vía _dispDrawn), en identidad violeta.
   function _cfgZonaGo() {
+    // [805] La zona MosGo SIEMPRE existe (aunque no tenga equipos) — es una zona fija del negocio.
+    // Antes desaparecía sin equipos (return ''), lo que confundía ("¿dónde está MosGo?").
     const devs = _fleetDe((cfgData.dispositivos || []).filter(d => String(d.App || '').toLowerCase() === 'mosgo'));
-    if (!devs.length) return '';
     const online = devs.filter(_dispEnLinea).length;
     const liveChip = online ? `<span class="chip live"><span class="d" style="background:#10b981"></span>${online} en línea</span>` : '';
+    const cuerpo = devs.length
+      ? `<div class="fleet">${devs.map(d => _dispDrawn(d)).join('')}</div>`
+      : `<div class="callout" style="margin-top:12px;background:rgba(110,86,207,.08);border:1px dashed rgba(143,122,255,.35);color:#c4b5fd">Aún no hay equipos de MosGo en ruta. Cuando un equipo entre con la app MosGo, aparecerá aquí.</div>`;
+    const meta = devs.length
+      ? `${devs.length} equipo${devs.length === 1 ? '' : 's'} de preventa · venden contra stock de ALMACÉN · solo admins`
+      : `Zona de preventa en ruta · venden contra stock de ALMACÉN · solo admins`;
     return `<div class="zone${online ? ' online' : ''}" style="border-color:rgba(143,122,255,.45);background:linear-gradient(160deg,rgba(110,86,207,.10),transparent 55%)">
       <div class="zhead"><div class="zbadge" style="background:linear-gradient(135deg,#6e56cf,#8f7aff)">🛵</div>
         <div class="zt"><div class="row1"><h3 style="color:#c4b5fd">MosGo · Ruta</h3>${liveChip}<span class="chip" style="background:rgba(110,86,207,.18);border-color:#8f7aff;color:#c4b5fd">🛵 MosGo</span><span class="zid">ZONA-GO</span></div>
-        <div class="zmeta">${devs.length} equipo${devs.length === 1 ? '' : 's'} de preventa · venden contra stock de ALMACÉN · solo admins</div></div>
+        <div class="zmeta">${meta}</div></div>
       </div>
-      <div class="fleet">${devs.map(d => _dispDrawn(d)).join('')}</div>
+      ${cuerpo}
     </div>`;
   }
 
@@ -41701,6 +41719,40 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       });
     }
   })();
+
+  // [804] Reportar los PERMISOS de ESTE equipo MOS (cam/mic/audio/geo/notif/…) a mos.dispositivos
+  // (permisos_json) — igual que ME/WH. Sin esto, los equipos MOS (sección VIP) no mostraban chips
+  // de permisos en el panel. Se hookea a los onchange para mantenerlo fresco.
+  let _mosPermsHooked = false;
+  async function _reportarPermisosMOS() {
+    try {
+      let id = '';
+      try { id = _getOrCreateDeviceId() || localStorage.getItem('mos_device_id') || ''; } catch (_) { id = localStorage.getItem('mos_device_id') || ''; }
+      if (!id) return;
+      const perms = {};
+      try {
+        if ('Notification' in window) { const np = Notification.permission; perms.notif = (np === 'default') ? 'prompt' : np; }
+        else perms.notif = 'unsupported';
+      } catch (_) { perms.notif = 'unsupported'; }
+      const map = { camera: 'cam', microphone: 'mic', geolocation: 'geo' };
+      for (const [name, key] of Object.entries(map)) {
+        try {
+          const ps = await navigator.permissions.query({ name });
+          perms[key] = ps.state;
+          if (!_mosPermsHooked) ps.onchange = () => { try { _reportarPermisosMOS(); } catch (_) {} };
+        } catch (_) { perms[key] = 'unsupported'; }
+      }
+      if (perms.mic === 'granted') perms.audio = 'granted';
+      else if (perms.mic === 'denied') perms.audio = 'denied';
+      else perms.audio = 'prompt';
+      perms.install = matchMedia('(display-mode: standalone)').matches ? 'granted' : 'prompt';
+      try { perms.storage = (navigator.storage && navigator.storage.persisted) ? (await navigator.storage.persisted() ? 'granted' : 'prompt') : 'unsupported'; } catch (_) { perms.storage = 'unsupported'; }
+      _mosPermsHooked = true;
+      if (window.DeviceAuth && typeof DeviceAuth.rpc === 'function') {
+        await DeviceAuth.rpc('registrar_permisos_dispositivo', { deviceId: id, permisos: perms });
+      }
+    } catch (_) {}
+  }
 
   async function _pushInit(nombre, rol, askPermission = false) {
     console.log('[Push] init — firebase:', !!window.firebase, '| Notification:', typeof Notification !== 'undefined' ? Notification.permission : 'N/A', '| ask:', askPermission);
