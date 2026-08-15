@@ -47307,8 +47307,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${showKpis ? `<div class="zpk-actions">${accion}</div>` : ''}
         ${showKpis && ((r && r.items) || []).length ? '<div class="zpk-leyenda">orden por urgencia 🔴→⚪ · deuda + veces pedido + días esperando + stock de almacén</div>' : ''}
         ${showKpis && !(r && r.sin_rezagado) ? `<input class="zpk-search" placeholder="🔎 Buscar producto…" oninput="MOS.zonaPickupFiltrar(this.value)" autocomplete="off">` : ''}
-        <div class="zpk-list">${body}</div>
-        ${sinBody}
+        <div class="zpk-list">${body}${sinBody}</div>
       </div>`;
   }
   // [v2.43.379] Imprime el rezagado (80mm, todo el ancho) por la Edge `imprimir` (cero-GAS).
