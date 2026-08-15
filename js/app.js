@@ -47194,22 +47194,69 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     else {
       const items = (r && r.items) || [];
       if (!items.length) body = '<div class="zpk-empty">Sin pendientes en esta zona 🎉</div>';
-      else body = items.map(it => {
-        const sol = parseFloat(it.solicitado) || 0, desp = parseFloat(it.despachado) || 0, pend = parseFloat(it.pendiente) || 0;
+      else {
+        // [789] SEMÁFORO DE URGENCIA (pedido del dueño): la lista se ordena por urgencia,
+        // no solo por deuda. Factores RELATIVOS a la propia lista: deuda pendiente (45) +
+        // veces que la zona lo pidió (30) + días esperando desde el primer pedido (25);
+        // BONUS si el almacén SÍ tiene stock (te deben Y se puede despachar → reclamar).
+        const ahora = Date.now();
+        const enr = items.map(it => {
+          const pend = parseFloat(it.pendiente) || 0;
+          const peds = (it.historial || []).filter(h => h.tipo !== 'despacho');
+          const prim = (peds[0] && peds[0].fecha) || it.tsSolicitud || '';
+          let dias = 0;
+          if (prim) { const t = new Date(String(prim).slice(0, 16)); if (!isNaN(t)) dias = Math.max(0, (ahora - t.getTime()) / 86400000); }
+          const stock = (it.stockWh == null) ? null : (parseFloat(it.stockWh) || 0);
+          return { it, pend, veces: Math.max(1, peds.length), dias, stock, score: 0, nivel: 'ok' };
+        });
+        const mP = Math.max(1, ...enr.map(e => e.pend));
+        const mV = Math.max(1, ...enr.map(e => e.veces));
+        const mD = Math.max(0.05, ...enr.map(e => e.dias));
+        enr.forEach(e => {
+          let s = 45 * (e.pend / mP) + 30 * (e.veces / mV) + 25 * (e.dias / mD);
+          if (e.pend > 0 && e.stock !== null && e.stock > 0) s += (e.stock >= e.pend ? 15 : 8);
+          e.score = s;
+          e.nivel = s >= 70 ? 'rojo' : s >= 45 ? 'naranja' : s >= 25 ? 'ambar' : 'ok';
+        });
+        enr.sort((a, b) => (b.score - a.score) || (b.pend - a.pend));
+        r._criticos = enr.reduce((a, e) => a + (e.nivel === 'rojo' ? 1 : 0), 0);
+        body = enr.map(en => {
+        const it = en.it;
+        const sol = parseFloat(it.solicitado) || 0, desp = parseFloat(it.despachado) || 0, pend = en.pend;
         const pct = sol > 0 ? Math.min(100, Math.round(desp / sol * 100)) : 0;
         const hist = ((it.historial || []).map(h => {
           const esDesp = h.tipo === 'despacho';
           const cant = (h.cant != null ? h.cant : h.pedido);   // compat con shape viejo
+          // [789] ORIGEN claro de cada pedido: cierre de caja ↔ lista sombra ↔ RIZ.
+          const src = esDesp ? '🏭 despachó a zona'
+            : h.fuente === 'LISTA_IA' ? '👻 pidió (sombra)'
+            : h.fuente === 'RIZ' ? '📊 pidió (RIZ)'
+            : h.fuente === 'ME_CIERRE_CAJA' ? '🛒 pidió (cierre)'
+            : '🛒 pidió';
           return `<div class="zpk-hrow ${esDesp ? 'is-desp' : 'is-ped'}">
               <span class="zpk-hdate">${_zpkFechaLbl(h.fecha)}</span>
-              <span class="zpk-hsrc">${esDesp ? '🏭 despachó a zona' : '🛒 pidió (cierre)'}</span>
+              <span class="zpk-hsrc">${src}</span>
               <span class="zpk-hped">${esDesp ? '−' : '+'}${_zpkNum(cant)}</span>
             </div>`;
         }).join('')) || '<div class="zpk-hrow zpk-hempty">sin desglose por día</div>';
-        return `<div class="zpk-item" data-sku="${_esc(it.skuBase)}">
+        // [789] chips: veces pedido · días esperando · stock de almacén (verde=alcanza
+        // todo el pendiente, ámbar=parcial, punteado=sin stock) · alerta pulsante cuando
+        // el producto es crítico Y el almacén tiene stock (no hay excusa: reclamar).
+        const chips = [
+          `<span class="zpk-chip">×${en.veces} ${en.veces === 1 ? 'pedido' : 'pedidos'}</span>`,
+          en.dias >= 1 ? `<span class="zpk-chip">${Math.floor(en.dias)}d esperando</span>` : '',
+          en.stock === null ? '' :
+            en.stock <= 0 ? '<span class="zpk-chip zc-s0">📦 alm 0</span>' :
+            en.stock >= pend ? `<span class="zpk-chip zc-sok">📦 alm ${_zpkNum(en.stock)}</span>` :
+                               `<span class="zpk-chip zc-sparte">📦 alm ${_zpkNum(en.stock)}</span>`,
+          (en.nivel === 'rojo' && en.stock !== null && en.stock > 0 && pend > 0)
+            ? '<span class="zpk-chip zc-reclama">⚡ hay stock · reclamar</span>' : ''
+        ].filter(Boolean).join('');
+        return `<div class="zpk-item zpk-u-${en.nivel}" data-sku="${_esc(it.skuBase)}">
             <div class="zpk-headrow" onclick="MOS.zonaPickupToggle('${_esc(it.skuBase)}')">
               <div class="zpk-info">
                 <div class="zpk-name">${_esc(_zpkCanonName(it.skuBase, it.nombre))}</div>
+                <div class="zpk-chips">${chips}</div>
                 <div class="zpk-bar"><span style="width:${pct}%"></span></div>
               </div>
               <div class="zpk-qty"><b>${_zpkNum(pend)}</b><small>pend</small></div>
@@ -47221,7 +47268,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               ${hist}
             </div>
           </div>`;
-      }).join('');
+        }).join('');
+      }
     }
     if (esRez && !loading && !(r && r._error) && r && r.sin_rezagado) {
       body = '<div class="zpk-empty">Sin rezagado de la semana pasada 🎉<br><small>todo se despachó</small></div>';
@@ -47255,8 +47303,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           <div><div class="zpk-zona">${titulo}</div><div class="zpk-subt">${subt}</div></div>
           <button class="zpk-x" onclick="MOS.zonaCerrarPickup()" aria-label="Cerrar">✕</button>
         </div>
-        ${showKpis ? `<div class="zpk-kpis"><div><b>${nItems}</b><small>productos</small></div><div><b>${_zpkNum(total)}</b><small>uds ${esRez ? 'no despachadas' : 'pendientes'}</small></div></div>` : ''}
+        ${showKpis ? `<div class="zpk-kpis"><div><b>${nItems}</b><small>productos</small></div><div><b>${_zpkNum(total)}</b><small>uds ${esRez ? 'no despachadas' : 'pendientes'}</small></div>${(r && r._criticos) ? `<div><b class="zpk-kroj">${r._criticos}</b><small>críticos</small></div>` : ''}</div>` : ''}
         ${showKpis ? `<div class="zpk-actions">${accion}</div>` : ''}
+        ${showKpis && ((r && r.items) || []).length ? '<div class="zpk-leyenda">orden por urgencia 🔴→⚪ · deuda + veces pedido + días esperando + stock de almacén</div>' : ''}
         ${showKpis && !(r && r.sin_rezagado) ? `<input class="zpk-search" placeholder="🔎 Buscar producto…" oninput="MOS.zonaPickupFiltrar(this.value)" autocomplete="off">` : ''}
         <div class="zpk-list">${body}</div>
         ${sinBody}
