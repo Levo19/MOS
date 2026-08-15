@@ -25035,7 +25035,27 @@ const MOS = (() => {
       + (isSusp ? `<span class="mbtn" style="background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.4);color:#6ee7b7" onclick="event.stopPropagation();MOS.aprobarDispositivo('${idAttr}')" title="Reactivar">↻</span>` : '')
       + `<span class="mbtn edit" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>`
       + `</div>`;
-    return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${monitor}</div>`;
+    return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${_dispMiniPermChips(d)}${monitor}</div>`;
+  }
+
+  // [801] Mini-chips de permisos EN LA TARJETA (vistazo rápido: ¿este móvil se puede monitorear?).
+  // Verde=concedido · rojo=denegado · ámbar=pendiente/sin pedir. Los 4 relevantes para vigilar:
+  // 📷 cámara · 🎤 micrófono · 🔔 notificaciones (para despertarlo) · 📍 GPS. El detalle completo
+  // sigue en el botón 🛡️. Si el equipo aún no reportó permisos, no muestra nada.
+  function _dispMiniPermChips(d) {
+    let p = {};
+    try { p = (typeof d.Permisos_JSON === 'string') ? JSON.parse(d.Permisos_JSON) : (d.Permisos_JSON || {}); } catch (_) { p = {}; }
+    if (!p || !Object.keys(p).length) return '';
+    const col = (st) => st === 'granted' ? '#34d399' : (st === 'denied' ? '#f87171' : '#fbbf24');
+    const lbl = (st) => st === 'granted' ? 'activo' : (st === 'denied' ? 'DENEGADO' : 'pendiente');
+    const items = [['cam', '📷', 'Cámara'], ['mic', '🎤', 'Micrófono'], ['notif', '🔔', 'Notif.'], ['geo', '📍', 'GPS']];
+    const chips = items.map(([k, ic, nm]) => {
+      const st = p[k];
+      if (st === undefined) return '';
+      return `<span title="${nm}: ${lbl(st)}" style="display:inline-flex;align-items:center;gap:2px;font-size:10.5px;line-height:1;${st === 'granted' ? '' : 'opacity:.9'}">${ic}<span style="width:6px;height:6px;border-radius:50%;background:${col(st)};box-shadow:0 0 4px ${col(st)}88"></span></span>`;
+    }).join('');
+    if (!chips) return '';
+    return `<div class="dev-perms" style="display:flex;gap:8px;justify-content:center;padding:3px 0 1px;flex-wrap:wrap">${chips}</div>`;
   }
 
   // Pill con la app de origen del dispositivo (ME / WH / MOS) — útil para que
