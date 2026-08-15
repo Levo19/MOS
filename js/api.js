@@ -3457,6 +3457,14 @@ const API = (() => {
       if (action === 'getProductosDelta') {
         return _conFallbackMOS(() => _getProductosDeltaDirecto(p));
       }
+      // [786] Roles amo/esclavo (principal/extensión) por dispositivo → chip en el panel.
+      // Devuelve un mapa {deviceId: 'AMO'|'ESCLAVO'} (solo los que forman par HOY). {} si nada.
+      if (action === 'getRolesAmoEsclavo') {
+        return _conFallbackMOS(async () => {
+          const r = await _sbRpcMOS('dispositivos_amo_esclavo', { p: {} }, 'mos');
+          return (r && typeof r === 'object' && !r.ok && !r.error) ? r : (r && r.data ? r.data : {});
+        });
+      }
       // [FASE 1] getFinanzasRango → lectura directa (RPC finanzas_rango) con gate por-acción + frescura + fallback GAS.
       // Flag OFF (default) ⇒ IDÉNTICO a hoy (va directo a GAS). Devuelve {serie,totales,desde,hasta} igual que GAS.
       if (action === 'getFinanzasRango') {

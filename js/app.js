@@ -20503,6 +20503,8 @@ const MOS = (() => {
         API.get('getVendedoresMEBloqueados', {}).then(r => { if (r) { cfgData.bloqueosME = r; _cfgSaveCache('bloqueosME', r); } }).catch(() => {}),
         API.get('getSeries', {}).then(r => { if (r) { cfgData.series = r; _cfgSaveCache('series', r); } }).catch(() => {}),
         API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = _dispAplicarShield(r); _cfgSaveCache('dispositivos', cfgData.dispositivos); } }).catch(() => {}),
+        // [786] mapa amo/esclavo (principal/extensión) por dispositivo → chip en la tarjeta.
+        API.get('getRolesAmoEsclavo', {}).then(r => { if (r && typeof r === 'object') cfgData.rolesAmoEsclavo = r; }).catch(() => {}),
         // [635] solicitudes de extensión de horario → sección A de Infraestructura
         API.get('getAlertasExtensionHorario', {}).then(r => { if (r) cfgData.alertasHorario = r; }).catch(() => {}),
         API.get('getTaxonomia', {}).then(r => { if (Array.isArray(r)) { cfgData.taxonomia = r; _cfgSaveCache('taxonomia', r); } }).catch(() => {}),
@@ -20543,6 +20545,7 @@ const MOS = (() => {
       if (tab === 'infra') {
         tasks.push(API.get('getImpresoras', {}).then(r => { if (r) { cfgData.impresoras = r; _cfgSaveCache('impresoras', r); } }).catch(() => {}));
         tasks.push(API.get('getDispositivos', {}).then(r => { if (r) { cfgData.dispositivos = _dispAplicarShield(r); _cfgSaveCache('dispositivos', cfgData.dispositivos); } }).catch(() => {}));
+        tasks.push(API.get('getRolesAmoEsclavo', {}).then(r => { if (r && typeof r === 'object') cfgData.rolesAmoEsclavo = r; }).catch(() => {}));   // [786] chip amo/esclavo
         tasks.push(API.get('getAlertasExtensionHorario', {}).then(r => { if (r) cfgData.alertasHorario = r; }).catch(() => {}));   // [635]
         tasks.push(API.get('getSeries', {}).then(r => { if (r) { cfgData.series = r; _cfgSaveCache('series', r); } }).catch(() => {}));
       }
@@ -25053,7 +25056,16 @@ const MOS = (() => {
       + (isSusp ? `<span class="mbtn" style="background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.4);color:#6ee7b7" onclick="event.stopPropagation();MOS.aprobarDispositivo('${idAttr}')" title="Reactivar">↻</span>` : '')
       + `<span class="mbtn edit" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>`
       + `</div>`;
-    return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${_dispMiniPermChips(d)}${monitor}</div>`;
+    // [786] Chip amo/esclavo (principal/extensión) — SOLO cuando el equipo forma parte de un par
+    // en la MISMA app (caja ME con extensión, etc.). Misma persona en apps distintas (WH+ME+MosGo)
+    // NO es amo-esclavo → sin chip. El mapa lo calcula el server (mos.dispositivos_amo_esclavo).
+    const _rolAE = (cfgData.rolesAmoEsclavo || {})[String(d.ID_Dispositivo)];
+    const aeChip = _rolAE === 'AMO'
+      ? `<span class="chip" title="Equipo PRINCIPAL (amo) — tiene una extensión conectada a su caja" style="background:rgba(245,184,73,.16);border:1px solid rgba(245,184,73,.5);color:#fde3a7;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">👑 amo</span>`
+      : _rolAE === 'ESCLAVO'
+        ? `<span class="chip" title="Equipo EXTENSIÓN (esclavo) — depende de un principal; no cierra caja" style="background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.42);color:#cbd5e1;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">🔗 esclavo</span>`
+        : '';
+    return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}${aeChip}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${_dispMiniPermChips(d)}${monitor}</div>`;
   }
 
   // [801] Mini-chips de permisos EN LA TARJETA (vistazo rápido: ¿este móvil se puede monitorear?).
