@@ -1,1 +1,1 @@
-{"version":"2.43.802","build":"2.43.802 [fix] en Zonas/Pickup la seccion 'No se entiende' ahora scrollea JUNTO con la lista de productos (antes quedaba fija abajo y con muchas constancias tapaba los productos - visto en ZONA-01 con 479 items)"}
+{"version":"2.43.803","build":"2.43.803 [multi-zona] el boton Pickup en ALMACEN ya no abre vacio: abre el overlay con PESTANAS, una por zona, mostrando la deuda de cada una (con badge de uds pendientes que se carga en segundo plano). Tocar una pestana carga esa zona con su semaforo de urgencia completo."}

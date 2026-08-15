@@ -15256,6 +15256,16 @@
     .zpk-overlay.zpk-in .zpk-card { transform:translateY(0); opacity:1; }
     @media(min-width:640px){ .zpk-overlay{ align-items:center; } .zpk-card{ border-radius:20px; border-bottom:1px solid #1e293b; } }
     .zpk-top { display:flex; align-items:center; justify-content:space-between; padding:16px 18px 10px; }
+    /* [multi-zona] pestañas por zona cuando el pickup se abre desde ALMACÉN */
+    .zpk-tabs { display:flex; gap:6px; overflow-x:auto; padding:0 16px 10px; scrollbar-width:none; flex-shrink:0; }
+    .zpk-tabs::-webkit-scrollbar { display:none; }
+    .zpk-tab { flex:none; display:flex; align-items:center; gap:6px; font-size:.72rem; font-weight:800;
+      color:#94a3b8; background:#0d1526; border:1px solid #1e293b; border-radius:999px; padding:6px 12px;
+      cursor:pointer; min-height:32px; transition:color .15s, border-color .15s, background .15s; }
+    .zpk-tab.on { color:#fbbf24; background:rgba(245,158,11,.13); border-color:rgba(245,158,11,.55); }
+    .zpk-tab i { font-style:normal; font-size:.6rem; font-weight:800; color:#f87171;
+      background:rgba(239,68,68,.14); border-radius:999px; padding:1px 6px; }
+    .zpk-tab.on i { color:#fbbf24; background:rgba(245,158,11,.18); }
     .zpk-zona { font-size:1.05rem; font-weight:800; color:#e2e8f0; }
     .zpk-subt { font-size:.72rem; color:#64748b; display:flex; align-items:center; gap:.4rem; margin-top:2px; }
     .zpk-live { width:8px; height:8px; border-radius:50%; background:#34d399; box-shadow:0 0 0 0 rgba(52,211,153,.6); animation:zpkLive 1.8s infinite; }
@@ -21260,7 +21270,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.802';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.803';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21555,7 +21565,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.802"></script>
+<script src="js/app.js?v=2.43.803"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

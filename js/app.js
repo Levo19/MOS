@@ -47115,16 +47115,60 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return _zpkFechaLbl(s);
   }
   let _zpkLast = { zona: '', modo: 'pickup', data: null };   // [v2.43.379] para imprimir el rezagado
-  async function zonaAbrirPickup(){
-    const zona = S.zonaActual;
-    if (!zona) return;
+  // [multi-zona] En ALMACÉN el pickup propio no existe (el almacén no se pide a sí mismo:
+  // las ZONAS le piden a él). Ahí el overlay abre con PESTAÑAS, una por zona, mostrando
+  // la deuda de cada una — el jefe de almacén ve todo el reclamo desde un solo lugar.
+  let _zpkTabs = null;   // [{id, nombre, pend?}] o null = modo una-zona normal
+  function _zpkEsAlmacen(id){
+    const nom = ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === id) || {}).nombre;
+    return _esZonaAlmacen({ idZona: id, nombre: nom });
+  }
+  async function _zpkCargar(zona){
     _zpkRender(zona, null, true, 'pickup');
     try {
       const r = await API.zona.pickupDetalle({ zona });
       if (!r || r.ok === false) throw new Error((r && r.error) || 'sin datos');
       _zpkLast = { zona, modo: 'pickup', data: r };
+      // El badge de la pestaña se actualiza con el dato fresco recién cargado.
+      if (_zpkTabs) { const t = _zpkTabs.find(x => x.id === zona); if (t) t.pend = r.total_pendiente || 0; }
       _zpkRender(zona, r, false, 'pickup');
     } catch (e) { _zpkRender(zona, { _error: String(e && e.message || e) }, false, 'pickup'); }
+  }
+  async function zonaAbrirPickup(){
+    let zona = S.zonaActual;
+    if (!zona) return;
+    if (_zpkEsAlmacen(zona)) {
+      _zpkTabs = (S.zonaList || [])
+        .map(z => ({ id: z.idZona || z.id || z.nombre, nombre: z.nombre || z.idZona || z.id }))
+        .filter(z => z.id && !_zpkEsAlmacen(z.id));
+      if (!_zpkTabs.length) { toast('Sin zonas para mostrar', 'warn'); return; }
+      zona = (_zpkLast && _zpkLast.zona && _zpkTabs.some(t => t.id === _zpkLast.zona))
+        ? _zpkLast.zona : _zpkTabs[0].id;
+      _zpkPrefetchTabs();
+    } else {
+      _zpkTabs = null;
+    }
+    await _zpkCargar(zona);
+  }
+  // Cambio de pestaña (solo existe en modo ALMACÉN).
+  function zonaPickupTab(z){
+    if (!_zpkTabs || !_zpkTabs.some(t => t.id === z)) return;
+    _zpkCargar(z);
+  }
+  // Badges de pendientes por pestaña, en segundo plano y de a una (no martillar la RPC).
+  async function _zpkPrefetchTabs(){
+    const tabs = _zpkTabs;
+    if (!tabs) return;
+    for (const t of tabs) {
+      if (_zpkTabs !== tabs) return;               // se cerró/reabrió el overlay
+      if (t.pend != null) continue;
+      try {
+        const r = await API.zona.pickupDetalle({ zona: t.id });
+        if (r && r.ok !== false) t.pend = r.total_pendiente || 0;
+      } catch (_) {}
+      const el = document.querySelector('#zonaPickupOverlay .zpk-tab[data-z="' + (window.CSS && CSS.escape ? CSS.escape(String(t.id)) : String(t.id)) + '"] i');
+      if (el && t.pend != null) { el.textContent = _zpkNum(t.pend); el.style.display = ''; }
+    }
   }
   // [v2.43.379] Rezagado de la semana pasada (lo NO despachado) — misma vista detallada
   // con historial, para reclamos + botón de imprimir (80mm).
@@ -47140,6 +47184,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (e) { _zpkRender(zona, { _error: String(e && e.message || e) }, false, 'rezagado'); }
   }
   function zonaCerrarPickup(){
+    _zpkTabs = null;   // [multi-zona] al cerrar, el prefetch en curso se detiene solo
     const ov = document.getElementById('zonaPickupOverlay');
     if (ov) { ov.classList.remove('zpk-in'); setTimeout(() => { try { ov.remove(); } catch(_){} }, 220); }
   }
@@ -47298,11 +47343,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
              <span style="font-size:11px;color:#fbbf24;font-weight:700;white-space:nowrap">pidió ${_zpkNum(parseFloat(s.solicitado) || 0)} · ${_zpkFechaLbl(s.fecha)}</span>
            </div>`).join('')}
        </div>`;
+    // [multi-zona] pestañas por zona (solo cuando se abrió desde ALMACÉN). El badge
+    // muestra las uds pendientes de cada zona (se completa en segundo plano).
+    const tabsHtml = !_zpkTabs ? '' : `<div class="zpk-tabs">` + _zpkTabs.map(t => {
+      const on = t.id === zona;
+      return `<button class="zpk-tab${on ? ' on' : ''}" data-z="${_esc(t.id)}" onclick="MOS.zonaPickupTab('${_esc(t.id)}')">${_esc(t.nombre || t.id)}<i${t.pend != null ? '' : ' style="display:none"'}>${t.pend != null ? _zpkNum(t.pend) : ''}</i></button>`;
+    }).join('') + `</div>`;
     ov.innerHTML = `<div class="zpk-card${esRez ? ' zpk-rez-mode' : ''}" onclick="event.stopPropagation()">
         <div class="zpk-top">
           <div><div class="zpk-zona">${titulo}</div><div class="zpk-subt">${subt}</div></div>
           <button class="zpk-x" onclick="MOS.zonaCerrarPickup()" aria-label="Cerrar">✕</button>
         </div>
+        ${tabsHtml}
         ${showKpis ? `<div class="zpk-kpis"><div><b>${nItems}</b><small>productos</small></div><div><b>${_zpkNum(total)}</b><small>uds ${esRez ? 'no despachadas' : 'pendientes'}</small></div>${(r && r._criticos) ? `<div><b class="zpk-kroj">${r._criticos}</b><small>críticos</small></div>` : ''}</div>` : ''}
         ${showKpis ? `<div class="zpk-actions">${accion}</div>` : ''}
         ${showKpis && ((r && r.items) || []).length ? '<div class="zpk-leyenda">orden por urgencia 🔴→⚪ · deuda + veces pedido + días esperando + stock de almacén</div>' : ''}
@@ -50403,7 +50455,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
     // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
     zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
-    zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar,
+    zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar, zonaPickupTab,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
