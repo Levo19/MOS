@@ -210,9 +210,15 @@
     .avatar-menu-sep { height: 1px; background: #1e293b; margin: 4px 0; }
 
     /* ── Bottom nav (mobile only) ───────────────────────────── */
+    /* [803] La barra debe LEERSE separada del contenido (antes se fundía = "una cola"):
+       elevación con sombra hacia arriba (flota sobre las vistas) + hilo dorado sutil en el
+       borde + fondo de panel más definido/opaco. */
     #bottomnav {
-      background: rgba(6,13,31,.92); border-top: 1px solid #1e293b;
-      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      background: linear-gradient(180deg, rgba(12,21,42,.98), rgba(6,11,26,.99));
+      border-top: 1px solid rgba(148,163,184,.16);
+      box-shadow: 0 -12px 30px -8px rgba(0,0,0,.65),   /* elevación: separa del contenido */
+                  0 -1px 0 rgba(201,162,39,.35);        /* hilo dorado (combina con el activo) */
+      backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
     }
     /* [nav-scroll v2] Barra deslizable con el dedo: TODOS los módulos, íconos grandes,
        ~3-4 visibles a la vez + peek del siguiente (sensación de que hay más). */
@@ -21094,7 +21100,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.794';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.795';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
