@@ -31919,7 +31919,9 @@ const MOS = (() => {
       // [v2.43.90] Si los 3 reintentos de FCM fallaron, avisar al master claramente
       // y NO crear el WebRTC — el device no se va a enterar de nada.
       if (r.pushOk === false) {
-        toast('No se pudo notificar al dispositivo (FCM falló ' + (r.pushIntentos || 3) + 'x). Revisa tokens y volvé a intentar.', 'error', 9000);
+        // [800] Mensaje accionable: el fallo casi siempre es que el EQUIPO OBJETIVO no tiene la app
+        // abierta o no dio permiso de notificaciones (sin token útil). No es un bug del panel.
+        toast('No se pudo despertar el equipo. Debe tener su app ABIERTA y con notificaciones activadas. Si es una PC/laptop, el aviso remoto es poco fiable. (aviso falló ' + (r.pushIntentos || 3) + '×)', 'error', 10000);
         _espiaV2Cerrar('push_fallo');
         return;
       }
@@ -32178,13 +32180,16 @@ const MOS = (() => {
         console.log('[espia master] backend reporta CERRADA · cerrando UI', d);
         // [v2.43.93] UX honesto — toast con causa probable antes de cerrar
         const motivo = d.motivoFin || 'desconocido';
-        let mensaje = 'El dispositivo cerró la sesión';
+        let mensaje = 'El equipo cerró la sesión de monitoreo';
         if (/ice_failed/i.test(motivo)) {
-          mensaje = '⚠ Conexión imposible (NAT/firewall). Configura TURN en Properties para redes móviles/corporativas.';
+          mensaje = '⚠ No se pudo conectar (redes distintas sin TURN). Ponte en la misma wifi que el equipo, o configura TURN.';
+        } else if (/sin_streams/i.test(motivo)) {
+          // [800] causa MUY común: el equipo objetivo no pudo capturar cámara/mic.
+          mensaje = 'El equipo no pudo abrir su cámara/micrófono. Debe estar DESBLOQUEADO, con la app al frente y con permiso de cámara. (Las PC de escritorio muchas veces no tienen cámara.)';
         } else if (/page_unload/i.test(motivo)) {
-          mensaje = 'El usuario cerró la app en el dispositivo.';
+          mensaje = 'El usuario cerró la app en el equipo.';
         } else if (/connection_/i.test(motivo)) {
-          mensaje = '⚠ La conexión WebRTC falló (' + motivo + '). Probablemente NAT simétrico sin TURN.';
+          mensaje = '⚠ La conexión se cayó (' + motivo + '). Probablemente redes distintas sin TURN.';
         }
         toast(mensaje, 'warn', 8000);
         _espiaV2Cerrar('device_cerro');
@@ -32581,7 +32586,7 @@ const MOS = (() => {
           ${soloJumps}
         </div>
         <div style="display:flex;align-items:center;gap:6px;background:rgba(12,17,28,.55);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:6px 8px;box-shadow:0 10px 34px -14px #000;flex-shrink:0">
-          ${solo ? `<button onclick="MOS._espiaV2VolverMosaico()" title="Volver al mosaico" style="background:rgba(99,102,241,.2);${btnCss};width:auto;padding:0 13px;gap:6px;font-size:12px;font-weight:800;color:#c7d2fe;border-color:rgba(99,102,241,.4)">← Mosaico</button>` : ''}
+          ${solo ? `<button onclick="MOS._espiaV2VolverMosaico()" title="Volver a ver todas las cámaras" style="background:rgba(99,102,241,.2);${btnCss};width:auto;padding:0 13px;gap:6px;font-size:12px;font-weight:800;color:#c7d2fe;border-color:rgba(99,102,241,.4)">← Volver</button>` : ''}
           <button onclick="MOS._espiaV2ToggleMute()" id="espiaV2MuteBtn" title="Silenciar audio" style="background:rgba(255,255,255,.06);${btnCss}"
             onmouseover="this.style.background='rgba(34,211,238,.25)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">🔊</button>
           <button onclick="MOS._espiaV2Captura()" title="Capturar imagen" style="background:rgba(255,255,255,.06);${btnCss}"
