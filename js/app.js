@@ -12701,8 +12701,13 @@ const MOS = (() => {
       }
       if (!lineas.length) { toast('Esa guía no tiene líneas registradas', 'warn'); return; }
 
+      // [837] La curva se abre DESDE el editor de precios (Paso 2). Si solo cierro el card y la
+      // curva, el Paso 1 aparece con el editor de precios ENCIMA — el cruce que reportó el dueño.
+      // Se cierra toda esa pila antes de entrar.
       _curvaCardCerrar(true);
       _curvaOverlayCerrar();
+      try { document.getElementById('paso2Modal')?.remove(); } catch(_){}
+      try { S._paso2Modo = null; } catch(_){}
       setTimeout(() => {
         try { opsEntrarModoCostos(op.fuente, op.idGuia); }
         catch (e) { toast('No se pudo abrir: ' + (e.message || e), 'error'); }
@@ -26035,9 +26040,18 @@ const MOS = (() => {
     if (fijar && !d.Nombre_Manual) {
       const ir = await _modalConfirm(
         'Este equipo todavía tiene el nombre que se puso solo ("' + nom + '").\n\n' +
-        'Para fijarlo hay que bautizarlo primero, así se sabe de quién es. ¿Abrir el editor de nombre?',
+        'Para fijarlo hay que bautizarlo primero, así se sabe de quién es. Ponle el nombre, ' +
+        'guarda, y volvé a tocar 📌 para fijarlo.',
         { titulo: '✏️ Falta ponerle nombre', okText: 'Ponerle nombre' });
-      if (ir) abrirModalDispositivo(id);
+      if (!ir) return;
+      // [837] el modal de confirmación todavía se está cerrando; abrir encima lo dejaba en
+      // blanco. Se espera a que termine su animación y se verifica que el equipo siga listado.
+      setTimeout(() => {
+        const sigue = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
+        if (!sigue) { toast('Ese equipo ya no está en la lista — refrescá Infraestructura', 'warn'); return; }
+        try { abrirModalDispositivo(id); }
+        catch (e) { toast('No pude abrir el editor: ' + (e.message || e), 'error'); }
+      }, 280);
       return;
     }
     if (!fijar) {
