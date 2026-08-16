@@ -12647,6 +12647,24 @@ const MOS = (() => {
         }
       }
       if (!op) { toast('No encontré esa compra en las últimas semanas', 'warn'); return; }
+
+      // [834] El Paso 1 lee las líneas del caché por guía, no de la operación. La Mesa lo llena
+      // con un prefetch que acá nunca corrió → el modal abría "0 productos". Se cargan ahora.
+      const key = op.fuente + '_' + op.idGuia;
+      S._opsDetCache = S._opsDetCache || {};
+      let lineas = ((S._opsDetCache[key] || {}).lineas) || op.lineas || [];
+      if (!lineas.length) {
+        try {
+          const rd = await API.get('getOperacionDetalle', { fuente: op.fuente, idGuia: op.idGuia });
+          lineas = (rd && (rd.data ? rd.data.lineas : rd.lineas)) || [];
+          S._opsDetCache[key] = { lineas, ts: Date.now() };
+          op.lineas = lineas; op.lineasCount = lineas.length;
+        } catch (e) {
+          toast('No pude leer las líneas de esa guía: ' + (e.message || e), 'error'); return;
+        }
+      }
+      if (!lineas.length) { toast('Esa guía no tiene líneas registradas', 'warn'); return; }
+
       _curvaCardCerrar(true);
       _curvaOverlayCerrar();
       setTimeout(() => {
