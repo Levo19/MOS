@@ -11916,7 +11916,7 @@ const MOS = (() => {
       const r = await API.post('historialPrecioCosto', { idProducto: f.x.idCanonico });
       const d = r && (r.data || r);
       hist.P = (d && d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, m: x.motivo, s: x.source, ao: x.appOrigen })).filter(x => x.v > 0 && !isNaN(x.t));
-      hist.C = (d && d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, s: x.source })).filter(x => x.v > 0 && !isNaN(x.t));
+      hist.C = (d && d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, s: x.source, n: +x.veces || 1 })).filter(x => x.v > 0 && !isNaN(x.t));
     } catch(_){}
     f._hist = hist;
     if (cv) _p2ChartInit(cv, hist, f.precioEd || f.precioActual || 0, parseFloat(f.x.costoNuevo) || 0);
@@ -12133,11 +12133,11 @@ const MOS = (() => {
     // [800] costos descartados de la curva por el servidor (compra revertida o monto de bulto).
     // Se guardan aparte para listarlos tachados: ocultar sin decirlo sería mentir el historial.
     _covAnulados = (d && d.costosAnulados || []).map(x => ({
-      t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, mot: x.motivo
+      t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, mot: x.motivo, n: +x.veces || 1
     })).filter(x => x.v > 0 && !isNaN(x.t)).sort((a, b) => b.t - a.t);
     const hist = d ? {
       P: (d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, m: x.motivo, s: x.source, ao: x.appOrigen })).filter(x => x.v > 0 && !isNaN(x.t)),
-      C: (d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, s: x.source })).filter(x => x.v > 0 && !isNaN(x.t))
+      C: (d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, s: x.source, n: +x.veces || 1 })).filter(x => x.v > 0 && !isNaN(x.t))
     } : (f._hist || { P: [], C: [] });
     const nowP = parseFloat(f.precioEd) || (d && parseFloat(d.precioActual)) || parseFloat(f.precioActual) || 0;
     const nowC = parseFloat(f.x && f.x.costoNuevo) || (d && parseFloat(d.costoActual)) || 0;
@@ -12196,8 +12196,11 @@ const MOS = (() => {
         _covAnulados.map(a => {
           let fh = '';
           try { const dt = new Date(a.t); fh = dt.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }) + ' · ' + dt.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }); } catch(_){}
-          const mot = a.mot === 'COMPRA_REVERTIDA' ? 'compra revertida' : 'monto del bulto cargado como unitario';
+          const mot = a.mot === 'REVERSION' ? 'anulación de una compra (no es un costo)'
+                    : a.mot === 'COMPRA_REVERTIDA' ? 'la compra fue revertida'
+                    : 'monto del bulto cargado como unitario';
           return '<div class="cov-anul-r"><s>S/ ' + (+a.v).toFixed(2) + '</s>' +
+            (a.n > 1 ? '<span class="cov-anul-n">×' + a.n + '</span>' : '') +
             '<span class="cov-anul-f">' + fh + '</span>' +
             '<span class="cov-anul-m">' + _escapeHtml(mot) + '</span>' +
             (a.g ? '<span class="cov-anul-g">' + _escapeHtml(String(a.g)) + '</span>' : '') + '</div>';
@@ -12231,6 +12234,7 @@ const MOS = (() => {
       return '<div class="cov-reg ' + (esP ? 'is-p' : 'is-c') + '" onclick="MOS._curvaSelReg(' + i + ')">' +
         '<span class="cov-reg-ic">' + (esP ? '💚' : '🟡') + '</span>' +
         '<span class="cov-reg-v">S/ ' + (+r.rec.v).toFixed(2) + '</span>' +
+        ((r.rec.n || 1) > 1 ? '<span class="cov-reg-n" title="la guía aplicó este costo en ' + r.rec.n + ' líneas">×' + r.rec.n + '</span>' : '') +
         '<span class="cov-reg-f">' + fh + '</span>' +
         '<span class="cov-reg-u">' + _escapeHtml(String(r.rec.u || '')) + '</span></div>';
     }).join('');
@@ -12376,6 +12380,8 @@ const MOS = (() => {
       '.cov-anul-f{color:#7488a6;font-weight:700;flex:none}' +
       '.cov-anul-m{color:#8296b5;font-weight:600;flex:1;min-width:120px}' +
       '.cov-anul-g{font-size:9.5px;font-family:ui-monospace,monospace;color:#5f7192;background:#0f1a2c;border:1px solid #1d2942;border-radius:6px;padding:1px 5px;flex:none}' +
+      '.cov-anul-n{font-size:9.5px;font-weight:800;color:#f0a6a6;background:rgba(248,113,113,.13);border-radius:5px;padding:1px 5px;flex:none}' +
+      '.cov-reg-n{font-size:9.5px;font-weight:800;color:#8296b5;background:#0f1a2c;border:1px solid #1d2942;border-radius:5px;padding:0 5px;flex:none}' +
       '.cov-anul-pie{padding:8px 11px;font-size:10px;color:#5f7192;line-height:1.5;font-weight:600}' +
       '.cov-det{min-height:80px}' +
       '.cov-det-empty{border:1px dashed #26344c;border-radius:12px;padding:16px;text-align:center;font-size:12px;color:#7488a6;line-height:1.55}.cov-det-empty b{color:#aebbd2}' +
