@@ -12585,7 +12585,7 @@ const MOS = (() => {
     const borrados = desc.length
       ? '<div class="cvf-elim">' +
           '<button type="button" class="cvf-elim-t" onclick="MOS._curvaVerBorrados(this)">' +
-            '<span>🚫 acá hubo ' + desc.length + ' costo' + (desc.length === 1 ? '' : 's') + ' que se eliminó' + (desc.length === 1 ? '' : 'aron') + '</span>' +
+            '<span>🚫 acá hubo ' + desc.length + (desc.length === 1 ? ' costo que se eliminó' : ' costos que se eliminaron') + '</span>' +
             '<span class="cvf-elim-cv">ver</span></button>' +
           '<div class="cvf-elim-l" hidden>' +
             desc.map(x => {
