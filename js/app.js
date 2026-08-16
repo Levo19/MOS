@@ -9966,6 +9966,10 @@ const MOS = (() => {
       if (l.inputValue !== '' && l.inputValue != null) return;   // el admin ya escribió — no pisar
       if (l._bonif) return;                                       // ya restaurada
       const cod = String(l.codigoBarra || l.codigoProducto || l.codProducto || '').trim();
+      // [810] línea BORRADA por el admin: no revivir. mos.costos_registrados_guia devuelve el
+      // último registro COSTO de la guía SIN distinguir el source, así que tras la reversa
+      // (COMPRA_REVERSA con el costo restaurado) volvería a pintar un monto en una línea borrada.
+      if (_p1TumbaTiene(st.idGuia, cod)) return;
       const p = (cod && idx.byCod.get(cod)) || idx.byId.get(String(l.idCanonico || '')) || null;
       const reg = regs.find(x =>
         (p && x.idProducto && String(x.idProducto) === String(p.idProducto)) ||
@@ -9986,6 +9990,7 @@ const MOS = (() => {
       // [768] el registro guarda el costo FINAL (con IGV y percepción ya sumados);
       // se re-pinta plano: monto total = unit × cant, sin flags que lo re-inflen.
       l.inputValue = +(unit * cant).toFixed(2);
+      l._valorServidor = unit;      // [810] hay costo guardado → vaciar el campo SÍ es un borrado
       l._costoRegistrado = true;
       st._costosAplicados[cod] = _r1(unit);
       hubo = true;
@@ -10453,6 +10458,18 @@ const MOS = (() => {
   function _costosInputBlur(i) {
     const st = S._costosGuiaState; if (!st) return;
     const l = (st.lineas || [])[i]; if (!l) return;
+    // [810 · pedido del dueño: "si dejo vacío y hago clic afuera que se autoguarde el borrado"]
+    // Campo VACÍO + la línea SÍ tenía costo guardado (monto del servidor o cotejo ya registrado)
+    // = mismo camino que la × : borrado PERSISTENTE (detalle en 0 + reversa del catálogo).
+    // Una línea que nunca tuvo monto no dispara nada: quedarse vacía es su estado normal.
+    const _codB = String(l.codigoBarra || l.codigoProducto || l.codProducto || '').trim();
+    const _vacio = !((parseFloat(l.inputValue) || 0) > 0);
+    const _teniaGuardado = (parseFloat(l._valorServidor) || 0) > 0 ||
+                           ((st._costosAplicados || {})[_codB] != null);
+    if (_vacio && _teniaGuardado && !l._bonif && !l._borrando && !l._borrado) {
+      _costosGuiaQuitarMonto(i);
+      return;
+    }
     _costosAplicarDebounce();
     // [773] re-pintar la LÍNEA COMPLETA (no solo pedacitos): así los toggles se esconden
     // al instante al quedar el costo, y el veredicto + botón 💰 aparecen sin salir y
@@ -12621,14 +12638,23 @@ const MOS = (() => {
     // cotejo confirmado por el admin para ESTA guía (0 mientras no se sepa: se
     // muestra "falta cotejar", que es el estado honesto por defecto)
     const cot = (S._cotejoGuias && S._cotejoGuias[op.idGuia]) || null;
-    const nCotejadas = esME ? Math.min(total, parseInt((cot && cot.n) || 0, 10) || 0) : 0;
     // [766] PRECIOS = COLOCACIONES reales (pedido del dueño 13-ago): un producto
     // cuenta solo si hay un evento PRECIO (colocado o confirmado en Paso 2/catálogo)
     // POSTERIOR al cotejo de costo de ESTA guía — cot.p lo trae el RPC. La heurística
     // vieja ("el precio ya cuadra con el margen") marcaba ✓ compras que nadie revisó;
     // queda SOLO como fallback para guías costeadas antes de que existiera el rastro.
-    const cotN = parseInt((cot && cot.n) || 0, 10) || 0;
-    const cotP = Math.min(cotN, parseInt((cot && cot.p) || 0, 10) || 0);
+    // [810] descuento por costos BORRADOS: mos.quitar_costo_compra limpia productos.historial_cambios
+    //   pero NO borra la fila COSTO de mos.historial_precio_costo (además agrega una COMPRA_REVERSA,
+    //   también tipo COSTO) → cotejo_costos_guias sigue contando ese producto y la card decía
+    //   "Costos 1/1" con el costo ya borrado. Hasta que el conteo del servidor sepa de reversas,
+    //   se descuentan las líneas que ESTE dispositivo borró (tumba local, misma fuente que el Paso 1).
+    let _nBorr = 0;
+    const _tumbaG = _p1TumbaGuia(op.idGuia);
+    if (_tumbaG) lineas.forEach(l => { if (_tumbaG[String(l.codigoBarra || l.codigoProducto || '').trim()]) _nBorr++; });
+    const cotN = Math.max(0, (parseInt((cot && cot.n) || 0, 10) || 0) - _nBorr);
+    const cotP = Math.min(cotN, Math.max(0, (parseInt((cot && cot.p) || 0, 10) || 0) - _nBorr));
+    // [810] el conteo de ME también parte del cotejo ya descontado de borrados
+    const nCotejadas = esME ? Math.min(total, cotN) : 0;
     let conCosto = 0, conPrecio = 0, totalCosteados = 0;
     lineas.forEach((l, i) => {
       const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
@@ -12942,6 +12968,39 @@ const MOS = (() => {
     try { _mesaPrefetchLineas(); _mesaPrefetchCotejo(); } catch(_){}          // [v2.43.612] cargar líneas de las compras recién traídas
   }
 
+  // [810 · pedido del dueño: "al darme un margen negativo ya debe ser una alerta; pon un símbolo
+  //  de alerta sobre la card"] Productos de ESTA compra que hoy se venden por debajo (o al mismo
+  //  precio) de su costo: costo > 0 && venta > 0 && costo >= venta. Es el caso que reventó el
+  //  margen del día a −310%: el costo del BULTO entró como costo UNITARIO (glutamato 90GR a
+  //  S/320 en vez de S/2). La alerta se calcula sobre el catálogo (costo/venta vigentes del
+  //  producto de la línea), que es lo que se está vendiendo de verdad.
+  //  Nota: NO se reusa _groupAlertList('perdida') porque esa alerta es del CATÁLOGO y compara
+  //  PRESENTACIONES contra el costo del canónico × factor — nunca el costo vs. la venta del
+  //  mismo producto, que es lo que se pregunta acá.
+  function _mesaAlertaMargen(op) {
+    const k = op.fuente + '_' + op.idGuia;
+    const lineas = ((S._opsDetCache && S._opsDetCache[k] && S._opsDetCache[k].lineas) || op.lineas || []);
+    if (!lineas.length) return null;
+    let idx; try { idx = _prodIndex(); } catch(_) { return null; }
+    const nombres = [];
+    const vistos = new Set();
+    lineas.forEach(l => {
+      const cod = String(l.codigoBarra || l.codigoProducto || '').trim();
+      const p = (cod && idx.byCod.get(cod)) || idx.byId.get(String(l.idCanonico || ''));
+      if (!p) return;
+      const costo = parseFloat(p.precioCosto) || 0;
+      const venta = parseFloat(p.precioVenta) || 0;
+      if (!(costo > 0) || !(venta > 0) || costo < venta) return;
+      const key = String(p.idProducto || cod);
+      if (vistos.has(key)) return;
+      vistos.add(key);
+      nombres.push(String(p.descripcion || l.descripcion || cod).trim()
+                   + ' (costo S/ ' + _money(costo).toFixed(2) + ' ≥ venta S/ ' + _money(venta).toFixed(2) + ')');
+    });
+    if (!nombres.length) return null;
+    return { n: nombres.length, nombres };
+  }
+
   // [D] Card grande: proveedor protagonista, productos con fade, progreso 2 pasos.
   function _mesaComprasCard(op, est, i) {
     // [v2.43.605] Compra EN ZONA (entrada libre) vs guía de PROVEEDOR: se distinguen
@@ -12980,16 +13039,24 @@ const MOS = (() => {
         <div class="mesa-ph ${est.pctC < 100 ? 'lock' : est.pctP >= 100 ? 'ok' : est.pctP > 0 ? 'mid' : ''}" title="${_escapeHtml(tipPrecios)}"><span>Precios</span><i style="width:${est.pctC < 100 ? 0 : est.pctP}%"></i><b>${est.pctC < 100 ? '—' : est.precios.con + '/' + est.precios.total}</b></div>
       </div>
       ${(esZona && est.fase === 'pendiente') ? `<div class="mesa-zona-nota">ℹ️ Registro de zona — falta que un admin coteje los costos en el Paso 1</div>` : ''}`;
+    // [810] alerta de margen negativo: badge ⚠ sobre la card + lista de los productos afectados
+    const alerta = _mesaAlertaMargen(op);
+    const alertaTip = alerta
+      ? 'Costo mayor o igual al precio de venta: revisa el costo (¿pusiste el precio del bulto?)'
+        + ' · ' + alerta.nombres.slice(0, 6).join(' · ') + (alerta.n > 6 ? ` y ${alerta.n - 6} más` : '')
+      : '';
     return `
-      <button class="mesa-card tone-${est.tone} fase-${est.fase}${esZona ? ' is-zona' : ''}" id="mesacard_${_escapeHtml(k)}" data-fase="${est.fase}" style="animation-delay:${Math.min(i, 16) * 40}ms"
+      <button class="mesa-card tone-${est.tone} fase-${est.fase}${esZona ? ' is-zona' : ''}${alerta ? ' has-alerta' : ''}" id="mesacard_${_escapeHtml(k)}" data-fase="${est.fase}" style="animation-delay:${Math.min(i, 16) * 40}ms"
               onclick="MOS._mesaComprasEntrar('${op.fuente}','${_escapeHtml(op.idGuia)}')">
         ${est.fase === 'finalizado' ? '<span class="mesa-done-ribbon">✓</span>' : ''}
+        ${alerta ? `<span class="mesa-alerta-badge" title="${_escapeHtml(alertaTip)}">⚠${alerta.n > 1 ? `<b>${alerta.n}</b>` : ''}</span>` : ''}
         <div class="mesa-card-top">
           <span class="mesa-state s-${est.tone}">${est.ico} ${_escapeHtml(est.label)}</span>
           <span class="mesa-gid">${esZona ? '<span class="mesa-origen-pill">🏪 EN ZONA</span>' : ''}${foto}${gidCorto}</span>
         </div>
         <div class="mesa-card-prov"><span class="mesa-prov-ico">${esZona ? '🏪' : '🏭'}</span><span class="mesa-prov-name">${prov}</span></div>
         <div class="mesa-card-prods"><span class="mesa-prods-n">${lineas.length} ítem${lineas.length !== 1 ? 's' : ''}:</span> ${listaProd}</div>
+        ${alerta ? `<div class="mesa-alerta-nota" title="${_escapeHtml(alertaTip)}">⚠ ${alerta.n} producto${alerta.n !== 1 ? 's' : ''} con margen negativo — el costo es mayor o igual al precio de venta</div>` : ''}
         ${faseBar}
         <div class="mesa-cta s-${est.tone}">${ctaTxt}</div>
       </button>`;
@@ -13165,6 +13232,21 @@ const MOS = (() => {
       .mesa-card.fase-finalizado.is-zona{background:linear-gradient(180deg,#0e1626,rgba(52,211,153,.09))}
       .mesa-done-ribbon{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#34d399,#059669);color:#04140d;font-size:14px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px -3px rgba(52,211,153,.65);z-index:2;animation:mesaDoneIn .5s cubic-bezier(.34,1.56,.64,1) both}
       @keyframes mesaDoneIn{from{opacity:0;transform:scale(.2) rotate(-60deg)}to{opacity:1;transform:none}}
+      /* [810] MARGEN NEGATIVO: la card grita. Badge ⚠ en la esquina (fuera del flujo → no mueve
+         nada del layout) + borde rojo + nota de una línea. Convive con el ✓ de finalizado: el
+         ✓ va a la derecha y la ⚠ a la izquierda. */
+      .mesa-card.has-alerta{border-color:rgba(248,113,113,.55);background:linear-gradient(180deg,#0e1626,rgba(248,113,113,.075))}
+      .mesa-card.has-alerta:hover{box-shadow:0 16px 30px -14px rgba(248,113,113,.5)}
+      .mesa-alerta-badge{position:absolute;top:-8px;left:-6px;min-width:26px;height:26px;padding:0 5px;border-radius:999px;
+        background:linear-gradient(135deg,#f87171,#b91c1c);color:#fff5f5;font-size:13px;font-weight:900;
+        display:inline-flex;align-items:center;justify-content:center;gap:2px;
+        box-shadow:0 4px 14px -3px rgba(248,113,113,.75);z-index:3;animation:mesaAlertaPulso 2s ease-in-out infinite}
+      .mesa-alerta-badge b{font-size:10px;font-weight:900;line-height:1}
+      @keyframes mesaAlertaPulso{0%,100%{box-shadow:0 4px 14px -3px rgba(248,113,113,.75)}
+        50%{box-shadow:0 4px 14px -3px rgba(248,113,113,.75),0 0 0 6px rgba(248,113,113,.14)}}
+      .mesa-alerta-nota{font-size:9.5px;line-height:1.45;color:#fca5a5;background:rgba(248,113,113,.1);
+        border:1px solid rgba(248,113,113,.3);border-radius:8px;padding:5px 8px;text-align:left}
+      @media(prefers-reduced-motion:reduce){.mesa-alerta-badge{animation:none}}
       .mesa-card-flip{animation:mesaCardIn .42s cubic-bezier(.22,1,.36,1) both, mesaCardFlip .8s cubic-bezier(.4,0,.2,1) both}
       @keyframes mesaCardFlip{0%{box-shadow:0 0 0 0 rgba(52,211,153,0)}28%{box-shadow:0 0 0 3px rgba(52,211,153,.55),0 0 34px -4px rgba(52,211,153,.65);transform:translateY(-2px) scale(1.015)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0);transform:none}}
       @media(prefers-reduced-motion:reduce){.mesa-done-ribbon{animation:none}.mesa-card-flip{animation:mesaCardIn .42s both}}
@@ -13245,10 +13327,17 @@ const MOS = (() => {
     // Como en almacén, el campo queda VACÍO → el admin escribe el costo real desde MOS.
     const esME = String(op.fuente || '').toUpperCase() === 'ME';
     const lineas = cached.map(l => {
-      const bruto = esME ? 0 : (parseFloat(l.precioUnitario) || 0);
+      let bruto = esME ? 0 : (parseFloat(l.precioUnitario) || 0);
+      // [810] si el admin BORRÓ el costo de esta línea, la tumba local manda por encima de un
+      // cache viejo que todavía traiga el monto anterior (el detalle del servidor ya está en 0).
+      const codI = String(l.codigoBarra || l.codigoProducto || l.codProducto || '').trim();
+      if (bruto > 0 && _p1TumbaTiene(op.idGuia, codI)) bruto = 0;
       return {
         ...l,
         inputValue: bruto > 0 ? +(bruto * (parseFloat(l.cantidad) || 1)).toFixed(2) : '',
+        // [810] costo unitario que trajo el servidor: el blur lo usa para saber si vaciar el
+        // campo es un BORRADO real (había algo guardado) o solo dejar una línea vacía como estaba.
+        _valorServidor: bruto,
         _sugerencia: null
       };
     });
@@ -13647,6 +13736,11 @@ const MOS = (() => {
     const linea = st.lineas[idx];
     if (!linea) return;
     linea.inputValue = parseFloat(valor) || 0;
+    // [810] escribir un monto RESUCITA la línea borrada: sale de la tumba y deja de viajar como 0.
+    if ((parseFloat(linea.inputValue) || 0) > 0 && linea._borrado) {
+      linea._borrado = false;
+      _p1TumbaQuitar(st.idGuia, String(linea.codigoBarra || linea.codigoProducto || linea.codProducto || '').trim());
+    }
     const brutoUnit = _costosGuiaCalcularBruto(linea, st);
     const netoUnit  = brutoUnit / (1 + _IGV_RATE);
     // [H · optimista] mantener el cache de detalle en sync YA, para que la Mesa marque
@@ -13696,14 +13790,83 @@ const MOS = (() => {
     _costosGuiaAutosaveDebounce(idx);
   }
 
+  // ───────── [810] TUMBA LOCAL DE COSTOS BORRADOS ─────────
+  // El servidor NO tiene una marca "esta línea fue borrada": la reversa del catálogo
+  // (mos.quitar_costo_compra) deja un registro COMPRA_REVERSA en mos.historial_precio_costo
+  // con el costo RESTAURADO, y mos.costos_registrados_guia devuelve el ÚLTIMO registro de la
+  // guía sin distinguir el source → al reabrir el Paso 1, la re-hidratación podía volver a
+  // pintar un monto en una línea que el admin acababa de borrar. La tumba es una lápida
+  // LOCAL (por dispositivo) que dice "esta línea de esta guía está borrada": la consultan
+  // _opsCostosInitState y _p1HidratarCostos, y se levanta apenas el admin escribe otro monto.
+  const _P1_TUMBA_KEY = 'mos_p1_costos_borrados_v1';
+  const _P1_TUMBA_TTL = 45 * 86400000;   // 45 días (misma ventana que la Mesa de compras)
+  // memo en RAM: la Mesa la consulta por CADA línea de CADA card en cada re-render (poll 700ms)
+  // → leer+parsear localStorage cada vez sería un desperdicio. Solo esta pestaña la escribe.
+  function _p1TumbaLeer() {
+    if (S._p1TumbaMem) return S._p1TumbaMem;
+    let obj = {};
+    try {
+      const raw = localStorage.getItem(_P1_TUMBA_KEY);
+      const o = raw ? JSON.parse(raw) : {};
+      if (o && typeof o === 'object') obj = o;
+    } catch(_) { obj = {}; }
+    S._p1TumbaMem = obj;
+    return obj;
+  }
+  function _p1TumbaGuardar(obj) {
+    // poda por TTL: la tumba no puede crecer para siempre en el localStorage del admin
+    try {
+      const lim = Date.now() - _P1_TUMBA_TTL;
+      Object.keys(obj).forEach(g => {
+        Object.keys(obj[g] || {}).forEach(c => { if (!(obj[g][c] > lim)) delete obj[g][c]; });
+        if (!Object.keys(obj[g] || {}).length) delete obj[g];
+      });
+      S._p1TumbaMem = obj;
+      localStorage.setItem(_P1_TUMBA_KEY, JSON.stringify(obj));
+    } catch(_){}
+  }
+  function _p1TumbaGuia(idGuia) { return (idGuia && _p1TumbaLeer()[String(idGuia)]) || null; }
+  function _p1TumbaTiene(idGuia, cod) {
+    if (!idGuia || !cod) return false;
+    const t = _p1TumbaGuia(idGuia) || {};
+    return !!t[String(cod).trim()];
+  }
+  function _p1TumbaMarcar(idGuia, cod) {
+    if (!idGuia || !cod) return;
+    const obj = _p1TumbaLeer();
+    (obj[String(idGuia)] = obj[String(idGuia)] || {})[String(cod).trim()] = Date.now();
+    _p1TumbaGuardar(obj);
+  }
+  function _p1TumbaQuitar(idGuia, cod) {
+    if (!idGuia || !cod) return;
+    const obj = _p1TumbaLeer();
+    if (obj[String(idGuia)]) { delete obj[String(idGuia)][String(cod).trim()]; _p1TumbaGuardar(obj); }
+  }
+
   // [v2.43.611] × del chip de monto: DESHACE retroactivamente el costo.
   // 1) limpia el input local + optimista (línea, cache, op) → la card recalcula "sin costo".
   // 2) si ese costo ya se aplicó al catálogo (esta guía), revierte precio_costo al valor previo
   //    (mos.quitar_costo_compra, SQL 556) y refleja el costo revertido en S.productos.
+  // [810 · pedido del dueño: "la × solo limpiaba el cuadro y al actualizar volvía"] Ahora el
+  // borrado se PERSISTE: la línea viaja al detalle de la guía con precioUnitario 0 (RPC 383
+  // wh.actualizar_precios_detalle acepta 0 — solo rechaza null/negativos — y recalcula el monto
+  // total de la guía). Antes NADA se enviaba: guardarCostosGuia filtraba `precioUnitario > 0`,
+  // así que el valor viejo sobrevivía en wh.guia_detalle y reaparecía al refrescar.
+  // Si la red falla, el monto se RESTAURA en pantalla (no mentimos: sigue guardado en el server).
   async function _costosGuiaQuitarMonto(idx) {
     const st = S._costosGuiaState; if (!st) return;
     const linea = st.lineas[idx]; if (!linea) return;
+    // [810] IDEMPOTENCIA: la × y el autoborrado del blur pueden dispararse casi juntos
+    // (vaciar el campo + clickear la ×). El latch corta el segundo disparo.
+    if (linea._borrando) return;
+    const montoActual = parseFloat(linea.inputValue) || 0;
+    if (linea._borrado && !(montoActual > 0)) return;   // ya borrada y sin monto nuevo tecleado
     const cod = String(linea.codigoBarra || linea.codigoProducto || linea.codProducto || '').trim();
+    // snapshot para poder REVERTIR si la red falla
+    const prevInput = linea.inputValue;
+    const prevServidor = parseFloat(linea._valorServidor) || 0;
+    const prevAplicado = (st._costosAplicados || {})[cod];
+    const teniaMonto = montoActual > 0 || prevServidor > 0 || prevAplicado != null;
     // limpiar input local (vacío, no 0) + estado optimista
     linea.inputValue = '';
     linea._precioListo = 0;   // si tenía precio publicado marcado, el chip vuelve a vacío
@@ -13733,20 +13896,77 @@ const MOS = (() => {
       const eB = $('costosGuiaTotalBruto'); if (eB) eB.textContent = 'S/ ' + _money(tB).toFixed(2);
     } catch(_){}
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    // revertir el costo aplicado al catálogo (retroactivo) — best-effort, no bloquea la UI
-    if (cod && st.idGuia) {
-      try {
-        const r = await API.post('quitarCostoCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: [{ codProducto: cod }] });
-        const it = r && r.data && Array.isArray(r.data.items) ? r.data.items[0] : null;
-        if (it && it.ok && !it.sinCambio) {
-          // reflejar el costo revertido en el catálogo local (para sugerencias/margen)
-          const p = (S.productos || []).find(x => String(x.idProducto) === String(it.idCanonico));
-          if (p && it.costoRestaurado != null) p.precioCosto = it.costoRestaurado;
-          toast('↩ Costo deshecho' + (it.costoRestaurado > 0 ? ` · volvió a S/ ${(+it.costoRestaurado).toFixed(2)}` : ' · sin costo'), 'ok', 3000);
-        } else {
-          toast('↩ Monto quitado', 'ok', 2000);
-        }
-      } catch (e) { toast('⚠ No se pudo deshacer el costo en el catálogo: ' + (e.message || e), 'error', 5000); }
+    // [810] nada que borrar (línea que nunca tuvo monto): solo se limpió la pantalla.
+    if (!teniaMonto || !cod || !st.idGuia) {
+      try { const m0 = document.getElementById('mesaComprasModal'); if (m0) m0.innerHTML = _mesaComprasHTML(); } catch(_){}
+      try { _mesaComprasSyncBadge && _mesaComprasSyncBadge(); } catch(_){}
+      return;
+    }
+    // [810] marca de borrado: la usa guardarCostosGuia para dejar viajar la línea con 0
+    // (el filtro `> 0` la habría descartado) y la tumba para que no reviva al reabrir.
+    linea._borrado = true;
+    linea._borrando = true;
+    linea._valorServidor = 0;
+    clearTimeout(_costosAutosaveTimers[idx]);   // que el autosave por línea no re-postee el monto viejo
+    _p1TumbaMarcar(st.idGuia, cod);
+    const _selloB = (txt, cls) => { const e = document.getElementById('costosSaveState'); if (e) { e.textContent = txt; e.className = 'p1-save ' + (cls || ''); } };
+    _selloB('⏳ borrando…', 'is-busy');
+    try {
+      // 1) BORRADO REAL en el detalle de la guía: precioUnitario 0 explícito (RPC 383).
+      //    Sin idDetalle (compras EN ZONA: me.guias_detalle no guarda monto) no hay línea
+      //    que actualizar — el borrado vive solo en el catálogo/historial (paso 2).
+      if (linea.idDetalle) {
+        const rd = await API.post('llenarCostosGuia', {
+          idGuia: st.idGuia,
+          items: [{ idDetalle: linea.idDetalle, codigoProducto: linea.codigoProducto, precioUnitario: 0 }],
+          actualizarPrecioCosto: false,
+          usuario: S.session?.nombre || '',
+          sugerenciasInline: [],
+          _autosave: true
+        });
+        if (!rd || rd.ok === false) throw new Error((rd && rd.error) || 'el servidor no borró el costo de la línea');
+      }
+    } catch (e) {
+      // [810] la red falló → NO mentimos: el monto sigue guardado en el servidor, así que se
+      // restaura en pantalla y la línea sale de la tumba. El admin puede reintentar.
+      linea._borrado = false;
+      linea._borrando = false;
+      linea._valorServidor = prevServidor;
+      if (prevAplicado !== undefined) { st._costosAplicados = st._costosAplicados || {}; st._costosAplicados[cod] = prevAplicado; }
+      _p1TumbaQuitar(st.idGuia, cod);
+      // valor a repintar: lo que había en el campo, o (si el campo ya estaba vacío por el
+      // autoborrado del blur) el costo del servidor llevado a la unidad del modo de la línea.
+      let restaurar = prevInput;
+      if (!(parseFloat(restaurar) || 0) && prevServidor > 0) {
+        const cantR = parseFloat(linea.cantidad) || 1;
+        restaurar = ((linea._modo || st.inputMode) === 'TOTAL') ? +(prevServidor * cantR).toFixed(2) : +prevServidor.toFixed(2);
+      }
+      const inpR = document.querySelector('#costoGuiaCi_' + idx + ' input');
+      if (inpR) inpR.value = restaurar || '';
+      try { _costosGuiaUpdLinea(idx, String(restaurar || '')); } catch(_){}
+      _selloB('⚠ sin borrar', 'is-err');
+      toast('⚠ No se pudo borrar el costo: ' + (e.message || e) + ' — el monto sigue guardado, reintenta', 'error', 6000);
+      return;
+    } finally {
+      linea._borrando = false;
+    }
+    // 2) revertir el costo aplicado al catálogo (retroactivo). El detalle YA quedó en 0: si esta
+    //    parte falla, el borrado de la línea se mantiene y solo avisamos que el catálogo no se revirtió.
+    try {
+      const r = await API.post('quitarCostoCompra', { idGuia: st.idGuia, usuario: S.session?.nombre || '', items: [{ codProducto: cod }] });
+      const it = r && r.data && Array.isArray(r.data.items) ? r.data.items[0] : null;
+      if (it && it.ok && !it.sinCambio) {
+        // reflejar el costo revertido en el catálogo local (para sugerencias/margen)
+        const p = (S.productos || []).find(x => String(x.idProducto) === String(it.idCanonico));
+        if (p && it.costoRestaurado != null) p.precioCosto = it.costoRestaurado;
+        toast('🗑 Costo borrado' + (it.costoRestaurado > 0 ? ` · el catálogo volvió a S/ ${_money(it.costoRestaurado).toFixed(2)}` : ' · catálogo sin costo'), 'ok', 3500);
+      } else {
+        toast('🗑 Costo borrado de esta compra', 'ok', 2500);
+      }
+      _selloB('☁ borrado', 'is-ok');
+    } catch (e) {
+      _selloB('⚠ catálogo sin revertir', 'is-err');
+      toast('⚠ Costo borrado de la compra, pero el catálogo NO se revirtió: ' + (e.message || e), 'error', 6000);
     }
     // refrescar la Mesa de Compras si está abierta (recalcula "Paso 1 · costos X/Y" desde op.lineas optimista)
     try { const m = document.getElementById('mesaComprasModal'); if (m) m.innerHTML = _mesaComprasHTML(); } catch(_){}
@@ -13795,7 +14015,9 @@ const MOS = (() => {
     const l = st.lineas[idx];
     if (!l) return;
     const bruto = _costosGuiaCalcularBruto(l, st);
-    if (bruto <= 0) return; // sin costo: no enviar (evitar borrar)
+    // sin costo: no enviar. [810] el BORRADO ya no pasa por acá: tiene su propio camino
+    // explícito (_costosGuiaQuitarMonto, que manda 0 + revierte el catálogo).
+    if (bruto <= 0) return;
     const marca = $('costoGuiaMarca_' + idx);
     if (marca) marca.innerHTML = '<span title="Guardando…" style="color:#fbbf24">⏳</span>';
     try {
@@ -13827,13 +14049,21 @@ const MOS = (() => {
     const st = S._costosGuiaState;
     const { idGuia, lineas } = st;
     if (!idGuia) return;
+    // [810] Las líneas BORRADAS (× del chip o campo vaciado) viajan con precioUnitario 0 explícito:
+    //   el filtro `> 0` de antes las descartaba y el monto viejo sobrevivía en wh.guia_detalle
+    //   (ese era el bug del dueño: "la × solo limpia el cuadro y al actualizar vuelve").
+    //   La RPC 383 acepta 0 (solo rechaza null/negativos) y recalcula el monto total de la guía.
     const items = lineas
       .map(l => ({
         idDetalle: l.idDetalle,
         codigoProducto: l.codigoProducto,
-        precioUnitario: _costosGuiaCalcularBruto(l, st) // bruto c/IGV
+        precioUnitario: l._borrado ? 0 : _costosGuiaCalcularBruto(l, st), // bruto c/IGV
+        _borrado: !!l._borrado
       }))
-      .filter(it => it.precioUnitario > 0);
+      .filter(it => it.precioUnitario > 0 || it._borrado);
+    const nBorrados = items.filter(it => it._borrado).length;
+    const nCostos   = items.length - nBorrados;
+    // guard: si SOLO hay borrados igual se guarda (antes abortaba con "No hay precios para guardar")
     if (!items.length) {
       if (!silent) toast('No hay precios para guardar', 'error');
       return;
@@ -13856,7 +14086,14 @@ const MOS = (() => {
 
     try {
       const resp = await API.post('llenarCostosGuia', {
-        idGuia, items, actualizarPrecioCosto: updateMaster,
+        // [810] el flag interno _borrado no viaja; y jamás sale un monto negativo (guard duro).
+        //   El monto NO se re-redondea acá a propósito: el costo unitario se venía guardando con
+        //   la precisión del cálculo (total ÷ cantidad) y redondearlo ahora movería céntimos ya
+        //   registrados en guías vivas. El redondeo a 2 decimales sigue siendo cosa de la vista (_money).
+        idGuia,
+        items: items.map(it => ({ idDetalle: it.idDetalle, codigoProducto: it.codigoProducto,
+                                  precioUnitario: Math.max(0, +it.precioUnitario || 0) })),
+        actualizarPrecioCosto: updateMaster,
         usuario: S.session?.nombre || '',
         sugerenciasInline                       // [v41.20] aplica directo desde inline
       });
@@ -13865,8 +14102,9 @@ const MOS = (() => {
       // [703] en autoguardado silencioso solo avisamos si hubo un efecto que el usuario NO pidió
       // explícitamente (recálculo automático de precios de venta) — eso siempre se anuncia.
       if (!silent || ventaAuto > 0 || sugerenciasInline.length)
-        toast('✓ ' + items.length + ' costos guardados'
-              + (updateMaster ? ' + catálogo MOS' : '')
+        toast((nCostos ? '✓ ' + nCostos + ' costos guardados' : '🗑 ' + nBorrados + ' costo(s) borrado(s)')
+              + (nBorrados && nCostos ? ' · 🗑 ' + nBorrados + ' borrado(s)' : '')
+              + (updateMaster && nCostos ? ' + catálogo MOS' : '')
               + (ventaAuto > 0 ? ' · ✨ ' + ventaAuto + ' precios auto-recalc. con margen objetivo' : '')
               + (sugerenciasInline.length ? ' · ' + sugerenciasInline.length + ' precios aplicados' : ''),
               'ok');
@@ -40608,14 +40846,41 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
 
   // ── Modal Productos Vendidos ─────────────────────────────────
+  // [796] REDISEÑO pedido por el dueño. Antes la tabla mostraba Cant · Precio · Costo u. ·
+  // Costo total · ✎: puro costo, sin NADA contra qué compararlo. El 14-ago un solo SKU con
+  // el costo mal cargado (AJINOMOTO GLUTAMATO 90GR / LEV1564: costo S/320, precio S/2.50)
+  // hundió el margen del día a −17.4% cuando el real era +16.8%, y estuvo 4 días invisible
+  // porque nadie podía ver "cobré X y me costó Y" en la misma fila. Ahora: se cobró · costó ·
+  // chip de margen (rojo si negativo) y la fila entera en rojo si el costo supera la venta.
+  // El ✎ de editar costo se fue: los costos se cargan desde el catálogo, no desde Finanzas.
   let _finProdFiltroSinCosto = false;
-  let _finProdEditSku = null;
+  let _finProdBusca = '';
+  let _finProdOrden = 'ingreso';   // [796] por defecto manda la plata, no la cantidad
+  let _finProdDir   = -1;          // -1 = descendente
 
   function finAbrirModalProductos() {
     const m = $('finModalProductos');
     if (!m) return;
     m.classList.remove('hidden'); m.classList.add('open');
     _finProdFiltroSinCosto = false;
+    _finProdBusca = '';
+    _finProdOrden = 'ingreso'; _finProdDir = -1;
+    const inp = $('finProdBuscar'); if (inp) inp.value = '';
+    _finRenderProductos();
+  }
+
+  // [796] Buscador en vivo: nombre Y SKU. Son 290+ filas por día; sin esto el overlay
+  // sólo servía para mirar, no para buscar. Mismo patrón que el .zpk-search del pickup.
+  function finProdFiltrar(q) {
+    _finProdBusca = String(q || '').toLowerCase().trim();
+    _finRenderProductos();
+  }
+
+  // [796] Orden alternable tocando el encabezado. El segundo toque sobre la MISMA columna
+  // invierte el sentido; al cambiar de columna arranca desc (asc sólo en nombre).
+  function finProdOrdenar(col) {
+    if (_finProdOrden === col) _finProdDir = -_finProdDir;
+    else { _finProdOrden = col; _finProdDir = (col === 'nombre') ? 1 : -1; }
     _finRenderProductos();
   }
 
@@ -40632,8 +40897,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _finRenderProductos() {
     const pl = _finPL;
     if (!pl) return;
-    const fmtM = v => 'S/ ' + parseFloat(v || 0).toFixed(2);
+    // Dinero SIEMPRE por _money(); cantidades de stock por _fmtQty() (nunca _money).
+    const fmtM = v => 'S/ ' + _money(v).toFixed(2);
+    const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const todos = pl.detalleProductos || [];
+    // Margen de fallback REAL que usó la RPC (mos.config → finMargenDefault). Hoy es 15,
+    // pero se lee del payload: si el dueño lo cambia, el chip "est. N%" lo sigue solo.
+    const defaultMargen = parseFloat(pl.defaultMargenUsado || 20);
     const haySinCosto = todos.some(p => p.sinCosto);
     const btn = $('finProdBtnSinCosto');
     if (btn) btn.classList.toggle('hidden', !haySinCosto);
@@ -40668,72 +40938,126 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       }
     }
 
-    const lista = _finProdFiltroSinCosto ? todos.filter(p => p.sinCosto) : todos;
+    // [796] Enriquecemos cada SKU UNA sola vez. `ingreso` es la clave nueva del SQL 796
+    // (cuánto se cobró de ese grupo). Para los SKU SIN costo real el SQL manda costoTotal=0:
+    // pintar "S/ 0.00" mentiría y el viejo "—" rompía cualquier fila de totales, así que
+    // reproducimos aquí EXACTAMENTE el fallback que usa la RPC — ingreso × (1 − margen/100) —
+    // y lo mostramos atenuado + chip "est. N%". Con eso la columna "Costó" suma el KPI
+    // costoVentas (verificado en 3 días: Δ ≤ S/0.23, puro redondeo fila a fila) y el margen
+    // del pie da EXACTO igual a margenPromedioPct, sin dejar de ser honesta sobre qué cifra
+    // es real y cuál estimada.
+    const filas = todos.map(p => {
+      const ingreso = _money(p.ingreso || 0);
+      const est     = !!p.esEstimado;
+      const costo   = est ? _money(ingreso * (1 - defaultMargen / 100)) : _money(p.costoTotal || 0);
+      // El margen REAL lo manda el servidor (margenPct); null = estimado o sin ingreso.
+      const margen  = est ? null : (p.margenPct == null ? null : parseFloat(p.margenPct));
+      return { p, ingreso, costo, est, margen, alerta: !est && costo > ingreso };
+    });
+
+    // Filtros: chip "Sin costo" (ya existía) + buscador por nombre/SKU.
+    let lista = _finProdFiltroSinCosto ? filas.filter(f => f.p.sinCosto) : filas;
+    if (_finProdBusca) {
+      const q = _finProdBusca;
+      lista = lista.filter(f => String(f.p.nombre || '').toLowerCase().indexOf(q) >= 0
+                             || String(f.p.sku    || '').toLowerCase().indexOf(q) >= 0);
+    }
+
+    // Orden. Por defecto mayor ingreso primero; empate se rompe siempre por plata.
+    const key = _finProdOrden, dir = _finProdDir;
+    lista = lista.slice().sort((a, b) => {
+      if (key === 'nombre') {
+        return dir * String(a.p.nombre || a.p.sku || '')
+                       .localeCompare(String(b.p.nombre || b.p.sku || ''), 'es');
+      }
+      let va, vb;
+      if      (key === 'cantidad') { va = parseFloat(a.p.cantidad) || 0; vb = parseFloat(b.p.cantidad) || 0; }
+      else if (key === 'costo')    { va = a.costo;  vb = b.costo; }
+      // Los estimados no tienen margen real: al ordenar por margen se van al fondo.
+      else if (key === 'margen')   { va = (a.margen == null ? -1e9 : a.margen); vb = (b.margen == null ? -1e9 : b.margen); }
+      else                         { va = a.ingreso; vb = b.ingreso; }
+      if (va === vb) return b.ingreso - a.ingreso;
+      return dir * (va - vb);
+    });
+
+    // Marca visual de la columna activa (▼/▲). textContent, nunca innerHTML.
+    try {
+      document.querySelectorAll('#finModalProductos .fin-prod-th').forEach(th => {
+        if (!th.getAttribute('data-fplbl')) th.setAttribute('data-fplbl', (th.textContent || '').trim());
+        const base = th.getAttribute('data-fplbl');
+        const act  = th.getAttribute('data-fpord') === key;
+        th.classList.toggle('is-activo', act);
+        th.textContent = act ? (base + (dir < 0 ? ' ▼' : ' ▲')) : base;
+      });
+    } catch (_) {}
+
     const conteo = $('finProdConteo');
     if (conteo) conteo.textContent = lista.length + ' de ' + todos.length + ' SKUs';
     const tbody = $('finProdTableBody');
     if (!tbody) return;
-    tbody.innerHTML = lista.map(p => {
-      const alertBadge = p.sinCosto
-        ? `<span class="text-amber-400 font-bold" title="Sin costo canónico">⚠</span>` : '';
-      // [v2.41.80] Cada fila es un GRUPO por skuBase. Cantidad = unidades base.
-      // cantPresent = cuántas presentaciones/líneas distintas se agruparon.
-      const cantPresent = parseFloat(p.cantPresent || 0);
+    tbody.innerHTML = lista.map(f => {
+      const p = f.p;
+      // [v2.41.80] Cada fila es un GRUPO por skuBase. `cantidad` = unidades BASE (ya
+      // multiplicadas por el factor); `cantPresent` = las mismas ventas contadas tal como
+      // se vendieron (packs/derivados). Si difieren, hubo presentaciones de por medio.
       const cantUds     = parseFloat(p.cantidad || 0);
-      // Mostrar "Nuds (Mpres)" si N != M (significa que hubo presentaciones)
-      const cantStr = cantUds !== cantPresent
-        ? `<strong>${cantUds}</strong><span class="text-[10px] text-slate-500 ml-1">uds · ${cantPresent} pres.</span>`
-        : `<strong>${cantUds}</strong>`;
-      const costoUnitStr = p.sinCosto
-        ? `<span class="text-amber-400/60">—</span>`
-        : `<span title="Costo canónico (por unidad base)">${fmtM(p.costoUnit)}</span>`;
-      const costoTotalStr = p.sinCosto
-        ? `<span class="text-amber-400/60">—</span>`
-        : `<span title="${cantUds} uds × ${fmtM(p.costoUnit)}">${fmtM(p.costoTotal)}</span>`;
-      const editBtn = p.sinCosto
-        ? `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-amber-400 hover:text-amber-200 px-1" title="Asignar costo canónico">✎</button>`
-        : `<button onclick="MOS.finEditarCostoProd('${p.sku}')" class="text-slate-600 hover:text-slate-300 px-1" title="Editar costo canónico">✎</button>`;
-      return `<tr class="hover:bg-slate-800/30 transition-colors">
+      const cantPresent = parseFloat(p.cantPresent || 0);
+      const hayPresent  = cantUds !== cantPresent;
+      const cantStr = hayPresent
+        ? `<strong>${_fmtQty(cantUds)}</strong><span class="text-[10px] text-slate-500 ml-1">uds</span>` +
+          `<div class="text-[10px] text-slate-500 font-normal" title="Se vendieron ${_fmtQty(cantPresent)} ítems tal como están en la presentación (packs/derivados) = ${_fmtQty(cantUds)} unidades base">${_fmtQty(cantPresent)} en presentación</div>`
+        : `<strong>${_fmtQty(cantUds)}</strong><span class="text-[10px] text-slate-500 ml-1">uds</span>`;
+      // Chip de margen: verde ≥15% · ámbar 0-15% · ROJO negativo · gris "est. N%".
+      const chip = f.est
+        ? `<span class="fin-mg-chip fin-mg-est" title="Sin costo real en el catálogo: el costo se estima al ${defaultMargen}% de margen">est. ${defaultMargen}%</span>`
+        : (f.margen == null
+            ? `<span class="fin-mg-chip fin-mg-est" title="Sin ingreso registrado: no se puede calcular el margen">—</span>`
+            : `<span class="fin-mg-chip ${f.margen < 0 ? 'fin-mg-neg' : (f.margen >= 15 ? 'fin-mg-ok' : 'fin-mg-bajo')}" title="Margen real: (se cobró − costó) ÷ se cobró">${f.margen.toFixed(1)}%</span>`);
+      const costoStr = f.est
+        ? `<span class="text-slate-500 italic" title="Costo ESTIMADO al ${defaultMargen}%: este SKU no tiene precio de costo en el catálogo">${fmtM(f.costo)}</span>`
+        : `<span title="${_fmtQty(cantUds)} uds × ${fmtM(p.costoUnit)}">${fmtM(f.costo)}</span>`;
+      const TIP_ALERTA = 'costo mayor que la venta: revisa el costo en el catálogo';
+      const warn = f.alerta
+        ? `<span class="text-red-400 font-bold" title="${TIP_ALERTA}">⚠</span>` : '';
+      return `<tr class="hover:bg-slate-800/30 transition-colors${f.alerta ? ' fin-prod-row-alerta' : ''}"${f.alerta ? ` title="${TIP_ALERTA}"` : ''}>
         <td class="px-3 py-2">
           <div class="flex items-start gap-1.5">
-            ${alertBadge}
-            <div>
-              <div class="text-slate-200 text-xs leading-snug">${p.nombre || p.sku}</div>
-              <div class="font-mono text-slate-500 text-xs">${p.sku}</div>
+            ${warn}
+            <div class="min-w-0">
+              <div class="text-slate-200 text-xs leading-snug">${_esc(p.nombre || p.sku)}</div>
+              <div class="font-mono text-slate-500 text-xs">${_esc(p.sku)}${hayPresent ? ' <span class="fin-prod-factor-pill">presentaciones</span>' : ''}</div>
             </div>
           </div>
         </td>
         <td class="px-2 py-2 text-right text-slate-200 whitespace-nowrap">${cantStr}</td>
-        <td class="px-2 py-2 text-right text-slate-400 whitespace-nowrap hidden sm:table-cell">${fmtM(p.precio)}</td>
-        <td class="px-2 py-2 text-right whitespace-nowrap hidden sm:table-cell">${costoUnitStr}</td>
-        <td class="px-2 py-2 text-right whitespace-nowrap">${costoTotalStr}</td>
-        <td class="px-1 py-2">${editBtn}</td>
+        <td class="px-2 py-2 text-right text-slate-100 whitespace-nowrap">${fmtM(f.ingreso)}</td>
+        <td class="px-2 py-2 text-right text-slate-400 whitespace-nowrap">${costoStr}</td>
+        <td class="px-2 py-2 text-right whitespace-nowrap">${chip}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">Sin datos</td></tr>';
-  }
+    }).join('') || '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">Sin datos</td></tr>';
 
-  function finEditarCostoProd(sku) {
-    _finProdEditSku = sku;
-    _setText('finProdCostoSku', sku);
-    const inp = $('finProdCostoInput');
-    if (inp) { inp.value = ''; inp.focus(); }
-    $('finProdCostoWrap')?.classList.remove('hidden');
-  }
-  function finCerrarCostoProd() {
-    _finProdEditSku = null;
-    $('finProdCostoWrap')?.classList.add('hidden');
-  }
-  async function finGuardarCostoProd() {
-    if (!_finProdEditSku) return;
-    const costo = parseFloat($('finProdCostoInput')?.value);
-    if (!costo || costo <= 0) { toast('Ingresa un costo válido', 'error'); return; }
-    try {
-      await API.post('actualizarCostoPorSku', { sku: _finProdEditSku, precioCosto: costo });
-      finCerrarCostoProd();
-      toast('Costo actualizado', 'ok');
-      await finCargar(); // refresca _finPL
-      _finRenderProductos();
-    } catch(e) { toast('Error: ' + e.message, 'error'); }
+    // [796] Fila de totales al pie: para cuadrar de un vistazo con los KPIs de arriba.
+    // Suma lo que se está VIENDO (si hay filtro/búsqueda activa lo dice), no el día entero.
+    const foot = $('finProdTableFoot');
+    if (foot) {
+      const tot = lista.reduce((a, f) => {
+        a.ing += f.ingreso; a.cos += f.costo; if (f.est) a.est++; return a;
+      }, { ing: 0, cos: 0, est: 0 });
+      const totIng = _money(tot.ing), totCos = _money(tot.cos);
+      const totMg  = totIng > 0 ? Math.round(((totIng - totCos) / totIng) * 1000) / 10 : 0;
+      const totCls = totMg < 0 ? 'fin-mg-neg' : (totMg >= 15 ? 'fin-mg-ok' : 'fin-mg-bajo');
+      const filtrado = lista.length !== todos.length;
+      foot.innerHTML = lista.length ? `<tr>
+        <td class="px-3 py-2 text-slate-200">
+          Total${filtrado ? ' <span class="text-[10px] text-amber-400 font-normal">(sólo lo filtrado)</span>' : ' del día'}
+          <div class="text-[10px] text-slate-500 font-normal">${lista.length} SKU${tot.est ? ` · ${tot.est} con costo estimado al ${defaultMargen}%` : ' · todos con costo real'}</div>
+        </td>
+        <td class="px-2 py-2"></td>
+        <td class="px-2 py-2 text-right text-slate-100 whitespace-nowrap">${fmtM(totIng)}</td>
+        <td class="px-2 py-2 text-right text-slate-300 whitespace-nowrap">${fmtM(totCos)}</td>
+        <td class="px-2 py-2 text-right"><span class="fin-mg-chip ${totCls}">${totMg.toFixed(1)}%</span></td>
+      </tr>` : '';
+    }
   }
 
   // ── Modal Tickets del Día ─────────────────────────────────────
@@ -51087,8 +51411,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Legacy stubs (no-op)
     liqCerrarDetalle,
     // Finanzas — modales detalle
+    // [796] finEditarCostoProd/finCerrarCostoProd/finGuardarCostoProd se retiraron junto
+    // con el botón ✎: los costos se cargan desde el catálogo, no desde Finanzas.
     finAbrirModalProductos, finToggleFiltroSinCosto,
-    finEditarCostoProd, finCerrarCostoProd, finGuardarCostoProd,
+    finProdFiltrar, finProdOrdenar,
     finAbrirModalTickets, finSetTicketFiltro,
     // Envasados — filtros modernos
     envSetRango, envSetOperador, envSetAgrupar, envToggleCustom, envSetCustom,

@@ -11123,6 +11123,58 @@
       letter-spacing: .04em;
       line-height: 1.2;
     }
+    /* [796] Chip de MARGEN por producto. Verde ≥15% · ámbar 0-15% · ROJO negativo.
+       El rojo es la señal que faltaba: un margen negativo significa que ese SKU se
+       está vendiendo por debajo de su costo de catálogo. */
+    .fin-mg-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; font-weight: 800;
+      padding: 1.5px 6px;
+      border-radius: 99px;
+      line-height: 1.3;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .fin-mg-ok   { background: rgba(16,185,129,.16); color: #6ee7b7; border: 1px solid rgba(16,185,129,.35); }
+    .fin-mg-bajo { background: rgba(245,158,11,.16); color: #fcd34d; border: 1px solid rgba(245,158,11,.35); }
+    .fin-mg-neg  { background: rgba(239,68,68,.20);  color: #fca5a5; border: 1px solid rgba(239,68,68,.5); }
+    .fin-mg-est  { background: rgba(100,116,139,.18); color: #94a3b8; border: 1px dashed rgba(148,163,184,.4); }
+    /* [796] Fila cuyo COSTO supera el INGRESO: costo mal cargado en el catálogo.
+       Un solo SKU así (AJINOMOTO 90GR: costo S/320 · precio S/2.50) hundió el margen
+       del día a −17.4% cuando el real era +16.8%. Ahora salta a la vista. */
+    .fin-prod-row-alerta {
+      background: rgba(239,68,68,.09);
+      box-shadow: inset 3px 0 0 rgba(239,68,68,.75);
+    }
+    .fin-prod-row-alerta:hover { background: rgba(239,68,68,.16); }
+    /* [796] Buscador del overlay — mismo lenguaje visual que .zpk-search del pickup */
+    .fin-prod-search {
+      width: 100%;
+      padding: 8px 11px;
+      background: #0d1526;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: .8rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .fin-prod-search:focus { border-color: #3b5bdb; }
+    /* [796] Encabezados ordenables: se nota que se pueden tocar */
+    .fin-prod-th { cursor: pointer; user-select: none; transition: color .12s; }
+    .fin-prod-th:hover { color: #cbd5e1; }
+    .fin-prod-th.is-activo { color: #93c5fd; }
+    /* [796] La celda de cantidad puede tener dos renglones (uds + "en presentación"):
+       alineamos todas las celdas arriba para que la fila no baile. Va aquí y no con
+       `align-top` de Tailwind porque tw.css es un build ESTÁTICO y esa clase no existe. */
+    #finProdTableBody td { vertical-align: top; }
+    /* [796] Fila de totales pegada al pie — cuadra de un vistazo con los KPIs */
+    .fin-prod-tfoot td {
+      position: sticky; bottom: 0;
+      background: #0b1220;
+      border-top: 1px solid #334155;
+      font-weight: 800;
+    }
     /* Skeleton breathing — más natural que shimmer estático */
     .fin-skel-on {
       background: linear-gradient(90deg,
@@ -18714,29 +18766,32 @@
     </div>
     <!-- [v2.41.79] Alerta prominente cuando >50% del costo es estimado -->
     <div id="finProdAlerta" class="hidden px-4 pt-3"></div>
-    <!-- inline cost editor dentro del modal -->
-    <div id="finProdCostoWrap" class="hidden p-3 border-b border-amber-900/40 bg-amber-950/20 flex items-center gap-2 flex-wrap">
-      <span class="text-xs text-slate-400">Nuevo costo para</span>
-      <span id="finProdCostoSku" class="font-mono text-amber-300 text-xs font-bold"></span>
-      <input id="finProdCostoInput" type="number" step="0.01" min="0" placeholder="0.00"
-             class="inp text-xs py-1 w-24" onkeydown="if(event.key==='Enter')MOS.finGuardarCostoProd()">
-      <button onclick="MOS.finGuardarCostoProd()" class="btn-primary text-xs px-2 py-1">Guardar</button>
-      <button onclick="MOS.finCerrarCostoProd()" class="btn-ghost text-xs px-2 py-1">×</button>
+    <!-- [796] Buscador en vivo por nombre y por SKU (mismo patrón que .zpk-search del pickup).
+         El overlay lista TODOS los SKU que produjeron ventas cobradas del día: sin buscador
+         eran 290+ filas y encontrar un producto puntual era imposible. -->
+    <div class="px-4 pt-3 pb-2">
+      <input id="finProdBuscar" class="fin-prod-search" type="search" autocomplete="off"
+             placeholder="🔎 Buscar por nombre o SKU…" oninput="MOS.finProdFiltrar(this.value)">
     </div>
     <!-- tabla -->
-    <div class="overflow-y-auto" style="max-height:65vh">
+    <div class="overflow-y-auto" style="max-height:62vh">
       <table class="w-full text-xs">
-        <thead class="sticky top-0 bg-slate-900/95">
+        <thead class="sticky top-0 bg-slate-900/95 z-10">
           <tr class="text-slate-500 text-left">
-            <th class="px-3 py-2 font-medium">Nombre / SKU</th>
-            <th class="px-2 py-2 font-medium text-right">Cant</th>
-            <th class="px-2 py-2 font-medium text-right hidden sm:table-cell">Precio</th>
-            <th class="px-2 py-2 font-medium text-right hidden sm:table-cell">Costo u.</th>
-            <th class="px-2 py-2 font-medium text-right">Costo total</th>
-            <th class="px-1 py-2"></th>
+            <th class="px-3 py-2 font-medium fin-prod-th" data-fpord="nombre"
+                onclick="MOS.finProdOrdenar('nombre')" title="Ordenar por nombre">Producto</th>
+            <th class="px-2 py-2 font-medium text-right fin-prod-th" data-fpord="cantidad"
+                onclick="MOS.finProdOrdenar('cantidad')" title="Ordenar por cantidad vendida">Cantidad</th>
+            <th class="px-2 py-2 font-medium text-right fin-prod-th" data-fpord="ingreso"
+                onclick="MOS.finProdOrdenar('ingreso')" title="Ordenar por lo cobrado">Se cobró</th>
+            <th class="px-2 py-2 font-medium text-right fin-prod-th" data-fpord="costo"
+                onclick="MOS.finProdOrdenar('costo')" title="Ordenar por costo">Costó</th>
+            <th class="px-2 py-2 font-medium text-right fin-prod-th" data-fpord="margen"
+                onclick="MOS.finProdOrdenar('margen')" title="Ordenar por margen">Margen</th>
           </tr>
         </thead>
         <tbody id="finProdTableBody" class="divide-y divide-slate-800/40"></tbody>
+        <tfoot id="finProdTableFoot" class="fin-prod-tfoot"></tfoot>
       </table>
     </div>
   </div>
@@ -21299,7 +21354,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.808';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.810';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21578,7 +21633,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.808"></script>
+<script src="js/api.js?v=2.43.810"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -21594,7 +21649,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.808"></script>
+<script src="js/app.js?v=2.43.810"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
