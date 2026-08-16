@@ -12067,11 +12067,11 @@ const MOS = (() => {
       ctx.fillStyle = '#93a4c2'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText('hoy', Math.min(Math.max(xh, M.l + 12), cssW - M.r - 12), M.t + 1);
       // [v2.43.602] primer registro: explica que la curva CRECE con cada compra/cambio
-      if (P.length + C.length <= 2) {
+      // [803] con banda de ingresos el aviso sobra y ensucia: la banda ya cuenta la historia
+      // ("entró mercadería estos días, sin costo") mucho mejor que una frase genérica.
+      if (P.length + C.length <= 2 && !I.length) {
         ctx.fillStyle = '#7b8aa6'; ctx.font = 'italic 8.5px sans-serif'; ctx.textAlign = 'left';
-        // [803] la banda de ingresos ocupa el pie: el aviso sube para no montarse encima
-        ctx.fillText('📈 primer registro — la curva crece con cada compra y cambio de precio',
-                     M.l + 4, M.t + plotH() - (I.length ? 28 : 10));
+        ctx.fillText('📈 primer registro — la curva crece con cada compra y cambio de precio', M.l + 4, M.t + plotH() - 10);
       }
       // [803] crosshair del punto bajo el cursor (guía visual antes de tocar)
       if (hov && !sel && opts.big) {
