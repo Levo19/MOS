@@ -11929,7 +11929,9 @@ const MOS = (() => {
     const yOf = v => M.t + (1 - (v - vMin) / (vMax - vMin || 1)) * plotH();
     let drawnPts = [];        // [H7] posiciones de puntos para detectar clicks
     let sel = null;           // registro seleccionado (tooltip)
-    let hov = null;           // [803] punto bajo el cursor/dedo (crosshair)
+    let hov = null;           // [803] punto bajo el cursor/dedo (imantado)
+    let insp = null;          // [825] inspector: {x,y} en pixeles · null = apagado
+    let inspFijo = false;     // [825] click derecho lo deja clavado hasta el proximo click
     let anim = opts.animar ? 0 : 1;   // [803] barrido de entrada 0→1 (solo en el overlay grande)
     const _fechaCorta = t => { try { return new Date(t).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }); } catch(_) { return ''; } };
     function draw() {
@@ -11941,13 +11943,15 @@ const MOS = (() => {
         const yy = M.t + g / 4 * plotH(), vv = vMax - g / 4 * (vMax - vMin);
         ctx.strokeStyle = 'rgba(40,52,76,.65)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(M.l, yy); ctx.lineTo(cssW - M.r, yy); ctx.stroke();
-        ctx.fillStyle = '#5f7192'; ctx.textAlign = 'right'; ctx.fillText('S/' + vv.toFixed((vMax - vMin) < 2 ? 2 : 1), M.l - 4, yy);
+        ctx.fillStyle = insp ? 'rgba(95,113,146,.4)' : '#5f7192';   // [825] se apagan para que resalte la del inspector
+        ctx.textAlign = 'right'; ctx.fillText('S/' + vv.toFixed((vMax - vMin) < 2 ? 2 : 1), M.l - 4, yy);
       }
       // X labels (fechas)
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       for (let g = 0; g <= 3; g++) {
         const tt = view.vs + g / 3 * (view.ve - view.vs), xx = xOf(tt), d = new Date(tt);
-        ctx.fillStyle = '#5f7192'; ctx.fillText(d.getDate() + '/' + (d.getMonth() + 1), Math.min(Math.max(xx, M.l + 12), cssW - M.r - 12), cssH - M.b + 5);
+        ctx.fillStyle = insp ? 'rgba(95,113,146,.4)' : '#5f7192';
+        ctx.fillText(d.getDate() + '/' + (d.getMonth() + 1), Math.min(Math.max(xx, M.l + 12), cssW - M.r - 12), cssH - M.b + 5);
       }
       // clip al área de trazado — [803] el ancho sigue `anim` para el barrido de entrada
       ctx.save(); ctx.beginPath(); ctx.rect(M.l, M.t, Math.max(1, plotW() * anim), plotH()); ctx.clip();
@@ -12038,15 +12042,75 @@ const MOS = (() => {
         ctx.fillStyle = '#7b8aa6'; ctx.font = 'italic 8.5px sans-serif'; ctx.textAlign = 'left';
         ctx.fillText('📈 primer registro — la curva crece con cada compra y cambio de precio', M.l + 4, M.t + plotH() - 10);
       }
-      // [803] crosshair del punto bajo el cursor (guía visual antes de tocar)
-      if (hov && !sel && opts.big) {
-        ctx.save(); ctx.beginPath(); ctx.rect(M.l, M.t, plotW(), plotH()); ctx.clip();
-        ctx.strokeStyle = 'rgba(148,163,184,.35)'; ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(hov.x, M.t); ctx.lineTo(hov.x, M.t + plotH()); ctx.stroke();
-        ctx.setLineDash([]); ctx.restore();
-      }
+      // [825] INSPECTOR CARTESIANO
+      if (insp && opts.big) _drawInspector();
       // [H7] tooltip del punto seleccionado
       if (sel) _drawTip(sel); else if (hov && opts.big) _drawTip(hov);
+    }
+    // [825] Dibuja la cruz hasta los ejes y resalta el valor de CADA eje en una etiqueta
+    // grande y en negrita, para saber exactamente en qué punto cartesiano se está parado.
+    // Si el puntero está cerca de un nodo, se IMANTA: muestra el dato real, no el interpolado.
+    function _drawInspector() {
+      const px = Math.min(Math.max(insp.x, M.l), cssW - M.r);
+      const py = Math.min(Math.max(insp.y, M.t), M.t + plotH());
+      const imantado = !!hov;
+      const X = imantado ? hov.x : px, Y = imantado ? hov.y : py;
+      const color = !imantado ? '#38bdf8'
+                  : hov.tipo === 'P' ? '#34d399' : hov.tipo === 'I' ? '#a78bfa' : '#fbbf24';
+      // valor y fecha bajo la cruz
+      const valor = imantado && hov.tipo !== 'I' ? (+hov.rec.v)
+                  : (vMin + (1 - (Y - M.t) / (plotH() || 1)) * (vMax - vMin));
+      const tiempo = imantado ? hov.rec.t : (view.vs + (X - M.l) / (plotW() || 1) * (view.ve - view.vs));
+
+      // ── guías punteadas hasta cada eje ──
+      ctx.save(); ctx.beginPath(); ctx.rect(M.l, M.t, plotW(), plotH()); ctx.clip();
+      ctx.strokeStyle = color; ctx.globalAlpha = .5; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(X, M.t); ctx.lineTo(X, M.t + plotH()); ctx.stroke();
+      if (!imantado || hov.tipo !== 'I') {
+        ctx.beginPath(); ctx.moveTo(M.l, Y); ctx.lineTo(cssW - M.r, Y); ctx.stroke();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      // nodo del inspector cuando NO está imantado (posición libre)
+      if (!imantado) {
+        ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(X, Y, 3.2, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+      }
+      ctx.restore();
+
+      // ── etiqueta del eje Y (izquierda): el precio/costo a esa altura ──
+      if (!imantado || hov.tipo !== 'I') {
+        const txtY = 'S/ ' + valor.toFixed(2);
+        ctx.font = '800 11.5px ui-monospace,monospace';
+        const wY = Math.max(M.l - 6, ctx.measureText(txtY).width + 12), hY = 19;
+        let by = Y - hY / 2;
+        by = Math.min(Math.max(by, 2), cssH - hY - 2);
+        _pastilla(Math.max(1, M.l - wY - 2), by, wY, hY, color);
+        ctx.fillStyle = '#03060d'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(txtY, Math.max(1, M.l - wY - 2) + wY / 2, by + hY / 2 + .5);
+      }
+
+      // ── etiqueta del eje X (abajo): la fecha en esa columna ──
+      let txtX = '';
+      try {
+        const d = new Date(tiempo);
+        txtX = d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
+        if (imantado) txtX += ' · ' + d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+      } catch(_) {}
+      ctx.font = '800 11.5px sans-serif';
+      const wX = ctx.measureText(txtX).width + 16, hX = 19;
+      let bx = X - wX / 2;
+      bx = Math.min(Math.max(bx, 2), cssW - wX - 2);
+      const byX = Math.min(cssH - hX - 2, M.t + plotH() + 4);
+      _pastilla(bx, byX, wX, hX, color);
+      ctx.fillStyle = '#03060d'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(txtX, bx + wX / 2, byX + hX / 2 + .5);
+      ctx.textBaseline = 'alphabetic';
+    }
+    function _pastilla(x, y, w, h, color) {
+      ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 12;
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill(); }
+      else ctx.fillRect(x, y, w, h);
+      ctx.shadowBlur = 0;
     }
     function _drawTip(dp) {
       const p = dp.rec, esP = dp.tipo === 'P', esI = dp.tipo === 'I';
@@ -12100,26 +12164,58 @@ const MOS = (() => {
         requestAnimationFrame(paso);
       }
     }
+    // [825] Coloca el inspector en (cx,cy) e imanta al nodo mas cercano si esta a <=20px.
+    function _inspEn(cx, cy) {
+      insp = { x: cx, y: cy };
+      let best = null, bd = 20 * 20;
+      drawnPts.forEach(dp => {
+        const d = (dp.x - cx) * (dp.x - cx) + (dp.y - cy) * (dp.y - cy);
+        if (d < bd) { bd = d; best = dp; }
+      });
+      hov = best;
+      draw();
+    }
+    function _inspApagar() {
+      if (!insp && !hov) return;
+      insp = null; hov = null; inspFijo = false; draw();
+    }
+
     // Arrastre horizontal (pan) + click a un punto (tooltip)
-    let drag = null, moved = 0;
+    let drag = null, moved = 0, pressT = null;
     cv.style.cursor = 'grab';
-    cv.onpointerdown = e => { drag = { x: e.clientX, vs: view.vs, ve: view.ve }; moved = 0; cv.style.cursor = 'grabbing'; try { cv.setPointerCapture(e.pointerId); } catch(_){} };
+    cv.onpointerdown = e => {
+      drag = { x: e.clientX, y: e.clientY, vs: view.vs, ve: view.ve }; moved = 0;
+      cv.style.cursor = 'grabbing';
+      try { cv.setPointerCapture(e.pointerId); } catch(_){}
+      // [825] mantener presionado (320ms sin moverse) = inspector, tambien en tactil
+      if (opts.big) {
+        clearTimeout(pressT);
+        pressT = setTimeout(() => {
+          if (!drag || moved > 8) return;
+          const r = cv.getBoundingClientRect();
+          drag = null; cv.style.cursor = 'crosshair';   // suelta el pan: manda el inspector
+          _inspEn(e.clientX - r.left, e.clientY - r.top);
+          try { _opsBeep && _opsBeep('tac'); } catch(_){}
+        }, 320);
+      }
+    };
     cv.onpointermove = e => {
       if (!drag) {
-        // [803] sin arrastre: resaltar el punto más cercano (crosshair + tooltip fantasma)
-        if (!opts.big || e.pointerType === 'touch') return;
+        if (!opts.big) return;
         const r = cv.getBoundingClientRect();
         const cx = e.clientX - r.left, cy = e.clientY - r.top;
-        let best = null, bd = 18 * 18;
-        drawnPts.forEach(dp => {
-          const d = (dp.x - cx) * (dp.x - cx) + (dp.y - cy) * (dp.y - cy);
-          if (d < bd) { bd = d; best = dp; }
-        });
-        if ((best && (!hov || hov.rec !== best.rec)) || (!best && hov)) { hov = best; draw(); }
-        cv.style.cursor = best ? 'pointer' : 'grab';
+        // [825] con el inspector encendido (tactil o clavado) el puntero lo arrastra
+        if (insp && !inspFijo) { _inspEn(cx, cy); return; }
+        if (inspFijo || e.pointerType === 'touch') return;
+        // mouse: el inspector sigue al cursor mientras esté dentro del área de trazado
+        if (cx >= M.l - 6 && cx <= cssW - M.r + 6 && cy >= M.t - 6 && cy <= M.t + plotH() + 6) {
+          _inspEn(cx, cy);
+          cv.style.cursor = hov ? 'pointer' : 'crosshair';
+        } else { _inspApagar(); cv.style.cursor = 'grab'; }
         return;
       }
       moved += Math.abs(e.movementX || 0);
+      if (moved > 8) clearTimeout(pressT);   // [825] se movió: era un arrastre, no una pulsación
       const dt = (e.clientX - drag.x) / plotW() * (drag.ve - drag.vs);
       let vs = drag.vs - dt, ve = drag.ve - dt; const w = ve - vs;
       const lo = tMin - w * 0.5, hi = tMax + w * 0.15;
@@ -12128,8 +12224,11 @@ const MOS = (() => {
       view.vs = vs; view.ve = ve; draw();
     };
     const up = e => {
+      clearTimeout(pressT);
       const wasClick = drag && moved < 5;
-      drag = null; cv.style.cursor = 'grab';
+      drag = null; cv.style.cursor = insp ? 'crosshair' : 'grab';
+      // [825] en táctil, soltar apaga el inspector (salvo que esté clavado con click derecho)
+      if (!wasClick && !inspFijo && e.pointerType === 'touch') _inspApagar();
       if (!wasClick) return;
       // [H7] hit-test: punto más cercano al click
       const r = cv.getBoundingClientRect();
@@ -12148,8 +12247,19 @@ const MOS = (() => {
         try { opts.onSelect(sel ? sel.rec : null, sel ? sel.tipo : null, cl); } catch(_){}
       }
     };
-    cv.onpointerup = up; cv.onpointercancel = () => { drag = null; cv.style.cursor = 'grab'; };
-    cv.onpointerleave = () => { if (hov) { hov = null; draw(); } };
+    cv.onpointerup = up;
+    cv.onpointercancel = () => { clearTimeout(pressT); drag = null; cv.style.cursor = 'grab'; if (!inspFijo) _inspApagar(); };
+    cv.onpointerleave = () => { if (!inspFijo) _inspApagar(); };
+    // [825] click derecho: deja el inspector CLAVADO ahí (y otro click derecho lo suelta).
+    // Sirve para leer los dos ejes con calma sin que se mueva al sacar el mouse.
+    cv.oncontextmenu = e => {
+      if (!opts.big) return;
+      e.preventDefault();
+      const r = cv.getBoundingClientRect();
+      if (inspFijo) { inspFijo = false; _inspApagar(); }
+      else { inspFijo = true; _inspEn(e.clientX - r.left, e.clientY - r.top); }
+      try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    };
     // hook para actualizar el punto "hoy" del precio cuando el admin edita
     cv._setHoyPrecio = v => { hoyP = v > 0 ? v : 0; draw(); };
     // [805] re-medida bajo demanda: el cockpit cambia el tamaño del lienzo al plegar el dock
@@ -12273,7 +12383,7 @@ const MOS = (() => {
       lg.className = 'cov-legend';
       lg.innerHTML = '<span><i class="dot-p"></i>precio</span><span><i class="dot-c"></i>costo</span>' +
         (_covIngresos.length ? '<span><i class="dot-i"></i>entró sin costo</span>' : '') +
-        '<span class="cov-hint">↔ arrastrá · tocá un punto</span>';
+        '<span class="cov-hint">↔ arrastrá · mantené presionado para inspeccionar</span>';
       stage.appendChild(lg);
     }
     const cv = document.getElementById('covCanvas');
