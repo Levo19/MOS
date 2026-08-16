@@ -10038,15 +10038,51 @@ const MOS = (() => {
     const _puedeCambiar = String((S._costosGuiaState && S._costosGuiaState.fuente) || '').toUpperCase() !== 'ME';
     carta.innerHTML = `
       <div class="p1-carta-in">
-        <div class="p1-carta-head"><span>📄 Factura</span>${_puedeCambiar
-          ? `<button type="button" class="p1-carta-swap" title="Cambiar el comprobante (cámara o galería) — el OCR releerá los datos tributarios" onclick="MOS._p1CartaFotoPick()">📷 Cambiar</button>` : ''}</div>
+        <div class="p1-carta-head"><span>📄 Factura</span><span class="p1-carta-acc">${_puedeCambiar
+          ? `<button type="button" class="p1-carta-swap" title="Cambiar el comprobante (cámara o galería) — el OCR releerá los datos tributarios" onclick="MOS._p1CartaFotoPick()">📷 Cambiar</button>` : ''}
+          <button type="button" class="p1-carta-rot" title="Girar 90° — se guarda así para siempre, también en WH" onclick="MOS.guiaRotarFoto()">⟳ Girar</button></span></div>
         <div class="p1-carta-foto" onclick="MOS.abrirFotoOverlay('${esc}')" title="Ampliar la factura (zoom)">
-          <img src="${esc}" alt="Factura de la guía" loading="lazy" onerror="this.closest('.p1-carta-foto').classList.add('is-err')">
+          <img src="${esc}" alt="Factura de la guía" loading="lazy" style="transform:rotate(${(S._costosGuiaState && S._costosGuiaState.fotoRot) || 0}deg)" onerror="this.closest('.p1-carta-foto').classList.add('is-err')">
           <span class="p1-carta-foto-empty">📄 Sin vista previa · toca para abrir</span>
           <span class="p1-carta-zoom">🔍 Ampliar</span>
         </div>
         <div class="p1-carta-pie">Compárala con cada línea y escribe el monto.</div>
       </div>`;
+  }
+
+  // ───────── [835] Girar la foto del comprobante ─────────
+  // A veces la traen de cabeza. El giro es COSMÉTICO y PERSISTENTE: se guarda en la guía
+  // (wh.guias.foto_rot), el archivo en Storage no se toca y el OCR no se re-dispara — ya leyó
+  // bien el original, comprobado con una factura real rotada 180°. Como vive en la guía, la
+  // rotación la ve cualquier app que muestre esa foto, WH incluido.
+  function _fotoRotActual() {
+    try { return (S._costosGuiaState && +S._costosGuiaState.fotoRot) || 0; } catch(_) { return 0; }
+  }
+  async function guiaRotarFoto() {
+    const st = S._costosGuiaState;
+    if (!st || !st.idGuia) return;
+    const antes = +st.fotoRot || 0;
+    const nuevo = (antes + 90) % 360;
+    // optimista: el giro se ve al instante y se revierte solo si el servidor no lo acepta
+    st.fotoRot = nuevo;
+    _fotoRotPintar(nuevo);
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    try {
+      const r = await API.post('guiaRotarFoto', { idGuia: st.idGuia, grados: 90 });
+      const d = r && (r.data || r);
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'no se pudo guardar');
+      if (d && d.rot != null && +d.rot !== nuevo) { st.fotoRot = +d.rot; _fotoRotPintar(+d.rot); }
+    } catch (e) {
+      st.fotoRot = antes; _fotoRotPintar(antes);
+      toast('No se pudo guardar el giro: ' + (e.message || e), 'error');
+    }
+  }
+  function _fotoRotPintar(deg) {
+    try {
+      document.querySelectorAll('.p1-carta-foto img, #almFotoImg').forEach(img => {
+        img.style.transform = 'rotate(' + deg + 'deg)';
+      });
+    } catch(_){}
   }
 
   // ───────── [774] Cambiar el comprobante de la guía desde el Paso 1 ─────────
@@ -12576,8 +12612,8 @@ const MOS = (() => {
     }).join('');
     const tieneFoto = d.foto && /^https?:/i.test(String(d.foto));
     const foto = tieneFoto
-      ? '<button type="button" class="cvf-foto" onclick="MOS._curvaVerFoto(this.dataset.u)" data-u="' + _escapeHtml(String(d.foto)) + '">' +
-          '<img src="' + _escapeHtml(String(d.foto)) + '" alt="comprobante" loading="lazy">' +
+      ? '<button type="button" class="cvf-foto" onclick="MOS._curvaVerFoto(this.dataset.u, this.dataset.r)" data-u="' + _escapeHtml(String(d.foto)) + '" data-r="' + (+d.fotoRot || 0) + '">' +
+          '<img src="' + _escapeHtml(String(d.foto)) + '" alt="comprobante" loading="lazy" style="transform:rotate(' + (+d.fotoRot || 0) + 'deg)">' +
           '<span class="cvf-foto-lupa">🔍 ver comprobante</span></button>'
       : '<div class="cvf-nofoto">📷<span>sin comprobante</span></div>';
     const monto = (d.monto != null && parseFloat(d.monto) > 0) ? parseFloat(d.monto) : null;
@@ -12761,13 +12797,14 @@ const MOS = (() => {
     return s ? _escapeHtml(s) : '🏷 Catálogo';
   }
   // [feedback] Lightbox del comprobante: imagen grande encima, click para cerrar. Táctil.
-  function _curvaVerFoto(url) {
+  function _curvaVerFoto(url, rot) {
     if (!url) return;
     const old = document.querySelector('.cov-lb'); if (old) old.remove();   // [1000x] no apilar lightboxes
     const lb = document.createElement('div');
     lb.className = 'cov-lb';
     lb.onclick = () => { lb.classList.remove('in'); setTimeout(() => { try { lb.remove(); } catch(_){} }, 180); };
-    lb.innerHTML = '<button class="cov-lb-x" aria-label="Cerrar">✕</button><img src="' + _escapeHtml(String(url)) + '" alt="comprobante">';
+    lb.innerHTML = '<button class="cov-lb-x" aria-label="Cerrar">✕</button>' +
+      '<img src="' + _escapeHtml(String(url)) + '" alt="comprobante" style="transform:rotate(' + (+rot || 0) + 'deg)">';
     document.body.appendChild(lb);
     requestAnimationFrame(() => lb.classList.add('in'));
   }
@@ -12927,7 +12964,8 @@ const MOS = (() => {
       '.cvf-guia-body{display:flex;gap:11px;margin-top:10px;align-items:flex-start}' +
       '.cvf-foto{position:relative;flex:none;width:92px;height:112px;border-radius:11px;overflow:hidden;border:1px solid #26344c;background:#060b16;cursor:zoom-in;padding:0;transition:.18s}' +
       '.cvf-foto:hover{border-color:#3b82f6;transform:translateY(-1px)}' +
-      '.cvf-foto img{width:100%;height:100%;object-fit:cover;display:block}' +
+      '.cvf-foto img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .3s cubic-bezier(.22,1,.36,1)}' +
+      '.cov-lb img{transition:transform .3s cubic-bezier(.22,1,.36,1)}' +
       '.cvf-foto-lupa{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(0deg,rgba(3,7,15,.92),transparent);color:#cbd5e1;font-size:8.5px;font-weight:800;padding:11px 3px 4px;text-align:center}' +
       '.cvf-nofoto{flex:none;width:92px;height:112px;border-radius:11px;border:1px dashed #26344c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#5f7192;font-size:18px}' +
       '.cvf-nofoto span{font-size:9px;font-weight:700}' +
@@ -13997,6 +14035,7 @@ const MOS = (() => {
       fuente: op.fuente,
       lineas,
       foto: op.foto || '',
+      fotoRot: +op.fotoRot || 0,   // [835] cómo se muestra el comprobante (grados)
       idProveedor: op.idProveedor || '',
       nombreProveedor: op.nombreProveedor || op.idProveedor || '',
       inputMode: 'TOTAL',
@@ -14020,7 +14059,8 @@ const MOS = (() => {
     overlay.innerHTML = `
       <button class="alm-foto-close" title="Cerrar (Esc)">✕</button>
       <div class="alm-foto-stage" id="almFotoStage">
-        <img class="alm-foto-grande" id="almFotoImg" src="${_escapeHtml(url)}" alt="Factura de la guía" draggable="false">
+        <img class="alm-foto-grande" id="almFotoImg" src="${_escapeHtml(url)}" alt="Factura de la guía" draggable="false"
+             style="transform:rotate(${_fotoRotActual()}deg)">
       </div>
       <div class="alm-foto-ctrls">
         <button type="button" data-z="out" title="Alejar">−</button>
@@ -52302,7 +52342,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
     dispToggleFijado,
     curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
-    _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
+    _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, guiaRotarFoto, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
