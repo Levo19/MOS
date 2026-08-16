@@ -12556,19 +12556,21 @@ const MOS = (() => {
     const mios = items.filter(it => it.esEste).length;
     // [830] ¿la guía dejó un costo VÁLIDO para este producto? Si no, el precio de SU línea se
     // marca como no aplicado: es el número del documento, no el costo del catálogo.
-    const sinCosto = !(d.costo && d.costo.valor != null);
+    // [832] La columna de dinero es el COSTO APLICADO de cada producto en esta guía, no el monto
+    // del documento. Si esa línea no dejó costo (nunca se cargó o se anuló), va vacía. Medido:
+    // en la guía del 30-jul, 7 de 8 líneas no tienen costo y antes las 8 mostraban un número.
+    let sinCostoN = 0;
     const itemsHtml = items.map(it => {
-      const q = parseFloat(it.cantidad) || 0, pu = parseFloat(it.precio) || 0;
-      const muerto = it.esEste && sinCosto;
+      const q = parseFloat(it.cantidad) || 0;
+      const ca = (it.costoAplicado != null) ? parseFloat(it.costoAplicado) : null;
+      if (!(ca > 0)) sinCostoN++;
       return '<div class="cvf-it' + (it.esEste ? ' is-yo' : '') + '">' +
         (it.esEste ? '<span class="cvf-it-mark">👉</span>' : '') +
         '<span class="cvf-it-n">' + _escapeHtml(String(it.nombre || '')) + '</span>' +
         '<span class="cvf-it-q">×' + _cantTxt(q) + '</span>' +
-        // [831] costo anulado = costo NO aplicado. No se tacha: no se muestra. El punto morado
-        // del gráfico dice "sin costo para esta fecha" y el detalle tiene que decir lo mismo.
-        (pu > 0 && !muerto
-          ? '<span class="cvf-it-p">S/ ' + _money(pu).toFixed(2) + '<i>c/u</i></span>' +
-            '<span class="cvf-it-t" title="total de la línea: ' + _cantTxt(q) + ' × S/ ' + _money(pu).toFixed(2) + '">S/ ' + _money(q * pu).toFixed(2) + '</span>'
+        (ca > 0
+          ? '<span class="cvf-it-p">S/ ' + _money(ca).toFixed(2) + '<i>c/u</i></span>' +
+            '<span class="cvf-it-t" title="' + _cantTxt(q) + ' × S/ ' + _money(ca).toFixed(2) + '">S/ ' + _money(q * ca).toFixed(2) + '</span>'
           : '') +
         '</div>';
     }).join('');
@@ -12614,11 +12616,46 @@ const MOS = (() => {
       '<div class="cvf-guia-doc">' + (d.documento ? _escapeHtml(String(d.documento)) + ' · ' : '') +
         _escapeHtml(String(d.fecha || '')) + (d.zona ? ' · ' + _escapeHtml(String(d.zona)) : '') + '</div>' +
       costo + borrados +
+      // [832] puerta directa al Paso 1 de esta compra: cargar o corregir los costos sin tener
+      // que ir a buscar la guía a mano en la Mesa.
+      '<button type="button" class="cvf-ir" onclick="MOS.curvaIrACostos(this.dataset.g)" data-g="' + _escapeHtml(String(d.idGuia)) + '">' +
+        '<span class="cvf-ir-ic">✏️</span>' +
+        '<span class="cvf-ir-tx"><b>Cargar los costos de esta compra</b><i>abre el Paso 1 con esta guía</i></span>' +
+        '<span class="cvf-ir-go">→</span></button>' +
       '<div class="cvf-guia-body">' + foto +
         '<div class="cvf-its">' +
           '<div class="cvf-its-tit">' + items.length + ' ítem(s)' + (mios ? ' · ' + mios + ' de este producto' : '') +
-            '<span class="cvf-its-sub">montos tal como figuran en la guía</span></div>' +
+            '<span class="cvf-its-sub">' + (sinCostoN ? sinCostoN + ' sin costo aplicado' : 'todos con costo aplicado') + '</span></div>' +
           itemsHtml + '</div></div>';
+  }
+
+  // [832] Del card de la curva al Paso 1 de esa compra, sin pasar por la Mesa a buscarla.
+  // La compra puede no estar en memoria (el admin llegó desde Catálogo), así que se amplía la
+  // ventana de operaciones y se espera a que aparezca antes de abrir.
+  async function curvaIrACostos(idGuia) {
+    if (!idGuia) return;
+    const btn = document.querySelector('.cvf-ir[data-g="' + idGuia + '"]');
+    if (btn) { btn.classList.add('is-load'); btn.disabled = true; }
+    try {
+      let op = _findOpByKey('WH_' + idGuia) || _findOpByKey('ME_' + idGuia);
+      if (!op) {
+        try { S._mesaRangoDias = Math.max(S._mesaRangoDias || 0, 45); } catch(_){}
+        try { _mesaAsegurarVentana(); } catch(_){}
+        for (let i = 0; i < 24 && !op; i++) {
+          await new Promise(r => setTimeout(r, 400));
+          op = _findOpByKey('WH_' + idGuia) || _findOpByKey('ME_' + idGuia);
+        }
+      }
+      if (!op) { toast('No encontré esa compra en las últimas semanas', 'warn'); return; }
+      _curvaCardCerrar(true);
+      _curvaOverlayCerrar();
+      setTimeout(() => {
+        try { opsEntrarModoCostos(op.fuente, op.idGuia); }
+        catch (e) { toast('No se pudo abrir: ' + (e.message || e), 'error'); }
+      }, 240);
+    } finally {
+      if (btn) { btn.classList.remove('is-load'); btn.disabled = false; }
+    }
   }
 
   // [828] Despliega la lista de costos que existieron en esta guía y se eliminaron.
@@ -12856,6 +12893,19 @@ const MOS = (() => {
       '.cvf-elim-u{color:#7488a6;font-weight:700;flex:none}' +
       '.cvf-elim-pie{padding:7px 10px;font-size:10px;color:#fbbf24;font-weight:700;background:rgba(251,191,36,.07)}' +
       '.cvf-elim-pie b{color:#fcd34d}' +
+      '.cvf-ir{width:100%;display:flex;align-items:center;gap:10px;margin-top:9px;padding:10px 12px;border-radius:11px;border:1px solid rgba(56,189,248,.4);background:linear-gradient(135deg,rgba(56,189,248,.16),rgba(56,189,248,.05));color:#e0f2fe;cursor:pointer;text-align:left;transition:.18s cubic-bezier(.22,1,.36,1);position:relative;overflow:hidden}' +
+      '.cvf-ir:hover{border-color:rgba(56,189,248,.75);transform:translateY(-1px);box-shadow:0 8px 22px -12px rgba(56,189,248,.75)}' +
+      '.cvf-ir:active{transform:translateY(0) scale(.99)}' +
+      '.cvf-ir::after{content:\"\";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.12) 50%,transparent 70%);transform:translateX(-120%);transition:transform .7s}' +
+      '.cvf-ir:hover::after{transform:translateX(120%)}' +
+      '.cvf-ir-ic{font-size:16px;flex:none}' +
+      '.cvf-ir-tx{flex:1;min-width:0;display:flex;flex-direction:column}' +
+      '.cvf-ir-tx b{font-size:12px;font-weight:800}' +
+      '.cvf-ir-tx i{font-style:normal;font-size:9.5px;color:#7dd3fc;opacity:.8;margin-top:1px}' +
+      '.cvf-ir-go{flex:none;font-size:15px;font-weight:800;color:#7dd3fc;transition:transform .2s}' +
+      '.cvf-ir:hover .cvf-ir-go{transform:translateX(3px)}' +
+      '.cvf-ir.is-load{opacity:.6;pointer-events:none}' +
+      '.cvf-ir.is-load .cvf-ir-go{animation:cvfSpin .8s linear infinite}' +
       '.cvf-guia-body{display:flex;gap:11px;margin-top:10px;align-items:flex-start}' +
       '.cvf-foto{position:relative;flex:none;width:92px;height:112px;border-radius:11px;overflow:hidden;border:1px solid #26344c;background:#060b16;cursor:zoom-in;padding:0;transition:.18s}' +
       '.cvf-foto:hover{border-color:#3b82f6;transform:translateY(-1px)}' +
@@ -52213,7 +52263,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
     dispToggleFijado,
     curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
-    _curvaTab, _curvaDock, _curvaVerBorrados, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
+    _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
