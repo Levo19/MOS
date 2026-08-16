@@ -12130,6 +12130,11 @@ const MOS = (() => {
     _curvaOverlayRender(d, f);
   }
   function _curvaOverlayRender(d, f) {
+    // [800] costos descartados de la curva por el servidor (compra revertida o monto de bulto).
+    // Se guardan aparte para listarlos tachados: ocultar sin decirlo sería mentir el historial.
+    _covAnulados = (d && d.costosAnulados || []).map(x => ({
+      t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, mot: x.motivo
+    })).filter(x => x.v > 0 && !isNaN(x.t)).sort((a, b) => b.t - a.t);
     const hist = d ? {
       P: (d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, m: x.motivo, s: x.source, ao: x.appOrigen })).filter(x => x.v > 0 && !isNaN(x.t)),
       C: (d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario, g: x.idGuia, s: x.source })).filter(x => x.v > 0 && !isNaN(x.t))
@@ -12159,6 +12164,7 @@ const MOS = (() => {
       '<div class="cov-chart"><canvas id="covCanvas"></canvas></div>' +
       '<div class="cov-legend"><span><i class="dot-p"></i>precio</span><span><i class="dot-c"></i>costo</span>' +
         '<span class="cov-hint">↔ arrastrá · tocá un punto o un registro</span></div>' +
+      _curvaTiraAnulados() +
       '<div class="cov-regs-tit">📋 Registros</div>' +
       '<div class="cov-regs" id="covRegs">' + _curvaListaRegistros(hist) + '</div>' +
       '<div class="cov-det" id="covDet">' + _curvaDetVacio() + '</div>';
@@ -12175,6 +12181,39 @@ const MOS = (() => {
       try { _opsBeep && _opsBeep('tac'); } catch(_){}
     } });
   }
+  // [800] ANULADOS — costos que el servidor sacó de la curva. Van tachados y con el motivo.
+  // Antes convivían con los reales (S/712.80 junto a S/13.20) y reventaban la escala: el
+  // gráfico no mostraba NADA de la variación verdadera. Ahora salen del trazo pero no del ojo.
+  let _covAnulados = [];
+  function _curvaTiraAnulados() {
+    const n = _covAnulados.length;
+    if (!n) return '';
+    return '<div class="cov-anul">' +
+      '<button type="button" class="cov-anul-t" onclick="MOS._curvaVerAnulados()">' +
+        '<span>🚫 ' + n + ' costo' + (n === 1 ? '' : 's') + ' anulado' + (n === 1 ? '' : 's') + ' — fuera del gráfico</span>' +
+        '<span class="cov-anul-cv" id="covAnulCv">ver</span></button>' +
+      '<div class="cov-anul-l" id="covAnulL" hidden>' +
+        _covAnulados.map(a => {
+          let fh = '';
+          try { const dt = new Date(a.t); fh = dt.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }) + ' · ' + dt.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }); } catch(_){}
+          const mot = a.mot === 'COMPRA_REVERTIDA' ? 'compra revertida' : 'monto del bulto cargado como unitario';
+          return '<div class="cov-anul-r"><s>S/ ' + (+a.v).toFixed(2) + '</s>' +
+            '<span class="cov-anul-f">' + fh + '</span>' +
+            '<span class="cov-anul-m">' + _escapeHtml(mot) + '</span>' +
+            (a.g ? '<span class="cov-anul-g">' + _escapeHtml(String(a.g)) + '</span>' : '') + '</div>';
+        }).join('') +
+        '<div class="cov-anul-pie">No se borran: quedan en el historial para auditoría, pero no cuentan como costo ni deforman la escala.</div>' +
+      '</div></div>';
+  }
+  function _curvaVerAnulados() {
+    const l = document.getElementById('covAnulL'), cv = document.getElementById('covAnulCv');
+    if (!l) return;
+    const abrir = l.hasAttribute('hidden');
+    if (abrir) l.removeAttribute('hidden'); else l.setAttribute('hidden', '');
+    if (cv) cv.textContent = abrir ? 'ocultar' : 'ver';
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
+
   // [feedback] Lista de registros (precio+costo, más reciente primero) — SIEMPRE visible,
   // aunque el gráfico apelmace puntos cercanos en el tiempo. Cada fila abre su detalle.
   let _covRecs = [];
@@ -12326,6 +12365,18 @@ const MOS = (() => {
       '.cov-legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}' +
       '.cov-legend .dot-p{background:#34d399}.cov-legend .dot-c{background:#fbbf24;height:3px;border-radius:2px}' +
       '.cov-hint{margin-left:auto;color:#5f7192;font-weight:600}' +
+      // [800] tira de costos anulados (fuera del gráfico, a la vista)
+      '.cov-anul{margin:-4px 2px 12px}' +
+      '.cov-anul-t{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px dashed rgba(248,113,113,.35);border-radius:11px;background:rgba(248,113,113,.06);color:#f0a6a6;font-size:11px;font-weight:800;padding:8px 11px;cursor:pointer;transition:.15s}' +
+      '.cov-anul-t:hover{background:rgba(248,113,113,.12)}' +
+      '.cov-anul-cv{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#8296b5;flex:none}' +
+      '.cov-anul-l{margin-top:7px;border:1px solid #223049;border-radius:11px;background:#0a1120;overflow:hidden}' +
+      '.cov-anul-r{display:flex;align-items:center;gap:9px;padding:7px 11px;border-bottom:1px solid #131e33;font-size:11px;flex-wrap:wrap}' +
+      '.cov-anul-r s{font-family:ui-monospace,monospace;font-weight:800;color:#f87171;opacity:.85;flex:none}' +
+      '.cov-anul-f{color:#7488a6;font-weight:700;flex:none}' +
+      '.cov-anul-m{color:#8296b5;font-weight:600;flex:1;min-width:120px}' +
+      '.cov-anul-g{font-size:9.5px;font-family:ui-monospace,monospace;color:#5f7192;background:#0f1a2c;border:1px solid #1d2942;border-radius:6px;padding:1px 5px;flex:none}' +
+      '.cov-anul-pie{padding:8px 11px;font-size:10px;color:#5f7192;line-height:1.5;font-weight:600}' +
       '.cov-det{min-height:80px}' +
       '.cov-det-empty{border:1px dashed #26344c;border-radius:12px;padding:16px;text-align:center;font-size:12px;color:#7488a6;line-height:1.55}.cov-det-empty b{color:#aebbd2}' +
       '.cov-det-card{border:1px solid #223049;border-radius:12px;padding:12px 13px;background:#0c1626;animation:covPop .22s cubic-bezier(.22,1,.36,1)}' +
@@ -51587,7 +51638,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaSetZona, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
-    curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
+    curvaOverlay, _curvaOverlayCerrar, _curvaSelReg, _curvaVerAnulados,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
