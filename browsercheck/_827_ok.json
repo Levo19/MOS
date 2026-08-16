@@ -1,0 +1,13 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 45000,
+  "viewport": {
+    "width": 430,
+    "height": 900
+  },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906477"
+  },
+  "evalAfter": "(()=>{const g=n=>{try{return typeof eval(n)}catch(e){return 'ERR'}};return {MOS:g('MOS'), fijar:g('MOS')==='object'?typeof MOS.dispToggleFijado:'-'}})()",
+  "screenshot": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/_827.png"
+}

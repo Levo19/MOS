@@ -12571,22 +12571,56 @@ const MOS = (() => {
           '<span class="cvf-foto-lupa">🔍 ver comprobante</span></button>'
       : '<div class="cvf-nofoto">📷<span>sin comprobante</span></div>';
     const monto = (d.monto != null && parseFloat(d.monto) > 0) ? parseFloat(d.monto) : null;
-    const costo = d.costo && d.costo.valor != null
-      ? '<div class="cvf-guia-costo' + (d.costo.motivoAnulacion ? ' is-x' : '') + '">' +
-          (d.costo.motivoAnulacion ? '🚫 costo anulado: ' : '✓ costo de esta guía: ') +
-          '<b>S/ ' + (+d.costo.valor).toFixed(2) + '</b>' + (d.costo.usuario ? ' · ' + _escapeHtml(String(d.costo.usuario)) : '') + '</div>'
+    // [828] El costo de la guía es SOLO el válido. Si se anuló, acá no hay número: la verdad es
+    // que esta guía quedó sin costo. Lo eliminado vive detrás de su propio botón, como historia.
+    const desc = d.costosDescartados || [];
+    const costo = (d.costo && d.costo.valor != null)
+      ? '<div class="cvf-guia-costo">✓ costo de esta guía: <b>S/ ' + (+d.costo.valor).toFixed(2) + '</b>' +
+          (d.costo.usuario ? ' · ' + _escapeHtml(String(d.costo.usuario)) : '') + '</div>'
       : '<div class="cvf-guia-costo is-falta">⚠ esta guía no dejó costo para el producto</div>';
+    const elim = d.eliminadoPor
+      ? '<div class="cvf-elim-pie">🗑 eliminado por <b>' + _escapeHtml(String(d.eliminadoPor.usuario)) + '</b>' +
+          (d.eliminadoPor.ts ? ' · ' + _escapeHtml(String(d.eliminadoPor.ts).replace('T', ' ')) : '') + '</div>'
+      : '';
+    const borrados = desc.length
+      ? '<div class="cvf-elim">' +
+          '<button type="button" class="cvf-elim-t" onclick="MOS._curvaVerBorrados(this)">' +
+            '<span>🚫 acá hubo ' + desc.length + ' costo' + (desc.length === 1 ? '' : 's') + ' que se eliminó' + (desc.length === 1 ? '' : 'aron') + '</span>' +
+            '<span class="cvf-elim-cv">ver</span></button>' +
+          '<div class="cvf-elim-l" hidden>' +
+            desc.map(x => {
+              const mot = x.motivo === 'COMPRA_REVERTIDA' ? 'la compra fue revertida'
+                        : x.motivo === 'MONTO_DE_BULTO' ? 'monto del bulto como unitario'
+                        : String(x.motivo || '').toLowerCase();
+              return '<div class="cvf-elim-r"><s>S/ ' + (+x.valor).toFixed(2) + '</s>' +
+                ((+x.veces || 1) > 1 ? '<span class="cvf-elim-n">×' + x.veces + '</span>' : '') +
+                '<span class="cvf-elim-m">' + _escapeHtml(mot) + '</span>' +
+                '<span class="cvf-elim-u">' + _escapeHtml(String(x.usuario || '')) + '</span></div>';
+            }).join('') + elim +
+          '</div></div>'
+      : (d.eliminadoPor ? '<div class="cvf-elim">' + elim + '</div>' : '');
     slot.innerHTML =
       '<div class="cvf-guia-head">' +
         '<span class="cvf-guia-prov">🧾 ' + _escapeHtml(String(d.proveedor)) + '</span>' +
         (monto != null ? '<b class="cvf-guia-monto">S/ ' + monto.toFixed(2) + '</b>' : '') + '</div>' +
       '<div class="cvf-guia-doc">' + (d.documento ? _escapeHtml(String(d.documento)) + ' · ' : '') +
         _escapeHtml(String(d.fecha || '')) + (d.zona ? ' · ' + _escapeHtml(String(d.zona)) : '') + '</div>' +
-      costo +
+      costo + borrados +
       '<div class="cvf-guia-body">' + foto +
         '<div class="cvf-its">' +
           '<div class="cvf-its-tit">' + items.length + ' ítem(s)' + (mios ? ' · ' + mios + ' de este producto' : '') + '</div>' +
           itemsHtml + '</div></div>';
+  }
+
+  // [828] Despliega la lista de costos que existieron en esta guía y se eliminaron.
+  function _curvaVerBorrados(btn) {
+    const cont = btn && btn.parentElement && btn.parentElement.querySelector('.cvf-elim-l');
+    if (!cont) return;
+    const abrir = cont.hasAttribute('hidden');
+    if (abrir) cont.removeAttribute('hidden'); else cont.setAttribute('hidden', '');
+    const cv = btn.querySelector('.cvf-elim-cv');
+    if (cv) cv.textContent = abrir ? 'ocultar' : 'ver';
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
 
   // [800] ANULADOS — costos que el servidor sacó de la curva. Van tachados y con el motivo.
@@ -12801,6 +12835,18 @@ const MOS = (() => {
       '.cvf-guia-costo b{font-family:ui-monospace,monospace}' +
       '.cvf-guia-costo.is-x{border-color:rgba(248,113,113,.34);background:rgba(248,113,113,.08);color:#f0a6a6}' +
       '.cvf-guia-costo.is-falta{border-color:rgba(251,191,36,.34);background:rgba(251,191,36,.08);color:#fcd34d}' +
+      '.cvf-elim{margin-top:8px}' +
+      '.cvf-elim-t{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px dashed rgba(248,113,113,.35);border-radius:9px;background:rgba(248,113,113,.06);color:#f0a6a6;font-size:10.5px;font-weight:800;padding:7px 10px;cursor:pointer;transition:.15s}' +
+      '.cvf-elim-t:hover{background:rgba(248,113,113,.13)}' +
+      '.cvf-elim-cv{font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#8296b5;flex:none}' +
+      '.cvf-elim-l{margin-top:6px;border:1px solid #223049;border-radius:9px;background:#0a1120;overflow:hidden}' +
+      '.cvf-elim-r{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #131e33;font-size:10.5px;flex-wrap:wrap}' +
+      '.cvf-elim-r s{font-family:ui-monospace,monospace;font-weight:800;color:#f87171;opacity:.85;flex:none}' +
+      '.cvf-elim-n{font-size:9px;font-weight:800;color:#f0a6a6;background:rgba(248,113,113,.13);border-radius:5px;padding:1px 5px;flex:none}' +
+      '.cvf-elim-m{color:#8296b5;font-weight:600;flex:1;min-width:110px}' +
+      '.cvf-elim-u{color:#7488a6;font-weight:700;flex:none}' +
+      '.cvf-elim-pie{padding:7px 10px;font-size:10px;color:#fbbf24;font-weight:700;background:rgba(251,191,36,.07)}' +
+      '.cvf-elim-pie b{color:#fcd34d}' +
       '.cvf-guia-body{display:flex;gap:11px;margin-top:10px;align-items:flex-start}' +
       '.cvf-foto{position:relative;flex:none;width:92px;height:112px;border-radius:11px;overflow:hidden;border:1px solid #26344c;background:#060b16;cursor:zoom-in;padding:0;transition:.18s}' +
       '.cvf-foto:hover{border-color:#3b82f6;transform:translateY(-1px)}' +
@@ -52157,7 +52203,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
     dispToggleFijado,
     curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
-    _curvaTab, _curvaDock, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
+    _curvaTab, _curvaDock, _curvaVerBorrados, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
