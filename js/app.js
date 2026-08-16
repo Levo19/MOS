@@ -12069,7 +12069,9 @@ const MOS = (() => {
       // [v2.43.602] primer registro: explica que la curva CRECE con cada compra/cambio
       if (P.length + C.length <= 2) {
         ctx.fillStyle = '#7b8aa6'; ctx.font = 'italic 8.5px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('📈 primer registro — la curva crece con cada compra y cambio de precio', M.l + 4, M.t + plotH() - 10);
+        // [803] la banda de ingresos ocupa el pie: el aviso sube para no montarse encima
+        ctx.fillText('📈 primer registro — la curva crece con cada compra y cambio de precio',
+                     M.l + 4, M.t + plotH() - (I.length ? 28 : 10));
       }
       // [803] crosshair del punto bajo el cursor (guía visual antes de tocar)
       if (hov && !sel && opts.big) {

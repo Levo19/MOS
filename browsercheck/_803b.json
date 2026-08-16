@@ -1,0 +1,13 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 45000,
+  "viewport": {
+    "width": 430,
+    "height": 760
+  },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906477"
+  },
+  "evalAfter": "(async()=>{\n  const r={}, w=ms=>new Promise(s=>setTimeout(s,ms));\n  const b=[...document.querySelectorAll('button,a')].find(el=>/Entrar a MOS/i.test(el.textContent||''));\n  if(b)b.click(); await w(5000);\n  window._paso2Filas=[{nombre:'GLUTAMATO 1KG',precioActual:14.5,x:{idCanonico:'IDPRO0000035',descripcion:'GLUTAMATO 1KG',costoNuevo:12.1}}];\n  await MOS.curvaOverlay(0); await w(8000);\n  const ov=document.getElementById('curvaOverlay');\n  if(ov){ const c=ov.querySelector('.cov-card'); if(c) c.scrollTop=0; }\n  r.ok=!!ov; return r;\n})()",
+  "screenshot": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/_803b.png"
+}
