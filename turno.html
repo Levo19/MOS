@@ -1069,7 +1069,17 @@ function buildPrintTicket(data) {
   const a = s => L.push(s);
 
   // ── PARTE 1: CABECERA ─────────────────────────────────────────
-  a(dbl()); a(ctr('MOSexpress')); a(ctr('CIERRE DE TURNO (Z)')); a(dbl());
+  a(dbl()); a(ctr('MOSexpress'));
+  // [815] Un Z impreso con la caja ABIERTA no es un comprobante de entrega: es una foto del
+  // momento. Se marca desde el titulo para que nadie lo confunda con el cierre definitivo.
+  a(ctr(estaAbierto ? 'RESUMEN PARCIAL' : 'CIERRE DE TURNO (Z)'));
+  a(dbl());
+  if (estaAbierto) {
+    a(ctr('*** LA CAJA SIGUE ABIERTA ***'));
+    a(ctr('NO es el cierre definitivo.'));
+    a(ctr('Los montos pueden cambiar.'));
+    a(sep());
+  }
   a(lr('CAJERO  :', String(caja.cajero||'---')));
   a(lr('ESTACION:', String(caja.estacion||caja.zona||'---')));
   a(lr('APERTURA:', String(caja.fechaApert||'---')));
@@ -1215,9 +1225,15 @@ function buildPrintTicket(data) {
   }
 
   // ── PIE ──────────────────────────────────────────────────────
-  a(dbl()); a(ctr('*** FIN DE TURNO ***'));
+  a(dbl());
+  a(ctr(estaAbierto ? '*** RESUMEN PARCIAL ***' : '*** FIN DE TURNO ***'));
+  if (estaAbierto) {
+    a(ctr('La caja NO esta cerrada.'));
+    a(ctr('Cierrala en la app para el'));
+    a(ctr('monto final a entregar.'));
+  }
   a(ctr('ProyectoMOS'));
-  a(ctr(new Date().toLocaleString('es-PE')));
+  a(ctr('Impreso: ' + new Date().toLocaleString('es-PE')));
   a(dbl());
 
   pre.textContent = L.join('\n');
