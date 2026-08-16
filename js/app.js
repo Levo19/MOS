@@ -8002,6 +8002,8 @@ const MOS = (() => {
           }
           if (r) {
             S._opsData = r; _almSaveCache('opsData', r);
+            // [816] esta carga es corta (7 días): decir la verdad para que la Mesa re-amplíe.
+            try { S._mesaRangoServido = 7; } catch(_) {}
             _opsPopulateDetCacheFromData(r);
             try { almRenderOps(); } catch {}
             // [735 · perf] NO prefetchear aquí el detalle línea-por-línea. Medido en el
@@ -8263,6 +8265,9 @@ const MOS = (() => {
       }
       if (opsRes) {
         S._opsData = opsRes;
+        // [816] anotar la ventana REAL que quedó cargada (params.dias) para que la Mesa sepa si
+        // debe re-ampliar antes de filtrar. Sin esto, una recarga corta dejaba el buscador ciego.
+        try { S._mesaRangoServido = parseInt((params && params.dias) || 0, 10) || 0; } catch(_) {}
         _almSaveCache('opsData', S._opsData);
         _opsPopulateDetCacheFromData(S._opsData);
         const idsActuales = new Set();
@@ -12786,22 +12791,33 @@ const MOS = (() => {
       }, 700);
     }
     // [C] la Mesa quiere ventana amplia (~45 días); si la carga base fue corta, amplía en background (cero-GAS).
-    if (!S._mesaRangoServido || S._mesaRangoServido < S._mesaRangoDias) {
-      (async () => {
-        S._mesaCargando = true;
-        try {
-          const r = await API.get('getOperacionesConDetalle', { dias: S._mesaRangoDias });
-          if (r && ((r.data || r).porDia)) {
-            S._opsData = r; S._mesaRangoServido = S._mesaRangoDias;
-            if (typeof _opsPopulateDetCacheFromData === 'function') _opsPopulateDetCacheFromData(r);
-          }
-        } catch(_){}
-        S._mesaCargando = false;
-        const m = document.getElementById('mesaComprasModal');
-        if (m && m.classList.contains('open') && !S._mesaAbierta) m.innerHTML = _mesaComprasHTML();
-        try { _mesaPrefetchLineas(); _mesaPrefetchCotejo(); } catch(_){}
-      })();
-    }
+    _mesaAsegurarVentana();
+  }
+
+  // [816] Amplía S._opsData a la ventana que la Mesa necesita (~45 días) si la carga vigente es
+  // más corta. Se extrajo de abrirMesaCompras porque el panel de Almacén refresca ese MISMO
+  // estado con 7 días: si eso ocurría con el buscador escrito, la búsqueda se quedaba mirando
+  // una semana y "desaparecían" guías que sí existen. Reentrante (un solo vuelo a la vez).
+  function _mesaAsegurarVentana(onListo) {
+    if (S._mesaRangoServido && S._mesaRangoServido >= S._mesaRangoDias) { if (onListo) onListo(false); return; }
+    if (S._mesaAmpliando) return;
+    S._mesaAmpliando = true;
+    (async () => {
+      S._mesaCargando = true;
+      try {
+        const r = await API.get('getOperacionesConDetalle', { dias: S._mesaRangoDias });
+        if (r && ((r.data || r).porDia)) {
+          S._opsData = r; S._mesaRangoServido = S._mesaRangoDias;
+          if (typeof _opsPopulateDetCacheFromData === 'function') _opsPopulateDetCacheFromData(r);
+        }
+      } catch(_){}
+      S._mesaCargando = false;
+      S._mesaAmpliando = false;
+      const m = document.getElementById('mesaComprasModal');
+      if (m && m.classList.contains('open') && !S._mesaAbierta) m.innerHTML = _mesaComprasHTML();
+      try { _mesaPrefetchLineas(); _mesaPrefetchCotejo(); } catch(_){}
+      if (onListo) onListo(true);
+    })();
   }
   function cerrarMesaCompras() {
     S._mesaAbierta = false;
@@ -12920,6 +12936,19 @@ const MOS = (() => {
     S._mesaBusqueda = v;
     const m = document.getElementById('mesaComprasModal');
     if (!m) return;
+    // [816] Buscar SIEMPRE sobre la ventana completa: si otro módulo degradó S._opsData a 7 días,
+    // se vuelve a ampliar y se repinta con el mismo término (antes el filtro se quedaba corto y
+    // parecía que las guías "desaparecían").
+    if (v) {
+      _mesaAsegurarVentana((amplio) => {
+        if (!amplio) return;
+        const m2 = document.getElementById('mesaComprasModal');
+        const b2 = m2 && m2.querySelector('.mesa-body');
+        if (b2 && String(S._mesaBusqueda || '') === String(v)) {
+          b2.innerHTML = _mesaComprasBodyHTML(_comprasFlat().map(op => ({ op, est: _comprasEstado(op) })));
+        }
+      });
+    }
     const body = m.querySelector('.mesa-body');
     if (body) {
       const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
