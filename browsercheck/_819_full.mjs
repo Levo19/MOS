@@ -33,3 +33,11 @@ console.log('typeof MOS →', r.MOS, '| API →', r.API);
 console.log('errores:', errs.length);
 errs.slice(0, 8).forEach((e, i) => console.log('  ' + (i+1) + ') ' + e));
 await b.close(); srv.close();
+// Sale con codigo 1 si la app no arranca o si hubo un error de pagina: asi una cadena
+// `node _819_full.mjs .. && git push` se CORTA sola en vez de publicar algo roto.
+const grave = errs.filter(e => e.startsWith('PAGEERROR'));
+if (r.MOS !== 'object' || grave.length) {
+  console.log('❌ NO PUBLICAR: ' + (r.MOS !== 'object' ? 'MOS no queda definido' : grave.length + ' error(es) de pagina'));
+  process.exit(1);
+}
+console.log('✅ la app arranca y no hay errores de pagina');

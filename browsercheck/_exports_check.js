@@ -5,6 +5,12 @@
 //
 //   node _exports_check.js ../js/app.js
 //
+// LIMITACIÓN CONOCIDA: solo comprueba que el nombre EXISTA en el archivo, no en qué ámbito. Una
+// función ANIDADA dentro de otra pasa este chequeo y aun así rompe la app — fue el fallo del
+// 2.43.826. El juez de verdad es `_819_full.mjs`, que levanta el árbol en un navegador y exige
+// que MOS quede definido. Este script es un HUMO rápido para el caso frecuente (borrar la
+// definición y olvidar el export, que fue el 2.43.819); nunca reemplaza al otro.
+//
 // Sale con código 1 si algún export no tiene definición en el archivo.
 const fs = require('fs');
 
