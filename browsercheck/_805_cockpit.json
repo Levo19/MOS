@@ -1,6 +1,6 @@
 {
   "url": "https://levo19.github.io/MOS/",
-  "waitMs": 60000,
+  "waitMs": 50000,
   "viewport": {
     "width": 430,
     "height": 860

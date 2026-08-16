@@ -11951,11 +11951,16 @@ const MOS = (() => {
     let span = Math.min(Math.max(fullSpan * 1.3, 7 * DAY), 60 * DAY); if (span < DAY) span = DAY;
     const padT = span * 0.08;
     const view = { vs: tMax - span - padT, ve: tMax + padT }; // centrado en la ÚLTIMA fecha
-    const M = { l: 42, r: 10, t: 12, b: 22 };
+    // [822] en el cockpit el lienzo va a pantalla completa y tiene vecinos: la barra de vidrio
+    // arriba y la leyenda flotante abajo. Sin margenes propios, la etiqueta superior del eje Y
+    // queda tapada y la banda de ingresos se pisa con la leyenda.
+    const M = opts.cockpit ? { l: 54, r: 18, t: 96, b: 60 } : { l: 42, r: 10, t: 12, b: 22 };
     let cssW = 0, cssH = 0;
     function resize() {
       const dpr = window.devicePixelRatio || 1;
       cssW = cv.clientWidth || 300; cssH = cv.clientHeight || 150;
+      // [822] en angosto la barra de vidrio ocupa dos filas -> mas aire arriba
+      if (opts.cockpit) M.t = cssW < 560 ? 142 : 96;
       cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
@@ -12787,6 +12792,7 @@ const MOS = (() => {
       '.cov-reg.is-p .cov-reg-v{color:#34d399}.cov-reg.is-c .cov-reg-v{color:#fbbf24}' +
       '.cov-reg-f{font-size:11px;color:#7488a6;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
       '.cov-reg-u{font-size:11px;color:#93a4c2;font-weight:700;flex:none;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '@media(max-width:560px){.cov-id{flex:1 1 auto;min-width:0}.cov-acts{order:2}.cov-chips{order:3;flex:1 1 100%}' +
       '@media(max-width:560px){.cov-chips{gap:6px;padding:7px 9px}.cov-chip b{font-size:13.5px}.cov-chip{padding:4px 9px}.cov-reg-u{max-width:64px}.cov-alarma{max-width:100%}}';
     document.head.appendChild(st);
   }
