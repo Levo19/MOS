@@ -25835,7 +25835,23 @@ const MOS = (() => {
           : '')
       + `<span class="mbtn edit" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>`
       + `</div>`;
-    // ═══════════ [826] FIJAR / SOLTAR un dispositivo ═══════════
+  // [786] Chip amo/esclavo (principal/extensión) — SOLO cuando el equipo forma parte de un par
+    // en la MISMA app (caja ME con extensión, etc.). Misma persona en apps distintas (WH+ME+MosGo)
+    // NO es amo-esclavo → sin chip. El mapa lo calcula el server (mos.dispositivos_amo_esclavo).
+    const _rolAE = (cfgData.rolesAmoEsclavo || {})[String(d.ID_Dispositivo)];
+    const aeChip = _rolAE === 'AMO'
+      ? `<span class="chip" title="Equipo PRINCIPAL (amo) — tiene una extensión conectada a su caja" style="background:rgba(245,184,73,.16);border:1px solid rgba(245,184,73,.5);color:#fde3a7;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">👑 amo</span>`
+      : _rolAE === 'ESCLAVO'
+        ? `<span class="chip" title="Equipo EXTENSIÓN (esclavo) — depende de un principal; no cierra caja" style="background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.42);color:#cbd5e1;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">🔗 esclavo</span>`
+        : '';
+    // [826] chip del fijado: se ve de un vistazo cuál equipo está exento
+    const fijChip = d.Fijado
+      ? `<span class="chip" title="Fijado por ${_escapeHtml(String(d.Fijado_Por || 'master'))} — la inactividad no lo suspende" style="background:rgba(56,189,248,.16);border:1px solid rgba(56,189,248,.5);color:#7dd3fc;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">📍 fijado</span>`
+      : '';
+    return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}${aeChip}${fijChip}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${_dispMiniPermChips(d)}${monitor}</div>`;
+  }
+
+  // ═══════════ [826] FIJAR / SOLTAR un dispositivo ═══════════
   // Un equipo FIJADO queda exento de la regla de inactividad (+2 días → SUSPENDIDO, +7 →
   // archivado). Nace de un caso real: la jefa no maneja claves y no tiene por qué pedir
   // reactivación cada vez. NO da permisos ni evita el bloqueo manual: si un equipo se pierde,
@@ -25895,21 +25911,6 @@ const MOS = (() => {
     }
   }
 
-  // [786] Chip amo/esclavo (principal/extensión) — SOLO cuando el equipo forma parte de un par
-    // en la MISMA app (caja ME con extensión, etc.). Misma persona en apps distintas (WH+ME+MosGo)
-    // NO es amo-esclavo → sin chip. El mapa lo calcula el server (mos.dispositivos_amo_esclavo).
-    const _rolAE = (cfgData.rolesAmoEsclavo || {})[String(d.ID_Dispositivo)];
-    const aeChip = _rolAE === 'AMO'
-      ? `<span class="chip" title="Equipo PRINCIPAL (amo) — tiene una extensión conectada a su caja" style="background:rgba(245,184,73,.16);border:1px solid rgba(245,184,73,.5);color:#fde3a7;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">👑 amo</span>`
-      : _rolAE === 'ESCLAVO'
-        ? `<span class="chip" title="Equipo EXTENSIÓN (esclavo) — depende de un principal; no cierra caja" style="background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.42);color:#cbd5e1;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">🔗 esclavo</span>`
-        : '';
-    // [826] chip del fijado: se ve de un vistazo cuál equipo está exento
-    const fijChip = d.Fijado
-      ? `<span class="chip" title="Fijado por ${_escapeHtml(String(d.Fijado_Por || 'master'))} — la inactividad no lo suspende" style="background:rgba(56,189,248,.16);border:1px solid rgba(56,189,248,.5);color:#7dd3fc;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">📍 fijado</span>`
-      : '';
-    return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}${aeChip}${fijChip}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${_dispMiniPermChips(d)}${monitor}</div>`;
-  }
 
   // [801] Mini-chips de permisos EN LA TARJETA (vistazo rápido: ¿este móvil se puede monitorear?).
   // Verde=concedido · rojo=denegado · ámbar=pendiente/sin pedir. Los 4 relevantes para vigilar:
