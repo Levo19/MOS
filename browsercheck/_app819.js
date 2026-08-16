@@ -12187,16 +12187,12 @@ const MOS = (() => {
     cv.onpointerleave = () => { if (hov) { hov = null; draw(); } };
     // hook para actualizar el punto "hoy" del precio cuando el admin edita
     cv._setHoyPrecio = v => { hoyP = v > 0 ? v : 0; draw(); };
-    // [805] re-medida bajo demanda: el cockpit cambia el tamaño del lienzo al plegar el dock
-    // y al rotar el equipo. Sin esto el canvas queda dibujado con las medidas viejas.
-    cv._resize = () => { resize(); draw(); };
   }
 
   // ═══════════════ [Fase 2] OVERLAY grande interactivo de la curva ═══════════════
   // Reusa el motor _p2ChartInit en un canvas grande + un panel de detalle (quién/cuándo/
   // medio para precio · fecha/quién/guía para costo) al tocar un punto. Táctil y responsive.
   let _covSeq = 0;   // [1000x] token de generación: invalida un fetch viejo si se re-abre/cierra el overlay
-  let _covOnResize = null;   // [805] listener de viewport del cockpit (se quita al cerrar)
   async function curvaOverlay(i) {
     const f = (window._paso2Filas || [])[i];
     if (!f) { toast('Curva no disponible', 'warn'); return; }
@@ -12207,35 +12203,15 @@ const MOS = (() => {
     const ov = document.createElement('div');
     ov.id = 'curvaOverlay'; ov.className = 'cov-back';
     ov.onpointerdown = e => { if (e.target === ov) _curvaOverlayCerrar(); };
-    // [805] COCKPIT: el gráfico es el fondo (stage a pantalla completa) y todo lo demás
-    // flota encima en paneles de vidrio, como el Espía V2.
     ov.innerHTML =
-      '<div class="cov-stage" id="covStage"><canvas id="covCanvas"></canvas><div class="cov-vig"></div></div>' +
-      '<div class="cov-hud" id="covHud">' +
-        '<div class="cov-glass cov-id">' +
-          '<span class="cov-live"><i></i></span>' +
-          '<div class="cov-id-txt"><b id="covTit">Cargando…</b><span id="covSub">historial de precio y costo</span></div>' +
-        '</div>' +
-        '<div class="cov-glass cov-chips" id="covChips"><span class="cov-boot">◍ leyendo el historial…</span></div>' +
-        '<div class="cov-glass cov-acts">' +
-          '<button class="cov-ab" id="covDockBtn" onclick="MOS._curvaDock()" title="Expandir el gráfico">⛶</button>' +
-          '<button class="cov-ab is-x" onclick="MOS._curvaOverlayCerrar()" aria-label="Cerrar">✕</button>' +
-        '</div>' +
-      '</div>' +
-      '<div class="cov-dock" id="covDock"><div class="cov-glass cov-dock-in">' +
-        '<div class="cov-tabs" id="covTabs"></div>' +
-        '<div class="cov-panes" id="covPanes"><div class="cov-boot">◍ leyendo el historial…</div></div>' +
-      '</div></div>';
+      '<div class="cov-card" role="dialog" aria-label="Analítica de precio y costo">' +
+        '<div class="cov-head"><div class="cov-tit"><span class="cov-ico">📈</span>' +
+          '<div class="cov-tit-txt" id="covTit"><b>Cargando…</b><span>Historial de precio y costo</span></div></div>' +
+          '<button class="cov-x" onclick="MOS._curvaOverlayCerrar()" aria-label="Cerrar">✕</button></div>' +
+        '<div id="covBody"><div class="cov-loading">Cargando historial…</div></div>' +
+      '</div>';
     document.body.appendChild(ov);
     requestAnimationFrame(() => ov.classList.add('cov-in'));
-    // [805] a pantalla completa el lienzo depende del viewport: rotar el equipo o cambiar de
-    // tamaño tiene que re-medirlo. El listener muere con el overlay (_curvaOverlayCerrar).
-    _covOnResize = () => {
-      const c2 = document.getElementById('covCanvas');
-      if (c2 && c2._resize) { try { c2._resize(); } catch(_){} }
-    };
-    window.addEventListener('resize', _covOnResize);
-    window.addEventListener('orientationchange', _covOnResize);
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     // [feedback] fetch FRESCO (no el f._hist cacheado, que puede ser viejo tras un cambio de precio)
     // [803] en paralelo, los INGRESOS por guía de proveedor: los que no tienen costo cargado
@@ -12279,41 +12255,27 @@ const MOS = (() => {
     if (d && d.canonicoNombre) dominio += '<div class="cov-dom-row">↳ de <b>' + _escapeHtml(String(d.canonicoNombre)) + '</b>' + (d.canonicoCodigoBarra ? ' · <span class="cov-dom-cb">' + _escapeHtml(String(d.canonicoCodigoBarra)) + '</span>' : '') + '</div>';
     const eqs = (d && d.equivalentes) || [];
     if (eqs.length) dominio += '<div class="cov-dom-row">🔁 también escanea: ' + eqs.slice(0, 6).map(x => '<span class="cov-dom-cb">' + _escapeHtml(String(x)) + '</span>').join(' ') + (eqs.length > 6 ? ' +' + (eqs.length - 6) : '') + '</div>';
-    const tit = document.getElementById('covTit'), subEl = document.getElementById('covSub');
-    if (tit) tit.textContent = nombre;
-    if (subEl) subEl.innerHTML = sub;
-    // [805] chips de estado en la barra flotante. El costo se marca en ROJO si es >= al precio:
-    // un costo así es basura (monto de bulto) y el dueño tiene que verlo gritando, no en gris.
-    const insano = nowC > 0 && nowP > 0 && nowC >= nowP;
-    const chips = document.getElementById('covChips');
-    if (chips) chips.innerHTML =
-      '<div class="cov-chip cov-chip-p"><span>Precio</span><b>S/ ' + nowP.toFixed(2) + '</b></div>' +
-      '<div class="cov-chip cov-chip-c' + (insano ? ' is-mal' : '') + '"><span>Costo' + (insano ? ' ⚠' : '') + '</span><b>S/ ' + nowC.toFixed(2) + '</b></div>' +
-      '<div class="cov-chip cov-chip-m' + (insano ? ' is-mal' : '') + '"><span>Margen</span><b>' + mg + '</b></div>' +
-      (insano ? '<div class="cov-alarma" title="El costo vigente es mayor o igual al precio de venta">costo por encima del precio — revisá la compra</div>' : '') +
-      (dominio ? '<div class="cov-dom">' + dominio + '</div>' : '');
-
-    // [805] el dock: pestañas con lo que antes eran tiras apiladas
-    const nReg = (hist.P || []).length + (hist.C || []).length;
-    _covTabs = [
-      { k: 'reg', ic: '📋', t: 'Registros', n: nReg,                 html: () => _curvaListaRegistros(hist) },
-      { k: 'ing', ic: '📦', t: 'Sin costo', n: _covIngresos.length,  html: _curvaPanelIngresos },
-      { k: 'anu', ic: '🚫', t: 'Anulados',  n: _covAnulados.length,  html: _curvaPanelAnulados }
-    ];
-    _curvaTab(_covTabs.findIndex(t => t.n > 0) < 0 ? 0 : _covTabs.findIndex(t => t.n > 0));
-    // [805] leyenda flotante al pie del lienzo (dentro del stage, encima del trazo)
-    const stage = document.getElementById('covStage');
-    if (stage && !stage.querySelector('.cov-legend')) {
-      const lg = document.createElement('div');
-      lg.className = 'cov-legend';
-      lg.innerHTML = '<span><i class="dot-p"></i>precio</span><span><i class="dot-c"></i>costo</span>' +
+    const tit = document.getElementById('covTit');
+    if (tit) tit.innerHTML = '<b>' + _escapeHtml(nombre) + '</b><span>' + sub + '</span>';
+    const body = document.getElementById('covBody');
+    if (!body) return;
+    body.innerHTML =
+      '<div class="cov-chips">' +
+        '<div class="cov-chip cov-chip-p"><span>Precio</span><b>S/ ' + nowP.toFixed(2) + '</b></div>' +
+        '<div class="cov-chip cov-chip-c"><span>Costo</span><b>S/ ' + nowC.toFixed(2) + '</b></div>' +
+        '<div class="cov-chip cov-chip-m"><span>Margen</span><b>' + mg + '</b></div></div>' +
+      (dominio ? '<div class="cov-dom">' + dominio + '</div>' : '') +
+      '<div class="cov-chart"><canvas id="covCanvas"></canvas></div>' +
+      '<div class="cov-legend"><span><i class="dot-p"></i>precio</span><span><i class="dot-c"></i>costo</span>' +
         (_covIngresos.length ? '<span><i class="dot-i"></i>entró sin costo</span>' : '') +
-        '<span class="cov-hint">↔ arrastrá · tocá un punto</span>';
-      stage.appendChild(lg);
-    }
+        '<span class="cov-hint">↔ arrastrá · tocá un punto</span></div>' +
+      _curvaTiraIngresos() +
+      _curvaTiraAnulados() +
+      '<div class="cov-regs-tit">📋 Registros del gráfico</div>' +
+      '<div class="cov-regs" id="covRegs">' + _curvaListaRegistros(hist) + '</div>';
     const cv = document.getElementById('covCanvas');
     if (cv) _p2ChartInit(cv, hist, nowP, nowC, {
-      big: true, animar: true, cockpit: true,
+      big: true, animar: true,
       ingresos: _covIngresos,
       onSelect: (rec, tipo, cluster) => {
         // [803] cada punto abre un CARD FLOTANTE encima del gráfico. Si varios puntos caen
@@ -12324,43 +12286,19 @@ const MOS = (() => {
       }
     });
   }
-  // ═══════════ [805] DOCK del cockpit: pestañas flotantes sobre el gráfico ═══════════
-  let _covTabs = [];
-  let _covTabAct = 0;
-  function _curvaTab(n) {
-    if (!_covTabs.length) return;
-    _covTabAct = Math.max(0, Math.min(_covTabs.length - 1, n | 0));
-    const tabs = document.getElementById('covTabs'), panes = document.getElementById('covPanes');
-    if (tabs) tabs.innerHTML = _covTabs.map((t, i) =>
-      '<button class="cov-tab' + (i === _covTabAct ? ' on' : '') + (t.n ? '' : ' is-0') + '" onclick="MOS._curvaTab(' + i + ')">' +
-        '<span class="cov-tab-ic">' + t.ic + '</span><span class="cov-tab-t">' + t.t + '</span>' +
-        (t.n ? '<span class="cov-tab-n">' + t.n + '</span>' : '') + '</button>').join('');
-    if (panes) { panes.innerHTML = _covTabs[_covTabAct].html(); panes.scrollTop = 0; }
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
-  }
-  // ⛶ — esconde el dock para que el gráfico ocupe TODO. El canvas se re-mide al terminar
-  // la transición: sin eso quedaría dibujado al tamaño viejo.
-  function _curvaDock() {
-    const ov = document.getElementById('curvaOverlay'); if (!ov) return;
-    const abierto = !ov.classList.toggle('cov-solo');
-    const b = document.getElementById('covDockBtn');
-    if (b) { b.textContent = abierto ? '⛶' : '⤡'; b.title = abierto ? 'Expandir el gráfico' : 'Mostrar las listas'; }
-    const cv = document.getElementById('covCanvas');
-    if (cv && cv._resize) { setTimeout(() => { try { cv._resize(); } catch(_){} }, 340); }
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
-  }
-
   // [803] INGRESOS SIN COSTO — días en que llegó mercadería del proveedor y nadie cargó
   // cuánto costó. Antes no existían en ninguna pantalla: la curva solo sabía de costos, así
   // que un mes entero de compras sin costo se veía como "no pasó nada".
   let _covIngresos = [];
   let _covProd = { idProducto: '', nombre: '', skuBase: '' };
-  function _curvaPanelIngresos() {
+  function _curvaTiraIngresos() {
     const n = _covIngresos.length;
-    if (!n) return '<div class="cov-vacio">Ningún ingreso de proveedor sin costo. Todas las compras de este producto tienen su costo cargado.</div>';
+    if (!n) return '';
     return '<div class="cov-ing">' +
-      '<div class="cov-pane-tit">📦 ' + n + ' ingreso' + (n === 1 ? '' : 's') + ' de proveedor sin costo cargado</div>' +
-      '<div class="cov-ing-l">' +
+      '<button type="button" class="cov-ing-t" onclick="MOS._curvaVerIngresos()">' +
+        '<span>📦 ' + n + ' ingreso' + (n === 1 ? '' : 's') + ' sin costo registrado</span>' +
+        '<span class="cov-ing-cv" id="covIngCv">ver</span></button>' +
+      '<div class="cov-ing-l" id="covIngL" hidden>' +
         _covIngresos.map((g, i) => {
           let fh = '';
           try { fh = new Date(g.t).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: '2-digit' }); } catch(_){}
@@ -12373,6 +12311,14 @@ const MOS = (() => {
         }).join('') +
         '<div class="cov-ing-pie">Entró mercadería pero la compra no tiene costo cargado: esos días no mueven la curva. Tocá uno para ver la guía.</div>' +
       '</div></div>';
+  }
+  function _curvaVerIngresos() {
+    const l = document.getElementById('covIngL'), cv = document.getElementById('covIngCv');
+    if (!l) return;
+    const abrir = l.hasAttribute('hidden');
+    if (abrir) l.removeAttribute('hidden'); else l.setAttribute('hidden', '');
+    if (cv) cv.textContent = abrir ? 'ocultar' : 'ver';
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
   // cantidades SIEMPRE con el formateador de cantidades, nunca con el de dinero
   function _cantTxt(n) { try { return _fmtQty(n); } catch(_) { return String(+n || 0); } }
@@ -12517,12 +12463,14 @@ const MOS = (() => {
   // Antes convivían con los reales (S/712.80 junto a S/13.20) y reventaban la escala: el
   // gráfico no mostraba NADA de la variación verdadera. Ahora salen del trazo pero no del ojo.
   let _covAnulados = [];
-  function _curvaPanelAnulados() {
+  function _curvaTiraAnulados() {
     const n = _covAnulados.length;
-    if (!n) return '<div class="cov-vacio">Ningún costo descartado. Todo lo que hay en el historial es historia válida.</div>';
+    if (!n) return '';
     return '<div class="cov-anul">' +
-      '<div class="cov-pane-tit">🚫 ' + n + ' costo' + (n === 1 ? '' : 's') + ' fuera del gráfico</div>' +
-      '<div class="cov-anul-l">' +
+      '<button type="button" class="cov-anul-t" onclick="MOS._curvaVerAnulados()">' +
+        '<span>🚫 ' + n + ' costo' + (n === 1 ? '' : 's') + ' anulado' + (n === 1 ? '' : 's') + ' — fuera del gráfico</span>' +
+        '<span class="cov-anul-cv" id="covAnulCv">ver</span></button>' +
+      '<div class="cov-anul-l" id="covAnulL" hidden>' +
         _covAnulados.map(a => {
           let fh = '';
           try { const dt = new Date(a.t); fh = dt.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }) + ' · ' + dt.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }); } catch(_){}
@@ -12538,6 +12486,14 @@ const MOS = (() => {
         '<div class="cov-anul-pie">No se borran: quedan en el historial para auditoría, pero no cuentan como costo ni deforman la escala.</div>' +
       '</div></div>';
   }
+  function _curvaVerAnulados() {
+    const l = document.getElementById('covAnulL'), cv = document.getElementById('covAnulCv');
+    if (!l) return;
+    const abrir = l.hasAttribute('hidden');
+    if (abrir) l.removeAttribute('hidden'); else l.setAttribute('hidden', '');
+    if (cv) cv.textContent = abrir ? 'ocultar' : 'ver';
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
 
   // [feedback] Lista de registros (precio+costo, más reciente primero) — SIEMPRE visible,
   // aunque el gráfico apelmace puntos cercanos en el tiempo. Cada fila abre su detalle.
@@ -12548,7 +12504,7 @@ const MOS = (() => {
     (hist.C || []).forEach(p => recs.push({ rec: p, tipo: 'C' }));
     recs.sort((a, b) => (b.rec.t || 0) - (a.rec.t || 0));
     _covRecs = recs;
-    if (!recs.length) return '<div class="cov-vacio">Sin cambios registrados todavía — al próximo cambio de precio o compra aparece acá.</div>';
+    if (!recs.length) return '<div class="cov-reg-empty">Sin cambios registrados todavía — al próximo cambio de precio o compra aparece acá.</div>';
     return recs.map((r, i) => {
       const esP = r.tipo === 'P';
       let fh = '';
@@ -12568,11 +12524,6 @@ const MOS = (() => {
   }
   function _curvaOverlayCerrar() {
     _covSeq++;   // [1000x] invalida cualquier fetch en vuelo (no pintar tras cerrar)
-    if (_covOnResize) {   // [805] sin esto queda un listener por cada apertura
-      window.removeEventListener('resize', _covOnResize);
-      window.removeEventListener('orientationchange', _covOnResize);
-      _covOnResize = null;
-    }
     _curvaCardCerrar(true);   // [803] el card flotante no puede sobrevivir a su overlay
     try { const lb = document.querySelector('.cov-lb'); if (lb) lb.remove(); } catch(_){}
     const ov = document.getElementById('curvaOverlay'); if (!ov) return;
@@ -12601,73 +12552,31 @@ const MOS = (() => {
     if (S._covCSS) return; S._covCSS = true;
     const st = document.createElement('style'); st.id = 'curvaOvCSS';
     st.textContent =
-      // [805] COCKPIT — mismo lenguaje que el Espía V2: negro a pantalla completa, paneles
-      // de vidrio flotando encima, latido en vivo y safe-area. El gráfico ocupa todo.
-      '.cov-back{position:fixed;inset:0;z-index:100040;background:#03060d;opacity:0;transition:opacity .26s ease}' +
+      '.cov-back{position:fixed;inset:0;z-index:9998;background:rgba(4,8,16,.66);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;padding:16px;opacity:0;transition:opacity .22s ease}' +
       '.cov-back.cov-in{opacity:1}' +
-      '.cov-stage{position:absolute;top:0;left:0;right:0;bottom:36vh;transition:bottom .3s cubic-bezier(.22,1,.36,1),right .3s cubic-bezier(.22,1,.36,1)}' +
-      '.cov-stage canvas{width:100%;height:100%;display:block;touch-action:none;cursor:grab}' +
-      '.cov-vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% 40%,transparent 45%,rgba(3,6,13,.72) 100%)}' +
-      '.cov-vig::before{content:"";position:absolute;inset:0;opacity:.5;background-image:linear-gradient(rgba(56,189,248,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,.05) 1px,transparent 1px);background-size:44px 44px;mask-image:radial-gradient(70% 60% at 50% 45%,#000,transparent)}' +
-      '.cov-glass{background:rgba(12,17,28,.58);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08);border-radius:16px;box-shadow:0 10px 34px -14px #000}' +
-      '.cov-hud{position:absolute;top:0;left:0;right:0;z-index:20;display:flex;align-items:flex-start;gap:9px;flex-wrap:wrap;padding:12px 13px;padding-top:calc(12px + env(safe-area-inset-top,0px));background:linear-gradient(180deg,rgba(3,6,13,.8),rgba(3,6,13,0));pointer-events:none}' +
-      '.cov-hud>*{pointer-events:auto}' +
-      '.cov-id{display:flex;align-items:center;gap:10px;padding:8px 13px;min-width:0;flex:1}' +
-      '.cov-live{position:relative;width:11px;height:11px;flex:none}' +
-      '.cov-live i{position:absolute;inset:0;border-radius:50%;background:#34d399;box-shadow:0 0 12px #34d399;animation:covBreath 2s ease-in-out infinite}' +
-      '.cov-live::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid #34d399;animation:covPulse 1.8s ease-out infinite}' +
-      '@keyframes covBreath{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.28);opacity:1}}' +
-      '@keyframes covPulse{0%{transform:scale(1);opacity:.65}100%{transform:scale(2.6);opacity:0}}' +
-      '.cov-id-txt{display:flex;flex-direction:column;min-width:0}' +
-      '.cov-id-txt b{font-size:14px;font-weight:800;color:#e2e8f0;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-      '.cov-id-txt span{font-size:10px;color:#94a3b8;font-weight:600;font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-      '.cov-acts{display:flex;align-items:center;gap:6px;padding:6px 7px;flex:none}' +
-      '.cov-ab{width:34px;height:34px;border-radius:11px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.06);color:#cbd5e1;font-size:14px;cursor:pointer;transition:.15s;display:grid;place-items:center}' +
-      '.cov-ab:hover{background:rgba(255,255,255,.15);color:#fff}' +
-      '.cov-ab.is-x{background:rgba(248,113,113,.16);border-color:rgba(248,113,113,.36);color:#fca5a5}' +
-      '.cov-ab.is-x:hover{background:rgba(248,113,113,.32)}' +
-      '.cov-chips{display:flex;align-items:stretch;gap:8px;padding:8px 10px;flex-wrap:wrap;flex:none;max-width:100%}' +
-      '.cov-chip{border-radius:11px;padding:5px 11px;display:flex;flex-direction:column;gap:1px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03)}' +
-      '.cov-chip span{font-size:8.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b;white-space:nowrap}' +
-      '.cov-chip b{font-size:15px;font-weight:800;font-family:ui-monospace,monospace;white-space:nowrap}' +
-      '.cov-chip-p{border-color:rgba(52,211,153,.3);background:linear-gradient(180deg,rgba(52,211,153,.12),transparent)}.cov-chip-p b{color:#34d399}' +
-      '.cov-chip-c{border-color:rgba(251,191,36,.28);background:linear-gradient(180deg,rgba(251,191,36,.1),transparent)}.cov-chip-c b{color:#fbbf24}' +
-      '.cov-chip-m b{color:#cbd5e1}' +
-      '.cov-chip.is-mal{border-color:rgba(248,113,113,.55);background:linear-gradient(180deg,rgba(248,113,113,.16),transparent);animation:covAlarma 1.6s ease-in-out infinite}' +
-      '.cov-chip.is-mal b,.cov-chip.is-mal span{color:#fca5a5}' +
-      '@keyframes covAlarma{0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0)}50%{box-shadow:0 0 0 4px rgba(248,113,113,.13)}}' +
-      '.cov-alarma{align-self:center;font-size:10px;font-weight:800;color:#fca5a5;background:rgba(248,113,113,.12);border:1px dashed rgba(248,113,113,.4);border-radius:9px;padding:5px 9px;max-width:210px;line-height:1.35}' +
-      '.cov-boot{font-size:11px;font-weight:700;color:#64748b;padding:4px 2px}' +
-      '.cov-dom{width:100%;font-size:10px;color:#94a3b8;font-weight:600;line-height:1.5;padding-top:2px}' +
-      '.cov-dock{position:absolute;left:0;right:0;bottom:0;height:36vh;z-index:20;padding:0 10px 10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));transition:transform .3s cubic-bezier(.22,1,.36,1),opacity .25s}' +
-      '.cov-dock-in{height:100%;display:flex;flex-direction:column;overflow:hidden;padding:0}' +
-      '.cov-back.cov-solo .cov-dock{transform:translateY(112%);opacity:0;pointer-events:none}' +
-      '.cov-back.cov-solo .cov-stage{bottom:0}' +
-      '.cov-tabs{display:flex;gap:4px;padding:8px 8px 0;flex:none}' +
-      '.cov-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:0;background:transparent;color:#64748b;font-size:11px;font-weight:800;padding:8px 6px;border-radius:10px;cursor:pointer;transition:.15s;border-bottom:2px solid transparent;min-width:0}' +
-      '.cov-tab:hover{background:rgba(255,255,255,.05);color:#cbd5e1}' +
-      '.cov-tab.on{color:#e2e8f0;background:rgba(255,255,255,.06);border-bottom-color:#38bdf8}' +
-      '.cov-tab.is-0{opacity:.45}' +
-      '.cov-tab-ic{font-size:13px;flex:none}' +
-      '.cov-tab-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
-      '.cov-tab-n{flex:none;font-size:9.5px;font-weight:800;background:rgba(56,189,248,.16);color:#7dd3fc;border-radius:20px;padding:1px 6px}' +
-      '.cov-panes{flex:1;overflow:auto;padding:8px 10px 10px;-webkit-overflow-scrolling:touch}' +
-      '.cov-pane-tit{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#64748b;margin-bottom:7px}' +
-      '.cov-vacio{border:1px dashed rgba(255,255,255,.12);border-radius:12px;padding:16px;text-align:center;font-size:11.5px;color:#64748b;line-height:1.6}' +
-      '@media (min-width:900px){' +
-        '.cov-stage{bottom:0;right:400px}' +
-        '.cov-dock{left:auto;top:0;bottom:0;width:400px;height:auto;padding:10px 10px 10px 0;padding-top:calc(84px + env(safe-area-inset-top,0px))}' +
-        '.cov-back.cov-solo .cov-stage{right:0}' +
-        '.cov-back.cov-solo .cov-dock{transform:translateX(112%)}' +
-        '.cov-hud{right:400px}' +
-        '.cov-back.cov-solo .cov-hud{right:0}' +
-      '}' +
-      '.cov-legend{position:absolute;left:13px;bottom:9px;z-index:15;display:flex;align-items:center;gap:12px;font-size:10px;color:#94a3b8;font-weight:700;background:rgba(12,17,28,.5);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.07);border-radius:11px;padding:6px 11px;flex-wrap:wrap;max-width:calc(100% - 26px)}' +
+      '.cov-card{width:min(680px,100%);max-height:92vh;overflow:auto;background:linear-gradient(180deg,#0f1a2c,#0b1220);border:1px solid #223049;border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.6);padding:16px 16px 18px;transform:translateY(14px) scale(.985);opacity:0;transition:transform .26s cubic-bezier(.22,1,.36,1),opacity .26s}' +
+      '.cov-back.cov-in .cov-card{transform:none;opacity:1}' +
+      '.cov-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}' +
+      '.cov-tit{display:flex;align-items:center;gap:10px;min-width:0}.cov-ico{font-size:20px;flex:none}' +
+      '.cov-tit-txt{display:flex;flex-direction:column;min-width:0}' +
+      '.cov-tit-txt b{font-size:15px;font-weight:800;color:#eaf1fb;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.cov-tit-txt span{font-size:11px;color:#6b7d9c;font-weight:600}' +
+      '.cov-x{flex:none;width:34px;height:34px;border-radius:10px;border:1px solid #26344c;background:#0c1626;color:#8296b5;font-size:15px;cursor:pointer;transition:.15s}' +
+      '.cov-x:hover{background:#152036;color:#dbe4f3}' +
+      '.cov-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}' +
+      '.cov-chip{border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;gap:1px;border:1px solid #1d2942;background:#0a1120}' +
+      '.cov-chip span{font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192}' +
+      '.cov-chip b{font-size:15px;font-weight:800;font-family:ui-monospace,monospace}' +
+      '.cov-chip-p{border-color:rgba(52,211,153,.28);background:linear-gradient(180deg,rgba(52,211,153,.09),transparent)}.cov-chip-p b{color:#34d399}' +
+      '.cov-chip-c{border-color:rgba(251,191,36,.26);background:linear-gradient(180deg,rgba(251,191,36,.08),transparent)}.cov-chip-c b{color:#fbbf24}' +
+      '.cov-chip-m b{color:#93a4c2}' +
+      '.cov-chart{position:relative;height:clamp(200px,42vh,340px);border:1px solid #1a2740;border-radius:14px;background:radial-gradient(120% 100% at 50% 0,#0c1626,#0a1120);padding:4px}' +
+      '.cov-chart canvas{width:100%;height:100%;display:block;touch-action:none;cursor:grab}' +
+      '.cov-legend{display:flex;align-items:center;gap:14px;margin:9px 2px 12px;font-size:10.5px;color:#7488a6;font-weight:700}' +
       '.cov-legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}' +
       '.cov-legend .dot-p{background:#34d399}.cov-legend .dot-c{background:#fbbf24;height:3px;border-radius:2px}' +
       '.cov-legend .dot-i{background:transparent;border:2px solid #a78bfa;border-radius:50%}' +
-      '.cov-hint{color:#64748b;font-weight:600}' +
-      '@media (max-width:420px){.cov-hint{display:none}}' +
+      '.cov-hint{margin-left:auto;color:#5f7192;font-weight:600}' +
       // [800] tira de costos anulados (fuera del gráfico, a la vista)
       '.cov-anul{margin:-4px 2px 12px}' +
       '.cov-anul-t{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px dashed rgba(248,113,113,.35);border-radius:11px;background:rgba(248,113,113,.06);color:#f0a6a6;font-size:11px;font-weight:800;padding:8px 11px;cursor:pointer;transition:.15s}' +
@@ -12768,6 +12677,7 @@ const MOS = (() => {
       '.cov-guia-it{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;color:#c3cee0;background:#0a1120;border:1px solid #182338;border-radius:7px;padding:5px 8px}' +
       '.cov-guia-it span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cov-guia-it b{flex:none;color:#93a4c2;font-family:ui-monospace,monospace}' +
       '.cov-guia-mas{font-size:10px;color:#6b7d9c;text-align:center;padding:3px;font-weight:600}' +
+      '.cov-loading{padding:40px 16px;text-align:center;font-size:12px;color:#7488a6;font-weight:600}' +
       '.cov-dom{margin:-4px 0 12px;padding:8px 10px;background:#0a1120;border:1px solid #182338;border-radius:10px;display:flex;flex-direction:column;gap:3px}' +
       '.cov-dom-row{font-size:11px;color:#93a4c2;font-weight:600}.cov-dom-row b{color:#cfd9ea}' +
       '.cov-dom-cb{font-family:ui-monospace,monospace;font-size:10px;color:#7cb3f0;background:rgba(124,179,240,.1);border-radius:5px;padding:1px 6px}' +
@@ -12778,6 +12688,7 @@ const MOS = (() => {
       '.cov-lb{position:fixed;inset:0;z-index:100080;background:rgba(0,0,0,.86);display:grid;place-items:center;padding:18px;opacity:0;transition:opacity .18s ease;cursor:zoom-out}.cov-lb.in{opacity:1}' +
       '.cov-lb img{max-width:100%;max-height:100%;border-radius:12px;box-shadow:0 12px 50px rgba(0,0,0,.7);transform:scale(.97);transition:transform .2s cubic-bezier(.22,1,.36,1)}.cov-lb.in img{transform:none}' +
       '.cov-lb-x{position:absolute;top:14px;right:16px;width:40px;height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.45);color:#fff;font-size:16px;cursor:pointer;z-index:2}' +
+      '.cov-regs-tit{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192;margin:2px 2px 6px}' +
       '.cov-regs{display:flex;flex-direction:column;gap:4px;max-height:170px;overflow:auto;margin-bottom:12px}' +
       '.cov-reg{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:9px;background:#0a1120;border:1px solid #182338;cursor:pointer;transition:.13s}' +
       '.cov-reg:hover{background:#0e1830;border-color:#26344c}.cov-reg.on{border-color:#3a5170;background:#111d34}' +
@@ -12787,7 +12698,8 @@ const MOS = (() => {
       '.cov-reg.is-p .cov-reg-v{color:#34d399}.cov-reg.is-c .cov-reg-v{color:#fbbf24}' +
       '.cov-reg-f{font-size:11px;color:#7488a6;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
       '.cov-reg-u{font-size:11px;color:#93a4c2;font-weight:700;flex:none;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
-      '@media(max-width:560px){.cov-chips{gap:6px;padding:7px 9px}.cov-chip b{font-size:13.5px}.cov-chip{padding:4px 9px}.cov-reg-u{max-width:64px}.cov-alarma{max-width:100%}}';
+      '.cov-reg-empty{border:1px dashed #26344c;border-radius:10px;padding:14px;text-align:center;font-size:11.5px;color:#7488a6}' +
+      '@media(max-width:560px){.cov-card{width:100%;max-height:94vh;border-radius:16px}.cov-chips{gap:6px}.cov-chip b{font-size:13.5px}.cov-reg-u{max-width:64px}}';
     document.head.appendChild(st);
   }
 
@@ -52002,8 +51914,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaSetZona, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
-    curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
-    _curvaTab, _curvaDock, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
+    curvaOverlay, _curvaOverlayCerrar, _curvaSelReg, _curvaVerAnulados,
+    _curvaVerIngresos, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
