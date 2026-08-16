@@ -1,0 +1,13 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 30000,
+  "viewport": {
+    "width": 430,
+    "height": 860
+  },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906477"
+  },
+  "evalAfter": "(()=>{const r={};try{r.tipoMOS=typeof MOS}catch(e){r.tipoMOS='TDZ:'+e.message};r.enWindow=typeof window.MOS;r.claves=[];try{r.claves=Object.keys(MOS).filter(k=>/curva/i.test(k))}catch(e){r.clavesErr=String(e)};r.errGlobal=window.__ultimoError||null;return r})()",
+  "screenshot": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/_805_diag.png"
+}

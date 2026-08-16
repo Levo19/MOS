@@ -1,0 +1,13 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 35000,
+  "viewport": {
+    "width": 430,
+    "height": 860
+  },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906477"
+  },
+  "evalAfter": "(()=>{const r={};const g=n=>{try{return typeof eval(n)}catch(e){return 'ERR:'+e.message.slice(0,40)}};r.MOS=g('MOS');r.API=g('API');r.S=g('S');r.scripts=[...document.querySelectorAll('script[src]')].map(s=>s.src.split('/').pop());r.recursos=performance.getEntriesByType('resource').filter(e=>/app.js|api.js/.test(e.name)).map(e=>e.name.split('/').pop()+' '+Math.round(e.duration)+'ms'+(e.responseStatus?(' HTTP'+e.responseStatus):''));return r})()",
+  "screenshot": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/_805_diag2.png"
+}
