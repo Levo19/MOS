@@ -19,6 +19,7 @@ await new Promise(r => srv.listen(8792, r));
 
 const b = await chromium.launch();
 const p = await b.newPage();
+await p.addInitScript(dev => localStorage.setItem('mos_device_id', dev), '7e57c1a0-de1c-4a7e-b0de-c47a10906477');  // identidad fija: no genera solicitudes de acceso
 const errs = [];
 p.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
 p.on('response', r => { if (r.status() >= 400) errs.push('HTTP ' + r.status() + ' ' + r.url()); });
