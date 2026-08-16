@@ -1,0 +1,13 @@
+{
+  "url": "https://levo19.github.io/MOS/",
+  "waitMs": 40000,
+  "viewport": {
+    "width": 480,
+    "height": 1700
+  },
+  "localStorage": {
+    "mos_device_id": "7e57c1a0-de1c-4a7e-b0de-c47a10906477"
+  },
+  "evalAfter": "(async()=>{\n  const r={}, w=ms=>new Promise(s=>setTimeout(s,ms));\n  const b=[...document.querySelectorAll('button,a')].find(el=>/Entrar a MOS/i.test(el.textContent||''));\n  if(b)b.click();\n  await w(5000);\n  try{ r.version=(await fetch('https://levo19.github.io/MOS/version.json?b='+Date.now()).then(x=>x.json())).version }catch(_){}\n  try{ const rr=await API.post('historialPrecioCosto',{idProducto:'IDPRO0000035'}); const d=rr&&(rr.data||rr);\n       r.rpc={costos:(d.costos||[]).length, anulados:(d.costosAnulados||[]).length,\n              maxCurva:Math.max(0,...(d.costos||[]).map(x=>+x.valor)),\n              maxAnulado:Math.max(0,...(d.costosAnulados||[]).map(x=>+x.valor))};\n  }catch(e){ r.rpcErr=String(e) }\n  window._paso2Filas=[{nombre:'GLUTAMATO 1KG',precioActual:14.5,x:{idCanonico:'IDPRO0000035',descripcion:'GLUTAMATO 1KG',costoNuevo:12.1}}];\n  try{ await MOS.curvaOverlay(0) }catch(e){ r.err=String(e) }\n  await w(6000);\n  const ov=document.getElementById('curvaOverlay');\n  r.overlay=!!ov;\n  if(ov){\n    r.chips=[...ov.querySelectorAll('.cov-chip')].map(e=>e.textContent.trim());\n    r.registros=ov.querySelectorAll('.cov-reg').length;\n    const vals=[...ov.querySelectorAll('.cov-reg-v')].map(e=>e.textContent.trim());\n    r.valores=vals;\n    r.basuraEnCurva=vals.filter(v=>parseFloat(v.replace(/[^0-9.]/g,''))>100);\n    const t=ov.querySelector('.cov-anul-t');\n    r.tira=t?t.textContent.trim():'(NO APARECE)';\n    if(t){ t.click(); await w(700);\n      r.anulados=[...ov.querySelectorAll('.cov-anul-r')].map(e=>[...e.children].map(c=>c.textContent.trim()).join(' | '));\n      r.tiraTrasClick=(ov.querySelector('.cov-anul-cv')||{}).textContent;\n    }\n  }\n  return r;\n})()",
+  "screenshot": "C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/_800_curva.png"
+}
