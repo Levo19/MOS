@@ -1500,6 +1500,17 @@ const API = (() => {
     return out;
   }
 
+  // [798 · extras admin] Transporte único de las 4 RPCs me.extra*(p jsonb) del overlay "💸 Extras".
+  // MISMO patrón que el bloque kill-GAS de ventas ME (cambiarMetodoME): _sbRpcMOS con profile 'me'.
+  // Devuelve el objeto CRUDO de la RPC ({ok:true, items|data|noop|dedup...}) porque los callers de
+  // app.js leen tanto items/totales como noop/dedup. Sin token → throw (no hay fallback GAS).
+  async function _meExtrasRpc(fn, p) {
+    const r = await _sbRpcMOS(fn, { p: p || {} }, 'me');
+    if (r == null) throw new Error('Sin conexión con el servidor');
+    if (r.ok === false) throw new Error(r.error || 'Error del servidor');
+    return r;
+  }
+
   // [CATÁLOGO DELETE-SAFE] Sube la foto de un producto a Supabase Storage (bucket 'producto-fotos', máxima
   // calidad). Réplica EXACTA del patrón probado de WH (_subirFotoStorage). path: productos/<skuBase>/<archivo>.
   // Nombre DETERMINÍSTICO por skuBase → un reintento sobreescribe el MISMO path (no acumula basura) y reusa la
@@ -3925,6 +3936,17 @@ const API = (() => {
       } catch (_) {}
       return [];
     },
+    // ── [798] MOVIMIENTOS EXTRA de caja · CRUD admin desde MOS (RPCs me.*, SQL 798) ──────────────
+    // Overlay "💸 Extras" del módulo Cajas. Las 4 viajan por el MISMO camino que las vecinas del
+    // esquema me (_sbRpcMOS con profile 'me' + token mint-mos app='MOS'). Las 3 de ESCRITURA exigen
+    // `claveAdmin` (el PIN de 8 dígitos que devuelve pedirAuth): la RPC lo RE-VERIFICA en el servidor
+    // (mos.reverificar_clave_admin), así que no alcanza con haberlo pedido en el front.
+    //   null (sin token, Edge mint caída) → throw 'Sin conexión' (cero-GAS: acá no hay fallback).
+    //   ok:false                          → throw con el error del servidor (el caller revierte).
+    extrasDeCaja:  async (idCaja)  => _meExtrasRpc('extras_de_caja',  { idCaja: String(idCaja || '') }),
+    extraCrear:    async (p)       => _meExtrasRpc('extra_crear',     p),
+    extraEditar:   async (p)       => _meExtrasRpc('extra_editar',    p),
+    extraEliminar: async (p)       => _meExtrasRpc('extra_eliminar',  p),
     // [Adhesivos Supabase] imprimir lote de adhesivos vía Edge print-adhesivo (mode:'crear', cantidad exacta).
     adhesivoImprimirEdge: _adhesivoImprimirEdge,
     // [Membretes] Edge print-adhesivo genérico (modal compartido vía edgeCall).

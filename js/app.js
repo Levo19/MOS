@@ -27015,11 +27015,23 @@ const MOS = (() => {
     const btnCerrarForzado = esActiva && _esAdmin
       ? `<button onclick="event.stopPropagation();MOS.cjCerrarCajaForzado('${idAttr}','${safeNombre}')" class="cj-caja-btn cj-caja-btn-danger" title="Cerrar caja forzadamente (admin)">🔒 Cerrar caja</button>`
       : '';
+    // [798] "💸 Extras" — overlay con TODOS los movimientos extra de la caja (agregar/editar/eliminar
+    // con PIN admin). Nace del incidente del 15-ago: dos egresos "Cierre de caja" duplicados dejaron
+    // el arqueo en −1925.60 y desde MOS no había forma de corregirlos. Va en cajas ABIERTAS y CERRADAS
+    // (el error se descubre casi siempre después del cierre). El badge = cuántos extras tiene; sin
+    // extras el botón SIGUE ahí porque es la única puerta para AGREGAR uno.
+    const nEx = (c.extrasList || []).length;
+    const badgeEx = nEx
+      ? ` <span style="display:inline-block;min-width:15px;padding:0 4px;border-radius:7px;background:#7c2d12;color:#fdba74;font-size:9px;font-weight:800;line-height:15px;text-align:center">${nEx}</span>`
+      : '';
+    const btnExtras = `<button onclick="event.stopPropagation();MOS.cjVerExtrasCaja('${idAttr}')" class="cj-caja-btn" title="Movimientos extra (ingresos/egresos) de esta caja">💸 Extras${badgeEx}</button>`;
     const btnActiva = esActiva ? `
       <button onclick="event.stopPropagation();MOS.cjVerTicketsCaja('${idAttr}')" class="cj-caja-btn cj-caja-btn-primary" title="Ver tickets de esta caja">🧾 Tickets</button>
+      ${btnExtras}
       <button onclick="event.stopPropagation();MOS.cjAbrirTurno('${idAttr}')" class="cj-caja-btn" title="Ver turno completo">📊 Turno</button>
       ${btnCerrarForzado}` : `
       <button onclick="event.stopPropagation();MOS.cjVerTicketsCaja('${idAttr}')" class="cj-caja-btn cj-caja-btn-primary">🧾 Tickets del turno</button>
+      ${btnExtras}
       <button onclick="event.stopPropagation();MOS.cjAbrirTurno('${idAttr}')" class="cj-caja-btn" title="Ver turno completo">📜 Ver cierre</button>`;
 
     return `
@@ -27093,14 +27105,14 @@ const MOS = (() => {
     const extrasHtml = exList.length ? `
       <div class="cj-caja-detail-head" style="margin-top:10px">Movimientos extra</div>
       ${exList.map(ex => {
-        const idEx = String(ex.idExtra || '').replace(/'/g, '&#39;');
+        // [798] El 📜 suelto por fila MURIÓ acá: al dueño le resultaba inútil/confuso dentro de la card.
+        // El historial (y editar/eliminar) vive ahora en el overlay "💸 Extras" (MOS.cjVerExtrasCaja).
         const colorCls = ex.tipo === 'INGRESO' || ex.tipo === 'INGRESO_VIRTUAL' ? 'text-emerald-400' : 'text-red-400';
         const sigArr = ex.tipo === 'INGRESO' || ex.tipo === 'INGRESO_VIRTUAL' ? '▲' : '▼';
         const sigMon = ex.tipo === 'INGRESO' || ex.tipo === 'INGRESO_VIRTUAL' ? '+' : '-';
         return `<div class="flex items-center justify-between gap-2 py-1 text-[10px]">
           <span class="${colorCls} flex-1 min-w-0 truncate">${sigArr} ${ex.concepto || ex.tipo}</span>
           <span class="${colorCls} font-bold">${sigMon}S/ ${parseFloat(ex.monto||0).toFixed(2)}</span>
-          ${idEx ? `<button onclick="event.stopPropagation();MOS.cjHistorialExtra('${idEx}')" class="text-[11px] opacity-50 hover:opacity-100" title="Ver historial">📜</button>` : ''}
         </div>`;
       }).join('')}
     ` : '';
@@ -28938,6 +28950,317 @@ const MOS = (() => {
     _cjTkRenderFiltrosBtns();
     _cjTkRenderVendedoresBtns();
     _cjTkRender();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  // [798] OVERLAY "💸 EXTRAS" DE LA CAJA — agregar / editar / eliminar movimientos extra con PIN admin.
+  //
+  // POR QUÉ EXISTE: el 15-ago una cajera registró dos egresos con concepto "Cierre de caja"
+  // (Yape S/1964.40 + Efectivo S/1640.00). El cierre YA descuenta lo entregado, así que esos extras
+  // duplicaron la salida: el arqueo quedó en −1925.60 cuando debía ser +1678.80, y desde MOS no había
+  // forma de corregirlo. Acá el dueño ve TODOS los extras de la caja y los repara.
+  //
+  // BACKEND: RPCs me.extras_de_caja / me.extra_crear / me.extra_editar / me.extra_eliminar (SQL 798).
+  // Toda escritura pasa ANTES por pedirAuth (EXTRA_CREAR/EXTRA_EDITAR tier 2 · EXTRA_ELIMINAR tier 3)
+  // y manda su `claveAdmin`, que la RPC RE-VERIFICA en el servidor (mos.reverificar_clave_admin).
+  // La auditoría queda en DOS lados: mos.auditoria_admin (quién autorizó qué) y el historial_cambios
+  // del propio movimiento (📜 por fila). Eliminar es DELETE real + snapshot íntegro en auditoria_admin
+  // (la tabla no tiene columna de anulado y 13 funciones la suman — ver cabecera del SQL 798).
+  //
+  // UX: optimista con reversión — se pinta el cambio al toque y si el servidor rechaza se restaura la
+  // lista anterior con un toast. Cero prompt/confirm/alert (formulario propio + _modalConfirm).
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  const _cjExState = { idCaja: '', caja: null, data: null, modo: 'crear', idExtra: '', busy: false };
+  const _cjExTipoOk = ['INGRESO', 'EGRESO', 'INGRESO_VIRTUAL', 'EGRESO_VIRTUAL'];
+  const _cjExEsIngreso = t => String(t || '').toUpperCase().startsWith('INGRESO');
+  const _cjExEsVirtual = t => String(t || '').toUpperCase().endsWith('_VIRTUAL');
+  const _cjExS = v => 'S/ ' + _money(v).toFixed(2);   // dinero SIEMPRE por _money()
+  // ⚠ la trampa que motivó todo: un extra cuyo concepto/obs habla del "cierre" casi siempre está
+  // duplicando lo que el cierre YA descuenta. Se pinta con aviso para que salte a la vista.
+  const _cjExSospechoso = ex => /cierre/i.test(String(ex.concepto || '') + ' ' + String(ex.obs || ''));
+
+  async function cjVerExtrasCaja(idCaja) {
+    _finBeep('click');
+    const c = (S._todasCajas || []).find(x => String(x.idCaja) === String(idCaja));
+    _cjExState.idCaja = String(idCaja || '');
+    _cjExState.caja   = c || null;
+    _cjExState.data   = null;
+    _setText('cjModalExtrasTitulo', 'Extras de Caja · ' + ((c && c.vendedor) || '—'));
+    _setText('cjModalExtrasSubtitulo', ((c && (c.zona || c.estacion)) || '') + ' · ' + _cjExState.idCaja);
+    const list = $('cjExList');
+    if (list) list.innerHTML = '<div class="px-4 py-10 text-center text-slate-500 text-sm italic">Cargando movimientos…</div>';
+    const tot = $('cjExTotales'); if (tot) tot.innerHTML = '';
+    openModal('cjModalExtras');
+    await _cjExCargar();
+  }
+
+  async function _cjExCargar() {
+    const pedida = _cjExState.idCaja;   // anti-race: si el dueño abrió otra caja mientras cargaba, se descarta
+    try {
+      const r = await API.extrasDeCaja(pedida);
+      if (pedida !== _cjExState.idCaja) return;
+      _cjExState.data = r || { items: [] };
+      _cjExRender();
+    } catch (e) {
+      if (pedida !== _cjExState.idCaja) return;
+      const list = $('cjExList');
+      if (list) list.innerHTML = `<div class="px-4 py-10 text-center text-rose-400 text-sm">⚠ ${_esc(e.message || e)}</div>`;
+    }
+  }
+
+  // Recalcula los totales en el cliente (tras un cambio optimista los del servidor quedan viejos).
+  function _cjExTotalesLocales(items) {
+    const sum = f => _money((items || []).reduce((s, x) => s + (f(x) ? (parseFloat(x.monto) || 0) : 0), 0));
+    const ti  = sum(x => x.tipo === 'INGRESO'), te  = sum(x => x.tipo === 'EGRESO');
+    const tiv = sum(x => x.tipo === 'INGRESO_VIRTUAL'), tev = sum(x => x.tipo === 'EGRESO_VIRTUAL');
+    return { ti, te, tiv, tev, netoEf: _money(ti - te), netoVi: _money(tiv - tev) };
+  }
+
+  function _cjExRender() {
+    const items = (_cjExState.data && Array.isArray(_cjExState.data.items)) ? _cjExState.data.items : [];
+    const t = _cjExTotalesLocales(items);
+
+    const tot = $('cjExTotales');
+    if (tot) {
+      const chip = (lbl, val, color) => `
+        <div style="flex:1;min-width:70px;text-align:center;padding:6px 4px;border-radius:9px;background:#070f1a;border:1px solid #1e293b">
+          <div style="font-size:9px;font-weight:800;color:#64748b;letter-spacing:.4px">${lbl}</div>
+          <div style="font-size:13px;font-weight:900;color:${color}">${_cjExS(val)}</div>
+        </div>`;
+      tot.innerHTML = `
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${chip('INGRESOS 💵', t.ti, '#34d399')}
+          ${chip('EGRESOS 💵', t.te, '#f87171')}
+          ${chip('NETO EFECTIVO', t.netoEf, t.netoEf >= 0 ? '#34d399' : '#f87171')}
+          ${chip('NETO VIRTUAL 📱', t.netoVi, t.netoVi >= 0 ? '#22d3ee' : '#f87171')}
+        </div>
+        <div style="margin-top:5px;font-size:10px;color:#64748b;text-align:center">${items.length} movimiento${items.length === 1 ? '' : 's'} · el signo lo da el tipo, el monto siempre es positivo</div>`;
+    }
+
+    const list = $('cjExList');
+    if (!list) return;
+    if (!items.length) {
+      list.innerHTML = '<div class="px-4 py-10 text-center text-slate-500 text-sm italic">Esta caja no tiene movimientos extra</div>';
+      return;
+    }
+    list.innerHTML = items.map(ex => {
+      const id   = String(ex.idExtra || '');
+      const idJs = id.replace(/'/g, '&#39;');
+      const ing  = _cjExEsIngreso(ex.tipo);
+      const vir  = _cjExEsVirtual(ex.tipo);
+      const col  = ing ? '#34d399' : '#f87171';
+      const hora = String(ex.ts || '').substring(11, 16) || '—';
+      const sosp = _cjExSospechoso(ex);
+      const chips = [
+        vir ? '<span style="font-size:9px;font-weight:800;padding:1px 5px;border-radius:6px;background:#164e63;color:#67e8f9">📱 VIRTUAL</span>' : '',
+        ex.editado ? '<span style="font-size:9px;font-weight:800;padding:1px 5px;border-radius:6px;background:#78350f;color:#fcd34d">✎ EDITADO</span>' : '',
+        ex.creadoEnMos ? '<span style="font-size:9px;font-weight:800;padding:1px 5px;border-radius:6px;background:#312e81;color:#a5b4fc">MOS</span>' : ''
+      ].filter(Boolean).join(' ');
+      return `
+      <div data-idextra="${_esc(id)}" style="display:flex;align-items:flex-start;gap:9px;padding:10px 14px;border-bottom:1px solid rgba(30,41,59,.55)">
+        <div style="font-size:15px;font-weight:900;color:${col};line-height:1.2">${ing ? '▲' : '▼'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+            <span style="font-size:12px;font-weight:800;color:#e2e8f0">${_esc(ex.concepto || ex.tipo || '—')}</span>
+            ${chips}
+          </div>
+          <div style="font-size:10px;color:#64748b;margin-top:2px">🕒 ${_esc(hora)} · ${_esc(ex.registradoPor || '—')}</div>
+          ${ex.obs ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">📝 ${_esc(ex.obs)}</div>` : ''}
+          ${sosp ? `<div style="font-size:10px;font-weight:700;color:#fcd34d;margin-top:3px;background:rgba(120,53,15,.35);border:1px solid #78350f;border-radius:7px;padding:4px 6px">⚠ el cierre ya descuenta lo entregado; esto puede estar duplicando</div>` : ''}
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:900;color:${col};white-space:nowrap">${ing ? '+' : '−'}${_cjExS(ex.monto)}</div>
+          <div style="display:flex;gap:3px;justify-content:flex-end;margin-top:4px">
+            <button onclick="MOS.cjExEditar('${idJs}')" title="Editar este movimiento" style="border:1px solid #334155;background:#0f172a;color:#cbd5e1;border-radius:7px;padding:2px 6px;font-size:11px;cursor:pointer">✎</button>
+            <button onclick="MOS.cjExEliminar('${idJs}')" title="Eliminar este movimiento" style="border:1px solid #7f1d1d;background:#1a0b0b;color:#fca5a5;border-radius:7px;padding:2px 6px;font-size:11px;cursor:pointer">🗑</button>
+            <button onclick="MOS.cjHistorialExtra('${idJs}')" title="Ver historial de cambios" style="border:1px solid #334155;background:#0f172a;color:#cbd5e1;border-radius:7px;padding:2px 6px;font-size:11px;cursor:pointer">📜</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Formulario (crear / editar) ───────────────────────────────────────────────────────────────
+  function cjExNuevo() {
+    if (!_cjExState.idCaja) return;
+    _finBeep('click');
+    _cjExState.modo = 'crear';
+    _cjExState.idExtra = '';
+    _setText('cjExFormTitulo', 'Nuevo movimiento extra');
+    _setText('cjExFormSub', ((_cjExState.caja && _cjExState.caja.vendedor) || '—') + ' · ' + _cjExState.idCaja);
+    _cjExFormSet({ tipo: 'EGRESO', monto: '', concepto: '', obs: '', motivo: '' });
+    openModal('cjModalExtraForm');
+    setTimeout(() => { const el = $('cjExFormMonto'); if (el) el.focus(); }, 90);
+  }
+
+  function cjExEditar(idExtra) {
+    const items = (_cjExState.data && _cjExState.data.items) || [];
+    const ex = items.find(x => String(x.idExtra) === String(idExtra));
+    if (!ex) { toast('Movimiento no encontrado — recarga el listado', 'warning'); return; }
+    _finBeep('click');
+    _cjExState.modo = 'editar';
+    _cjExState.idExtra = String(idExtra);
+    _setText('cjExFormTitulo', 'Editar movimiento extra');
+    _setText('cjExFormSub', String(ex.ts || '').replace('T', ' ') + ' · ' + (ex.registradoPor || '—'));
+    _cjExFormSet({ tipo: ex.tipo, monto: _money(ex.monto).toFixed(2), concepto: ex.concepto || '', obs: ex.obs || '', motivo: '' });
+    openModal('cjModalExtraForm');
+    setTimeout(() => { const el = $('cjExFormMonto'); if (el) el.focus(); }, 90);
+  }
+
+  function _cjExFormSet(v) {
+    const tipo = $('cjExFormTipo'); if (tipo) tipo.value = _cjExTipoOk.indexOf(String(v.tipo || '').toUpperCase()) >= 0 ? String(v.tipo).toUpperCase() : 'EGRESO';
+    const mon  = $('cjExFormMonto'); if (mon) mon.value = v.monto || '';
+    const con  = $('cjExFormConcepto'); if (con) con.value = v.concepto || '';
+    const obs  = $('cjExFormObs'); if (obs) obs.value = v.obs || '';
+    const mot  = $('cjExFormMotivo'); if (mot) mot.value = v.motivo || '';
+    _cjExFormMsg('');
+    _cjExFormPreview();
+  }
+
+  function _cjExFormMsg(txt) {
+    const el = $('cjExFormMsg');
+    if (!el) return;
+    el.textContent = txt || '';
+    el.classList.toggle('hidden', !txt);
+  }
+
+  // Vista previa del efecto en la caja (así el dueño ve el signo ANTES de guardar).
+  function _cjExFormPreview() {
+    const el = $('cjExFormPreview');
+    if (!el) return;
+    const tipo = ($('cjExFormTipo') || {}).value || 'EGRESO';
+    const monto = _money(($('cjExFormMonto') || {}).value);
+    const conc = String((($('cjExFormConcepto') || {}).value) || '').trim();
+    const ing = _cjExEsIngreso(tipo), vir = _cjExEsVirtual(tipo);
+    if (!(monto > 0)) { el.style.color = '#64748b'; el.textContent = 'Ingresa un monto mayor a 0'; return; }
+    el.style.color = ing ? '#34d399' : '#f87171';
+    el.textContent = `${ing ? '▲ suma' : '▼ resta'} ${_cjExS(monto)} ${vir ? 'al saldo VIRTUAL' : 'al efectivo de la caja'}${conc ? ' · ' + conc : ''}`;
+    if (/cierre/i.test(conc)) {
+      el.style.color = '#fcd34d';
+      el.textContent += ' ⚠ el cierre ya descuenta lo entregado';
+    }
+  }
+
+  function cjExFormCerrar() {
+    closeModal('cjModalExtraForm');
+    _cjExFormMsg('');
+  }
+
+  async function cjExFormGuardar() {
+    if (_cjExState.busy) return;
+    const esCrear = _cjExState.modo === 'crear';
+    const tipo  = String((($('cjExFormTipo') || {}).value) || 'EGRESO').toUpperCase();
+    const monto = _money(($('cjExFormMonto') || {}).value);
+    const conc  = String((($('cjExFormConcepto') || {}).value) || '').trim();
+    const obs   = String((($('cjExFormObs') || {}).value) || '').trim();
+    const mot   = String((($('cjExFormMotivo') || {}).value) || '').trim();
+    if (_cjExTipoOk.indexOf(tipo) < 0) { _cjExFormMsg('Tipo inválido'); return; }
+    if (!(monto > 0)) { _cjExFormMsg('El monto debe ser mayor a 0 (el signo lo da el tipo)'); _finBeep('error'); return; }
+    if (!conc) { _cjExFormMsg('Escribe un concepto (queda en el arqueo y en el ticket de turno)'); _finBeep('error'); return; }
+
+    // AUTORIZACIÓN ANTES DE ESCRIBIR (el patrón vivo de la casa: pedirAuth → claveAdmin → RPC).
+    const auth = await pedirAuth({
+      accion: esCrear ? 'EXTRA_CREAR' : 'EXTRA_EDITAR',
+      refDocumento: esCrear ? _cjExState.idCaja : _cjExState.idExtra,
+      contexto: (esCrear ? 'Crear' : 'Editar') + ` movimiento extra · ${tipo} ${_cjExS(monto)} · ${conc}`
+    });
+    if (!auth) return;
+
+    const items = (_cjExState.data && _cjExState.data.items) || [];
+    const snapshot = items.slice();          // para revertir si el servidor rechaza
+    _cjExState.busy = true;
+    const btn = $('cjExFormGuardar');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando…'; }
+
+    // id generado en el cliente → el reintento NO duplica (la RPC es idempotente por id_extra).
+    const idNuevo = esCrear
+      ? 'EX-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8)
+      : _cjExState.idExtra;
+
+    // Optimismo: pintar YA el cambio en la lista del overlay.
+    const nuevos = esCrear
+      ? items.concat([{ idExtra: idNuevo, ts: '', tipo, monto, concepto: conc, obs,
+                        registradoPor: auth.nombre || 'MOS-admin', editado: false, creadoEnMos: true }])
+      : items.map(x => String(x.idExtra) === String(idNuevo)
+          ? Object.assign({}, x, { tipo, monto, concepto: conc, obs, editado: true }) : x);
+    _cjExState.data = Object.assign({}, _cjExState.data || {}, { items: nuevos });
+    _cjExRender();
+    cjExFormCerrar();
+
+    try {
+      const payload = {
+        idExtra: idNuevo, tipo, monto, concepto: conc, obs,
+        usuario: auth.nombre || 'MOS-admin', rol: auth.rol || '',
+        motivo: mot, claveAdmin: auth.clave || '', app: 'MOS'
+      };
+      if (esCrear) payload.idCaja = _cjExState.idCaja;
+      const r = esCrear ? await API.extraCrear(payload) : await API.extraEditar(payload);
+      _finBeep(esCrear ? 'agregar' : 'ok');
+      toast(esCrear
+        ? `✓ Extra agregado · ${tipo} ${_cjExS(monto)}`
+        : (r && r.noop ? 'Sin cambios que guardar' : `✓ Movimiento actualizado · ${_cjExS(monto)}`), 'success');
+      await _cjExCargar();                 // la verdad viene del servidor (ts, editado, totales)
+      _cajasRefreshSilencioso();           // el badge 💸 y el arqueo de la card se re-pintan
+    } catch (e) {
+      _cjExState.data = Object.assign({}, _cjExState.data || {}, { items: snapshot });
+      _cjExRender();
+      _finBeep('error');
+      toast('⚠ No se guardó: ' + (e.message || e), 'error', 6000);
+    } finally {
+      _cjExState.busy = false;
+      if (btn) { btn.disabled = false; btn.textContent = '🔐 Guardar con PIN'; }
+    }
+  }
+
+  async function cjExEliminar(idExtra) {
+    if (_cjExState.busy) return;
+    const items = (_cjExState.data && _cjExState.data.items) || [];
+    const ex = items.find(x => String(x.idExtra) === String(idExtra));
+    if (!ex) { toast('Movimiento no encontrado — recarga el listado', 'warning'); return; }
+    const ing = _cjExEsIngreso(ex.tipo);
+    const detalle = [
+      `${ing ? '▲ INGRESO' : '▼ EGRESO'}${_cjExEsVirtual(ex.tipo) ? ' VIRTUAL' : ''} · ${_cjExS(ex.monto)}`,
+      `Concepto: ${ex.concepto || '—'}`,
+      `Registrado por: ${ex.registradoPor || '—'}${ex.ts ? ' · ' + String(ex.ts).replace('T', ' ') : ''}`,
+      '',
+      'Se elimina de la caja y el arqueo se recalcula sin él.',
+      'Queda copia completa en la auditoría (quién, cuándo y por qué).'
+    ].join('\n');
+    const ok = await _modalConfirm(detalle, { danger: true, titulo: '🗑 Eliminar movimiento extra', okText: 'Sí, eliminar' });
+    if (!ok) return;
+
+    const auth = await pedirAuth({
+      accion: 'EXTRA_ELIMINAR',
+      refDocumento: String(idExtra),
+      contexto: `Eliminar extra ${ex.tipo} ${_cjExS(ex.monto)} · ${ex.concepto || '—'} (caja ${_cjExState.idCaja})`
+    });
+    if (!auth) return;
+
+    const snapshot = items.slice();
+    _cjExState.busy = true;
+    _cjExState.data = Object.assign({}, _cjExState.data || {}, {
+      items: items.filter(x => String(x.idExtra) !== String(idExtra))
+    });
+    _cjExRender();
+    try {
+      await API.extraEliminar({
+        idExtra: String(idExtra),
+        usuario: auth.nombre || 'MOS-admin', rol: auth.rol || '',
+        motivo: 'Eliminado desde MOS · ' + (ex.concepto || ''),
+        claveAdmin: auth.clave || '', app: 'MOS'
+      });
+      _finBeep('eliminar');
+      toast(`✓ Movimiento eliminado · ${_cjExS(ex.monto)}`, 'success');
+      await _cjExCargar();
+      _cajasRefreshSilencioso();
+    } catch (e) {
+      _cjExState.data = Object.assign({}, _cjExState.data || {}, { items: snapshot });
+      _cjExRender();
+      _finBeep('error');
+      toast('⚠ No se eliminó: ' + (e.message || e), 'error', 6000);
+    } finally {
+      _cjExState.busy = false;
+    }
   }
 
   function _cjTkRenderFiltrosBtns() {
@@ -51345,6 +51668,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _cjTkAplicarRango, _cjTkHoyRango, _cjTkSetDoc, _cjTkSetZona,
     _cjRangoCalAbrir, _cjRangoCalNavMes, _cjRangoCalPick, cjAbrirTurno,
     cjCerrarCajaForzado,
+    // [798] overlay 💸 Extras (agregar/editar/eliminar movimientos extra con PIN admin)
+    cjVerExtrasCaja, cjExNuevo, cjExEditar, cjExEliminar,
+    cjExFormCerrar, cjExFormGuardar, _cjExFormPreview,
     cjModoTV,
     _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,
     // [v40.4] Cobro asignado de créditos — mano de cartas

@@ -312,7 +312,29 @@ async function loadData(_intento) {
     const json = await _cargarDirectoSupabase(_to);
     if (json && json.ok) {
       render(json.data);
-      if (autoPrint) _triggerAutoPrint(json.data);
+      if (autoPrint) {
+        // [815] NO imprimir el Z mientras la caja siga ABIERTA. ME abre esta ventana ANTES de
+        // ejecutar el cierre (para no perder el gesto del usuario y esquivar el popup-blocker),
+        // así que al primer render la caja normalmente todavía no cerró. Se espera a que el
+        // cierre aterrice; si no aterriza, se imprime igual pero el ticket ya se autodeclara
+        // RESUMEN PARCIAL, que es la verdad.
+        const _c = (json.data && json.data.caja) || {};
+        const _cerrada = !!_c.fechaCierre && String(_c.estado || '').toUpperCase() !== 'ABIERTA';
+        if (_cerrada || _espCierre >= ESP_CIERRE_MAX) {
+          if (!_cerrada) { try { showToast('La caja sigue abierta · se imprime el resumen parcial', 'err'); } catch(_) {} }
+          _triggerAutoPrint(json.data);
+        } else {
+          _espCierre++;
+          try {
+            const rootEl2 = document.getElementById('root');
+            if (rootEl2) rootEl2.insertAdjacentHTML('afterbegin',
+              '<div style="padding:10px 14px;margin:0 0 10px;border-radius:12px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.4);color:#fbbf24;font-size:13px;font-weight:700">'
+              + '⏳ Esperando que el cierre termine para imprimir el Ticket-Z… (' + _espCierre + '/' + ESP_CIERRE_MAX + ')</div>');
+          } catch(_) {}
+          setTimeout(() => loadData(0), 3000);
+          return;
+        }
+      }
     } else if (_intento < MAX) {
       _reintentar();
     } else {
@@ -1329,6 +1351,8 @@ async function doPrint(printNodeId) {
 }
 
 let _autoPrintFired = false;
+// [815] intentos de espera a que el cierre aterrice antes de imprimir el Z (3s c/u).
+let _espCierre = 0; const ESP_CIERRE_MAX = 8;
 function _triggerAutoPrint(data) {
   // Guard: solo una vez por carga de página. El refresh cada 60s vuelve a
   // llamar loadData() y antes re-disparaba múltiples impresiones (bug visto:

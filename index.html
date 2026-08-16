@@ -17306,6 +17306,100 @@
       </div>
 
       <!-- ═══════════════════════════════════════════════════════
+           [798] MODAL EXTRAS DE LA CAJA — mismo molde que el de
+           tickets (cabecera + cuerpo scrolleable + pie). Nace de
+           un error real: dos egresos "Cierre de caja" duplicados
+           dejaron el arqueo en −1925.60. Desde acá el dueño los
+           agrega / edita / elimina con PIN admin y todo queda en
+           el historial del movimiento (📜 por fila).
+           OJO z-index: este overlay vive en 9400 (.modal-backdrop)
+           igual que #modalTkHistorial, que va DESPUÉS en el DOM →
+           el historial se pinta encima sin tocar z-index.
+      ═══════════════════════════════════════════════════════ -->
+      <div id="cjModalExtras" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('cjModalExtras')">
+        <div class="modal-box flex flex-col" style="max-width:640px;max-height:94vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(251,146,60,0.10),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#7c2d12,#fb923c);">💸</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white" id="cjModalExtrasTitulo">Movimientos extra</h2>
+              <p id="cjModalExtrasSubtitulo" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.closeModal('cjModalExtras')" class="modal-close-x">×</button>
+          </div>
+          <!-- totales arriba (ingresos / egresos / neto efectivo / neto virtual) -->
+          <div id="cjExTotales" class="px-3 py-2 flex-shrink-0" style="background:#0a1424;border-bottom:1px solid #1e293b;"></div>
+          <div class="overflow-y-auto flex-1">
+            <div id="cjExList"></div>
+          </div>
+          <div class="p-3 flex-shrink-0" style="border-top:1px solid #1e293b;background:#070f1a;">
+            <button id="cjExBtnNuevo" onclick="MOS.cjExNuevo()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:8px;font-weight:800;font-size:14px;padding:12px;border-radius:12px;border:none;cursor:pointer;color:#04120c;background:linear-gradient(135deg,#fbbf24,#f59e0b)">➕ Agregar extra</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
+           [798] MODAL FORMULARIO DE EXTRA (crear / editar).
+           z-index 9500 para quedar SOBRE #cjModalExtras (9400);
+           el teclado de PIN (9700) y _modalConfirm (9600) siguen
+           quedando por encima de este.
+      ═══════════════════════════════════════════════════════ -->
+      <div id="cjModalExtraForm" class="modal-backdrop hidden" style="z-index:9500" onclick="if(MOS._validBackdropClose(event,this))MOS.cjExFormCerrar()">
+        <div class="modal-box flex flex-col" style="max-width:440px;max-height:92vh">
+          <div class="px-5 py-4 flex items-center gap-3 flex-shrink-0" style="border-bottom:1px solid #1e293b;background:linear-gradient(135deg,rgba(251,146,60,0.12),transparent);">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#7c2d12,#fb923c);">✎</div>
+            <div class="min-w-0 flex-1">
+              <h2 class="font-bold text-base text-white" id="cjExFormTitulo">Editar movimiento</h2>
+              <p id="cjExFormSub" class="text-[11px] text-slate-500 mt-0.5">—</p>
+            </div>
+            <button onclick="MOS.cjExFormCerrar()" class="modal-close-x">×</button>
+          </div>
+          <div class="overflow-y-auto flex-1 p-4" style="display:flex;flex-direction:column;gap:12px">
+            <div>
+              <label for="cjExFormTipo" style="display:block;font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:5px">Tipo de movimiento</label>
+              <select id="cjExFormTipo" class="inp text-xs" style="width:100%;padding:9px 10px;color-scheme:dark" onchange="MOS._cjExFormPreview()">
+                <option value="EGRESO">💵 ▼ EGRESO · sale efectivo de la caja</option>
+                <option value="INGRESO">💵 ▲ INGRESO · entra efectivo a la caja</option>
+                <option value="EGRESO_VIRTUAL">📱 ▼ EGRESO VIRTUAL · sale de Yape/Plin</option>
+                <option value="INGRESO_VIRTUAL">📱 ▲ INGRESO VIRTUAL · entra por Yape/Plin</option>
+              </select>
+            </div>
+            <div>
+              <label for="cjExFormMonto" style="display:block;font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:5px">Monto (S/) · siempre positivo, el signo lo da el tipo</label>
+              <input id="cjExFormMonto" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00"
+                     class="inp" style="width:100%;padding:11px 12px;font-size:20px;font-weight:800;text-align:right"
+                     oninput="MOS._cjExFormPreview()">
+            </div>
+            <div>
+              <label for="cjExFormConcepto" style="display:block;font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:5px">Concepto</label>
+              <input id="cjExFormConcepto" type="text" list="cjExConceptos" maxlength="80" placeholder="Pago proveedor, Gasto operativo…"
+                     class="inp text-xs" style="width:100%;padding:9px 10px" oninput="MOS._cjExFormPreview()">
+              <datalist id="cjExConceptos">
+                <option value="Pago proveedor"></option>
+                <option value="Gasto operativo"></option>
+                <option value="Retiro jefe"></option>
+                <option value="Otro ingreso"></option>
+                <option value="Otro egreso"></option>
+              </datalist>
+            </div>
+            <div>
+              <label for="cjExFormObs" style="display:block;font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:5px">Observación (opcional)</label>
+              <textarea id="cjExFormObs" rows="2" maxlength="200" placeholder="detalle libre…" class="inp text-xs" style="width:100%;padding:9px 10px;resize:vertical"></textarea>
+            </div>
+            <div>
+              <label for="cjExFormMotivo" style="display:block;font-size:11px;font-weight:700;color:#94a3b8;margin-bottom:5px">Motivo del cambio (queda en el historial)</label>
+              <input id="cjExFormMotivo" type="text" maxlength="120" placeholder="ej: la cajera tipeó mal el monto" class="inp text-xs" style="width:100%;padding:9px 10px">
+            </div>
+            <div id="cjExFormPreview" style="font-size:12px;font-weight:800;text-align:center;padding:9px;border-radius:10px;background:#0a1424;border:1px solid #1e293b;color:#94a3b8">—</div>
+            <div id="cjExFormMsg" class="hidden" style="font-size:11px;font-weight:700;color:#fca5a5;text-align:center"></div>
+          </div>
+          <div class="p-3 flex-shrink-0" style="border-top:1px solid #1e293b;display:flex;gap:8px">
+            <button onclick="MOS.cjExFormCerrar()" style="flex:1;font-weight:800;font-size:13px;padding:11px;border-radius:11px;border:1px solid #334155;cursor:pointer;color:#cbd5e1;background:#0f172a">Cancelar</button>
+            <button id="cjExFormGuardar" onclick="MOS.cjExFormGuardar()" style="flex:2;font-weight:800;font-size:13px;padding:11px;border-radius:11px;border:none;cursor:pointer;color:#04120c;background:linear-gradient(135deg,#34d399,#10b981)">🔐 Guardar con PIN</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
            MODAL: ACCIONES DE TICKET (menú contextual)
       ═══════════════════════════════════════════════════════ -->
       <div id="modalTkAcciones" class="modal-backdrop hidden" onclick="if(MOS._validBackdropClose(event,this))MOS.closeModal('modalTkAcciones')">
@@ -21354,7 +21448,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.811';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.812';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21633,7 +21727,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.810"></script>
+<script src="js/api.js?v=2.43.812"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -21649,7 +21743,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.810"></script>
+<script src="js/app.js?v=2.43.812"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
