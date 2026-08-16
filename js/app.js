@@ -12819,6 +12819,10 @@ const MOS = (() => {
       '.cvf-it-p i{font-style:normal;font-size:8.5px;color:#64748b;margin-left:2px}' +
       '.cvf-it-t{flex:none;font-family:ui-monospace,monospace;color:#5f7192;font-size:10px}' +
       '@media (max-width:460px){.cvf{padding:0;align-items:flex-end}.cvf-card{width:100%;max-height:92vh;border-radius:20px 20px 0 0;transform:translateY(28px)}}' +
+      // [826] boton FIJAR en la card de dispositivo
+      '.mbtn.fij{background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.32);color:#7dd3fc}' +
+      '.mbtn.fij:hover{background:rgba(56,189,248,.22)}' +
+      '.mbtn.fij.on{background:rgba(56,189,248,.26);border-color:rgba(56,189,248,.7);color:#e0f2fe;box-shadow:0 0 0 1px rgba(56,189,248,.3),0 0 12px rgba(56,189,248,.35)}' +
       '.cov-anul-n{font-size:9.5px;font-weight:800;color:#f0a6a6;background:rgba(248,113,113,.13);border-radius:5px;padding:1px 5px;flex:none}' +
       '.cov-reg-n{font-size:9.5px;font-weight:800;color:#8296b5;background:#0f1a2c;border:1px solid #1d2942;border-radius:5px;padding:0 5px;flex:none}' +
       '.cov-anul-pie{padding:8px 11px;font-size:10px;color:#5f7192;line-height:1.5;font-weight:600}' +
@@ -25824,9 +25828,74 @@ const MOS = (() => {
       + (master && !isSusp ? `<span class="mbtn spy2" onclick="event.stopPropagation();MOS.abrirEspiaV2('${idAttr}')" title="Espía V2 · WebRTC live (Master)">🛰️</span>` : '')
       + (master && !isSusp ? `<span class="mbtn tl" onclick="event.stopPropagation();MOS.abrirTimelineBufferEspia('${idAttr}')" title="Timeline buffer (12h histórico)">📼</span>` : '')
       + (isSusp ? `<span class="mbtn" style="background:rgba(16,185,129,.14);border-color:rgba(16,185,129,.4);color:#6ee7b7" onclick="event.stopPropagation();MOS.aprobarDispositivo('${idAttr}')" title="Reactivar">↻</span>` : '')
+      // [826] FIJAR: exime a este equipo de la suspensión por +2 días sin uso. Solo MASTER,
+      // solo equipos de MOS. El ícono cambia de forma según el estado.
+      + (master && _esDispMOS(d)
+          ? `<span class="mbtn fij${d.Fijado ? ' on' : ''}" onclick="event.stopPropagation();MOS.dispToggleFijado('${idAttr}')" title="${d.Fijado ? 'FIJADO · no se suspende por inactividad. Tocar para soltar' : 'Fijar: que la inactividad no lo suspenda (pide clave master)'}">${d.Fijado ? '📍' : '📌'}</span>`
+          : '')
       + `<span class="mbtn edit" onclick="event.stopPropagation();MOS.abrirModalDispositivo('${idAttr}')" title="Editar">✏️</span>`
       + `</div>`;
-    // [786] Chip amo/esclavo (principal/extensión) — SOLO cuando el equipo forma parte de un par
+    // ═══════════ [826] FIJAR / SOLTAR un dispositivo ═══════════
+  // Un equipo FIJADO queda exento de la regla de inactividad (+2 días → SUSPENDIDO, +7 →
+  // archivado). Nace de un caso real: la jefa no maneja claves y no tiene por qué pedir
+  // reactivación cada vez. NO da permisos ni evita el bloqueo manual: si un equipo se pierde,
+  // se bloquea a mano igual que siempre.
+  function _esDispMOS(d) {
+    const a = String((d && d.App) || '').trim().toUpperCase();
+    return a === 'MOS' || a === '';
+  }
+  async function dispToggleFijado(id) {
+    const d = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
+    if (!d) return;
+    const fijar = !d.Fijado;
+    const nom = String(d.Nombre_Equipo || '').trim() || id.slice(0, 8);
+
+    // El servidor exige que el nombre lo haya puesto una persona. Se avisa ANTES de pedir la
+    // clave: sería absurdo hacer tipear 8 dígitos para después rebotar.
+    if (fijar && !d.Nombre_Manual) {
+      const ir = await _modalConfirm(
+        'Este equipo todavía tiene el nombre que se puso solo ("' + nom + '").\n\n' +
+        'Para fijarlo hay que bautizarlo primero, así se sabe de quién es. ¿Abrir el editor de nombre?',
+        { titulo: '✏️ Falta ponerle nombre', okText: 'Ponerle nombre' });
+      if (ir) abrirModalDispositivo(id);
+      return;
+    }
+    if (!fijar) {
+      const ok = await _modalConfirm(
+        'Soltar "' + nom + '": vuelve a la regla general y se suspenderá solo si pasa 2 días sin conectarse. ¿Continuar?',
+        { titulo: '📌 Soltar dispositivo', okText: 'Sí, soltar' });
+      if (!ok) return;
+    }
+
+    const auth = await pedirAuth({
+      accion: 'DISPOSITIVO_FIJAR',
+      refDocumento: id,
+      contexto: (fijar ? 'Fijar' : 'Soltar') + ' "' + nom + '" · exención de la suspensión por inactividad',
+      allowCache: false
+    });
+    if (!auth) return;
+
+    try {
+      const r = await API.post('dispositivoFijar', {
+        idDispositivo: id, fijar: fijar, clave: auth.clave || '',
+        usuario: (S.session && S.session.nombre) || ''
+      });
+      const dd = r && (r.data || r);
+      if (!r || r.ok === false) {
+        toast((r && (r.mensaje || r.error)) || 'No se pudo aplicar', 'error');
+        return;
+      }
+      d.Fijado = !!(dd && dd.fijado);
+      d.Fijado_Por = d.Fijado ? ((S.session && S.session.nombre) || '') : '';
+      toast(d.Fijado ? ('📍 "' + nom + '" fijado — la inactividad ya no lo suspende')
+                     : ('📌 "' + nom + '" soltado — vuelve a la regla general'), 'ok', 4000);
+      try { renderInfra(); } catch(_) {}   // repinta la card con el icono nuevo
+    } catch (e) {
+      toast('Error: ' + (e.message || e), 'error');
+    }
+  }
+
+  // [786] Chip amo/esclavo (principal/extensión) — SOLO cuando el equipo forma parte de un par
     // en la MISMA app (caja ME con extensión, etc.). Misma persona en apps distintas (WH+ME+MosGo)
     // NO es amo-esclavo → sin chip. El mapa lo calcula el server (mos.dispositivos_amo_esclavo).
     const _rolAE = (cfgData.rolesAmoEsclavo || {})[String(d.ID_Dispositivo)];
@@ -25835,7 +25904,11 @@ const MOS = (() => {
       : _rolAE === 'ESCLAVO'
         ? `<span class="chip" title="Equipo EXTENSIÓN (esclavo) — depende de un principal; no cierra caja" style="background:rgba(148,163,184,.14);border:1px solid rgba(148,163,184,.42);color:#cbd5e1;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">🔗 esclavo</span>`
         : '';
-    return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}${aeChip}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${_dispMiniPermChips(d)}${monitor}</div>`;
+    // [826] chip del fijado: se ve de un vistazo cuál equipo está exento
+    const fijChip = d.Fijado
+      ? `<span class="chip" title="Fijado por ${_escapeHtml(String(d.Fijado_Por || 'master'))} — la inactividad no lo suspende" style="background:rgba(56,189,248,.16);border:1px solid rgba(56,189,248,.5);color:#7dd3fc;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px">📍 fijado</span>`
+      : '';
+    return `<div class="dev ${isFresh ? 'online' : ''}">${pill}${appc}${aeChip}${fijChip}<div class="glass"><div class="halo"></div>${devt}</div>${cap}${_dispMiniPermChips(d)}${monitor}</div>`;
   }
 
   // [801] Mini-chips de permisos EN LA TARJETA (vistazo rápido: ¿este móvil se puede monitorear?).
@@ -52081,6 +52154,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v5 §11] Mesa de compras (workbench único desde Almacén + Catálogo)
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaSetZona, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
+    dispToggleFijado,
     curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
     _curvaTab, _curvaDock, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos

@@ -2628,6 +2628,16 @@ const API = (() => {
       if (r.ok === false) throw new Error(r.error || 'no se pudo actualizar la guía');
       return { ok: true, data: { url, ocr: 'PENDIENTE' } };
     }
+    // [807] FIJAR / SOLTAR un dispositivo: lo exime de la suspensión por inactividad.
+    // La RPC re-verifica la clave MASTER en el servidor (nivel 3) y audita la acción.
+    if (action === 'dispositivoFijar') {
+      const r = await _sbRpcMOS('dispositivo_fijar', { p: {
+        idDispositivo: p.idDispositivo, fijar: !!p.fijar,
+        clave: p.clave || '', usuario: p.usuario || '', motivo: p.motivo || ''
+      } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:{idDispositivo, fijado, nombre}}
+    }
     // [802 · curva] INGRESOS del producto por guía de proveedor, cada uno diciendo si tiene
     // costo válido registrado. El overlay pinta un punto hueco en los días que entró mercadería
     // pero nadie cargó el costo — el hueco que antes no se veía. PURA.
@@ -2952,6 +2962,7 @@ const API = (() => {
     rotacionZonasCatalogo:       () => true,   // mos.rotacion_zonas_catalogo (775) · chips de zona · LECTURA PURA
     guiaCambiarFoto:             () => true,   // wh.guia_set_foto (774) · Storage + trigger OCR 762 · escritura directa
     historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
+    dispositivoFijar:            () => true,   // mos.dispositivo_fijar (807) · exime de la suspensión · PURA
     curvaIngresos:               () => true,   // mos.curva_ingresos (802) · ingresos sin costo en la curva · PURA
     curvaGuiaDetalle:            () => true,   // mos.curva_guia_detalle (802) · card flotante de la guía · PURA
     wh_auditarStockGlobal:       () => true,   // mos.wh_auditar_cuadre (381)
@@ -3006,7 +3017,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.
