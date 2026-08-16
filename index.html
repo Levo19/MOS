@@ -18978,18 +18978,6 @@
         <span class="bnav-lbl">Config</span>
       </div>
     </button>
-    <!-- [AUDITORÍA 15-ago · FIX] Puerta del bottom-sheet "Más". El sheet ya existía y ya
-         inyectaba Almacén, pero NADIE llamaba a MOS.abrirMasMenu() → Almacén salió del nav
-         en [nav-reorg] y su única entrada quedó DENTRO de Zona, que está gateada por el flag
-         `zonaModulo` que NO existe en mos.config (solo se activa por localStorage). En un
-         equipo nuevo Zona no aparece y Almacén quedaba INALCANZABLE. Este botón es la salida
-         que el propio comentario de almVolver() ya daba por existente. -->
-    <button class="bnav-btn" onclick="try{MOS.abrirMasMenu()}catch(e){}" aria-label="Más módulos">
-      <div class="bnav-pill">
-        <span class="bnav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
-        <span class="bnav-lbl">Más</span>
-      </div>
-    </button>
   </div>
 </nav>
 <script>
@@ -19005,58 +18993,7 @@
   };
 </script>
 
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- BOTTOM-SHEET "MÁS" (móvil) — accesos secundarios              -->
-<!-- Se rellena/abre por JS (MOS.abrirMasMenu). El item Config solo  -->
-<!-- se inyecta si _esMasterSession()===true. Cierra tocando fuera   -->
-<!-- del panel o el botón ✕. z-index alto para tapar el bottomnav.   -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<div id="masSheetOvl" class="mas-sheet-ovl" onclick="MOS.cerrarMasMenu(event)" aria-hidden="true">
-  <div class="mas-sheet" role="dialog" aria-modal="true" aria-label="Más accesos" onclick="event.stopPropagation()">
-    <div class="mas-sheet-grip"></div>
-    <div class="mas-sheet-head">
-      <span class="mas-sheet-title">Más accesos</span>
-      <button class="mas-sheet-x" type="button" onclick="MOS.cerrarMasMenu()" aria-label="Cerrar">✕</button>
-    </div>
-    <div id="masSheetGrid" class="mas-sheet-grid"><!-- items inyectados por JS --></div>
-  </div>
-</div>
 
-<style>
-  /* ── Bottom-sheet "Más" (solo móvil, coherente con .bnav-*) ───────────── */
-  .mas-sheet-ovl {
-    position: fixed; inset: 0; z-index: 60;
-    background: rgba(2,8,23,.62); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
-    display: none; align-items: flex-end; justify-content: center;
-    opacity: 0; transition: opacity .22s ease;
-  }
-  .mas-sheet-ovl.show { display: flex; opacity: 1; }
-  .mas-sheet {
-    width: 100%; max-width: 560px;
-    background: rgba(10,17,35,.98); border-top: 1px solid #1e293b;
-    border-radius: 20px 20px 0 0; padding: 8px 16px calc(18px + env(safe-area-inset-bottom,0));
-    box-shadow: 0 -12px 40px rgba(0,0,0,.5);
-    transform: translateY(102%); transition: transform .28s cubic-bezier(.34,1.4,.5,1);
-  }
-  .mas-sheet-ovl.show .mas-sheet { transform: translateY(0); }
-  .mas-sheet-grip { width: 40px; height: 4px; border-radius: 999px; background: #334155; margin: 6px auto 10px; }
-  .mas-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .mas-sheet-title { font-size: 13px; font-weight: 800; color: #cbd5e1; letter-spacing: .01em; }
-  .mas-sheet-x {
-    width: 44px; height: 44px; border: none; background: transparent; color: #94a3b8;
-    font-size: 18px; cursor: pointer; border-radius: 12px; display: flex; align-items: center; justify-content: center;
-  }
-  .mas-sheet-x:active { background: rgba(148,163,184,.14); }
-  .mas-sheet-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding-bottom: 6px; }
-  .mas-sheet-item {
-    min-height: 84px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
-    padding: 12px 6px; border-radius: 16px; border: 1px solid #1e293b; background: rgba(30,41,59,.45);
-    color: #cbd5e1; cursor: pointer; transition: background .18s, transform .18s;
-  }
-  .mas-sheet-item:active { transform: scale(.95); background: rgba(51,65,85,.6); }
-  .mas-sheet-item .mas-sheet-ico { display: flex; align-items: center; justify-content: center; color: #ffd700; }
-  .mas-sheet-item .mas-sheet-lbl { font-size: 11.5px; font-weight: 700; text-align: center; line-height: 1.15; }
-</style>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- MODALS                                                     -->
@@ -21448,7 +21385,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.822';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.823';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21727,7 +21664,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.822"></script>
+<script src="js/api.js?v=2.43.823"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -21743,7 +21680,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.822"></script>
+<script src="js/app.js?v=2.43.823"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

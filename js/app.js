@@ -611,46 +611,6 @@ const MOS = (() => {
     } catch (_) {}
   }
 
-  // [nav-reorg] Bottom-sheet "Más" (móvil): accesos secundarios. Los ítems se generan aquí para
-  // poder ocultar Config a quien no es MASTER (mismo criterio que _aplicarVisibilidadConfig / _esMasterSession).
-  function abrirMasMenu() {
-    const ovl = document.getElementById('masSheetOvl');
-    const grid = document.getElementById('masSheetGrid');
-    if (!ovl || !grid) return;
-    // Definición de ítems. Config solo para MASTER estricto.
-    const items = [
-      { view: 'dashboard',   lbl: 'Dashboard',   ico: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>' },
-      { view: 'proveedores', lbl: 'Proveedores', ico: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>' },
-      { view: 'almacen',     lbl: 'Almacén',     ico: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-6 9 6v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>' }
-    ];
-    if (_esMasterSession()) {
-      items.push({ view: 'config', lbl: 'Configuración', ico: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="8" cy="6" r="2.5"/><circle cx="16" cy="12" r="2.5"/><circle cx="10" cy="18" r="2.5"/></svg>' });
-    }
-    grid.innerHTML = items.map(it =>
-      '<button type="button" class="mas-sheet-item" onclick="MOS.masNav(\'' + it.view + '\')">' +
-        '<span class="mas-sheet-ico">' + it.ico + '</span>' +
-        '<span class="mas-sheet-lbl">' + it.lbl + '</span>' +
-      '</button>'
-    ).join('');
-    ovl.classList.add('show');
-    ovl.setAttribute('aria-hidden', 'false');
-  }
-
-  // Cierra la hoja "Más". Si se llama desde el click del overlay, solo cierra al tocar el fondo
-  // (el panel interior detiene la propagación con event.stopPropagation en el HTML).
-  function cerrarMasMenu(ev) {
-    const ovl = document.getElementById('masSheetOvl');
-    if (!ovl) return;
-    ovl.classList.remove('show');
-    ovl.setAttribute('aria-hidden', 'true');
-  }
-
-  // Navega desde un ítem del sheet "Más" y cierra la hoja.
-  function masNav(view) {
-    cerrarMasMenu();
-    nav(view);
-  }
-
   // ── LOGIN / LOCK ─────────────────────────────────────────────
   let _loginPersonal   = [];
   let _loginSelectedId = null;
@@ -51877,7 +51837,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toast,
     init, nav, refresh, fabAction, iconBusy,
     // [nav-reorg] Volver desde Almacén (anti-huérfano) + bottom-sheet "Más" (móvil)
-    almVolver, abrirMasMenu, cerrarMasMenu, masNav,
+    almVolver,
     // Facturación CPE (100% Supabase)
     setFacTab, facSetTipo, facDocInput, facAddItem, facDelItem, facItemInput,
     facLookup, facEmitir, facCargarHistorial, facAnular, _facReglasRefresh,
