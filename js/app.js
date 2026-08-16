@@ -12554,14 +12554,20 @@ const MOS = (() => {
     }
     const items = d.items || [];
     const mios = items.filter(it => it.esEste).length;
+    // [830] ¿la guía dejó un costo VÁLIDO para este producto? Si no, el precio de SU línea se
+    // marca como no aplicado: es el número del documento, no el costo del catálogo.
+    const sinCosto = !(d.costo && d.costo.valor != null);
     const itemsHtml = items.map(it => {
       const q = parseFloat(it.cantidad) || 0, pu = parseFloat(it.precio) || 0;
+      const muerto = it.esEste && sinCosto;
       return '<div class="cvf-it' + (it.esEste ? ' is-yo' : '') + '">' +
         (it.esEste ? '<span class="cvf-it-mark">👉</span>' : '') +
         '<span class="cvf-it-n">' + _escapeHtml(String(it.nombre || '')) + '</span>' +
         '<span class="cvf-it-q">×' + _cantTxt(q) + '</span>' +
-        (pu > 0 ? '<span class="cvf-it-p">S/ ' + _money(pu).toFixed(2) + '<i>c/u</i></span>' +
-                  '<span class="cvf-it-t" title="total de la línea: ' + _cantTxt(q) + ' × S/ ' + _money(pu).toFixed(2) + '">S/ ' + _money(q * pu).toFixed(2) + '</span>' : '') +
+        (pu > 0 ? '<span class="cvf-it-p' + (muerto ? ' is-off' : '') + '">S/ ' + _money(pu).toFixed(2) + '<i>c/u</i></span>' +
+                  '<span class="cvf-it-t' + (muerto ? ' is-off' : '') + '" title="total de la línea: ' + _cantTxt(q) + ' × S/ ' + _money(pu).toFixed(2) + '">S/ ' + _money(q * pu).toFixed(2) + '</span>' +
+                  (muerto ? '<span class="cvf-it-off" title="Este monto está en la guía, pero NO quedó como costo del producto">no aplicado</span>' : '')
+                : '') +
         '</div>';
     }).join('');
     const tieneFoto = d.foto && /^https?:/i.test(String(d.foto));
@@ -12608,7 +12614,8 @@ const MOS = (() => {
       costo + borrados +
       '<div class="cvf-guia-body">' + foto +
         '<div class="cvf-its">' +
-          '<div class="cvf-its-tit">' + items.length + ' ítem(s)' + (mios ? ' · ' + mios + ' de este producto' : '') + '</div>' +
+          '<div class="cvf-its-tit">' + items.length + ' ítem(s)' + (mios ? ' · ' + mios + ' de este producto' : '') +
+            '<span class="cvf-its-sub">montos tal como figuran en la guía</span></div>' +
           itemsHtml + '</div></div>';
   }
 
@@ -12864,6 +12871,9 @@ const MOS = (() => {
       '.cvf-it-p{flex:none;font-family:ui-monospace,monospace;color:#cbd5e1;font-weight:700}' +
       '.cvf-it-p i{font-style:normal;font-size:8.5px;color:#64748b;margin-left:2px}' +
       '.cvf-it-t{flex:none;font-family:ui-monospace,monospace;color:#5f7192;font-size:10px}' +
+      '.cvf-it-p.is-off,.cvf-it-t.is-off{text-decoration:line-through;opacity:.45}' +
+      '.cvf-it-off{flex:none;font-size:8.5px;font-weight:800;color:#f0a6a6;background:rgba(248,113,113,.14);border:1px solid rgba(248,113,113,.3);border-radius:5px;padding:1px 5px}' +
+      '.cvf-its-sub{display:block;font-size:8.5px;font-weight:600;letter-spacing:0;text-transform:none;color:#4b5c78;margin-top:2px}' +
       '@media (max-width:460px){.cvf{padding:0;align-items:flex-end}.cvf-card{width:100%;max-height:92vh;border-radius:20px 20px 0 0;transform:translateY(28px)}}' +
       // [826] boton FIJAR en la card de dispositivo
       '.mbtn.fij{background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.32);color:#7dd3fc}' +
