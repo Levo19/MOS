@@ -33465,6 +33465,13 @@ const MOS = (() => {
     if (!_espiaV2) return;
     // Polling de respuesta + ICE del device
     _espiaV2.pollTimer = setInterval(_espiaV2Poll, 600);
+    // [833] Repintado único al vencer la espera de streams: si a los 15s la pantalla no llegó,
+    // su tile sale del mosaico y el placeholder explica por qué. Sin esto el visor no se
+    // refresca hasta el próximo evento y el spinner se queda eterno.
+    const _sesEspera = _espiaV2.sesionId;
+    setTimeout(() => {
+      if (_espiaV2 && _espiaV2.sesionId === _sesEspera) { try { _espiaV2RenderModal(); } catch(_){} }
+    }, 15400);
   }
 
   // [v2.43.89 REFACTOR] BATCH SYNC — antes 3-4 round-trips Apps Script por tick,
@@ -33796,11 +33803,17 @@ const MOS = (() => {
     // predicen que llegará (para pintar placeholders con spinner mientras
     // conecta). Unión ordenada; si aún no hay nada, un solo tile placeholder.
     const activos = orden.filter(k => s[k]);
+    // [833] Un stream ESPERADO solo reserva su tile mientras razonablemente puede estar llegando.
+    // `tienePantalla` es true en toda PC con Chrome porque existe getDisplayMedia — pero esa API
+    // exige que la PERSONA acepte el diálogo "Elige qué compartir", y una cajera nunca lo hace.
+    // Sin este corte, el mosaico se quedaba con un tile de pantalla negro y un spinner eterno.
+    const _espMs = Date.now() - (_espiaV2.tsInicio || Date.now());
+    const _aunLlega = _espMs < 15000;
     const esperados = [];
     if (caps) {
-      if (caps.tienePantalla === true) esperados.push('pantalla');
-      if ((caps.camsTotales || 0) >= 1 || caps.esMobile) esperados.push('camara');
-      if ((caps.camsTotales || 0) >= 2) esperados.push('camara2');
+      if (caps.tienePantalla === true && (s.pantalla || _aunLlega)) esperados.push('pantalla');
+      if (((caps.camsTotales || 0) >= 1 || caps.esMobile) && (s.camara || _aunLlega)) esperados.push('camara');
+      if ((caps.camsTotales || 0) >= 2 && (s.camara2 || _aunLlega)) esperados.push('camara2');
     }
     let visibles = orden.filter(k => activos.indexOf(k) >= 0 || esperados.indexOf(k) >= 0);
     if (!visibles.length) {
@@ -33834,9 +33847,17 @@ const MOS = (() => {
           style="position:absolute;top:10px;right:10px;background:rgba(10,15,25,.55);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:11px;width:36px;height:36px;font-size:15px;cursor:pointer;z-index:4;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;transition:background .15s"
           onmouseover="this.style.background='rgba(99,102,241,.6)'" onmouseout="this.style.background='rgba(10,15,25,.55)'">📸</button>
         ${!solo ? `<div class="espiaV2-tile-hint" style="position:absolute;bottom:12px;right:12px;font-size:9px;font-weight:700;color:#e2e8f0;background:rgba(10,15,25,.5);padding:4px 9px;border-radius:14px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);z-index:4;letter-spacing:.3px;opacity:.85">⤢ ampliar</div>` : ''}
-        ${!activo ? `<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#0f172a,#05070d);color:#64748b">
-            <div style="width:46px;height:46px;border:3px solid rgba(${m.color},.25);border-top-color:rgba(${m.color},1);border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
-            <div style="margin-top:14px;font-size:11px;color:#94a3b8;font-weight:600">Conectando ${m.label.toLowerCase()}…</div>
+        ${!activo ? `<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,#0f172a,#05070d);color:#64748b;padding:20px;text-align:center">
+            ${_aunLlega
+              ? `<div style="width:46px;height:46px;border:3px solid rgba(${m.color},.25);border-top-color:rgba(${m.color},1);border-radius:50%;animation:espiaSpin 1s linear infinite"></div>
+                 <div style="margin-top:14px;font-size:11px;color:#94a3b8;font-weight:600">Conectando ${m.label.toLowerCase()}…</div>`
+              /* [833] Pasados los 15s ya no está "conectando": no llegó. Se dice por qué. */
+              : `<div style="font-size:38px;opacity:.5">${k === 'pantalla' ? '🖥️' : '📷'}</div>
+                 <div style="margin-top:10px;font-size:12.5px;color:#cbd5e1;font-weight:800">Sin ${m.label.toLowerCase()}</div>
+                 <div style="margin-top:7px;font-size:10.5px;color:#7488a6;line-height:1.55;max-width:280px">${
+                   k === 'pantalla'
+                     ? 'El navegador NO comparte la pantalla solo: en ese equipo tiene que aparecer el aviso de Chrome «Elige qué compartir» y alguien debe aceptarlo. En celulares no existe esa opción.'
+                     : 'El equipo no entregó la cámara: puede estar tapada, en uso por otra app o sin permiso concedido.'}</div>`}
           </div>` : ''}
       </div>`;
     }).join('');
