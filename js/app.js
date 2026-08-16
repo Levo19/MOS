@@ -11932,8 +11932,11 @@ const MOS = (() => {
     const DAY = 86400000, now = Date.now();
     const P = (hist.P || []).slice().sort((a, b) => a.t - b.t);
     const C = (hist.C || []).slice().sort((a, b) => a.t - b.t);
+    // [803] tercera serie: días en que ENTRÓ mercadería del proveedor sin costo cargado.
+    // No tienen valor en S/ (por eso no van en la curva): se marcan en una banda al pie.
+    const I = (opts.ingresos || []).slice().sort((a, b) => a.t - b.t);
     let hoyP = nowPrecio, hoyC = nowCosto;
-    const allT = P.concat(C).map(p => p.t).concat([now]);
+    const allT = P.concat(C).map(p => p.t).concat(I.map(p => p.t)).concat([now]);
     const baseV = P.concat(C).map(p => p.v).concat([hoyP, hoyC].filter(v => v > 0));
     if (!baseV.length) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
     const tMin = Math.min(...allT), tMax = Math.max(...allT, now);
@@ -11961,6 +11964,8 @@ const MOS = (() => {
     const yOf = v => M.t + (1 - (v - vMin) / (vMax - vMin || 1)) * plotH();
     let drawnPts = [];        // [H7] posiciones de puntos para detectar clicks
     let sel = null;           // registro seleccionado (tooltip)
+    let hov = null;           // [803] punto bajo el cursor/dedo (crosshair)
+    let anim = opts.animar ? 0 : 1;   // [803] barrido de entrada 0→1 (solo en el overlay grande)
     const _fechaCorta = t => { try { return new Date(t).toLocaleDateString('es-PE', { day: '2-digit', month: 'short' }); } catch(_) { return ''; } };
     function draw() {
       ctx.clearRect(0, 0, cssW, cssH);
@@ -11979,20 +11984,60 @@ const MOS = (() => {
         const tt = view.vs + g / 3 * (view.ve - view.vs), xx = xOf(tt), d = new Date(tt);
         ctx.fillStyle = '#5f7192'; ctx.fillText(d.getDate() + '/' + (d.getMonth() + 1), Math.min(Math.max(xx, M.l + 12), cssW - M.r - 12), cssH - M.b + 5);
       }
-      // clip al área de trazado
-      ctx.save(); ctx.beginPath(); ctx.rect(M.l, M.t, plotW(), plotH()); ctx.clip();
-      const serie = (arr, hoyV, color, dash, tipo) => {
+      // clip al área de trazado — [803] el ancho sigue `anim` para el barrido de entrada
+      ctx.save(); ctx.beginPath(); ctx.rect(M.l, M.t, Math.max(1, plotW() * anim), plotH()); ctx.clip();
+      const serie = (arr, hoyV, color, dash, tipo, rgb) => {
         const pts = arr.slice(); if (hoyV > 0) pts.push({ t: now, v: hoyV, hoy: true });
         if (!pts.length) return;
+        // [803] relleno degradado bajo la línea: da volumen sin tapar la otra serie
+        if (opts.big && pts.length > 1 && rgb) {
+          const gr = ctx.createLinearGradient(0, M.t, 0, M.t + plotH());
+          gr.addColorStop(0, 'rgba(' + rgb + ',.20)');
+          gr.addColorStop(1, 'rgba(' + rgb + ',0)');
+          ctx.fillStyle = gr; ctx.beginPath();
+          ctx.moveTo(xOf(pts[0].t), M.t + plotH());
+          pts.forEach(p => ctx.lineTo(xOf(p.t), yOf(p.v)));
+          ctx.lineTo(xOf(pts[pts.length - 1].t), M.t + plotH()); ctx.closePath(); ctx.fill();
+        }
         ctx.strokeStyle = color; ctx.lineWidth = 2 * BG; ctx.setLineDash(dash.map(d => d * BG));
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        if (opts.big) { ctx.shadowColor = color; ctx.shadowBlur = 9; }   // [803] glow
         ctx.beginPath(); pts.forEach((p, i) => { const X = xOf(p.t), Y = yOf(p.v); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.shadowBlur = 0; ctx.setLineDash([]);
         pts.forEach(p => {
           const X = xOf(p.t), Y = yOf(p.v);
           drawnPts.push({ x: X, y: Y, rec: p, tipo });   // [H7]
           const isSel = sel && sel.rec === p;
-          ctx.fillStyle = p.hoy ? '#fff' : color; ctx.beginPath(); ctx.arc(X, Y, (p.hoy ? 4 : (isSel ? 4.5 : 2.6)) * BG, 0, 7); ctx.fill();
-          if (p.hoy || isSel) { ctx.strokeStyle = color; ctx.lineWidth = 2 * BG; ctx.beginPath(); ctx.arc(X, Y, (isSel ? 6.5 : 4.5) * BG, 0, 7); ctx.stroke(); }
+          const isHov = hov && hov.rec === p;
+          if (isSel && opts.big) {   // [803] halo del punto elegido
+            ctx.fillStyle = 'rgba(' + (rgb || '148,163,184') + ',.18)';
+            ctx.beginPath(); ctx.arc(X, Y, 11 * BG, 0, 7); ctx.fill();
+          }
+          if (opts.big) { ctx.shadowColor = color; ctx.shadowBlur = (isSel || isHov) ? 12 : 5; }
+          ctx.fillStyle = p.hoy ? '#fff' : color;
+          ctx.beginPath(); ctx.arc(X, Y, (p.hoy ? 4 : (isSel ? 5 : (isHov ? 4 : 2.6))) * BG, 0, 7); ctx.fill();
+          ctx.shadowBlur = 0;
+          if (p.hoy || isSel) { ctx.strokeStyle = color; ctx.lineWidth = 2 * BG; ctx.beginPath(); ctx.arc(X, Y, (isSel ? 7 : 4.5) * BG, 0, 7); ctx.stroke(); }
+        });
+      };
+      // [803] BANDA DE INGRESOS SIN COSTO — el hueco que antes no se veía: ese día entró
+      // mercadería del proveedor y nadie cargó cuánto costó. Sin valor en S/, va al pie.
+      const bandaIngresos = () => {
+        if (!I.length) return;
+        const yI = M.t + plotH() - 7 * BG;
+        I.forEach(g => {
+          const X = xOf(g.t);
+          if (X < M.l - 20 || X > cssW - M.r + 20) return;
+          const isSel = sel && sel.rec === g, isHov = hov && hov.rec === g;
+          ctx.strokeStyle = 'rgba(167,139,250,' + (isSel ? .55 : .22) + ')';
+          ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+          ctx.beginPath(); ctx.moveTo(X, M.t); ctx.lineTo(X, yI); ctx.stroke(); ctx.setLineDash([]);
+          drawnPts.push({ x: X, y: yI, rec: g, tipo: 'I' });
+          if (opts.big) { ctx.shadowColor = '#a78bfa'; ctx.shadowBlur = (isSel || isHov) ? 12 : 6; }
+          ctx.fillStyle = '#0b1220'; ctx.beginPath(); ctx.arc(X, yI, (isSel ? 6 : 4.6) * BG, 0, 7); ctx.fill();
+          ctx.strokeStyle = '#a78bfa'; ctx.lineWidth = 1.8 * BG;
+          ctx.beginPath(); ctx.arc(X, yI, (isSel ? 6 : 4.6) * BG, 0, 7); ctx.stroke();
+          ctx.shadowBlur = 0;
         });
       };
       // [v2.43.602] sin historial de PRECIO todavía → línea de referencia plana con el
@@ -12002,8 +12047,9 @@ const MOS = (() => {
         ctx.strokeStyle = 'rgba(52,211,153,.35)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]);
         ctx.beginPath(); ctx.moveTo(M.l, yP); ctx.lineTo(xOf(now), yP); ctx.stroke(); ctx.setLineDash([]);
       }
-      serie(C, hoyC, '#fbbf24', [5, 3], 'C');
-      serie(P, hoyP, '#34d399', [], 'P');
+      bandaIngresos();
+      serie(C, hoyC, '#fbbf24', [5, 3], 'C', '251,191,36');
+      serie(P, hoyP, '#34d399', [], 'P', '52,211,153');
       // línea "hoy" vertical + Δ (margen) entre costo y precio de hoy
       const xh = xOf(now);
       ctx.strokeStyle = 'rgba(148,163,184,.45)'; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
@@ -12025,15 +12071,24 @@ const MOS = (() => {
         ctx.fillStyle = '#7b8aa6'; ctx.font = 'italic 8.5px sans-serif'; ctx.textAlign = 'left';
         ctx.fillText('📈 primer registro — la curva crece con cada compra y cambio de precio', M.l + 4, M.t + plotH() - 10);
       }
+      // [803] crosshair del punto bajo el cursor (guía visual antes de tocar)
+      if (hov && !sel && opts.big) {
+        ctx.save(); ctx.beginPath(); ctx.rect(M.l, M.t, plotW(), plotH()); ctx.clip();
+        ctx.strokeStyle = 'rgba(148,163,184,.35)'; ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(hov.x, M.t); ctx.lineTo(hov.x, M.t + plotH()); ctx.stroke();
+        ctx.setLineDash([]); ctx.restore();
+      }
       // [H7] tooltip del punto seleccionado
-      if (sel) _drawTip(sel);
+      if (sel) _drawTip(sel); else if (hov && opts.big) _drawTip(hov);
     }
     function _drawTip(dp) {
-      const p = dp.rec, esP = dp.tipo === 'P';
-      const l1 = (esP ? 'Precio' : 'Costo') + ' S/ ' + (+p.v).toFixed(2);
+      const p = dp.rec, esP = dp.tipo === 'P', esI = dp.tipo === 'I';
+      // [803] el ingreso sin costo no tiene valor en S/: dice qué entró, no cuánto costó
+      const l1 = esI ? '📦 Entró sin costo' : ((esP ? 'Precio' : 'Costo') + ' S/ ' + (+p.v).toFixed(2));
       const l2 = p.hoy ? 'ahora (valor actual)' : _fechaCorta(p.t);
       let l3 = '';
-      if (!p.hoy) {
+      if (esI) l3 = (p.cant ? '×' + p.cant + ' · ' : '') + String(p.prov || '').slice(0, 22);
+      else if (!p.hoy) {
         if (!esP && p.g) l3 = '🧾 ' + String(p.g).slice(-8) + (p.u ? ' · ' + p.u : '');
         else if (p.m || p.u) l3 = (p.m ? p.m : '') + (p.u ? (p.m ? ' · ' : '') + p.u : '');
       }
@@ -12045,11 +12100,13 @@ const MOS = (() => {
       if (bx + wBox > cssW - 2) bx = dp.x - wBox - 8;
       if (bx < 2) bx = 2;
       if (by < 2) by = dp.y + 10;
-      ctx.fillStyle = 'rgba(6,11,22,.95)'; ctx.strokeStyle = esP ? 'rgba(52,211,153,.6)' : 'rgba(251,191,36,.6)'; ctx.lineWidth = 1;
+      ctx.fillStyle = 'rgba(6,11,22,.95)';
+      ctx.strokeStyle = esI ? 'rgba(167,139,250,.6)' : (esP ? 'rgba(52,211,153,.6)' : 'rgba(251,191,36,.6)');
+      ctx.lineWidth = 1;
       if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, wBox, hBox, 6); ctx.fill(); ctx.stroke(); }
       else { ctx.fillRect(bx, by, wBox, hBox); ctx.strokeRect(bx, by, wBox, hBox); }
       lines.forEach((t, i) => {
-        ctx.fillStyle = i === 0 ? (esP ? '#34d399' : '#fbbf24') : '#cbd5e1';
+        ctx.fillStyle = i === 0 ? (esI ? '#a78bfa' : (esP ? '#34d399' : '#fbbf24')) : '#cbd5e1';
         ctx.font = (i === 0 ? '700 ' : '') + '9px ui-monospace,monospace';
         ctx.fillText(t, bx + 8, by + 5 + i * 13);
       });
@@ -12058,12 +12115,43 @@ const MOS = (() => {
     // [v2.43.602] el canvas puede montarse antes de que el layout asiente (drill-down) →
     // re-medir al siguiente frame para que no quede en 300px por clientWidth=0
     requestAnimationFrame(() => { resize(); draw(); });
+    // [803] barrido de entrada: la curva se dibuja de izquierda a derecha en ~750ms.
+    // Se respeta a quien pidió menos movimiento (prefers-reduced-motion).
+    if (anim < 1) {
+      let quieto = false;
+      try { quieto = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(_){}
+      if (quieto) { anim = 1; draw(); }
+      else {
+        const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+        const paso = () => {
+          const ahora = (window.performance && performance.now) ? performance.now() : Date.now();
+          const k = Math.min(1, (ahora - t0) / 750);
+          anim = 1 - Math.pow(1 - k, 3);          // easeOutCubic
+          draw();
+          if (k < 1 && cv.isConnected) requestAnimationFrame(paso);
+        };
+        requestAnimationFrame(paso);
+      }
+    }
     // Arrastre horizontal (pan) + click a un punto (tooltip)
     let drag = null, moved = 0;
     cv.style.cursor = 'grab';
     cv.onpointerdown = e => { drag = { x: e.clientX, vs: view.vs, ve: view.ve }; moved = 0; cv.style.cursor = 'grabbing'; try { cv.setPointerCapture(e.pointerId); } catch(_){} };
     cv.onpointermove = e => {
-      if (!drag) return;
+      if (!drag) {
+        // [803] sin arrastre: resaltar el punto más cercano (crosshair + tooltip fantasma)
+        if (!opts.big || e.pointerType === 'touch') return;
+        const r = cv.getBoundingClientRect();
+        const cx = e.clientX - r.left, cy = e.clientY - r.top;
+        let best = null, bd = 18 * 18;
+        drawnPts.forEach(dp => {
+          const d = (dp.x - cx) * (dp.x - cx) + (dp.y - cy) * (dp.y - cy);
+          if (d < bd) { bd = d; best = dp; }
+        });
+        if ((best && (!hov || hov.rec !== best.rec)) || (!best && hov)) { hov = best; draw(); }
+        cv.style.cursor = best ? 'pointer' : 'grab';
+        return;
+      }
       moved += Math.abs(e.movementX || 0);
       const dt = (e.clientX - drag.x) / plotW() * (drag.ve - drag.vs);
       let vs = drag.vs - dt, ve = drag.ve - dt; const w = ve - vs;
@@ -12094,6 +12182,7 @@ const MOS = (() => {
       }
     };
     cv.onpointerup = up; cv.onpointercancel = () => { drag = null; cv.style.cursor = 'grab'; };
+    cv.onpointerleave = () => { if (hov) { hov = null; draw(); } };
     // hook para actualizar el punto "hoy" del precio cuando el admin edita
     cv._setHoyPrecio = v => { hoyP = v > 0 ? v : 0; draw(); };
   }
@@ -12123,13 +12212,26 @@ const MOS = (() => {
     requestAnimationFrame(() => ov.classList.add('cov-in'));
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
     // [feedback] fetch FRESCO (no el f._hist cacheado, que puede ser viejo tras un cambio de precio)
-    let d = null;
-    try { const r = await API.post('historialPrecioCosto', { idProducto: idp }); d = r && (r.data || r); } catch(_){}
+    // [803] en paralelo, los INGRESOS por guía de proveedor: los que no tienen costo cargado
+    // se pintan como puntos huecos en la banda del pie. Si esa RPC falla, la curva igual sale.
+    let d = null, ing = [];
+    const pHist = API.post('historialPrecioCosto', { idProducto: idp }).then(r => { d = r && (r.data || r); }).catch(() => {});
+    const pIng  = API.post('curvaIngresos', { idProducto: idp }).then(r => {
+      const x = r && (r.data || r); ing = (x && x.ingresos) || [];
+    }).catch(() => {});
+    try { await Promise.all([pHist, pIng]); } catch(_){}
     // [1000x] si otra apertura/cierre ocurrió durante el fetch, NO pintar (evita mostrar el producto equivocado)
     if (myGen !== _covSeq || !document.getElementById('curvaOverlay')) return;
-    _curvaOverlayRender(d, f);
+    _covProd = { idProducto: idp, nombre: (d && d.descripcion) || f.nombre || '', skuBase: (d && d.skuBase) || '' };
+    _curvaOverlayRender(d, f, ing);
   }
-  function _curvaOverlayRender(d, f) {
+  function _curvaOverlayRender(d, f, ing) {
+    // [803] SOLO los ingresos SIN costo válido son un hueco que el dueño debe ver. Los que
+    // ya tienen costo están representados por su punto en la curva: repetirlos sería ruido.
+    _covIngresos = (ing || []).filter(x => !x.tieneCosto).map(x => ({
+      t: Date.parse(x.ts), g: x.idGuia, prov: x.proveedor, doc: x.documento,
+      cant: +x.cantidad || 0, foto: !!x.tieneFoto, lineas: +x.lineas || 1
+    })).filter(x => !isNaN(x.t)).sort((a, b) => b.t - a.t);
     // [800] costos descartados de la curva por el servidor (compra revertida o monto de bulto).
     // Se guardan aparte para listarlos tachados: ocultar sin decirlo sería mentir el historial.
     _covAnulados = (d && d.costosAnulados || []).map(x => ({
@@ -12163,24 +12265,198 @@ const MOS = (() => {
       (dominio ? '<div class="cov-dom">' + dominio + '</div>' : '') +
       '<div class="cov-chart"><canvas id="covCanvas"></canvas></div>' +
       '<div class="cov-legend"><span><i class="dot-p"></i>precio</span><span><i class="dot-c"></i>costo</span>' +
-        '<span class="cov-hint">↔ arrastrá · tocá un punto o un registro</span></div>' +
+        (_covIngresos.length ? '<span><i class="dot-i"></i>entró sin costo</span>' : '') +
+        '<span class="cov-hint">↔ arrastrá · tocá un punto</span></div>' +
+      _curvaTiraIngresos() +
       _curvaTiraAnulados() +
-      '<div class="cov-regs-tit">📋 Registros</div>' +
-      '<div class="cov-regs" id="covRegs">' + _curvaListaRegistros(hist) + '</div>' +
-      '<div class="cov-det" id="covDet">' + _curvaDetVacio() + '</div>';
+      '<div class="cov-regs-tit">📋 Registros del gráfico</div>' +
+      '<div class="cov-regs" id="covRegs">' + _curvaListaRegistros(hist) + '</div>';
     const cv = document.getElementById('covCanvas');
-    if (cv) _p2ChartInit(cv, hist, nowP, nowC, { big: true, onSelect: (rec, tipo, cluster) => {
-      const det = document.getElementById('covDet');
-      if (!det) return;
-      if (!rec) { det.innerHTML = _curvaDetVacio(); return; }
-      // [feedback] si el punto tiene varios cambios superpuestos, mostrarlos TODOS (último primero)
-      const grupo = (cluster && cluster.length > 1) ? cluster : [{ rec: rec, tipo: tipo }];
-      det.innerHTML = (grupo.length > 1 ? '<div class="cov-det-multi">📌 ' + grupo.length + ' cambios en este punto · último primero</div>' : '') +
-                      grupo.map((g, gi) => _curvaDetalle(g.rec, g.tipo, gi)).join('');
-      grupo.forEach((g, gi) => { if (g.tipo === 'C' && g.rec.g && !g.rec.hoy) _curvaCargarGuia(g.rec.g, gi); });
-      try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    } });
+    if (cv) _p2ChartInit(cv, hist, nowP, nowC, {
+      big: true, animar: true,
+      ingresos: _covIngresos,
+      onSelect: (rec, tipo, cluster) => {
+        // [803] cada punto abre un CARD FLOTANTE encima del gráfico. Si varios puntos caen
+        // apelmazados en el mismo lugar, el card los muestra todos (último primero).
+        if (!rec) { _curvaCardCerrar(); return; }
+        const grupo = (cluster && cluster.length > 1) ? cluster : [{ rec: rec, tipo: tipo }];
+        _curvaAbrirCard(grupo);
+      }
+    });
   }
+  // [803] INGRESOS SIN COSTO — días en que llegó mercadería del proveedor y nadie cargó
+  // cuánto costó. Antes no existían en ninguna pantalla: la curva solo sabía de costos, así
+  // que un mes entero de compras sin costo se veía como "no pasó nada".
+  let _covIngresos = [];
+  let _covProd = { idProducto: '', nombre: '', skuBase: '' };
+  function _curvaTiraIngresos() {
+    const n = _covIngresos.length;
+    if (!n) return '';
+    return '<div class="cov-ing">' +
+      '<button type="button" class="cov-ing-t" onclick="MOS._curvaVerIngresos()">' +
+        '<span>📦 ' + n + ' ingreso' + (n === 1 ? '' : 's') + ' sin costo registrado</span>' +
+        '<span class="cov-ing-cv" id="covIngCv">ver</span></button>' +
+      '<div class="cov-ing-l" id="covIngL" hidden>' +
+        _covIngresos.map((g, i) => {
+          let fh = '';
+          try { fh = new Date(g.t).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: '2-digit' }); } catch(_){}
+          return '<div class="cov-ing-r" onclick="MOS._curvaCardIngreso(' + i + ')">' +
+            '<span class="cov-ing-f">' + fh + '</span>' +
+            '<span class="cov-ing-p">' + _escapeHtml(String(g.prov || '—')) + '</span>' +
+            '<span class="cov-ing-q">×' + _cantTxt(g.cant) + '</span>' +
+            (g.foto ? '<span class="cov-ing-cam" title="tiene comprobante">📷</span>' : '') +
+            '<span class="cov-ing-go">›</span></div>';
+        }).join('') +
+        '<div class="cov-ing-pie">Entró mercadería pero la compra no tiene costo cargado: esos días no mueven la curva. Tocá uno para ver la guía.</div>' +
+      '</div></div>';
+  }
+  function _curvaVerIngresos() {
+    const l = document.getElementById('covIngL'), cv = document.getElementById('covIngCv');
+    if (!l) return;
+    const abrir = l.hasAttribute('hidden');
+    if (abrir) l.removeAttribute('hidden'); else l.setAttribute('hidden', '');
+    if (cv) cv.textContent = abrir ? 'ocultar' : 'ver';
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+  }
+  // cantidades SIEMPRE con el formateador de cantidades, nunca con el de dinero
+  function _cantTxt(n) { try { return _fmtQty(n); } catch(_) { return String(+n || 0); } }
+
+  function _curvaCardIngreso(i) { const g = _covIngresos[i]; if (g) _curvaAbrirCard([{ rec: g, tipo: 'I' }]); }
+  function _curvaCardAnulado(i) {
+    const a = _covAnulados[i]; if (!a) return;
+    _curvaAbrirCard([{ rec: { t: a.t, v: a.v, u: a.u, g: a.g, anulado: a.mot, n: a.n }, tipo: 'C' }]);
+  }
+
+  // ═══════════ [803] CARD FLOTANTE de un punto ═══════════
+  // Flota SOBRE el gráfico (no empuja el layout ni obliga a scrollear). Para costo e ingreso
+  // carga la guía completa: proveedor, comprobante y TODOS los ítems, con las líneas del
+  // producto en cuestión resaltadas — que es lo que el dueño pidió ver.
+  let _cvfSeq = 0;
+  function _curvaAbrirCard(grupo) {
+    _curvaCardCerrar(true);
+    const gen = ++_cvfSeq;
+    const el = document.createElement('div');
+    el.className = 'cvf'; el.id = 'curvaCard';
+    el.onpointerdown = e => { if (e.target === el) _curvaCardCerrar(); };
+    el.innerHTML = '<div class="cvf-card" role="dialog" aria-label="Detalle del punto">' +
+      '<button class="cvf-x" onclick="MOS._curvaCardCerrar()" aria-label="Cerrar">✕</button>' +
+      (grupo.length > 1 ? '<div class="cvf-multi">📌 ' + grupo.length + ' registros en este punto · último primero</div>' : '') +
+      grupo.map((g, i) => _curvaCardCuerpo(g.rec, g.tipo, i)).join('') +
+      '</div>';
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('cvf-in'));
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+    // guías: se cargan async, cada una en su slot
+    grupo.forEach((g, i) => {
+      const idGuia = g.rec && g.rec.g;
+      if (idGuia && !g.rec.hoy && (g.tipo === 'C' || g.tipo === 'I')) _curvaCargarGuiaRica(idGuia, i, gen);
+    });
+  }
+  function _curvaCardCerrar(inmediato) {
+    _cvfSeq++;
+    const el = document.getElementById('curvaCard'); if (!el) return;
+    if (inmediato) { try { el.remove(); } catch(_){} return; }
+    el.classList.remove('cvf-in');
+    setTimeout(() => { try { el.remove(); } catch(_){} }, 200);
+  }
+  function _curvaCardCuerpo(rec, tipo, idx) {
+    const esP = tipo === 'P', esI = tipo === 'I';
+    let fecha = '', hora = '';
+    try { const dt = new Date(rec.t);
+      fecha = dt.toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' });
+      hora = dt.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+    } catch(_){}
+    const tag = rec.hoy ? (esP ? '💚 Precio actual' : '🟡 Costo actual')
+              : esI ? '📦 Ingreso sin costo' : (esP ? '💚 Cambio de precio' : '🟡 Costo de compra');
+    const val = esI ? ('×' + _cantTxt(rec.cant)) : ('S/ ' + (+rec.v).toFixed(2));
+    const cls = esI ? 'is-i' : (esP ? 'is-p' : 'is-c');
+    const rows = [];
+    if (rec.hoy) {
+      rows.push(_cvfRow('Estado', 'Valor vigente ahora'));
+    } else if (esI) {
+      rows.push(_cvfRow('Cuándo entró', fecha));
+      rows.push(_cvfRow('Proveedor', _escapeHtml(String(rec.prov || '—'))));
+      rows.push(_cvfRow('Cantidad', _cantTxt(rec.cant) + (rec.lineas > 1 ? ' · ' + rec.lineas + ' líneas' : '')));
+      rows.push('<div class="cvf-aviso">⚠ Esta compra no tiene costo cargado para el producto. Por eso este día no mueve la curva: entró mercadería, pero el sistema no sabe a cuánto.</div>');
+    } else if (esP) {
+      rows.push(_cvfRow('Cuándo', fecha + ' · ' + hora));
+      if (rec.u) rows.push(_cvfRow('Quién', _escapeHtml(rec.u)));
+      rows.push(_cvfRow('Vía', _curvaMedio(rec.s)));
+      if (rec.m) rows.push(_cvfRow('Motivo', _escapeHtml(rec.m)));
+    } else {
+      rows.push(_cvfRow('Fecha de compra', fecha));
+      if (rec.u) rows.push(_cvfRow('Quién registró', _escapeHtml(rec.u)));
+      if (rec.n > 1) rows.push(_cvfRow('Aplicado en', rec.n + ' líneas de la guía'));
+      if (rec.anulado) {
+        const t = rec.anulado === 'REVERSION' ? 'Esta fila es la anulación de una compra, no un costo.'
+                : rec.anulado === 'COMPRA_REVERTIDA' ? 'La compra que trajo este costo fue revertida.'
+                : 'Monto del bulto cargado como si fuera unitario.';
+        rows.push('<div class="cvf-aviso is-x">🚫 Fuera del gráfico — ' + t + '</div>');
+      }
+    }
+    const slot = (rec.g && !rec.hoy && (tipo === 'C' || tipo === 'I'))
+      ? '<div class="cvf-guia" id="cvfGuia' + idx + '" data-guia="' + _escapeHtml(String(rec.g)) + '">' +
+          '<div class="cvf-guia-load"><span class="cvf-spin"></span>cargando la guía…</div></div>'
+      : '';
+    return '<div class="cvf-blk ' + cls + '">' +
+      '<div class="cvf-top"><span class="cvf-tag">' + tag + '</span><b class="cvf-val">' + val + '</b></div>' +
+      rows.join('') + slot + '</div>';
+  }
+  function _cvfRow(k, v) { return '<div class="cvf-row"><span class="cvf-k">' + k + '</span><span class="cvf-v">' + v + '</span></div>'; }
+
+  // Guía COMPLETA (mos.curva_guia_detalle): cabecera + comprobante + todos los ítems con el
+  // producto en cuestión resaltado. La foto abre en lightbox, igual que en Compras.
+  async function _curvaCargarGuiaRica(idGuia, idx, gen) {
+    const sid = 'cvfGuia' + idx;
+    if (!document.getElementById(sid)) return;
+    let d = null;
+    try {
+      const r = await API.post('curvaGuiaDetalle', { idGuia, idProducto: _covProd.idProducto, skuBase: _covProd.skuBase });
+      d = r && (r.data || r);
+    } catch(_){}
+    if (gen !== _cvfSeq) return;                       // el usuario ya cerró o abrió otro punto
+    const slot = document.getElementById(sid); if (!slot) return;
+    if (slot.getAttribute('data-guia') !== String(idGuia)) return;
+    if (!d || d.ok === false || !d.proveedor) {
+      slot.innerHTML = '<div class="cvf-guia-load">🧾 Guía ' + _escapeHtml(String(idGuia).slice(-10)) + ' · sin detalle disponible</div>';
+      return;
+    }
+    const items = d.items || [];
+    const mios = items.filter(it => it.esEste).length;
+    const itemsHtml = items.map(it => {
+      const q = parseFloat(it.cantidad) || 0, pu = parseFloat(it.precio) || 0;
+      return '<div class="cvf-it' + (it.esEste ? ' is-yo' : '') + '">' +
+        (it.esEste ? '<span class="cvf-it-mark">👉</span>' : '') +
+        '<span class="cvf-it-n">' + _escapeHtml(String(it.nombre || '')) + '</span>' +
+        '<span class="cvf-it-q">×' + _cantTxt(q) + '</span>' +
+        (pu > 0 ? '<span class="cvf-it-p">S/ ' + _money(q * pu).toFixed(2) + '</span>' : '') +
+        '</div>';
+    }).join('');
+    const tieneFoto = d.foto && /^https?:/i.test(String(d.foto));
+    const foto = tieneFoto
+      ? '<button type="button" class="cvf-foto" onclick="MOS._curvaVerFoto(this.dataset.u)" data-u="' + _escapeHtml(String(d.foto)) + '">' +
+          '<img src="' + _escapeHtml(String(d.foto)) + '" alt="comprobante" loading="lazy">' +
+          '<span class="cvf-foto-lupa">🔍 ver comprobante</span></button>'
+      : '<div class="cvf-nofoto">📷<span>sin comprobante</span></div>';
+    const monto = (d.monto != null && parseFloat(d.monto) > 0) ? parseFloat(d.monto) : null;
+    const costo = d.costo && d.costo.valor != null
+      ? '<div class="cvf-guia-costo' + (d.costo.motivoAnulacion ? ' is-x' : '') + '">' +
+          (d.costo.motivoAnulacion ? '🚫 costo anulado: ' : '✓ costo de esta guía: ') +
+          '<b>S/ ' + (+d.costo.valor).toFixed(2) + '</b>' + (d.costo.usuario ? ' · ' + _escapeHtml(String(d.costo.usuario)) : '') + '</div>'
+      : '<div class="cvf-guia-costo is-falta">⚠ esta guía no dejó costo para el producto</div>';
+    slot.innerHTML =
+      '<div class="cvf-guia-head">' +
+        '<span class="cvf-guia-prov">🧾 ' + _escapeHtml(String(d.proveedor)) + '</span>' +
+        (monto != null ? '<b class="cvf-guia-monto">S/ ' + monto.toFixed(2) + '</b>' : '') + '</div>' +
+      '<div class="cvf-guia-doc">' + (d.documento ? _escapeHtml(String(d.documento)) + ' · ' : '') +
+        _escapeHtml(String(d.fecha || '')) + (d.zona ? ' · ' + _escapeHtml(String(d.zona)) : '') + '</div>' +
+      costo +
+      '<div class="cvf-guia-body">' + foto +
+        '<div class="cvf-its">' +
+          '<div class="cvf-its-tit">' + items.length + ' ítem(s)' + (mios ? ' · ' + mios + ' de este producto' : '') + '</div>' +
+          itemsHtml + '</div></div>';
+  }
+
   // [800] ANULADOS — costos que el servidor sacó de la curva. Van tachados y con el motivo.
   // Antes convivían con los reales (S/712.80 junto a S/13.20) y reventaban la escala: el
   // gráfico no mostraba NADA de la variación verdadera. Ahora salen del trazo pero no del ojo.
@@ -12199,7 +12475,7 @@ const MOS = (() => {
           const mot = a.mot === 'REVERSION' ? 'anulación de una compra (no es un costo)'
                     : a.mot === 'COMPRA_REVERTIDA' ? 'la compra fue revertida'
                     : 'monto del bulto cargado como unitario';
-          return '<div class="cov-anul-r"><s>S/ ' + (+a.v).toFixed(2) + '</s>' +
+          return '<div class="cov-anul-r" onclick="MOS._curvaCardAnulado(' + _covAnulados.indexOf(a) + ')"><s>S/ ' + (+a.v).toFixed(2) + '</s>' +
             (a.n > 1 ? '<span class="cov-anul-n">×' + a.n + '</span>' : '') +
             '<span class="cov-anul-f">' + fh + '</span>' +
             '<span class="cov-anul-m">' + _escapeHtml(mot) + '</span>' +
@@ -12241,20 +12517,16 @@ const MOS = (() => {
   }
   function _curvaSelReg(n) {
     const r = _covRecs[n]; if (!r) return;
-    const det = document.getElementById('covDet');
-    if (det) det.innerHTML = _curvaDetalle(r.rec, r.tipo);
-    if (r.tipo === 'C' && r.rec.g && !r.rec.hoy) _curvaCargarGuia(r.rec.g);
+    _curvaAbrirCard([{ rec: r.rec, tipo: r.tipo }]);
     try { document.querySelectorAll('#curvaOverlay .cov-reg').forEach((el, i) => el.classList.toggle('on', i === n)); } catch(_){}
-    try { _opsBeep && _opsBeep('tac'); } catch(_){}
   }
   function _curvaOverlayCerrar() {
     _covSeq++;   // [1000x] invalida cualquier fetch en vuelo (no pintar tras cerrar)
+    _curvaCardCerrar(true);   // [803] el card flotante no puede sobrevivir a su overlay
+    try { const lb = document.querySelector('.cov-lb'); if (lb) lb.remove(); } catch(_){}
     const ov = document.getElementById('curvaOverlay'); if (!ov) return;
     ov.classList.remove('cov-in');
     setTimeout(() => { try { ov.remove(); } catch(_){} }, 220);
-  }
-  function _curvaDetVacio() {
-    return '<div class="cov-det-empty">👆 Tocá un punto de la curva para ver <b>quién</b>, <b>cuándo</b> y <b>por qué medio</b> se registró.</div>';
   }
   function _curvaMedio(s) {
     s = String(s || '').toUpperCase();
@@ -12262,73 +12534,6 @@ const MOS = (() => {
     if (s.indexOf('PASO2') >= 0 || s.indexOf('COMPRA') >= 0) return '🛒 Compras (Paso 2)';
     if (s.indexOf('CATALOGO') >= 0) return '🏷 Catálogo';
     return s ? _escapeHtml(s) : '🏷 Catálogo';
-  }
-  function _curvaDetalle(rec, tipo, idx) {
-    idx = idx || 0;
-    const esP = tipo === 'P';
-    const cls = esP ? 'is-p' : 'is-c';
-    if (rec.hoy) {
-      return '<div class="cov-det-card ' + cls + '"><div class="cov-det-top">' +
-        '<span class="cov-det-tag">' + (esP ? '💚 Precio' : '🟡 Costo') + ' actual</span>' +
-        '<b class="cov-det-val">S/ ' + (+rec.v).toFixed(2) + '</b></div>' +
-        '<div class="cov-det-row"><span class="cov-det-k">Estado</span><span>Valor vigente ahora</span></div></div>';
-    }
-    let fecha = '', hora = '';
-    try { const d = new Date(rec.t);
-      fecha = d.toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' });
-      hora = d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-    } catch(_){}
-    const rows = [];
-    if (esP) {
-      rows.push('<div class="cov-det-row"><span class="cov-det-k">Cuándo</span><span>' + fecha + ' · ' + hora + '</span></div>');
-      if (rec.u) rows.push('<div class="cov-det-row"><span class="cov-det-k">Quién</span><span>' + _escapeHtml(rec.u) + '</span></div>');
-      rows.push('<div class="cov-det-row"><span class="cov-det-k">Vía</span><span>' + _curvaMedio(rec.s) + '</span></div>');
-      if (rec.m) rows.push('<div class="cov-det-row"><span class="cov-det-k">Motivo</span><span>' + _escapeHtml(rec.m) + '</span></div>');
-    } else {
-      rows.push('<div class="cov-det-row"><span class="cov-det-k">Fecha de compra</span><span>' + fecha + '</span></div>');
-      if (rec.u) rows.push('<div class="cov-det-row"><span class="cov-det-k">Quién registró</span><span>' + _escapeHtml(rec.u) + '</span></div>');
-      if (rec.g) rows.push('<div class="cov-det-row"><span class="cov-det-k">Guía</span><span class="cov-det-guia">🧾 ' + _escapeHtml(String(rec.g)) + '</span></div>');
-    }
-    // [Fase 3] costo con guía → slot para el mini-preview (se carga async al seleccionar)
-    const slot = (!esP && rec.g) ? '<div class="cov-guia" id="covGuiaSlot' + idx + '" data-guia="' + _escapeHtml(String(rec.g)) + '"><div class="cov-guia-load">🧾 cargando guía…</div></div>' : '';
-    return '<div class="cov-det-card ' + cls + '"><div class="cov-det-top">' +
-      '<span class="cov-det-tag">' + (esP ? '💚 Cambio de precio' : '🟡 Costo de compra') + '</span>' +
-      '<b class="cov-det-val">S/ ' + (+rec.v).toFixed(2) + '</b></div>' + rows.join('') + slot + '</div>';
-  }
-  // [Fase 3] Carga el mini-preview de la guía en el slot del panel de detalle (proveedor, monto, ítems).
-  async function _curvaCargarGuia(idGuia, idx) {
-    const sid = 'covGuiaSlot' + (idx || 0);
-    if (!document.getElementById(sid)) return;
-    let d = null;
-    try { const r = await API.post('guiaPreview', { idGuia }); d = r && (r.data || r); } catch(_){}
-    const slot = document.getElementById(sid); if (!slot) return;   // el usuario pudo cambiar de punto
-    if (slot.getAttribute('data-guia') !== String(idGuia)) return;   // [100x] ya está mostrando OTRO punto → no pisar
-    if (!d || d.ok === false || !d.proveedor) {
-      slot.innerHTML = '<div class="cov-guia-load">🧾 Guía ' + _escapeHtml(String(idGuia).slice(-8)) + ' · sin detalle disponible</div>';
-      return;
-    }
-    const its = (d.items || []);
-    // [feedback] monto POR LÍNEA (cantidad × precio) inline en cada ítem; si no hay precio, solo la cantidad
-    const itemsHtml = its.map(it => {
-      const q = parseFloat(it.cantidad) || 0, pu = parseFloat(it.precio) || 0;
-      const lt = pu > 0 ? ' · <span class="cov-guia-lt">S/ ' + (q * pu).toFixed(2) + '</span>' : '';
-      return '<div class="cov-guia-it"><span>' + _escapeHtml(String(it.nombre || '')) + '</span><b>×' + q + lt + '</b></div>';
-    }).join('');
-    const restantes = (parseInt(d.nItems, 10) || its.length) - its.length;
-    const mas = restantes > 0 ? '<div class="cov-guia-mas">+' + restantes + ' ítem(s) más</div>' : '';
-    const tieneFoto = d.foto && /^https?:/i.test(String(d.foto));
-    const foto = tieneFoto
-      ? '<img class="cov-guia-foto" src="' + _escapeHtml(String(d.foto)) + '" alt="comprobante" loading="lazy" title="Ver comprobante">'
-      : '<div class="cov-guia-nofoto">📷<span>sin comprobante</span></div>';
-    // [feedback] header: SOLO el total real de la guía (si existe); nada de un total inventado
-    const montoReal = (d.monto != null && parseFloat(d.monto) > 0) ? parseFloat(d.monto) : null;
-    slot.innerHTML =
-      '<div class="cov-guia-head"><span class="cov-guia-prov">🧾 ' + _escapeHtml(String(d.proveedor)) + '</span>' +
-        (montoReal != null ? '<b class="cov-guia-monto">S/ ' + montoReal.toFixed(2) + '</b>' : '') + '</div>' +
-      '<div class="cov-guia-doc">' + (d.documento ? _escapeHtml(String(d.documento)) + ' · ' : '') + _escapeHtml(String(d.fecha || '')) + '</div>' +
-      '<div class="cov-guia-body">' + foto + '<div class="cov-guia-items">' + itemsHtml + mas + '</div></div>';
-    // [feedback] la foto se ve en LIGHTBOX (encima), no en pestaña nueva — reojo rápido
-    if (tieneFoto) { const img = slot.querySelector('.cov-guia-foto'); if (img) img.addEventListener('click', () => _curvaVerFoto(String(d.foto))); }
   }
   // [feedback] Lightbox del comprobante: imagen grande encima, click para cerrar. Táctil.
   function _curvaVerFoto(url) {
@@ -12368,6 +12573,7 @@ const MOS = (() => {
       '.cov-legend{display:flex;align-items:center;gap:14px;margin:9px 2px 12px;font-size:10.5px;color:#7488a6;font-weight:700}' +
       '.cov-legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}' +
       '.cov-legend .dot-p{background:#34d399}.cov-legend .dot-c{background:#fbbf24;height:3px;border-radius:2px}' +
+      '.cov-legend .dot-i{background:transparent;border:2px solid #a78bfa;border-radius:50%}' +
       '.cov-hint{margin-left:auto;color:#5f7192;font-weight:600}' +
       // [800] tira de costos anulados (fuera del gráfico, a la vista)
       '.cov-anul{margin:-4px 2px 12px}' +
@@ -12380,6 +12586,68 @@ const MOS = (() => {
       '.cov-anul-f{color:#7488a6;font-weight:700;flex:none}' +
       '.cov-anul-m{color:#8296b5;font-weight:600;flex:1;min-width:120px}' +
       '.cov-anul-g{font-size:9.5px;font-family:ui-monospace,monospace;color:#5f7192;background:#0f1a2c;border:1px solid #1d2942;border-radius:6px;padding:1px 5px;flex:none}' +
+      // [803] tira de ingresos sin costo (mismo lenguaje visual que la de anulados, en violeta)
+      '.cov-ing{margin:-4px 2px 10px}' +
+      '.cov-ing-t{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px dashed rgba(167,139,250,.4);border-radius:11px;background:rgba(167,139,250,.07);color:#c4b5fd;font-size:11px;font-weight:800;padding:8px 11px;cursor:pointer;transition:.15s}' +
+      '.cov-ing-t:hover{background:rgba(167,139,250,.14)}' +
+      '.cov-ing-cv{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#8296b5;flex:none}' +
+      '.cov-ing-l{margin-top:7px;border:1px solid #223049;border-radius:11px;background:#0a1120;overflow:hidden}' +
+      '.cov-ing-r{display:flex;align-items:center;gap:9px;padding:9px 11px;border-bottom:1px solid #131e33;font-size:11.5px;cursor:pointer;transition:.13s}' +
+      '.cov-ing-r:hover{background:#0f1a2c}' +
+      '.cov-ing-f{color:#c4b5fd;font-weight:800;font-family:ui-monospace,monospace;flex:none}' +
+      '.cov-ing-p{color:#aebbd2;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.cov-ing-q{color:#8296b5;font-weight:800;font-family:ui-monospace,monospace;flex:none}' +
+      '.cov-ing-cam{flex:none;opacity:.8}' +
+      '.cov-ing-go{color:#5f7192;font-weight:800;flex:none}' +
+      '.cov-ing-pie{padding:8px 11px;font-size:10px;color:#5f7192;line-height:1.5;font-weight:600}' +
+      '.cov-anul-r{cursor:pointer}.cov-anul-r:hover{background:#0f1a2c}' +
+      // [803] CARD FLOTANTE del punto — flota encima del gráfico, no empuja el layout
+      '.cvf{position:fixed;inset:0;z-index:100060;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(3,7,15,.62);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);opacity:0;transition:opacity .2s}' +
+      '.cvf.cvf-in{opacity:1}' +
+      '.cvf-card{position:relative;width:min(460px,100%);max-height:86vh;overflow:auto;background:linear-gradient(180deg,#111d31,#0a1120);border:1px solid #26344c;border-radius:18px;box-shadow:0 26px 70px rgba(0,0,0,.66);padding:14px 14px 16px;transform:translateY(16px) scale(.97);opacity:0;transition:transform .26s cubic-bezier(.22,1,.36,1),opacity .2s}' +
+      '.cvf.cvf-in .cvf-card{transform:none;opacity:1}' +
+      '.cvf-x{position:absolute;top:10px;right:10px;width:30px;height:30px;border-radius:9px;border:1px solid #26344c;background:#0c1626;color:#8296b5;font-size:13px;cursor:pointer;z-index:2;transition:.15s}' +
+      '.cvf-x:hover{background:#182742;color:#dbe4f3}' +
+      '.cvf-multi{font-size:10px;font-weight:800;color:#7488a6;margin:0 0 9px;padding-right:34px}' +
+      '.cvf-blk{border-radius:13px;border:1px solid #223049;background:#0c1626;padding:12px 13px;margin-bottom:10px;border-left-width:3px}' +
+      '.cvf-blk:last-child{margin-bottom:0}' +
+      '.cvf-blk.is-p{border-left-color:#34d399}.cvf-blk.is-c{border-left-color:#fbbf24}.cvf-blk.is-i{border-left-color:#a78bfa}' +
+      '.cvf-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:9px;margin-bottom:9px;border-bottom:1px solid #1a2740;padding-right:26px}' +
+      '.cvf-tag{font-size:11.5px;font-weight:800;color:#aebbd2}' +
+      '.cvf-val{font-size:19px;font-weight:800;font-family:ui-monospace,monospace;color:#eaf1fb;white-space:nowrap}' +
+      '.cvf-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:4px 0;font-size:12px}' +
+      '.cvf-k{color:#6b7d9c;font-weight:700;flex:none}' +
+      '.cvf-v{color:#dbe4f3;font-weight:600;text-align:right;min-width:0;word-break:break-word}' +
+      '.cvf-aviso{margin-top:9px;border:1px dashed rgba(167,139,250,.42);background:rgba(167,139,250,.08);color:#c4b5fd;border-radius:10px;padding:9px 11px;font-size:11px;line-height:1.55;font-weight:600}' +
+      '.cvf-aviso.is-x{border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.08);color:#f0a6a6}' +
+      '.cvf-guia{margin-top:11px;border-top:1px solid #1a2740;padding-top:11px}' +
+      '.cvf-guia-load{display:flex;align-items:center;gap:8px;font-size:11px;color:#7488a6;font-weight:700;padding:6px 0}' +
+      '.cvf-spin{width:12px;height:12px;border-radius:50%;border:2px solid #26344c;border-top-color:#8296b5;animation:cvfSpin .8s linear infinite;flex:none}' +
+      '@keyframes cvfSpin{to{transform:rotate(360deg)}}' +
+      '.cvf-guia-head{display:flex;align-items:center;justify-content:space-between;gap:10px}' +
+      '.cvf-guia-prov{font-size:12.5px;font-weight:800;color:#eaf1fb;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.cvf-guia-monto{font-size:13px;font-weight:800;font-family:ui-monospace,monospace;color:#93a4c2;flex:none}' +
+      '.cvf-guia-doc{font-size:10.5px;color:#6b7d9c;font-weight:600;margin-top:2px}' +
+      '.cvf-guia-costo{margin-top:8px;border-radius:9px;padding:7px 10px;font-size:11px;font-weight:700;border:1px solid rgba(52,211,153,.28);background:rgba(52,211,153,.08);color:#6ee7b7}' +
+      '.cvf-guia-costo b{font-family:ui-monospace,monospace}' +
+      '.cvf-guia-costo.is-x{border-color:rgba(248,113,113,.34);background:rgba(248,113,113,.08);color:#f0a6a6}' +
+      '.cvf-guia-costo.is-falta{border-color:rgba(251,191,36,.34);background:rgba(251,191,36,.08);color:#fcd34d}' +
+      '.cvf-guia-body{display:flex;gap:11px;margin-top:10px;align-items:flex-start}' +
+      '.cvf-foto{position:relative;flex:none;width:92px;height:112px;border-radius:11px;overflow:hidden;border:1px solid #26344c;background:#060b16;cursor:zoom-in;padding:0;transition:.18s}' +
+      '.cvf-foto:hover{border-color:#3b82f6;transform:translateY(-1px)}' +
+      '.cvf-foto img{width:100%;height:100%;object-fit:cover;display:block}' +
+      '.cvf-foto-lupa{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(0deg,rgba(3,7,15,.92),transparent);color:#cbd5e1;font-size:8.5px;font-weight:800;padding:11px 3px 4px;text-align:center}' +
+      '.cvf-nofoto{flex:none;width:92px;height:112px;border-radius:11px;border:1px dashed #26344c;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#5f7192;font-size:18px}' +
+      '.cvf-nofoto span{font-size:9px;font-weight:700}' +
+      '.cvf-its{flex:1;min-width:0;max-height:190px;overflow:auto}' +
+      '.cvf-its-tit{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192;margin-bottom:5px}' +
+      '.cvf-it{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:7px;font-size:11px;color:#93a4c2}' +
+      '.cvf-it.is-yo{background:rgba(251,191,36,.11);border:1px solid rgba(251,191,36,.32);color:#fde68a;font-weight:700}' +
+      '.cvf-it-mark{flex:none}' +
+      '.cvf-it-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.cvf-it-q{flex:none;font-family:ui-monospace,monospace;font-weight:700}' +
+      '.cvf-it-p{flex:none;font-family:ui-monospace,monospace;color:#7488a6}' +
+      '@media (max-width:460px){.cvf{padding:0;align-items:flex-end}.cvf-card{width:100%;max-height:92vh;border-radius:20px 20px 0 0;transform:translateY(28px)}}' +
       '.cov-anul-n{font-size:9.5px;font-weight:800;color:#f0a6a6;background:rgba(248,113,113,.13);border-radius:5px;padding:1px 5px;flex:none}' +
       '.cov-reg-n{font-size:9.5px;font-weight:800;color:#8296b5;background:#0f1a2c;border:1px solid #1d2942;border-radius:5px;padding:0 5px;flex:none}' +
       '.cov-anul-pie{padding:8px 11px;font-size:10px;color:#5f7192;line-height:1.5;font-weight:600}' +
@@ -12415,7 +12683,7 @@ const MOS = (() => {
       '.cov-guia-foto{width:66px;height:66px;flex:none;object-fit:cover;border-radius:9px;border:1px solid #26344c;cursor:pointer;transition:.15s}.cov-guia-foto:hover{border-color:#3a4d70;transform:scale(1.03)}' +
       '.cov-guia-nofoto{width:66px;height:66px;flex:none;border-radius:9px;border:1px dashed #2a3a56;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:18px;color:#5f7192}.cov-guia-nofoto span{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}' +
       '.cov-guia-lt{color:#fbbf24;font-family:ui-monospace,monospace}' +
-      '.cov-lb{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.86);display:grid;place-items:center;padding:18px;opacity:0;transition:opacity .18s ease;cursor:zoom-out}.cov-lb.in{opacity:1}' +
+      '.cov-lb{position:fixed;inset:0;z-index:100080;background:rgba(0,0,0,.86);display:grid;place-items:center;padding:18px;opacity:0;transition:opacity .18s ease;cursor:zoom-out}.cov-lb.in{opacity:1}' +
       '.cov-lb img{max-width:100%;max-height:100%;border-radius:12px;box-shadow:0 12px 50px rgba(0,0,0,.7);transform:scale(.97);transition:transform .2s cubic-bezier(.22,1,.36,1)}.cov-lb.in img{transform:none}' +
       '.cov-lb-x{position:absolute;top:14px;right:16px;width:40px;height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.22);background:rgba(0,0,0,.45);color:#fff;font-size:16px;cursor:pointer;z-index:2}' +
       '.cov-regs-tit{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192;margin:2px 2px 6px}' +
@@ -51645,6 +51913,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirMesaCompras, cerrarMesaCompras, mesaSetFiltro, mesaSetZona, mesaCargarMas, mesaBuscar, _mesaComprasEntrar, _mesaComprasSyncBadge,
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
     curvaOverlay, _curvaOverlayCerrar, _curvaSelReg, _curvaVerAnulados,
+    _curvaVerIngresos, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.

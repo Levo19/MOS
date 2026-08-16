@@ -2628,11 +2628,20 @@ const API = (() => {
       if (r.ok === false) throw new Error(r.error || 'no se pudo actualizar la guía');
       return { ok: true, data: { url, ocr: 'PENDIENTE' } };
     }
-    // [Fase 3 · analítica] mini-preview de una guía de compra (para el punto de COSTO del overlay). Perfil wh.
-    if (action === 'guiaPreview') {
-      const r = await _sbRpcMOS('guia_preview', { p: { idGuia: p.idGuia } }, 'wh');
+    // [802 · curva] INGRESOS del producto por guía de proveedor, cada uno diciendo si tiene
+    // costo válido registrado. El overlay pinta un punto hueco en los días que entró mercadería
+    // pero nadie cargó el costo — el hueco que antes no se veía. PURA.
+    if (action === 'curvaIngresos') {
+      const r = await _sbRpcMOS('curva_ingresos', { p: { idProducto: p.idProducto || undefined, skuBase: p.skuBase || undefined } }, 'mos');
       if (r == null) return null;
-      return r;   // {ok, data:{proveedor, documento, fecha, monto, nItems, items[]}}
+      return r;   // {ok, data:{skuBase, ingresos:[{idGuia, ts, proveedor, cantidad, tieneCosto, tieneFoto, costo}]}}
+    }
+    // [802 · curva] Guía COMPLETA para el card flotante: cabecera + todos los ítems con el
+    // producto en cuestión marcado (esEste) + foto del comprobante. PURA.
+    if (action === 'curvaGuiaDetalle') {
+      const r = await _sbRpcMOS('curva_guia_detalle', { p: { idGuia: p.idGuia, idProducto: p.idProducto || undefined, skuBase: p.skuBase || undefined } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:{proveedor, documento, fecha, monto, foto, items[{esEste}], costo}}
     }
     // Analítica FUSIONADA del grupo canónico (almacén WH por guías + ventas ME por zona,
     // kg-equivalentes; SQL 425). Directa PURA — sin GAS ni fallback.
@@ -2943,7 +2952,8 @@ const API = (() => {
     rotacionZonasCatalogo:       () => true,   // mos.rotacion_zonas_catalogo (775) · chips de zona · LECTURA PURA
     guiaCambiarFoto:             () => true,   // wh.guia_set_foto (774) · Storage + trigger OCR 762 · escritura directa
     historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
-    guiaPreview:                 () => true,   // wh.guia_preview (578) · preview de guía en el overlay · PURA
+    curvaIngresos:               () => true,   // mos.curva_ingresos (802) · ingresos sin costo en la curva · PURA
+    curvaGuiaDetalle:            () => true,   // mos.curva_guia_detalle (802) · card flotante de la guía · PURA
     wh_auditarStockGlobal:       () => true,   // mos.wh_auditar_cuadre (381)
     wh_getAlertasStock:          () => true,   // mos.wh_get_alertas_stock (381)
     wh_reconciliarStockProducto: () => true,   // ⚠️stock · mos.wh_reconciliar_stock_producto (381)
@@ -2996,7 +3006,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, guiaPreview: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.
