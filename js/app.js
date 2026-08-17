@@ -13050,7 +13050,14 @@ const MOS = (() => {
       '.cov-reg-f{font-size:11px;color:#7488a6;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
       '.cov-reg-u{font-size:11px;color:#93a4c2;font-weight:700;flex:none;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
       '@media(max-width:560px){.cov-id{flex:1 1 auto;min-width:0}.cov-acts{order:2}.cov-chips{order:3;flex:1 1 100%}' +
-      '@media(max-width:560px){.cov-chips{gap:6px;padding:7px 9px}.cov-chip b{font-size:13.5px}.cov-chip{padding:4px 9px}.cov-reg-u{max-width:64px}.cov-alarma{max-width:100%}}';
+      '@media(max-width:560px){.cov-chips{gap:6px;padding:7px 9px}.cov-chip b{font-size:13.5px}.cov-chip{padding:4px 9px}.cov-reg-u{max-width:64px}.cov-alarma{max-width:100%}}}' +
+      // [844] Táctil: las pestañas del dock y las dos X quedaban por debajo de lo cómodo de tocar.
+      '@media(pointer:coarse){' +
+        '.cov-tab{padding:11px 6px;min-height:38px}' +
+        '.cov-ab{width:38px;height:38px}' +
+        '.cvf-x{width:38px;height:38px}' +
+        '.cvf-multi,.cvf-top{padding-right:42px}' +
+      '}';
     document.head.appendChild(st);
   }
 
@@ -42180,7 +42187,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.ftk-seg{font-style:normal;font-size:9px;color:#c4b5fd;background:rgba(167,139,250,.14);border-radius:5px;padding:1px 5px}' +
       '.ftk-lq,.ftk-lv{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;text-align:right}' +
       '.ftk-pie{font-size:10.5px;color:#5f7192;text-align:center;padding:6px 0}' +
-      '@media(max-width:560px){.fpd{padding:11px 12px}.fpd-nums{grid-template-columns:repeat(3,1fr);gap:9px}.ftk-back{padding:0;align-items:flex-end}.ftk-card{width:100%;max-height:92vh;border-radius:18px 18px 0 0}}';
+      '@media(max-width:560px){.fpd{padding:11px 12px}.fpd-nums{grid-template-columns:repeat(3,1fr);gap:9px}.ftk-back{padding:0;align-items:flex-end}.ftk-card{width:100%;max-height:92vh;border-radius:18px 18px 0 0}}' +
+      // [844] Dedo, no puntero. En pantalla táctil un botón de 21px se falla más de lo que se acierta.
+      // El chip de margen NO se agranda a la vista —vive en una fila densa y la desordenaría—: se le
+      // estira el área de toque con un ::after invisible. Los otros dos sí tienen sitio y crecen.
+      '@media(pointer:coarse){' +
+        '.fin-mg-btn{position:relative}' +
+        '.fin-mg-btn::after{content:"";position:absolute;inset:-9px -7px}' +
+        '.fpd-tk{min-height:34px;padding:7px 14px;display:inline-flex;align-items:center}' +
+        '.fpd-tk-mini{min-height:34px;padding:7px 12px}' +
+        '.ftk-x{width:38px;height:38px}' +
+      '}';
     document.head.appendChild(st);
   }
 
