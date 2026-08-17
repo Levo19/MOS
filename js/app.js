@@ -42052,6 +42052,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.fpd-row.is-tramo{border-color:rgba(167,139,250,.3);background:#0f1024}' +
       '.fpd-row.is-tramo .fpd-n i{color:#a78bfa}' +
       '.fpd-aj{font-size:9.5px;font-weight:800;color:#c4b5fd;background:rgba(167,139,250,.14);border:1px solid rgba(167,139,250,.32);border-radius:5px;padding:1px 5px;flex:none}' +
+      '.fpd-avisorec{font-size:10.5px;line-height:1.5;color:#fcd34d;background:rgba(251,191,36,.08);border:1px dashed rgba(251,191,36,.3);border-radius:8px;padding:7px 10px}' +
       '.fpd-pista{font-size:11.5px;line-height:1.5;color:#7dd3fc;background:rgba(56,189,248,.08);' +
         'border:1px dashed rgba(56,189,248,.32);border-radius:9px;padding:9px 11px}' +
       '.fpd-pista b{color:#e0f2fe}' +
@@ -42144,6 +42145,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       bloqueTramos =
         '<div class="fpd-head fpd-head-2"><span>🎚 Por tramo de precio</span>' +
           '<span class="fpd-costo">base S/ ' + _money(tramos.precioBase).toFixed(2) + '/kg · el tramo no cambia el costo</span></div>' +
+        // [821] honestidad sobre el origen del dato: lo grabado es historia; lo reconstruido se
+        // calcula con los tramos de HOY y cambiaría si mañana se tocan.
+        ((+tramos.reconstruidas || 0) > 0
+          ? '<div class="fpd-avisorec">↺ ' + tramos.reconstruidas + ' venta(s) de este día son anteriores al registro del tramo: se calculan con los tramos actuales y podrían moverse si los cambiás.</div>'
+          : '') +
         (tramos.tramos || []).map(t => {
           const mg = (t.margenPct != null)
             ? '<span class="fpd-mg ' + (t.margenPct < 0 ? 'neg' : (t.margenPct >= 15 ? 'ok' : 'bajo')) + '">' + (+t.margenPct).toFixed(1) + '%</span>'
