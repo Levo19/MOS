@@ -10238,10 +10238,22 @@ const MOS = (() => {
   }
 
   // [G] helper de costo por unidad — MISMO markup en el render inicial y al teclear.
-  function _costosGuiaHelperHTML(brutoUnit, netoUnit) {
+  // [845 · pedido del dueño: "no solo el monto, también el valor del monto"] El readout se lee
+  // igual que la línea de la boleta: la multiplicación tal cual (24 × 12.20), y debajo el total
+  // CON IGV —el número que está impreso en el comprobante— junto al mismo total SIN IGV. Así el
+  // cotejo es de un vistazo y no hay que calcular nada de cabeza.
+  function _costosGuiaHelperHTML(brutoUnit, netoUnit, cant) {
     if (!(brutoUnit > 0)) return '<span class="cu-empty">— falta el costo</span>';
-    return `<span class="cu-bruto">S/ ${brutoUnit.toFixed(2)}</span><span class="cu-u">/u</span>`
-         + (netoUnit > 0 ? `<span class="cu-neto">neto S/ ${netoUnit.toFixed(2)}</span>` : '');
+    const c = parseFloat(cant) || 0;
+    let out = `<span class="cu-bruto">S/ ${brutoUnit.toFixed(2)}</span><span class="cu-u">/u</span>`;
+    if (c > 0) {
+      out += `<span class="cu-mult">${_fmtQty(c)} × S/ ${_money(brutoUnit).toFixed(2)}</span>`;
+      out += `<span class="cu-cotejo"><b>S/ ${_money(brutoUnit * c).toFixed(2)}</b> con IGV`
+           + (netoUnit > 0 ? ` · <b>S/ ${_money(netoUnit * c).toFixed(2)}</b> sin IGV` : '') + `</span>`;
+    } else if (netoUnit > 0) {
+      out += `<span class="cu-neto">neto S/ ${netoUnit.toFixed(2)}</span>`;
+    }
+    return out;
   }
 
   function _renderCostosLineaItem(op, l, i, st) {
@@ -10261,7 +10273,7 @@ const MOS = (() => {
     const cod  = _escapeHtml(cod0);
     const equivBadge = (l.esEquivalencia || (prodCat && String(prodCat.codigoBarra || '').trim() !== cod0)) ? '<span class="alm-v-equiv-badge">EQUIV</span>' : '';
     const placeholder = st.inputMode === 'TOTAL' ? 'Total' : 'Unit';
-    const helper = _costosGuiaHelperHTML(brutoUnit, netoUnit);
+    const helper = _costosGuiaHelperHTML(brutoUnit, netoUnit, cant);
     const fotoUrl = prodCat ? String(prodCat.fotoUrl || prodCat.logoUrl || '').trim() : '';
     const fotoSafe = fotoUrl.replace(/'/g, "\\'");
     const fotoHtml = fotoUrl
@@ -10484,7 +10496,7 @@ const MOS = (() => {
       _costosGuiaQuitarMonto(i);
       return;
     }
-    _costosAplicarDebounce();
+    _costosAplicarDebounce(250);   // [845] salió del campo: se guarda casi al instante
     // [773] re-pintar la LÍNEA COMPLETA (no solo pedacitos): así los toggles se esconden
     // al instante al quedar el costo, y el veredicto + botón 💰 aparecen sin salir y
     // volver a entrar. El pequeño delay deja aterrizar el click en la ✕ del monto
@@ -10492,11 +10504,13 @@ const MOS = (() => {
     clearTimeout(l._repT); l._repT = setTimeout(() => _costosLineaRepaint(i), 180);
   }
   // [773] Reemplaza el nodo de la línea i por su render fresco (estado real).
-  function _costosLineaRepaint(i) {
+  // [845] `force` repinta aunque el foco esté dentro: lo necesita la × del monto, que se pulsa
+  // con el cursor en el propio campo y tiene que devolver la línea a su estado "sin costo".
+  function _costosLineaRepaint(i, force) {
     const st = S._costosGuiaState; if (!st) return;
     const l = (st.lineas || [])[i]; if (!l) return;
     const row = document.getElementById('costoGuiaLinea_' + i); if (!row) return;
-    if (row.contains(document.activeElement)) return;   // el admin volvió a entrar — no pisar
+    if (!force && row.contains(document.activeElement)) return;   // el admin volvió a entrar — no pisar
     const op = _findOpByKey(st.fuente + '_' + st.idGuia); if (!op) return;
     const tmp = document.createElement('div');
     tmp.innerHTML = _renderCostosLineaItem(op, l, i, st);
@@ -10566,11 +10580,14 @@ const MOS = (() => {
   }
   // [703] El costo se aplica SOLO al catálogo (mismas RPCs que el botón viejo) tras 1.2s
   // sin ediciones. Reemplaza al botón "✓ Aplicar costos al catálogo" que el dueño quitó.
-  function _costosAplicarDebounce() {
+  // [845] El dueño escribe rápido: 1200 ms de espera se sentían como lag y, si cerraba antes,
+  // el guardado nunca salía. Se baja a 700 ms al teclear y, al SALIR del campo (blur = ya terminó
+  // con ese número), a 250 ms. El cierre del Paso 1 fuerza el envío inmediato (_p1FlushPendientes).
+  function _costosAplicarDebounce(ms) {
     clearTimeout(S._p1AplicarT);
     const sello = document.getElementById('costosSaveState');
     if (sello) { sello.textContent = '⏳ guardando…'; sello.className = 'p1-save is-busy'; }
-    S._p1AplicarT = setTimeout(() => { _costosAplicarAlCatalogo(true); }, 1200);
+    S._p1AplicarT = setTimeout(() => { S._p1AplicarT = null; _costosAplicarAlCatalogo(true); }, ms || 700);
   }
 
   // [v2.43.615] ¿esta línea YA tiene su precio puesto (Paso 2)? = publicado en esta sesión (_precioListo)
@@ -10987,6 +11004,10 @@ const MOS = (() => {
       #modalCostosGuiaUnif .cu-u { opacity: .55; margin-left: 1px; font-size: 11px; }
       #modalCostosGuiaUnif .cu-neto { display: block; opacity: .65; font-size: 10.5px; margin-top: 1px; }
       #modalCostosGuiaUnif .cu-empty { color: #fbbf24; opacity: .8; font-style: italic; font-size: 11.5px; }
+      /* [845] la multiplicación y el cotejo con/sin IGV bajo el costo unitario */
+      #modalCostosGuiaUnif .cu-mult { display: block; opacity: .72; font-size: 11px; margin-top: 3px; }
+      #modalCostosGuiaUnif .cu-cotejo { display: block; font-size: 11px; margin-top: 2px; color: #93a4c2; }
+      #modalCostosGuiaUnif .cu-cotejo b { color: #e2e8f0; font-weight: 700; }
       @media (max-width: 460px) { #modalCostosGuiaUnif .cl-money { grid-template-columns: 1fr; gap: 9px; padding-left: 30px; } #modalCostosGuiaUnif .cl-readout { align-items: flex-start; text-align: left; } }
       #modalCostosGuiaUnif .alm-v-marca-ok    { color: #34d399; font-weight: 700; }
       #modalCostosGuiaUnif .alm-v-marca-ocr   { color: #fbbf24; font-weight: 700; }
@@ -11300,6 +11321,7 @@ const MOS = (() => {
   // [v41.21] Conmutar el modo costos dentro del MISMO overlay del voucher
   function opsEntrarModoCostos(fuente, idGuia) {
     _opsBeep('tac');
+    S._p1Volver = null;   // [845] por defecto se sale a donde siempre; curvaIrACostos lo re-arma
     // Inicializar state ANTES de abrir el modal (necesita las líneas)
     const op = _findOpByKey(fuente + '_' + idGuia);
     if (!op) { toast('Operación no encontrada', 'error'); return; }
@@ -12324,6 +12346,7 @@ const MOS = (() => {
   async function curvaOverlay(i) {
     const f = (window._paso2Filas || [])[i];
     if (!f) { toast('Curva no disponible', 'warn'); return; }
+    S._covIdx = i;   // [845] para poder volver acá desde el Paso 1
     const idp = (f.x && f.x.idCanonico) || '';
     const myGen = ++_covSeq;
     _curvaOvInyectarCSS();
@@ -12717,12 +12740,18 @@ const MOS = (() => {
       // [837] La curva se abre DESDE el editor de precios (Paso 2). Si solo cierro el card y la
       // curva, el Paso 1 aparece con el editor de precios ENCIMA — el cruce que reportó el dueño.
       // Se cierra toda esa pila antes de entrar.
+      // [845 · cruce reportado] Antes, cerrar el Paso 1 dejaba al dueño en el catálogo aunque
+      // hubiera entrado DESDE la curva. Se anota de dónde vino para devolverlo ahí mismo. La marca
+      // se pone DESPUÉS de entrar (opsEntrarModoCostos la limpia), para que no quede pegada si el
+      // Paso 1 se abre luego por otro camino.
+      let _vol = null;
+      try { _vol = { filas: window._paso2Filas, i: (S._covIdx | 0) }; } catch(_) { _vol = null; }
       _curvaCardCerrar(true);
       _curvaOverlayCerrar();
       try { document.getElementById('paso2Modal')?.remove(); } catch(_){}
       try { S._paso2Modo = null; } catch(_){}
       setTimeout(() => {
-        try { opsEntrarModoCostos(op.fuente, op.idGuia); }
+        try { opsEntrarModoCostos(op.fuente, op.idGuia); S._p1Volver = _vol; }
         catch (e) { toast('No se pudo abrir: ' + (e.message || e), 'error'); }
       }, 240);
     } finally {
@@ -13239,11 +13268,14 @@ const MOS = (() => {
 
   // [v5 §11] guardarCostosEImprimirJefa ELIMINADO — no se imprime ticket para la jefa;
   // el Paso 2 del secuencial ES esa conversación en la tablet.
-  function opsSalirModoCostos() {
+  async function opsSalirModoCostos() {
     S._opsModoCostos = false;
     // [v2.43.21] Cerrar el modal unificado de costos
     const modal = document.getElementById('modalCostosGuiaUnif');
     if (modal) modal.classList.add('hidden');
+    // [845] la pantalla ya se cerró; ahora se vacía la cola de guardado para que salir rápido
+    // nunca pierda un monto recién escrito.
+    const _flush = _p1FlushPendientes();
     // Por compat (overlay viejo si quedó abierto en algún flow)
     const overlay = $('almOpsDetalleOverlay');
     if (overlay) overlay.classList.remove('is-costos-mode');
@@ -13252,6 +13284,15 @@ const MOS = (() => {
     if (op) {
       const cont = $('almOpsDetalleContent');
       if (cont) cont.innerHTML = _renderVoucher(op, 0);
+    }
+    // [845] Si entramos DESDE la curva de precio/costo, volvemos a ella —no al catálogo—, y con
+    // el historial releído para que el costo que se acaba de escribir ya esté dibujado.
+    const _volver = S._p1Volver; S._p1Volver = null;
+    if (_volver && _volver.filas && _volver.filas.length) {
+      try { await _flush; } catch(_){}
+      try { window._paso2Filas = _volver.filas; } catch(_){}
+      try { await curvaOverlay(_volver.i || 0); } catch(_){}
+      return;
     }
     // [L] Si venimos de la Mesa, regresar a ella (des-atenuada y refrescada).
     if (S._mesaAbierta) _mesaVolver();
@@ -14046,6 +14087,12 @@ const MOS = (() => {
       // cache viejo que todavía traiga el monto anterior (el detalle del servidor ya está en 0).
       const codI = String(l.codigoBarra || l.codigoProducto || l.codProducto || '').trim();
       if (bruto > 0 && _p1TumbaTiene(op.idGuia, codI)) bruto = 0;
+      // [845] lo último que tecleó el admin en este dispositivo manda sobre una lectura vieja,
+      // salvo que después lo haya borrado (la tumba gana sobre el eco).
+      if (!_p1TumbaTiene(op.idGuia, codI)) {
+        const _eco = _p1EcoVal(op.idGuia, codI);
+        if (_eco > 0) bruto = _eco;
+      }
       return {
         ...l,
         inputValue: bruto > 0 ? +(bruto * (parseFloat(l.cantidad) || 1)).toFixed(2) : '',
@@ -14469,7 +14516,7 @@ const MOS = (() => {
       if (op && op.lineas && op.lineas[idx]) op.lineas[idx].precioUnitario = brutoUnit;
     } catch(_){}
     const cell = $('costoGuiaSubtot_' + idx);
-    if (cell) cell.innerHTML = _costosGuiaHelperHTML(brutoUnit, netoUnit);
+    if (cell) cell.innerHTML = _costosGuiaHelperHTML(brutoUnit, netoUnit, parseFloat(linea.cantidad) || 0);
     // [v2.43.603] el botón 💰 Precio de la línea aparece/desaparece con el monto
     const acc = $('costoGuiaAcc_' + idx);
     if (acc) acc.innerHTML = _costosLineaAccionesHTML(linea, idx, brutoUnit);
@@ -14500,7 +14547,16 @@ const MOS = (() => {
     // [v2.41.54] Marca visual: el ✓/⚠ de esta línea se recalcula
     _costosGuiaUpdMarca(idx);
     _costosGuiaUpdProgreso();
-    // [v2.41.54] Autoguardado por línea debounced 1.5s — el user no tiene
+    // [845] eco local: lo tecleado manda sobre cualquier lectura vieja del servidor hasta que
+    // el guardado confirme. Es lo que evita el "entro rápido a verificar y aparece vacío".
+    try {
+      const _codE = String(linea.codigoBarra || linea.codigoProducto || linea.codProducto || '').trim();
+      if (_codE && st.idGuia) {
+        if (brutoUnit > 0) _p1EcoMarcar(st.idGuia, _codE, brutoUnit);
+        else _p1EcoQuitar(st.idGuia, _codE);
+      }
+    } catch(_){}
+    // [v2.41.54] Autoguardado por línea debounced — el user no tiene
     // que pulsar "Guardar" para que el costo persista. El backend acepta
     // upsert por idDetalle/codigoProducto, idempotente.
     _costosGuiaAutosaveDebounce(idx);
@@ -14594,6 +14650,7 @@ const MOS = (() => {
       if (op && op.lineas && op.lineas[idx]) { op.lineas[idx].precioUnitario = 0; op.lineas[idx].subtotal = 0; }
     } catch(_){}
     if (st._costosAplicados) delete st._costosAplicados[cod];
+    try { _p1EcoQuitar(st.idGuia, cod); } catch(_){}   // [845] se borró: el eco no debe revivirlo
     // re-render de la línea (input vuelve a placeholder, botón 💰 desaparece) + progreso
     const ci = $('costoGuiaCi_' + idx); if (ci) { ci.classList.remove('has-val'); const inp = ci.querySelector('input'); if (inp) inp.value = ''; }
     const cell = $('costoGuiaSubtot_' + idx); if (cell) cell.innerHTML = _costosGuiaHelperHTML(0, 0);
@@ -14602,6 +14659,18 @@ const MOS = (() => {
     const _row = $('costoGuiaLinea_' + idx); if (_row) { _row.classList.remove('is-cost', 'is-done', 'is-collapsed'); _row.classList.add('is-nocost'); }
     const _sum = $('costoGuiaSum_' + idx); if (_sum) _sum.textContent = '';
     _costosGuiaUpdMarca(idx); _costosGuiaUpdProgreso();
+    // [845 · cruce reportado] Los chips (🎁 bonificación · Σ total/unitario · IGV · ⊕ percepción)
+    // NO existen en el DOM mientras la línea está hecha (`togglesHtml` nace vacío). Los parches
+    // quirúrgicos de arriba no podían devolverlos, así que había que cerrar el modal y volver a
+    // entrar. Se repinta la línea entera: vuelve exactamente al estado "sin costo", con sus chips.
+    setTimeout(() => {
+      try {
+        _costosLineaRepaint(idx, true);
+        const r = document.getElementById('costoGuiaLinea_' + idx);
+        const inp = r && r.querySelector('.alm-v-costo-input');
+        if (inp) inp.focus();
+      } catch(_){}
+    }, 0);
     try { _costosCtaUpd(); _costosGuiaUpdPrecioProgreso(); } catch(_){}
     // los totales del pie también bajan al quitar el monto
     try {
@@ -14660,6 +14729,7 @@ const MOS = (() => {
       const inpR = document.querySelector('#costoGuiaCi_' + idx + ' input');
       if (inpR) inpR.value = restaurar || '';
       try { _costosGuiaUpdLinea(idx, String(restaurar || '')); } catch(_){}
+      try { _costosLineaRepaint(idx, true); } catch(_){}   // [845] y los chips vuelven a esconderse
       _selloB('⚠ sin borrar', 'is-err');
       toast('⚠ No se pudo borrar el costo: ' + (e.message || e) + ' — el monto sigue guardado, reintenta', 'error', 6000);
       return;
@@ -14722,7 +14792,9 @@ const MOS = (() => {
   const _costosAutosaveTimers = {};
   function _costosGuiaAutosaveDebounce(idx) {
     clearTimeout(_costosAutosaveTimers[idx]);
-    _costosAutosaveTimers[idx] = setTimeout(() => _costosGuiaAutosaveLinea(idx), 1500);
+    _costosAutosaveTimers[idx] = setTimeout(() => {
+      _costosAutosaveTimers[idx] = null; _costosGuiaAutosaveLinea(idx);
+    }, 700);   // [845] era 1500 — se sentía lento en uso rápido
   }
   async function _costosGuiaAutosaveLinea(idx) {
     const st = S._costosGuiaState;
@@ -14748,6 +14820,8 @@ const MOS = (() => {
         sugerenciasInline: [],
         _autosave: true
       });
+      // [845] el servidor ya lo tiene: el eco local sobra (y no debe tapar una edición futura)
+      try { _p1EcoQuitar(st.idGuia, String(l.codigoBarra || l.codigoProducto || l.codProducto || '').trim()); } catch(_){}
       // Restaurar marca ✓ tras éxito
       _costosGuiaUpdMarca(idx);
       if (marca) {
@@ -14759,6 +14833,71 @@ const MOS = (() => {
     }
   }
 
+
+  // [845] SALIR NO PUEDE PERDER NADA. Antes, escribir un monto y cerrar dentro de la ventana del
+  // debounce dejaba el envío en el aire: el timer seguía vivo pero el estado ya podía haber cambiado
+  // de guía, y al reabrir el campo salía vacío ("parece que no retiene la info nueva"). Ahora el
+  // cierre vacía la cola: dispara YA los autoguardados por línea pendientes y la aplicación al
+  // catálogo, y devuelve la promesa para poder esperarla antes de volver al gráfico.
+  async function _p1FlushPendientes() {
+    const jobs = [];
+    try {
+      Object.keys(_costosAutosaveTimers).forEach(k => {
+        if (!_costosAutosaveTimers[k]) return;
+        clearTimeout(_costosAutosaveTimers[k]);
+        _costosAutosaveTimers[k] = null;
+        jobs.push(Promise.resolve(_costosGuiaAutosaveLinea(+k)).catch(() => {}));
+      });
+    } catch(_){}
+    if (S._p1AplicarT) { clearTimeout(S._p1AplicarT); S._p1AplicarT = null; }
+    // se llama siempre: la guarda `_costosAplicados` corta sin red si no cambió nada
+    if (S._costosGuiaState) jobs.push(Promise.resolve(_costosAplicarAlCatalogo(true)).catch(() => {}));
+    if (jobs.length) { try { await Promise.all(jobs); } catch(_){} }
+  }
+
+  // ───────── [845] ECO LOCAL DEL ÚLTIMO MONTO TECLEADO ─────────
+  // Hermano de la TUMBA (que recuerda los borrados). Entre que el admin teclea un costo y que el
+  // servidor lo confirma hay una ventana de segundos; si en ese rato se recarga el detalle de la
+  // guía, la respuesta vieja del servidor pisaba lo recién escrito y el campo aparecía vacío. El
+  // eco guarda ese valor en el dispositivo y manda al re-hidratar. Se BORRA en cuanto el servidor
+  // confirma —a partir de ahí la fuente es el servidor— y caduca solo a los 3 días.
+  const _P1_ECO_KEY = 'mos_p1_costos_eco_v1';
+  const _P1_ECO_TTL = 3 * 86400000;
+  function _p1EcoLeer() {
+    if (S._p1EcoMem) return S._p1EcoMem;
+    let obj = {};
+    try { const raw = localStorage.getItem(_P1_ECO_KEY); const o = raw ? JSON.parse(raw) : {}; if (o && typeof o === 'object') obj = o; }
+    catch(_) { obj = {}; }
+    S._p1EcoMem = obj; return obj;
+  }
+  function _p1EcoGuardar(obj) {
+    try {
+      const lim = Date.now() - _P1_ECO_TTL;
+      Object.keys(obj).forEach(g => {
+        Object.keys(obj[g] || {}).forEach(c => { if (!(((obj[g][c] || {}).ts || 0) > lim)) delete obj[g][c]; });
+        if (!Object.keys(obj[g] || {}).length) delete obj[g];
+      });
+      S._p1EcoMem = obj;
+      localStorage.setItem(_P1_ECO_KEY, JSON.stringify(obj));
+    } catch(_){}
+  }
+  function _p1EcoVal(idGuia, cod) {
+    if (!idGuia || !cod) return 0;
+    const g = _p1EcoLeer()[String(idGuia)] || {};
+    const e = g[String(cod).trim()];
+    return (e && parseFloat(e.v) > 0) ? parseFloat(e.v) : 0;
+  }
+  function _p1EcoMarcar(idGuia, cod, unitBruto) {
+    if (!idGuia || !cod) return;
+    const obj = _p1EcoLeer();
+    (obj[String(idGuia)] = obj[String(idGuia)] || {})[String(cod).trim()] = { v: +unitBruto || 0, ts: Date.now() };
+    _p1EcoGuardar(obj);
+  }
+  function _p1EcoQuitar(idGuia, cod) {
+    if (!idGuia || !cod) return;
+    const obj = _p1EcoLeer();
+    if (obj[String(idGuia)]) { delete obj[String(idGuia)][String(cod).trim()]; _p1EcoGuardar(obj); }
+  }
 
   async function guardarCostosGuia(silent) {
     const st = S._costosGuiaState;
