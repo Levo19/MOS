@@ -42010,6 +42010,92 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _finRenderProductos();
   }
 
+  // [843] Del margen a la curva: abre el cockpit de precio/costo del producto sin salir de
+  // Finanzas. Reusa curvaOverlay, que lee window._paso2Filas — se le siembra la fila mínima.
+  function finProdCurva(sku) {
+    const pl = _finPL; if (!pl) return;
+    const p = (pl.detalleProductos || []).find(x => String(x.sku) === String(sku));
+    if (!p) { toast('No encontré ese producto', 'warn'); return; }
+    // el canónico: por código de barras del payload, o por sku_base en el catálogo
+    const cat = (S.productos || []).find(x =>
+      String(x.codigoBarra || '') === String(p.codigoCanonico || '') ||
+      (String(x.skuBase || '') === String(sku) && (parseFloat(x.factorConversion) || 1) === 1));
+    if (!cat || !cat.idProducto) { toast('Ese producto no está en el catálogo cargado', 'warn'); return; }
+    window._paso2Filas = [{
+      nombre: cat.descripcion || p.nombre || sku,
+      precioActual: parseFloat(cat.precioVenta) || parseFloat(p.precioCanonico) || 0,
+      x: { idCanonico: cat.idProducto, descripcion: cat.descripcion || p.nombre || sku,
+           costoNuevo: parseFloat(cat.precioCosto) || parseFloat(p.costoUnit) || 0 }
+    }];
+    try { curvaOverlay(0); } catch (e) { toast('No se pudo abrir la curva: ' + (e.message || e), 'error'); }
+  }
+
+  // [843] Los TICKETS detrás de un número. El mismo botón sirve en el líder (todos), en una
+  // presentación (solo la suya) y en un tramo (solo el suyo) — cambia el filtro, no la vista.
+  async function finProdTickets(sku, clave, segmentoId, etiqueta) {
+    if (!sku) return;
+    _finProdInyectarCSS();
+    const prev = document.getElementById('finTicketsOvl'); if (prev) prev.remove();
+    const ovl = document.createElement('div');
+    ovl.id = 'finTicketsOvl'; ovl.className = 'ftk-back';
+    ovl.onpointerdown = e => { if (e.target === ovl) MOS.finTicketsCerrar(); };
+    ovl.innerHTML = '<div class="ftk-card" role="dialog" aria-label="Tickets del producto">' +
+      '<div class="ftk-head"><div class="ftk-tit"><b>🧾 Tickets</b><span>' + _escapeHtml(etiqueta || sku) + '</span></div>' +
+      '<button class="ftk-x" onclick="MOS.finTicketsCerrar()" aria-label="Cerrar">✕</button></div>' +
+      '<div class="ftk-body"><div class="fpd-load">◍ buscando los tickets…</div></div></div>';
+    document.body.appendChild(ovl);
+    requestAnimationFrame(() => ovl.classList.add('in'));
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+
+    let d = null;
+    try {
+      const _f = (document.getElementById('finFecha') || {}).value || '';
+      const r = await API.post('finanzasDiaSkuTickets', {
+        fecha: _f, skuBase: sku, clave: clave || '', segmentoId: segmentoId || '' });
+      d = r && (r.data || r);
+    } catch (e) {
+      const b = ovl.querySelector('.ftk-body');
+      if (b) b.innerHTML = '<div class="fpd-load">No pude leer los tickets: ' + _escapeHtml(e.message || String(e)) + '</div>';
+      return;
+    }
+    const body = ovl.querySelector('.ftk-body'); if (!body) return;
+    const tks = (d && d.tickets) || [];
+    if (!tks.length) { body.innerHTML = '<div class="fpd-load">Sin tickets para ese filtro en este día</div>'; return; }
+
+    const _S = v => 'S/ ' + _money(v).toFixed(2);
+    let sumaMia = 0, udsMias = 0;
+    const html = tks.map(t => {
+      const lineas = (t.lineas || []).map(l => {
+        if (l.esEste) { sumaMia += +l.subtotal || 0; udsMias += +l.cantidad || 0; }
+        return '<div class="ftk-l' + (l.esEste ? ' is-yo' : '') + '">' +
+          '<span class="ftk-ln">' + (l.esEste ? '👉 ' : '') + _escapeHtml(String(l.nombre || '')) +
+            (l.esEste && l.segmento ? ' <em class="ftk-seg">' + _escapeHtml(String(l.segmento)) + '</em>' : '') + '</span>' +
+          '<span class="ftk-lq">' + _fmtQty(l.cantidad) + '</span>' +
+          '<span class="ftk-lv">' + _S(l.subtotal) + '</span></div>';
+      }).join('');
+      return '<div class="ftk-t">' +
+        '<div class="ftk-th"><span class="ftk-hora">' + _escapeHtml(String(t.hora)) + '</span>' +
+          '<span class="ftk-fp">' + _escapeHtml(String(t.formaPago || '')) + '</span>' +
+          (t.vendedor ? '<span class="ftk-vend">' + _escapeHtml(String(t.vendedor).split(/\s+/)[0]) + '</span>' : '') +
+          (t.correlativo ? '<span class="ftk-corr">' + _escapeHtml(String(t.correlativo)) + '</span>' : '') +
+          '<b class="ftk-tot">' + _S(t.total) + '</b></div>' +
+        '<div class="ftk-ls">' + lineas + '</div></div>';
+    }).join('');
+
+    const pie = (d.total > d.mostrados)
+      ? '<div class="ftk-pie">Mostrando ' + d.mostrados + ' de ' + d.total + ' tickets — los más recientes primero.</div>' : '';
+    body.innerHTML = '<div class="ftk-resumen">' +
+        '<div><i>tickets</i><b>' + d.total + '</b></div>' +
+        '<div><i>de este producto</i><b>' + _fmtQty(udsMias) + '</b></div>' +
+        '<div><i>cobrado por él</i><b>' + _S(sumaMia) + '</b></div>' +
+      '</div>' + html + pie;
+  }
+  function finTicketsCerrar() {
+    const o = document.getElementById('finTicketsOvl'); if (!o) return;
+    o.classList.remove('in');
+    setTimeout(() => { try { o.remove(); } catch(_){} }, 180);
+  }
+
   // [840] Estilos del desglose. Viven acá y no en el inyector de la curva: ese solo corre al
   // abrir el gráfico de precio/costo, así que en Finanzas nunca llegaban y la tabla salía pegada.
   function _finProdInyectarCSS() {
@@ -42057,7 +42143,44 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         'border:1px dashed rgba(56,189,248,.32);border-radius:9px;padding:9px 11px}' +
       '.fpd-pista b{color:#e0f2fe}' +
       '.fpd-pista-solo{color:#7488a6;border-color:#26344c;background:transparent}' +
-      '@media(max-width:560px){.fpd{padding:11px 12px}.fpd-nums{grid-template-columns:repeat(3,1fr);gap:9px}}';
+      '.fpd-tk{align-self:flex-start;font-size:10px;font-weight:800;color:#7dd3fc;background:rgba(56,189,248,.1);' +
+        'border:1px solid rgba(56,189,248,.32);border-radius:20px;padding:4px 10px;cursor:pointer;transition:.15s}' +
+      '.fpd-tk:hover{background:rgba(56,189,248,.22);color:#e0f2fe}' +
+      '.fpd-tk-mini{margin-top:2px;font-size:9.5px;padding:3px 9px;opacity:.85}' +
+      '.fin-mg-btn{cursor:pointer;font:inherit;transition:.15s}' +
+      '.fin-mg-btn:hover{filter:brightness(1.25);transform:translateY(-1px)}' +
+      '.ftk-back{position:fixed;inset:0;z-index:100090;display:flex;align-items:center;justify-content:center;' +
+        'padding:16px;background:rgba(3,7,15,.66);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);opacity:0;transition:opacity .2s}' +
+      '.ftk-back.in{opacity:1}' +
+      '.ftk-card{width:min(560px,100%);max-height:88vh;display:flex;flex-direction:column;background:linear-gradient(180deg,#111d31,#0a1120);' +
+        'border:1px solid #26344c;border-radius:16px;box-shadow:0 26px 70px rgba(0,0,0,.66);overflow:hidden;' +
+        'transform:translateY(14px) scale(.98);opacity:0;transition:transform .25s cubic-bezier(.22,1,.36,1),opacity .2s}' +
+      '.ftk-back.in .ftk-card{transform:none;opacity:1}' +
+      '.ftk-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;border-bottom:1px solid #1a2740;flex:none}' +
+      '.ftk-tit{display:flex;flex-direction:column;min-width:0}' +
+      '.ftk-tit b{font-size:14px;color:#e2e8f0}' +
+      '.ftk-tit span{font-size:10.5px;color:#7488a6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.ftk-x{flex:none;width:30px;height:30px;border-radius:9px;border:1px solid #26344c;background:#0c1626;color:#8296b5;cursor:pointer}' +
+      '.ftk-x:hover{background:#182742;color:#dbe4f3}' +
+      '.ftk-body{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:9px;-webkit-overflow-scrolling:touch}' +
+      '.ftk-resumen{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding-bottom:10px;border-bottom:1px solid #1a2740}' +
+      '.ftk-resumen>div{display:flex;flex-direction:column;gap:2px}' +
+      '.ftk-resumen i{font-style:normal;font-size:8.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#4b5c78}' +
+      '.ftk-resumen b{font-size:15px;font-family:ui-monospace,monospace;color:#7dd3fc}' +
+      '.ftk-t{border:1px solid #1a2740;border-radius:11px;background:#0b1424;overflow:hidden}' +
+      '.ftk-th{display:flex;align-items:center;gap:8px;padding:8px 11px;background:#0e1830;flex-wrap:wrap}' +
+      '.ftk-hora{font-family:ui-monospace,monospace;font-size:11.5px;font-weight:800;color:#e2e8f0}' +
+      '.ftk-fp,.ftk-vend,.ftk-corr{font-size:9.5px;font-weight:700;color:#7488a6;background:#0a1120;border:1px solid #1d2942;border-radius:5px;padding:1px 6px}' +
+      '.ftk-tot{margin-left:auto;font-family:ui-monospace,monospace;font-size:12.5px;color:#cbd5e1}' +
+      '.ftk-ls{display:flex;flex-direction:column}' +
+      '.ftk-l{display:grid;grid-template-columns:1fr auto auto;gap:9px;padding:5px 11px;font-size:11px;color:#8296b5;align-items:center}' +
+      '.ftk-l+.ftk-l{border-top:1px solid #101a2c}' +
+      '.ftk-l.is-yo{background:rgba(251,191,36,.1);color:#fde68a;font-weight:700}' +
+      '.ftk-ln{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.ftk-seg{font-style:normal;font-size:9px;color:#c4b5fd;background:rgba(167,139,250,.14);border-radius:5px;padding:1px 5px}' +
+      '.ftk-lq,.ftk-lv{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;text-align:right}' +
+      '.ftk-pie{font-size:10.5px;color:#5f7192;text-align:center;padding:6px 0}' +
+      '@media(max-width:560px){.fpd{padding:11px 12px}.fpd-nums{grid-template-columns:repeat(3,1fr);gap:9px}.ftk-back{padding:0;align-items:flex-end}.ftk-card{width:100%;max-height:92vh;border-radius:18px 18px 0 0}}';
     document.head.appendChild(st);
   }
 
@@ -42106,6 +42229,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     const _S = v => 'S/ ' + _money(v).toFixed(2);
     const costoBase = +(d.costoUnitBase || 0);
+    const nombreSku = ((items[0] && items[0].nombre) || sku);
     // rendimiento por unidad base: la comparación que de verdad decide si empacar conviene
     const filas = items.map(it => {
       const uBase = +it.unidadesBase || 0;
@@ -42125,6 +42249,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             '<i>por u. base</i><b>' + _S(porBase) + '</b></div>' +
           '<div class="fpd-cel"><i>margen</i>' + mg + '</div>' +
         '</div>' +
+        '<button type="button" class="fpd-tk fpd-tk-mini" onclick="MOS.finProdTickets(\'' + sku + '\',\'' +
+          String(it.clave).replace(/'/g, "\\'") + '\',\'\',\'' +
+          _escapeHtml(String(it.nombre || '')).replace(/'/g, "\\'") + '\')">🧾 sus tickets</button>' +
       '</div>';
     }).join('');
     const mejor = items.slice().sort((a, b) => {
@@ -42165,7 +42292,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               '<div class="fpd-cel ub" title="precio real por unidad · esperado S/ ' + _money(t.precioEsperado).toFixed(2) + '">' +
                 '<i>por u. base</i><b>' + _money(t.precioKg).toFixed(2) + '</b></div>' +
               '<div class="fpd-cel"><i>margen</i>' + mg + '</div>' +
-            '</div></div>';
+            '</div>' +
+            '<button type="button" class="fpd-tk fpd-tk-mini" onclick="MOS.finProdTickets(\'' + sku + '\',\'\',\'' +
+              String(t.id).replace(/'/g, "\\'") + '\',\'' +
+              _escapeHtml(String(t.etiqueta || '')).replace(/'/g, "\\'") + '\')">🧾 sus tickets</button>' +
+          '</div>';
         }).join('') +
         (mejorT ? '<div class="fpd-pista">🎚 El tramo <b>' + _escapeHtml(String(mejorT.etiqueta)) + '</b> es el que más deja hoy: ' +
                   (+mejorT.margenPct).toFixed(1) + '% de margen.</div>' : '');
@@ -42173,6 +42304,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
     fila.innerHTML = '<td colspan="5"><div class="fpd">' +
       '<div class="fpd-head"><span>Cómo se vendió</span>' +
+        '<button type="button" class="fpd-tk" onclick="MOS.finProdTickets(\'' + sku + '\',\'\',\'\',\'' +
+          _escapeHtml(String(nombreSku)).replace(/'/g, "\\'") + '\')">🧾 ver tickets</button>' +
         '<span class="fpd-costo">' + (costoBase > 0
           ? 'costo S/ ' + _money(costoBase).toFixed(2) + ' por unidad base'
           : 'sin costo cargado · el costo de abajo es estimado') + '</span></div>' +
@@ -42322,7 +42455,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ? `<span class="fin-mg-chip fin-mg-est" title="Sin costo real en el catálogo: el costo se estima al ${defaultMargen}% de margen">est. ${defaultMargen}%</span>`
         : (f.margen == null
             ? `<span class="fin-mg-chip fin-mg-est" title="Sin ingreso registrado: no se puede calcular el margen">—</span>`
-            : `<span class="fin-mg-chip ${f.margen < 0 ? 'fin-mg-neg' : (f.margen >= 15 ? 'fin-mg-ok' : 'fin-mg-bajo')}" title="Margen real: (se cobró − costó) ÷ se cobró">${f.margen.toFixed(1)}%</span>`);
+            : `<button type="button" class="fin-mg-chip fin-mg-btn ${f.margen < 0 ? 'fin-mg-neg' : (f.margen >= 15 ? 'fin-mg-ok' : 'fin-mg-bajo')}" onclick="event.stopPropagation();MOS.finProdCurva('${_esc(p.sku)}')" title="Margen real: (se cobró − costó) ÷ se cobró · tocá para ver la curva de precio y costo">${f.margen.toFixed(1)}%</button>`);
       const costoStr = f.est
         ? `<span class="text-slate-500 italic" title="Costo ESTIMADO al ${defaultMargen}%: este SKU no tiene precio de costo en el catálogo">${fmtM(f.costo)}</span>`
         : `<span title="${_fmtQty(cantUds)} uds × ${fmtM(p.costoUnit)}">${fmtM(f.costo)}</span>`;
@@ -52547,7 +52680,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
     dispToggleFijado,
     curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
-    _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, guiaRotarFoto, finProdDesglose, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
+    _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, guiaRotarFoto, finProdDesglose,
+    finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.

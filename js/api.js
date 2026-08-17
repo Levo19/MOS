@@ -2642,6 +2642,15 @@ const API = (() => {
       if (r == null) return null;
       return r;
     }
+    // [822] Los tickets detrás de un número: todos los del día con ese SKU, o filtrados por
+    // presentación (clave) o por tramo (segmentoId). Devuelve el ticket completo. PURA.
+    if (action === 'finanzasDiaSkuTickets') {
+      const r = await _sbRpcMOS('finanzas_dia_sku_tickets', { p: {
+        fecha: p.fecha || '', skuBase: p.skuBase, clave: p.clave || '', segmentoId: p.segmentoId || ''
+      } }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
     // [814] Girar la foto del comprobante 90°. Es COSMÉTICO: guarda los grados en la guía, no
     // toca el archivo en Storage ni el estado del OCR (que ya leyó bien el original). Como vive
     // en wh.guias, la rotación la ve cualquier app que muestre esa foto — WH incluido.
@@ -2985,7 +2994,8 @@ const API = (() => {
     guiaCambiarFoto:             () => true,   // wh.guia_set_foto (774) · Storage + trigger OCR 762 · escritura directa
     historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
     finanzasDiaSku:              () => true,
-    finanzasDiaSkuTramos:        () => true,   // mos.finanzas_dia_sku_tramos (820) · margen por tramo · PURA   // mos.finanzas_dia_sku (819) · desglose por presentación · PURA
+    finanzasDiaSkuTramos:        () => true,
+    finanzasDiaSkuTickets:       () => true,   // mos.finanzas_dia_sku_tickets (822) · trazabilidad · PURA   // mos.finanzas_dia_sku_tramos (820) · margen por tramo · PURA   // mos.finanzas_dia_sku (819) · desglose por presentación · PURA
     guiaRotarFoto:               () => true,   // mos.guia_rotar_foto (814) · giro cosmético persistente · PURA
     dispositivoFijar:            () => true,   // mos.dispositivo_fijar (807) · exime de la suspensión · PURA
     curvaIngresos:               () => true,   // mos.curva_ingresos (802) · ingresos sin costo en la curva · PURA
@@ -3042,7 +3052,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.
