@@ -1729,6 +1729,19 @@ const MOS = (() => {
     };
   }
 
+  // [838] Un costo cambió: que el catálogo diga la verdad YA. Antes solo se tocaba la memoria,
+  // pero el catálogo pinta primero desde el caché en disco, así que al volver aparecía el margen
+  // anterior — un dato que ya no existía. Acá se actualizan los tres a la vez.
+  function _catCostoSync(idCanonico, costo) {
+    try {
+      const p = (S.productos || []).find(x => String(x.idProducto) === String(idCanonico));
+      if (!p) return;
+      if (costo != null) p.precioCosto = costo;
+      _catSaveCache({ productos: S.productos, equivMap: S.equivMap || {} });
+      if (S.view === 'catalogo') renderCatalogo();
+    } catch(_) {}
+  }
+
   async function loadCatalogo(force = false) {
     // Si el timer ya precargó datos frescos y no se forzó, renderizar sin fetch
     if (!force && S.productos && S.productos.length > 0) {
@@ -11355,7 +11368,7 @@ const MOS = (() => {
     if (silent && !pend.length) { _sello('☁ guardado', 'is-ok'); return; }
     // reflejar el costo nuevo en memoria (para que el 💰 por línea sugiera con lo nuevo)
     // [768] bonificación NO toca el costo en memoria (no cambia el costo del catálogo)
-    pend.forEach(x => { if (x._bonif) return; const p = S.productos.find(y => y.idProducto === x.idCanonico); if (p) p.precioCosto = x.costoNuevo; });
+    pend.forEach(x => { if (x._bonif) return; _catCostoSync(x.idCanonico, x.costoNuevo); });   // [838] también persiste el caché
     // [v2.43.603 · pedido del dueño] YA NO se abre el overlay de precios en lote (era un
     // tercer modal confuso): esto aplica LOS COSTOS y te quedas en la guía — los
     // PRECIOS se publican con el botón 💰 de cada línea (directo al editor de ese producto).
@@ -14653,8 +14666,7 @@ const MOS = (() => {
       const it = r && r.data && Array.isArray(r.data.items) ? r.data.items[0] : null;
       if (it && it.ok && !it.sinCambio) {
         // reflejar el costo revertido en el catálogo local (para sugerencias/margen)
-        const p = (S.productos || []).find(x => String(x.idProducto) === String(it.idCanonico));
-        if (p && it.costoRestaurado != null) p.precioCosto = it.costoRestaurado;
+        _catCostoSync(it.idCanonico, it.costoRestaurado);   // [838] memoria + caché + repintado
         toast('🗑 Costo borrado' + (it.costoRestaurado > 0 ? ` · el catálogo volvió a S/ ${_money(it.costoRestaurado).toFixed(2)}` : ' · catálogo sin costo'), 'ok', 3500);
       } else {
         toast('🗑 Costo borrado de esta compra', 'ok', 2500);
@@ -26035,24 +26047,33 @@ const MOS = (() => {
     const fijar = !d.Fijado;
     const nom = String(d.Nombre_Equipo || '').trim() || id.slice(0, 8);
 
-    // El servidor exige que el nombre lo haya puesto una persona. Se avisa ANTES de pedir la
-    // clave: sería absurdo hacer tipear 8 dígitos para después rebotar.
+    // [838] El servidor exige que el nombre lo haya puesto una persona. En vez de mandar al
+    // editor completo y hacer volver, se pide el nombre acá mismo, se guarda y se sigue derecho
+    // al fijado. Un solo gesto.
     if (fijar && !d.Nombre_Manual) {
-      const ir = await _modalConfirm(
-        'Este equipo todavía tiene el nombre que se puso solo ("' + nom + '").\n\n' +
-        'Para fijarlo hay que bautizarlo primero, así se sabe de quién es. Ponle el nombre, ' +
-        'guarda, y volvé a tocar 📌 para fijarlo.',
-        { titulo: '✏️ Falta ponerle nombre', okText: 'Ponerle nombre' });
-      if (!ir) return;
-      // [837] el modal de confirmación todavía se está cerrando; abrir encima lo dejaba en
-      // blanco. Se espera a que termine su animación y se verifica que el equipo siga listado.
-      setTimeout(() => {
-        const sigue = (cfgData.dispositivos || []).find(x => String(x.ID_Dispositivo) === String(id));
-        if (!sigue) { toast('Ese equipo ya no está en la lista — refrescá Infraestructura', 'warn'); return; }
-        try { abrirModalDispositivo(id); }
-        catch (e) { toast('No pude abrir el editor: ' + (e.message || e), 'error'); }
-      }, 280);
-      return;
+      const propuesto = await _modalPrompt(
+        'Nombre del equipo — para saber de quién es',
+        '',
+        { titulo: '✏️ Ponle nombre y lo fijo',
+          okText: 'Guardar y fijar',
+          placeholder: 'Ej: Jefa · oficina',
+          maxlength: 40 });
+      const limpio = String(propuesto == null ? '' : propuesto).trim();
+      if (!limpio) return;                       // canceló o lo dejó vacío
+      if (limpio.length < 3) { toast('Ponle un nombre de al menos 3 letras', 'warn'); return; }
+      try {
+        const rn = await API.post('actualizarDispositivo', {
+          ID_Dispositivo: id, Nombre_Equipo: limpio, App: d.App || 'MOS', Estado: d.Estado || 'ACTIVO'
+        });
+        if (rn && rn.ok === false) throw new Error(rn.error || 'no se pudo guardar el nombre');
+        d.Nombre_Equipo = limpio;
+        d.Nombre_Manual = true;
+        try { renderInfra(); } catch(_){}
+      } catch (e) {
+        toast('No se pudo guardar el nombre: ' + (e.message || e), 'error');
+        return;
+      }
+      // el nombre ya está: se sigue al fijado sin hacer volver a empezar
     }
     if (!fijar) {
       const ok = await _modalConfirm(
@@ -26061,10 +26082,11 @@ const MOS = (() => {
       if (!ok) return;
     }
 
+    const nomFinal = String(d.Nombre_Equipo || '').trim() || nom;
     const auth = await pedirAuth({
       accion: 'DISPOSITIVO_FIJAR',
       refDocumento: id,
-      contexto: (fijar ? 'Fijar' : 'Soltar') + ' "' + nom + '" · exención de la suspensión por inactividad',
+      contexto: (fijar ? 'Fijar' : 'Soltar') + ' "' + nomFinal + '" · exención de la suspensión por inactividad',
       allowCache: false
     });
     if (!auth) return;
@@ -26081,8 +26103,8 @@ const MOS = (() => {
       }
       d.Fijado = !!(dd && dd.fijado);
       d.Fijado_Por = d.Fijado ? ((S.session && S.session.nombre) || '') : '';
-      toast(d.Fijado ? ('📍 "' + nom + '" fijado — la inactividad ya no lo suspende')
-                     : ('📌 "' + nom + '" soltado — vuelve a la regla general'), 'ok', 4000);
+      toast(d.Fijado ? ('📍 "' + nomFinal + '" fijado — la inactividad ya no lo suspende')
+                     : ('📌 "' + nomFinal + '" soltado — vuelve a la regla general'), 'ok', 4000);
       try { renderInfra(); } catch(_) {}   // repinta la card con el icono nuevo
     } catch (e) {
       toast('Error: ' + (e.message || e), 'error');
