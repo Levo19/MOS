@@ -42048,6 +42048,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.fpd-mg.bajo{color:#fcd34d;border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.1)}' +
       '.fpd-mg.neg{color:#fca5a5;border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.12)}' +
       '.fpd-mg.est{color:#7488a6;border-color:#26344c;background:transparent}' +
+      '.fpd-head-2{margin-top:6px}' +
+      '.fpd-row.is-tramo{border-color:rgba(167,139,250,.3);background:#0f1024}' +
+      '.fpd-row.is-tramo .fpd-n i{color:#a78bfa}' +
+      '.fpd-aj{font-size:9.5px;font-weight:800;color:#c4b5fd;background:rgba(167,139,250,.14);border:1px solid rgba(167,139,250,.32);border-radius:5px;padding:1px 5px;flex:none}' +
       '.fpd-pista{font-size:11.5px;line-height:1.5;color:#7dd3fc;background:rgba(56,189,248,.08);' +
         'border:1px dashed rgba(56,189,248,.32);border-radius:9px;padding:9px 11px}' +
       '.fpd-pista b{color:#e0f2fe}' +
@@ -42077,13 +42081,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     fila.innerHTML = '<td colspan="5"><div class="fpd-load">◍ abriendo el desglose…</div></td>';
     tr.parentNode.insertBefore(fila, tr.nextSibling);
 
-    let d = null;
+    let d = null, tramos = null;
     try {
       // la fecha del panel vive en el input, no en el estado: el desglose tiene que mirar
       // EL MISMO día que la lista, o mostraría otros números.
       const _f = (document.getElementById('finFecha') || {}).value || '';
-      const r = await API.post('finanzasDiaSku', { fecha: _f, skuBase: sku });
+      // [841] los dos cortes se piden a la vez: por presentación y por tramo de precio
+      const [r, rt] = await Promise.all([
+        API.post('finanzasDiaSku', { fecha: _f, skuBase: sku }),
+        API.post('finanzasDiaSkuTramos', { fecha: _f, skuBase: sku }).catch(() => null)
+      ]);
       d = r && (r.data || r);
+      tramos = rt && (rt.data || rt);
     } catch (e) {
       fila.innerHTML = '<td colspan="5"><div class="fpd-load">No pude leer el desglose: ' + _escapeHtml(e.message || String(e)) + '</div></td>';
       return;
@@ -42126,12 +42135,42 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         _S((+mejor.ingreso || 0) / (+mejor.unidadesBase || 1)) + ' por unidad base.</div>'
       : '<div class="fpd-pista fpd-pista-solo">Solo se vendió de una forma. Cuando haya presentaciones vendidas se comparan acá.</div>';
 
+    // [841] bloque de TRAMOS: solo aparece si el producto los tiene configurados
+    let bloqueTramos = '';
+    if (tramos && tramos.tieneTramos && (tramos.tramos || []).length) {
+      const mejorT = (tramos.tramos || []).slice()
+        .filter(t => t.margenPct != null)
+        .sort((a, b) => (+b.margenPct || 0) - (+a.margenPct || 0))[0];
+      bloqueTramos =
+        '<div class="fpd-head fpd-head-2"><span>🎚 Por tramo de precio</span>' +
+          '<span class="fpd-costo">base S/ ' + _money(tramos.precioBase).toFixed(2) + '/kg · el tramo no cambia el costo</span></div>' +
+        (tramos.tramos || []).map(t => {
+          const mg = (t.margenPct != null)
+            ? '<span class="fpd-mg ' + (t.margenPct < 0 ? 'neg' : (t.margenPct >= 15 ? 'ok' : 'bajo')) + '">' + (+t.margenPct).toFixed(1) + '%</span>'
+            : '<span class="fpd-mg est">est. ' + (tramos.margenDefault || 15) + '%</span>';
+          return '<div class="fpd-row' + (t.esBase ? '' : ' is-tramo') + '">' +
+            '<div class="fpd-n">' + (t.esBase ? '<i title="fuera de todo tramo">⬚</i>' : '<i title="tramo con ajuste">▲</i>') +
+              '<span>' + _escapeHtml(String(t.etiqueta)) + '</span>' +
+              (t.ajustePct ? '<b class="fpd-aj">' + (t.ajustePct > 0 ? '+' : '') + t.ajustePct + '%</b>' : '') + '</div>' +
+            '<div class="fpd-nums">' +
+              '<div class="fpd-cel q"><i>vendido</i><b>' + _fmtQty(t.cantidad) + '</b><em>' + t.lineas + ' venta' + (t.lineas === 1 ? '' : 's') + '</em></div>' +
+              '<div class="fpd-cel"><i>cobrado</i><b>' + _money(t.ingreso).toFixed(2) + '</b></div>' +
+              '<div class="fpd-cel co"><i>costó</i><b>' + _money(t.costo).toFixed(2) + '</b></div>' +
+              '<div class="fpd-cel ub" title="precio real por unidad · esperado S/ ' + _money(t.precioEsperado).toFixed(2) + '">' +
+                '<i>por u. base</i><b>' + _money(t.precioKg).toFixed(2) + '</b></div>' +
+              '<div class="fpd-cel"><i>margen</i>' + mg + '</div>' +
+            '</div></div>';
+        }).join('') +
+        (mejorT ? '<div class="fpd-pista">🎚 El tramo <b>' + _escapeHtml(String(mejorT.etiqueta)) + '</b> es el que más deja hoy: ' +
+                  (+mejorT.margenPct).toFixed(1) + '% de margen.</div>' : '');
+    }
+
     fila.innerHTML = '<td colspan="5"><div class="fpd">' +
       '<div class="fpd-head"><span>Cómo se vendió</span>' +
         '<span class="fpd-costo">' + (costoBase > 0
           ? 'costo S/ ' + _money(costoBase).toFixed(2) + ' por unidad base'
           : 'sin costo cargado · el costo de abajo es estimado') + '</span></div>' +
-      filas + pista + '</div></td>';
+      filas + pista + bloqueTramos + '</div></td>';
   }
 
   // [796] Buscador en vivo: nombre Y SKU. Son 290+ filas por día; sin esto el overlay
