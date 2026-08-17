@@ -12966,36 +12966,6 @@ const MOS = (() => {
       '.cvf-elim-u{color:#7488a6;font-weight:700;flex:none}' +
       '.cvf-elim-pie{padding:7px 10px;font-size:10px;color:#fbbf24;font-weight:700;background:rgba(251,191,36,.07)}' +
       '.cvf-elim-pie b{color:#fcd34d}' +
-      '.fin-prod-row{cursor:pointer}' +
-      '.fin-prod-row.on{background:rgba(56,189,248,.09)}' +
-      '.fin-prod-det>td{padding:0!important;background:#070d18}' +
-      '.fpd{padding:12px 14px;border-left:3px solid #38bdf8;display:flex;flex-direction:column;gap:6px}' +
-      '.fpd-load{padding:14px;color:#7488a6;font-size:11.5px;font-weight:600}' +
-      '.fpd-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}' +
-      '.fpd-head>span:first-child{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#7dd3fc}' +
-      '.fpd-costo{font-size:10.5px;color:#7488a6;font-family:ui-monospace,monospace}' +
-      '.fpd-cols,.fpd-row{display:grid;grid-template-columns:minmax(120px,2.2fr) 1fr 1fr 1fr 1fr .8fr;gap:8px;align-items:center}' +
-      '.fpd-cols{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#4b5c78;padding-bottom:2px;border-bottom:1px solid #1a2740}' +
-      '.fpd-cols>span:not(:first-child){text-align:right}' +
-      '.fpd-row{padding:6px 0;border-bottom:1px solid #101a2c;font-size:11.5px}' +
-      '.fpd-row:last-of-type{border-bottom:none}' +
-      '.fpd-row.is-base .fpd-n span{color:#e2e8f0;font-weight:700}' +
-      '.fpd-n{display:flex;align-items:center;gap:6px;min-width:0;color:#93a4c2}' +
-      '.fpd-n i{font-style:normal;flex:none;font-size:11px}' +
-      '.fpd-n span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
-      '.fpd-q,.fpd-v,.fpd-m{text-align:right;font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}' +
-      '.fpd-q{color:#93a4c2}.fpd-q em{font-style:normal;font-size:9.5px;color:#5f7192}' +
-      '.fpd-v{color:#e2e8f0}.fpd-c{color:#94a3b8}' +
-      '.fpd-u{color:#7dd3fc;font-weight:700}' +
-      '.fpd-mg{font-size:10px;font-weight:800;padding:1px 6px;border-radius:20px;border:1px solid}' +
-      '.fpd-mg.ok{color:#6ee7b7;border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1)}' +
-      '.fpd-mg.bajo{color:#fcd34d;border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.1)}' +
-      '.fpd-mg.neg{color:#fca5a5;border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.12)}' +
-      '.fpd-mg.est{color:#7488a6;border-color:#26344c;background:transparent}' +
-      '.fpd-pista{margin-top:4px;font-size:11px;color:#7dd3fc;background:rgba(56,189,248,.08);border:1px dashed rgba(56,189,248,.3);border-radius:8px;padding:7px 10px}' +
-      '.fpd-pista b{color:#e0f2fe}' +
-      '.fpd-pista-solo{color:#7488a6;border-color:#26344c;background:transparent}' +
-      '@media(max-width:640px){.fpd-cols,.fpd-row{grid-template-columns:minmax(90px,1.6fr) .9fr 1fr 1fr .9fr}.fpd-cols>span:nth-child(5),.fpd-row>div:nth-child(5){display:none}}' +
       '.cvf-ir{width:100%;display:flex;align-items:center;gap:10px;margin-top:9px;padding:10px 12px;border-radius:11px;border:1px solid rgba(56,189,248,.4);background:linear-gradient(135deg,rgba(56,189,248,.16),rgba(56,189,248,.05));color:#e0f2fe;cursor:pointer;text-align:left;transition:.18s cubic-bezier(.22,1,.36,1);position:relative;overflow:hidden}' +
       '.cvf-ir:hover{border-color:rgba(56,189,248,.75);transform:translateY(-1px);box-shadow:0 8px 22px -12px rgba(56,189,248,.75)}' +
       '.cvf-ir:active{transform:translateY(0) scale(.99)}' +
@@ -42040,6 +42010,52 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _finRenderProductos();
   }
 
+  // [840] Estilos del desglose. Viven acá y no en el inyector de la curva: ese solo corre al
+  // abrir el gráfico de precio/costo, así que en Finanzas nunca llegaban y la tabla salía pegada.
+  function _finProdInyectarCSS() {
+    if (S._fpdCSS) return; S._fpdCSS = true;
+    const st = document.createElement('style'); st.id = 'finProdDesgloseCSS';
+    st.textContent =
+      '.fin-prod-row{cursor:pointer}' +
+      '.fin-prod-row.on{background:rgba(56,189,248,.10)}' +
+      '.fin-prod-row.on td{border-bottom-color:transparent}' +
+      '.fin-prod-det>td{padding:0!important;background:#060c17;border-bottom:1px solid #1a2740}' +
+      '.fpd{padding:14px 16px;border-left:3px solid #38bdf8;display:flex;flex-direction:column;gap:10px}' +
+      '.fpd-load{padding:16px;color:#7488a6;font-size:12px;font-weight:600}' +
+      '.fpd-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;' +
+        'padding-bottom:8px;border-bottom:1px solid #16233a}' +
+      '.fpd-head>span:first-child{font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#7dd3fc}' +
+      '.fpd-costo{font-size:10.5px;color:#7488a6;font-family:ui-monospace,monospace}' +
+      // fila: nombre arriba, números abajo en su propia grilla. Nada de exprimir 6 columnas.
+      '.fpd-row{display:flex;flex-direction:column;gap:7px;padding:11px 12px;border-radius:10px;' +
+        'background:#0b1424;border:1px solid #16233a}' +
+      '.fpd-row.is-base{border-color:rgba(56,189,248,.28);background:#0c1728}' +
+      '.fpd-n{display:flex;align-items:center;gap:7px;min-width:0;color:#cbd5e1;font-size:12.5px;font-weight:600}' +
+      '.fpd-n i{font-style:normal;flex:none;font-size:12px;opacity:.9}' +
+      '.fpd-n span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.fpd-nums{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}' +
+      '.fpd-cel{display:flex;flex-direction:column;gap:2px;min-width:0}' +
+      '.fpd-cel>i{font-style:normal;font-size:8.5px;font-weight:800;letter-spacing:.07em;' +
+        'text-transform:uppercase;color:#4b5c78;white-space:nowrap}' +
+      '.fpd-cel>b{font-size:12.5px;font-weight:700;font-family:ui-monospace,monospace;' +
+        'font-variant-numeric:tabular-nums;color:#e2e8f0;white-space:nowrap}' +
+      '.fpd-cel.q>b{color:#93a4c2}' +
+      '.fpd-cel.q em{font-style:normal;font-size:9px;color:#5f7192;display:block;margin-top:1px}' +
+      '.fpd-cel.co>b{color:#94a3b8}' +
+      '.fpd-cel.ub>b{color:#7dd3fc}' +
+      '.fpd-mg{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px;border:1px solid;width:fit-content}' +
+      '.fpd-mg.ok{color:#6ee7b7;border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1)}' +
+      '.fpd-mg.bajo{color:#fcd34d;border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.1)}' +
+      '.fpd-mg.neg{color:#fca5a5;border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.12)}' +
+      '.fpd-mg.est{color:#7488a6;border-color:#26344c;background:transparent}' +
+      '.fpd-pista{font-size:11.5px;line-height:1.5;color:#7dd3fc;background:rgba(56,189,248,.08);' +
+        'border:1px dashed rgba(56,189,248,.32);border-radius:9px;padding:9px 11px}' +
+      '.fpd-pista b{color:#e0f2fe}' +
+      '.fpd-pista-solo{color:#7488a6;border-color:#26344c;background:transparent}' +
+      '@media(max-width:560px){.fpd{padding:11px 12px}.fpd-nums{grid-template-columns:repeat(3,1fr);gap:9px}}';
+    document.head.appendChild(st);
+  }
+
   // ═══════════ [839] Desglose de un SKU: suelto vs. presentaciones ═══════════
   // La fila del modal es el SKU COLAPSADO (granel + todas sus presentaciones sumados). Eso da el
   // total del día pero esconde justo lo que hay que decidir: si conviene empacar o vender suelto.
@@ -42052,6 +42068,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try { document.querySelectorAll('#finModalProductos .fin-prod-det').forEach(x => x.remove()); } catch(_){}
     try { document.querySelectorAll('#finModalProductos .fin-prod-row.on').forEach(x => x.classList.remove('on')); } catch(_){}
     if (abierta) return;                       // segundo toque = cerrar
+    _finProdInyectarCSS();
     tr.classList.add('on');
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
 
@@ -42087,13 +42104,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ? '<span class="fpd-mg ' + (it.margenPct < 0 ? 'neg' : (it.margenPct >= 15 ? 'ok' : 'bajo')) + '">' + (+it.margenPct).toFixed(1) + '%</span>'
         : '<span class="fpd-mg est">est. ' + (d.margenDefault || 15) + '%</span>';
       return '<div class="fpd-row' + (it.esBase ? ' is-base' : '') + '">' +
-        '<div class="fpd-n">' + (it.esBase ? '<i title="unidad base">▸</i>' : '<i title="presentación">🧱</i>') +
+        '<div class="fpd-n">' + (it.esBase ? '<i title="unidad suelta">▸</i>' : '<i title="presentación">🧱</i>') +
           '<span>' + _escapeHtml(String(it.nombre || it.clave)) + '</span></div>' +
-        '<div class="fpd-q">' + _fmtQty(it.cantidad) + (it.factor > 1 ? ' <em>×' + it.factor + ' = ' + _fmtQty(uBase) + 'u</em>' : '') + '</div>' +
-        '<div class="fpd-v">' + _S(it.ingreso) + '</div>' +
-        '<div class="fpd-v fpd-c">' + _S(it.costo) + '</div>' +
-        '<div class="fpd-v fpd-u" title="lo que deja cada unidad base con esta forma de venta">' + _S(porBase) + '</div>' +
-        '<div class="fpd-m">' + mg + '</div>' +
+        '<div class="fpd-nums">' +
+          '<div class="fpd-cel q"><i>vendido</i><b>' + _fmtQty(it.cantidad) +
+            (it.factor > 1 ? '</b><em>×' + it.factor + ' = ' + _fmtQty(uBase) + ' u</em>' : '</b>') + '</div>' +
+          '<div class="fpd-cel"><i>cobrado</i><b>' + _S(it.ingreso) + '</b></div>' +
+          '<div class="fpd-cel co"><i>costó</i><b>' + _S(it.costo) + '</b></div>' +
+          '<div class="fpd-cel ub" title="lo que deja cada unidad base con esta forma de venta">' +
+            '<i>por u. base</i><b>' + _S(porBase) + '</b></div>' +
+          '<div class="fpd-cel"><i>margen</i>' + mg + '</div>' +
+        '</div>' +
       '</div>';
     }).join('');
     const mejor = items.slice().sort((a, b) => {
@@ -42110,7 +42131,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         '<span class="fpd-costo">' + (costoBase > 0
           ? 'costo S/ ' + _money(costoBase).toFixed(2) + ' por unidad base'
           : 'sin costo cargado · el costo de abajo es estimado') + '</span></div>' +
-      '<div class="fpd-cols"><span>producto</span><span>vendido</span><span>cobrado</span><span>costó</span><span>por u. base</span><span>margen</span></div>' +
       filas + pista + '</div></td>';
   }
 
