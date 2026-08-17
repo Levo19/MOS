@@ -12966,6 +12966,36 @@ const MOS = (() => {
       '.cvf-elim-u{color:#7488a6;font-weight:700;flex:none}' +
       '.cvf-elim-pie{padding:7px 10px;font-size:10px;color:#fbbf24;font-weight:700;background:rgba(251,191,36,.07)}' +
       '.cvf-elim-pie b{color:#fcd34d}' +
+      '.fin-prod-row{cursor:pointer}' +
+      '.fin-prod-row.on{background:rgba(56,189,248,.09)}' +
+      '.fin-prod-det>td{padding:0!important;background:#070d18}' +
+      '.fpd{padding:12px 14px;border-left:3px solid #38bdf8;display:flex;flex-direction:column;gap:6px}' +
+      '.fpd-load{padding:14px;color:#7488a6;font-size:11.5px;font-weight:600}' +
+      '.fpd-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}' +
+      '.fpd-head>span:first-child{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#7dd3fc}' +
+      '.fpd-costo{font-size:10.5px;color:#7488a6;font-family:ui-monospace,monospace}' +
+      '.fpd-cols,.fpd-row{display:grid;grid-template-columns:minmax(120px,2.2fr) 1fr 1fr 1fr 1fr .8fr;gap:8px;align-items:center}' +
+      '.fpd-cols{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#4b5c78;padding-bottom:2px;border-bottom:1px solid #1a2740}' +
+      '.fpd-cols>span:not(:first-child){text-align:right}' +
+      '.fpd-row{padding:6px 0;border-bottom:1px solid #101a2c;font-size:11.5px}' +
+      '.fpd-row:last-of-type{border-bottom:none}' +
+      '.fpd-row.is-base .fpd-n span{color:#e2e8f0;font-weight:700}' +
+      '.fpd-n{display:flex;align-items:center;gap:6px;min-width:0;color:#93a4c2}' +
+      '.fpd-n i{font-style:normal;flex:none;font-size:11px}' +
+      '.fpd-n span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.fpd-q,.fpd-v,.fpd-m{text-align:right;font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}' +
+      '.fpd-q{color:#93a4c2}.fpd-q em{font-style:normal;font-size:9.5px;color:#5f7192}' +
+      '.fpd-v{color:#e2e8f0}.fpd-c{color:#94a3b8}' +
+      '.fpd-u{color:#7dd3fc;font-weight:700}' +
+      '.fpd-mg{font-size:10px;font-weight:800;padding:1px 6px;border-radius:20px;border:1px solid}' +
+      '.fpd-mg.ok{color:#6ee7b7;border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1)}' +
+      '.fpd-mg.bajo{color:#fcd34d;border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.1)}' +
+      '.fpd-mg.neg{color:#fca5a5;border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.12)}' +
+      '.fpd-mg.est{color:#7488a6;border-color:#26344c;background:transparent}' +
+      '.fpd-pista{margin-top:4px;font-size:11px;color:#7dd3fc;background:rgba(56,189,248,.08);border:1px dashed rgba(56,189,248,.3);border-radius:8px;padding:7px 10px}' +
+      '.fpd-pista b{color:#e0f2fe}' +
+      '.fpd-pista-solo{color:#7488a6;border-color:#26344c;background:transparent}' +
+      '@media(max-width:640px){.fpd-cols,.fpd-row{grid-template-columns:minmax(90px,1.6fr) .9fr 1fr 1fr .9fr}.fpd-cols>span:nth-child(5),.fpd-row>div:nth-child(5){display:none}}' +
       '.cvf-ir{width:100%;display:flex;align-items:center;gap:10px;margin-top:9px;padding:10px 12px;border-radius:11px;border:1px solid rgba(56,189,248,.4);background:linear-gradient(135deg,rgba(56,189,248,.16),rgba(56,189,248,.05));color:#e0f2fe;cursor:pointer;text-align:left;transition:.18s cubic-bezier(.22,1,.36,1);position:relative;overflow:hidden}' +
       '.cvf-ir:hover{border-color:rgba(56,189,248,.75);transform:translateY(-1px);box-shadow:0 8px 22px -12px rgba(56,189,248,.75)}' +
       '.cvf-ir:active{transform:translateY(0) scale(.99)}' +
@@ -42010,6 +42040,80 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _finRenderProductos();
   }
 
+  // ═══════════ [839] Desglose de un SKU: suelto vs. presentaciones ═══════════
+  // La fila del modal es el SKU COLAPSADO (granel + todas sus presentaciones sumados). Eso da el
+  // total del día pero esconde justo lo que hay que decidir: si conviene empacar o vender suelto.
+  // Al tocarla se abre una fila hija con el desglose por producto real, con el MISMO costo por
+  // unidad base — así la comparación es limpia: mismo costo, distinto precio.
+  async function finProdDesglose(tr, sku) {
+    if (!tr || !sku) return;
+    const abierta = tr.nextElementSibling && tr.nextElementSibling.classList.contains('fin-prod-det');
+    // cerrar cualquier otro desglose: uno por vez, para no perder el hilo
+    try { document.querySelectorAll('#finModalProductos .fin-prod-det').forEach(x => x.remove()); } catch(_){}
+    try { document.querySelectorAll('#finModalProductos .fin-prod-row.on').forEach(x => x.classList.remove('on')); } catch(_){}
+    if (abierta) return;                       // segundo toque = cerrar
+    tr.classList.add('on');
+    try { _opsBeep && _opsBeep('tac'); } catch(_){}
+
+    const fila = document.createElement('tr');
+    fila.className = 'fin-prod-det';
+    fila.innerHTML = '<td colspan="5"><div class="fpd-load">◍ abriendo el desglose…</div></td>';
+    tr.parentNode.insertBefore(fila, tr.nextSibling);
+
+    let d = null;
+    try {
+      // la fecha del panel vive en el input, no en el estado: el desglose tiene que mirar
+      // EL MISMO día que la lista, o mostraría otros números.
+      const _f = (document.getElementById('finFecha') || {}).value || '';
+      const r = await API.post('finanzasDiaSku', { fecha: _f, skuBase: sku });
+      d = r && (r.data || r);
+    } catch (e) {
+      fila.innerHTML = '<td colspan="5"><div class="fpd-load">No pude leer el desglose: ' + _escapeHtml(e.message || String(e)) + '</div></td>';
+      return;
+    }
+    if (!fila.isConnected) return;
+    const items = (d && d.items) || [];
+    if (!items.length) {
+      fila.innerHTML = '<td colspan="5"><div class="fpd-load">Sin desglose para este SKU</div></td>';
+      return;
+    }
+    const _S = v => 'S/ ' + _money(v).toFixed(2);
+    const costoBase = +(d.costoUnitBase || 0);
+    // rendimiento por unidad base: la comparación que de verdad decide si empacar conviene
+    const filas = items.map(it => {
+      const uBase = +it.unidadesBase || 0;
+      const porBase = uBase > 0 ? (+it.ingreso || 0) / uBase : 0;
+      const mg = (it.margenPct != null)
+        ? '<span class="fpd-mg ' + (it.margenPct < 0 ? 'neg' : (it.margenPct >= 15 ? 'ok' : 'bajo')) + '">' + (+it.margenPct).toFixed(1) + '%</span>'
+        : '<span class="fpd-mg est">est. ' + (d.margenDefault || 15) + '%</span>';
+      return '<div class="fpd-row' + (it.esBase ? ' is-base' : '') + '">' +
+        '<div class="fpd-n">' + (it.esBase ? '<i title="unidad base">▸</i>' : '<i title="presentación">🧱</i>') +
+          '<span>' + _escapeHtml(String(it.nombre || it.clave)) + '</span></div>' +
+        '<div class="fpd-q">' + _fmtQty(it.cantidad) + (it.factor > 1 ? ' <em>×' + it.factor + ' = ' + _fmtQty(uBase) + 'u</em>' : '') + '</div>' +
+        '<div class="fpd-v">' + _S(it.ingreso) + '</div>' +
+        '<div class="fpd-v fpd-c">' + _S(it.costo) + '</div>' +
+        '<div class="fpd-v fpd-u" title="lo que deja cada unidad base con esta forma de venta">' + _S(porBase) + '</div>' +
+        '<div class="fpd-m">' + mg + '</div>' +
+      '</div>';
+    }).join('');
+    const mejor = items.slice().sort((a, b) => {
+      const ua = +a.unidadesBase || 0, ub = +b.unidadesBase || 0;
+      return (ub > 0 ? (+b.ingreso || 0) / ub : 0) - (ua > 0 ? (+a.ingreso || 0) / ua : 0);
+    })[0];
+    const pista = (items.length > 1 && mejor)
+      ? '<div class="fpd-pista">💡 Hoy rinde más <b>' + _escapeHtml(String(mejor.nombre || '')) + '</b>: ' +
+        _S((+mejor.ingreso || 0) / (+mejor.unidadesBase || 1)) + ' por unidad base.</div>'
+      : '<div class="fpd-pista fpd-pista-solo">Solo se vendió de una forma. Cuando haya presentaciones vendidas se comparan acá.</div>';
+
+    fila.innerHTML = '<td colspan="5"><div class="fpd">' +
+      '<div class="fpd-head"><span>Cómo se vendió</span>' +
+        '<span class="fpd-costo">' + (costoBase > 0
+          ? 'costo S/ ' + _money(costoBase).toFixed(2) + ' por unidad base'
+          : 'sin costo cargado · el costo de abajo es estimado') + '</span></div>' +
+      '<div class="fpd-cols"><span>producto</span><span>vendido</span><span>cobrado</span><span>costó</span><span>por u. base</span><span>margen</span></div>' +
+      filas + pista + '</div></td>';
+  }
+
   // [796] Buscador en vivo: nombre Y SKU. Son 290+ filas por día; sin esto el overlay
   // sólo servía para mirar, no para buscar. Mismo patrón que el .zpk-search del pickup.
   function finProdFiltrar(q) {
@@ -42160,7 +42264,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const TIP_ALERTA = 'costo mayor que la venta: revisa el costo en el catálogo';
       const warn = f.alerta
         ? `<span class="text-red-400 font-bold" title="${TIP_ALERTA}">⚠</span>` : '';
-      return `<tr class="hover:bg-slate-800/30 transition-colors${f.alerta ? ' fin-prod-row-alerta' : ''}"${f.alerta ? ` title="${TIP_ALERTA}"` : ''}>
+      return `<tr class="fin-prod-row hover:bg-slate-800/30 transition-colors${f.alerta ? ' fin-prod-row-alerta' : ''}" data-sku="${_esc(p.sku)}" onclick="MOS.finProdDesglose(this,'${_esc(p.sku)}')" title="${f.alerta ? TIP_ALERTA : 'Ver el desglose: suelto vs. presentaciones'}">
         <td class="px-3 py-2">
           <div class="flex items-start gap-1.5">
             ${warn}
@@ -52378,7 +52482,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _mesaVolver, _paso2CerrarAMesa, _paso2VolverAMontos, _p2Toggle, _p2Sync, _p2SatToggle, _p2SatPrecio, _p2Repartir,
     dispToggleFijado,
     curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
-    _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, guiaRotarFoto, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
+    _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, guiaRotarFoto, finProdDesglose, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
     // impresora de costos + stubs OCR). Reemplazado por el secuencial Paso 1→Paso 2. -1169 líneas.
