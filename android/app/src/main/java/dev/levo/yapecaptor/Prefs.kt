@@ -2,13 +2,25 @@ package dev.levo.yapecaptor
 
 import android.content.Context
 
-/** Lo que el equipo necesita saber para entregar: a dónde y con qué secreto. */
+/**
+ * A dónde entregar. La URL y la clave anon vienen COMPILADAS: no son secretos — están a la
+ * vista en el HTML de las tres apps web — y así en el celular no hay que tipear dos cadenas
+ * larguísimas. Lo único que se pide es un código de 6 letras.
+ */
+object Backend {
+    const val URL = "https://rzbzdeipbtqkzjqdchqk.supabase.co"
+    const val ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k"
+}
+
+/** Lo que identifica a ESTE equipo. El secreto llega canjeando el código de emparejamiento. */
 data class Config(
-    val supabaseUrl: String,
-    val anonKey: String,
-    val secreto: String
+    val secreto: String,
+    val nombre: String = "",
+    val zona: String = ""
 ) {
-    fun completa() = supabaseUrl.isNotBlank() && anonKey.isNotBlank() && secreto.isNotBlank()
+    val supabaseUrl: String get() = Backend.URL
+    val anonKey: String get() = Backend.ANON
+    fun completa() = secreto.isNotBlank()
 }
 
 /**
@@ -22,17 +34,17 @@ object Prefs {
     fun leer(ctx: Context): Config {
         val sp = ctx.getSharedPreferences(P, Context.MODE_PRIVATE)
         return Config(
-            sp.getString("url", "").orEmpty().trim(),
-            sp.getString("anon", "").orEmpty().trim(),
-            sp.getString("secreto", "").orEmpty().trim()
+            sp.getString("secreto", "").orEmpty().trim(),
+            sp.getString("nombre", "").orEmpty(),
+            sp.getString("zona", "").orEmpty()
         )
     }
 
     fun guardar(ctx: Context, c: Config) {
         ctx.getSharedPreferences(P, Context.MODE_PRIVATE).edit()
-            .putString("url", c.supabaseUrl.trim())
-            .putString("anon", c.anonKey.trim())
             .putString("secreto", c.secreto.trim())
+            .putString("nombre", c.nombre)
+            .putString("zona", c.zona)
             .apply()
     }
 

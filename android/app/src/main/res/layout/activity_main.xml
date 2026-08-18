@@ -35,25 +35,23 @@
 
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="@string/config_titulo" android:textColor="#CBD5E1"
-        android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="8dp" />
+        android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp" />
 
-    <EditText android:id="@+id/etUrl" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:hint="@string/h_url"
-        android:textColor="#E2E8F0" android:textColorHint="#475569" android:textSize="13sp"
-        android:inputType="textUri" android:autofillHints="" />
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="@string/config_ayuda" android:textColor="#5F7192" android:textSize="11sp"
+        android:layout_marginBottom="10dp" />
 
-    <EditText android:id="@+id/etAnon" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:hint="@string/h_anon"
-        android:textColor="#E2E8F0" android:textColorHint="#475569" android:textSize="13sp"
-        android:inputType="textMultiLine" android:maxLines="3" android:autofillHints="" />
+    <!-- seis letras: es TODO lo que hay que tipear en el celular -->
+    <EditText android:id="@+id/etCodigo" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:hint="@string/h_codigo"
+        android:textColor="#E2E8F0" android:textColorHint="#475569"
+        android:textSize="30sp" android:textStyle="bold" android:gravity="center"
+        android:letterSpacing="0.35" android:maxLength="6"
+        android:inputType="textCapCharacters|textNoSuggestions" android:autofillHints=""
+        android:background="#0C1626" android:padding="16dp" />
 
-    <EditText android:id="@+id/etSecreto" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:hint="@string/h_secreto"
-        android:textColor="#E2E8F0" android:textColorHint="#475569" android:textSize="13sp"
-        android:inputType="textPassword" android:autofillHints="" />
-
-    <Button android:id="@+id/btnGuardar" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:text="@string/guardar"
+    <Button android:id="@+id/btnEmparejar" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:text="@string/emparejar"
         android:backgroundTint="#10B981" android:textColor="#FFFFFF" android:layout_marginTop="12dp" />
 
     <Button android:id="@+id/btnProbar" android:layout_width="match_parent"

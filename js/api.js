@@ -2649,6 +2649,29 @@ const API = (() => {
     // asignación en sí. El vínculo apunta a un TURNO —persona + día—, no a un nombre: el
     // nombre se repite (mañana puede entrar otro Marcelo), el turno es único para siempre.
     // [852] Consumo de IA: tokens y dólares por día / función / app / modelo.
+    // [858] Captura de Yapes: código de emparejamiento del celular y panel de capturados.
+    if (action === 'yapeCodigoGenerar') {
+      const r = await _sbRpcMOS('yape_codigo_generar', { p: {
+        zona: p.zona || '', nombre: p.nombre || '', usuario: p.usuario || '' } }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
+    if (action === 'yapesDeCaja') {
+      const r = await _sbRpcMOS('yapes_de_caja', { p: { idCaja: p.idCaja } }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
+    if (action === 'yapesDelDia') {
+      const r = await _sbRpcMOS('yapes_del_dia', { p: { fecha: p.fecha || '' } }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
+    if (action === 'yapeResolver') {
+      const r = await _sbRpcMOS('yape_resolver', { p: {
+        id: p.id, idVenta: p.idVenta || null, usuario: p.usuario || '' } }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
     if (action === 'iaUsoResumen') {
       const r = await _sbRpcMOS('ia_uso_resumen', { p: { dias: p.dias || 30 } }, 'mos');
       if (r == null) return null;
@@ -3027,6 +3050,10 @@ const API = (() => {
     historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
     finanzasDiaSku:              () => true,
     finanzasDiaSkuTramos:        () => true,
+    yapeCodigoGenerar:           () => true,   // mos.yape_codigo_generar (858)
+    yapesDeCaja:                 () => true,   // mos.yapes_de_caja (860) · panel por caja
+    yapesDelDia:                 () => true,   // mos.yapes_del_dia (856) · panel de capturados
+    yapeResolver:                () => true,   // mos.yape_resolver (856) · atar o soltar a mano
     iaUsoResumen:                () => true,   // mos.ia_uso_resumen (852) · consumo de IA · PURA
     turnosDelDia:                () => true,   // mos.turnos_del_dia (848) · turnos abiertos del día · PURA
     creditoAsignar:              () => true,   // mos.credito_asignar (848) · carga un crédito a un turno
@@ -3088,7 +3115,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, iaUsoResumen: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, iaUsoResumen: 1, yapeCodigoGenerar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.

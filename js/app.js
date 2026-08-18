@@ -21730,7 +21730,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['infra','personal','categorias','notifs','bancarios','ia'];   // [852] +IA
+    const tabs = ['infra','personal','categorias','notifs','bancarios','ia','yape'];   // [852] +IA · [858] +Yapes
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -21752,6 +21752,7 @@ const MOS = (() => {
       case 'notifs':       renderNotifsPanel();  break;
       case 'bancarios':    renderBancarios();    break;
       case 'ia':           renderIaPanel();      break;   // [852] consumo de IA
+      case 'yape':         renderYapeCard();     break;   // [858] captura de Yapes
     }
   }
 
@@ -28052,6 +28053,8 @@ const MOS = (() => {
       <div class="cj-spark-axis"><span>7h</span><span>13h</span><span>19h</span></div>
       <div class="cj-caja-actions">
         ${btnActiva}
+        <button type="button" class="cj-caja-yape" title="Yapes capturados de esta caja: verificar, atar a mano o desverificar"
+                onclick="event.stopPropagation();MOS.yapesCajaAbrir('${idAttr}')">💜 Yapes</button>
       </div>
       <div class="cj-caja-detail ${_cjState.expandido.has(idAttr) ? '' : 'hidden'}" id="cjdetail-${idAttr}">
         ${_cjBuildDetalleHtml(c)}
@@ -42889,6 +42892,307 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     document.head.appendChild(st);
   }
 
+
+
+  // ══════════════════════════════════════════════════════════════════════
+  // [860] PANEL DE YAPES DE UNA CAJA — el control de cierre.
+  //
+  // Se arma por caja porque así se cierra: el admin toma una caja y cuadra las DOS mitades —
+  // los Yapes que entraron y los tickets virtuales que todavía no tienen el suyo. Un panel
+  // global de "todos los Yapes del día" no sirve para eso.
+  //
+  // Tres acciones, todas reversibles: atar un Yape libre a un ticket, elegir entre los
+  // candidatos de uno ambiguo, y DESVERIFICAR si alguien se equivocó. Ninguna adivina nada.
+  // ══════════════════════════════════════════════════════════════════════
+  let _ypCaja = null;
+
+  async function yapesCajaAbrir(idCaja) {
+    if (!idCaja) return;
+    _ypCaja = idCaja;
+    _ypInyectarCSS();
+    const prev = document.getElementById('ypOvl'); if (prev) prev.remove();
+    const ovl = document.createElement('div');
+    ovl.id = 'ypOvl'; ovl.className = 'yp-back';
+    ovl.onpointerdown = e => { if (e.target === ovl) MOS.yapesCajaCerrar(); };
+    ovl.innerHTML = '<div class="yp-card" role="dialog" aria-label="Yapes de la caja">' +
+      '<div class="yp-head"><div><b>💜 Yapes de la caja</b><span id="ypSub">cargando…</span></div>' +
+      '<button class="yp-x" onclick="MOS.yapesCajaCerrar()" aria-label="Cerrar">✕</button></div>' +
+      '<div class="yp-body" id="ypBody"><div class="yp-load">◍ leyendo los Yapes de esta caja…</div></div></div>';
+    document.body.appendChild(ovl);
+    requestAnimationFrame(() => ovl.classList.add('in'));
+    try { _finBeep?.('click'); } catch (_) {}
+    await yapesCajaRefrescar();
+  }
+
+  async function yapesCajaRefrescar() {
+    const body = document.getElementById('ypBody'); if (!body || !_ypCaja) return;
+    let d = null;
+    try {
+      const r = await API.post('yapesDeCaja', { idCaja: _ypCaja });
+      d = r && (r.data || r);
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'sin datos');
+    } catch (e) {
+      body.innerHTML = '<div class="yp-load">No pude leer: ' + _escapeHtml(e.message || String(e)) + '</div>';
+      return;
+    }
+    const R = d.resumen || {};
+    const sub = document.getElementById('ypSub');
+    if (sub) sub.textContent = (d.zona || '') + ' · ' + (d.desde || '') + '→' + (d.hasta || '') +
+      ' · ' + (R.yapes || 0) + ' Yapes · ' + (R.ticketsSinVerificar || 0) + ' ticket(s) sin verificar';
+
+    const _S = v => 'S/ ' + _money(v).toFixed(2);
+    const chip = (n, txt, cls) => '<div class="yp-kpi ' + cls + '"><b>' + n + '</b><i>' + txt + '</i></div>';
+
+    const yapes = (d.yapes || []).map(y => {
+      const est = String(y.estado);
+      const cls = est === 'MATCHEADO' ? 'is-ok' : (est === 'AMBIGUO' ? 'is-amb' : 'is-libre');
+      const cands = (y.candidatos || []).map(c =>
+        '<button type="button" class="yp-cand" onclick="MOS.yapeAtar(' + y.id + ',\'' + _esc(c.idVenta) + '\')">' +
+          '<b>' + _escapeHtml(String(c.correlativo || c.idVenta)) + '</b>' +
+          '<i>' + _escapeHtml(String(c.hora)) + ' · ' + _S(c.virtual) +
+          (String(c.formaPago || '').indexOf('MIXTO') === 0 ? ' de ' + _S(c.total) + ' (mixto)' : '') +
+          (c.cliente ? ' · ' + _escapeHtml(String(c.cliente)) : '') + '</i></button>').join('');
+      return '<div class="yp-y ' + cls + '">' +
+        '<div class="yp-y-top">' +
+          '<span class="yp-y-m">' + (y.monto == null ? '—' : _S(y.monto)) + '</span>' +
+          '<span class="yp-y-n">' + _escapeHtml(String(y.pagador || 'sin nombre')) + '</span>' +
+          '<span class="yp-y-h">' + _escapeHtml(String(y.hora)) + '</span>' +
+        '</div>' +
+        (est === 'MATCHEADO'
+          ? '<div class="yp-y-ok">✅ verifica <b>' + _escapeHtml(String(y.correlativo || y.idVenta)) + '</b>' +
+            (y.manual ? ' <i>(atado a mano)</i>' : '') +
+            '<button type="button" class="yp-soltar" onclick="MOS.yapeSoltar(' + y.id + ')">desverificar</button></div>'
+          : (y.monto == null
+              ? '<div class="yp-y-raw">No pude leer el monto: <span>' + _escapeHtml(String(y.raw).slice(0, 120)) + '</span></div>'
+              : (cands
+                  ? '<div class="yp-y-cands"><i>' + (est === 'AMBIGUO' ? 'Dos o más tickets calzan — elegí cuál pagó:' : 'Ticket que podría ser:') + '</i>' + cands + '</div>'
+                  : '<div class="yp-y-solo">Libre — ningún ticket de esta caja calza con ese monto</div>'))) +
+      '</div>';
+    }).join('') || '<div class="yp-vacio">No entró ningún Yape en el horario de esta caja.</div>';
+
+    const pend = (d.sinVerificar || []).map(t =>
+      '<div class="yp-t"><span class="yp-t-c">' + _escapeHtml(String(t.correlativo || t.idVenta)) + '</span>' +
+      '<span class="yp-t-h">' + _escapeHtml(String(t.hora)) + '</span>' +
+      '<span class="yp-t-m">' + _S(t.virtual) +
+        (String(t.formaPago || '').indexOf('MIXTO') === 0 ? ' <i>de ' + _S(t.total) + '</i>' : '') + '</span></div>').join('')
+      || '<div class="yp-vacio">Todos los tickets virtuales de esta caja están verificados.</div>';
+
+    body.innerHTML =
+      '<div class="yp-kpis">' +
+        chip(R.verificados || 0, 'verificados', 'is-ok') +
+        chip(R.libres || 0, 'libres', 'is-libre') +
+        chip(R.ambiguos || 0, 'ambiguos', 'is-amb') +
+        chip(R.ticketsSinVerificar || 0, 'tickets sin Yape', 'is-pend') +
+      '</div>' +
+      '<div class="yp-sec">💜 Yapes que entraron</div>' + yapes +
+      '<div class="yp-sec">🧾 Tickets virtuales sin verificar <span>' + _S(R.montoSinVerificar || 0) + '</span></div>' + pend +
+      '<div class="yp-pie">Sin verificar no significa impago: el Yape puede no haber llegado, o el cliente pudo pagar ' +
+        'con otra billetera. Si cambiás el pago de un ticket a efectivo, su Yape se suelta solo.</div>';
+  }
+
+  async function yapeAtar(id, idVenta) {
+    try {
+      const r = await API.post('yapeResolver', { id, idVenta, usuario: S.session?.nombre || '' });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'no se pudo');
+      try { _finBeep?.('agregar'); } catch (_) {}
+      toast('✅ Verificado', 'ok', 2200);
+      await yapesCajaRefrescar();
+    } catch (e) { toast('No se pudo atar: ' + (e.message || e), 'error', 5000); }
+  }
+
+  async function yapeSoltar(id) {
+    if (!await _modalConfirm('¿Desverificar este Yape?\n\nEl ticket vuelve a quedar sin verificar y el Yape libre, ' +
+        'para atarlo a otro.', { warning: true, titulo: 'Desverificar', okText: 'Desverificar' })) return;
+    try {
+      const r = await API.post('yapeResolver', { id, idVenta: null, usuario: S.session?.nombre || '' });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'no se pudo');
+      try { _finBeep?.('eliminar'); } catch (_) {}
+      toast('Yape liberado', 'ok', 2200);
+      await yapesCajaRefrescar();
+    } catch (e) { toast('No se pudo soltar: ' + (e.message || e), 'error', 5000); }
+  }
+
+  function yapesCajaCerrar() {
+    const o = document.getElementById('ypOvl'); if (!o) return;
+    o.classList.remove('in');
+    setTimeout(() => { try { o.remove(); } catch (_) {} }, 180);
+    _ypCaja = null;
+  }
+
+  function _ypInyectarCSS() {
+    if (document.getElementById('ypCSS')) return;
+    const st = document.createElement('style'); st.id = 'ypCSS';
+    st.textContent =
+      '.cj-caja-yape{padding:6px 11px;border-radius:9px;border:1px solid rgba(167,139,250,.42);' +
+        'background:rgba(124,58,237,.14);color:#c4b5fd;font-size:10.5px;font-weight:800;cursor:pointer;' +
+        'transition:.15s;min-height:32px}' +
+      '.cj-caja-yape:hover{background:rgba(124,58,237,.3);color:#e9d5ff}' +
+      '.yp-back{position:fixed;inset:0;z-index:100097;display:flex;align-items:center;justify-content:center;padding:16px;' +
+        'background:rgba(3,7,15,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;transition:opacity .2s}' +
+      '.yp-back.in{opacity:1}' +
+      '.yp-card{width:min(620px,100%);max-height:86vh;display:flex;flex-direction:column;border-radius:18px;overflow:hidden;' +
+        'background:linear-gradient(180deg,#111d31,#0a1120);border:1px solid #26344c;box-shadow:0 26px 70px rgba(0,0,0,.7);' +
+        'transform:translateY(14px) scale(.98);opacity:0;transition:transform .25s cubic-bezier(.22,1,.36,1),opacity .2s}' +
+      '.yp-back.in .yp-card{transform:none;opacity:1}' +
+      '.yp-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #1a2740;flex:none}' +
+      '.yp-head b{display:block;font-size:15px;color:#e2e8f0}' +
+      '.yp-head span{display:block;font-size:10.5px;color:#7488a6;margin-top:2px}' +
+      '.yp-x{flex:none;width:38px;height:38px;border-radius:10px;border:1px solid #26344c;background:#0c1626;color:#8296b5;cursor:pointer}' +
+      '.yp-body{flex:1;overflow:auto;padding:13px 15px;-webkit-overflow-scrolling:touch}' +
+      '.yp-load,.yp-vacio{font-size:12px;color:#64748b;text-align:center;padding:16px 8px;line-height:1.6}' +
+      '.yp-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}' +
+      '.yp-kpi{display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 6px;border-radius:12px;' +
+        'background:#0c1626;border:1px solid #223049}' +
+      '.yp-kpi b{font-size:19px;font-family:ui-monospace,monospace;color:#e2e8f0}' +
+      '.yp-kpi i{font-style:normal;font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f7192;text-align:center}' +
+      '.yp-kpi.is-ok b{color:#6ee7b7}.yp-kpi.is-libre b{color:#c4b5fd}' +
+      '.yp-kpi.is-amb b{color:#fcd34d}.yp-kpi.is-pend b{color:#f0a6a6}' +
+      '.yp-sec{font-size:11.5px;font-weight:800;color:#93a4c2;margin:16px 0 8px;display:flex;justify-content:space-between}' +
+      '.yp-sec span{font-family:ui-monospace,monospace;color:#f0a6a6}' +
+      '.yp-y{border-radius:13px;border:1px solid #223049;background:#0c1626;padding:11px 13px;margin-bottom:8px}' +
+      '.yp-y.is-ok{border-color:rgba(52,211,153,.38);background:rgba(16,185,129,.06)}' +
+      '.yp-y.is-amb{border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.05)}' +
+      '.yp-y.is-libre{border-color:rgba(167,139,250,.42);background:rgba(124,58,237,.06)}' +
+      '.yp-y-top{display:flex;align-items:baseline;gap:9px}' +
+      '.yp-y-m{font-family:ui-monospace,monospace;font-size:16px;font-weight:800;color:#e2e8f0}' +
+      '.yp-y-n{flex:1;min-width:0;font-size:12px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.yp-y-h{font-size:10.5px;color:#5f7192;font-family:ui-monospace,monospace}' +
+      '.yp-y-ok{margin-top:7px;font-size:11.5px;color:#6ee7b7;display:flex;align-items:center;gap:7px;flex-wrap:wrap}' +
+      '.yp-y-ok i{font-style:normal;color:#7488a6;font-size:10px}' +
+      '.yp-soltar{margin-left:auto;font-size:10px;font-weight:800;color:#93a4c2;background:transparent;' +
+        'border:1px solid #33415a;border-radius:8px;padding:4px 9px;cursor:pointer;min-height:28px}' +
+      '.yp-soltar:hover{color:#f0a6a6;border-color:rgba(248,113,113,.5)}' +
+      '.yp-y-cands{margin-top:8px;display:flex;flex-direction:column;gap:5px}' +
+      '.yp-y-cands>i{font-style:normal;font-size:10.5px;color:#fcd34d;margin-bottom:2px}' +
+      '.yp-cand{display:flex;flex-direction:column;align-items:flex-start;gap:1px;text-align:left;width:100%;' +
+        'padding:8px 11px;border-radius:10px;border:1px solid #26344c;background:#0a1120;cursor:pointer;transition:.15s;min-height:44px}' +
+      '.yp-cand:hover{border-color:#7c3aed;background:#131f36}' +
+      '.yp-cand b{font-size:11.5px;color:#e2e8f0}' +
+      '.yp-cand i{font-style:normal;font-size:10px;color:#7488a6}' +
+      '.yp-y-solo,.yp-y-raw{margin-top:7px;font-size:11px;color:#7488a6;line-height:1.55}' +
+      '.yp-y-raw span{color:#5f7192;font-style:italic}' +
+      '.yp-t{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#0c1626;' +
+        'border:1px solid #1d2942;margin-bottom:5px}' +
+      '.yp-t-c{flex:1;min-width:0;font-size:11.5px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.yp-t-h{font-size:10px;color:#5f7192;font-family:ui-monospace,monospace}' +
+      '.yp-t-m{font-family:ui-monospace,monospace;font-size:12.5px;color:#f0a6a6;font-weight:700}' +
+      '.yp-t-m i{font-style:normal;font-size:9.5px;color:#5f7192;font-weight:400}' +
+      '.yp-pie{margin-top:14px;font-size:10.5px;line-height:1.65;color:#5f7192;background:rgba(15,23,42,.45);' +
+        'border:1px dashed #223049;border-radius:11px;padding:10px 12px}' +
+      '@media(max-width:560px){.yp-back{padding:0;align-items:flex-end}' +
+        '.yp-card{width:100%;max-height:90vh;border-radius:18px 18px 0 0}' +
+        '.yp-kpis{grid-template-columns:repeat(2,1fr)}}';
+    document.head.appendChild(st);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // [858] CAPTURA DE YAPES — dar de alta un celular sin tipear nada largo.
+  //
+  // El dueño pidió "que el APK baje ya con los datos seteados para la Zona 1". Compilar un APK
+  // por zona seria la idea equivocada: obligaría a meter el secreto de cada celular dentro del
+  // repositorio —queda en el historial de git para siempre y no se puede revocar de verdad— y a
+  // recompilar cada vez que se agrega una zona. Un APK para todos y un CÓDIGO CORTO por equipo
+  // consigue lo mismo: en el celular se teclean 6 letras y el servidor le entrega su secreto,
+  // una sola vez. Si alguien ve el código, se genera otro y el anterior muere.
+  // ══════════════════════════════════════════════════════════════════════
+  const YAPE_APK_URL = 'https://github.com/Levo19/MOS/actions/workflows/apk-yape.yml';
+  let _yapeCod = {};   // zona → { codigo, nombre, hasta }
+
+  async function yapeGenerarCodigo(zona) {
+    const auth = await pedirAuth({
+      accion: 'BLOQUEAR_DISPOSITIVO',    // mismo nivel: dar de alta un equipo que capta dinero
+      refDocumento: zona || 'general',
+      contexto: 'Emparejar un celular de captura de Yapes' + (zona ? ' para ' + zona : '')
+    });
+    if (!auth) return;
+    try {
+      const r = await API.post('yapeCodigoGenerar', { zona: zona || '', usuario: S.session?.nombre || '' });
+      const d = r && (r.data || r);
+      if (!r || r.ok === false || !d || !d.codigo) throw new Error((r && r.error) || 'no se pudo generar');
+      _yapeCod[zona || ''] = { codigo: d.codigo, nombre: d.nombre, zona: d.zona,
+                               hasta: Date.now() + (d.venceEn || 30) * 60000 };
+      try { _finBeep?.('ok'); } catch (_) {}
+      renderYapeCard();
+    } catch (e) {
+      toast('No se pudo generar el código: ' + (e.message || e), 'error', 5000);
+    }
+  }
+
+  function _yapeZonasVenta() {
+    return (cfgData.zonas || []).filter(z => !_esZonaAlmacen(z) && String(z.estado) !== '0');
+  }
+
+  function renderYapeCard() {
+    _yapeInyectarCSS();
+    const cont = $('yapeBody'); if (!cont) return;
+    const zonas = _yapeZonasVenta();
+    const filas = zonas.map(z => {
+      const c = _yapeCod[z.idZona];
+      const vivo = c && c.hasta > Date.now();
+      const min = vivo ? Math.max(1, Math.round((c.hasta - Date.now()) / 60000)) : 0;
+      return '<div class="yp-zona">' +
+        '<div class="yp-z-n"><b>' + _escapeHtml(String(z.nombre || z.idZona)) + '</b>' +
+          '<i>' + _escapeHtml(String(z.idZona)) + '</i></div>' +
+        (vivo
+          ? '<div class="yp-cod"><span>' + _escapeHtml(c.codigo) + '</span>' +
+            '<i>vence en ' + min + ' min · se usa una sola vez</i></div>'
+          : '') +
+        '<button type="button" class="yp-btn" onclick="MOS.yapeGenerarCodigo(\'' + _esc(z.idZona) + '\')">' +
+          (vivo ? '↺ Otro código' : '🔑 Emparejar un celular') + '</button>' +
+      '</div>';
+    }).join('') || '<div class="yp-vacio">No hay zonas de venta configuradas.</div>';
+
+    cont.innerHTML =
+      '<div class="yp-wrap">' +
+        '<div class="yp-pasos">' +
+          '<div class="yp-paso"><b>1</b><span>Bajá el APK una sola vez y instalalo en el celular que recibe los Yapes. ' +
+            '<a href="' + YAPE_APK_URL + '" target="_blank" rel="noopener">Descargar YapeCaptor ↗</a> ' +
+            '<i>(abrí la última ejecución y bajá el archivo <b>YapeCaptor-apk</b>)</i></span></div>' +
+          '<div class="yp-paso"><b>2</b><span>Generá acá abajo el código de la zona y tipealo en la app: ' +
+            'son <b>6 letras</b> y nada más. La dirección y la clave ya vienen dentro del APK.</span></div>' +
+          '<div class="yp-paso"><b>3</b><span>En la app, tocá <b>Dar permiso de notificaciones</b> y activá YapeCaptor en la lista. ' +
+            'Android exige que eso lo haga una persona a mano.</span></div>' +
+        '</div>' +
+        '<div class="yp-zonas">' + filas + '</div>' +
+        '<div class="yp-nota">El código dura 30 minutos y muere al usarse. Generar uno nuevo para el mismo equipo ' +
+          '<b>cambia su secreto</b>: el celular anterior deja de entregar en el acto — es la forma de sacar de ' +
+          'circulación un equipo perdido.</div>' +
+      '</div>';
+  }
+
+  function _yapeInyectarCSS() {
+    if (document.getElementById('yapeCSS')) return;
+    const st = document.createElement('style'); st.id = 'yapeCSS';
+    st.textContent =
+      '.yp-wrap{display:flex;flex-direction:column;gap:14px;padding-bottom:18px}' +
+      '.yp-pasos{display:flex;flex-direction:column;gap:9px;padding:14px 16px;border-radius:15px;' +
+        'background:radial-gradient(120% 150% at 0% 0%,rgba(124,58,237,.18),transparent 60%),#0b1424;border:1px solid #223049}' +
+      '.yp-paso{display:flex;gap:11px;align-items:flex-start}' +
+      '.yp-paso b{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;' +
+        'background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;font-size:11px}' +
+      '.yp-paso span{font-size:12px;line-height:1.65;color:#93a4c2}' +
+      '.yp-paso span b{display:inline;width:auto;height:auto;background:none;color:#e2e8f0;font-size:12px}' +
+      '.yp-paso i{font-style:normal;color:#5f7192;font-size:11px}' +
+      '.yp-paso a{color:#a78bfa;font-weight:800;text-decoration:none}' +
+      '.yp-paso a:hover{text-decoration:underline}' +
+      '.yp-zonas{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px}' +
+      '.yp-zona{display:flex;flex-direction:column;gap:9px;padding:14px;border-radius:14px;background:#0c1626;border:1px solid #223049}' +
+      '.yp-z-n b{display:block;font-size:13.5px;color:#e2e8f0}' +
+      '.yp-z-n i{font-style:normal;font-size:10px;color:#5f7192}' +
+      '.yp-cod{text-align:center;padding:11px;border-radius:12px;background:rgba(124,58,237,.12);border:1px dashed rgba(167,139,250,.45)}' +
+      '.yp-cod span{display:block;font-family:ui-monospace,monospace;font-size:30px;font-weight:900;' +
+        'letter-spacing:.22em;color:#c4b5fd}' +
+      '.yp-cod i{display:block;font-style:normal;font-size:10px;color:#7488a6;margin-top:4px}' +
+      '.yp-btn{padding:10px;border-radius:11px;border:0;background:linear-gradient(135deg,#7c3aed,#4f46e5);' +
+        'color:#fff;font-size:12px;font-weight:800;cursor:pointer;min-height:40px;transition:.15s}' +
+      '.yp-btn:hover{filter:brightness(1.12)}' +
+      '.yp-nota{font-size:11px;line-height:1.65;color:#6b7d9c;background:rgba(15,23,42,.45);' +
+        'border:1px dashed #223049;border-radius:12px;padding:11px 14px}' +
+      '.yp-nota b{color:#93a4c2}' +
+      '.yp-vacio{font-size:12px;color:#5f7192;padding:16px;text-align:center}';
+    document.head.appendChild(st);
+  }
+
   // [843] Del margen a la curva: abre el cockpit de precio/costo del producto sin salir de
   // Finanzas. Reusa curvaOverlay, que lee window._paso2Filas — se le siembra la fila mínima.
   function finProdCurva(sku) {
@@ -53572,6 +53876,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, guiaRotarFoto, finProdDesglose,
     cjTrabajadorAbrir, cjTrabajadorElegir, cjTrabajadorQuitar, cjTrabajadorCerrar,
     renderIaPanel, iaSetRango, iaVerDia, iaCerrarDia,
+    renderYapeCard, yapeGenerarCodigo,
+    yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
