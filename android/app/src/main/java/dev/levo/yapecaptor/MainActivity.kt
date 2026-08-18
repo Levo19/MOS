@@ -1,7 +1,11 @@
 package dev.levo.yapecaptor
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.format.DateUtils
 import android.widget.Button
@@ -51,13 +55,56 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnProbar).setOnClickListener { probar() }
+
+        // LA CAUSA NÚMERO UNO de que un equipo deje de capturar: Android lo "optimiza" y lo
+        // duerme. Un celular de mostrador está todo el día con la pantalla apagada, que es
+        // justo cuando el sistema decide matar procesos. Sin esta exención, la app funciona
+        // perfecto en la prueba y deja de capturar a las dos horas.
+        findViewById<Button>(R.id.btnBateria).setOnClickListener { pedirSinOptimizar() }
+
+        pedirPermisoNotificaciones()
+        LatidoReceiver.programar(this)
+    }
+
+    /** Android 13+ exige pedir esto en runtime o la notificación fija no se muestra. */
+    private fun pedirPermisoNotificaciones() {
+        if (Build.VERSION.SDK_INT < 33) return
+        try {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 91)
+            }
+        } catch (_: Throwable) {}
+    }
+
+    private fun sinOptimizar(): Boolean = try {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) true
+        else (getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+    } catch (_: Throwable) { false }
+
+    private fun pedirSinOptimizar() {
+        if (sinOptimizar()) { Toast.makeText(this, "Ya está exento ✅", Toast.LENGTH_SHORT).show(); return }
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                .setData(Uri.parse("package:" + packageName)))
+        } catch (_: Throwable) {
+            // algunos fabricantes (Xiaomi, Huawei) esconden esa pantalla: se abre la general
+            try { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+            catch (_: Throwable) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }
     }
 
     override fun onResume() { super.onResume(); pintar() }
 
-    private fun permisoConcedido(): Boolean =
-        Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
-            ?.contains(packageName) == true
+    private fun permisoConcedido(): Boolean = permisoNotificaciones(this)
+
+    companion object {
+        /** ¿El equipo tiene concedido el acceso a notificaciones? Lo consulta también el latido. */
+        fun permisoNotificaciones(ctx: Context): Boolean = try {
+            Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners")
+                ?.contains(ctx.packageName) == true
+        } catch (_: Throwable) { false }
+    }
 
     private fun pintar() {
         val cfg = Prefs.leer(this)
@@ -65,10 +112,13 @@ class MainActivity : AppCompatActivity() {
         val pend = Cola.tamano(this)
         val err = Prefs.ultimoError(this)
 
+        val bat = sinOptimizar()
         val (txt, color) = when {
             !cfg.completa() -> "⚙ Falta emparejar" to 0xFFF59E0B.toInt()
             !perm           -> "⛔ Falta el permiso" to 0xFFEF4444.toInt()
             err.isNotBlank() -> "⚠ El servidor rechaza" to 0xFFF59E0B.toInt()
+            // captura bien, pero Android lo va a dormir: es un verde con asterisco, no un verde
+            !bat            -> "⚠ Android puede dormirlo" to 0xFFF59E0B.toInt()
             else            -> "✅ Capturando" to 0xFF10B981.toInt()
         }
         tvEstado.text = txt
@@ -83,6 +133,7 @@ class MainActivity : AppCompatActivity() {
                 appendLine("Zona: " + cfg.zona.ifBlank { "todas" })
             } else appendLine("Sin emparejar — pedí el código en MOS → Config")
             appendLine("Permiso de notificaciones: " + if (perm) "concedido" else "NO concedido")
+            appendLine("Exento de ahorro de batería: " + if (bat) "sí" else "NO — puede dejar de capturar")
             appendLine("Yapes entregados: " + Prefs.total(this@MainActivity))
             appendLine("Última entrega: $cuando")
             appendLine("En cola por entregar: $pend")

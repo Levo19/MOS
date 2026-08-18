@@ -106,6 +106,8 @@ class YapeListener : NotificationListenerService() {
         Log.i(TAG, "listener conectado")
         Prefs.marcarListenerVivo(applicationContext, true)
         ColaService.despertar(applicationContext)
+        LatidoReceiver.programar(applicationContext)   // el equipo empieza a avisar que está vivo
+        LatidoReceiver.latir(applicationContext)
     }
 
     override fun onListenerDisconnected() {

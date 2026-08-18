@@ -1,0 +1,92 @@
+package dev.levo.yapecaptor
+
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.util.Log
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlin.concurrent.thread
+
+/**
+ * EL LATIDO — el equipo avisa que sigue vivo cada 15 minutos.
+ *
+ * Sin esto hay un agujero silencioso: si el celular se apaga, se queda sin datos o Android mata
+ * la app, deja de capturar Yapes y NADIE se entera. Los tickets simplemente dejan de verificarse
+ * y el admin lo descubre recién al cerrar caja, cuando ya no puede hacer nada.
+ *
+ * Un Yape capturado también cuenta como señal de vida, pero no alcanza: un día sin pagos por Yape
+ * se vería igual que un celular muerto. Por eso el latido es aparte y no depende de que haya
+ * movimiento.
+ *
+ * Se usa una alarma INEXACTA a propósito: Android la agrupa con otras y la deja pasar en las
+ * ventanas de mantenimiento aunque el equipo esté en reposo profundo. Pedir exactitud gastaría
+ * batería para nada — que llegue a los 15 o a los 22 minutos da igual.
+ */
+class LatidoReceiver : BroadcastReceiver() {
+
+    companion object {
+        private const val TAG = "YapeCaptor"
+        private const val CADA_MS = 15 * 60 * 1000L
+        private const val ACCION = "dev.levo.yapecaptor.LATIDO"
+
+        fun programar(ctx: Context) {
+            try {
+                val am = ctx.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                am.setInexactRepeating(
+                    AlarmManager.RTC,
+                    System.currentTimeMillis() + CADA_MS,
+                    CADA_MS,
+                    pi(ctx)
+                )
+                Log.i(TAG, "latido programado cada 15 min")
+            } catch (e: Throwable) { Log.e(TAG, "no pude programar el latido", e) }
+        }
+
+        private fun pi(ctx: Context): PendingIntent {
+            val i = Intent(ctx, LatidoReceiver::class.java).setAction(ACCION)
+            val f = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            else PendingIntent.FLAG_UPDATE_CURRENT
+            return PendingIntent.getBroadcast(ctx, 7311, i, f)
+        }
+
+        /** Manda el latido. Silencioso: si no hay red, se pierde y el próximo lo cubre. */
+        fun latir(ctx: Context) {
+            val cfg = Prefs.leer(ctx)
+            if (!cfg.completa()) return
+            thread {
+                var con: HttpURLConnection? = null
+                try {
+                    val url = URL(Backend.URL.trimEnd('/') + "/rest/v1/rpc/yape_latido")
+                    con = (url.openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"; connectTimeout = 12000; readTimeout = 15000; doOutput = true
+                        setRequestProperty("apikey", Backend.ANON)
+                        setRequestProperty("Authorization", "Bearer " + Backend.ANON)
+                        setRequestProperty("Content-Type", "application/json")
+                        setRequestProperty("Content-Profile", "mos")
+                    }
+                    val p = JSONObject()
+                        .put("secreto", cfg.secreto)
+                        .put("equipo", Build.MODEL ?: "")
+                        .put("pendientes", Cola.tamano(ctx))
+                        .put("permiso", MainActivity.permisoNotificaciones(ctx))
+                    con.outputStream.use { it.write(JSONObject().put("p", p).toString().toByteArray(Charsets.UTF_8)) }
+                    con.responseCode   // basta con que llegue
+                } catch (_: Throwable) {
+                } finally { try { con?.disconnect() } catch (_: Throwable) {} }
+            }
+        }
+    }
+
+    override fun onReceive(context: Context?, intent: Intent?) {
+        val ctx = context ?: return
+        latir(ctx)
+        // aprovechamos el despertar para vaciar lo que haya quedado en cola sin red
+        if (Cola.tamano(ctx) > 0) ColaService.despertar(ctx)
+    }
+}

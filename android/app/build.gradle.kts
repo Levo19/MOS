@@ -15,12 +15,26 @@ android {
         versionName = "1.0.0"
     }
 
+    // CLAVE DE FIRMA ESTABLE. Android se niega a instalar una actualización si viene firmada
+    // con otra clave que la instalada. La clave de depuración se genera NUEVA en cada máquina y
+    // en cada corrida de CI, así que firmar con ella obligaría a DESINSTALAR el equipo en cada
+    // actualización — perdiendo el emparejamiento. Esta clave vive en el repo (la crea el propio
+    // CI la primera vez) y no cambia nunca: las actualizaciones se instalan encima y el celular
+    // conserva su secreto.
+    signingConfigs {
+        create("estable") {
+            storeFile = file("../keystore/yape.jks")
+            storePassword = "yapecaptor"
+            keyAlias = "yape"
+            keyPassword = "yapecaptor"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // firmado con la clave de debug: es una app interna que se instala a mano,
-            // no va a Play Store. Así el APK sale instalable directo del build de CI.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (file("../keystore/yape.jks").exists())
+                signingConfigs.getByName("estable") else signingConfigs.getByName("debug")
         }
     }
     compileOptions {

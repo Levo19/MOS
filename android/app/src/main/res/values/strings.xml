@@ -4,6 +4,8 @@
     <string name="subtitulo">Captura los Yapes de este equipo y los manda a MOS</string>
     <string name="dar_permiso">Dar permiso de notificaciones</string>
     <string name="ayuda_permiso">Android no deja conceder esto por código. Buscá «YapeCaptor» en la lista y activalo.</string>
+    <string name="bateria">🔋 Que Android no lo apague</string>
+    <string name="ayuda_bateria">Sin esto, el sistema duerme la app con la pantalla apagada y deja de capturar a las pocas horas. Aceptá cuando pregunte.</string>
     <string name="config_titulo">Emparejar este equipo</string>
     <string name="config_ayuda">Pedí el código en MOS → Configuración → Captura de Yapes. Dura 30 minutos y se usa una sola vez.</string>
     <string name="h_codigo">CÓDIGO</string>

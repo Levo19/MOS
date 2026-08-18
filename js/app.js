@@ -43122,9 +43122,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return (cfgData.zonas || []).filter(z => !_esZonaAlmacen(z) && String(z.estado) !== '0');
   }
 
-  function renderYapeCard() {
+  async function renderYapeCard() {
     _yapeInyectarCSS();
     const cont = $('yapeBody'); if (!cont) return;
+    // [862] Estado de los celulares. Un equipo que dejó de latir es un equipo que dejó de
+    // capturar, y eso hay que verlo ACÁ y no descubrirlo al cerrar caja.
+    let equipos = [];
+    try {
+      const re = await API.post('yapeEquipos', {});
+      equipos = ((re && (re.data || re)) || {}).equipos || [];
+    } catch (_) {}
     const zonas = _yapeZonasVenta();
     const filas = zonas.map(z => {
       const c = _yapeCod[z.idZona];
@@ -43142,8 +43149,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '</div>';
     }).join('') || '<div class="yp-vacio">No hay zonas de venta configuradas.</div>';
 
+    const eqHtml = equipos.length ? ('<div class="yp-eqs">' + equipos.map(e => {
+      const st = String(e.estado);
+      const cls = st === 'VIVO' ? 'is-ok' : (st === 'CAIDO' ? 'is-mal' : 'is-gris');
+      const dice = st === 'VIVO' ? 'capturando'
+                 : (st === 'CAIDO' ? 'sin dar señal hace ' + (e.minSinLatir || '?') + ' min'
+                                   : 'todavía no se instaló');
+      return '<div class="yp-eq ' + cls + '"><span class="yp-eq-luz"></span>' +
+        '<div><b>' + _escapeHtml(String(e.nombre)) + '</b>' +
+          '<i>' + _escapeHtml(String(e.zona || 'todas')) + ' · ' + dice +
+          (e.capturas > 0 ? ' · ' + e.capturas + ' capturas' : '') +
+          (e.pendientes > 0 ? ' · ' + e.pendientes + ' en cola' : '') +
+          (e.permisoOk === false ? ' · ⚠ sin permiso de notificaciones' : '') + '</i></div></div>';
+    }).join('') + '</div>') : '';
+
     cont.innerHTML =
       '<div class="yp-wrap">' +
+        eqHtml +
         '<div class="yp-pasos">' +
           '<div class="yp-paso"><b>1</b><span>Bajá el APK una sola vez y instalalo en el celular que recibe los Yapes. ' +
             '<a href="' + YAPE_APK_URL + '" target="_blank" rel="noopener">Descargar YapeCaptor ↗</a> ' +
@@ -43175,6 +43197,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.yp-paso i{font-style:normal;color:#5f7192;font-size:11px}' +
       '.yp-paso a{color:#a78bfa;font-weight:800;text-decoration:none}' +
       '.yp-paso a:hover{text-decoration:underline}' +
+      '.yp-eqs{display:flex;flex-direction:column;gap:7px}' +
+      '.yp-eq{display:flex;align-items:center;gap:11px;padding:11px 14px;border-radius:13px;background:#0c1626;border:1px solid #223049}' +
+      '.yp-eq b{display:block;font-size:12.5px;color:#e2e8f0}' +
+      '.yp-eq i{font-style:normal;display:block;font-size:10.5px;color:#7488a6;margin-top:2px}' +
+      '.yp-eq-luz{flex:none;width:11px;height:11px;border-radius:50%;background:#64748b;box-shadow:0 0 0 3px rgba(100,116,139,.16)}' +
+      '.yp-eq.is-ok{border-color:rgba(52,211,153,.36);background:rgba(16,185,129,.06)}' +
+      '.yp-eq.is-ok .yp-eq-luz{background:#34d399;box-shadow:0 0 0 3px rgba(52,211,153,.2)}' +
+      '.yp-eq.is-mal{border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.07)}' +
+      '.yp-eq.is-mal .yp-eq-luz{background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.2);animation:iaLatido 1.7s infinite}' +
+      '.yp-eq.is-mal b{color:#fca5a5}' +
       '.yp-zonas{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px}' +
       '.yp-zona{display:flex;flex-direction:column;gap:9px;padding:14px;border-radius:14px;background:#0c1626;border:1px solid #223049}' +
       '.yp-z-n b{display:block;font-size:13.5px;color:#e2e8f0}' +

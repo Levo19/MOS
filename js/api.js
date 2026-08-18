@@ -2656,6 +2656,11 @@ const API = (() => {
       if (r == null) return null;
       return r;
     }
+    if (action === 'yapeEquipos') {
+      const r = await _sbRpcMOS('yape_dispositivos_estado', { p: {} }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
     if (action === 'yapesDeCaja') {
       const r = await _sbRpcMOS('yapes_de_caja', { p: { idCaja: p.idCaja } }, 'mos');
       if (r == null) return null;
@@ -3051,6 +3056,7 @@ const API = (() => {
     finanzasDiaSku:              () => true,
     finanzasDiaSkuTramos:        () => true,
     yapeCodigoGenerar:           () => true,   // mos.yape_codigo_generar (858)
+    yapeEquipos:                 () => true,   // mos.yape_dispositivos_estado (862)
     yapesDeCaja:                 () => true,   // mos.yapes_de_caja (860) · panel por caja
     yapesDelDia:                 () => true,   // mos.yapes_del_dia (856) · panel de capturados
     yapeResolver:                () => true,   // mos.yape_resolver (856) · atar o soltar a mano
@@ -3115,7 +3121,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, iaUsoResumen: 1, yapeCodigoGenerar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, iaUsoResumen: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.

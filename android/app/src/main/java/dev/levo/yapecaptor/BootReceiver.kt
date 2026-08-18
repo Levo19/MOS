@@ -12,5 +12,8 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         val ctx = context ?: return
         if (Cola.tamano(ctx) > 0) ColaService.despertar(ctx)
+        // el reinicio borra las alarmas: hay que volver a programar el latido
+        LatidoReceiver.programar(ctx)
+        LatidoReceiver.latir(ctx)
     }
 }
