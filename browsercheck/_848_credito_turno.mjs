@@ -54,6 +54,28 @@ if(!tk){ tk = await p.evaluate(async ()=>{
 }); }
 if(!tk){ console.log('  ⚠ no hay tickets de crédito vivos para probar'); await b.close(); srv.close(); process.exit(0); }
 console.log('  ticket de prueba: '+tk);
+// [850] el boton tiene que estar en la CARTA de la mesa, sin abrir el detalle
+const enMesa = await p.evaluate(()=>{
+  const btns=[...document.querySelectorAll('.cj-carta-tk-btn')];
+  const sellos=[...document.querySelectorAll('.cj-carta-tk')];
+  return { n: btns.length, txt: btns[0]?btns[0].textContent.trim():'', sellos: sellos.length };
+});
+console.log('     en la mesa: '+enMesa.n+' boton(es) "'+enMesa.txt+'" · '+enMesa.sellos+' ya asignado(s)');
+T('la carta de la mesa muestra ASIGNAR sin abrir el detalle', enMesa.n>0 || enMesa.sellos>0, JSON.stringify(enMesa));
+// [850] no debe pintarse en dias ya liquidados: seria un boton que el servidor rechaza
+const abiertos = await p.evaluate(async ()=>{
+  const r=await API.post('meGetCreditosPendientes',{diasAtras:365});
+  const d=(r&&r.data)?r.data:(r||{});
+  let vivos=0, conTurno=0;
+  for(const g of (d.grupos||[])) for(const t of (g.tickets||[]))
+    if(!t.estadoCobro || t.estadoCobro==='VIVO'){ vivos++; if(t.turnosAbiertos) conTurno++; }
+  return {vivos, conTurno};
+});
+console.log('     creditos vivos: '+abiertos.vivos+' · con turno abierto ese dia: '+abiertos.conTurno);
+T('solo se ofrece donde hay turno abierto (no en dias ya liquidados)',
+  enMesa.n === abiertos.conTurno, enMesa.n+' boton(es) vs '+abiertos.conTurno+' dia(s) util(es)');
+T('el boton dice ASIGNAR (la palabra del dueno)', /ASIGNAR/i.test(enMesa.txt) || enMesa.n===0, enMesa.txt);
+
 await p.evaluate(id=>MOS.cjAbrirDetalleCarta(id), tk);
 await p.waitForTimeout(900);
 const hayBtn = await p.evaluate(()=>!!document.querySelector('.cj-det-tk-btn') || !!document.querySelector('.cj-det-tk-quitar'));

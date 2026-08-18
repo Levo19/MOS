@@ -29184,6 +29184,7 @@ const MOS = (() => {
   function cjRepartirMano() {
     const grupos = _cjCreditosState.todosLosGrupos || [];
     if (!grupos.length) return;
+    _cjInyectarCSSTrabajador();   // [850] el botón ASIGNAR vive en cada carta de la mesa
     try { _finBeep?.('click'); } catch(_){}
 
     const hoyStr = today();
@@ -29252,7 +29253,8 @@ const MOS = (() => {
         const esCobradoSrv = !!(t.estadoCobro && t.estadoCobro !== 'VIVO');
         const esCobrado = esCobradoSrv || cobradosIds.has(String(t.idVenta));
         const cobrInfo = (!esCobradoSrv && esCobrado) ? cobradosData[String(t.idVenta)] : null;
-        const cobradoClass = esCobrado ? 'cj-mesa-carta-cobrada' : '';
+        const cobradoClass = (esCobrado ? 'cj-mesa-carta-cobrada' : '')
+          + ((t.trabajador && t.trabajador.nombre && !esCobrado) ? ' cj-mesa-carta-tk' : '');
         const selloCobrado = esCobrado
           ? `<div class="cj-carta-sello-cobrado">✓ COBRADO</div>`
           : '';
@@ -29274,6 +29276,7 @@ const MOS = (() => {
           <div class="cj-carta-sep"></div>
           ${_cjResumenItemsVoucher(t.items, 6, 22)}
           <div class="cj-carta-meta">${_esc(t.correlativo)} · ${_esc(t.vendedor)}${metaCobrado}</div>
+          ${_cjTkMesaHTML(t)}
           ${asigActions}
         </div>`;
       }).join('');
@@ -29334,6 +29337,23 @@ const MOS = (() => {
   // ocurrido es único para siempre. Por eso solo se ofrecen los turnos DEL MISMO DÍA del ticket:
   // se le carga a quien vino a trabajar ese día, no se arrastra al siguiente.
   // ══════════════════════════════════════════════════════════════════════
+  // [850] Lo que se ve en la carta de la MESA (sin abrirla): el botón ASIGNAR si el consumo
+  // todavía no tiene dueño, o el nombre de quién lo paga si ya lo tiene.
+  function _cjTkMesaHTML(t) {
+    if (!t) return '';
+    const tr = t.trabajador;
+    if (tr && tr.nombre) {
+      return '<div class="cj-carta-tk">👤 ' + _esc(String(tr.nombre)) +
+        (String(tr.estado || '') === 'DESCONTADO' ? ' · ya descontado' : ' · se le descuenta') + '</div>';
+    }
+    if (t.estadoCobro && t.estadoCobro !== 'VIVO') return '';
+    // [850] En un día ya liquidado no queda turno al que cargarlo: el servidor lo rechazaría.
+    // Sin botón, así el admin no persigue una opción que no existe.
+    if (t.turnosAbiertos === false) return '';
+    return '<button type="button" class="cj-carta-tk-btn" title="Cargar este consumo a alguien que trabajó ese día"' +
+      ' onclick="event.stopPropagation();MOS.cjTrabajadorAbrir(\'' + _esc(String(t.idVenta)) + '\')">👤 ASIGNAR</button>';
+  }
+
   function _cjTrabajadorBloqueHTML(t) {
     const tr = t && t.trabajador;
     if (tr && tr.nombre) {
@@ -29345,8 +29365,13 @@ const MOS = (() => {
       </div>`;
     }
     if (t && t.estadoCobro && t.estadoCobro !== 'VIVO') return '';
+    // [850] día sin turnos abiertos: se dice por qué, en vez de ofrecer un botón que va a fallar
+    if (t && t.turnosAbiertos === false) {
+      return `<div class="cj-det-tk-nota">👤 Ese día ya no tiene turnos abiertos —
+        sus liquidaciones están pagadas o vetadas, así que no se le puede cargar a nadie.</div>`;
+    }
     return `<button type="button" class="cj-det-tk-btn" onclick="MOS.cjTrabajadorAbrir('${_esc(String(t.idVenta))}')">
-      👤 Cargar a un trabajador de ese día</button>`;
+      👤 ASIGNAR a un trabajador de ese día</button>`;
   }
 
   async function cjTrabajadorAbrir(idVenta) {
@@ -29444,10 +29469,22 @@ const MOS = (() => {
     if (document.getElementById('cjTkCSS')) return;
     const st = document.createElement('style'); st.id = 'cjTkCSS';
     st.textContent =
+      // [850] en la carta de la mesa
+      '.cj-carta-tk-btn{display:block;width:100%;margin-top:8px;padding:7px 9px;border-radius:9px;' +
+        'border:1px dashed rgba(56,189,248,.5);background:rgba(56,189,248,.1);color:#7dd3fc;' +
+        'font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;transition:.15s}' +
+      '.cj-carta-tk-btn:hover{background:rgba(56,189,248,.24);color:#e0f2fe;border-style:solid}' +
+      '.cj-carta-tk{margin-top:8px;padding:6px 9px;border-radius:9px;border:1px solid rgba(56,189,248,.4);' +
+        'background:rgba(56,189,248,.12);color:#7dd3fc;font-size:10.5px;font-weight:800;' +
+        'overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.cj-mesa-carta-tk{border-color:rgba(56,189,248,.55)!important;' +
+        'box-shadow:0 0 0 1px rgba(56,189,248,.18) inset,0 8px 22px rgba(2,6,23,.5)!important}' +
       '.cj-det-tk-btn{display:block;width:100%;margin-top:11px;padding:11px 12px;border-radius:12px;' +
         'border:1px dashed rgba(56,189,248,.45);background:rgba(56,189,248,.08);color:#7dd3fc;' +
         'font-size:12px;font-weight:800;cursor:pointer;transition:.15s}' +
       '.cj-det-tk-btn:hover{background:rgba(56,189,248,.18);color:#e0f2fe}' +
+      '.cj-det-tk-nota{margin-top:11px;padding:10px 12px;border-radius:12px;border:1px dashed #33415a;' +
+        'background:rgba(148,163,184,.06);color:#7488a6;font-size:11px;line-height:1.55;font-weight:600}' +
       '.cj-det-tk-quitar{margin-left:8px;font-size:10px;font-weight:800;color:#93a4c2;background:transparent;' +
         'border:1px solid #33415a;border-radius:7px;padding:2px 7px;cursor:pointer}' +
       '.cj-det-tk-quitar:hover{color:#f0a6a6;border-color:rgba(248,113,113,.5)}' +
