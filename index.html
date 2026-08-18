@@ -20279,7 +20279,7 @@
       <div class="pers-section" style="border-top:1px dashed #1e293b;padding-top:14px;margin-top:14px">
         <div class="pers-section-title" style="display:flex;align-items:center;gap:6px;color:#86efac">
           <span>💰 Política de la zona</span>
-          <span class="text-[10px] text-slate-500 font-normal normal-case">(meta cajero + auditorías POS)</span>
+          <span class="text-[10px] text-slate-500 font-normal normal-case">(base + meta + comisión + auditorías POS)</span>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -20292,15 +20292,27 @@
             <input id="zonaComisionPct" class="inp" type="number" min="0" max="100" step="0.5" placeholder="5">
             <p class="text-[10px] text-slate-500 mt-1">Solo si se logra la meta</p>
           </div>
+          <!-- [846] Base diaria por rol: la paga la ZONA, no la persona. Antes salía de un
+               "usuario genérico" (el sueldo más alto de otra persona con el mismo rol). -->
+          <div>
+            <label class="lbl">👤 Base diaria CAJERO (S/)</label>
+            <input id="zonaBaseCajero" class="inp" type="number" min="0" step="5" placeholder="50">
+            <p class="text-[10px] text-slate-500 mt-1">Lo que esta zona paga por día a cada cajero</p>
+          </div>
+          <div>
+            <label class="lbl">🛒 Base diaria VENDEDOR (S/)</label>
+            <input id="zonaBaseVendedor" class="inp" type="number" min="0" step="5" placeholder="50">
+            <p class="text-[10px] text-slate-500 mt-1">Lo que esta zona paga por día a cada vendedor</p>
+          </div>
           <div class="col-span-2">
             <label class="lbl">Meta auditorías diarias (POS)</label>
             <input id="zonaMetaAuditorias" class="inp" type="number" min="0" step="1" placeholder="30">
             <p class="text-[10px] text-slate-500 mt-1">Cantidad de productos que cada cajero/vendedor de esta zona debe auditar por día. Vacío = usa global de CONFIG_MOS.</p>
           </div>
           <div class="col-span-2">
-            <label class="lbl">📅 Vigencia de meta / comisión (desde)</label>
+            <label class="lbl">📅 Vigencia de base / meta / comisión (desde)</label>
             <input id="zonaPoliticaVigencia" class="inp" type="date">
-            <p class="text-[10px] text-slate-500 mt-1">Los cambios de <b>meta de venta</b> y <b>% de comisión</b> aplican <b>desde esta fecha hacia adelante</b>. Los días anteriores conservan el valor que regía entonces (<b>no retroactivo</b>). Podés fijar una fecha anterior si querés que aplique retroactivo a propósito. Default: hoy. <span class="text-slate-600">(La meta de auditorías usa el valor global de CONFIG_MOS.)</span></p>
+            <p class="text-[10px] text-slate-500 mt-1">Los cambios de <b>base diaria</b>, <b>meta de venta</b> y <b>% de comisión</b> aplican <b>desde esta fecha hacia adelante</b>. Los días anteriores conservan el valor que regía entonces (<b>no retroactivo</b>). Podés fijar una fecha anterior si querés que aplique retroactivo a propósito. Default: hoy. <span class="text-slate-600">(La meta de auditorías usa el valor global de CONFIG_MOS.)</span></p>
           </div>
           <div class="col-span-2 text-[11px] text-slate-400 italic p-2 rounded" style="background:rgba(34,197,94,.05);border:1px dashed rgba(34,197,94,.3)">
             ⓘ Estos campos aplican a la operación POS (cajeros y vendedores). El almacén tiene sus propias reglas (guías + envasado + auditorías generales) en la sección Operadores.
@@ -21385,7 +21397,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.845';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.846';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21664,7 +21676,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.845"></script>
+<script src="js/api.js?v=2.43.846"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -21680,7 +21692,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.845"></script>
+<script src="js/app.js?v=2.43.846"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

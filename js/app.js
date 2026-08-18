@@ -23157,10 +23157,16 @@ const MOS = (() => {
     let pol = {};
     try { pol = z.politicaJSON ? (typeof z.politicaJSON === 'string' ? JSON.parse(z.politicaJSON) : z.politicaJSON) : {}; } catch (_) {}
     const meta = parseFloat(pol.metaDiaria), pct = parseFloat(pol.comisionExcedentePct), aud = parseFloat(pol.metaAuditorias);
-    const mkz = (icon, val, lbl, unidad) => `<span class="pchip" style="cursor:pointer" onclick="MOS.abrirModalZona('${z.idZona}')" title="Editar en la zona"><span>${icon}</span><div><div class="pv">${val}</div><div class="pl">${lbl}${unidad ? ` <span class="pu">${unidad}</span>` : ''}</div></div></span>`;
+    // [846] La base diaria por rol la paga LA ZONA. Antes salía de un "usuario genérico" (el sueldo
+    // más alto de cualquier otra persona con el mismo rol), un solo número para las dos zonas.
+    const bCaj = parseFloat(pol.baseCajero), bVen = parseFloat(pol.baseVendedor);
+    const mkz = (icon, val, lbl, unidad, tip) => `<span class="pchip" style="cursor:pointer" onclick="MOS.abrirModalZona('${z.idZona}')" title="${_escapeHtml(tip || 'Editar en la zona')}"><span>${icon}</span><div><div class="pv">${val}</div><div class="pl">${lbl}${unidad ? ` <span class="pu">${unidad}</span>` : ''}</div></div></span>`;
+    const tipBase = r => 'Base diaria que esta zona paga a cada ' + r + '. Al cambiarla, las liquidaciones PENDIENTES desde la fecha de vigencia se recalculan solas; los días ya pagados no se tocan.';
     return `<div class="srow"><span class="slab">🎯 Política</span>
       ${mkz('💰', (!isNaN(meta) && meta > 0) ? 'S/' + meta.toFixed(0) : '—', 'Meta', '/día')}
       ${mkz('🎯', (!isNaN(pct) && pct >= 0) ? pct + '%' : '—', 'Comisión', '')}
+      ${mkz('👤', (!isNaN(bCaj) && bCaj >= 0) ? 'S/' + _money(bCaj).toFixed(0) : '—', 'Base cajero', '/día', tipBase('cajero'))}
+      ${mkz('🛒', (!isNaN(bVen) && bVen >= 0) ? 'S/' + _money(bVen).toFixed(0) : '—', 'Base vendedor', '/día', tipBase('vendedor'))}
       ${mkz('📋', (!isNaN(aud) && aud > 0) ? String(aud) : '—', 'Auditorías', '/día')}
       ${horChip}</div>`;
   }
@@ -23892,7 +23898,7 @@ const MOS = (() => {
   }
 
   function abrirModalZona(id) {
-    ['Id','Nombre','Direccion','Responsable','Desc','MetaDiaria','ComisionPct','MetaAuditorias'].forEach(f => {
+    ['Id','Nombre','Direccion','Responsable','Desc','MetaDiaria','ComisionPct','MetaAuditorias','BaseCajero','BaseVendedor'].forEach(f => {
       const el = $('zona' + f); if (el) el.value = '';
     });
     const estadoWrap = $('zonaEstadoWrap');
@@ -23916,6 +23922,9 @@ const MOS = (() => {
         if (pol.metaDiaria != null)            $('zonaMetaDiaria').value      = String(pol.metaDiaria);
         if (pol.comisionExcedentePct != null)  $('zonaComisionPct').value     = String(pol.comisionExcedentePct);
         if (pol.metaAuditorias != null)        $('zonaMetaAuditorias').value  = String(pol.metaAuditorias);
+        // [846] base diaria por rol de la zona
+        if (pol.baseCajero != null   && $('zonaBaseCajero'))   $('zonaBaseCajero').value   = String(pol.baseCajero);
+        if (pol.baseVendedor != null && $('zonaBaseVendedor')) $('zonaBaseVendedor').value = String(pol.baseVendedor);
       } catch(_){}
       if (tg) tg.checked = String(z.estado) === '1' || z.estado === 1 || z.estado === true;
       if (estadoWrap) estadoWrap.classList.remove('hidden');
@@ -23982,10 +23991,16 @@ const MOS = (() => {
     const metaRaw    = parseFloat($('zonaMetaDiaria')?.value);
     const pctRaw     = parseFloat($('zonaComisionPct')?.value);
     const metaAudRaw = parseFloat($('zonaMetaAuditorias')?.value);
+    // [846] base diaria por rol — viaja en la MISMA política versionada que meta y comisión, así
+    // que hereda su vigencia por fecha y el recálculo automático de los días PENDIENTES.
+    const bCajRaw    = parseFloat($('zonaBaseCajero')?.value);
+    const bVenRaw    = parseFloat($('zonaBaseVendedor')?.value);
     const politica = {};
     if (!isNaN(metaRaw)    && metaRaw    >= 0)  politica.metaDiaria            = metaRaw;
     if (!isNaN(pctRaw)     && pctRaw     >= 0)  politica.comisionExcedentePct  = pctRaw;
     if (!isNaN(metaAudRaw) && metaAudRaw >= 0)  politica.metaAuditorias        = metaAudRaw;
+    if (!isNaN(bCajRaw)    && bCajRaw    >= 0)  politica.baseCajero            = bCajRaw;
+    if (!isNaN(bVenRaw)    && bVenRaw    >= 0)  politica.baseVendedor          = bVenRaw;
     const politicaJSON = Object.keys(politica).length ? JSON.stringify(politica) : '';
 
     const params = {
@@ -25137,6 +25152,9 @@ const MOS = (() => {
       const hasMeta = !isNaN(meta) && meta > 0;
       const hasPct  = !isNaN(pct)  && pct  >= 0;
       const hasAud  = !isNaN(metaAud) && metaAud > 0;
+      // [846] base diaria por rol que paga la zona
+      const bCaj = parseFloat(pol.baseCajero), bVen = parseFloat(pol.baseVendedor);
+      const hasBase = !isNaN(bCaj) && bCaj >= 0 && !isNaN(bVen) && bVen >= 0;
       const completa = hasMeta && hasPct;
       const idAttr = String(z.idZona).replace(/'/g, '&#39;');
       return `<div class="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all hover:scale-[1.01]"
@@ -25157,6 +25175,13 @@ const MOS = (() => {
             <span class="${hasAud ? 'text-sky-300' : 'text-slate-500'}">
               <span class="opacity-70">Auditorías:</span>
               <span class="font-bold">${hasAud ? metaAud.toFixed(0) + '/día' : 'global'}</span>
+            </span>
+            <span class="${hasBase ? 'text-violet-300' : 'text-slate-500'}"
+                  title="Base diaria que esta zona paga a cada persona según su rol">
+              <span class="opacity-70">Base:</span>
+              <span class="font-bold">${hasBase
+                ? 'cajero S/ ' + _money(bCaj).toFixed(0) + ' · vendedor S/ ' + _money(bVen).toFixed(0)
+                : 'global'}</span>
             </span>
           </div>
         </div>
