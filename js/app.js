@@ -29322,6 +29322,165 @@ const MOS = (() => {
 
   // Abre el detalle de una carta específica — busca por idVenta en todos los grupos
   // (la mesa ahora muestra cartas de varias fechas, no solo del día activo).
+  // ══════════════════════════════════════════════════════════════════════
+  // [848] CARGAR UN CRÉDITO A UN TRABAJADOR (rescate desde MOS)
+  //
+  // El camino normal es el POS: al dar el crédito, el cajero elige de una lista a quién de los
+  // que trabajan HOY se le da. Esto es para lo que se escapó — un ticket que quedó sin dueño,
+  // típicamente cargado a "VARIOS".
+  //
+  // El vínculo apunta a un TURNO (persona + día), no a un nombre. Un nombre se repite: la otra
+  // semana puede entrar otro Marcelo y sería, literalmente, la misma identidad. Un turno ya
+  // ocurrido es único para siempre. Por eso solo se ofrecen los turnos DEL MISMO DÍA del ticket:
+  // se le carga a quien vino a trabajar ese día, no se arrastra al siguiente.
+  // ══════════════════════════════════════════════════════════════════════
+  function _cjTrabajadorBloqueHTML(t) {
+    const tr = t && t.trabajador;
+    if (tr && tr.nombre) {
+      const yaDesc = String(tr.estado || '') === 'DESCONTADO';
+      return `<div class="cj-det-asignado-banner" style="background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.45);color:#7dd3fc">
+        👤 ${yaDesc ? 'Descontado a' : 'Se le descuenta a'} <strong>${_esc(tr.nombre)}</strong>
+        ${tr.fechaDia ? ' · liquidación del ' + _esc(tr.fechaDia) : ''}
+        ${yaDesc ? '' : `<button type="button" class="cj-det-tk-quitar" onclick="MOS.cjTrabajadorQuitar('${_esc(String(t.idVenta))}')">quitar</button>`}
+      </div>`;
+    }
+    if (t && t.estadoCobro && t.estadoCobro !== 'VIVO') return '';
+    return `<button type="button" class="cj-det-tk-btn" onclick="MOS.cjTrabajadorAbrir('${_esc(String(t.idVenta))}')">
+      👤 Cargar a un trabajador de ese día</button>`;
+  }
+
+  async function cjTrabajadorAbrir(idVenta) {
+    const t = _cjBuscarTicket(idVenta);
+    if (!t) { toast('No encontré ese ticket', 'warn'); return; }
+    const fecha = String(t.fechaISO || '').slice(0, 10);
+    _cjInyectarCSSTrabajador();
+    const prev = document.getElementById('cjTkOvl'); if (prev) prev.remove();
+    const ovl = document.createElement('div');
+    ovl.id = 'cjTkOvl'; ovl.className = 'cjtk-back';
+    ovl.onpointerdown = e => { if (e.target === ovl) MOS.cjTrabajadorCerrar(); };
+    ovl.innerHTML = '<div class="cjtk-card" role="dialog" aria-label="Elegir trabajador">' +
+      '<div class="cjtk-head"><div><b>👤 ¿A quién se le carga?</b>' +
+        '<span>' + _escapeHtml(String(t.correlativo || '')) + ' · S/ ' + _money(t.total).toFixed(2) +
+        ' · turnos del ' + _escapeHtml(fecha) + '</span></div>' +
+        '<button class="cjtk-x" onclick="MOS.cjTrabajadorCerrar()" aria-label="Cerrar">✕</button></div>' +
+      '<div class="cjtk-body"><div class="cjtk-load">◍ buscando quién trabajó ese día…</div></div></div>';
+    document.body.appendChild(ovl);
+    requestAnimationFrame(() => ovl.classList.add('in'));
+
+    let turnos = [];
+    try {
+      const r = await API.post('turnosDelDia', { fecha });
+      turnos = ((r && (r.data || r)) || {}).turnos || [];
+    } catch (e) {
+      const b = ovl.querySelector('.cjtk-body');
+      if (b) b.innerHTML = '<div class="cjtk-load">No pude leer los turnos: ' + _escapeHtml(e.message || String(e)) + '</div>';
+      return;
+    }
+    const body = ovl.querySelector('.cjtk-body'); if (!body) return;
+    if (!turnos.length) {
+      body.innerHTML = '<div class="cjtk-load">Ese día no quedó ningún turno abierto al que cargarle el consumo.<br>' +
+        '<small>Los turnos ya pagados o vetados tienen el monto sellado.</small></div>';
+      return;
+    }
+    body.innerHTML = turnos.map(x =>
+      '<button type="button" class="cjtk-row" onclick="MOS.cjTrabajadorElegir(\'' + _esc(String(idVenta)) + '\',\'' +
+        _esc(String(x.idDia)) + '\')">' +
+        '<span class="cjtk-ini">' + _escapeHtml((String(x.nombre || '?').trim()[0] || '?').toUpperCase()) + '</span>' +
+        '<span class="cjtk-txt"><b>' + _escapeHtml(String(x.nombre || '')) + '</b>' +
+          '<i>' + _escapeHtml(String(x.rol || '')) + (x.zona ? ' · ' + _escapeHtml(String(x.zona)) : '') +
+          (x.horaIngreso ? ' · desde ' + _escapeHtml(String(x.horaIngreso)) : '') + '</i></span>' +
+        (x.yaAsignado > 0 ? '<span class="cjtk-ya" title="Ya consumió ese día">S/ ' + _money(x.yaAsignado).toFixed(2) + '</span>' : '') +
+      '</button>').join('');
+  }
+
+  function _cjBuscarTicket(idVenta) {
+    const idV = String(idVenta);
+    for (const g of (_cjCreditosState.todosLosGrupos || [])) {
+      const f = (g.tickets || []).find(x => String(x.idVenta) === idV);
+      if (f) return f;
+    }
+    return (_cjCreditosState.ticketsActivos || []).find(x => String(x.idVenta) === idV) || null;
+  }
+
+  async function cjTrabajadorElegir(idVenta, idDia) {
+    const t = _cjBuscarTicket(idVenta);
+    try { _finBeep?.('click'); } catch(_){}
+    try {
+      const r = await API.post('creditoAsignar', { idVenta, idDia, usuario: S.session?.nombre || '' });
+      const d = r && (r.data || r);
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'no se pudo asignar');
+      // optimista: el ticket en memoria ya sabe de quién es
+      if (t) t.trabajador = { nombre: (d && d.nombre) || '', idDia, estado: 'ASIGNADO', fechaDia: String(t.fechaISO || '').slice(0, 10) };
+      toast('👤 Se le descuenta a ' + ((d && d.nombre) || 'ese turno'), 'ok', 3500);
+      cjTrabajadorCerrar();
+      if (t) cjAbrirDetalleCarta(idVenta);
+      _cjCargarCreditosPendientes();
+    } catch (e) {
+      toast('No se pudo cargar: ' + (e.message || e), 'error', 5000);
+    }
+  }
+
+  async function cjTrabajadorQuitar(idVenta) {
+    const t = _cjBuscarTicket(idVenta);
+    try {
+      const r = await API.post('creditoDesasignar', { idVenta });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'no se pudo quitar');
+      if (t) t.trabajador = null;
+      toast('Quitado — el ticket vuelve a quedar sin dueño', 'ok');
+      if (t) cjAbrirDetalleCarta(idVenta);
+      _cjCargarCreditosPendientes();
+    } catch (e) {
+      toast('No se pudo quitar: ' + (e.message || e), 'error', 5000);
+    }
+  }
+
+  function cjTrabajadorCerrar() {
+    const o = document.getElementById('cjTkOvl'); if (!o) return;
+    o.classList.remove('in');
+    setTimeout(() => { try { o.remove(); } catch(_){} }, 180);
+  }
+
+  function _cjInyectarCSSTrabajador() {
+    if (document.getElementById('cjTkCSS')) return;
+    const st = document.createElement('style'); st.id = 'cjTkCSS';
+    st.textContent =
+      '.cj-det-tk-btn{display:block;width:100%;margin-top:11px;padding:11px 12px;border-radius:12px;' +
+        'border:1px dashed rgba(56,189,248,.45);background:rgba(56,189,248,.08);color:#7dd3fc;' +
+        'font-size:12px;font-weight:800;cursor:pointer;transition:.15s}' +
+      '.cj-det-tk-btn:hover{background:rgba(56,189,248,.18);color:#e0f2fe}' +
+      '.cj-det-tk-quitar{margin-left:8px;font-size:10px;font-weight:800;color:#93a4c2;background:transparent;' +
+        'border:1px solid #33415a;border-radius:7px;padding:2px 7px;cursor:pointer}' +
+      '.cj-det-tk-quitar:hover{color:#f0a6a6;border-color:rgba(248,113,113,.5)}' +
+      '.cjtk-back{position:fixed;inset:0;z-index:100095;display:flex;align-items:center;justify-content:center;' +
+        'padding:16px;background:rgba(3,7,15,.7);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);opacity:0;transition:opacity .2s}' +
+      '.cjtk-back.in{opacity:1}' +
+      '.cjtk-card{width:min(460px,100%);max-height:82vh;display:flex;flex-direction:column;' +
+        'background:linear-gradient(180deg,#111d31,#0a1120);border:1px solid #26344c;border-radius:16px;' +
+        'box-shadow:0 26px 70px rgba(0,0,0,.66);overflow:hidden;transform:translateY(14px) scale(.98);opacity:0;' +
+        'transition:transform .25s cubic-bezier(.22,1,.36,1),opacity .2s}' +
+      '.cjtk-back.in .cjtk-card{transform:none;opacity:1}' +
+      '.cjtk-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;' +
+        'border-bottom:1px solid #1a2740;flex:none}' +
+      '.cjtk-head b{display:block;font-size:14px;color:#e2e8f0}' +
+      '.cjtk-head span{display:block;font-size:10.5px;color:#7488a6;margin-top:2px}' +
+      '.cjtk-x{flex:none;width:38px;height:38px;border-radius:10px;border:1px solid #26344c;background:#0c1626;color:#8296b5;cursor:pointer}' +
+      '.cjtk-body{flex:1;overflow:auto;padding:11px 13px;display:flex;flex-direction:column;gap:7px;-webkit-overflow-scrolling:touch}' +
+      '.cjtk-load{font-size:12px;color:#7488a6;text-align:center;padding:18px 6px;line-height:1.6}' +
+      '.cjtk-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 11px;border-radius:12px;' +
+        'border:1px solid #223049;background:#0c1626;cursor:pointer;transition:.15s;min-height:52px}' +
+      '.cjtk-row:hover{border-color:rgba(56,189,248,.5);background:#132238}' +
+      '.cjtk-ini{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800;' +
+        'font-size:14px;color:#04121f;background:linear-gradient(135deg,#7dd3fc,#22d3ee)}' +
+      '.cjtk-txt{flex:1;min-width:0;display:flex;flex-direction:column}' +
+      '.cjtk-txt b{font-size:12.5px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.cjtk-txt i{font-style:normal;font-size:10px;color:#7488a6;margin-top:1px}' +
+      '.cjtk-ya{flex:none;font-size:10px;font-weight:800;color:#fcd34d;background:rgba(251,191,36,.12);' +
+        'border:1px solid rgba(251,191,36,.32);border-radius:7px;padding:2px 6px}' +
+      '@media(max-width:560px){.cjtk-back{padding:0;align-items:flex-end}' +
+        '.cjtk-card{width:100%;max-height:88vh;border-radius:18px 18px 0 0}}';
+    document.head.appendChild(st);
+  }
+
   function cjAbrirDetalleCarta(idVentaOrIdx) {
     let t = null;
     // Compatibilidad: si recibe número, asume idx del ticketsActivos viejo
@@ -29389,6 +29548,7 @@ const MOS = (() => {
           ✈ Ya asignado a <strong>${_esc(t.asignado.vendedorDest)}</strong>
           (${_esc(t.asignado.cajaDestino)}) — esperando confirmación
         </div>` : ''}
+        ${_cjTrabajadorBloqueHTML(t)}
       `;
     }
     // El botón FAB se oculta si ya está asignado — o si el ticket ya fue saldado [610]
@@ -52888,6 +53048,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     dispToggleFijado,
     curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
     _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, guiaRotarFoto, finProdDesglose,
+    cjTrabajadorAbrir, cjTrabajadorElegir, cjTrabajadorQuitar, cjTrabajadorCerrar,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de

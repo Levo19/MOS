@@ -2644,6 +2644,26 @@ const API = (() => {
     }
     // [822] Los tickets detrás de un número: todos los del día con ese SKU, o filtrados por
     // presentación (clave) o por tramo (segmentoId). Devuelve el ticket completo. PURA.
+    // [848] Turnos abiertos de un día (para elegir a quién se le carga un consumo) y la
+    // asignación en sí. El vínculo apunta a un TURNO —persona + día—, no a un nombre: el
+    // nombre se repite (mañana puede entrar otro Marcelo), el turno es único para siempre.
+    if (action === 'turnosDelDia') {
+      const r = await _sbRpcMOS('turnos_del_dia', { p: { fecha: p.fecha || '' } }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
+    if (action === 'creditoAsignar') {
+      const r = await _sbRpcMOS('credito_asignar', { p: {
+        idVenta: p.idVenta, idDia: p.idDia, usuario: p.usuario || ''
+      } }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
+    if (action === 'creditoDesasignar') {
+      const r = await _sbRpcMOS('credito_desasignar', { p: { idVenta: p.idVenta } }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
     if (action === 'finanzasDiaSkuTickets') {
       const r = await _sbRpcMOS('finanzas_dia_sku_tickets', { p: {
         fecha: p.fecha || '', skuBase: p.skuBase, clave: p.clave || '', segmentoId: p.segmentoId || ''
@@ -2995,6 +3015,9 @@ const API = (() => {
     historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
     finanzasDiaSku:              () => true,
     finanzasDiaSkuTramos:        () => true,
+    turnosDelDia:                () => true,   // mos.turnos_del_dia (848) · turnos abiertos del día · PURA
+    creditoAsignar:              () => true,   // mos.credito_asignar (848) · carga un crédito a un turno
+    creditoDesasignar:           () => true,   // mos.credito_desasignar (848)
     finanzasDiaSkuTickets:       () => true,   // mos.finanzas_dia_sku_tickets (822) · trazabilidad · PURA   // mos.finanzas_dia_sku_tramos (820) · margen por tramo · PURA   // mos.finanzas_dia_sku (819) · desglose por presentación · PURA
     guiaRotarFoto:               () => true,   // mos.guia_rotar_foto (814) · giro cosmético persistente · PURA
     dispositivoFijar:            () => true,   // mos.dispositivo_fijar (807) · exime de la suspensión · PURA
@@ -3052,7 +3075,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.
