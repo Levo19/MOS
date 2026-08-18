@@ -672,8 +672,11 @@
         .then(_libera, _libera);
     });
   }
+  // [849] El BUZÓN es el camino remoto: quien aprueba acá no está delante del equipo.
+  // Se marca `origen: 'PANEL'` para que el aviso diga "aprobado desde el panel" y no se
+  // confunda con una reactivación in situ.
   function _aprobar(id) {
-    return _deviceAuthWrite('aprobar_dispositivo', {}, id, '✅ Dispositivo aprobado', 'Aprobar dispositivo pendiente');
+    return _deviceAuthWrite('aprobar_dispositivo', { origen: 'PANEL' }, id, '✅ Dispositivo aprobado', 'Aprobar dispositivo pendiente');
   }
   function _renombrar(id) {
     _modalPrompt({
@@ -683,7 +686,7 @@
       emoji: '✏'
     }).then(function(nombre) {
       if (!nombre || !nombre.trim()) return;
-      _deviceAuthWrite('aprobar_dispositivo', { nombre_equipo: nombre }, id,
+      _deviceAuthWrite('aprobar_dispositivo', { nombre_equipo: nombre, origen: 'PANEL' }, id,
         '✅ Dispositivo aprobado como "' + _esc(nombre) + '"', 'Aprobar y renombrar');
     });
   }
@@ -699,7 +702,7 @@
     });
   }
   function _reactivar(id) {
-    _deviceAuthWrite('aprobar_dispositivo', { es_reactivar: true }, id, '✅ Dispositivo reactivado', 'Reactivar dispositivo suspendido');
+    _deviceAuthWrite('aprobar_dispositivo', { es_reactivar: true, origen: 'PANEL' }, id, '✅ Dispositivo reactivado', 'Reactivar dispositivo suspendido');
   }
 
   // ════════════════════════════════════════════════════════════
@@ -844,7 +847,8 @@
       id_dispositivo: deviceId,
       clave_admin: clave,
       app: _config.app,
-      nombre_equipo: navigator.userAgent.substring(0, 60)
+      nombre_equipo: navigator.userAgent.substring(0, 60),
+      origen: 'INSITU'   // [849] aprobación con el equipo delante
     }).then(function(r) {
       if (r && r.ok === false) { sonidos.rechazado(); _toast('❌ ' + _esc(r.error || 'Error'), { error: true }); return; }
       var d = (r && r.data) ? r.data : r;

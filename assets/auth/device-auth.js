@@ -1352,7 +1352,10 @@
         app:            _config.app,
         clave_admin:    clave,
         nombre_equipo:  nombreEquipoFinal || null,
-        es_reactivar:   !!esReactivar
+        es_reactivar:   !!esReactivar,
+        // [849] esta pantalla vive en el equipo bloqueado: quien pone la clave está parado
+        // delante. El aviso dirá "Fulano reactivó un equipo · in situ", no "piden acceso".
+        origen:         'INSITU'
       }).then(function(j) {
         var autorizado = !!(j && j.autorizado === true);
         // [CERO-GAS] La aprobación directa ESCRIBE la sombra mos.dispositivos (fuente de verdad). Sin dual-write
