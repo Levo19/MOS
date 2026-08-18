@@ -91,8 +91,17 @@ await p.evaluate(()=>{
   document.getElementById('zonaBaseVendedor').value = '62';
   document.getElementById('zonaBaseCajero').value = '58';
 });
+// [847] espiar la relectura del personal del día tras guardar
+await p.evaluate(()=>{
+  window.__gets = [];
+  const og = API.get.bind(API);
+  API.get = function (a, q) { window.__gets.push({ a, q: q || {} }); return og(a, q); };
+  const f = new Date(Date.now()-5*3600*1000).toISOString().slice(0,10);
+  localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: [{ __viejo: true }] }));
+  window.__cacheKey = 'mos_fin_resum_' + f;
+});
 await p.evaluate(()=>MOS.guardarZona());
-await p.waitForTimeout(2500);
+await p.waitForTimeout(6000);
 const env = await p.evaluate(()=>window.__zs);
 const pl = env.length ? env[env.length-1].pl : null;
 console.log('     payload: ' + JSON.stringify(pl && { idZona: pl.idZona, politicaJSON: pl.politicaJSON, vig: pl.politicaVigenteDesde }));
@@ -104,6 +113,18 @@ T('meta y comisión siguen viajando (no se pisan)', pol.metaDiaria > 0 && pol.co
   'meta=' + pol.metaDiaria + ' pct=' + pol.comisionExcedentePct);
 T('viaja la fecha de vigencia', /^\d{4}-\d{2}-\d{2}$/.test(String(pl && pl.politicaVigenteDesde || '')),
   String(pl && pl.politicaVigenteDesde));
+
+// ── tras guardar, el panel de Personal se relee (no se queda con el pago viejo) ──
+console.log('\n[847] guardar la política relee el personal del día');
+const gets = await p.evaluate(()=>window.__gets.filter(g=>g.a==='getPersonalDiaFast'));
+T('se pidió getPersonalDiaFast tras guardar', gets.length > 0, gets.length + ' llamada(s)');
+T('se pidió SALTANDO el caché (_refresh)', gets.some(g=>String(g.q._refresh)==='true'),
+  JSON.stringify(gets.map(g=>g.q)));
+const cacheViejo = await p.evaluate(()=>{
+  try { const r = JSON.parse(localStorage.getItem(window.__cacheKey)||'{}');
+        return !!(r.data && r.data[0] && r.data[0].__viejo); } catch(_) { return false; }
+});
+T('el caché viejo del día quedó descartado', !cacheViejo);
 
 // ── zona nueva: los campos no arrastran lo de la anterior ──
 console.log('\n[higiene] abrir "Nueva zona" no arrastra la base de la anterior');

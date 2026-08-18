@@ -24034,6 +24034,10 @@ const MOS = (() => {
       }
       toast('Zona guardada ✓', 'ok');
       renderInfra();
+      // [847] Guardar la política de una zona hace que el SERVIDOR recalcule las liquidaciones
+      // PENDIENTES desde la vigencia (SQL 731 para meta/comisión, 846 para la base). El panel de
+      // Personal vive de un caché local, así que hay que releerlo o queda mostrando el pago viejo.
+      if (idEdit && politicaJSON) _finRefrescarPersonalDia().catch(() => {});
     } catch(e) {
       cfgData.zonas = backup;
       renderInfra();
@@ -40892,6 +40896,28 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
          + '<span class="fin-zgrp-n" title="personas en esta zona">' + nPersonas + '</span>'
          + reglas + venta
          + '</div>';
+  }
+
+  // [847] Releer el personal del día desde el servidor, saltándose el caché local.
+  // Hace falta cada vez que el SERVIDOR recalcula por su cuenta: cambiar la base, la meta o la
+  // comisión de una zona dispara el recompute de las liquidaciones PENDIENTES (SQL 731/846), y sin
+  // esto la card seguía mostrando el pago viejo aunque en la base ya estuviera el nuevo — justo la
+  // incoherencia que vio el dueño: "puse 60 al cajero de Zona 1, la card dice 50 y Auditar dice 60".
+  async function _finRefrescarPersonalDia(fecha) {
+    const cont = document.getElementById('finPersonalList');
+    const f = fecha || (cont && cont.dataset.fecha) ||
+              new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+    try { localStorage.removeItem('mos_fin_resum_' + f); } catch {}
+    try { localStorage.removeItem('mos_evals_' + f); } catch {}
+    let arr = [];
+    try {
+      const fresh = await API.get('getPersonalDiaFast', { fecha: f, _refresh: 'true' });
+      arr = Array.isArray(fresh) ? fresh : ((fresh && fresh.data) || []);
+    } catch (_) { return; }
+    if (!arr.length) return;
+    try { localStorage.setItem('mos_fin_resum_' + f, JSON.stringify({ ts: Date.now(), data: arr })); } catch {}
+    try { _evalState.resumenes = arr; } catch (_) {}
+    if (cont && _finPL) { cont.dataset._lastHtml = ''; _finRenderPersonal(_finPL, f); }
   }
 
   function _finRenderPersonal(pl, fecha) {
