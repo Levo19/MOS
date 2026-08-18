@@ -123,8 +123,12 @@ Deno.serve(async (req: Request) => {
       }),
     });
     if (!ar.ok) {
+      // [853] el CUERPO del error, no solo el código: sin él, "saldo agotado" quedaba como
+      // "falla desconocida" y el panel no podía decirle al dueño qué hacer.
+      const _errTxt = await ar.text().catch(() => '');
       _iaLog({ app: 'cron', funcion: 'ocrGuia', modelo: 'claude-haiku-4-5-20251001', ok: false,
-               ms: Date.now() - _t0ia, error: ('anthropic ' + ar.status).slice(0, 300), usage: {},
+               ms: Date.now() - _t0ia, usage: {},
+               error: ('anthropic ' + ar.status + ': ' + _errTxt).slice(0, 300),
                meta: { idGuia: String(idGuia || '') } });
       return json({ ok: false, error: 'anthropic ' + ar.status, transitorio: true }, 200);
     }

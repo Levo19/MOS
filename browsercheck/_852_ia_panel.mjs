@@ -35,6 +35,24 @@ T('deja elegir el rango de días', v.rangos === 3);
 T('publica el tarifario real de Anthropic', v.tarifas >= 7, v.tarifas+' modelos');
 T('dice dónde se usa IA en el ecosistema', v.pie);
 T('es honesto sobre desde cuándo hay registro', v.registro);
+// [853] el ESTADO DE CRÉDITOS tiene que ser lo primero de la pantalla
+const est = await p.evaluate(()=>{
+  const e=document.querySelector('.ia-estado');
+  if(!e) return null;
+  const wrap=document.querySelector('.ia-wrap');
+  return { primero: wrap && wrap.firstElementChild === e,
+           txt: e.textContent.replace(/\s+/g,' ').trim().slice(0,150),
+           grave: e.classList.contains('is-grave'), ok: e.classList.contains('is-ok'),
+           cta: !!e.querySelector('.ia-est-btn'),
+           href: (e.querySelector('.ia-est-btn')||{}).href||'' };
+});
+console.log('     estado: '+JSON.stringify(est));
+T('el estado de créditos es lo primero que se ve', !!est && est.primero);
+T('dice si hay que recargar y da el enlace', !!est && est.cta && /billing/.test(est.href), est?est.href:'');
+T('el semáforo distingue caída de operativa', !!est && (est.grave || est.ok || /fallando|Sin datos/.test(est.txt)));
+T('el panel explica que Anthropic no publica el saldo',
+  await p.evaluate(()=>/no publica el crédito restante/.test(document.getElementById('iaBody').textContent)));
+
 // [852b] si la IA está fallando, tiene que decirlo con el motivo traducido
 const al = await p.evaluate(()=>{const e=document.querySelector('.ia-alerta');
   return e?{txt:e.textContent.replace(/\s+/g,' ').trim().slice(0,120), grave:e.classList.contains('is-grave')}:null;});

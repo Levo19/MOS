@@ -42595,6 +42595,42 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '<td class="ia-num">$' + (+x.usdOut).toFixed(2) + '</td>' +
       '<td class="ia-num">$' + (+(x.usdCacheR || 0)).toFixed(2) + '</td></tr>').join('');
 
+    // [853] ESTADO DE CRÉDITOS — lo primero de la pantalla.
+    // Anthropic NO publica el saldo por API (su Admin API solo da costo histórico), así que esto
+    // no se estima: se lee de lo que la API responde de verdad. Cuando el crédito se acaba, cada
+    // llamada vuelve con "credit balance is too low" — el momento exacto en que hay que recargar.
+    const E = d.estado || {};
+    const _iaEstadoHTML = () => {
+      if (!E.estado || E.estado === 'SIN_DATOS') {
+        return '<div class="ia-estado is-gris"><span class="ia-est-luz"></span>' +
+          '<div><b>Sin datos todavía</b><span>El estado aparece con la primera llamada a la IA.</span></div></div>';
+      }
+      if (E.estado === 'OPERATIVA') {
+        return '<div class="ia-estado is-ok"><span class="ia-est-luz"></span>' +
+          '<div><b>IA operativa</b>' +
+          '<span>Última llamada ' + _escapeHtml(String(E.ultimaLlamada || '')) +
+          (+E.gastoDesdeRecarga > 0 ? ' · llevás <b>' + _iaUsd(E.gastoDesdeRecarga) + '</b> gastados desde la última recarga' : '') +
+          '</span></div>' +
+          '<a class="ia-est-btn" href="https://platform.claude.com/settings/billing" target="_blank" rel="noopener">Ver saldo ↗</a></div>';
+      }
+      const sinSaldo = E.motivo === 'SIN_SALDO';
+      const tit = sinSaldo ? 'La IA está SIN SALDO' :
+                  (E.motivo === 'API_KEY' ? 'La clave de API fue rechazada' : 'La IA está fallando');
+      const sub = sinSaldo
+        ? 'Anthropic rechaza cada llamada. El OCR de guías, las listas del almacén, las descripciones y los sustitutos están <b>apagados</b>. Hay que recargar créditos.'
+        : (E.motivo === 'API_KEY'
+            ? 'Hay que renovar el secret <code>ANTHROPIC_API_KEY</code>.'
+            : 'Mirá el detalle para entender qué está pasando.');
+      return '<div class="ia-estado is-mal' + (sinSaldo ? ' is-grave' : '') + '">' +
+        '<span class="ia-est-luz"></span>' +
+        '<div><b>' + _escapeHtml(tit) + '</b><span>' + sub + '</span>' +
+        '<i>Sin funcionar desde las ' + _escapeHtml(String(E.caidaDesde || '?')) +
+          (E.horasSinIa != null ? ' · ' + E.horasSinIa + ' h' : '') +
+          ' · ' + (E.fallos || 0) + ' llamada' + ((E.fallos || 0) === 1 ? '' : 's') + ' rechazada' + ((E.fallos || 0) === 1 ? '' : 's') + '</i></div>' +
+        (sinSaldo ? '<a class="ia-est-btn is-cta" href="https://platform.claude.com/settings/billing" target="_blank" rel="noopener">Recargar ↗</a>' : '') +
+      '</div>';
+    };
+
     // [852b] Si la IA está fallando, el panel lo dice en la cara y con el motivo traducido.
     // Fue lo primero que apareció al encender la contabilidad: el saldo de Anthropic agotado,
     // con los tres crones disparando cada 10 minutos contra una cuenta sin crédito.
@@ -42628,6 +42664,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
     return '' +
       '<div class="ia-wrap">' +
+        _iaEstadoHTML() +
         '<div class="ia-hero">' +
           '<div class="ia-hero-main">' +
             '<span class="ia-hero-lbl">Gasto de este mes</span>' +
@@ -42643,7 +42680,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             (t.errores > 0 ? '<div class="ia-kpi is-err"><i>fallidas</i><b>' + t.errores + '</b></div>' : '') +
           '</div>' +
         '</div>' +
-        avisoFalla +
+        ((E.estado && E.estado !== 'OPERATIVA' && F && F.motivo === E.motivo) ? '' : avisoFalla) +
         avisoSinTarifa +
         '<div class="ia-rango">' +
           [7, 30, 90].map(n => '<button type="button" class="ia-rb' + (_iaDias === n ? ' is-on' : '') +
@@ -42671,7 +42708,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
         '<div class="ia-pie">🧾 <b>Dónde se usa IA hoy:</b> lista sombra de almacén (foto, PDF y texto), ' +
           'OCR de comprobantes de proveedor, descripción automática de productos, sugerencia de sustitutos ' +
-          'y el chat de almacén. Los tres crones corren cada 10 minutos.<br>' + desdeCuando + '</div>' +
+          'y el chat de almacén. Los tres crones corren cada 10 minutos.<br>' + desdeCuando +
+          '<br><b>Sobre el saldo:</b> Anthropic no publica el crédito restante por API — su Admin API solo da costo histórico. ' +
+          'Por eso el estado de arriba no es una estimación: sale de lo que la API responde de verdad en cada llamada, ' +
+          'que es exactamente el momento en que hay que recargar.</div>' +
       '</div>';
   }
 
@@ -42783,6 +42823,30 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.ia-num{text-align:right;font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}' +
       '.ia-nota{font-size:10.5px;color:#5f7192;line-height:1.6;margin-top:9px}' +
       '.ia-nota code,.ia-pie code,.ia-warn code{font-family:ui-monospace,monospace;color:#93a4c2;background:#0c1626;padding:1px 5px;border-radius:5px}' +
+      // estado de créditos — el semáforo de arriba de todo
+      '.ia-estado{display:flex;align-items:center;gap:13px;padding:14px 16px;border-radius:16px;border:1px solid #223049;background:#0b1424}' +
+      '.ia-estado b{display:block;font-size:14px;color:#e2e8f0}' +
+      '.ia-estado>div{flex:1;min-width:0}' +
+      '.ia-estado span.ia-est-luz{flex:none;width:13px;height:13px;border-radius:50%;background:#64748b;box-shadow:0 0 0 4px rgba(100,116,139,.15)}' +
+      '.ia-estado div>span{display:block;font-size:11.5px;line-height:1.6;color:#93a4c2;margin-top:3px}' +
+      '.ia-estado div>span b{display:inline;color:#e2e8f0}' +
+      '.ia-estado i{display:block;font-style:normal;font-size:10px;color:#7488a6;margin-top:5px}' +
+      '.ia-estado.is-ok{border-color:rgba(52,211,153,.4);background:rgba(16,185,129,.07)}' +
+      '.ia-estado.is-ok .ia-est-luz{background:#34d399;box-shadow:0 0 0 4px rgba(52,211,153,.18)}' +
+      '.ia-estado.is-ok b{color:#6ee7b7}' +
+      '.ia-estado.is-mal{border-color:rgba(251,191,36,.42);background:rgba(251,191,36,.07)}' +
+      '.ia-estado.is-mal .ia-est-luz{background:#fbbf24;box-shadow:0 0 0 4px rgba(251,191,36,.18)}' +
+      '.ia-estado.is-mal b{color:#fcd34d}' +
+      '.ia-estado.is-grave{border-color:rgba(248,113,113,.5);background:rgba(248,113,113,.09)}' +
+      '.ia-estado.is-grave b{color:#fca5a5}' +
+      '.ia-estado.is-grave .ia-est-luz{background:#ef4444;box-shadow:0 0 0 4px rgba(239,68,68,.2);animation:iaLatido 1.7s infinite}' +
+      '@keyframes iaLatido{0%,100%{box-shadow:0 0 0 4px rgba(239,68,68,.2)}50%{box-shadow:0 0 0 9px rgba(239,68,68,.05)}}' +
+      '.ia-est-btn{flex:none;padding:9px 15px;border-radius:11px;border:1px solid #26344c;background:#0c1626;' +
+        'color:#93a4c2;font-size:11.5px;font-weight:800;text-decoration:none;transition:.15s;min-height:38px;display:grid;place-items:center}' +
+      '.ia-est-btn:hover{border-color:#3b82f6;color:#c7d2fe}' +
+      '.ia-est-btn.is-cta{background:linear-gradient(135deg,#ef4444,#dc2626);border-color:transparent;color:#fff;' +
+        'box-shadow:0 3px 0 #991b1b,0 8px 18px -6px rgba(239,68,68,.6)}' +
+      '.ia-est-btn.is-cta:active{transform:translateY(2px);box-shadow:0 1px 0 #991b1b}' +
       '.ia-alerta{display:flex;align-items:flex-start;gap:12px;padding:13px 15px;border-radius:14px;' +
         'background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.35)}' +
       '.ia-alerta.is-grave{background:rgba(248,113,113,.09);border-color:rgba(248,113,113,.45)}' +
