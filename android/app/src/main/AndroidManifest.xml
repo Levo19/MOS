@@ -20,6 +20,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- para poder PEDIR que Android no lo apague; el usuario acepta o no -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- para poder ABRIR el instalador con la version nueva; Android igual pide confirmacion -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="false"
@@ -58,6 +60,17 @@
             android:name=".ColaService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- entrega el APK descargado al instalador del sistema, sin exponer nada mas -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- avisa cada 15 min que el equipo sigue capturando -->
         <receiver android:name=".LatidoReceiver" android:exported="false" />

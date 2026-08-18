@@ -62,8 +62,47 @@ class MainActivity : AppCompatActivity() {
         // perfecto en la prueba y deja de capturar a las dos horas.
         findViewById<Button>(R.id.btnBateria).setOnClickListener { pedirSinOptimizar() }
 
+        // Actualización asistida: la app se entera sola de que hay version nueva, la baja y
+        // abre el instalador. El toque final en la pantalla del sistema es obligatorio: fuera de
+        // Play Store, Android no permite instalar en silencio. Ningun truco lo evita.
+        findViewById<Button>(R.id.btnActualizar).setOnClickListener { buscarActualizacion(true) }
+
         pedirPermisoNotificaciones()
         LatidoReceiver.programar(this)
+        buscarActualizacion(false)   // aviso silencioso al abrir
+    }
+
+    private var nuevaVersion: Actualizador.Nueva? = null
+
+    private fun buscarActualizacion(manual: Boolean) {
+        if (manual) Toast.makeText(this, "Buscando…", Toast.LENGTH_SHORT).show()
+        thread {
+            val n = Actualizador.buscar(this)
+            runOnUiThread {
+                nuevaVersion = n
+                if (n == null) {
+                    if (manual) Toast.makeText(this, "Ya tenes la ultima version ✅", Toast.LENGTH_LONG).show()
+                    pintar(); return@runOnUiThread
+                }
+                pintar()
+                if (manual) descargarEInstalar(n)
+            }
+        }
+    }
+
+    private fun descargarEInstalar(n: Actualizador.Nueva) {
+        if (!Actualizador.puedeInstalar(this)) {
+            Toast.makeText(this, "Activa 'Permitir instalar apps' para este equipo", Toast.LENGTH_LONG).show()
+            Actualizador.pedirPermisoInstalar(this); return
+        }
+        Toast.makeText(this, "Descargando " + n.nombre + "…", Toast.LENGTH_LONG).show()
+        thread {
+            val apk = Actualizador.descargar(this, n)
+            runOnUiThread {
+                if (apk == null) { Toast.makeText(this, "No se pudo descargar", Toast.LENGTH_LONG).show(); return@runOnUiThread }
+                Actualizador.instalar(this, apk)
+            }
+        }
     }
 
     /** Android 13+ exige pedir esto en runtime o la notificación fija no se muestra. */
@@ -137,6 +176,9 @@ class MainActivity : AppCompatActivity() {
             appendLine("Yapes entregados: " + Prefs.total(this@MainActivity))
             appendLine("Última entrega: $cuando")
             appendLine("En cola por entregar: $pend")
+            appendLine("Version instalada: " + Actualizador.nombreActual(this@MainActivity) +
+                       " (" + Actualizador.versionActual(this@MainActivity) + ")")
+            nuevaVersion?.let { appendLine("⬆ Hay version nueva: " + it.nombre + " — toca Actualizar") }
             if (err.isNotBlank()) appendLine("Último rechazo: $err")
         }.trim()
     }

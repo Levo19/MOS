@@ -11,8 +11,11 @@ android {
         applicationId = "dev.levo.yapecaptor"
         minSdk = 24              // Android 7 — cubre los equipos viejos de las zonas
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // La version la pone el CI (numero de corrida). Con versionCode fijo, Android se niega
+        // a instalar una compilacion nueva encima de otra "de la misma version", y ademas seria
+        // imposible saber que version corre cada celular.
+        versionCode = (System.getenv("APK_VERSION_CODE") ?: "1").toInt()
+        versionName = System.getenv("APK_VERSION_NAME") ?: "1.0.0-dev"
     }
 
     // CLAVE DE FIRMA ESTABLE. Android se niega a instalar una actualización si viene firmada

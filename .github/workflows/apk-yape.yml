@@ -57,6 +57,11 @@ jobs:
           git commit -m "YapeCaptor: clave de firma estable (creada por CI, no cambiar)"
           git push
 
+      - name: Numerar la version
+        run: |
+          echo "APK_VERSION_CODE=${{ github.run_number }}" >> $GITHUB_ENV
+          echo "APK_VERSION_NAME=1.$(date +%y%m).${{ github.run_number }}" >> $GITHUB_ENV
+
       - name: Compilar el APK
         working-directory: android
         run: gradle assembleRelease --no-daemon --stacktrace
@@ -68,9 +73,26 @@ jobs:
           cp app/build/outputs/apk/release/*.apk "out/YapeCaptor-$(date +%Y%m%d-%H%M).apk"
           ls -lh out
 
-      - name: Subir el APK
+      - name: Subir el APK (artefacto)
         uses: actions/upload-artifact@v4
         with:
           name: YapeCaptor-apk
           path: android/out/*.apk
           retention-days: 90
+
+      # Ademas del artefacto (que exige estar logueado en GitHub para bajarlo), se publica como
+      # RELEASE: eso da una URL directa y publica. Es la que usa la propia app para avisar que
+      # hay version nueva y descargarla sola — sin que nadie tenga que entrar a Actions.
+      - name: Publicar la version
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: yape-v${{ github.run_number }}
+          name: YapeCaptor ${{ env.APK_VERSION_NAME }}
+          body: |
+            APK de captura de Yapes.
+            versionCode: ${{ github.run_number }} · versionName: ${{ env.APK_VERSION_NAME }}
+
+            Se instala encima de la anterior (firma estable): no hace falta desinstalar
+            ni volver a emparejar.
+          files: android/out/*.apk
+          make_latest: true

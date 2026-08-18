@@ -11,5 +11,6 @@
     <string name="h_codigo">CÓDIGO</string>
     <string name="emparejar">Emparejar</string>
     <string name="probar">Enviar una captura de prueba</string>
+    <string name="actualizar">⬆ Buscar actualización</string>
     <string name="pie">Solo lee las notificaciones de Yape de este equipo. No abre Yape, no toca el banco y no lee otras apps.</string>
 </resources>

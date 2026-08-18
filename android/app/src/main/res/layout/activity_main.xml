@@ -66,6 +66,10 @@
         android:layout_height="wrap_content" android:text="@string/probar"
         android:backgroundTint="#334155" android:textColor="#E2E8F0" android:layout_marginTop="8dp" />
 
+    <Button android:id="@+id/btnActualizar" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:text="@string/actualizar"
+        android:backgroundTint="#0EA5E9" android:textColor="#FFFFFF" android:layout_marginTop="8dp" />
+
     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
         android:text="@string/pie" android:textColor="#475569" android:textSize="11sp"
         android:layout_marginTop="22dp" />

@@ -43160,7 +43160,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           '<i>' + _escapeHtml(String(e.zona || 'todas')) + ' · ' + dice +
           (e.capturas > 0 ? ' · ' + e.capturas + ' capturas' : '') +
           (e.pendientes > 0 ? ' · ' + e.pendientes + ' en cola' : '') +
-          (e.permisoOk === false ? ' · ⚠ sin permiso de notificaciones' : '') + '</i></div></div>';
+          (e.permisoOk === false ? ' · ⚠ sin permiso de notificaciones' : '') +
+          (e.version ? ' · v' + _escapeHtml(String(e.version)) : '') +
+          (e.atrasado ? ' · <b class="yp-eq-old">⬆ hay versión más nueva</b>' : '') + '</i></div></div>';
     }).join('') + '</div>') : '';
 
     cont.innerHTML =
@@ -43207,6 +43209,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.yp-eq.is-mal{border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.07)}' +
       '.yp-eq.is-mal .yp-eq-luz{background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.2);animation:iaLatido 1.7s infinite}' +
       '.yp-eq.is-mal b{color:#fca5a5}' +
+      '.yp-eq-old{color:#7dd3fc;font-weight:800}' +
       '.yp-zonas{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px}' +
       '.yp-zona{display:flex;flex-direction:column;gap:9px;padding:14px;border-radius:14px;background:#0c1626;border:1px solid #223049}' +
       '.yp-z-n b{display:block;font-size:13.5px;color:#e2e8f0}' +

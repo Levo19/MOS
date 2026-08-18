@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solo la carpeta de caché, y solo para entregarle el APK al instalador de Android.
+     No se comparte nada más del equipo. -->
+<paths>
+    <cache-path name="descargas" path="." />
+</paths>

@@ -25,13 +25,13 @@ import kotlin.concurrent.thread
  *
  * Se usa una alarma INEXACTA a propósito: Android la agrupa con otras y la deja pasar en las
  * ventanas de mantenimiento aunque el equipo esté en reposo profundo. Pedir exactitud gastaría
- * batería para nada — que llegue a los 15 o a los 22 minutos da igual.
+ * batería para nada — que llegue a los 10 o a los 18 minutos da igual.
  */
 class LatidoReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "YapeCaptor"
-        private const val CADA_MS = 15 * 60 * 1000L
+        private const val CADA_MS = 10 * 60 * 1000L   // 10 min: alarma inexacta, no gasta bateria
         private const val ACCION = "dev.levo.yapecaptor.LATIDO"
 
         fun programar(ctx: Context) {
@@ -43,7 +43,7 @@ class LatidoReceiver : BroadcastReceiver() {
                     CADA_MS,
                     pi(ctx)
                 )
-                Log.i(TAG, "latido programado cada 15 min")
+                Log.i(TAG, "latido programado cada 10 min")
             } catch (e: Throwable) { Log.e(TAG, "no pude programar el latido", e) }
         }
 
@@ -75,6 +75,8 @@ class LatidoReceiver : BroadcastReceiver() {
                         .put("equipo", Build.MODEL ?: "")
                         .put("pendientes", Cola.tamano(ctx))
                         .put("permiso", MainActivity.permisoNotificaciones(ctx))
+                        .put("versionCode", Actualizador.versionActual(ctx))
+                        .put("versionName", Actualizador.nombreActual(ctx))
                     con.outputStream.use { it.write(JSONObject().put("p", p).toString().toByteArray(Charsets.UTF_8)) }
                     con.responseCode   // basta con que llegue
                 } catch (_: Throwable) {
