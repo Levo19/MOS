@@ -2652,15 +2652,20 @@ const API = (() => {
       if (r == null) return null;
       return r;
     }
+    // [851] asignar/desasignar mueve el pago del día de una persona → clave admin obligatoria,
+    // re-verificada en el servidor y registrada en la auditoría.
     if (action === 'creditoAsignar') {
       const r = await _sbRpcMOS('credito_asignar', { p: {
-        idVenta: p.idVenta, idDia: p.idDia, usuario: p.usuario || ''
+        idVenta: p.idVenta, idDia: p.idDia, usuario: p.usuario || '',
+        claveAdmin: p.claveAdmin || '', deviceId: _mosDeviceId() || ''
       } }, 'mos');
       if (r == null) return null;
       return r;
     }
     if (action === 'creditoDesasignar') {
-      const r = await _sbRpcMOS('credito_desasignar', { p: { idVenta: p.idVenta } }, 'mos');
+      const r = await _sbRpcMOS('credito_desasignar', { p: {
+        idVenta: p.idVenta, claveAdmin: p.claveAdmin || '', deviceId: _mosDeviceId() || ''
+      } }, 'mos');
       if (r == null) return null;
       return r;
     }

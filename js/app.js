@@ -29265,9 +29265,11 @@ const MOS = (() => {
               : '');
         return `<div class="cj-mesa-carta ${asigClass} ${cobradoClass}"
                      style="animation-delay: ${delay}ms"
+                     data-tk="${_esc(t.idVenta)}"
                      onclick="MOS.cjAbrirDetalleCarta('${_esc(t.idVenta)}')">
           ${selloCobrado}
           ${asigBadge}
+          ${_cjTkChipHTML(t)}
           <div class="cj-carta-head">
             <span class="cj-carta-cliente">${cliente}</span>
             <span class="cj-carta-monto">S/${parseFloat(t.total).toFixed(2)}</span>
@@ -29339,13 +29341,23 @@ const MOS = (() => {
   // ══════════════════════════════════════════════════════════════════════
   // [850] Lo que se ve en la carta de la MESA (sin abrirla): el botón ASIGNAR si el consumo
   // todavía no tiene dueño, o el nombre de quién lo paga si ya lo tiene.
+  // [851] El sello de asignación: ícono de usuario + nombre, arriba a la IZQUIERDA de la carta,
+  // con una ✕ encima para deshacerlo de un toque si el admin se equivocó de persona.
+  function _cjTkChipHTML(t) {
+    const tr = t && t.trabajador;
+    if (!tr || !tr.nombre) return '';
+    const yaDesc = String(tr.estado || '') === 'DESCONTADO';
+    return '<span class="cj-carta-tk-chip' + (yaDesc ? ' is-desc' : '') + '">' +
+      (yaDesc ? '' : '<button type="button" class="cj-carta-tk-x" title="Quitar la asignación"' +
+         ' onclick="event.stopPropagation();MOS.cjTrabajadorQuitar(\'' + _esc(String(t.idVenta)) + '\')">✕</button>') +
+      '<span class="cj-carta-tk-ico">👤</span><b>' + _esc(String(tr.nombre)) + '</b>' +
+      (yaDesc ? '<i>ya descontado</i>' : '') + '</span>';
+  }
+
   function _cjTkMesaHTML(t) {
     if (!t) return '';
     const tr = t.trabajador;
-    if (tr && tr.nombre) {
-      return '<div class="cj-carta-tk">👤 ' + _esc(String(tr.nombre)) +
-        (String(tr.estado || '') === 'DESCONTADO' ? ' · ya descontado' : ' · se le descuenta') + '</div>';
-    }
+    if (tr && tr.nombre) return '';   // [851] ya lo dice el chip de arriba
     if (t.estadoCobro && t.estadoCobro !== 'VIVO') return '';
     // [850] En un día ya liquidado no queda turno al que cargarlo: el servidor lo rechazaría.
     // Sin botón, así el admin no persigue una opción que no existe.
@@ -29372,6 +29384,34 @@ const MOS = (() => {
     }
     return `<button type="button" class="cj-det-tk-btn" onclick="MOS.cjTrabajadorAbrir('${_esc(String(t.idVenta))}')">
       👤 ASIGNAR a un trabajador de ese día</button>`;
+  }
+
+  // [851] Repinta SOLO la carta tocada: color, chip y botón. Es lo que hace que la asignación
+  // se sienta instantánea sin re-dibujar toda la mesa (y sin perder el scroll).
+  function _cjPintarTk(idVenta, opts) {
+    const t = _cjBuscarTicket(idVenta); if (!t) return;
+    const asignado = !!(t.trabajador && t.trabajador.nombre);
+    document.querySelectorAll('.cj-mesa-carta[data-tk="' + String(idVenta).replace(/"/g, '') + '"]').forEach(el => {
+      el.classList.toggle('cj-mesa-carta-tk', asignado);
+      const chip = el.querySelector('.cj-carta-tk-chip'); if (chip) chip.remove();
+      const btn  = el.querySelector('.cj-carta-tk-btn');  if (btn)  btn.remove();
+      if (asignado) {
+        el.insertAdjacentHTML('afterbegin', _cjTkChipHTML(t));
+        const c = el.querySelector('.cj-carta-tk-chip');
+        if (c && !(opts && opts.silent)) { c.classList.add('tk-pop'); setTimeout(() => c.classList.remove('tk-pop'), 460); }
+      } else {
+        const meta = el.querySelector('.cj-carta-meta');
+        const html = _cjTkMesaHTML(t);
+        if (meta && html) meta.insertAdjacentHTML('afterend', html);
+      }
+      if (opts && opts.shake) { el.classList.add('tk-shake'); setTimeout(() => el.classList.remove('tk-shake'), 480); }
+    });
+    // si el detalle está abierto sobre este ticket, que cuente lo mismo
+    const det = document.getElementById('modalDetalleCarta');
+    if (det && !det.classList.contains('hidden') &&
+        _cjCreditosState.detalleTicket && String(_cjCreditosState.detalleTicket.idVenta) === String(idVenta)) {
+      cjAbrirDetalleCarta(idVenta);
+    }
   }
 
   async function cjTrabajadorAbrir(idVenta) {
@@ -29407,6 +29447,7 @@ const MOS = (() => {
         '<small>Los turnos ya pagados o vetados tienen el monto sellado.</small></div>';
       return;
     }
+    _cjTkTurnos = {}; turnos.forEach(x => { _cjTkTurnos[String(x.idDia)] = x; });
     body.innerHTML = turnos.map(x =>
       '<button type="button" class="cjtk-row" onclick="MOS.cjTrabajadorElegir(\'' + _esc(String(idVenta)) + '\',\'' +
         _esc(String(x.idDia)) + '\')">' +
@@ -29418,6 +29459,8 @@ const MOS = (() => {
       '</button>').join('');
   }
 
+  let _cjTkTurnos = {};   // [851] idDia → turno, para no meter nombres en un onclick
+
   function _cjBuscarTicket(idVenta) {
     const idV = String(idVenta);
     for (const g of (_cjCreditosState.todosLosGrupos || [])) {
@@ -29427,35 +29470,62 @@ const MOS = (() => {
     return (_cjCreditosState.ticketsActivos || []).find(x => String(x.idVenta) === idV) || null;
   }
 
+  // [851] Asignar mueve dinero: le baja el pago del día a una persona. Por eso pide clave y queda
+  // auditado (mismo camino que anular un pago). La pantalla no espera al servidor: pinta primero y,
+  // si el servidor rechaza, vuelve sola con un temblor y un buzz — nunca se queda mintiendo.
   async function cjTrabajadorElegir(idVenta, idDia) {
-    const t = _cjBuscarTicket(idVenta);
-    try { _finBeep?.('click'); } catch(_){}
+    const t = _cjBuscarTicket(idVenta); if (!t) return;
+    const turno = _cjTkTurnos[String(idDia)] || {};
+    const nombre = String(turno.nombre || '');
+    cjTrabajadorCerrar();
+    const auth = await pedirAuth({
+      accion: 'ASIGNAR_CREDITO_TRABAJADOR',
+      refDocumento: t.correlativo || idVenta,
+      contexto: 'Asignar el consumo de S/ ' + _money(t.total).toFixed(2) + ' a ' + (nombre || 'ese turno')
+    });
+    if (!auth) return;
+
+    const previo = t.trabajador || null;
+    t.trabajador = { nombre, idDia, estado: 'ASIGNADO', fechaDia: String(t.fechaISO || '').slice(0, 10) };
+    _cjPintarTk(idVenta);
+    try { _finBeep?.('agregar'); } catch(_){}
+    toast('👤 Se le descuenta a ' + (nombre || 'ese turno'), 'ok', 3200);
     try {
-      const r = await API.post('creditoAsignar', { idVenta, idDia, usuario: S.session?.nombre || '' });
-      const d = r && (r.data || r);
+      const r = await API.post('creditoAsignar', {
+        idVenta, idDia, usuario: S.session?.nombre || '', claveAdmin: auth.clave || '' });
       if (!r || r.ok === false) throw new Error((r && r.error) || 'no se pudo asignar');
-      // optimista: el ticket en memoria ya sabe de quién es
-      if (t) t.trabajador = { nombre: (d && d.nombre) || '', idDia, estado: 'ASIGNADO', fechaDia: String(t.fechaISO || '').slice(0, 10) };
-      toast('👤 Se le descuenta a ' + ((d && d.nombre) || 'ese turno'), 'ok', 3500);
-      cjTrabajadorCerrar();
-      if (t) cjAbrirDetalleCarta(idVenta);
-      _cjCargarCreditosPendientes();
+      const d = r.data || r;
+      if (d && d.nombre) { t.trabajador.nombre = d.nombre; _cjPintarTk(idVenta, { silent: true }); }
     } catch (e) {
-      toast('No se pudo cargar: ' + (e.message || e), 'error', 5000);
+      t.trabajador = previo;
+      _cjPintarTk(idVenta, { shake: true });
+      try { _finBeep?.('error'); } catch(_){}
+      toast('No se pudo asignar: ' + (e.message || e), 'error', 6000);
     }
   }
 
   async function cjTrabajadorQuitar(idVenta) {
-    const t = _cjBuscarTicket(idVenta);
+    const t = _cjBuscarTicket(idVenta); if (!t) return;
+    const previo = t.trabajador || null;
+    const auth = await pedirAuth({
+      accion: 'DESASIGNAR_CREDITO_TRABAJADOR',
+      refDocumento: t.correlativo || idVenta,
+      contexto: 'Quitarle el consumo de S/ ' + _money(t.total).toFixed(2) + ' a ' + ((previo && previo.nombre) || '?')
+    });
+    if (!auth) return;
+
+    t.trabajador = null;
+    _cjPintarTk(idVenta);
+    try { _finBeep?.('eliminar'); } catch(_){}
+    toast('Quitado — el ticket vuelve a quedar sin dueño', 'ok', 2800);
     try {
-      const r = await API.post('creditoDesasignar', { idVenta });
+      const r = await API.post('creditoDesasignar', { idVenta, claveAdmin: auth.clave || '' });
       if (!r || r.ok === false) throw new Error((r && r.error) || 'no se pudo quitar');
-      if (t) t.trabajador = null;
-      toast('Quitado — el ticket vuelve a quedar sin dueño', 'ok');
-      if (t) cjAbrirDetalleCarta(idVenta);
-      _cjCargarCreditosPendientes();
     } catch (e) {
-      toast('No se pudo quitar: ' + (e.message || e), 'error', 5000);
+      t.trabajador = previo;
+      _cjPintarTk(idVenta, { shake: true });
+      try { _finBeep?.('error'); } catch(_){}
+      toast('No se pudo quitar: ' + (e.message || e), 'error', 6000);
     }
   }
 
@@ -29469,16 +29539,36 @@ const MOS = (() => {
     if (document.getElementById('cjTkCSS')) return;
     const st = document.createElement('style'); st.id = 'cjTkCSS';
     st.textContent =
-      // [850] en la carta de la mesa
-      '.cj-carta-tk-btn{display:block;width:100%;margin-top:8px;padding:7px 9px;border-radius:9px;' +
-        'border:1px dashed rgba(56,189,248,.5);background:rgba(56,189,248,.1);color:#7dd3fc;' +
-        'font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;transition:.15s}' +
-      '.cj-carta-tk-btn:hover{background:rgba(56,189,248,.24);color:#e0f2fe;border-style:solid}' +
-      '.cj-carta-tk{margin-top:8px;padding:6px 9px;border-radius:9px;border:1px solid rgba(56,189,248,.4);' +
-        'background:rgba(56,189,248,.12);color:#7dd3fc;font-size:10.5px;font-weight:800;' +
-        'overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
-      '.cj-mesa-carta-tk{border-color:rgba(56,189,248,.55)!important;' +
-        'box-shadow:0 0 0 1px rgba(56,189,248,.18) inset,0 8px 22px rgba(2,6,23,.5)!important}' +
+      // [851] La carta de la MESA es ÁMBAR con texto marrón, no oscura: el botón va sólido y
+      // azul para que se lea de lejos (antes era celeste translúcido = invisible sobre ámbar).
+      '.cj-carta-tk-btn{display:block;width:100%;margin-top:9px;padding:9px 10px;border-radius:10px;' +
+        'border:0;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;font-size:11px;' +
+        'font-weight:900;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;' +
+        'box-shadow:0 3px 0 #1e40af,0 7px 16px -5px rgba(30,64,175,.7);' +
+        'transition:transform .12s,box-shadow .12s,filter .12s}' +
+      '.cj-carta-tk-btn:hover{filter:brightness(1.1)}' +
+      '.cj-carta-tk-btn:active{transform:translateY(2px);box-shadow:0 1px 0 #1e40af}' +
+      // sello de asignado: arriba a la IZQUIERDA, con la ✕ encima del nombre
+      '.cj-carta-tk-chip{position:absolute;top:7px;left:7px;z-index:7;display:inline-flex;align-items:center;' +
+        'gap:4px;max-width:calc(100% - 74px);padding:3px 9px 3px 6px;border-radius:999px;' +
+        'background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;font-size:9.5px;font-weight:900;' +
+        'box-shadow:0 3px 10px rgba(30,64,175,.55)}' +
+      '.cj-carta-tk-chip b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.02em}' +
+      '.cj-carta-tk-chip i{font-style:normal;opacity:.75;font-weight:700}' +
+      '.cj-carta-tk-chip.is-desc{background:linear-gradient(135deg,#059669,#047857)}' +
+      '.cj-carta-tk-ico{font-size:11px;line-height:1}' +
+      '.cj-carta-tk-x{position:absolute;top:-8px;right:-7px;width:19px;height:19px;padding:0;border-radius:50%;' +
+        'border:2px solid #fff;background:#ef4444;color:#fff;font-size:10px;font-weight:900;line-height:1;' +
+        'cursor:pointer;display:grid;place-items:center;box-shadow:0 2px 7px rgba(0,0,0,.45);transition:.15s}' +
+      '.cj-carta-tk-x:hover{background:#dc2626;transform:scale(1.18)}' +
+      // asignada = MISMO celeste que un ticket enviado a cobrar a una caja
+      '.cj-mesa-carta-tk{background:linear-gradient(135deg,#dbeafe,#bfdbfe)!important;' +
+        'border-color:#3b82f6!important;color:#1e3a8a!important}' +
+      '@keyframes tkPop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.15);opacity:1}100%{transform:scale(1)}}' +
+      '.cj-carta-tk-chip.tk-pop{animation:tkPop .42s cubic-bezier(.34,1.56,.64,1)}' +
+      '@keyframes tkShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}' +
+        '40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}' +
+      '.cj-mesa-carta.tk-shake{animation:tkShake .45s ease-in-out}' +
       '.cj-det-tk-btn{display:block;width:100%;margin-top:11px;padding:11px 12px;border-radius:12px;' +
         'border:1px dashed rgba(56,189,248,.45);background:rgba(56,189,248,.08);color:#7dd3fc;' +
         'font-size:12px;font-weight:800;cursor:pointer;transition:.15s}' +
