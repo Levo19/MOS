@@ -21730,7 +21730,7 @@ const MOS = (() => {
 
   function setCfgTab(tab) {
     S.cfgTab = tab;
-    const tabs = ['infra','personal','categorias','notifs','bancarios'];
+    const tabs = ['infra','personal','categorias','notifs','bancarios','ia'];   // [852] +IA
     tabs.forEach(t => {
       const btn = $('cfgTab' + t.charAt(0).toUpperCase() + t.slice(1));
       if (btn) btn.classList.toggle('active', t === tab);
@@ -21751,6 +21751,7 @@ const MOS = (() => {
       case 'categorias':   renderCategorias();   break;
       case 'notifs':       renderNotifsPanel();  break;
       case 'bancarios':    renderBancarios();    break;
+      case 'ia':           renderIaPanel();      break;   // [852] consumo de IA
     }
   }
 
@@ -42494,6 +42495,336 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _finRenderProductos();
   }
 
+
+  // ══════════════════════════════════════════════════════════════════════
+  // [852] GESTIÓN DE IA — la constancia de uso que pidió el dueño.
+  //
+  // "he hecho muchas recargas en Anthropic… quiero ver día por día cuántos tokens se usaron en
+  //  tal función, en tal app, cuántos dólares representa y con qué modelo, para saber si vale
+  //  la pena".
+  //
+  // Anthropic cobra POR TOKEN, y cada respuesta de la API trae su bloque `usage`. Las cuatro
+  // Edge Functions que hablan con Claude ahora lo anotan (SQL 852). Acá solo se lee y se pinta.
+  // Los precios NO están en este archivo: viven en mos.ia_precios con fecha de vigencia, así un
+  // día viejo conserva lo que costó de verdad aunque Anthropic cambie la lista mañana.
+  // ══════════════════════════════════════════════════════════════════════
+  let _iaDias = 30;
+  let _iaData = null;
+
+  function iaSetRango(d) { _iaDias = parseInt(d, 10) || 30; renderIaPanel(); }
+
+  async function renderIaPanel() {
+    _iaInyectarCSS();
+    const cont = $('iaBody'); if (!cont) return;
+    if (!_iaData) cont.innerHTML = '<div class="ia-load">◍ leyendo el consumo de IA…</div>';
+    let d = null;
+    try {
+      const r = await API.post('iaUsoResumen', { dias: _iaDias });
+      d = (r && (r.data || r)) || null;
+    } catch (e) {
+      cont.innerHTML = '<div class="ia-load">No pude leer el consumo: ' + _escapeHtml(e.message || String(e)) + '</div>';
+      return;
+    }
+    if (!d) { cont.innerHTML = '<div class="ia-load">Sin datos</div>'; return; }
+    _iaData = d;
+    cont.innerHTML = _iaPanelHTML(d);
+  }
+
+  const _iaUsd = v => '$' + (Math.round((+v || 0) * 10000) / 10000).toFixed(4).replace(/0+$/, '').replace(/\.$/, '.00');
+  const _iaUsd2 = v => '$' + (+v || 0).toFixed(2);
+  function _iaTok(n) {
+    n = +n || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+    return String(n);
+  }
+  function _iaFechaCorta(iso) {
+    try {
+      const [y, m, dd] = String(iso).split('-').map(Number);
+      const MES = ['ene','feb','mar','abr','may','jun','jul','ago','set','oct','nov','dic'];
+      return dd + ' ' + MES[(m || 1) - 1];
+    } catch (_) { return String(iso); }
+  }
+
+  function _iaPanelHTML(d) {
+    const t = d.total || {};
+    const dias = d.porDia || [];
+    const hayDatos = (t.llamadas || 0) > 0;
+
+    // proyección del mes: promedio diario × días del mes (solo informativa, se dice que lo es)
+    const hoy = new Date(Date.now() - 5 * 3600 * 1000);
+    const diasMes = new Date(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, 0).getUTCDate();
+    const diaHoy = hoy.getUTCDate();
+    const proy = (+t.usdMes || 0) / Math.max(1, diaHoy) * diasMes;
+
+    const maxDia = Math.max(0.000001, ...dias.map(x => +x.usd || 0));
+    const barras = dias.slice().reverse().map(x => {
+      const h = Math.max(3, Math.round((+x.usd || 0) / maxDia * 100));
+      const esHoy = x.dia === d.hasta;
+      return '<button type="button" class="ia-bar' + (esHoy ? ' is-hoy' : '') + '" style="--h:' + h + '%"' +
+        ' onclick="MOS.iaVerDia(\'' + _esc(x.dia) + '\')"' +
+        ' title="' + _esc(_iaFechaCorta(x.dia)) + ' · ' + _iaUsd(x.usd) + ' · ' + x.llamadas + ' llamadas">' +
+        '<i></i><span>' + _esc(String(_iaFechaCorta(x.dia)).split(' ')[0]) + '</span></button>';
+    }).join('');
+
+    const totalFun = (d.porFuncion || []).reduce((a, f) => a + (+f.usd || 0), 0) || 1;
+    const funciones = (d.porFuncion || []).map(f => {
+      const pct = Math.round((+f.usd || 0) / totalFun * 100);
+      return '<div class="ia-fn">' +
+        '<div class="ia-fn-top"><b>' + _escapeHtml(String(f.funcion)) + '</b>' +
+          '<span class="ia-fn-usd">' + _iaUsd(f.usd) + '</span></div>' +
+        '<div class="ia-fn-bar"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="ia-fn-sub">' + pct + '% del gasto · ' + f.llamadas + ' llamada' + (f.llamadas === 1 ? '' : 's') +
+          ' · ' + _iaTok(f.tokens) + ' tokens · <b>' + _iaUsd(f.usdPorLlamada) + ' cada una</b></div>' +
+      '</div>';
+    }).join('') || '<div class="ia-vacio">Todavía no hay llamadas registradas en este período.</div>';
+
+    const modelos = (d.porModelo || []).map(m =>
+      '<div class="ia-chip"><span class="ia-chip-k">' + _escapeHtml(String(m.modelo)) + '</span>' +
+      '<b>' + _iaUsd(m.usd) + '</b><i>' + m.llamadas + ' · ' + _iaTok(m.tokens) + ' tok</i></div>').join('')
+      || '<div class="ia-vacio">—</div>';
+
+    const apps = (d.porApp || []).map(a =>
+      '<div class="ia-chip"><span class="ia-chip-k">' + _escapeHtml(String(a.app)) + '</span>' +
+      '<b>' + _iaUsd(a.usd) + '</b><i>' + a.llamadas + ' llamadas</i></div>').join('')
+      || '<div class="ia-vacio">—</div>';
+
+    const tarifas = (d.tarifas || []).map(x =>
+      '<tr><td>' + _escapeHtml(String(x.etiqueta)) + '</td>' +
+      '<td class="ia-num">$' + (+x.usdIn).toFixed(2) + '</td>' +
+      '<td class="ia-num">$' + (+x.usdOut).toFixed(2) + '</td>' +
+      '<td class="ia-num">$' + (+(x.usdCacheR || 0)).toFixed(2) + '</td></tr>').join('');
+
+    // [852b] Si la IA está fallando, el panel lo dice en la cara y con el motivo traducido.
+    // Fue lo primero que apareció al encender la contabilidad: el saldo de Anthropic agotado,
+    // con los tres crones disparando cada 10 minutos contra una cuenta sin crédito.
+    const F = d.fallaTop;
+    const MOTIVOS = {
+      SIN_SALDO:          ['🔴', 'Sin saldo en Anthropic', 'La IA está APAGADA de hecho: las llamadas se rechazan. Recargá créditos en Plans & Billing para que vuelva a funcionar.'],
+      LIMITE_TASA:        ['🟠', 'Límite de velocidad', 'Se están mandando más llamadas por minuto de las permitidas. Los crones reintentan solos.'],
+      ANTHROPIC_SATURADO: ['🟡', 'Anthropic saturado', 'Problema del lado de ellos. Se reintenta solo; no hay nada que hacer acá.'],
+      API_KEY:            ['🔴', 'Clave de API rechazada', 'El secret ANTHROPIC_API_KEY venció o cambió. Hay que renovarlo.'],
+      TIEMPO_AGOTADO:     ['🟡', 'Tiempo agotado', 'La respuesta tardó más de lo permitido. Suele ser por archivos pesados.'],
+      OTRO:               ['🟠', 'Fallas en las llamadas', 'Mirá el detalle para entender qué está pasando.']
+    };
+    const avisoFalla = (F && F.n > 0) ? (() => {
+      const m = MOTIVOS[F.motivo] || MOTIVOS.OTRO;
+      return '<div class="ia-alerta' + (F.motivo === 'SIN_SALDO' || F.motivo === 'API_KEY' ? ' is-grave' : '') + '">' +
+        '<span class="ia-alerta-ico">' + m[0] + '</span>' +
+        '<div><b>' + _escapeHtml(m[1]) + '</b>' +
+          '<span>' + _escapeHtml(m[2]) + '</span>' +
+          '<i>' + F.n + ' llamada' + (F.n === 1 ? '' : 's') + ' rechazada' + (F.n === 1 ? '' : 's') +
+          ' · última ' + _escapeHtml(String(F.ultima || '')) + '</i>' +
+        '</div></div>';
+    })() : '';
+
+    const avisoSinTarifa = (d.sinTarifa > 0)
+      ? '<div class="ia-warn">⚠ ' + d.sinTarifa + ' llamada(s) usaron un modelo sin precio configurado: su costo no está contado. ' +
+        'Agregá su tarifa en <code>mos.ia_precios</code> para que aparezca.</div>' : '';
+
+    const desdeCuando = d.primerRegistro
+      ? 'El registro empieza el <b>' + _escapeHtml(_iaFechaCorta(d.primerRegistro)) + '</b>: lo gastado antes no quedó anotado y no se puede reconstruir.'
+      : 'Todavía no hay ninguna llamada registrada. El contador arranca con la primera que ocurra.';
+
+    return '' +
+      '<div class="ia-wrap">' +
+        '<div class="ia-hero">' +
+          '<div class="ia-hero-main">' +
+            '<span class="ia-hero-lbl">Gasto de este mes</span>' +
+            '<span class="ia-hero-usd">' + _iaUsd2(t.usdMes) + '</span>' +
+            '<span class="ia-hero-sub">proyección a fin de mes ≈ <b>' + _iaUsd2(proy) + '</b> ' +
+              '<i class="ia-hint" title="Promedio diario del mes × días del mes. Es una estimación, no un cobro.">?</i></span>' +
+          '</div>' +
+          '<div class="ia-kpis">' +
+            '<div class="ia-kpi"><i>hoy</i><b>' + _iaUsd2(t.usdHoy) + '</b></div>' +
+            '<div class="ia-kpi"><i>promedio/día</i><b>' + _iaUsd2(t.promDia) + '</b></div>' +
+            '<div class="ia-kpi"><i>llamadas</i><b>' + (t.llamadas || 0) + '</b></div>' +
+            '<div class="ia-kpi"><i>tokens</i><b>' + _iaTok(t.tokens) + '</b></div>' +
+            (t.errores > 0 ? '<div class="ia-kpi is-err"><i>fallidas</i><b>' + t.errores + '</b></div>' : '') +
+          '</div>' +
+        '</div>' +
+        avisoFalla +
+        avisoSinTarifa +
+        '<div class="ia-rango">' +
+          [7, 30, 90].map(n => '<button type="button" class="ia-rb' + (_iaDias === n ? ' is-on' : '') +
+            '" onclick="MOS.iaSetRango(' + n + ')">' + n + ' días</button>').join('') +
+          '<span class="ia-rango-nota">' + _escapeHtml(d.desde) + ' → ' + _escapeHtml(d.hasta) + '</span>' +
+        '</div>' +
+
+        (hayDatos ? '<div class="ia-card"><div class="ia-card-h">📅 Día por día<span>tocá una barra para ver el detalle</span></div>' +
+          '<div class="ia-bars">' + barras + '</div></div>' : '') +
+
+        '<div class="ia-card"><div class="ia-card-h">🎯 En qué se gasta<span>ordenado por costo</span></div>' +
+          '<div class="ia-fns">' + funciones + '</div></div>' +
+
+        '<div class="ia-grid2">' +
+          '<div class="ia-card"><div class="ia-card-h">🤖 Por modelo</div><div class="ia-chips">' + modelos + '</div></div>' +
+          '<div class="ia-card"><div class="ia-card-h">📱 Por app</div><div class="ia-chips">' + apps + '</div></div>' +
+        '</div>' +
+
+        '<details class="ia-card ia-det"><summary>💵 Tarifario vigente <span>USD por millón de tokens</span></summary>' +
+          '<div class="ia-tabla-wrap"><table class="ia-tabla"><thead><tr><th>Modelo</th><th class="ia-num">Entrada</th>' +
+          '<th class="ia-num">Salida</th><th class="ia-num">Caché leída</th></tr></thead><tbody>' + tarifas + '</tbody></table></div>' +
+          '<p class="ia-nota">Precios oficiales de Anthropic. Escribir en caché cuesta 1.25× la entrada y leerla 0.1×. ' +
+          'Viven en la tabla <code>mos.ia_precios</code> con fecha de vigencia: si cambian, los días anteriores conservan su costo real.</p>' +
+        '</details>' +
+
+        '<div class="ia-pie">🧾 <b>Dónde se usa IA hoy:</b> lista sombra de almacén (foto, PDF y texto), ' +
+          'OCR de comprobantes de proveedor, descripción automática de productos, sugerencia de sustitutos ' +
+          'y el chat de almacén. Los tres crones corren cada 10 minutos.<br>' + desdeCuando + '</div>' +
+      '</div>';
+  }
+
+  // Detalle de un día: qué función gastó qué, con qué modelo.
+  function iaVerDia(dia) {
+    const d = _iaData; if (!d) return;
+    const row = (d.porDia || []).find(x => String(x.dia) === String(dia));
+    if (!row) return;
+    try { _finBeep && _finBeep('click'); } catch (_) {}
+    const prev = document.getElementById('iaDiaOvl'); if (prev) prev.remove();
+    const filas = (row.funciones || []).map(f =>
+      '<div class="iad-row">' +
+        '<div class="iad-n"><b>' + _escapeHtml(String(f.funcion)) + '</b>' +
+          '<i>' + _escapeHtml(String(f.modelos || '')) + ' · ' + _escapeHtml(String(f.app || '')) + '</i></div>' +
+        '<div class="iad-t">' + _iaTok(f.tokens) + '<i>tokens</i></div>' +
+        '<div class="iad-c">' + f.llamadas + '<i>llamadas</i></div>' +
+        '<div class="iad-u">' + _iaUsd(f.usd) + '</div>' +
+      '</div>').join('') || '<div class="ia-vacio">Sin detalle</div>';
+    const ovl = document.createElement('div');
+    ovl.id = 'iaDiaOvl'; ovl.className = 'iad-back';
+    ovl.onpointerdown = e => { if (e.target === ovl) MOS.iaCerrarDia(); };
+    ovl.innerHTML = '<div class="iad-card" role="dialog" aria-label="Consumo de IA del día">' +
+      '<div class="iad-head"><div><b>🧠 ' + _escapeHtml(_iaFechaCorta(row.dia)) + '</b>' +
+        '<span>' + row.llamadas + ' llamadas · ' + _iaTok(row.tokens) + ' tokens · entrada ' + _iaTok(row.tokIn) +
+        ' / salida ' + _iaTok(row.tokOut) + (row.tokCacheR > 0 ? ' · caché ' + _iaTok(row.tokCacheR) : '') + '</span></div>' +
+        '<div class="iad-usd">' + _iaUsd(row.usd) + '</div>' +
+        '<button class="iad-x" onclick="MOS.iaCerrarDia()" aria-label="Cerrar">✕</button></div>' +
+      '<div class="iad-body">' + filas + '</div></div>';
+    document.body.appendChild(ovl);
+    requestAnimationFrame(() => ovl.classList.add('in'));
+  }
+  function iaCerrarDia() {
+    const o = document.getElementById('iaDiaOvl'); if (!o) return;
+    o.classList.remove('in');
+    setTimeout(() => { try { o.remove(); } catch (_) {} }, 180);
+  }
+
+  function _iaInyectarCSS() {
+    if (document.getElementById('iaCSS')) return;
+    const st = document.createElement('style'); st.id = 'iaCSS';
+    st.textContent =
+      '.ia-wrap{display:flex;flex-direction:column;gap:13px;padding-bottom:20px}' +
+      '.ia-load,.ia-vacio{font-size:12.5px;color:#64748b;text-align:center;padding:22px 10px;line-height:1.6}' +
+      // hero
+      '.ia-hero{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:18px 20px;border-radius:18px;' +
+        'background:radial-gradient(120% 160% at 0% 0%,rgba(129,140,248,.22),rgba(56,189,248,.06) 55%,transparent),#0b1424;' +
+        'border:1px solid #223049;position:relative;overflow:hidden}' +
+      '.ia-hero::after{content:"🧠";position:absolute;right:-6px;bottom:-16px;font-size:92px;opacity:.06;pointer-events:none}' +
+      '.ia-hero-main{display:flex;flex-direction:column;min-width:190px}' +
+      '.ia-hero-lbl{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#7488a6}' +
+      '.ia-hero-usd{font-size:38px;font-weight:900;line-height:1.05;font-family:ui-monospace,monospace;' +
+        'background:linear-gradient(120deg,#c7d2fe,#7dd3fc);-webkit-background-clip:text;background-clip:text;color:transparent}' +
+      '.ia-hero-sub{font-size:11px;color:#93a4c2;margin-top:3px}' +
+      '.ia-hero-sub b{color:#c7d2fe}' +
+      '.ia-hint{font-style:normal;display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;' +
+        'border:1px solid #33415a;color:#7488a6;font-size:9px;cursor:help;vertical-align:middle}' +
+      '.ia-kpis{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}' +
+      '.ia-kpi{display:flex;flex-direction:column;gap:1px;padding:8px 12px;border-radius:12px;background:rgba(15,23,42,.6);' +
+        'border:1px solid #223049;min-width:82px}' +
+      '.ia-kpi i{font-style:normal;font-size:8.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#5f7192}' +
+      '.ia-kpi b{font-size:16px;font-family:ui-monospace,monospace;color:#e2e8f0}' +
+      '.ia-kpi.is-err b{color:#f0a6a6}' +
+      // rango
+      '.ia-rango{display:flex;align-items:center;gap:7px;flex-wrap:wrap}' +
+      '.ia-rb{padding:6px 13px;border-radius:999px;border:1px solid #26344c;background:#0c1626;color:#7488a6;' +
+        'font-size:11px;font-weight:800;cursor:pointer;transition:.15s;min-height:32px}' +
+      '.ia-rb:hover{border-color:#3b82f6;color:#c7d2fe}' +
+      '.ia-rb.is-on{background:linear-gradient(135deg,#4f46e5,#3b82f6);border-color:transparent;color:#fff}' +
+      '.ia-rango-nota{font-size:10.5px;color:#5f7192;margin-left:auto}' +
+      // card
+      '.ia-card{border:1px solid #223049;border-radius:16px;background:#0b1424;padding:14px 16px}' +
+      '.ia-card-h{display:flex;align-items:baseline;gap:9px;font-size:12.5px;font-weight:800;color:#dbe4f3;margin-bottom:11px}' +
+      '.ia-card-h span{font-size:10px;font-weight:600;color:#5f7192}' +
+      '.ia-grid2{display:grid;grid-template-columns:1fr 1fr;gap:13px}' +
+      // barras por día
+      '.ia-bars{display:flex;align-items:flex-end;gap:4px;height:132px;overflow-x:auto;padding-bottom:2px}' +
+      '.ia-bar{flex:1 0 20px;min-width:20px;height:100%;display:flex;flex-direction:column;justify-content:flex-end;' +
+        'align-items:center;gap:4px;background:none;border:0;padding:0;cursor:pointer;color:#5f7192}' +
+      '.ia-bar i{display:block;width:100%;height:var(--h);border-radius:5px 5px 2px 2px;' +
+        'background:linear-gradient(180deg,#818cf8,#3b82f6);transition:filter .15s,transform .15s}' +
+      '.ia-bar:hover i{filter:brightness(1.25);transform:scaleY(1.03)}' +
+      '.ia-bar.is-hoy i{background:linear-gradient(180deg,#7dd3fc,#22d3ee);box-shadow:0 0 12px rgba(34,211,238,.5)}' +
+      '.ia-bar span{font-size:8.5px;font-weight:700}' +
+      // funciones
+      '.ia-fns{display:flex;flex-direction:column;gap:11px}' +
+      '.ia-fn-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}' +
+      '.ia-fn-top b{font-size:12.5px;color:#e2e8f0}' +
+      '.ia-fn-usd{font-family:ui-monospace,monospace;font-size:13px;font-weight:800;color:#a5b4fc}' +
+      '.ia-fn-bar{height:6px;border-radius:99px;background:#101a2c;margin:5px 0 4px;overflow:hidden}' +
+      '.ia-fn-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#4f46e5,#22d3ee)}' +
+      '.ia-fn-sub{font-size:10.5px;color:#6b7d9c}' +
+      '.ia-fn-sub b{color:#93a4c2}' +
+      // chips
+      '.ia-chips{display:flex;flex-direction:column;gap:7px}' +
+      '.ia-chip{display:flex;align-items:baseline;gap:8px;padding:8px 11px;border-radius:11px;background:#0c1626;border:1px solid #1d2942}' +
+      '.ia-chip-k{flex:1;min-width:0;font-size:11.5px;font-weight:700;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.ia-chip b{font-family:ui-monospace,monospace;font-size:12.5px;color:#a5b4fc}' +
+      '.ia-chip i{font-style:normal;font-size:9.5px;color:#5f7192;flex:none}' +
+      // tarifario
+      '.ia-det summary{cursor:pointer;font-size:12.5px;font-weight:800;color:#dbe4f3;list-style:none}' +
+      '.ia-det summary::-webkit-details-marker{display:none}' +
+      '.ia-det summary::before{content:"▸ ";color:#5f7192}' +
+      '.ia-det[open] summary::before{content:"▾ "}' +
+      '.ia-det summary span{font-size:10px;font-weight:600;color:#5f7192;margin-left:6px}' +
+      '.ia-tabla-wrap{overflow-x:auto;margin-top:11px}' +
+      '.ia-tabla{width:100%;border-collapse:collapse;font-size:11.5px}' +
+      '.ia-tabla th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#5f7192;padding:5px 8px;border-bottom:1px solid #1a2740}' +
+      '.ia-tabla td{padding:6px 8px;border-bottom:1px solid #101a2c;color:#cbd5e1}' +
+      '.ia-num{text-align:right;font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}' +
+      '.ia-nota{font-size:10.5px;color:#5f7192;line-height:1.6;margin-top:9px}' +
+      '.ia-nota code,.ia-pie code,.ia-warn code{font-family:ui-monospace,monospace;color:#93a4c2;background:#0c1626;padding:1px 5px;border-radius:5px}' +
+      '.ia-alerta{display:flex;align-items:flex-start;gap:12px;padding:13px 15px;border-radius:14px;' +
+        'background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.35)}' +
+      '.ia-alerta.is-grave{background:rgba(248,113,113,.09);border-color:rgba(248,113,113,.45)}' +
+      '.ia-alerta-ico{font-size:20px;line-height:1.2;flex:none}' +
+      '.ia-alerta b{display:block;font-size:13px;color:#fde68a}' +
+      '.ia-alerta.is-grave b{color:#fca5a5}' +
+      '.ia-alerta span{display:block;font-size:11.5px;line-height:1.6;color:#cbd5e1;margin-top:3px}' +
+      '.ia-alerta i{display:block;font-style:normal;font-size:10px;color:#7488a6;margin-top:5px}' +
+      '.ia-warn{font-size:11px;line-height:1.6;color:#fcd34d;background:rgba(251,191,36,.08);' +
+        'border:1px dashed rgba(251,191,36,.35);border-radius:12px;padding:10px 13px}' +
+      '.ia-pie{font-size:11px;line-height:1.7;color:#6b7d9c;background:rgba(15,23,42,.45);border:1px dashed #223049;' +
+        'border-radius:13px;padding:12px 15px}' +
+      '.ia-pie b{color:#93a4c2}' +
+      // detalle del día
+      '.iad-back{position:fixed;inset:0;z-index:100096;display:flex;align-items:center;justify-content:center;padding:16px;' +
+        'background:rgba(3,7,15,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;transition:opacity .2s}' +
+      '.iad-back.in{opacity:1}' +
+      '.iad-card{width:min(560px,100%);max-height:84vh;display:flex;flex-direction:column;border-radius:18px;overflow:hidden;' +
+        'background:linear-gradient(180deg,#111d31,#0a1120);border:1px solid #26344c;box-shadow:0 26px 70px rgba(0,0,0,.7);' +
+        'transform:translateY(14px) scale(.98);opacity:0;transition:transform .25s cubic-bezier(.22,1,.36,1),opacity .2s}' +
+      '.iad-back.in .iad-card{transform:none;opacity:1}' +
+      '.iad-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #1a2740;flex:none}' +
+      '.iad-head b{display:block;font-size:15px;color:#e2e8f0}' +
+      '.iad-head span{display:block;font-size:10px;color:#7488a6;margin-top:2px}' +
+      '.iad-usd{margin-left:auto;font-family:ui-monospace,monospace;font-size:19px;font-weight:800;color:#a5b4fc}' +
+      '.iad-x{flex:none;width:38px;height:38px;border-radius:10px;border:1px solid #26344c;background:#0c1626;color:#8296b5;cursor:pointer}' +
+      '.iad-body{flex:1;overflow:auto;padding:11px 13px;display:flex;flex-direction:column;gap:7px;-webkit-overflow-scrolling:touch}' +
+      '.iad-row{display:grid;grid-template-columns:1fr auto auto auto;gap:11px;align-items:center;padding:9px 11px;' +
+        'border-radius:11px;background:#0c1626;border:1px solid #1d2942}' +
+      '.iad-n{min-width:0}' +
+      '.iad-n b{display:block;font-size:12px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.iad-n i{font-style:normal;display:block;font-size:9.5px;color:#5f7192;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+      '.iad-t,.iad-c{display:flex;flex-direction:column;align-items:flex-end;font-family:ui-monospace,monospace;font-size:11.5px;color:#93a4c2}' +
+      '.iad-t i,.iad-c i{font-style:normal;font-family:system-ui,sans-serif;font-size:8.5px;color:#4b5c78}' +
+      '.iad-u{font-family:ui-monospace,monospace;font-size:13px;font-weight:800;color:#a5b4fc;min-width:62px;text-align:right}' +
+      '@media(max-width:720px){.ia-grid2{grid-template-columns:1fr}.ia-hero-usd{font-size:31px}' +
+        '.ia-kpis{margin-left:0;width:100%}.ia-kpi{flex:1 1 70px;min-width:70px}' +
+        '.iad-row{grid-template-columns:1fr auto;row-gap:6px}.iad-u{grid-column:2}}' +
+      '@media(pointer:coarse){.ia-bar{min-width:26px}.ia-rb{min-height:36px}}';
+    document.head.appendChild(st);
+  }
+
   // [843] Del margen a la curva: abre el cockpit de precio/costo del producto sin salir de
   // Finanzas. Reusa curvaOverlay, que lee window._paso2Filas — se le siembra la fila mínima.
   function finProdCurva(sku) {
@@ -53176,6 +53507,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     curvaOverlay, _curvaOverlayCerrar, _curvaSelReg,
     _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, guiaRotarFoto, finProdDesglose,
     cjTrabajadorAbrir, cjTrabajadorElegir, cjTrabajadorQuitar, cjTrabajadorCerrar,
+    renderIaPanel, iaSetRango, iaVerDia, iaCerrarDia,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de

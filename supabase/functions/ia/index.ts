@@ -18,6 +18,23 @@ const MODELO_DEFAULT = 'claude-haiku-4-5-20251001';
 const MODELOS_OK = new Set(['claude-haiku-4-5-20251001', 'claude-3-5-haiku-20241022', 'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250929']);   // [foto/PDF listas] +sonnet-5 (visión/tablas)
 const MAX_TOKENS_CAP = 8192;   // techo duro (= máximo output de Haiku 4.5; analizarListaSombra usa 8192 para listas grandes)
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
+// [852] CONTABILIDAD DE IA — registra tokens y costo de cada llamada a Claude.
+// Nunca lanza: si el registro falla, la IA sigue funcionando igual. Sin await en el camino
+// caliente (se dispara y se olvida) para no sumar latencia al usuario.
+function _iaLog(rec: Record<string, unknown>): void {
+  try {
+    const _u = Deno.env.get('SUPABASE_URL');
+    const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!_u || !_k) return;
+    fetch(`${_u}/rest/v1/rpc/ia_registrar_uso`, {
+      method: 'POST',
+      headers: { apikey: _k, Authorization: 'Bearer ' + _k,
+                 'Content-Type': 'application/json', 'Content-Profile': 'mos' },
+      body: JSON.stringify({ p: rec }),
+    }).catch(() => {});
+  } catch { /* contabilizar jamás rompe la operación */ }
+}
+
 
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
@@ -61,13 +78,28 @@ Deno.serve(async (req: Request) => {
       ...(body.thinking && typeof body.thinking === 'object' ? { thinking: body.thinking } : {}),
     };
 
+    const _t0 = Date.now();
     const r = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const text = await r.text();
-    if (!r.ok) return json({ ok: false, error: 'Claude ' + r.status + ': ' + text }, 502);
+    // [852] la función la declara quien llama (listaSombra, ocrComprobante, resumenZona…);
+    // la app sale del claim del token, que ya está verificado arriba.
+    const _fn = String(body.funcion || body.fn || 'ia').slice(0, 60);
+    const _app = String(claims.app || '?');
+    if (!r.ok) {
+      _iaLog({ app: _app, funcion: _fn, modelo: model, ok: false, ms: Date.now() - _t0,
+               error: ('Claude ' + r.status + ': ' + text).slice(0, 300), usage: {} });
+      return json({ ok: false, error: 'Claude ' + r.status + ': ' + text }, 502);
+    }
+    try {
+      const _d = JSON.parse(text);
+      _iaLog({ app: _app, funcion: _fn, modelo: String(_d.model || model), ok: true,
+               ms: Date.now() - _t0, usage: _d.usage || {},
+               meta: { stop: _d.stop_reason || '', maxTokens: max_tokens } });
+    } catch { /* respuesta no-JSON: no se puede contabilizar, pero la IA responde igual */ }
     // devolvemos el JSON de Claude tal cual (el front lee .content[0].text como con GAS)
     return new Response(text, { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
   } catch (e) {

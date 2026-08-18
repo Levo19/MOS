@@ -1191,6 +1191,7 @@ const API = (() => {
     const p = payload || {};
     const body = {
       messages: p.messages,
+      funcion: String(p.funcion || 'resumenZona'),   // [852] etiqueta para la contabilidad de IA
       ...(p.system ? { system: String(p.system) } : {}),
       ...(p.model ? { model: String(p.model) } : {}),
       ...(p.max_tokens ? { max_tokens: p.max_tokens } : {})
@@ -2647,6 +2648,12 @@ const API = (() => {
     // [848] Turnos abiertos de un día (para elegir a quién se le carga un consumo) y la
     // asignación en sí. El vínculo apunta a un TURNO —persona + día—, no a un nombre: el
     // nombre se repite (mañana puede entrar otro Marcelo), el turno es único para siempre.
+    // [852] Consumo de IA: tokens y dólares por día / función / app / modelo.
+    if (action === 'iaUsoResumen') {
+      const r = await _sbRpcMOS('ia_uso_resumen', { p: { dias: p.dias || 30 } }, 'mos');
+      if (r == null) return null;
+      return r;
+    }
     if (action === 'turnosDelDia') {
       const r = await _sbRpcMOS('turnos_del_dia', { p: { fecha: p.fecha || '' } }, 'mos');
       if (r == null) return null;
@@ -3020,6 +3027,7 @@ const API = (() => {
     historialPrecioCosto:        () => true,   // mos.historial_precio_costo (431) · v5 curvas · PURA   // mos.analitica_grupo (425) · fusionada · directa PURA sin GAS
     finanzasDiaSku:              () => true,
     finanzasDiaSkuTramos:        () => true,
+    iaUsoResumen:                () => true,   // mos.ia_uso_resumen (852) · consumo de IA · PURA
     turnosDelDia:                () => true,   // mos.turnos_del_dia (848) · turnos abiertos del día · PURA
     creditoAsignar:              () => true,   // mos.credito_asignar (848) · carga un crédito a un turno
     creditoDesasignar:           () => true,   // mos.credito_desasignar (848)
@@ -3080,7 +3088,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, iaUsoResumen: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.

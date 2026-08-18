@@ -3,6 +3,22 @@
 // (misma categoría, sin familia); externos buscados en la web (mercado peruano).
 // AUTORIZACIÓN: header `x-cron-secret` == CRON_SECRET (deploy --no-verify-jwt).
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
+// [852] CONTABILIDAD DE IA — registra tokens y costo de cada llamada a Claude.
+// Nunca lanza: si el registro falla, la IA sigue funcionando igual.
+function _iaLog(rec: Record<string, unknown>): void {
+  try {
+    const _u = Deno.env.get('SUPABASE_URL');
+    const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!_u || !_k) return;
+    fetch(`${_u}/rest/v1/rpc/ia_registrar_uso`, {
+      method: 'POST',
+      headers: { apikey: _k, Authorization: 'Bearer ' + _k,
+                 'Content-Type': 'application/json', 'Content-Profile': 'mos' },
+      body: JSON.stringify({ p: rec }),
+    }).catch(() => {});
+  } catch { /* contabilizar jamás rompe la operación */ }
+}
+
 const MODELO = 'claude-haiku-4-5-20251001';
 
 function json(payload: unknown, status = 200): Response {
@@ -58,6 +74,7 @@ async function generar(key: string, prod: any): Promise<{ internos: any[]; exter
     const payload = conWeb
       ? { ...base, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }] }
       : base;
+    const _t0ia = Date.now();
     const r = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
@@ -65,6 +82,12 @@ async function generar(key: string, prod: any): Promise<{ internos: any[]; exter
       signal: AbortSignal.timeout(60_000),   // [rev.7]
     });
     const d = await r.json();
+    // [852] contabilidad — también los intentos fallidos: consumieron tokens de entrada igual
+    _iaLog({ app: 'cron', funcion: conWeb ? 'sustitutosIA (con web)' : 'sustitutosIA',
+             modelo: String(d.model || MODELO), ok: r.ok, ms: Date.now() - _t0ia,
+             usage: d.usage || {}, error: r.ok ? '' : JSON.stringify(d).slice(0, 300),
+             meta: { conWeb, stop: d.stop_reason || '',
+                     websearch: ((d.usage || {}).server_tool_use || {}).web_search_requests || 0 } });
     if (!r.ok) {
       const msg = JSON.stringify(d);
       if (conWeb && r.status === 400 && /web_search|tool/i.test(msg)) continue;

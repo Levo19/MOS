@@ -7,6 +7,23 @@
 //
 // SECRETS: ANTHROPIC_API_KEY (ya existe) · CRON_SECRET (nuevo).
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
+// [852] CONTABILIDAD DE IA — registra tokens y costo de cada llamada a Claude.
+// Nunca lanza: si el registro falla, la IA sigue funcionando igual. Sin await en el camino
+// caliente (se dispara y se olvida) para no sumar latencia al usuario.
+function _iaLog(rec: Record<string, unknown>): void {
+  try {
+    const _u = Deno.env.get('SUPABASE_URL');
+    const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!_u || !_k) return;
+    fetch(`${_u}/rest/v1/rpc/ia_registrar_uso`, {
+      method: 'POST',
+      headers: { apikey: _k, Authorization: 'Bearer ' + _k,
+                 'Content-Type': 'application/json', 'Content-Profile': 'mos' },
+      body: JSON.stringify({ p: rec }),
+    }).catch(() => {});
+  } catch { /* contabilizar jamás rompe la operación */ }
+}
+
 const MODELO = 'claude-haiku-4-5-20251001';
 
 function json(payload: unknown, status = 200): Response {
@@ -57,6 +74,7 @@ async function generar(key: string, prod: any): Promise<{ texto: string; conWeb:
     const payload = conWeb
       ? { ...base, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }] }
       : base;
+    const _t0ia = Date.now();
     const r = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
@@ -64,6 +82,13 @@ async function generar(key: string, prod: any): Promise<{ texto: string; conWeb:
       signal: AbortSignal.timeout(60_000),   // [rev.7] sin cuelgues que maten la Edge a mitad de lote
     });
     const d = await r.json();
+    // [852] contabilidad — se registra SIEMPRE, también el intento fallido: una llamada que
+    // Anthropic rechaza por formato igual consumió tokens de entrada.
+    _iaLog({ app: 'cron', funcion: conWeb ? 'descripcionIA (con web)' : 'descripcionIA',
+             modelo: String(d.model || MODELO), ok: r.ok, ms: Date.now() - _t0ia,
+             usage: d.usage || {}, error: r.ok ? '' : JSON.stringify(d).slice(0, 300),
+             meta: { conWeb, stop: d.stop_reason || '',
+                     websearch: ((d.usage || {}).server_tool_use || {}).web_search_requests || 0 } });
     if (!r.ok) {
       const msg = JSON.stringify(d);
       if (conWeb && r.status === 400 && /web_search|tool/i.test(msg)) continue;  // herramienta no disponible

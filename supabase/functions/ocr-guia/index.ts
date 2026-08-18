@@ -21,6 +21,23 @@ const CORS = {
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 }
+// [852] CONTABILIDAD DE IA — registra tokens y costo de cada llamada a Claude.
+// Nunca lanza: si el registro falla, la IA sigue funcionando igual. Sin await en el camino
+// caliente (se dispara y se olvida) para no sumar latencia al usuario.
+function _iaLog(rec: Record<string, unknown>): void {
+  try {
+    const _u = Deno.env.get('SUPABASE_URL');
+    const _k = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!_u || !_k) return;
+    fetch(`${_u}/rest/v1/rpc/ia_registrar_uso`, {
+      method: 'POST',
+      headers: { apikey: _k, Authorization: 'Bearer ' + _k,
+                 'Content-Type': 'application/json', 'Content-Profile': 'mos' },
+      body: JSON.stringify({ p: rec }),
+    }).catch(() => {});
+  } catch { /* contabilizar jamás rompe la operación */ }
+}
+
 
 const SYSTEM = [
   'Eres un asistente experto en lectura de comprobantes de pago peruanos (SUNAT).',
@@ -93,6 +110,7 @@ Deno.serve(async (req: Request) => {
     const b64 = btoa(bin);
 
     // 3) Claude visión (haiku — mismo modelo/costo que el camino del front vía Edge `ia`)
+    const _t0ia = Date.now();
     const ar = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': AK, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
@@ -104,8 +122,17 @@ Deno.serve(async (req: Request) => {
         ] }],
       }),
     });
-    if (!ar.ok) return json({ ok: false, error: 'anthropic ' + ar.status, transitorio: true }, 200);
+    if (!ar.ok) {
+      _iaLog({ app: 'cron', funcion: 'ocrGuia', modelo: 'claude-haiku-4-5-20251001', ok: false,
+               ms: Date.now() - _t0ia, error: ('anthropic ' + ar.status).slice(0, 300), usage: {},
+               meta: { idGuia: String(idGuia || '') } });
+      return json({ ok: false, error: 'anthropic ' + ar.status, transitorio: true }, 200);
+    }
     const aj = await ar.json().catch(() => null);
+    // [852] contabilidad: este cron corre cada 10 min y es de los que más gasta
+    _iaLog({ app: 'cron', funcion: 'ocrGuia', modelo: String((aj && aj.model) || 'claude-haiku-4-5-20251001'),
+             ok: true, ms: Date.now() - _t0ia, usage: (aj && aj.usage) || {},
+             meta: { idGuia: String(idGuia || '') } });
     const text = (aj && aj.content && aj.content[0] && aj.content[0].text) || '';
     const first = text.indexOf('{'), last = text.lastIndexOf('}');
     if (first < 0 || last < 0) return json({ ok: false, error: 'respuesta sin JSON', transitorio: true }, 200);
