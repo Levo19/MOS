@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">YapeCaptor</string>
+    <string name="subtitulo">Captura los Yapes de este equipo y los manda a MOS</string>
+    <string name="dar_permiso">Dar permiso de notificaciones</string>
+    <string name="ayuda_permiso">Android no deja conceder esto por código. Buscá «YapeCaptor» en la lista y activalo.</string>
+    <string name="config_titulo">Configuración (se pega una sola vez)</string>
+    <string name="h_url">URL de Supabase (https://xxx.supabase.co)</string>
+    <string name="h_anon">Clave anon</string>
+    <string name="h_secreto">Secreto de este equipo</string>
+    <string name="guardar">Guardar</string>
+    <string name="probar">Enviar una captura de prueba</string>
+    <string name="pie">Solo lee las notificaciones de Yape de este equipo. No abre Yape, no toca el banco y no lee otras apps.</string>
+</resources>

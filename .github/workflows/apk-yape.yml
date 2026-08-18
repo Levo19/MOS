@@ -1,0 +1,50 @@
+# Compila el APK de YapeCaptor en la nube.
+#
+# En la PC del dueño no hay Java, ni Gradle, ni el SDK de Android — y no hace falta que los haya:
+# GitHub trae todo eso instalado en sus máquinas. Cada vez que cambia algo dentro de android/,
+# este flujo compila el APK y lo deja para descargar desde la pestaña Actions del repo.
+#
+# El APK sale firmado con la clave de depuración de Android. Es una app interna que se instala a
+# mano en los celulares del negocio, no va a Play Store, así que no necesita firma de publicación
+# — y de esta forma el archivo que baja ya es instalable, sin pasos extra.
+name: APK YapeCaptor
+
+on:
+  push:
+    paths:
+      - 'android/**'
+      - '.github/workflows/apk-yape.yml'
+  workflow_dispatch:        # botón "Run workflow" para compilar cuando se quiera
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Compilar el APK
+        working-directory: android
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Renombrar con la fecha
+        working-directory: android
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk "out/YapeCaptor-$(date +%Y%m%d-%H%M).apk"
+          ls -lh out
+
+      - name: Subir el APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: YapeCaptor-apk
+          path: android/out/*.apk
+          retention-days: 90
