@@ -304,12 +304,26 @@ Deno.serve(async (req: Request) => {
     const endpoint = ruta;   // ruta dedicada NubeFact — el body lleva tipo_de_comprobante (1=factura,2=boleta)
     const tok = pickToken(serie);   // [go-live] token del local segun la serie (BM01/FM01=Z1, BM02/FM02=Z2)
     if (!tok) return json({ ok: false, error: 'sin token NubeFact para la serie ' + serie }, 500);
-    const resp = await fetch(endpoint, {
+    let resp = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Authorization': 'Token ' + tok, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const body = await resp.json().catch(() => ({}));
+    let body = await resp.json().catch(() => ({}));
+    // [FM01-000059 · 19-ago] "Código de Producto SUNAT incorrecto": un producto del catálogo traía
+    // un código UNSPSC que NubeFact no reconoce (50111509). El código de producto SUNAT es
+    // OPCIONAL en el comprobante —la reemisión del servidor ya lo manda vacío y SUNAT acepta—,
+    // así que si esa es la única queja se reintenta UNA vez sin códigos, en el acto, y la venta
+    // no se queda una hora esperando al cron. El catálogo se corrige aparte.
+    if (resp.status === 400 && /c[oó]digo de producto sunat/i.test(String((body && (body.errors || body.message || body.error)) || ''))) {
+      const payload2 = { ...payload, items: nfItems.map((it) => ({ ...it, codigo_producto_sunat: '' })) };
+      resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Authorization': 'Token ' + tok, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload2),
+      });
+      body = await resp.json().catch(() => ({}));
+    }
 
     if (resp.status === 200 || resp.status === 201) {
       // El comprobante SE GENERÓ (NubeFact firmó + dio QR/hash/PDF). La aceptación SUNAT es ASÍNCRONA:
