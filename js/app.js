@@ -36961,14 +36961,26 @@ const MOS = (() => {
 
     filtrada.forEach((c, i) => {
       const cls = _tribClasifCPE(c);
-      const est = estados[cls] || estados.SIN_EMITIR;
+      let est = estados[cls] || estados.SIN_EMITIR;
+      // Un comprobante que NubeFact rechazó no es lo mismo que uno que todavía no se mandó:
+      // el primero necesita que alguien lo mire, el segundo se resuelve solo. Se distinguen.
+      if (cls !== 'ACEPTADO' && /^RECHAZO NubeFact/i.test(String(c.sunatDesc || '')))
+        est = ['error', '⛔ NubeFact lo rechazó'];
+      else if (cls !== 'ACEPTADO' && /^FUERA DE PLAZO/i.test(String(c.sunatDesc || '')))
+        est = ['error', '⏳ fuera de plazo'];
       const igv = _tribIGVdeCPE(c);
       totIGV = _money(totIGV + igv);
       const esFactura = String(c.tipo || '').toUpperCase() === 'FACTURA';
       const fecha = c.fecha ? new Date(c.fecha) : null;
       const fStr = (fecha && !isNaN(fecha.getTime())) ? fecha.toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
-      const detSunat = (cls === 'RECHAZADO' && c.sunatDesc)
-        ? '<div class="trib-gaviso" style="color:#fb7185">⚠ ' + _escapeHtml(String(c.sunatDesc).slice(0, 120)) + '</div>' : '';
+      // El motivo se muestra SIEMPRE que exista y el comprobante no esté aceptado — antes solo
+      // salía en los RECHAZADO por SUNAT, así que un rechazo de NubeFact (que ni siquiera llega
+      // a SUNAT) se veía como un "⚪ sin emitir" mudo: no había forma de saber qué pasó.
+      const _desc = String(c.sunatDesc || '').trim();
+      const _esFalloNF = /^RECHAZO NubeFact|^FUERA DE PLAZO/i.test(_desc);
+      const detSunat = (_desc && cls !== 'ACEPTADO')
+        ? '<div class="trib-gaviso" style="color:' + (_esFalloNF ? '#fbbf24' : '#fb7185') + '">⚠ '
+          + _escapeHtml(_desc.slice(0, 180)) + '</div>' : '';
       const meta = [];
       if (fStr) meta.push('<span>' + _escapeHtml(fStr) + '</span>');
       meta.push('<span>' + (esFactura ? 'Factura' : 'Boleta') + '</span>');

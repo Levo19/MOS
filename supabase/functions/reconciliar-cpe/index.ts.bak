@@ -74,83 +74,6 @@ async function generarBaja(serie: string, numero: number, tipoComprobante: numbe
   } catch { return { estado: 'BAJA_ERROR' }; }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════════════
-// REEMITIR. Esto es lo que no existía y por lo que 31 facturas se quedaron sin llegar a
-// SUNAT: cuando la emisión original falla, MosExpress deja la venta PENDIENTE confiando en
-// que "la reconciliación la re-emite". No la re-emitía — este archivo solo consultaba.
-//
-// La matemática de totales es la MISMA de emitir-cpe, campo por campo. Y antes de mandar
-// nada hay un cerrojo: se recalcula el total desde los ítems y si no cuadra al céntimo con
-// el total de la venta guardada, NO se emite. Un comprobante con otro monto que la venta es
-// peor que un comprobante que falta.
-//
-// Diferencia deliberada con emitir-cpe: la fecha_de_emision es la de la VENTA, no la de hoy.
-// El comprobante documenta esa venta, de ese día. Reemitir con fecha de hoy movería el
-// período — y eso lo decide el contador, no este código.
-// ══════════════════════════════════════════════════════════════════════════════════════
-function armarPayloadNF(data: Record<string, any>, serie: string, numero: number,
-                        tipoComprobante: number, fechaEmision: string) {
-  const header = data.header || {};
-  const items = data.items || [];
-  let totalGravada = 0, totalIVAP = 0, totalImpIVAP = 0, totalExonerada = 0, totalInafecta = 0;
-  // ── LA TRADUCCIÓN QUE FALTABA ─────────────────────────────────────────────────────
-  // El catálogo guarda 9 para EXONERADO. Pero en NubeFact 9 es INAFECTO — su rechazo lo dice
-  // con todas las letras: "codigo Tributo: 9998", que es el código SUNAT de inafecto. En
-  // NubeFact el exonerado es 8. Por eso, desde el 14-ago (el día en que se pasaron 87
-  // productos a 9), TODO comprobante con un exonerado fue rechazado en la pre-validación:
-  // el monto se declaraba en total_exonerada mientras la línea decía "inafecto", y NubeFact
-  // contestaba "Total INAFECTA debe ser mayor a cero".
-  const aNubeFact = (t: number): number => (t === 9 ? 8 : t === 11 ? 9 : t === 8 ? 17 : t);
-  const nfItems = items.map((item: Record<string, unknown>) => {
-    const tipoIgv = aNubeFact(parseInt(String(item.tipo_igv ?? 1), 10));
-    const cantidad = parseFloat(String(item.cantidad ?? 1));
-    const valorUnitario = parseFloat(String(item.valor_unitario ?? 0));
-    const subtotalVU = r2(valorUnitario * cantidad);
-    const precioTotal = parseFloat(String(item.subtotal ?? 0));
-    let igvItem: number;
-    // Los totales se agrupan por el código de NubeFact, no por el nuestro:
-    //   1 gravado · 8 exonerado · 9/10/11 inafecto · 17 IVAP
-    if (tipoIgv === 1) { igvItem = r2(precioTotal - subtotalVU); totalGravada += subtotalVU; }
-    else if (tipoIgv === 17) { igvItem = r2(precioTotal - subtotalVU); totalIVAP += subtotalVU; totalImpIVAP += igvItem; }
-    else if (tipoIgv === 8) { igvItem = 0; totalExonerada += precioTotal; }
-    else { igvItem = 0; totalInafecta += precioTotal; }
-    return {
-      unidad_de_medida: String(item.unidad_de_medida || 'NIU'),
-      codigo: String(item.sku || ''), codigo_producto_sunat: String(item.cod_sunat || ''),
-      descripcion: String(item.nombre || ''), cantidad,
-      valor_unitario: r2(valorUnitario), precio_unitario: parseFloat(String(item.precio ?? 0)),
-      descuento: '', subtotal: subtotalVU, tipo_de_igv: tipoIgv, igv: igvItem, total: precioTotal,
-      anticipo_regularizacion: false, anticipo_documento_serie: '', anticipo_documento_numero: '',
-    };
-  });
-  totalGravada = r2(totalGravada); totalIVAP = r2(totalIVAP); totalImpIVAP = r2(totalImpIVAP);
-  totalExonerada = r2(totalExonerada); totalInafecta = r2(totalInafecta);
-  const totalGeneral = parseFloat(String(header.total ?? 0));
-  const totalIgv = r2(totalGeneral - totalGravada - totalIVAP - totalExonerada - totalInafecta);
-  // EL CERROJO: la suma de las líneas tiene que dar el total de la venta, al céntimo.
-  const sumaLineas = r2(nfItems.reduce((a: number, it: Record<string, any>) => a + parseFloat(String(it.total ?? 0)), 0));
-  if (Math.abs(sumaLineas - totalGeneral) > 0.009) {
-    return { error: 'DESCUADRE: items suman ' + sumaLineas.toFixed(2) + ' y la venta dice ' + totalGeneral.toFixed(2) };
-  }
-  const cliente = header.cliente || {};
-  return { payload: {
-    operacion: 'generar_comprobante', tipo_de_comprobante: tipoComprobante, serie, numero,
-    sunat_transaction: 1,
-    cliente_tipo_de_documento: parseInt(String(cliente.tipo ?? 0), 10),
-    cliente_numero_de_documento: (parseInt(String(cliente.tipo ?? 0), 10) === 0) ? '0' : String(cliente.doc || '0'),
-    cliente_denominacion: String(cliente.nombre || 'CLIENTE ANONIMO'),
-    cliente_direccion: String(cliente.direccion || ''), cliente_email: '',
-    fecha_de_emision: fechaEmision, fecha_de_vencimiento: '', moneda: 1, tipo_de_cambio: '',
-    porcentaje_de_igv: 18,
-    total_gravada: totalGravada > 0 ? totalGravada : '', total_ivap: totalIVAP > 0 ? totalIVAP : '',
-    total_imp_ivap: totalImpIVAP > 0 ? totalImpIVAP : '', total_exonerada: totalExonerada > 0 ? totalExonerada : '',
-    total_inafecta: totalInafecta > 0 ? totalInafecta : '', total_igv: totalIgv > 0 ? totalIgv : '',
-    total_precio_de_venta: totalGeneral, total_descuentos: '', total_otros_cargos: '', total: totalGeneral,
-    detraccion: false, enviar_automaticamente_a_la_sunat: true, enviar_automaticamente_al_cliente: false,
-    formato_de_pdf: 'TICKET', items: nfItems,
-  } };
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ ok: false, error: 'método no permitido' }, 405);
@@ -186,15 +109,6 @@ Deno.serve(async (req: Request) => {
     // [500x-2b] ventana >= 45d (cubre el sweep GAS de 35d + margen); SUNAT puede aceptar dias despues.
     const dias = Math.min(Math.max(parseInt(String(inp.dias ?? 45), 10) || 45, 1), 90);
     const limite = Math.min(Math.max(parseInt(String(inp.limite ?? 50), 10) || 50, 1), 200);
-    // CENSO: consulta y reporta, sin escribir NADA y sin comunicar ninguna baja. Sirve para
-    // saber, antes de tocar SUNAT, cuáles comprobantes existen allá y cuáles no.
-    const censo = inp.censo === true;
-    // REEMITIR: para los que NubeFact confirma que no existen, emitirlos de verdad.
-    const reemitir = inp.reemitir === true && !censo;
-    // Permite acotar la corrida a una lista concreta — para empezar por UNO y mirar el resultado
-    // antes de soltar los 55.
-    const solo: string[] = Array.isArray(inp.soloCorrelativos)
-      ? inp.soloCorrelativos.map((x: unknown) => String(x).trim().toUpperCase()).filter(Boolean) : [];
 
     // [505] Candidatos vía RPC (me.cpe_recon_candidatos): pendientes NORMALES + ANULADAS que aún deben
     // comunicar la baja. Cada fila trae `anulada` (forma_pago='ANULADO') → decide la acción fiscal.
@@ -204,16 +118,11 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({ p_dias: dias, p_limite: limite }),
     });
     if (!rp.ok) return json({ ok: false, error: 'lectura candidatos HTTP ' + rp.status }, 502);
-    let pend = await rp.json().catch(() => []);
-    if (Array.isArray(pend) && solo.length) {
-      pend = pend.filter((r: Record<string, unknown>) => solo.includes(String(r.correlativo || '').trim().toUpperCase()));
-    }
+    const pend = await rp.json().catch(() => []);
     if (!Array.isArray(pend) || pend.length === 0) return json({ ok: true, revisados: 0, emitidos: 0, rechazados: 0, bajas: 0, agendadas: 0, sin_cambio: 0, detalle: [] });
 
     // helper: persistir un nf_estado simple (baja/anulación) vía service-role.
-    const setEstado = (ref: string, nf: Record<string, unknown>) => censo
-      ? Promise.resolve({ ok: true, status: 200 } as Response)
-      : fetch(`${url}/rest/v1/rpc/set_cpe_nf`, {
+    const setEstado = (ref: string, nf: Record<string, unknown>) => fetch(`${url}/rest/v1/rpc/set_cpe_nf`, {
       method: 'POST',
       headers: { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
       body: JSON.stringify({ p_ref_local: ref, p_nf: nf }),
@@ -236,75 +145,6 @@ Deno.serve(async (req: Request) => {
         // ser transitorio, y marcar ANULADO nos haría PERDER la baja si el comprobante sí existía y se acepta.
         if (anulada && row.nf_estado !== 'ANULADO_PEND_BAJA') { await setEstado(row.ref_local, { nf_estado: 'ANULADO_PEND_BAJA' }); }
         if (anulada) { agendadas++; detalle.push({ correlativo: corr, accion: (cons.noExiste ? 'anulada_no_existe_reintenta' : 'anulada_consulta_fallo') }); }
-        else if (cons.noExiste && reemitir) {
-          // ACÁ está el agujero que dejó 31 facturas fuera de SUNAT: NubeFact confirma que el
-          // comprobante nunca llegó. Antes se contaba como "sin cambio" y se seguía de largo.
-          const pay = await fetch(`${url}/rest/v1/rpc/cpe_payload_reemision`, {
-            method: 'POST',
-            headers: { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ p: { correlativo: corr } }),
-          });
-          const pj = await pay.json().catch(() => null);
-          if (!pj || pj.ok !== true) { sinCambio++; detalle.push({ correlativo: corr, accion: 'reemision_sin_payload', error: (pj && pj.error) || 'HTTP ' + pay.status }); continue; }
-          // NubeFact solo acepta comprobantes con fecha de HOY. Un comprobante de ayer ya no
-          // se puede emitir con su fecha original, y emitirlo con la de hoy movería el período
-          // fiscal — eso lo decide el contador. Así que el reintento automático cubre SOLO el
-          // día en curso: es donde sirve y donde no hay que decidir nada.
-          const hoyLima = new Date(Date.now() - 5 * 3600 * 1000);
-          const hoyStr = `${String(hoyLima.getUTCDate()).padStart(2,'0')}-${String(hoyLima.getUTCMonth()+1).padStart(2,'0')}-${hoyLima.getUTCFullYear()}`;
-          const fechaUsar = String(inp.fechaHoy === true ? hoyStr : pj.data.fecha_venta);
-          if (fechaUsar !== hoyStr) {
-            await setEstado(row.ref_local, {
-              nf_estado: 'PENDIENTE', consultado: true,
-              sunat_desc: 'FUERA DE PLAZO: NubeFact solo acepta comprobantes con fecha de HOY. '
-                        + 'Este es del ' + pj.data.fecha_venta + ' y requiere decisión del contador.',
-              sunat_code: 'PLAZO',
-            });
-            sinCambio++;
-            detalle.push({ correlativo: corr, accion: 'fuera_de_plazo_requiere_decision', fecha: pj.data.fecha_venta, total: pj.data.data.header.total });
-            continue;
-          }
-          const armado = armarPayloadNF(pj.data.data, m[1], parseInt(m[2], 10), tipoComprobante, fechaUsar);
-          if ((armado as Record<string, unknown>).error) {
-            sinCambio++; detalle.push({ correlativo: corr, accion: 'reemision_descuadre', error: (armado as Record<string, string>).error }); continue;
-          }
-          let em: Record<string, unknown> = {};
-          try {
-            const rr = await fetch(ruta, {
-              method: 'POST',
-              headers: { 'Authorization': 'Token ' + tok, 'Content-Type': 'application/json' },
-              body: JSON.stringify((armado as Record<string, unknown>).payload),
-            });
-            const bb = await rr.json().catch(() => ({}));
-            const acept = bb.aceptada_por_sunat === true;
-            const sdesc = String(bb.sunat_description || bb.errors || '').trim();
-            if (rr.status === 200 || rr.status === 201) {
-              em = { nf_estado: acept ? 'EMITIDO' : 'PENDIENTE', nf_hash: String(bb.codigo_hash || ''),
-                     nf_enlace: String(bb.enlace_del_pdf || ''), nf_qr: String(bb.cadena_para_codigo_qr || ''),
-                     aceptada: acept, sunat_desc: sdesc,
-                     sunat_code: (bb.sunat_responsecode != null ? String(bb.sunat_responsecode) : ''),
-                     enlace_xml: String(bb.enlace_del_xml || ''), enlace_cdr: String(bb.enlace_del_cdr || ''),
-                     numero_orden_sunat: String(bb.numero_de_orden_sunat || ''), consultado: true };
-            } else {
-              // EL MOTIVO SE GUARDA. Antes el rechazo de NubeFact moría en el log de un cron que
-              // nadie leía: el comprobante quedaba "sin emitir" en Tributario, sin decir por qué,
-              // y no había forma de enterarse. Ahora el motivo viaja a nf_sunat_desc y lo pinta
-              // el card, junto al push del vigilante.
-              await setEstado(row.ref_local, {
-                nf_estado: 'PENDIENTE', consultado: true,
-                sunat_desc: 'RECHAZO NubeFact (' + rr.status + '): ' + sdesc.slice(0, 300),
-                sunat_code: 'NF_' + rr.status,
-              });
-              sinCambio++; detalle.push({ correlativo: corr, accion: 'reemision_rechazada', http: rr.status, error: sdesc.slice(0, 180) }); continue;
-            }
-          } catch (e) {
-            sinCambio++; detalle.push({ correlativo: corr, accion: 'reemision_error_red', error: String((e as Error)?.message || e).slice(0, 120) }); continue;
-          }
-          const sp2 = await setEstado(row.ref_local, em);
-          if (sp2.ok) { emitidos++; detalle.push({ correlativo: corr, accion: 'REEMITIDO_' + String(em.nf_estado), fecha: pj.data.fecha_venta, total: pj.data.data.header.total }); }
-          else { sinCambio++; detalle.push({ correlativo: corr, accion: 'reemitido_pero_no_persistio_HTTP_' + sp2.status }); }
-          continue;
-        }
         else { sinCambio++; detalle.push({ correlativo: corr, accion: cons.noExiste ? 'no_existe_nubefact' : 'consulta_fallo' }); }
         continue;
       }
@@ -312,7 +152,6 @@ Deno.serve(async (req: Request) => {
       // ── Rama ANULADA: la venta ya no cuenta (pago reversado); resolver el lado fiscal ──
       if (anulada) {
         if (cons.aceptada) {
-          if (censo) { sinCambio++; detalle.push({ correlativo: corr, accion: 'censo_anulada_aceptada_falta_baja' }); continue; }
           // SUNAT lo aceptó → comunicar la baja YA (auto-baja).
           const b = await generarBaja(m[1], parseInt(m[2], 10), tipoComprobante, ruta, tok);
           const sp = await setEstado(row.ref_local, { nf_estado: b.estado, aceptada: true, consultado: true,
@@ -344,8 +183,7 @@ Deno.serve(async (req: Request) => {
       if (sp.ok) { if (nuevoEstado === 'EMITIDO') emitidos++; else rechazados++; detalle.push({ correlativo: corr, accion: nuevoEstado }); }
       else { sinCambio++; detalle.push({ correlativo: corr, accion: 'set_cpe_nf_HTTP_' + sp.status }); }
     }
-    return json({ ok: true, modo: censo ? 'censo' : (reemitir ? 'reemitir' : 'normal'),
-                  revisados: pend.length, emitidos, rechazados, bajas, agendadas, sin_cambio: sinCambio, detalle });
+    return json({ ok: true, revisados: pend.length, emitidos, rechazados, bajas, agendadas, sin_cambio: sinCambio, detalle });
   } catch (e) {
     return json({ ok: false, error: String((e as Error)?.message || e) }, 500);
   }

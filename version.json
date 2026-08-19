@@ -1,1 +1,1 @@
-{"version": "2.43.856", "build": "2.43.856 El APK ahora tiene version real (sube en cada compilacion), se publica como Release descargable y se actualiza solo: la app avisa que hay version nueva, la baja y abre el instalador. En Config se ve que version corre cada celular y si alguno quedo atras. El latido pasa a cada 10 minutos."}
+{"version": "2.43.857", "build": "2.43.857 Tributario ahora dice POR QUE un comprobante no llego a SUNAT: si NubeFact lo rechazo o quedo fuera de plazo, el card lo muestra en vez de un mudo sin emitir."}
