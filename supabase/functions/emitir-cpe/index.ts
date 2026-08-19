@@ -330,6 +330,16 @@ Deno.serve(async (req: Request) => {
         numero_orden_sunat: String(body.numero_de_orden_sunat || ''),
       };
       if (!aceptada && tieneErrSunat) {
+        // SUNAT rechazó el comprobante que NubeFact sí aceptó: aviso al MASTER al instante.
+        try {
+          const sbUrl3 = Deno.env.get('SUPABASE_URL'), sbKey3 = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+          if (sbUrl3 && sbKey3) await fetch(`${sbUrl3}/rest/v1/rpc/cpe_avisar_rechazo`, {
+            method: 'POST',
+            headers: { 'apikey': sbKey3, 'Authorization': 'Bearer ' + sbKey3, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ p: { correlativo, origen: 'SUNAT', http: String(respCode ?? ''), motivo: (sunatDesc || ('código ' + respCode)).slice(0, 300),
+                                        total: parseFloat(String(header.total ?? 0)) || 0 } }),
+          });
+        } catch (_) { /* best-effort */ }
         return json({ ok: false, rechazadoPorSunat: true, error: 'SUNAT rechazó: ' + (sunatDesc || ('código ' + respCode)), ...comun });
       }
       // EMITIDO (aceptada) o PENDIENTE (async) — ambos con comprobante válido.
@@ -346,6 +356,22 @@ Deno.serve(async (req: Request) => {
         return json({ ...cons, estado: cons.aceptada ? 'EMITIDO' : 'PENDIENTE', dedupNubeFact: true });
       }
     }
+    // NubeFact rechazó y NO es duplicado: avisar AL INSTANTE, con el motivo. Antes esto volvía
+    // a la caja como {ok:false}, la venta quedaba PENDIENTE muda, y el dueño se enteraba a los
+    // 20 min por el vigilante (sin motivo) y del motivo recién una hora después, cuando el cron
+    // reintentaba y volvía a fallar. NubeFact lo dijo con todas las letras en el segundo cero.
+    // Best-effort: si el aviso falla, la respuesta a la caja no cambia.
+    try {
+      const sbUrl2 = Deno.env.get('SUPABASE_URL'), sbKey2 = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (sbUrl2 && sbKey2) {
+        await fetch(`${sbUrl2}/rest/v1/rpc/cpe_avisar_rechazo`, {
+          method: 'POST',
+          headers: { 'apikey': sbKey2, 'Authorization': 'Bearer ' + sbKey2, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p: { correlativo, http: String(resp.status), motivo: errMsg.slice(0, 300),
+                                      total: parseFloat(String(header.total ?? 0)) || 0 } }),
+        });
+      }
+    } catch (_) { /* el aviso es best-effort */ }
     return json({ ok: false, error: 'HTTP ' + resp.status + ': ' + errMsg.slice(0, 250) }, 502);
   } catch (e) {
     return json({ ok: false, error: String((e as Error)?.message || e) }, 500);

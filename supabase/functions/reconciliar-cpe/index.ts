@@ -361,6 +361,19 @@ Deno.serve(async (req: Request) => {
         consultado: true,
       };
       const sp = await setEstado(row.ref_local, nf);
+      if (sp.ok && nuevoEstado === 'RECHAZADO' && !censo) {
+        // SUNAT lo rechazó después de que NubeFact lo aceptara (pasa con boletas del resumen
+        // diario). Aviso al MASTER con el motivo — el vigilante no lo cuenta porque tiene hash.
+        try {
+          await fetch(`${url}/rest/v1/rpc/cpe_avisar_rechazo`, {
+            method: 'POST',
+            headers: { 'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Profile': 'me', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ p: { correlativo: corr, origen: 'SUNAT', http: String(cons.sunat_code || ''),
+                                        motivo: String(cons.sunatDescription || ('código ' + cons.sunat_code)).slice(0, 300),
+                                        total: parseFloat(String(row.total ?? 0)) || 0 } }),
+          });
+        } catch (_) { /* best-effort */ }
+      }
       if (sp.ok) { if (nuevoEstado === 'EMITIDO') emitidos++; else rechazados++; detalle.push({ correlativo: corr, accion: nuevoEstado }); }
       else { sinCambio++; detalle.push({ correlativo: corr, accion: 'set_cpe_nf_HTTP_' + sp.status }); }
     }

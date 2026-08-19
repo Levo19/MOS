@@ -37017,6 +37017,36 @@ const MOS = (() => {
       : '';
     let totIGV = 0;
 
+    // ── agrupado por DÍA. La fecha va en la cabecera del grupo, el card solo lleva la hora:
+    //    con 450 comprobantes al mes repetir "18-ago." en cada uno era ruido, y buscar "qué
+    //    pasó el viernes" obligaba a leer fila por fila.
+    const _hoy = new Date(); _hoy.setHours(0, 0, 0, 0);
+    const _diaKey = (d) => d ? (d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')) : '';
+    const _diaTitulo = (d) => {
+      const dd = new Date(d); dd.setHours(0, 0, 0, 0);
+      const diff = Math.round((_hoy - dd) / 86400000);
+      const largo = d.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' });
+      const cap = largo.charAt(0).toUpperCase() + largo.slice(1);
+      return diff === 0 ? 'Hoy · ' + cap : diff === 1 ? 'Ayer · ' + cap : cap;
+    };
+    let _grupoActual = null, _gN = 0, _gIGV = 0, _gDocs = 0;
+    const _abrirGrupo = (fecha) => {
+      _grupoActual = _diaKey(fecha); _gN = 0; _gIGV = 0; _gDocs = 0;
+      const id = 'tribDia_' + _grupoActual;
+      html += '<div class="trib-dia" id="' + id + '">' +
+                '<div class="trib-dia-h"><span class="trib-dia-t">' + _escapeHtml(_diaTitulo(fecha)) + '</span>' +
+                '<span class="trib-dia-s" data-diaresumen="' + id + '"></span></div>';
+    };
+    const _cerrarGrupo = () => {
+      if (_grupoActual == null) return;
+      html += '</div>';
+      // el resumen del día se rellena al final, cuando ya se contó todo el grupo
+      html = html.replace('data-diaresumen="tribDia_' + _grupoActual + '"></span>',
+        'data-diaresumen="tribDia_' + _grupoActual + '">' + _gDocs + ' doc' + (_gDocs === 1 ? '' : 's') +
+        ' · <b>' + _tribFmtSoles(_gIGV) + '</b> en contra</span>');
+      _grupoActual = null;
+    };
+
     filtrada.forEach((c, i) => {
       const cls = _tribClasifCPE(c);
       let est = estados[cls] || estados.SIN_EMITIR;
@@ -37024,13 +37054,23 @@ const MOS = (() => {
       // el primero necesita que alguien lo mire, el segundo se resuelve solo. Se distinguen.
       if (cls !== 'ACEPTADO' && /^RECHAZO NubeFact/i.test(String(c.sunatDesc || '')))
         est = ['error', '⛔ NubeFact lo rechazó'];
+      else if (cls !== 'ACEPTADO' && /^RECHAZO SUNAT/i.test(String(c.sunatDesc || '')))
+        est = ['error', '🔴 SUNAT lo rechazó'];
       else if (cls !== 'ACEPTADO' && /^FUERA DE PLAZO/i.test(String(c.sunatDesc || '')))
         est = ['error', '⏳ fuera de plazo'];
+      const esBaja = (cls === 'BAJA');
       const igv = _tribIGVdeCPE(c);
-      totIGV = _money(totIGV + igv);
+      // una baja no suma: la venta ya no existe. Mostrarla como "en contra" mentía en el
+      // parcial de pantalla mientras el encabezado (backend) sí la excluía.
+      if (!esBaja) totIGV = _money(totIGV + igv);
       const esFactura = String(c.tipo || '').toUpperCase() === 'FACTURA';
       const fecha = c.fecha ? new Date(c.fecha) : null;
-      const fStr = (fecha && !isNaN(fecha.getTime())) ? fecha.toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      const fOk = fecha && !isNaN(fecha.getTime());
+      if (fOk && _diaKey(fecha) !== _grupoActual) { _cerrarGrupo(); _abrirGrupo(fecha); }
+      else if (!fOk && _grupoActual !== '') { _cerrarGrupo(); _grupoActual = ''; html += '<div class="trib-dia"><div class="trib-dia-h"><span class="trib-dia-t">Sin fecha</span></div>'; }
+      _gDocs++; if (!esBaja) _gIGV = _money(_gIGV + igv);
+      const hora = fOk ? fecha.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }) : '';
+
       // El motivo se muestra SIEMPRE que exista y el comprobante no esté aceptado — antes solo
       // salía en los RECHAZADO por SUNAT, así que un rechazo de NubeFact (que ni siquiera llega
       // a SUNAT) se veía como un "⚪ sin emitir" mudo: no había forma de saber qué pasó.
@@ -37039,29 +37079,32 @@ const MOS = (() => {
       const detSunat = (_desc && cls !== 'ACEPTADO')
         ? '<div class="trib-gaviso" style="color:' + (_esFalloNF ? '#fbbf24' : '#fb7185') + '">⚠ '
           + _escapeHtml(_desc.slice(0, 180)) + '</div>' : '';
-      const meta = [];
-      if (fStr) meta.push('<span>' + _escapeHtml(fStr) + '</span>');
-      meta.push('<span>' + (esFactura ? 'Factura' : 'Boleta') + '</span>');
-      meta.push('<span>Total ' + _tribFmtSoles(c.total) + '</span>');
+
+      const cli = String(c.cliente || '').trim();
+      const nombreCli = cli && !/^varios$/i.test(cli) ? cli : (esFactura ? 'Sin razón social' : 'Cliente varios');
+      const docCli = c.clienteDoc && String(c.clienteDoc) !== '66666' ? String(c.clienteDoc) : '';
 
       html +=
-        '<div class="trib-gcard" data-cpe="' + _escapeHtml(String(c.idVenta || c.refLocal || i)) + '" style="animation-delay:' + (Math.min(i, 16) * 25) + 'ms">' +
-          '<span class="trib-gnofoto" style="background:rgba(255,255,255,.05);border:1px solid var(--trib-line);color:var(--trib-ink2);width:42px;height:52px">' +
-            (esFactura ? '📋' : '🧾') + '</span>' +
+        '<div class="trib-gcard cpe' + (esBaja ? ' baja' : '') + '" data-cpe="' + _escapeHtml(String(c.idVenta || c.refLocal || i)) + '" style="animation-delay:' + (Math.min(i, 16) * 25) + 'ms">' +
+          '<span class="trib-gtipo ' + (esFactura ? 'fac' : 'bol') + '" title="' + (esFactura ? 'Factura' : 'Boleta') + '">' + (esFactura ? 'F' : 'B') + '</span>' +
           '<div class="trib-gmain">' +
-            '<div class="trib-gid">' + _escapeHtml(String(c.correlativo || '(sin correlativo)')) + '</div>' +
-            '<div class="trib-gmeta">' + meta.join('<span>·</span>') + '</div>' +
-            '<div class="trib-gmeta" style="margin-top:2px">👤 ' + _escapeHtml(String(c.cliente || 'sin cliente')) +
-              (c.clienteDoc ? ' <code>' + _escapeHtml(String(c.clienteDoc)) + '</code>' : '') + '</div>' +
+            // 1 · el cliente, primero: es lo que se busca cuando alguien pregunta "mi factura"
+            '<div class="trib-gcli">' + _escapeHtml(nombreCli) +
+              (docCli ? ' <code>' + _escapeHtml(docCli) + '</code>' : '') + '</div>' +
+            // 2 · el documento: correlativo · hora
+            '<div class="trib-gmeta"><code class="trib-gcorr">' + _escapeHtml(String(c.correlativo || '(sin correlativo)')) + '</code>' +
+              (hora ? '<span>·</span><span>' + _escapeHtml(hora) + '</span>' : '') +
+              '<span>·</span><span>Total <b>' + _tribFmtSoles(c.total) + '</b></span></div>' +
             detSunat +
           '</div>' +
           '<div class="trib-gright">' +
-            '<span class="trib-gchip en-contra" title="IGV incluido en el total (18%)">' + _tribFmtSoles(igv) + ' en contra</span>' +
+            (esBaja
+              ? '<span class="trib-gchip neutro" title="La venta se anuló: no cuenta">sin efecto</span>'
+              : '<span class="trib-gchip en-contra" title="IGV de la operación">' + _tribFmtSoles(igv) + ' en contra</span>') +
             '<span class="trib-gocr ' + est[0] + '">' + est[1] + '</span>' +
           '</div>' +
+          '<div class="trib-gacc">' +
           (c.enlacePdf ? '<button type="button" class="trib-gbtn" data-pdf="' + _escapeHtml(String(c.enlacePdf)) + '" title="Abrir el PDF del comprobante">📄</button>' : '') +
-          // Compartir: la imagen se arma acá con los datos que ya están en pantalla (instantánea,
-          // sirve aunque el cliente no abra PDFs); el PDF es el archivo fiscal de NubeFact.
           (c.enlacePdf
             ? '<button type="button" class="trib-gbtn img" data-cpeimg="' + _escapeHtml(String(c.idVenta || '')) + '" title="Generar imagen del comprobante y compartir">🖼</button>' +
               '<button type="button" class="trib-gbtn wa" data-cpewa="' + _escapeHtml(String(c.idVenta || '')) + '" title="Enviar el PDF por WhatsApp">🟢</button>'
@@ -37071,13 +37114,14 @@ const MOS = (() => {
               'data-corr="' + _escapeHtml(String(c.correlativo || '')) + '" data-tipo="' + _escapeHtml(String(c.tipo || '')) + '" ' +
               'data-ref="' + _escapeHtml(String(c.refLocal || '')) + '" title="Consultar el estado real en SUNAT">🔄</button>'
             : '') +
+          '</div>' +
         '</div>';
     });
+    _cerrarGrupo();
 
     html += '<div class="trib-nota">Mostrando <b style="color:var(--trib-ink1)">' + filtrada.length + '</b> de ' + lista.length +
-            ' comprobantes · IGV en pantalla <b style="color:var(--trib-contra)">' + _tribFmtSoles(totIGV) + '</b>. ' +
-            'El IGV por línea se deriva del total (18% incluido), igual que el Excel del mes: la trazabilidad de CPE ' +
-            'guarda el total, no el desagregado. El total del encabezado sí viene del cálculo fiscal del backend.</div>';
+            ' comprobantes · IGV en pantalla <b style="color:var(--trib-contra)">' + _tribFmtSoles(totIGV) + '</b> ' +
+            '(solo lo gravado, línea por línea, como se declaró; las bajas no suman).</div>';
     cont.innerHTML = html;
     cont.scrollTop = 0;
   }
