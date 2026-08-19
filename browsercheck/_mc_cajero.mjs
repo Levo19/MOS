@@ -95,6 +95,18 @@ window.__vm = createApp({
       mcReja: ref(null), mcAura: ref(null), mcFlash: ref(null), mcScan: ref(null), mcGlove: ref(null), mcDrag: ref(null),
       // v6: cola, órbita, gestos
       mcSiguientes: computed(()=>tickets.value.filter(v=>v.id!==(cajeroTicketActual.value&&cajeroTicketActual.value.id)).slice(0,2)),
+      // v7: órbitas — pendientes + historia, y Yapes; posiciones repartidas por ángulo
+      mcEscEl: ref(null),
+      mcOrbTk: computed(()=>{ const hist=[{id:'h1',correlativo:'NVM2-000520',tipo:'NOTA_DE_VENTA',total:9,timestamp:Date.now()-3600e3,cobrado:true,raw_data:{auth:{vendedor:'Mia'}}},
+                                          {id:'h2',correlativo:'NVM2-000519',tipo:'NOTA_DE_VENTA',total:14.5,timestamp:Date.now()-5400e3,cobrado:true,raw_data:{auth:{vendedor:'Mia'}}}];
+        const todos=tickets.value.map(v=>({v,pend:true})).concat(hist.map(v=>({v,pend:false}))); const n=todos.length;
+        return todos.map((o,i)=>{ const a=(-90+i*360/n)*Math.PI/180; const x=Math.round(430*Math.cos(a)), y=Math.round(250*Math.sin(a));
+          const cur=cajeroTicketActual.value&&cajeroTicketActual.value.id; const sigV=tickets.value.find(v=>v.id!==cur);
+          return Object.assign(o,{sig:!!(sigV&&o.v.id===sigV.id&&o.pend),st:{transform:'translate3d(calc(-50% + '+x+'px), calc(-50% + '+y+'px), 0)'}}); }); }),
+      mcOrbYp: computed(()=>{ const ys=[...mcYapes.value,{id:2,monto:12,pagador:'JUAN PEREZ',hora:'14:20',min:12,estado:'MATCHEADO',idVenta:'h1',ilegible:false},{id:3,monto:7.5,pagador:'ANA',hora:'14:00',min:32,estado:'NUEVO',idVenta:'',ilegible:false}];
+        const n=ys.length; return ys.map((y,i)=>{ const a=(90+180/n - i*360/n)*Math.PI/180; const x=Math.round(560*Math.cos(a)), y2=Math.round(320*Math.sin(a));
+          return {y, st:{transform:'translate3d(calc(-50% + '+x+'px), calc(-50% + '+y2+'px), 0)'}}; }); }),
+      mcTocarYape: (y) => { window.__tocoYape = y.id; },
       mcLineas: ref([{nombre:'AJI PANCA ENTERO GRANEL',cantidad:0.25,subtotal:3.5,um:'KGM'},{nombre:'AZUCAR RUBIA 1KG',cantidad:2,subtotal:6.6,um:'NIU'},{nombre:'FIDEO SPAGHETTI 500GR',cantidad:1,subtotal:2.4,um:'NIU'}]),
       mcCant: it => { const n=parseFloat(it.cantidad)||0, um=String(it.um||'NIU').toUpperCase(); return (Number.isInteger(n)?n:n.toFixed(3).replace(/0+$/,'').replace(/[.]$/,''))+(um==='KGM'?' kg':um==='NIU'?'×':' '+um.toLowerCase()); },
       mcCorto: n => { const t=String(n||'').trim(); return t.length>26?t.slice(0,25)+'…':t; },
@@ -150,21 +162,27 @@ T('no inventa campos de config/venta que la app no tenga',
 
 // ── 1. el template compila y pinta ──
 const v1 = await p.evaluate(`(() => { const r=document.getElementById('mcRoot'); if(!r) return null;
-  return { tickets:r.querySelectorAll('.mc-tk').length, calza:r.querySelectorAll('.mc-tk.calza').length,
-           yapes:r.querySelectorAll('.mc-yp').length, hud:!!r.querySelector('.mc-hud'),
+  return { tickets:r.querySelectorAll('.mc-tk.pend').length, hist:r.querySelectorAll('.mc-tk.hist').length,
+           calza:r.querySelectorAll('.mc-tk.calza').length,
+           yapes:r.querySelectorAll('.mc-yp').length, yUsado:r.querySelectorAll('.mc-yp.usado').length,
+           anillos:r.querySelectorAll('.mc-anillo').length, riel:!!r.querySelector('.mc-riel'), rio:!!r.querySelector('.mc-rio'),
+           posiciones:[...r.querySelectorAll('.mc-tk')].map(e=>e.style.transform).filter(Boolean).length,
+           hud:!!r.querySelector('.mc-hud'),
            camOn:!!r.querySelector('.mc-ic.on'), esperando:!!r.querySelector('.mc-esperando'),
            mustaches:(r.innerHTML.match(/\\{\\{/g)||[]).length,
            caja:(r.querySelector('.mc-caja')||{}).textContent||'',
-           total:(r.querySelector('.mc-rh span:last-child')||{}).textContent||'' }; })()`);
+           total:'' }; })()`);
 console.log('     ' + JSON.stringify(v1));
 T('el template compila y pinta', !!v1);
 T('sin bindings rotos (cero mustaches sin procesar)', !!v1 && v1.mustaches===0);
-T('el riel lista los 3 tickets por cobrar', !!v1 && v1.tickets===3);
+T('los 3 pendientes orbitan encendidos y 2 cobrados apagados (historia)', !!v1 && v1.tickets===3 && v1.hist===2, v1.tickets+' pend · '+v1.hist+' hist');
 T('marca el ticket que calza con un Yape', !!v1 && v1.calza===1);
-T('el rio muestra los Yapes', !!v1 && v1.yapes===1);
+T('los Yapes orbitan afuera; el atado va apagado', !!v1 && v1.yapes===3 && v1.yUsado===1, v1.yapes+' yapes · '+v1.yUsado+' atado');
+T('hay dos anillos y ya no hay riel ni río', !!v1 && v1.anillos===2 && !v1.riel && !v1.rio);
+T('cada satélite tiene su posición en el anillo', !!v1 && v1.posiciones===5, v1.posiciones+' posicionados');
 T('arranca en el radar y con la camara APAGADA', !!v1 && v1.hud && !v1.camOn);
 T('la franja "esperando su Yape" aparece', !!v1 && v1.esperando);
-T('el riel suma el total pendiente', !!v1 && /21\.10/.test(v1.total), v1?v1.total:'');
+// (el total pendiente ya no se muestra como cabecera de un riel: vive en el chip "N por cobrar")
 T('la barra dice qué caja es y quién la atiende',
   !!v1 && /CAJA 02 MERCADO/.test(v1.caja) && /Javier/.test(v1.caja) && !/\[object/.test(v1.caja),
   v1 ? v1.caja.replace(/\s+/g,' ').trim() : '');
@@ -186,16 +204,15 @@ T('avisa que ya llego el Yape de ese monto', /OLIVIA/.test(v2.yape), v2.yape.rep
 T('resalta VIRTUAL cuando hay Yape esperando', v2.destaca);
 // ── v6: cola, órbita, gestos ──
 const v6 = await p.evaluate(`(() => { const r=document.getElementById('mcRoot');
-  return { cola:r.querySelectorAll('.mc-cola .mc-colatk').length,
-           colaTxt:[...r.querySelectorAll('.mc-cola .mc-colas')].map(x=>x.textContent.trim()).join('/'),
-           colaNoIncluyeActual:![...r.querySelectorAll('.mc-cola .mc-colac')].some(x=>x.textContent.includes('NVM2-000531')),
+  return { sig:r.querySelectorAll('.mc-tk.sig').length,
+           sigCorr:(r.querySelector('.mc-tk.sig .mc-tkc')||{}).textContent||'',
+           sigNoEsActual:!((r.querySelector('.mc-tk.sig .mc-tkc')||{}).textContent||'').includes('NVM2-000531'),
            orb:r.querySelectorAll('.mc-orbita .mc-orb').length,
            orbTxt:(r.querySelector('.mc-orbita .mc-orb')||{}).textContent||'',
            glove:!!r.querySelector('.mc-glove'), drag:!!r.querySelector('.mc-drag'), scan:!!r.querySelector('.mc-scan'),
            dragRegistrado:!!(window.__drag && window.__drag.id==='t1') }; })()`);
 console.log('     v6: ' + JSON.stringify(v6));
-T('la cola muestra los dos que vienen, detrás del actual', v6.cola===2 && v6.colaNoIncluyeActual, v6.cola+' · '+v6.colaTxt);
-T('la cola dice "siguiente" y "después"', v6.colaTxt==='siguiente/después', v6.colaTxt);
+T('el próximo pendiente lleva la etiqueta SIGUIENTE en el anillo (y no es el que está en mano)', v6.sig===1 && v6.sigNoEsActual, v6.sigCorr.replace(/\s+/g,' '));
 T('los productos del ticket orbitan el monto', v6.orb===3, v6.orb+' anotaciones');
 T('la anotación trae cantidad, nombre y monto', /0\.25 kg.*AJI PANCA.*S\/ 3\.50/.test(v6.orbTxt.replace(/\s+/g,' ')), v6.orbTxt.replace(/\s+/g,' ').trim());
 T('el guante, la estela de arrastre y el barrido existen', v6.glove && v6.drag && v6.scan);
