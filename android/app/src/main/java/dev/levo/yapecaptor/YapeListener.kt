@@ -52,6 +52,15 @@ class YapeListener : NotificationListenerService() {
         )
         private val MONTO = Regex("S/\\.?\\s*[0-9]")
 
+        /** Pide a Android que vuelva a atar el listener (si el permiso está dado). Idempotente. */
+        fun reatar(ctx: Context) {
+            try {
+                if (!MainActivity.permisoNotificaciones(ctx)) return
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N)
+                    android.service.notification.NotificationListenerService.requestRebind(android.content.ComponentName(ctx, YapeListener::class.java))
+            } catch (_: Throwable) {}
+        }
+
         /** ¿Este texto es un cobro que entró? */
         fun esCobroEntrante(texto: String): Boolean {
             if (texto.isBlank()) return false
@@ -112,17 +121,6 @@ class YapeListener : NotificationListenerService() {
             // Nunca lanzar acá: una excepción en el listener puede hacer que Android
             // desconecte el servicio y el equipo deje de capturar sin que nadie se entere.
             Log.e(TAG, "error procesando notificación", e)
-        }
-    }
-
-    companion object {
-        /** Pide a Android que vuelva a atar el listener (si el permiso está dado). Idempotente. */
-        fun reatar(ctx: Context) {
-            try {
-                if (!MainActivity.permisoNotificaciones(ctx)) return
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N)
-                    android.service.notification.NotificationListenerService.requestRebind(android.content.ComponentName(ctx, YapeListener::class.java))
-            } catch (_: Throwable) {}
         }
     }
 
