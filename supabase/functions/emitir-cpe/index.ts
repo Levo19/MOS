@@ -241,9 +241,17 @@ Deno.serve(async (req: Request) => {
     const nfItems = items.map((item: Record<string, unknown>) => {
       const tipoIgv = parseInt(String(item.tipo_igv ?? 1), 10);
       const cantidad = parseFloat(String(item.cantidad ?? 1));
-      const valorUnitario = parseFloat(String(item.valor_unitario ?? 0));
-      const subtotalVU = r2(valorUnitario * cantidad);
       const precioTotal = parseFloat(String(item.subtotal ?? 0));
+      // El valor unitario se DERIVA del subtotal realmente cobrado, no del que manda el POS.
+      // El POS calcula precio/1.18 redondeado a 2 decimales; en GRANEL el subtotal no siempre es
+      // precio × cantidad (0.050 kg de laurel a S/120 el kilo da S/6.00, pero se cobró S/7.50).
+      // Multiplicar el valor_unitario recibido por la cantidad daba un valor de venta que no
+      // cuadraba con el total y NubeFact rechazaba: "Error de cálculo de 'igv'". Este era el
+      // TERCER motivo de rechazo (BM01-000212, BM01-000230, FM02-000036) — ~1 comprobante al día
+      // antes del bug del IGV, y seguía abierto en la emisión original aunque el reintento del
+      // servidor ya lo tenía resuelto. Misma matemática que reconciliar-cpe, que SUNAT ya aceptó.
+      const subtotalVU = (tipoIgv === 1 || tipoIgv === 17) ? r2(precioTotal / (tipoIgv === 17 ? 1.04 : 1.18)) : r2(precioTotal);
+      const valorUnitario = cantidad > 0 ? (subtotalVU / cantidad) : subtotalVU;
       let igvItem: number;
       // Catálogo NubeFact: 1 gravado · 8 exonerado · 9/10/11 inafecto · 17 IVAP.
       // Antes acá el 8 se sumaba a IVAP y el 9/10 a exonerada — al revés de lo que NubeFact
@@ -257,7 +265,9 @@ Deno.serve(async (req: Request) => {
         unidad_de_medida: String(item.unidad_de_medida || 'NIU'),
         codigo: String(item.sku || ''), codigo_producto_sunat: String(item.cod_sunat || ''),
         descripcion: String(item.nombre || ''), cantidad,
-        valor_unitario: r2(valorUnitario), precio_unitario: parseFloat(String(item.precio ?? 0)),
+        // 6 decimales: con cantidades fraccionarias (0.050 kg) redondear a 2 rompe la línea.
+        valor_unitario: Math.round(valorUnitario * 1e6) / 1e6,
+        precio_unitario: cantidad > 0 ? Math.round((precioTotal / cantidad) * 1e6) / 1e6 : precioTotal,
         descuento: '', subtotal: subtotalVU, tipo_de_igv: tipoIgv, igv: igvItem, total: precioTotal,
         anticipo_regularizacion: false, anticipo_documento_serie: '', anticipo_documento_numero: '',
       };

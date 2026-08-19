@@ -1,1 +1,1 @@
-{"version": "2.43.860", "build": "2.43.860 Tributario: compartir el comprobante por WhatsApp como imagen (con QR de SUNAT) o como PDF, y chips para filtrar por factura/boleta y por zona."}
+{"version": "2.43.861", "build": "2.43.861 Tributario: el IGV en contra ya es el real por linea (los exonerados no suman IGV); antes estimaba 18/118 sobre el total y sobrestimaba."}
