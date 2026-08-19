@@ -32,6 +32,7 @@ const grab = (name, endMarker = '\n  }') => { const i = src.indexOf(name); const
 const fnClasif = grab('function _tribClasifCPE(c) {');
 const fnIGV = grab('function _tribIGVdeCPE(c) {');
 const fnSellos = grab('function _tribSellos(c, cls) {');
+const fnHist = grab('function _tribHistorialHTML(c) {');
 const fnRender = grab('function _tribRenderCPEDetalle() {');
 // el CSS del módulo tributario, entero
 const cssIni = html.indexOf('--trib-line:'); const cssBlockStart = html.lastIndexOf('<style', cssIni); const cssBlockEnd = html.indexOf('</style>', cssIni);
@@ -54,6 +55,7 @@ const _tribSheetEl = (id, sel) => document.querySelector('#' + id + ' ' + sel);
 ${fnClasif}
 ${fnIGV}
 ${fnSellos}
+${fnHist}
 ${fnRender}
 _tribRenderCPEDetalle();
 </script></body></html>`;
@@ -85,14 +87,18 @@ const r = await p.evaluate(`(() => {
   const sellosEspera = [...document.querySelectorAll('.trib-gcard.cpe')].filter(c => c.querySelector('.trib-sello.espera')).length;
   const sellosBaja = [...document.querySelectorAll('.trib-gcard.cpe .trib-sello.baja')].length;
   const semaforo = document.querySelectorAll('.trib-gcard.cpe .trib-gocr').length;
+  const conVendedor = [...document.querySelectorAll('.trib-gcard.cpe')].filter(c => /👤/.test(c.querySelector('.trib-gmeta').textContent)).length;
+  const conHist = document.querySelectorAll('.trib-gcard.cpe .trib-hist').length;
+  const histEj = (document.querySelector('.trib-gcard.cpe .trib-hist-f')||{}).textContent || '';
+  const svgImg = document.querySelectorAll('.trib-gbtn.img svg').length, svgPdf = document.querySelectorAll('.trib-gbtn.wa svg').length;
   const fechaEnCard = /\\d{2}-[a-z]{3}\\./i.test(first ? first.textContent : '');
-  return { leyenda, sellosOk, sellosEspera, sellosBaja, semaforo, dias: dias.length, cards: cards.length, cli, corr, meta, orden, titulos, resumen, bajas: bajas.length, bajaChip, motivo, motivoBaja, nota: nota.slice(0,240), fechaEnCard,
+  return { conVendedor, conHist, histEj: histEj.replace(/\s+/g,' ').trim().slice(0,120), svgImg, svgPdf, leyenda, sellosOk, sellosEspera, sellosBaja, semaforo, dias: dias.length, cards: cards.length, cli, corr, meta, orden, titulos, resumen, bajas: bajas.length, bajaChip, motivo, motivoBaja, nota: nota.slice(0,240), fechaEnCard,
            scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth };
 })()`);
 console.log('     ' + JSON.stringify(r));
 T('renderiza todos los comprobantes', r.cards === lista.length, r.cards + ' de ' + lista.length);
 T('agrupados por día', r.dias >= 10, r.dias + ' días');
-T('la cabecera del día dice cuándo ("Hoy · …")', /Hoy · /.test(r.titulos[0] || ''), r.titulos.join(' | '));
+T('la cabecera del día dice cuándo ("Hoy · …" o "Ayer · …" si no hubo ventas hoy)', /^(Hoy|Ayer) · /.test(r.titulos[0] || ''), r.titulos.join(' | '));
 T('la cabecera resume el día (docs + IGV)', /docs? · S\/ [\d,.]+ en contra/.test(r.resumen || ''), r.resumen);
 T('el cliente va primero, el correlativo debajo', r.orden && !!r.cli && !!r.corr, r.cli + ' → ' + r.corr);
 T('el card muestra hora, no fecha', !r.fechaEnCard && /\d{2}:\d{2}/.test(r.meta || ''), r.meta);
@@ -102,9 +108,14 @@ T('el motivo del anulado/rechazo se lee en el card', /Anulada|RECHAZO/i.test(r.m
 T('la nota aclara que las bajas no suman', /bajas no suman/.test(r.nota));
 T('hay leyenda del ciclo arriba de la lista', r.leyenda);
 T('los aceptados llevan dos sellos ✓ (NubeFact → SUNAT)', r.sellosOk >= 400, r.sellosOk + ' con doble sello');
-T('las boletas en resumen llevan SUNAT ⏳', r.sellosEspera >= 20, r.sellosEspera + ' en espera');
+// depende de la hora: de día hay boletas en el resumen diario (⏳); tras el cierre de SUNAT todas pasan a ✓
+console.log('     boletas en espera ahora: ' + r.sellosEspera + ' (varía con la hora, no se exige)');
 T('las bajas llevan el sello baja ⊘', r.sellosBaja >= 11, r.sellosBaja + ' sellos de baja');
 T('el semáforo viejo ya no está en los cards', r.semaforo === 0, r.semaforo + ' semáforos');
+T('cada card dice quién emitió (👤 vendedor)', r.conVendedor >= 440, r.conVendedor + ' con vendedor');
+T('los que tuvieron movimientos traen su historial', r.conHist >= 10, r.conHist + ' con historial');
+T('el historial dice quién, cuándo y qué', /anuló|cobró|cambió/.test(r.histEj), r.histEj);
+T('los botones son íconos de imagen y PDF, no emojis', r.svgImg > 400 && r.svgPdf > 400, r.svgImg + '/' + r.svgPdf);
 T('sin desborde horizontal', r.scrollW <= r.clientW + 1, r.scrollW + '/' + r.clientW);
 T('sin errores de JS', errs.length === 0, errs.join(' | '));
 

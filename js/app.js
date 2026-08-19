@@ -36972,6 +36972,29 @@ const MOS = (() => {
     return '<span class="trib-sellos">' + nf + flecha + su + ba + '</span>';
   }
 
+  /* ── el historial del comprobante: quién hizo qué, cuándo y por qué. Viene de la venta
+        (historial_cambios): cobrar, anular, cambiar forma de pago, dar crédito. Plegado por
+        defecto; un toque lo abre. Si no pasó nada después de emitirse, no se muestra. ── */
+  function _tribHistorialHTML(c) {
+    const h = Array.isArray(c.historial) ? c.historial : [];
+    if (!h.length) return '';
+    const nom = a => ({ cobrar_venta: '💵 cobró', anular_venta_interna: '⊘ anuló', anular_venta: '⊘ anuló',
+                        editar_forma_pago: '✎ cambió la forma de pago', dar_credito: '📋 dio crédito',
+                        cobrar_credito: '💵 cobró el crédito', asignar_credito: '👤 asignó el crédito',
+                        convertir_cpe: '🧾 convirtió a comprobante' }[a] || ('· ' + String(a || '').replace(/_/g, ' ')));
+    const filas = h.map(x => {
+      const d = x.ts ? new Date(x.ts) : null;
+      const cuando = d && !isNaN(d.getTime()) ? d.toLocaleString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      return '<div class="trib-hist-f"><span class="trib-hist-t">' + _escapeHtml(cuando) + '</span>' +
+        '<span class="trib-hist-q">' + _escapeHtml(String(x.usuario || '—')) + '</span>' +
+        '<span class="trib-hist-a">' + nom(x.accion) +
+          (x.de && x.a ? ' <code>' + _escapeHtml(String(x.de)) + ' → ' + _escapeHtml(String(x.a)) + '</code>' : '') +
+          (x.autorizadoPor ? ' <i>autorizó ' + _escapeHtml(String(x.autorizadoPor)) + '</i>' : '') +
+          (x.motivo ? '<em>“' + _escapeHtml(String(x.motivo)) + '”</em>' : '') + '</span></div>';
+    }).join('');
+    return '<details class="trib-hist"><summary>🕘 historial · ' + h.length + ' movimiento' + (h.length === 1 ? '' : 's') + '</summary>' + filas + '</details>';
+  }
+
   function _tribRenderCPEDetalle() {
     const cont = _tribSheetEl('tribOvEmitido', '[data-trib-body]');
     const chipsCont = _tribSheetEl('tribOvEmitido', '[data-trib-chips]');
@@ -37158,8 +37181,13 @@ const MOS = (() => {
             // 2 · el documento: correlativo · hora
             '<div class="trib-gmeta"><code class="trib-gcorr">' + _escapeHtml(String(c.correlativo || '(sin correlativo)')) + '</code>' +
               (hora ? '<span>·</span><span>' + _escapeHtml(hora) + '</span>' : '') +
-              '<span>·</span><span>Total <b>' + _tribFmtSoles(c.total) + '</b></span></div>' +
+              '<span>·</span><span>Total <b>' + _tribFmtSoles(c.total) + '</b></span>' +
+              // quién lo emitió: el vendedor que hizo la venta (viene de la venta misma)
+              (c.vendedor ? '<span>·</span><span title="Emitido por">👤 ' + _escapeHtml(String(c.vendedor).split(' ').slice(0, 2).join(' ')) + '</span>' : '') +
+              (c.formaPago && !/ANULADO/i.test(String(c.formaPago)) ? '<span>·</span><span>' + _escapeHtml(String(c.formaPago).replace(/\s*\(.*$/, '')) + '</span>' : '') +
+              '</div>' +
             detSunat +
+            _tribHistorialHTML(c) +
           '</div>' +
           '<div class="trib-gright">' +
             (esBaja
@@ -37170,8 +37198,10 @@ const MOS = (() => {
           '<div class="trib-gacc">' +
           (c.enlacePdf ? '<button type="button" class="trib-gbtn" data-pdf="' + _escapeHtml(String(c.enlacePdf)) + '" title="Abrir el PDF del comprobante">📄</button>' : '') +
           (c.enlacePdf
-            ? '<button type="button" class="trib-gbtn img" data-cpeimg="' + _escapeHtml(String(c.idVenta || '')) + '" title="Generar imagen del comprobante y compartir">🖼</button>' +
-              '<button type="button" class="trib-gbtn wa" data-cpewa="' + _escapeHtml(String(c.idVenta || '')) + '" title="Enviar el PDF por WhatsApp">🟢</button>'
+            ? '<button type="button" class="trib-gbtn img" data-cpeimg="' + _escapeHtml(String(c.idVenta || '')) + '" title="Generar el voucher como imagen y compartir">' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg></button>' +
+              '<button type="button" class="trib-gbtn wa" data-cpewa="' + _escapeHtml(String(c.idVenta || '')) + '" title="Compartir el PDF fiscal (WhatsApp)">' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h1.5a1.5 1.5 0 0 0 0-3H9v6"/></svg></button>'
             : '') +
           (cls !== 'ACEPTADO' && cls !== 'BAJA'
             ? '<button type="button" class="trib-gbtn" data-recpe="' + _escapeHtml(String(c.idVenta || '')) + '" ' +
@@ -37204,101 +37234,114 @@ const MOS = (() => {
     return lista.find(c => String(c.idVenta || '') === String(id)) || null;
   }
 
-  // Formato vertical tipo tarjeta: se lee entero en el chat, sin zoom.
+  // EL VOUCHER: la representación impresa entera, como el ticket que sale de la caja.
+  // Cabecera de la empresa, tipo y número, cliente, fecha, CADA LÍNEA con cantidad · nombre ·
+  // importe, el desglose gravada/exonerada/IGV, el total, quién atendió, el hash y el QR de
+  // SUNAT. El alto se calcula por el contenido: un ticket de 3 líneas sale corto, uno de 14
+  // sale largo — como el papel.
   async function _tribCPEImagenBlob(c) {
-    const W = 900, H = 1180, R = 2;                 // R=2 → nítido en pantallas densas
-    const cv = document.createElement('canvas');
-    cv.width = W * R; cv.height = H * R;
-    const x = cv.getContext('2d');
-    x.scale(R, R);
+    const W = 720, R = 2, PAD = 44;
+    const lineas = Array.isArray(c.lineas) ? c.lineas : [];
+    const esFac = String(c.tipo || '').toUpperCase() === 'FACTURA';
+    const total = parseFloat(c.total) || 0;
+    // desglose desde las líneas (mismo criterio que el emisor); sin líneas, se estima
+    let grav = 0, exo = 0, inaf = 0;
+    lineas.forEach(l => { const t = parseInt(l.tipoIgv ?? 1, 10), st = parseFloat(l.subtotal) || 0;
+      if (t === 1) grav += st; else if (t === 8 || (t === 9 && false)) exo += st; else if (t === 9 || t === 10 || t === 11) inaf += st; else exo += st; });
+    // en la venta vieja (14-18 ago) el 9 era exonerado; para el voucher da igual: va a "exonerada/inafecta"
+    const baseGrav = Math.round(grav / 1.18 * 100) / 100, igv = Math.round((grav - baseGrav) * 100) / 100;
+    const noGrav = Math.round((exo + inaf) * 100) / 100;
+    const tieneDesglose = lineas.length > 0;
+    const igvEst = tieneDesglose ? igv : _tribIGVdeCPE(c);
+    const baseEst = tieneDesglose ? baseGrav : _money(total - igvEst);
 
-    const esFac  = String(c.tipo || '').toUpperCase() === 'FACTURA';
-    const acento = esFac ? '#8b7bff' : '#2de3c8';
-    const total  = parseFloat(c.total) || 0;
-    const igv    = _tribIGVdeCPE(c);
-    const base   = _money(total - igv);
-
-    const g = x.createLinearGradient(0, 0, W, H);
-    g.addColorStop(0, '#0b1220'); g.addColorStop(1, '#070d17');
-    x.fillStyle = g; x.fillRect(0, 0, W, H);
-    const halo = x.createRadialGradient(W / 2, 0, 0, W / 2, 0, 620);
-    halo.addColorStop(0, esFac ? 'rgba(139,123,255,.20)' : 'rgba(45,227,200,.18)');
-    halo.addColorStop(1, 'rgba(0,0,0,0)');
-    x.fillStyle = halo; x.fillRect(0, 0, W, 620);
-
-    const linea = (y, a) => { x.strokeStyle = 'rgba(255,255,255,' + a + ')'; x.lineWidth = 1;
-                              x.beginPath(); x.moveTo(60, y); x.lineTo(W - 60, y); x.stroke(); };
-    const txt = (t, px, y, col, size, peso, alin) => {
+    // alto = cabecera + líneas + pie
+    const H = 470 + lineas.length * 44 + (tieneDesglose && noGrav > 0 ? 28 : 0) + 300 + 360;
+    const cv = document.createElement('canvas'); cv.width = W * R; cv.height = H * R;
+    const x = cv.getContext('2d'); x.scale(R, R);
+    x.fillStyle = '#0b1220'; x.fillRect(0, 0, W, H);
+    // el "papel": claro, con borde dentado arriba y abajo como un ticket térmico
+    const papel = '#f8f6f1';
+    x.fillStyle = papel; x.fillRect(24, 28, W - 48, H - 56);
+    x.fillStyle = '#0b1220';
+    for (let i = 24; i < W - 24; i += 14) { x.beginPath(); x.moveTo(i, 28); x.lineTo(i + 7, 20); x.lineTo(i + 14, 28); x.fill();
+                                           x.beginPath(); x.moveTo(i, H - 28); x.lineTo(i + 7, H - 20); x.lineTo(i + 14, H - 28); x.fill(); }
+    const T = (t, px, y, col, size, peso, alin, fam) => {
       x.fillStyle = col; x.textAlign = alin || 'left';
-      x.font = (peso || '600') + ' ' + size + 'px ui-sans-serif, system-ui, "Segoe UI", sans-serif';
+      x.font = (peso || '600') + ' ' + size + 'px ' + (fam === 'mono' ? 'ui-monospace, "SF Mono", Menlo, Consolas, monospace' : 'ui-sans-serif, system-ui, "Segoe UI", sans-serif');
       x.fillText(String(t == null ? '' : t), px, y);
     };
-    const mono = (t, px, y, col, size, peso, alin) => {
-      x.fillStyle = col; x.textAlign = alin || 'left';
-      x.font = (peso || '700') + ' ' + size + 'px ui-monospace, "SF Mono", Menlo, monospace';
-      x.fillText(String(t == null ? '' : t), px, y);
-    };
-
-    txt('INVERSIONES MOS E.I.R.L.', 60, 92, '#eaf6f8', 27, '800');
-    txt('RUC 20610714057', 60, 122, '#6f8a99', 16, '600');
-    txt(esFac ? 'FACTURA ELECTRONICA' : 'BOLETA DE VENTA ELECTRONICA', W - 60, 92, acento, 17, '800', 'right');
-    mono(c.correlativo || '', W - 60, 126, '#eaf6f8', 26, '800', 'right');
-    linea(158, .10);
-
-    txt('CLIENTE', 60, 202, '#5d7a87', 13, '800');
-    const nom = String(c.cliente || 'CLIENTE VARIOS');
-    txt(nom.length > 40 ? nom.slice(0, 39) + '\u2026' : nom, 60, 236, '#eaf6f8', 24, '700');
-    if (c.clienteDoc) mono((String(c.clienteDoc).length === 11 ? 'RUC ' : 'DOC ') + c.clienteDoc, 60, 266, '#9fb9c4', 17);
+    const linea = (y, dash) => { x.strokeStyle = '#b9b3a7'; x.lineWidth = 1; x.setLineDash(dash ? [4, 4] : []);
+                                 x.beginPath(); x.moveTo(PAD, y); x.lineTo(W - PAD, y); x.stroke(); x.setLineDash([]); };
+    const ink = '#161616', ink2 = '#4b4b4b', ink3 = '#7a7a7a';
+    let y = 78;
+    T('INVERSIONES MOS E.I.R.L.', W / 2, y, ink, 22, '800', 'center'); y += 26;
+    T('RUC 20610714057', W / 2, y, ink2, 13, '700', 'center', 'mono'); y += 20;
+    T('Pisco · Ica', W / 2, y, ink3, 12, '600', 'center'); y += 30;
+    linea(y); y += 30;
+    T(esFac ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA', W / 2, y, ink, 17, '800', 'center'); y += 26;
+    T(c.correlativo || '', W / 2, y, ink, 26, '800', 'center', 'mono'); y += 30;
+    linea(y, true); y += 26;
     const f = c.fecha ? new Date(c.fecha) : null;
-    if (f && !isNaN(f.getTime()))
-      txt(f.toLocaleString('es-PE', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-          W - 60, 236, '#9fb9c4', 17, '600', 'right');
-    linea(300, .07);
-
-    txt('TOTAL A PAGAR', 60, 368, '#5d7a87', 14, '800');
-    mono('S/ ' + total.toFixed(2), 60, 452, '#ffffff', 76, '800');
-
-    let y = 540;
-    const fila = (lbl, val, col) => {
-      txt(lbl, 60, y, '#9fb9c4', 18, '600');
-      mono('S/ ' + (parseFloat(val) || 0).toFixed(2), W - 60, y, col || '#cfe3ea', 20, '700', 'right');
-      y += 42;
-    };
-    fila('Op. gravada', base);
-    fila('IGV 18%', igv);
-    linea(y - 18, .07);
-    y += 6;
-    fila('Total', total, '#ffffff');
-
+    const fStr = f && !isNaN(f.getTime()) ? f.toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    T('Fecha', PAD, y, ink3, 11, '700'); T(fStr, W - PAD, y, ink, 13, '600', 'right', 'mono'); y += 22;
+    const cli = String(c.cliente || '').trim();
+    const nomCli = cli && !/^varios$/i.test(cli) ? cli : 'CLIENTE VARIOS';
+    T('Cliente', PAD, y, ink3, 11, '700');
+    // nombre largo: dos renglones
+    const maxW = W - PAD * 2 - 70; x.font = '700 13px ui-sans-serif, system-ui, sans-serif';
+    if (x.measureText(nomCli).width > maxW) { const mitad = Math.ceil(nomCli.length / 2); const cut = nomCli.lastIndexOf(' ', mitad); const a = nomCli.slice(0, cut > 0 ? cut : mitad), b = nomCli.slice(cut > 0 ? cut + 1 : mitad);
+      T(a, W - PAD, y, ink, 13, '700', 'right'); y += 18; T(b, W - PAD, y, ink, 13, '700', 'right'); }
+    else T(nomCli, W - PAD, y, ink, 13, '700', 'right');
+    y += 22;
+    const doc = c.clienteDoc && String(c.clienteDoc) !== '66666' ? String(c.clienteDoc) : '';
+    if (doc) { T(doc.length === 11 ? 'RUC' : 'DNI', PAD, y, ink3, 11, '700'); T(doc, W - PAD, y, ink, 13, '600', 'right', 'mono'); y += 22; }
+    if (c.vendedor) { T('Atendió', PAD, y, ink3, 11, '700'); T(String(c.vendedor).split(' ').slice(0, 2).join(' '), W - PAD, y, ink2, 12, '600', 'right'); y += 22; }
+    y += 6; linea(y, true); y += 24;
+    // líneas
+    T('CANT', PAD, y, ink3, 10, '800'); T('DESCRIPCIÓN', PAD + 70, y, ink3, 10, '800'); T('IMPORTE', W - PAD, y, ink3, 10, '800', 'right'); y += 20;
+    if (!lineas.length) { T('(detalle no disponible en esta vista)', W / 2, y + 6, ink3, 11, '600', 'center'); y += 40; }
+    lineas.forEach(l => {
+      const n = parseFloat(l.cantidad) || 0, um = String(l.um || 'NIU').toUpperCase();
+      const cant = (Number.isInteger(n) ? n : n.toFixed(3).replace(/0+$/, '').replace(/[.]$/, '')) + (um === 'KGM' ? ' kg' : '');
+      let nom = String(l.nombre || '').replace(/\s+/g, ' ').trim();
+      x.font = '600 12.5px ui-sans-serif, system-ui, sans-serif';
+      const maxN = W - PAD * 2 - 70 - 90;
+      while (x.measureText(nom).width > maxN && nom.length > 8) nom = nom.slice(0, -2);
+      if (nom !== String(l.nombre || '').replace(/\s+/g, ' ').trim()) nom += '…';
+      T(cant, PAD, y, ink, 12.5, '700', 'left', 'mono');
+      T(nom, PAD + 70, y, ink, 12.5, '600');
+      T((parseFloat(l.subtotal) || 0).toFixed(2), W - PAD, y, ink, 13, '700', 'right', 'mono');
+      // precio unitario debajo, chico
+      if (n !== 1 && l.precio != null) { y += 15; T('a ' + (parseFloat(l.precio) || 0).toFixed(2) + (um === 'KGM' ? ' /kg' : ' c/u'), PAD + 70, y, ink3, 10, '600', 'left', 'mono'); y += 29; }
+      else y += 44;
+    });
+    linea(y, true); y += 26;
+    const fila = (k, v, peso, size) => { T(k, PAD, y, ink2, size || 12, '700'); T('S/ ' + (parseFloat(v) || 0).toFixed(2), W - PAD, y, ink, size || 13, peso || '700', 'right', 'mono'); y += 24; };
+    fila('Op. gravada', baseEst);
+    if (tieneDesglose && noGrav > 0) fila('Op. exonerada / inafecta', noGrav);
+    fila('IGV 18%', igvEst);
+    y += 6; linea(y); y += 34;
+    T('TOTAL', PAD, y, ink, 18, '800'); T('S/ ' + total.toFixed(2), W - PAD, y, ink, 30, '800', 'right', 'mono'); y += 22;
+    if (c.formaPago && !/ANULADO/i.test(String(c.formaPago))) { y += 14; T('Pago: ' + String(c.formaPago).replace(/\s*\(.*$/, ''), PAD, y, ink3, 11, '700'); }
+    y += 30; linea(y, true); y += 26;
+    // estado fiscal + QR + hash
     const cls = _tribClasifCPE(c);
-    const badge = { ACEPTADO: ['ACEPTADO POR SUNAT', '#3ddc84'], PENDIENTE: ['EN CAMINO A SUNAT', '#ffd166'],
-                    RECHAZADO: ['RECHAZADO POR SUNAT', '#fb7185'], TRABADO: ['NO LLEGO A SUNAT', '#fb7185'],
-                    BAJA: ['DADO DE BAJA', '#94a3b8'], SIN_EMITIR: ['SIN EMITIR', '#94a3b8'] }[cls] || ['', '#94a3b8'];
-    y += 26;
-    x.fillStyle = badge[1] + '22';
-    x.beginPath(); x.roundRect(60, y - 26, 380, 44, 22); x.fill();
-    x.fillStyle = badge[1]; x.beginPath(); x.arc(88, y - 4, 6, 0, 7); x.fill();
-    txt(badge[0], 108, y + 2, badge[1], 15, '800');
-
-    // QR de SUNAT: lo que le permite al cliente validar el comprobante por su cuenta
+    const est = { ACEPTADO: ['ACEPTADO POR SUNAT', '#0f9d58'], PENDIENTE: ['ENVIADO · EN PROCESO EN SUNAT', '#b8860b'], RECHAZADO: ['RECHAZADO POR SUNAT', '#c62828'],
+                  TRABADO: ['NO LLEGÓ A SUNAT', '#c62828'], BAJA: ['ANULADO · BAJA COMUNICADA', '#6b6b6b'], SIN_EMITIR: ['SIN EMITIR', '#6b6b6b'] }[cls] || ['', '#6b6b6b'];
+    T(est[0], W / 2, y, est[1], 12, '800', 'center'); y += 26;
     const cadena = String(c.qr || '').trim();
     if (cadena && typeof qrcode === 'function') {
-      try {
-        const q = qrcode(0, 'M'); q.addData(cadena); q.make();
-        const n = q.getModuleCount(), lado = 260, cel = lado / n, ox = (W - lado) / 2, oy = y + 78;
-        x.fillStyle = '#ffffff';
-        x.beginPath(); x.roundRect(ox - 18, oy - 18, lado + 36, lado + 36, 18); x.fill();
-        x.fillStyle = '#000000';
-        for (let r = 0; r < n; r++) for (let col = 0; col < n; col++)
-          if (q.isDark(r, col)) x.fillRect(ox + col * cel, oy + r * cel, cel + .6, cel + .6);
-        txt('Escanea para validar en SUNAT', W / 2, oy + lado + 52, '#6f8a99', 15, '600', 'center');
-      } catch (_) { /* sin QR la imagen sigue sirviendo */ }
+      try { const q = qrcode(0, 'M'); q.addData(cadena); q.make();
+        const n = q.getModuleCount(), lado = 150, cel = lado / n, ox = (W - lado) / 2, oy = y;
+        x.fillStyle = '#000';
+        for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) if (q.isDark(r, col)) x.fillRect(ox + col * cel, oy + r * cel, cel + .5, cel + .5);
+        y += lado + 22; } catch (_) {}
     }
-
-    txt('Representacion del comprobante electronico \u00b7 el documento fiscal es el PDF/XML',
-        W / 2, H - 58, '#4a626e', 14, '600', 'center');
-    txt('\u26a1 MOS', W / 2, H - 30, '#33505c', 13, '800', 'center');
-
+    const hash = cadena ? (cadena.split('|').map(s => s.trim()).filter(Boolean).pop() || '') : '';
+    if (hash && hash.length > 10) { T('Hash: ' + hash.slice(0, 28) + (hash.length > 28 ? '…' : ''), W / 2, y, ink3, 9.5, '600', 'center', 'mono'); y += 18; }
+    T('Representación impresa del comprobante electrónico', W / 2, y, ink3, 10, '600', 'center'); y += 15;
+    T('Consulte en www.sunat.gob.pe · ⚡ MOS', W / 2, y, ink3, 10, '600', 'center');
     return await new Promise(res => cv.toBlob(res, 'image/png'));
   }
 
