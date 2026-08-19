@@ -66,3 +66,11 @@ verify_jwt = false
 # baja el PDF de *.nubefact.com (SSRF-guard) y lo re-sirve con CORS. Sin escritura, sin secrets extra.
 [functions.cpe-pdf]
 verify_jwt = true
+
+# [879] crones de IA: los llama pg_cron con x-cron-secret, SIN JWT → verify_jwt=false (sino 401 y el cron muere en silencio)
+[functions.ocr-guia]
+verify_jwt = false
+[functions.descripcion-ia]
+verify_jwt = false
+[functions.sustitutos-ia]
+verify_jwt = false

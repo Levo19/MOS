@@ -24,6 +24,7 @@ function _iaLog(rec: Record<string, unknown>): void {
   } catch { /* contabilizar jamás rompe la operación */ }
 }
 
+import { geminiMessages, proveedorIA, GEMINI_FLASH } from '../_shared/gemini.ts';
 const MODELO = 'claude-haiku-4-5-20251001';
 
 function json(payload: unknown, status = 200): Response {
@@ -63,6 +64,29 @@ Para la línea 🗂 usa una de estas categorías SI el producto calza: ABARROTES
 Si no encuentras ficha específica, descríbelo con conocimiento general del tipo de producto y agrega al final de la línea ✅: " (descripción general del tipo de producto — sin ficha web específica)". No inventes datos regulatorios.`;
 }
 
+
+// [IA · Gemini 19-ago-2026] mismo contrato que Claude (payload estilo Anthropic → respuesta con content[].text y
+// usage). El proveedor lo decide mos.config.IA_PROVEEDOR / la clave disponible. `conWeb` → grounding de Google.
+async function llamarIA(key: string, payload: Record<string, unknown>, conWeb: boolean, modeloGemini: string):
+    Promise<{ ok: boolean; status: number; d: any; proveedor: string }> {
+  const prov = await proveedorIA();
+  const gkey = Deno.env.get('GEMINI_API_KEY') || '';
+  if (prov === 'gemini' && gkey) {
+    const g = await geminiMessages({ key: gkey, model: modeloGemini, system: payload.system ? String(payload.system) : undefined,
+                                     messages: payload.messages as any, max_tokens: Number(payload.max_tokens) || 1024,
+                                     grounding: conWeb, timeoutMs: 60000 });
+    return { ok: g.ok, status: g.status, d: g.data || { error: { message: g.error || 'gemini' } }, proveedor: 'gemini' };
+  }
+  const r = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const d = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, d, proveedor: 'anthropic' };
+}
+
 async function generar(key: string, prod: any): Promise<{ texto: string; conWeb: boolean }> {
   const base = {
     model: MODELO, max_tokens: 1200,
@@ -75,24 +99,19 @@ async function generar(key: string, prod: any): Promise<{ texto: string; conWeb:
       ? { ...base, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }] }
       : base;
     const _t0ia = Date.now();
-    const r = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60_000),   // [rev.7] sin cuelgues que maten la Edge a mitad de lote
-    });
-    const d = await r.json();
+    const r = await llamarIA(key, payload, conWeb, GEMINI_FLASH);
+    const d = r.d || {};
     // [852] contabilidad — se registra SIEMPRE, también el intento fallido: una llamada que
-    // Anthropic rechaza por formato igual consumió tokens de entrada.
+    // el proveedor rechaza por formato igual consumió tokens de entrada.
     _iaLog({ app: 'cron', funcion: conWeb ? 'descripcionIA (con web)' : 'descripcionIA',
-             modelo: String(d.model || MODELO), ok: r.ok, ms: Date.now() - _t0ia,
+             modelo: String(d.model || (r.proveedor === 'gemini' ? GEMINI_FLASH : MODELO)), ok: r.ok, ms: Date.now() - _t0ia,
              usage: d.usage || {}, error: r.ok ? '' : JSON.stringify(d).slice(0, 300),
-             meta: { conWeb, stop: d.stop_reason || '',
+             meta: { conWeb, stop: d.stop_reason || '', proveedor: r.proveedor,
                      websearch: ((d.usage || {}).server_tool_use || {}).web_search_requests || 0 } });
     if (!r.ok) {
       const msg = JSON.stringify(d);
-      if (conWeb && r.status === 400 && /web_search|tool/i.test(msg)) continue;  // herramienta no disponible
-      throw new Error(`anthropic ${r.status}: ${msg.slice(0, 180)}`);
+      if (conWeb && r.status === 400 && /web_search|tool|google_search|grounding/i.test(msg)) continue;  // herramienta no disponible
+      throw new Error(`${r.proveedor} ${r.status}: ${msg.slice(0, 180)}`);
     }
     // [rev.5] truncada o pausada = fallo (una ficha a medias pasaría el guard 🏷…✅ y quedaría coja)
     if (d.stop_reason === 'max_tokens' || d.stop_reason === 'pause_turn') {
@@ -117,8 +136,8 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'POST only' }, 405);
   const secret = Deno.env.get('CRON_SECRET') || '';
   if (!secret || req.headers.get('x-cron-secret') !== secret) return json({ ok: false, error: 'no autorizado' }, 401);
-  const key = Deno.env.get('ANTHROPIC_API_KEY');
-  if (!key) return json({ ok: false, error: 'sin ANTHROPIC_API_KEY' }, 500);
+  const key = Deno.env.get('ANTHROPIC_API_KEY') || '';
+  if (!key && !Deno.env.get('GEMINI_API_KEY')) return json({ ok: false, error: 'sin GEMINI_API_KEY ni ANTHROPIC_API_KEY' }, 500);
 
   try {
     const body = await req.json().catch(() => ({}));

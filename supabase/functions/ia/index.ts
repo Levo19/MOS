@@ -7,6 +7,13 @@
 //
 // SECRET: supabase secrets set ANTHROPIC_API_KEY=<la misma de GAS> --project-ref rzbzdeipbtqkzjqdchqk
 
+import { geminiMessages, proveedorIA, mapearModelo } from '../_shared/gemini.ts';
+
+// [IA · Gemini 19-ago-2026] El proveedor se elige por mos.config.IA_PROVEEDOR (gemini | anthropic); con
+// GEMINI_API_KEY puesta y sin config, Gemini. El navegador NO cambia: manda messages estilo Anthropic y lee
+// content[].text + usage — el adaptador (_shared/gemini.ts) traduce ida y vuelta. Si Gemini responde
+// 429/5xx y hay clave Anthropic con saldo, se cae a Claude en esa llamada (y al revés no: Claude sin saldo
+// es 400, no se reintenta).
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -56,8 +63,11 @@ Deno.serve(async (req: Request) => {
     const claims = jwtClaims(auth.replace(/^Bearer\s+/i, '').trim());
     if (!claims || !APPS_OK.has(String(claims.app))) return json({ ok: false, error: 'no autorizado (claim app)' }, 401);
 
+    const prov = await proveedorIA();
     const key = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!key) return json({ ok: false, error: 'ANTHROPIC_API_KEY no configurada (secret)' }, 500);
+    const gkey = Deno.env.get('GEMINI_API_KEY');
+    if (prov === 'anthropic' && !key) return json({ ok: false, error: 'ANTHROPIC_API_KEY no configurada (secret)' }, 500);
+    if (prov === 'gemini' && !gkey) return json({ ok: false, error: 'GEMINI_API_KEY no configurada (secret)' }, 500);
 
     const body = await req.json().catch(() => ({}));
     // El navegador manda los messages ya armados (texto y/o imagen base64). La Edge solo agrega key + reenvía.
@@ -79,16 +89,38 @@ Deno.serve(async (req: Request) => {
     };
 
     const _t0 = Date.now();
+    // [852] la función la declara quien llama (listaSombra, ocrComprobante, resumenZona…);
+    // la app sale del claim del token, que ya está verificado arriba.
+    const _fn = String(body.funcion || body.fn || 'ia').slice(0, 60);
+    const _app = String(claims.app || '?');
+
+    // ── GEMINI ──
+    if (prov === 'gemini' && gkey) {
+      const conWeb = Array.isArray(body.tools) && body.tools.some((t: Record<string, unknown>) => /web_search|google_search/i.test(String(t && (t.type || t.name) || '')));
+      const gmodel = mapearModelo(body.model);
+      const g = await geminiMessages({ key: gkey, model: gmodel, system: body.system ? String(body.system) : undefined,
+                                       messages, max_tokens, grounding: conWeb, timeoutMs: 120000 });
+      if (g.ok && g.data) {
+        _iaLog({ app: _app, funcion: _fn, modelo: String(g.data.model || gmodel), ok: true, ms: Date.now() - _t0,
+                 usage: g.data.usage || {}, meta: { stop: g.data.stop_reason || '', maxTokens: max_tokens, proveedor: 'gemini' } });
+        return new Response(JSON.stringify(g.data), { status: 200, headers: { ...CORS, 'Content-Type': 'application/json' } });
+      }
+      _iaLog({ app: _app, funcion: _fn, modelo: gmodel, ok: false, ms: Date.now() - _t0,
+               error: String(g.error || 'gemini').slice(0, 300), usage: {}, meta: { proveedor: 'gemini' } });
+      // sin red de Claude (o error que no es de cupo): se devuelve el error de Gemini
+      const caerAClaude = !!key && (g.status === 429 || g.status >= 500 || g.status === 0);
+      if (!caerAClaude) return json({ ok: false, error: g.error || 'gemini' }, 502);
+      // si no, sigue abajo con Claude en esta llamada
+    }
+
+    // ── ANTHROPIC ──
+    if (!key) return json({ ok: false, error: 'sin proveedor de IA disponible' }, 500);
     const r = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const text = await r.text();
-    // [852] la función la declara quien llama (listaSombra, ocrComprobante, resumenZona…);
-    // la app sale del claim del token, que ya está verificado arriba.
-    const _fn = String(body.funcion || body.fn || 'ia').slice(0, 60);
-    const _app = String(claims.app || '?');
     if (!r.ok) {
       _iaLog({ app: _app, funcion: _fn, modelo: model, ok: false, ms: Date.now() - _t0,
                error: ('Claude ' + r.status + ': ' + text).slice(0, 300), usage: {} });

@@ -19,6 +19,7 @@ function _iaLog(rec: Record<string, unknown>): void {
   } catch { /* contabilizar jamás rompe la operación */ }
 }
 
+import { geminiMessages, proveedorIA, GEMINI_FLASH } from '../_shared/gemini.ts';
 const MODELO = 'claude-haiku-4-5-20251001';
 
 function json(payload: unknown, status = 200): Response {
@@ -66,6 +67,29 @@ RESPONDE ÚNICAMENTE este JSON, sin texto antes ni después:
 {"internos":[{"n":1,"motivo":"..."}],"externos":[{"nombre":"...","marca":"...","presentacion":"...","motivo":"..."}]}`;
 }
 
+
+// [IA · Gemini 19-ago-2026] mismo contrato que Claude (payload estilo Anthropic → respuesta con content[].text y
+// usage). El proveedor lo decide mos.config.IA_PROVEEDOR / la clave disponible. `conWeb` → grounding de Google.
+async function llamarIA(key: string, payload: Record<string, unknown>, conWeb: boolean, modeloGemini: string):
+    Promise<{ ok: boolean; status: number; d: any; proveedor: string }> {
+  const prov = await proveedorIA();
+  const gkey = Deno.env.get('GEMINI_API_KEY') || '';
+  if (prov === 'gemini' && gkey) {
+    const g = await geminiMessages({ key: gkey, model: modeloGemini, system: payload.system ? String(payload.system) : undefined,
+                                     messages: payload.messages as any, max_tokens: Number(payload.max_tokens) || 1024,
+                                     grounding: conWeb, timeoutMs: 60000 });
+    return { ok: g.ok, status: g.status, d: g.data || { error: { message: g.error || 'gemini' } }, proveedor: 'gemini' };
+  }
+  const r = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const d = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, d, proveedor: 'anthropic' };
+}
+
 async function generar(key: string, prod: any): Promise<{ internos: any[]; externos: any[] }> {
   const base = { model: MODELO, max_tokens: 700, messages: [{ role: 'user', content: prompt(prod) }] };
   // fallback SIN web SOLO si la herramienta no está disponible — jamás por formato malo
@@ -75,23 +99,18 @@ async function generar(key: string, prod: any): Promise<{ internos: any[]; exter
       ? { ...base, tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 1 }] }
       : base;
     const _t0ia = Date.now();
-    const r = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60_000),   // [rev.7]
-    });
-    const d = await r.json();
+    const r = await llamarIA(key, payload, conWeb, GEMINI_FLASH);
+    const d = r.d || {};
     // [852] contabilidad — también los intentos fallidos: consumieron tokens de entrada igual
     _iaLog({ app: 'cron', funcion: conWeb ? 'sustitutosIA (con web)' : 'sustitutosIA',
-             modelo: String(d.model || MODELO), ok: r.ok, ms: Date.now() - _t0ia,
+             modelo: String(d.model || (r.proveedor === 'gemini' ? GEMINI_FLASH : MODELO)), ok: r.ok, ms: Date.now() - _t0ia,
              usage: d.usage || {}, error: r.ok ? '' : JSON.stringify(d).slice(0, 300),
-             meta: { conWeb, stop: d.stop_reason || '',
+             meta: { conWeb, stop: d.stop_reason || '', proveedor: r.proveedor,
                      websearch: ((d.usage || {}).server_tool_use || {}).web_search_requests || 0 } });
     if (!r.ok) {
       const msg = JSON.stringify(d);
-      if (conWeb && r.status === 400 && /web_search|tool/i.test(msg)) continue;
-      throw new Error(`anthropic ${r.status}: ${msg.slice(0, 160)}`);
+      if (conWeb && r.status === 400 && /web_search|tool|google_search|grounding/i.test(msg)) continue;
+      throw new Error(`${r.proveedor} ${r.status}: ${msg.slice(0, 160)}`);
     }
     // [rev.5] respuesta truncada = fallo (mejor reintentar por cola que guardar a medias)
     if (d.stop_reason === 'max_tokens' || d.stop_reason === 'pause_turn') {
@@ -126,8 +145,8 @@ Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'POST only' }, 405);
   const secret = Deno.env.get('CRON_SECRET') || '';
   if (!secret || req.headers.get('x-cron-secret') !== secret) return json({ ok: false, error: 'no autorizado' }, 401);
-  const key = Deno.env.get('ANTHROPIC_API_KEY');
-  if (!key) return json({ ok: false, error: 'sin ANTHROPIC_API_KEY' }, 500);
+  const key = Deno.env.get('ANTHROPIC_API_KEY') || '';
+  if (!key && !Deno.env.get('GEMINI_API_KEY')) return json({ ok: false, error: 'sin GEMINI_API_KEY ni ANTHROPIC_API_KEY' }, 500);
   try {
     const body = await req.json().catch(() => ({}));
     const max = Math.min(Math.max(parseInt(String(body.max)) || 2, 1), 5);

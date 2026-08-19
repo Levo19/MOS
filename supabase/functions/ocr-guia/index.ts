@@ -13,6 +13,7 @@
 // AUTORIZACIÓN: header x-ocr-cron == secret OCR_CRON_SECRET (mismo patrón que la Edge push).
 // SECRETS: ANTHROPIC_API_KEY (ya existe, la usa `ia`) + OCR_CRON_SECRET (nuevo).
 
+import { geminiMessages, proveedorIA, GEMINI_LATEST } from '../_shared/gemini.ts';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-ocr-cron',
@@ -109,34 +110,47 @@ Deno.serve(async (req: Request) => {
     for (let i = 0; i < buf.length; i += CH) bin += String.fromCharCode(...buf.subarray(i, i + CH));
     const b64 = btoa(bin);
 
-    // 3) Claude visión (haiku — mismo modelo/costo que el camino del front vía Edge `ia`)
+    // 3) visión — Gemini Flash (por defecto) o Claude Haiku: mismo prompt, misma salida JSON
     const _t0ia = Date.now();
-    const ar = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': AK, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001', max_tokens: 1536, system: SYSTEM,
-        messages: [{ role: 'user', content: [
-          { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
-          { type: 'text', text: 'Analiza este comprobante de proveedor y devuelve el JSON con la estructura indicada.' },
-        ] }],
-      }),
-    });
-    if (!ar.ok) {
-      // [853] el CUERPO del error, no solo el código: sin él, "saldo agotado" quedaba como
-      // "falla desconocida" y el panel no podía decirle al dueño qué hacer.
-      const _errTxt = await ar.text().catch(() => '');
-      _iaLog({ app: 'cron', funcion: 'ocrGuia', modelo: 'claude-haiku-4-5-20251001', ok: false,
-               ms: Date.now() - _t0ia, usage: {},
-               error: ('anthropic ' + ar.status + ': ' + _errTxt).slice(0, 300),
-               meta: { idGuia: String(idGuia || '') } });
-      return json({ ok: false, error: 'anthropic ' + ar.status, transitorio: true }, 200);
+    const mensajes = [{ role: 'user', content: [
+      { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
+      { type: 'text', text: 'Analiza este comprobante de proveedor y devuelve el JSON con la estructura indicada.' },
+    ] }];
+    const prov = await proveedorIA();
+    const gkey = Deno.env.get('GEMINI_API_KEY') || '';
+    let aj: any = null; let provUsado = 'anthropic';
+    if (prov === 'gemini' && gkey) {
+      provUsado = 'gemini';
+      const g = await geminiMessages({ key: gkey, model: GEMINI_LATEST, system: SYSTEM, messages: mensajes as any, max_tokens: 1536, json: true, timeoutMs: 60000 });
+      if (!g.ok) {
+        _iaLog({ app: 'cron', funcion: 'ocrGuia', modelo: GEMINI_LATEST, ok: false, ms: Date.now() - _t0ia, usage: {},
+                 error: String(g.error || 'gemini').slice(0, 300), meta: { idGuia: String(idGuia || ''), proveedor: 'gemini' } });
+        return json({ ok: false, error: String(g.error || 'gemini'), transitorio: true }, 200);
+      }
+      aj = g.data;
+    } else {
+      if (!AK) return json({ ok: false, error: 'sin clave de IA', transitorio: true }, 200);
+      const ar = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': AK, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1536, system: SYSTEM, messages: mensajes }),
+      });
+      if (!ar.ok) {
+        // [853] el CUERPO del error, no solo el código: sin él, "saldo agotado" quedaba como
+        // "falla desconocida" y el panel no podía decirle al dueño qué hacer.
+        const _errTxt = await ar.text().catch(() => '');
+        _iaLog({ app: 'cron', funcion: 'ocrGuia', modelo: 'claude-haiku-4-5-20251001', ok: false,
+                 ms: Date.now() - _t0ia, usage: {},
+                 error: ('anthropic ' + ar.status + ': ' + _errTxt).slice(0, 300),
+                 meta: { idGuia: String(idGuia || '') } });
+        return json({ ok: false, error: 'anthropic ' + ar.status, transitorio: true }, 200);
+      }
+      aj = await ar.json().catch(() => null);
     }
-    const aj = await ar.json().catch(() => null);
     // [852] contabilidad: este cron corre cada 10 min y es de los que más gasta
-    _iaLog({ app: 'cron', funcion: 'ocrGuia', modelo: String((aj && aj.model) || 'claude-haiku-4-5-20251001'),
+    _iaLog({ app: 'cron', funcion: 'ocrGuia', modelo: String((aj && aj.model) || (provUsado === 'gemini' ? GEMINI_LATEST : 'claude-haiku-4-5-20251001')),
              ok: true, ms: Date.now() - _t0ia, usage: (aj && aj.usage) || {},
-             meta: { idGuia: String(idGuia || '') } });
+             meta: { idGuia: String(idGuia || ''), proveedor: provUsado } });
     const text = (aj && aj.content && aj.content[0] && aj.content[0].text) || '';
     const first = text.indexOf('{'), last = text.lastIndexOf('}');
     if (first < 0 || last < 0) return json({ ok: false, error: 'respuesta sin JSON', transitorio: true }, 200);
