@@ -1,0 +1,41 @@
+// [877] MOS Cajas: sello ✅/◌ en la fila de tickets virtuales, filtros verificado/sin verificar, botones en 2 filas
+import { chromium } from 'playwright';
+import http from 'http'; import fs from 'fs'; import path from 'path';
+const ROOT=path.resolve('C:/Users/ISO/ecosistema MOS/ProyectoMOS');
+const MIME={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon'};
+const srv=http.createServer((q,r)=>{let u=decodeURIComponent(q.url.split('?')[0]);if(u==='/')u='/index.html';const f=path.join(ROOT,u);
+ if(!path.resolve(f).startsWith(ROOT)||!fs.existsSync(f)||fs.statSync(f).isDirectory()){r.writeHead(404);return r.end('no');}
+ r.writeHead(200,{'Content-Type':MIME[path.extname(f)]||'application/octet-stream'});r.end(fs.readFileSync(f));});
+await new Promise(r=>srv.listen(8805,r));
+const ok=[],bad=[]; const T=(n,c,x)=>{(c?ok:bad).push(n);console.log((c?'  OK  ':'  --  ')+n+(x?'  ·  '+x:''));};
+const b=await chromium.launch(); const p=await (await b.newContext({viewport:{width:1280,height:950}})).newPage();
+const errs=[]; p.on('pageerror',e=>errs.push(String(e.message)));
+await p.addInitScript(d=>localStorage.setItem('mos_device_id',d),'7e57c1a0-de1c-4a7e-b0de-c47a10906477');
+await p.goto('http://127.0.0.1:8805/',{waitUntil:'domcontentloaded'}); await p.waitForTimeout(5000);
+try{await p.click('text=/Entrar a MOS/i',{timeout:4000});}catch{}
+await p.waitForFunction(()=>{try{return !!MOS;}catch{return false;}},{timeout:60000});
+await p.evaluate(()=>MOS.nav('cajas')); await p.waitForTimeout(15000);
+const btns = await p.evaluate(()=>{ const a=document.querySelector('.cj-caja-actions'); if(!a) return null; const bs=[...a.children]; const tops=new Set(bs.map(b=>Math.round(b.getBoundingClientRect().top)));
+  return { n:bs.length, filas:tops.size, grid:getComputedStyle(a).display }; });
+console.log('     botones: '+JSON.stringify(btns));
+T('los 5 botones de la caja van en grilla de 2 filas (no apretados en una)', btns && btns.grid==='grid' && btns.n>=4 && btns.filas===2);
+const idCaja = await p.evaluate(()=>{ const c=document.querySelector('.cj-caja-card'); return c && c.dataset.idcaja; });
+await p.evaluate((id)=>MOS.cjVerTicketsCaja(id), idCaja); await p.waitForTimeout(2500);
+const r = await p.evaluate(()=>{ const rows=[...document.querySelectorAll('#cjTkList .tk-row')];
+  const virt=rows.filter(r=>/Virtual|Mixto/.test(r.textContent)); const ok=virt.filter(r=>r.querySelector('.tk-sello-ok')).length; const no=virt.filter(r=>r.querySelector('.tk-sello-no')).length;
+  const efe=rows.filter(r=>/Efectivo/.test(r.textContent) && r.querySelector('.tk-sello')).length;
+  const chips=[...document.querySelectorAll('#cjTkFiltros button')].map(b=>b.textContent.trim());
+  return { rows:rows.length, virt:virt.length, ok, no, efeConSello:efe, chips }; });
+console.log('     tickets: '+JSON.stringify({rows:r.rows,virt:r.virt,ok:r.ok,no:r.no,efe:r.efeConSello}));
+T('cada ticket virtual/mixto lleva su sello (✅ verificado o ◌ sin verificar) y los de efectivo no', r.virt>0 && r.ok+r.no===r.virt && r.efeConSello===0, `virt ${r.virt} = ok ${r.ok} + no ${r.no}`);
+T('hay chips "✅ Verificado" y "◌ Sin verificar"', r.chips.some(c=>/Verificado/.test(c)) && r.chips.some(c=>/Sin verificar/.test(c)));
+await p.evaluate(()=>MOS._cjTkSetFiltro('verif')); await p.waitForTimeout(600);
+const f1 = await p.evaluate(()=>{ const rows=[...document.querySelectorAll('#cjTkList .tk-row')]; return { n:rows.length, todosOk:rows.every(r=>r.querySelector('.tk-sello-ok')) }; });
+T('el filtro "Verificado" deja solo los virtuales con Yape', f1.n===r.ok && f1.todosOk, JSON.stringify(f1));
+await p.evaluate(()=>MOS._cjTkSetFiltro('sinverif')); await p.waitForTimeout(600);
+const f2 = await p.evaluate(()=>{ const rows=[...document.querySelectorAll('#cjTkList .tk-row')]; return { n:rows.length, todosNo:rows.every(r=>r.querySelector('.tk-sello-no')) }; });
+T('el filtro "Sin verificar" deja solo los virtuales sin Yape', f2.n===r.no && f2.todosNo, JSON.stringify(f2));
+T('sin errores de página', errs.length===0, errs.join(' | '));
+await p.screenshot({path:'C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/_877_sello_tickets.png'});
+await b.close(); srv.close();
+console.log('\n  '+ok.length+' OK   '+bad.length+' fallos'); process.exit(bad.length?1:0);

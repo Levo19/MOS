@@ -30545,6 +30545,8 @@ const MOS = (() => {
       { key: 'efectivo',   label: '💵 Efectivo' },
       { key: 'virtual',    label: '📱 Virtual' },
       { key: 'mixto',      label: '🔀 Mixto' },
+      { key: 'verif',      label: '✅ Verificado' },      // [877] virtual/mixto con su Yape
+      { key: 'sinverif',   label: '◌ Sin verificar' },   // [877] virtual/mixto sin Yape
       { key: 'por_cobrar', label: '⏳ Por cobrar' },
       { key: 'credito',    label: '📋 Crédito' },
       { key: 'anulado',    label: '❌ Anulado' },
@@ -30676,6 +30678,11 @@ const MOS = (() => {
     if (f === 'efectivo')   return tickets.filter(t => esEf(t) && !esAnul(t));
     if (f === 'virtual')    return tickets.filter(t => esVi(t) && !esAnul(t));
     if (f === 'mixto')      return tickets.filter(t => esMx(t) && !esAnul(t));
+    // [877] verificación por Yape: solo aplica a lo virtual (VIRTUAL y MIXTO)
+    const esVirt = t => (esVi(t) || esMx(t)) && !esAnul(t);
+    const conYape = t => !!(t.yape && typeof t.yape === 'object');
+    if (f === 'verif')      return tickets.filter(t => esVirt(t) && conYape(t));
+    if (f === 'sinverif')   return tickets.filter(t => esVirt(t) && !conYape(t));
     if (f === 'por_cobrar') return tickets.filter(esPorCob);
     if (f === 'credito')    return tickets.filter(esCred);
     if (f === 'anulado')    return tickets.filter(esAnul);
@@ -30739,6 +30746,20 @@ const MOS = (() => {
     base = base.charAt(0).toUpperCase() + base.slice(1);
     return diff === -1 ? ('Ayer · ' + base) : base;
   }
+  // [877] SELLO de verificación: un ticket VIRTUAL/MIXTO cobrado o tiene su Yape (verificado) o no.
+  // Sin verificar NO significa impago (el Yape puede no haber llegado, u otra billetera): por eso
+  // el sello dice "sin verificar", nunca "impago". Se verifica/desverifica en "💜 Yapes de la caja".
+  function _cjTkSelloYape(t, anulado) {
+    if (anulado) return '';
+    const fp = String(t.metodo || t.formaPago || '').toUpperCase();
+    if (!(fp === 'VIRTUAL' || fp.startsWith('MIXTO'))) return '';
+    const y = t.yape && typeof t.yape === 'object' ? t.yape : null;
+    if (y) {
+      const quien = String(y.pagador || '').split(' ')[0];
+      return `<span class="tk-sello tk-sello-ok" title="Yape de ${_escapeHtml(String(y.pagador || ''))} · ${_escapeHtml(String(y.hora || ''))}">✅ verificado${quien ? ' · ' + _escapeHtml(quien) : ''}</span>`;
+    }
+    return `<span class="tk-sello tk-sello-no" title="Ningún Yape capturado calza con este ticket (no significa impago)">◌ sin verificar</span>`;
+  }
   // [diseño] fila de ticket (sin la fecha chica: ahora la da el header del grupo)
   function _cjTkRowHtml(t) {
     const an = String(t.metodo || t.formaPago || '').toUpperCase() === 'ANULADO' || t.estado === 'ANULADO';
@@ -30771,6 +30792,7 @@ const MOS = (() => {
       <div class="tk-monto-col">
         <div class="tk-monto ${an ? 'tk-monto-anul' : ''}">S/ ${parseFloat(t.total || 0).toFixed(2)}</div>
         <span class="tk-chip ${met.cls}">${met.txt}</span>
+        ${_cjTkSelloYape(t, an)}
       </div>
       <div class="tk-row-cog" title="Acciones">⚙️</div>
     </div>`;
