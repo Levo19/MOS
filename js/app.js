@@ -37196,12 +37196,17 @@ const MOS = (() => {
             _tribSellos(c, cls) +
           '</div>' +
           '<div class="trib-gacc">' +
+          // Tres acciones: abrir el PDF · voucher-imagen · compartir PDF. El voucher se arma con
+          // los datos de la venta (líneas, QR), así que existe aunque el PDF de NubeFact no esté
+          // todavía; los dos del PDF sí dependen del enlace.
           (c.enlacePdf ? '<button type="button" class="trib-gbtn" data-pdf="' + _escapeHtml(String(c.enlacePdf)) + '" title="Abrir el PDF del comprobante">📄</button>' : '') +
-          (c.enlacePdf
+          (cls !== 'BAJA'
             ? '<button type="button" class="trib-gbtn img" data-cpeimg="' + _escapeHtml(String(c.idVenta || '')) + '" title="Generar el voucher como imagen y compartir">' +
-                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg></button>' +
-              '<button type="button" class="trib-gbtn wa" data-cpewa="' + _escapeHtml(String(c.idVenta || '')) + '" title="Compartir el PDF fiscal (WhatsApp)">' +
-                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h1.5a1.5 1.5 0 0 0 0-3H9v6"/></svg></button>'
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg></button>'
+            : '') +
+          (c.enlacePdf
+            ? '<button type="button" class="trib-gbtn wa" data-cpewa="' + _escapeHtml(String(c.idVenta || '')) + '" title="Compartir el PDF fiscal (WhatsApp)">' +
+                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h1.5a1.5 1.5 0 0 0 0-3H9v6"/></svg></button>'
             : '') +
           (cls !== 'ACEPTADO' && cls !== 'BAJA'
             ? '<button type="button" class="trib-gbtn" data-recpe="' + _escapeHtml(String(c.idVenta || '')) + '" ' +
