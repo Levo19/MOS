@@ -1,1 +1,1 @@
-{"version": "2.43.862", "build": "2.43.862 Tributario: la lista de comprobantes agrupada por dia, cliente primero y correlativo debajo, hora en el card. Push al MASTER en el instante en que NubeFact o SUNAT rechazan, con el motivo."}
+{"version": "2.43.863", "build": "2.43.863 Tributario: los comprobantes dados de baja cuentan su historia entera (se emitio y SUNAT la acepto, despues se anulo y se comunico la baja) en vez de mezclar el mensaje viejo de aceptacion con un signo de alerta."}

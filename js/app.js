@@ -37076,9 +37076,19 @@ const MOS = (() => {
       // a SUNAT) se veía como un "⚪ sin emitir" mudo: no había forma de saber qué pasó.
       const _desc = String(c.sunatDesc || '').trim();
       const _esFalloNF = /^RECHAZO NubeFact|^FUERA DE PLAZO/i.test(_desc);
-      const detSunat = (_desc && cls !== 'ACEPTADO')
-        ? '<div class="trib-gaviso" style="color:' + (_esFalloNF ? '#fbbf24' : '#fb7185') + '">⚠ '
-          + _escapeHtml(_desc.slice(0, 180)) + '</div>' : '';
+      let detSunat = '';
+      if (esBaja) {
+        // Una baja tiene DOS momentos y el card los mezclaba: guardaba "ha sido aceptada" (la
+        // respuesta de SUNAT al EMITIRLA) y encima le ponía ⚠, al lado de "dado de baja". Se
+        // leía como "¿aceptada para anularla?". Acá se cuenta la historia entera, en gris.
+        const _nuncaEmitida = /NUNCA_EMITIDO|nunca llego/i.test(String(c.sunatCode || '') + ' ' + _desc);
+        detSunat = _nuncaEmitida
+          ? '<div class="trib-gaviso" style="color:#fbbf24">⚠ Anulada antes de emitirse: nunca llegó a NubeFact ni a SUNAT. El número queda sin uso.</div>'
+          : '<div class="trib-gaviso" style="color:var(--trib-ink3);font-weight:600">🧾 Se emitió y SUNAT la aceptó · después la venta se anuló y se comunicó la baja a SUNAT ✓</div>';
+      } else if (_desc && cls !== 'ACEPTADO') {
+        detSunat = '<div class="trib-gaviso" style="color:' + (_esFalloNF ? '#fbbf24' : '#fb7185') + '">⚠ '
+          + _escapeHtml(_desc.slice(0, 180)) + '</div>';
+      }
 
       const cli = String(c.cliente || '').trim();
       const nombreCli = cli && !/^varios$/i.test(cli) ? cli : (esFactura ? 'Sin razón social' : 'Cliente varios');
@@ -37099,7 +37109,7 @@ const MOS = (() => {
           '</div>' +
           '<div class="trib-gright">' +
             (esBaja
-              ? '<span class="trib-gchip neutro" title="La venta se anuló: no cuenta">sin efecto</span>'
+              ? '<span class="trib-gchip neutro" title="La venta se anuló y el comprobante fue dado de baja: no cuenta en el IGV">anulada · no cuenta</span>'
               : '<span class="trib-gchip en-contra" title="IGV de la operación">' + _tribFmtSoles(igv) + ' en contra</span>') +
             '<span class="trib-gocr ' + est[0] + '">' + est[1] + '</span>' +
           '</div>' +

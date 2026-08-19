@@ -76,9 +76,10 @@ const r = await p.evaluate(`(() => {
   const bajas = [...document.querySelectorAll('.trib-gcard.baja')];
   const bajaChip = bajas[0] && bajas[0].querySelector('.trib-gchip') && bajas[0].querySelector('.trib-gchip').textContent.trim();
   const motivo = [...document.querySelectorAll('.trib-gaviso')].map(x=>x.textContent.trim()).find(x=>/anulada|rechazo/i.test(x)) || '';
+  const motivoBaja = [...document.querySelectorAll('.trib-gcard.baja .trib-gaviso')].map(x=>x.textContent.trim()).find(x=>/Se emitió/i.test(x)) || '';
   const nota = ([...document.querySelectorAll('.trib-nota')].pop()||{}).textContent || '';
   const fechaEnCard = /\\d{2}-[a-z]{3}\\./i.test(first ? first.textContent : '');
-  return { dias: dias.length, cards: cards.length, cli, corr, meta, orden, titulos, resumen, bajas: bajas.length, bajaChip, motivo, nota: nota.slice(0,240), fechaEnCard,
+  return { dias: dias.length, cards: cards.length, cli, corr, meta, orden, titulos, resumen, bajas: bajas.length, bajaChip, motivo, motivoBaja, nota: nota.slice(0,240), fechaEnCard,
            scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth };
 })()`);
 console.log('     ' + JSON.stringify(r));
@@ -88,7 +89,8 @@ T('la cabecera del día dice cuándo ("Hoy · …")', /Hoy · /.test(r.titulos[0
 T('la cabecera resume el día (docs + IGV)', /docs? · S\/ [\d,.]+ en contra/.test(r.resumen || ''), r.resumen);
 T('el cliente va primero, el correlativo debajo', r.orden && !!r.cli && !!r.corr, r.cli + ' → ' + r.corr);
 T('el card muestra hora, no fecha', !r.fechaEnCard && /\d{2}:\d{2}/.test(r.meta || ''), r.meta);
-T('las bajas se ven y dicen "sin efecto"', r.bajas > 0 && r.bajaChip === 'sin efecto', r.bajas + ' bajas · chip: ' + r.bajaChip);
+T('las bajas se ven y dicen que no cuentan', r.bajas > 0 && /anulada/.test(r.bajaChip || ''), r.bajas + ' bajas · chip: ' + r.bajaChip);
+T('la baja cuenta su historia (emitida → anulada → baja comunicada)', /Se emitió y SUNAT la aceptó/.test(r.motivoBaja || ''), (r.motivoBaja||'').slice(0,80));
 T('el motivo del anulado/rechazo se lee en el card', /Anulada|RECHAZO/i.test(r.motivo), r.motivo.slice(0, 70));
 T('la nota aclara que las bajas no suman', /bajas no suman/.test(r.nota));
 T('sin desborde horizontal', r.scrollW <= r.clientW + 1, r.scrollW + '/' + r.clientW);
