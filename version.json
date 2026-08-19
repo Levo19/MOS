@@ -1,1 +1,1 @@
-{"version": "2.43.866", "build": "2.43.866 Tributario: cada comprobante dice quien lo emitio y trae su historial (quien cobro, anulo, cambio la forma de pago). La imagen para compartir es el voucher completo como el ticket impreso, con cada linea, desglose, QR y hash. Iconos de imagen y PDF."}
+{"version": "2.43.867", "build": "2.43.867 El voucher-imagen cierra justo con su contenido (sin papel vacio al pie)."}

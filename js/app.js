@@ -37256,7 +37256,9 @@ const MOS = (() => {
     const baseEst = tieneDesglose ? baseGrav : _money(total - igvEst);
 
     // alto = cabecera + líneas + pie
-    const H = 470 + lineas.length * 44 + (tieneDesglose && noGrav > 0 ? 28 : 0) + 300 + 360;
+    // alto exacto = lo que ocupa cada bloque (cabecera 380 · fila de línea 44 · desglose · QR y pie 330).
+    // Antes sobraban ~300 px de papel en blanco abajo del QR.
+    const H = 380 + lineas.length * 44 + (tieneDesglose && noGrav > 0 ? 24 : 0) + 140 + 330 + (c.vendedor ? 22 : 0) + (c.clienteDoc && String(c.clienteDoc) !== '66666' ? 22 : 0);
     const cv = document.createElement('canvas'); cv.width = W * R; cv.height = H * R;
     const x = cv.getContext('2d'); x.scale(R, R);
     x.fillStyle = '#0b1220'; x.fillRect(0, 0, W, H);
