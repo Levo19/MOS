@@ -111,6 +111,7 @@ window.__vm = createApp({
       mcSumidero: ref(null), mcSumideroTxt: ref(''), mcOjo: ref([]), mcOjoVer: ref(false),
       mcSumideroFoco: () => {}, mcSumideroEnter: () => { window.__sumEnter = (window.__sumEnter||0)+1; },
       mcSumEditableVer: ref(false), mcSumCambiarModo: () => {},
+      mcTocarCobro: (e, metodo) => { window.__toco = (window.__toco||[]).concat([metodo]); if (metodo==='MIXTO') { mcMixEfe.value=''; mcEstado.value='mixto'; } else { window.__cobro = { metodo, virtual:0 }; mcEstado.value='hecho'; } },
       mcSumideroInput: (e) => { window.__sumInput = e && e.target ? e.target.value : ''; },
       mcLineas: ref([{nombre:'AJI PANCA ENTERO GRANEL',cantidad:0.25,subtotal:3.5,um:'KGM'},{nombre:'AZUCAR RUBIA 1KG',cantidad:2,subtotal:6.6,um:'NIU'},{nombre:'FIDEO SPAGHETTI 500GR',cantidad:1,subtotal:2.4,um:'NIU'}]),
       mcCant: it => { const n=parseFloat(it.cantidad)||0, um=String(it.um||'NIU').toUpperCase(); return (Number.isInteger(n)?n:n.toFixed(3).replace(/0+$/,'').replace(/[.]$/,''))+(um==='KGM'?' kg':um==='NIU'?'×':' '+um.toLowerCase()); },
@@ -224,7 +225,7 @@ T('el guante, la estela de arrastre y el barrido existen', v6.glove && v6.drag &
 T('tocar el ticket entra por el gesto (pointerdown), no por click', v6.dragRegistrado);
 
 // ── 3. MIXTO ──
-await p.evaluate(`document.querySelector('#mcRoot .mc-bt.mix').click()`);
+await p.evaluate(`(el => el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerType:'touch',isPrimary:true,pointerId:3,button:0})))(document.querySelector('#mcRoot .mc-bt.mix'))`);
 await p.waitForTimeout(400);
 await p.evaluate(`(() => { const t=[...document.querySelectorAll('#mcRoot .mc-te')];
   t.find(x=>x.textContent.trim()==='2').click();
@@ -242,6 +243,10 @@ T('reparte efectivo y virtual solo', v3.barras[0]==='S/ 2.60' && v3.barras[1]===
 T('las barras liquidas muestran la proporcion', v3.anchos[0]==='46%' && v3.anchos[1]==='54%', v3.anchos.join(' / '));
 T('habilita cobrar con reparto valido', v3.ok);
 
+// v13: los botones de cobro reaccionan al PRIMER toque (pointerdown), no al click
+T('EFECTIVO / VIRTUAL / MIXTO escuchan pointerdown (reaccionan al primer toque)', /mc-bt efe" @pointerdown\.prevent="mcTocarCobro\(\$event, 'EFECTIVO'\)"/.test(src) && /mc-bt vir"[^>]*@pointerdown\.prevent="mcTocarCobro\(\$event, 'VIRTUAL'\)"/.test(src));
+T('la función real dedupe toques repetidos en 500 ms y respeta mcProcesando', /if \(now - _mcTocoT < 500\) return; _mcTocoT = now;\s+if \(mcProcesando\.value\) return;/.test(src));
+T('la voz del cierre dice "Pago efectivo, muchas gracias por su compra"', /'Pago ' \+ como \+ ', muchas gracias por su compra'/.test(src));
 await p.evaluate(`document.querySelector('#mcRoot .mc-te.ok').click()`);
 await p.waitForTimeout(400);
 const v4 = await p.evaluate(`(() => ({ cobro:window.__cobro,
@@ -396,7 +401,7 @@ if (process.env.MC_SHOT) {
   const op={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,pointerType:'touch',isPrimary:true,pointerId:7};
   el.dispatchEvent(new PointerEvent('pointerdown',op)); el.dispatchEvent(new PointerEvent('pointerup',op)); })()`);
   await p.waitForTimeout(900); await p.screenshot({ path: SH+'mc2_cobro.png' });
-  await p.evaluate(`document.querySelector('#mcRoot .mc-bt.mix').click()`);
+  await p.evaluate(`(el => el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerType:'touch',isPrimary:true,pointerId:3,button:0})))(document.querySelector('#mcRoot .mc-bt.mix'))`);
   await p.waitForTimeout(700); await p.screenshot({ path: SH+'mc3_mixto.png' });
   console.log('  capturas listas');
 }

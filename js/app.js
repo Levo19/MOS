@@ -29372,6 +29372,12 @@ const MOS = (() => {
     if (!t) return '';
     const tr = t.trabajador;
     if (tr && tr.nombre) return '';   // [851] ya lo dice el chip de arriba
+    // [880] Personal FIJO (documento en ficha): su consumo entra SOLO en su liquidación, sin
+    // asignar nada. El botón ASIGNAR acá confundía (es para trabajadores de zona sin ficha).
+    if (t.planillaAuto) {
+      return '<span class="cj-carta-tk-chip" title="Su documento está en su ficha: este crédito se descuenta solo al pagar su liquidación">' +
+        '<span class="cj-carta-tk-ico">💼</span><b>' + _esc(String(t.planillaAuto).split(' ')[0]) + '</b><i>planilla automática</i></span>';
+    }
     if (t.estadoCobro && t.estadoCobro !== 'VIVO') return '';
     // [850] En un día ya liquidado no queda turno al que cargarlo: el servidor lo rechazaría.
     // Sin botón, así el admin no persigue una opción que no existe.
@@ -29389,6 +29395,11 @@ const MOS = (() => {
         ${tr.fechaDia ? ' · liquidación del ' + _esc(tr.fechaDia) : ''}
         ${yaDesc ? '' : `<button type="button" class="cj-det-tk-quitar" onclick="MOS.cjTrabajadorQuitar('${_esc(String(t.idVenta))}')">quitar</button>`}
       </div>`;
+    }
+    // [880] personal fijo: el descuento es automático al liquidar (por su documento), sin botón
+    if (t && t.planillaAuto) {
+      return `<div class="cj-det-asignado-banner" style="background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.4);color:#6ee7b7">
+        💼 Se descuenta solo en la liquidación de <strong>${_esc(String(t.planillaAuto))}</strong> (su documento está en su ficha)</div>`;
     }
     if (t && t.estadoCobro && t.estadoCobro !== 'VIVO') return '';
     // [850] día sin turnos abiertos: se dice por qué, en vez de ofrecer un botón que va a fallar

@@ -1,0 +1,10 @@
+import fs from 'fs'; import { execSync } from 'child_process';
+const src = fs.readFileSync('C:/Users/ISO/ecosistema MOS/ProyectoMOS/supabase/functions/print-adhesivo/index.ts','utf8');
+const grab = (name) => { const i = src.indexOf('function ' + name + '('); let d=0, j=src.indexOf('{', i); for (let k=j;k<src.length;k++){ if(src[k]==='{')d++; else if(src[k]==='}'){d--; if(!d) return src.slice(i,k+1);} } };
+fs.writeFileSync('_adh_tmp.ts', ['normalizeEtq','detectHighlightsEtq','fontWidthEtq','wrapTokensEtq','wrapPlanoEtq'].map(grab).join('\n') + '\ntype Tok = { tok: string; hl: boolean; w: number };\nexport { normalizeEtq, detectHighlightsEtq, wrapTokensEtq, wrapPlanoEtq };');
+execSync('npx -y esbuild _adh_tmp.ts --format=esm --outfile=_adh_tmp.mjs --log-level=error');
+const m = await import('./_adh_tmp.mjs?x=' + Date.now());
+const d='CLAVO DE OLOR INDONESIO PREMIUM GRANEL'; const n=m.normalizeEtq(d); console.log(JSON.stringify(n)); const toks=n.split(/\s+/); console.log(JSON.stringify(toks));
+console.log('hl', JSON.stringify(m.detectHighlightsEtq(toks, [])));
+console.log('wrapTokens', JSON.stringify(m.wrapTokensEtq(toks, m.detectHighlightsEtq(toks, [])).map(l=>l.map(o=>o.tok+':'+o.w))));
+console.log('plano', JSON.stringify(m.wrapPlanoEtq(toks,12,2)?.map(l=>l.map(o=>o.tok))));
