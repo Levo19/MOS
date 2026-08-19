@@ -145,6 +145,10 @@ begin
      where v.tipo_doc in ('FACTURA','BOLETA')
        and coalesce(v.nf_estado,'PENDIENTE') = 'PENDIENTE'
        and upper(coalesce(v.forma_pago,'')) <> 'ANULADO'
+       -- Solo lo ACCIONABLE: comprobantes que ni siquiera llegaron a NubeFact. Una boleta que
+       -- ya tiene hash está en NubeFact esperando el resumen diario de SUNAT — eso se resuelve
+       -- solo y avisarlo sería ruido. Un vigilante que grita por todo deja de ser un vigilante.
+       and coalesce(v.nf_hash,'') = ''
        and v.fecha > now() - make_interval(days => v_dias)
        and extract(epoch from (now() - v.fecha))/60 >
            (case when v.tipo_doc = 'FACTURA' then v_min_fac else v_min_bol end)

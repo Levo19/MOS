@@ -104,9 +104,15 @@ function armarPayloadNF(data: Record<string, any>, serie: string, numero: number
   const nfItems = items.map((item: Record<string, unknown>) => {
     const tipoIgv = aNubeFact(parseInt(String(item.tipo_igv ?? 1), 10));
     const cantidad = parseFloat(String(item.cantidad ?? 1));
-    const valorUnitario = parseFloat(String(item.valor_unitario ?? 0));
-    const subtotalVU = r2(valorUnitario * cantidad);
     const precioTotal = parseFloat(String(item.subtotal ?? 0));
+    // El valor unitario se DERIVA del subtotal realmente cobrado, no del precio de lista.
+    // En granel el subtotal no siempre es precio × cantidad: 0.050 kg de laurel a S/120 el kilo
+    // da S/6.00, pero se cobró S/7.50. Multiplicar el valor_unitario guardado por la cantidad
+    // daba un valor de venta que no cuadraba con el total, y NubeFact rechazaba por
+    // "Error de cálculo de 'igv'". Derivándolo del subtotal, la línea siempre cierra y el
+    // monto que pagó el cliente se respeta exacto — que es lo único que no se puede mover.
+    const subtotalVU = (tipoIgv === 1 || tipoIgv === 17) ? r2(precioTotal / 1.18) : r2(precioTotal);
+    const valorUnitario = cantidad > 0 ? (subtotalVU / cantidad) : subtotalVU;
     let igvItem: number;
     // Los totales se agrupan por el código de NubeFact, no por el nuestro:
     //   1 gravado · 8 exonerado · 9/10/11 inafecto · 17 IVAP
@@ -118,7 +124,8 @@ function armarPayloadNF(data: Record<string, any>, serie: string, numero: number
       unidad_de_medida: String(item.unidad_de_medida || 'NIU'),
       codigo: String(item.sku || ''), codigo_producto_sunat: String(item.cod_sunat || ''),
       descripcion: String(item.nombre || ''), cantidad,
-      valor_unitario: r2(valorUnitario), precio_unitario: parseFloat(String(item.precio ?? 0)),
+      valor_unitario: Math.round(valorUnitario * 1e6) / 1e6,
+      precio_unitario: cantidad > 0 ? Math.round((precioTotal / cantidad) * 1e6) / 1e6 : precioTotal,
       descuento: '', subtotal: subtotalVU, tipo_de_igv: tipoIgv, igv: igvItem, total: precioTotal,
       anticipo_regularizacion: false, anticipo_documento_serie: '', anticipo_documento_numero: '',
     };
