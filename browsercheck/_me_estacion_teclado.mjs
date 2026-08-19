@@ -64,10 +64,19 @@ await b.close(); srv.close();
 const src = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 T('el captor de la estación escucha en la ventana, en fase de captura',
   /window\.addEventListener\('keydown', _mcTeclado, true\)/.test(src));
-T('reconoce el escaneo por ráfaga y lo manda a buscarTicketCajero',
-  /dur > cod\.length \* 35 \+ 150\) return;[\s\S]{0,120}cajeroBusqueda\.value = cod;[\s\S]{0,40}buscarTicketCajero\(\);/.test(src));
+// El único corte es el silencio de 400 ms entre teclas (igual que el captor del salvapantallas,
+// que SÍ lee en la tablet). La regla de "≤35 ms por tecla" tiraba a la basura el escaneo real:
+// en Android el lector entrega las teclas más lento que un USB en PC.
+T('reconoce el escaneo por silencio de 400 ms, SIN corte por velocidad, y lo manda a buscarTicketCajero',
+  !/dur > cod\.length \* 35/.test(src)
+  && /_mcBufTimer = setTimeout\(\(\) => \{ _mcBuf = ''; \}, 400\);/.test(src)
+  && /cajeroBusqueda\.value = cod;[\s\S]{0,40}buscarTicketCajero\(\);/.test(src));
+T('lee la tecla aunque el lector mande e.key=Unidentified (usa e.code / keyCode)',
+  /function _mcTeclaDe\(e\)/.test(src) && /Unidentified/.test(src) && /String\.fromCharCode\(e\.keyCode\)/.test(src));
+T('acepta Enter también como NumpadEnter / keyCode 13',
+  /e\.code === 'NumpadEnter' \|\| e\.keyCode === 13/.test(src));
 T('las teclas de la ráfaga NO llegan a ningún input (preventDefault + stopPropagation)',
-  /_mcBuf \+= ch;[\s\S]{0,200}e\.preventDefault\(\); e\.stopPropagation\(\);/.test(src));
+  /_mcBuf \+= ch;[\s\S]{0,700}e\.preventDefault\(\); e\.stopPropagation\(\);/.test(src));
 T('ya no hay input oculto en la estación (nada que levante teclado)',
   !/ref="cajeroInput"/.test(src));
 T('el POS no roba el foco mientras la estación está abierta',
@@ -77,6 +86,36 @@ T('si un input gana foco con la estación abierta, se le quita (focusin → blur
 T('el captor de guías cede a la estación', /if \(modoCajero\.value\) return;\s+\/\/ la estación de cobro tiene su propio captor/.test(src));
 T('el teclado en pantalla del POS no aparece con la estación abierta', /mostrarTeclado\.value && !modoCajero\.value\) scannerInput\.value\.focus\(\)/.test(src));
 T('ESC no cierra la estación', /e\.key === 'Escape'\) \{ e\.preventDefault\(\); return; \}/.test(src));
+
+// ── el captor REAL, ejecutado con un lector Android lento (80 ms/tecla) y con e.key=Unidentified ──
+{
+  const grab = (name) => { const i = src.indexOf(name); const f = src.indexOf('\n        }', i) + 10; return src.slice(i, f); };
+  const fnDe = grab('function _mcTeclaDe(e)'), fnTec = grab('function _mcTeclado(e)');
+  const b2 = await chromium.launch(); const p2 = await b2.newPage();
+  await p2.setContent('<!doctype html><body><script>' +
+    'let _mcBuf="",_mcBufT0=0,_mcBufTimer=null; const modoCajero={value:true}; const cajeroBusqueda={value:""};' +
+    'window.__leido=[]; function buscarTicketCajero(){ window.__leido.push(cajeroBusqueda.value); } function mcSon(){}' +
+    fnDe + fnTec + 'window.addEventListener("keydown",_mcTeclado,true);</script></body>');
+  // lector lento: 80 ms por tecla, con e.key legible
+  const cod = 'NVM2-000531';
+  for (const ch of cod) { await p2.keyboard.press(ch === '-' ? 'Minus' : ch); await p2.waitForTimeout(80); }
+  await p2.keyboard.press('Enter'); await p2.waitForTimeout(100);
+  // lector que manda Unidentified: se despachan eventos a mano con code/keyCode
+  await p2.evaluate(() => { const fire = (key, code, kc) => window.dispatchEvent(new KeyboardEvent('keydown', { key, code, keyCode: kc, bubbles: true, cancelable: true }));
+    'BM01'.split('').forEach(c => fire('Unidentified', /[0-9]/.test(c) ? 'Digit' + c : 'Key' + c, c.charCodeAt(0)));
+    fire('Unidentified', 'Minus', 189); '000335'.split('').forEach(c => fire('Unidentified', 'Digit' + c, c.charCodeAt(0)));
+    fire('Unidentified', 'NumpadEnter', 13); });
+  await p2.waitForTimeout(100);
+  // tecleo humano: 600 ms entre teclas → se descarta
+  for (const ch of 'ABCD') { await p2.keyboard.press(ch); await p2.waitForTimeout(600); }
+  await p2.keyboard.press('Enter'); await p2.waitForTimeout(100);
+  const leido = await p2.evaluate(() => window.__leido);
+  console.log('     leído por el captor real: ' + JSON.stringify(leido));
+  T('el captor REAL lee un lector lento (80 ms/tecla)', leido.includes('NVM2-000531'));
+  T('el captor REAL lee un lector que manda e.key=Unidentified', leido.includes('BM01-000335'));
+  T('el captor REAL ignora tecleo humano (600 ms/tecla)', !leido.includes('ABCD'));
+  await b2.close();
+}
 
 console.log('\n  ' + ok.length + ' OK   ' + bad.length + ' fallos');
 process.exit(bad.length ? 1 : 0);
