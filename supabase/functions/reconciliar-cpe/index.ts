@@ -293,9 +293,15 @@ Deno.serve(async (req: Request) => {
             const acept = bb.aceptada_por_sunat === true;
             const sdesc = String(bb.sunat_description || bb.errors || '').trim();
             if (rr.status === 200 || rr.status === 201) {
+              // Si salió, el motivo de un rechazo anterior es historia: se limpia. Si no,
+              // Tributario seguiría mostrando "⛔ NubeFact lo rechazó" sobre un comprobante
+              // que ya está emitido, que es peor que no decir nada.
               em = { nf_estado: acept ? 'EMITIDO' : 'PENDIENTE', nf_hash: String(bb.codigo_hash || ''),
                      nf_enlace: String(bb.enlace_del_pdf || ''), nf_qr: String(bb.cadena_para_codigo_qr || ''),
-                     aceptada: acept, sunat_desc: sdesc,
+                     // Si salió, el motivo del rechazo anterior es historia. set_cpe_nf no pisa el
+                     // campo con vacío, así que un mensaje vacío dejaría "⛔ NubeFact lo rechazó"
+                     // colgado sobre un comprobante que ya está emitido — peor que no decir nada.
+                     aceptada: acept, sunat_desc: sdesc || 'Emitido por el reintento automatico',
                      sunat_code: (bb.sunat_responsecode != null ? String(bb.sunat_responsecode) : ''),
                      enlace_xml: String(bb.enlace_del_xml || ''), enlace_cdr: String(bb.enlace_del_cdr || ''),
                      numero_orden_sunat: String(bb.numero_de_orden_sunat || ''), consultado: true };

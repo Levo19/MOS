@@ -36272,8 +36272,14 @@ const MOS = (() => {
     $('tribIGVFavorSub').textContent = (d.guiasConIGV || 0) + ' de ' + (d.guiasMes || 0) + ' guías con IGV recuperable' +
                                       (d.guiasSinFoto > 0 ? ' · ' + d.guiasSinFoto + ' sin foto' : '');
     $('tribIGVPagarSub').textContent = (d.cpeEmitidos || 0) + ' de ' + (d.cpeTotal || 0) + ' CPE emitidos' +
-                                      (d.cpeErrores > 0 ? ' · ' + d.cpeErrores + ' con error' : '') +
-                                      (d.cpePendientes > 0 ? ' · ' + d.cpePendientes + ' pendientes' : '');
+                                      (d.cpeErrores > 0 ? ' · ⚠ ' + d.cpeErrores + ' NO llegaron a SUNAT' : '') +
+                                      (d.cpePendientes > 0 ? ' · ' + d.cpePendientes + ' en camino' : '');
+    // La tarjeta entera se marca cuando hay comprobantes que no llegaron. Un número perdido
+    // dentro de un subtítulo gris no se ve: con 56 trabados, la pantalla se veía normal.
+    try {
+      const _cardIGV = $('tribIGVPagar') && $('tribIGVPagar').closest('.trib-stat');
+      if (_cardIGV) _cardIGV.classList.toggle('trib-stat-alerta', (d.cpeErrores || 0) > 0);
+    } catch(_) {}
     // Tasa derivada del propio dato (no hardcodeada): si el backend cambiara
     // el régimen, el subtítulo lo dice solo.
     const tasaRenta = (d.totalVentas > 0) ? (d.rentaMensual / d.totalVentas) * 100 : 1.5;
@@ -36288,10 +36294,16 @@ const MOS = (() => {
       const partes = [];
       // Estimación del IGV que se está perdiendo (proporcional al promedio del mes)
       const igvPromedioPorGuia = (d.guiasConIGV > 0) ? (d.igvFavor / d.guiasConIGV) : 0;
-      if (d.cpeErrores > 0)     partes.push(d.cpeErrores + ' CPE con error');
+      if (d.cpeErrores > 0)     partes.push(d.cpeErrores + ' comprobante(s) que NO llegaron a SUNAT · tócalo para verlos');
       if (d.guiasIlegibles > 0) partes.push(d.guiasIlegibles + ' ilegibles · recuperables ~' + _tribFmtSoles(d.guiasIlegibles * igvPromedioPorGuia));
       if (d.guiasSinFoto > 0)   partes.push(d.guiasSinFoto + ' sin comprobante · ~' + _tribFmtSoles(d.guiasSinFoto * igvPromedioPorGuia) + ' en juego');
       $('tribAlertSub').textContent = partes.join(' · ');
+      // Si el problema son los CPE, tocar la franja abre la lista YA filtrada a los que no
+      // llegaron. Antes llevaba siempre a las guías, así que un CPE trabado avisaba y te
+      // dejaba en otra pantalla.
+      $('tribAlertCard').onclick = (d.cpeErrores > 0)
+        ? function () { tribAbrirIGVEmitido('TRABADO'); }
+        : function () { tribAbrirIGVFavor('PENDIENTES'); };
     } else {
       $('tribAlertCard').style.display = 'none';
     }
@@ -36838,8 +36850,8 @@ const MOS = (() => {
   const _tribCPEFiltro = { estado: 'TODOS' };
   let _tribCPEBusq = '';
 
-  async function tribAbrirIGVEmitido() {
-    _tribCPEFiltro.estado = 'TODOS';
+  async function tribAbrirIGVEmitido(filtroInicial) {
+    _tribCPEFiltro.estado = filtroInicial || 'TODOS';
     _tribCPEBusq = '';
     const d = _tribState.data || {};
     const mesNom = _TRIB_MESES[(_tribState.mes || 1) - 1] + ' ' + (_tribState.anio || '');
@@ -36894,6 +36906,15 @@ const MOS = (() => {
     if (e.indexOf('BAJA') === 0) return 'BAJA';
     if (e === 'RECHAZADO' || e === 'RECHAZADO_SUNAT' || e === 'ERROR') return 'RECHAZADO';
     if (c.aceptadoSunat) return 'ACEPTADO';
+    // TRABADO: no llegó a NubeFact y ya se le pasó su ventana. Antes caía en "pendiente" y
+    // se perdía entre los que están en camino — que es exactamente lo que dejó 56 comprobantes
+    // fuera de SUNAT sin que nadie lo viera. Una factura se acepta en segundos; una boleta
+    // viaja en el resumen diario, por eso la ventana es distinta.
+    if (!c.aceptadoNubefact) {
+      const ms = c.fecha ? (Date.now() - new Date(c.fecha).getTime()) : 0;
+      const limite = (String(c.tipo || '').toUpperCase() === 'FACTURA') ? 20 * 60000 : 25 * 3600000;
+      if (ms > limite) return 'TRABADO';
+    }
     if (c.aceptadoNubefact || e === 'PENDIENTE' || e === 'EMITIDO') return 'PENDIENTE';
     return 'SIN_EMITIR';
   }
@@ -36918,7 +36939,7 @@ const MOS = (() => {
       return;
     }
 
-    const cnt = { TODOS: lista.length, ACEPTADO: 0, PENDIENTE: 0, RECHAZADO: 0, SIN_EMITIR: 0, BAJA: 0 };
+    const cnt = { TODOS: lista.length, ACEPTADO: 0, PENDIENTE: 0, RECHAZADO: 0, TRABADO: 0, SIN_EMITIR: 0, BAJA: 0 };
     lista.forEach(c => { cnt[_tribClasifCPE(c)]++; });
 
     if (chipsCont) {
@@ -36929,6 +36950,7 @@ const MOS = (() => {
         : '';
       chipsCont.innerHTML =
         mk('TODOS',      'Todos',            cnt.TODOS,      '') +
+        mk('TRABADO',    '⚠ No llegó a SUNAT', cnt.TRABADO,  '#fb7185') +
         mk('ACEPTADO',   'Aceptados SUNAT',  cnt.ACEPTADO,   '#34d399') +
         mk('PENDIENTE',  'Pendientes',       cnt.PENDIENTE,  '#fbbf24') +
         mk('RECHAZADO',  'Rechazados',       cnt.RECHAZADO,  '#fb7185') +
@@ -36953,6 +36975,7 @@ const MOS = (() => {
       ACEPTADO:   ['ok',    '🟢 aceptado SUNAT'],
       PENDIENTE:  ['warn',  '🟡 en NubeFact · pendiente SUNAT'],
       RECHAZADO:  ['error', '🔴 rechazado SUNAT'],
+      TRABADO:    ['error', '⚠ no llegó a SUNAT'],
       SIN_EMITIR: ['info',  '⚪ sin emitir'],
       BAJA:       ['info',  '⊘ dado de baja']
     };
