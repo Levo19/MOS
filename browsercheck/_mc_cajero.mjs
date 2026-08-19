@@ -107,6 +107,11 @@ window.__vm = createApp({
         const n=ys.length; return ys.map((y,i)=>{ const a=(90+180/n - i*360/n)*Math.PI/180; const x=Math.round(560*Math.cos(a)), y2=Math.round(320*Math.sin(a));
           return {y, st:{transform:'translate3d(calc(-50% + '+x+'px), calc(-50% + '+y2+'px), 0)'}}; }); }),
       mcTocarYape: (y) => { window.__tocoYape = y.id; },
+      // v9: sumidero (input mudo) y ojo de diagnóstico
+      mcSumidero: ref(null), mcSumideroTxt: ref(''), mcOjo: ref([]), mcOjoVer: ref(false),
+      mcSumideroFoco: () => {}, mcSumideroEnter: () => { window.__sumEnter = (window.__sumEnter||0)+1; },
+      mcSumEditableVer: ref(false), mcSumCambiarModo: () => {},
+      mcSumideroInput: (e) => { window.__sumInput = e && e.target ? e.target.value : ''; },
       mcLineas: ref([{nombre:'AJI PANCA ENTERO GRANEL',cantidad:0.25,subtotal:3.5,um:'KGM'},{nombre:'AZUCAR RUBIA 1KG',cantidad:2,subtotal:6.6,um:'NIU'},{nombre:'FIDEO SPAGHETTI 500GR',cantidad:1,subtotal:2.4,um:'NIU'}]),
       mcCant: it => { const n=parseFloat(it.cantidad)||0, um=String(it.um||'NIU').toUpperCase(); return (Number.isInteger(n)?n:n.toFixed(3).replace(/0+$/,'').replace(/[.]$/,''))+(um==='KGM'?' kg':um==='NIU'?'×':' '+um.toLowerCase()); },
       mcCorto: n => { const t=String(n||'').trim(); return t.length>26?t.slice(0,25)+'…':t; },
@@ -319,6 +324,23 @@ T('la barra de controles no respira ni sigue al dedo',
   barra.anim === 'none' && (barra.tw === 'none' || barra.tw === 'matrix(1, 0, 0, 1, 0, 0)'), barra.anim + ' / ' + barra.tw);
 T('los botones no esperan el doble-tap del navegador', barra.touch === 'manipulation', barra.touch);
 T('quedan solo los dos botones que sirven: 📷 y ✕', barra.ics === 2, barra.ics + ' botones');
+
+// ── 5c. el sumidero: input mudo para lectores IME ──
+const sum = await p.evaluate(`(() => { const i=document.getElementById('mcSumidero'); if(!i) return null;
+  return { ro:i.readOnly, im:i.getAttribute('inputmode'), w:i.getBoundingClientRect().width }; })()`);
+console.log('     sumidero: ' + JSON.stringify(sum));
+T('existe el sumidero (input real) para lectores que escriben como IME', !!sum);
+T('el sumidero es mudo: readonly + inputmode=none (Android no levanta teclado)', !!sum && sum.ro && sum.im === 'none');
+await p.evaluate(`(() => { const i=document.getElementById('mcSumidero'); i.readOnly=false; i.focus(); })()`);
+await p.keyboard.type('BM01-000335', { delay: 30 });
+await p.keyboard.press('Enter');
+await p.waitForTimeout(200);
+const sumR = await p.evaluate(`({ v: window.__sumInput, enter: window.__sumEnter })`);
+T('texto tecleado con el sumidero enfocado dispara @input y el Enter dispara la entrega',
+  sumR.v === 'BM01-000335' && sumR.enter === 1, JSON.stringify(sumR));
+T('tocar el reloj abre el OJO de diagnóstico', await p.evaluate(`(() => { const r=document.querySelector('#mcRoot .mc-reloj');
+  r.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerType:'touch',isPrimary:true,pointerId:9}));
+  return new Promise(res=>setTimeout(()=>res(!!document.querySelector('#mcRoot .mc-ojo')),150)); })()`));
 
 // ── 6. lo acordado que NO tiene que estar, y lo que SÍ ──
 // Estos tres se revisan sobre el archivo, no sobre el render: son decisiones de la app

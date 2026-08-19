@@ -76,9 +76,18 @@ T('lee la tecla aunque el lector mande e.key=Unidentified (usa e.code / keyCode)
 T('acepta Enter también como NumpadEnter / keyCode 13',
   /e\.code === 'NumpadEnter' \|\| e\.keyCode === 13/.test(src));
 T('las teclas de la ráfaga NO llegan a ningún input (preventDefault + stopPropagation)',
-  /_mcBuf \+= ch;[\s\S]{0,700}e\.preventDefault\(\); e\.stopPropagation\(\);/.test(src));
+  /_mcBuf \+= ch;[\s\S]{0,900}e\.preventDefault\(\); e\.stopPropagation\(\);/.test(src));
 T('ya no hay input oculto en la estación (nada que levante teclado)',
   !/ref="cajeroInput"/.test(src));
+// Android/Chrome: sin NINGÚN elemento enfocado, los keydown de un teclado Bluetooth no llegan a la
+// página. El foco tiene que estar en algún lado — en el propio escenario (#mcRoot, tabindex=-1), que
+// es un div y por eso no levanta teclado en pantalla.
+T('el escenario es enfocable (tabindex=-1) y recibe el foco, en vez de dejarlo en la nada',
+  /id="mcRoot" tabindex="-1"/.test(src) && /r\.focus\(\{ preventScroll: true \}\)/.test(src));
+T('al abrir, el foco se refuerza tras el fullscreen/orientación',
+  /setTimeout\(mcSoltarFoco, 400\); setTimeout\(mcSoltarFoco, 1500\);/.test(src));
+T('cualquier toque en el escenario devuelve el teclado al escenario',
+  /setTimeout\(mcSoltarFoco, 50\);/.test(src));
 T('el POS no roba el foco mientras la estación está abierta',
   /if \(modoCajero\.value\) return;\n\s+if\(config\.value\.completado && currentModule\.value === 'POS'/.test(src));
 T('si un input gana foco con la estación abierta, se le quita (focusin → blur)',
@@ -92,9 +101,11 @@ T('ESC no cierra la estación', /e\.key === 'Escape'\) \{ e\.preventDefault\(\);
   const grab = (name) => { const i = src.indexOf(name); const f = src.indexOf('\n        }', i) + 10; return src.slice(i, f); };
   const fnDe = grab('function _mcTeclaDe(e)'), fnTec = grab('function _mcTeclado(e)');
   const b2 = await chromium.launch(); const p2 = await b2.newPage();
-  await p2.setContent('<!doctype html><body><script>' +
+  await p2.setContent('<!doctype html><body><div id="mcRoot" tabindex="-1"></div><script>' +
+    'document.getElementById("mcRoot").focus();' +
     'let _mcBuf="",_mcBufT0=0,_mcBufTimer=null; const modoCajero={value:true}; const cajeroBusqueda={value:""};' +
-    'window.__leido=[]; function buscarTicketCajero(){ window.__leido.push(cajeroBusqueda.value); } function mcSon(){}' +
+    'window.__leido=[]; function buscarTicketCajero(){ window.__leido.push(cajeroBusqueda.value); } function mcSon(){} function _mcOjoAnota(){}' +
+    'let _mcSumEditable=false; const mcSumidero={value:null}; const mcEstado={value:"espera"}; function _mcSumHacerEditable(){ _mcSumEditable=true; window.__editable=true; const el=document.getElementById("mcSumidero"); if(el) el.readOnly=false; }' +
     fnDe + fnTec + 'window.addEventListener("keydown",_mcTeclado,true);</script></body>');
   // lector lento: 80 ms por tecla, con e.key legible
   const cod = 'NVM2-000531';
@@ -110,11 +121,55 @@ T('ESC no cierra la estación', /e\.key === 'Escape'\) \{ e\.preventDefault\(\);
   for (const ch of 'ABCD') { await p2.keyboard.press(ch); await p2.waitForTimeout(600); }
   await p2.keyboard.press('Enter'); await p2.waitForTimeout(100);
   const leido = await p2.evaluate(() => window.__leido);
+  const foco = await p2.evaluate(() => document.activeElement && document.activeElement.id);
+  T('con el escenario enfocado (como en la tablet) el activeElement es mcRoot, no un input', foco === 'mcRoot', foco);
   console.log('     leído por el captor real: ' + JSON.stringify(leido));
   T('el captor REAL lee un lector lento (80 ms/tecla)', leido.includes('NVM2-000531'));
   T('el captor REAL lee un lector que manda e.key=Unidentified', leido.includes('BM01-000335'));
   T('el captor REAL ignora tecleo humano (600 ms/tecla)', !leido.includes('ABCD'));
+  // v9: con el SUMIDERO enfocado el captor cede: las teclas entran al input (lector IME o no)
+  await p2.evaluate(() => { const i=document.createElement('input'); i.id='mcSumidero'; document.body.appendChild(i); i.focus(); window.__leido=[]; });
+  for (const ch of 'NVM2-000777') { await p2.keyboard.press(ch === '-' ? 'Minus' : ch); await p2.waitForTimeout(30); }
+  await p2.keyboard.press('Enter'); await p2.waitForTimeout(100);
+  const sum = await p2.evaluate(() => ({ v: document.getElementById('mcSumidero').value, leido: window.__leido }));
+  T('con el sumidero EDITABLE enfocado, el captor cede y el texto queda en el input (lo entrega el sumidero, no el captor)',
+    sum.v === 'NVM2-000777' && sum.leido.length === 0, JSON.stringify(sum));
+  // v13: sumidero READONLY (por defecto: sin chip de teclado de Android) → las teclas las lee el captor
+  await p2.evaluate(() => { const i=document.getElementById('mcSumidero'); i.value=''; i.readOnly=true; i.focus(); window.__leido=[]; });
+  for (const ch of 'NVM2-000888') { await p2.keyboard.press(ch === '-' ? 'Minus' : ch); await p2.waitForTimeout(30); }
+  await p2.keyboard.press('Enter'); await p2.waitForTimeout(100);
+  const ro = await p2.evaluate(() => ({ v: document.getElementById('mcSumidero').value, leido: window.__leido, ro: document.getElementById('mcSumidero').readOnly }));
+  T('con el sumidero READONLY enfocado (sin chip), el captor lee el escaneo él mismo', ro.leido.includes('NVM2-000888') && ro.v === '', JSON.stringify(ro));
+  // v13: si el lector escribe por el IME (keyCode 229), el sumidero se vuelve editable en el acto
+  await p2.evaluate(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Unidentified', keyCode: 229, bubbles: true, cancelable: true })); });
+  const ime = await p2.evaluate(() => ({ ed: !!window.__editable, ro: document.getElementById('mcSumidero').readOnly }));
+  T('un keydown de IME (keyCode 229) vuelve el sumidero editable al instante', ime.ed && ime.ro === false, JSON.stringify(ime));
   await b2.close();
+}
+
+// ── v11: el sumidero (input editable = IME de Android) SOLO tiene el foco en ESPERA ──
+{
+  const i = src.indexOf('function mcSoltarFoco()'); const f = src.indexOf('\n        }', i) + 10;
+  const fnFoco = src.slice(i, f);
+  const b3 = await chromium.launch(); const p3 = await b3.newPage();
+  await p3.setContent('<!doctype html><body><div id="mcRoot" tabindex="-1"><input id="mcSumidero" readonly><button id="bt">EFECTIVO</button></div><script>' +
+    'const mcSumidero={value:document.getElementById("mcSumidero")}; const mcRootEl={value:document.getElementById("mcRoot")}; const mcEstado={value:"espera"};' +
+    fnFoco + 'window.mcSoltarFoco=mcSoltarFoco; window.mcEstado=mcEstado;</script></body>');
+  const ae = () => p3.evaluate(() => ({ foco: document.activeElement && document.activeElement.id, ro: document.getElementById('mcSumidero').readOnly }));
+  await p3.evaluate(() => window.mcSoltarFoco());
+  let r = await ae();
+  T('en ESPERA el foco va al sumidero (para que el lector/IME escriba)', r.foco === 'mcSumidero', JSON.stringify(r));
+  await p3.evaluate(() => { window.mcEstado.value = 'cobro'; document.getElementById('bt').focus(); window.mcSoltarFoco(); });
+  r = await ae();
+  T('en COBRO (tocar EFECTIVO/VIRTUAL) el foco va al escenario, NO al sumidero: sin IME, sin ícono de teclado, sin redibujo', r.foco === 'mcRoot' && r.ro === true, JSON.stringify(r));
+  await p3.evaluate(() => { window.mcEstado.value = 'hecho'; window.mcSoltarFoco(); });
+  r = await ae();
+  T('en HECHO tampoco', r.foco === 'mcRoot', JSON.stringify(r));
+  await p3.evaluate(() => { window.mcEstado.value = 'espera'; window.mcSoltarFoco(); });
+  r = await ae();
+  T('al volver a ESPERA el sumidero retoma el foco', r.foco === 'mcSumidero', JSON.stringify(r));
+  await b3.close();
+  T('cada cambio de estado recoloca el foco (watch mcEstado → mcSoltarFoco)', /watch\(mcEstado, \(\) => \{ nextTick\(mcSoltarFoco\); \}\);/.test(src));
 }
 
 console.log('\n  ' + ok.length + ' OK   ' + bad.length + ' fallos');

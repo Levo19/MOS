@@ -2186,6 +2186,13 @@ const MOS = (() => {
         if (S.view === 'cajas' && typeof _cajasRefreshSilencioso === 'function') _cajasRefreshSilencioso();
         return;
       }
+      if (app === 'me' && dominio === 'yapes') {
+        // [v2] entró un Yape (o cambió de estado): la pestaña Yapes de Configuración y el modal
+        // "Yapes que entraron" se refrescan en el acto.
+        if (S.view === 'config' && S.cfgTab === 'yape' && typeof renderYapeCard === 'function') renderYapeCard(true);
+        if (document.getElementById('ypOvl') && typeof yapesZonaRefrescar === 'function' && _ypZona) yapesZonaRefrescar();
+        return;
+      }
       if (app === 'me' && dominio === 'cajas') {
         if (S.view === 'cajas' && typeof _cajasRefreshSilencioso === 'function') _cajasRefreshSilencioso();
         return;
@@ -43403,11 +43410,97 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (e) { toast('No se pudo soltar: ' + (e.message || e), 'error', 5000); }
   }
 
+  // [v2] Los Yapes que ENTRARON en una zona, por día, con el estado de cada uno. No es para cuadrar
+  // una caja (eso es "Yapes de la caja"): es para saber qué llega, cuándo y qué pasó con cada uno.
+  let _ypZona = null, _ypZonaFecha = null;
+  function _ypFechaLima(offDias) {
+    const d = new Date(Date.now() - 5 * 3600 * 1000 + (offDias || 0) * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
+  async function yapesZonaAbrir(zona, fecha) {
+    _ypZona = String(zona || ''); _ypZonaFecha = fecha || _ypFechaLima(0);
+    _ypInyectarCSS();
+    const prev = document.getElementById('ypOvl'); if (prev) prev.remove();
+    const ovl = document.createElement('div');
+    ovl.id = 'ypOvl'; ovl.className = 'yp-back';
+    ovl.onpointerdown = e => { if (e.target === ovl) MOS.yapesCajaCerrar(); };
+    ovl.innerHTML = '<div class="yp-card" role="dialog" aria-label="Yapes de la zona">' +
+      '<div class="yp-head"><div><b>💜 Yapes que entraron · ' + _escapeHtml(_ypZona) + '</b><span id="ypSub">cargando…</span></div>' +
+      '<button class="yp-x" onclick="MOS.yapesCajaCerrar()" aria-label="Cerrar">✕</button></div>' +
+      '<div class="yp-body" id="ypBody"><div class="yp-load">◍ leyendo los Yapes de la zona…</div></div></div>';
+    document.body.appendChild(ovl);
+    requestAnimationFrame(() => ovl.classList.add('in'));
+    try { _finBeep?.('click'); } catch (_) {}
+    await yapesZonaRefrescar();
+  }
+  async function yapesZonaRefrescar() {
+    const body = document.getElementById('ypBody'); if (!body || !_ypZona) return;
+    let d = null;
+    try {
+      const r = await API.post('yapesDelDia', { fecha: _ypZonaFecha });
+      d = r && (r.data || r);
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'sin datos');
+    } catch (e) {
+      body.innerHTML = '<div class="yp-load">No pude leer: ' + _escapeHtml(e.message || String(e)) + '</div>';
+      return;
+    }
+    const zUp = _ypZona.toUpperCase();
+    const lista = (d.yapes || []).filter(y => String(y.zona || '').toUpperCase() === zUp);
+    const _S = v => 'S/ ' + _money(v).toFixed(2);
+    const n = (f) => lista.filter(f).length;
+    const R = { total: lista.length, ok: n(y => y.estado === 'MATCHEADO'), amb: n(y => y.estado === 'AMBIGUO'),
+                libres: n(y => y.estado === 'NUEVO' && y.monto != null), ileg: n(y => y.monto == null),
+                monto: lista.reduce((a, y) => a + (Number(y.monto) || 0), 0) };
+    const esHoy = _ypZonaFecha === _ypFechaLima(0);
+    const sub = document.getElementById('ypSub');
+    if (sub) sub.textContent = (esHoy ? 'hoy' : _ypZonaFecha) + ' · ' + R.total + ' Yape' + (R.total === 1 ? '' : 's') + ' · ' + _S(R.monto);
+    const chip = (v, txt, cls) => '<div class="yp-kpi ' + cls + '"><b>' + v + '</b><i>' + txt + '</i></div>';
+    const fila = (y) => {
+      const est = String(y.estado);
+      const cls = est === 'MATCHEADO' ? 'is-ok' : (est === 'AMBIGUO' ? 'is-amb' : 'is-libre');
+      const sello = y.monto == null ? '<span class="yp-sello is-mal">✕ ilegible</span>'
+                  : est === 'MATCHEADO' ? '<span class="yp-sello is-ok">✅ verificado · ' + _escapeHtml(String(y.correlativo || y.idVenta || '')) + '</span>'
+                  : est === 'AMBIGUO'   ? '<span class="yp-sello is-amb">⚖ ambiguo · ' + ((y.candidatos || []).length) + ' tickets calzan</span>'
+                  : '<span class="yp-sello is-libre">◌ libre · sin ticket todavía</span>';
+      return '<div class="yp-y ' + cls + '">' +
+        '<div class="yp-y-top">' +
+          '<span class="yp-y-m">' + (y.monto == null ? '—' : _S(y.monto)) + '</span>' +
+          '<span class="yp-y-n">' + _escapeHtml(String(y.pagador || 'sin nombre')) + '</span>' +
+          '<span class="yp-y-h">' + _escapeHtml(String(y.hora)) + '</span>' +
+        '</div>' +
+        '<div class="yp-y-pie">' + sello + (y.dispositivo ? '<i>' + _escapeHtml(String(y.dispositivo)) + '</i>' : '') + '</div>' +
+        (y.monto == null ? '<div class="yp-y-raw"><span>' + _escapeHtml(String(y.raw || '').slice(0, 120)) + '</span></div>' : '') +
+      '</div>';
+    };
+    body.innerHTML =
+      '<div class="yp-nav">' +
+        '<button type="button" class="yp-act is-gris" onclick="MOS.yapesZonaDia(-1)">‹ día anterior</button>' +
+        '<b>' + (esHoy ? 'Hoy' : _escapeHtml(_ypZonaFecha)) + '</b>' +
+        '<button type="button" class="yp-act is-gris" ' + (esHoy ? 'disabled' : '') + ' onclick="MOS.yapesZonaDia(1)">día siguiente ›</button>' +
+      '</div>' +
+      '<div class="yp-kpis">' +
+        chip(R.ok, 'verificados', 'is-ok') + chip(R.libres, 'libres', 'is-libre') +
+        chip(R.amb, 'ambiguos', 'is-amb') + chip(R.ileg, 'ilegibles', 'is-pend') +
+      '</div>' +
+      (lista.map(fila).join('') || '<div class="yp-vacio">No entró ningún Yape en ' + _escapeHtml(_ypZona) + ' ' + (esHoy ? 'hoy' : 'ese día') + '.</div>') +
+      '<div class="yp-pie">Verificar, desverificar o atar a mano se hace desde <b>Cajas → Yapes de la caja</b>. ' +
+        'Acá se ve lo que entra, apenas entra.</div>';
+  }
+  function yapesZonaDia(delta) {
+    if (!_ypZonaFecha) return;
+    const d = new Date(_ypZonaFecha + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + (delta || 0));
+    const nf = d.toISOString().slice(0, 10);
+    if (nf > _ypFechaLima(0)) return;
+    _ypZonaFecha = nf;
+    const body = document.getElementById('ypBody'); if (body) body.innerHTML = '<div class="yp-load">◍ leyendo…</div>';
+    yapesZonaRefrescar();
+  }
+
   function yapesCajaCerrar() {
     const o = document.getElementById('ypOvl'); if (!o) return;
     o.classList.remove('in');
     setTimeout(() => { try { o.remove(); } catch (_) {} }, 180);
-    _ypCaja = null;
+    _ypCaja = null; _ypZona = null;
   }
 
   function _ypInyectarCSS() {
@@ -43524,9 +43617,26 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       else toast('No se pudo: ' + ((r && r.error) || ''), 'error');
     } catch (e) { toast('No se pudo: ' + (e && e.message || e), 'error'); }
   }
-  async function renderYapeCard() {
+  // [v2] vivo: mientras la pestaña está a la vista se refresca sola cada 8 s (el emparejamiento,
+  // el latido y los Yapes nuevos se ven sin recargar). Se apaga sola al salir de la pestaña.
+  let _yapeLiveTimer = null;
+  function _yapeLiveArrancar() {
+    if (_yapeLiveTimer) return;
+    _yapeLiveTimer = setInterval(() => {
+      if (!document.getElementById('yapeBody') || S.cfgTab !== 'yape' || document.hidden) { clearInterval(_yapeLiveTimer); _yapeLiveTimer = null; return; }
+      renderYapeCard(true);
+    }, 8000);
+  }
+  let _yapeRenderEnVuelo = false;
+  async function renderYapeCard(silencioso) {
     _yapeInyectarCSS();
     const cont = $('yapeBody'); if (!cont) return;
+    if (_yapeRenderEnVuelo) return;
+    _yapeRenderEnVuelo = true;
+    try { await _renderYapeCardReal(cont, !!silencioso); } finally { _yapeRenderEnVuelo = false; }
+    _yapeLiveArrancar();
+  }
+  async function _renderYapeCardReal(cont, silencioso) {
     // [862] Estado de los celulares. Un equipo que dejó de latir es un equipo que dejó de
     // capturar, y eso hay que verlo ACÁ y no descubrirlo al cerrar caja.
     let equipos = [];
@@ -43535,51 +43645,76 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       equipos = ((re && (re.data || re)) || {}).equipos || [];
     } catch (_) {}
     const zonas = _yapeZonasVenta();
+    // [v2] UNA card por zona: el celular emparejado (estado vivo) + sus acciones. El código de
+    // emparejamiento vive DENTRO de la misma card, porque es el mismo ciclo: emparejar → capturar →
+    // revocar / cambiar de celular → emparejar.
+    const porZona = {};
+    equipos.forEach(e => { const k = String(e.zona || '').toUpperCase(); if (!porZona[k] || e.activo) porZona[k] = e; });
     const filas = zonas.map(z => {
-      const c = _yapeCod[z.idZona];
-      const vivo = c && c.hasta > Date.now();
-      const min = vivo ? Math.max(1, Math.round((c.hasta - Date.now()) / 60000)) : 0;
-      return '<div class="yp-zona">' +
-        '<div class="yp-z-n"><b>' + _escapeHtml(String(z.nombre || z.idZona)) + '</b>' +
-          '<i>' + _escapeHtml(String(z.idZona)) + '</i></div>' +
-        (vivo
-          ? '<div class="yp-cod"><span>' + _escapeHtml(c.codigo) + '</span>' +
-            '<i>vence en ' + min + ' min · se usa una sola vez</i></div>'
-          : '') +
-        '<button type="button" class="yp-btn" onclick="MOS.yapeGenerarCodigo(\'' + _esc(z.idZona) + '\')">' +
-          (vivo ? '↺ Otro código' : '🔑 Emparejar un celular') + '</button>' +
-      '</div>';
-    }).join('') || '<div class="yp-vacio">No hay zonas de venta configuradas.</div>';
-
-    const eqHtml = equipos.length ? ('<div class="yp-eqs">' + equipos.map(e => {
-      const st = String(e.estado);
-      const cls = st === 'VIVO' && e.permisoOk !== false ? 'is-ok' : (st === 'CAIDO' || e.permisoOk === false ? 'is-mal' : 'is-gris');
-      const dice = st === 'REVOCADO' ? 'revocado — ya no entrega'
+      const zid = String(z.idZona);
+      const e = porZona[zid.toUpperCase()] || null;
+      const c = _yapeCod[zid];
+      const codVivo = c && c.hasta > Date.now();
+      const min = codVivo ? Math.max(1, Math.round((c.hasta - Date.now()) / 60000)) : 0;
+      const st = e ? String(e.estado) : 'NUNCA';
+      const emparejado = !!e && st !== 'NUNCA' && st !== 'REVOCADO';
+      const cls = !e || st === 'NUNCA' ? 'is-gris'
+                : st === 'VIVO' && e.permisoOk !== false ? 'is-ok'
+                : (st === 'CAIDO' || e.permisoOk === false) ? 'is-mal' : 'is-gris';
+      const dice = !e || st === 'NUNCA' ? (codVivo ? 'esperando que el celular tipee el código' : 'sin celular emparejado')
+                 : st === 'REVOCADO' ? 'revocado — ya no entrega'
                  : st === 'VIVO' && e.permisoOk === false ? 'vivo pero SIN permiso de notificaciones: no captura'
                  : st === 'VIVO' ? 'capturando'
-                 : (st === 'CAIDO' ? 'sin dar señal hace ' + (e.minSinLatir || '?') + ' min'
-                                   : 'todavía no se instaló');
-      // el último Yape que entregó: la prueba de que el parser entiende lo que llega
-      const uy = e.ultimoYape;
-      const ultimo = uy ? ' · último: S/ ' + (Number(uy.monto) || 0).toFixed(2) + (uy.pagador ? ' de ' + _escapeHtml(String(uy.pagador).split(' ')[0]) : '') +
-                          (uy.hace != null ? ' hace ' + (uy.hace < 60 ? uy.hace + ' min' : Math.round(uy.hace / 60) + ' h') : '') : '';
-      return '<div class="yp-eq ' + cls + '"><span class="yp-eq-luz"></span>' +
-        '<div><b>' + _escapeHtml(String(e.nombre)) + '</b>' +
-          '<i>' + _escapeHtml(String(e.zona || 'todas')) + ' · ' + dice +
-          (e.hoy > 0 ? ' · ' + e.hoy + ' hoy' : '') +
-          (e.capturas > 0 ? ' · ' + e.capturas + ' en total' : '') + ultimo +
-          (e.pendientes > 0 ? ' · ' + e.pendientes + ' en cola' : '') +
-          (e.version ? ' · v' + _escapeHtml(String(e.version)) : '') +
-          (e.atrasado ? ' · <b class="yp-eq-old">⬆ hay versión más nueva</b>' : '') + '</i></div>' +
-        (st !== 'NUNCA'
-          ? '<button type="button" class="yp-eq-btn" onclick="MOS.yapeRevocar(\'' + _esc(e.nombre) + '\',' + (st === 'REVOCADO' ? 'true' : 'false') + ')">' +
-            (st === 'REVOCADO' ? 'Reactivar' : 'Revocar') + '</button>'
-          : '') +
+                 : 'sin dar señal hace ' + (e.minSinLatir || '?') + ' min';
+      const uy = e && e.ultimoYape;
+      const ultimo = uy ? '<span class="yp-dato">último: <b>S/ ' + (Number(uy.monto) || 0).toFixed(2) + '</b>' + (uy.pagador ? ' de ' + _escapeHtml(String(uy.pagador).split(' ')[0]) : '') +
+                          (uy.hace != null ? ' hace ' + (uy.hace < 60 ? uy.hace + ' min' : Math.round(uy.hace / 60) + ' h') : '') + '</span>' : '';
+      const datos = e && st !== 'NUNCA' ? (
+          (e.modelo ? '<span class="yp-dato">' + _escapeHtml(String(e.modelo)) + '</span>' : '') +
+          '<span class="yp-dato"><b>' + (e.hoy || 0) + '</b> hoy · <b>' + (e.capturas || 0) + '</b> en total</span>' + ultimo +
+          (e.pendientes > 0 ? '<span class="yp-dato is-warn">' + e.pendientes + ' en cola por entregar</span>' : '') +
+          (e.version ? '<span class="yp-dato">v' + _escapeHtml(String(e.version)) + (e.atrasado ? ' · <b class="yp-eq-old">⬆ hay versión más nueva</b>' : '') + '</span>' : '')
+        ) : '';
+      const acciones =
+        (e && st !== 'NUNCA' ? '<button type="button" class="yp-act" onclick="MOS.yapesZonaAbrir(\'' + _esc(zid) + '\')">💜 Ver Yapes</button>' : '') +
+        (emparejado
+          ? '<button type="button" class="yp-act is-rojo" onclick="MOS.yapeRevocar(\'' + _esc(e.nombre) + '\',false)">⛔ Revocar</button>' +
+            '<button type="button" class="yp-act is-gris" onclick="MOS.yapeGenerarCodigo(\'' + _esc(zid) + '\')" title="Genera un código nuevo: el celular actual deja de entregar en el acto">↺ Cambiar de celular</button>'
+          : (st === 'REVOCADO'
+              ? '<button type="button" class="yp-act is-verde" onclick="MOS.yapeRevocar(\'' + _esc(e.nombre) + '\',true)">✓ Reactivar</button>' +
+                '<button type="button" class="yp-act is-gris" onclick="MOS.yapeGenerarCodigo(\'' + _esc(zid) + '\')">🔑 Emparejar otro celular</button>'
+              : '<button type="button" class="yp-act is-verde" onclick="MOS.yapeGenerarCodigo(\'' + _esc(zid) + '\')">' + (codVivo ? '↺ Otro código' : '🔑 Emparejar un celular') + '</button>'));
+      return '<div class="yp-eq yp-zcard ' + cls + '"><span class="yp-eq-luz"></span>' +
+        '<div class="yp-zbody">' +
+          '<div class="yp-z-n"><b>' + _escapeHtml(String(z.nombre || zid)) + '</b><i>' + _escapeHtml(zid) + (e && e.nombre ? ' · ' + _escapeHtml(String(e.nombre)) : '') + '</i></div>' +
+          '<div class="yp-estado">' + dice + '</div>' +
+          (datos ? '<div class="yp-datos">' + datos + '</div>' : '') +
+          (codVivo
+            ? '<div class="yp-cod"><span>' + _escapeHtml(c.codigo) + '</span>' +
+              '<i>vence en ' + min + ' min · se usa una sola vez' + (emparejado ? ' · al usarse, el celular actual deja de entregar' : '') + '</i></div>'
+            : '') +
+          '<div class="yp-acts">' + acciones + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('') || '<div class="yp-vacio">No hay zonas de venta configuradas.</div>';
+    // equipos que no cuadran con ninguna zona de venta (zona vacía / vieja): se listan aparte para no perderlos
+    const zidsUp = new Set(zonas.map(z => String(z.idZona).toUpperCase()));
+    const sueltos = equipos.filter(e => !zidsUp.has(String(e.zona || '').toUpperCase()));
+    const eqHtml = sueltos.length ? ('<div class="yp-eqs">' + sueltos.map(e => {
+      const st = String(e.estado);
+      return '<div class="yp-eq is-gris"><span class="yp-eq-luz"></span><div><b>' + _escapeHtml(String(e.nombre)) + '</b>' +
+        '<i>' + _escapeHtml(String(e.zona || 'sin zona')) + ' · ' + st.toLowerCase() + ' · ' + (e.capturas || 0) + ' en total</i></div>' +
+        (st !== 'NUNCA' ? '<button type="button" class="yp-eq-btn" onclick="MOS.yapeRevocar(\'' + _esc(e.nombre) + '\',' + (st === 'REVOCADO' ? 'true' : 'false') + ')">' + (st === 'REVOCADO' ? 'Reactivar' : 'Revocar') + '</button>' : '') +
         '</div>';
     }).join('') + '</div>') : '';
 
+    // firma del contenido: si nada cambió no se repinta (sin parpadeo en el refresco vivo)
+    const firma = filas + '|' + eqHtml;
+    if (silencioso && cont.dataset.firma === firma) return;
+    cont.dataset.firma = firma;
     cont.innerHTML =
       '<div class="yp-wrap">' +
+        '<div class="yp-zonas">' + filas + '</div>' +
         eqHtml +
         '<div class="yp-pasos">' +
           '<div class="yp-paso"><b>1</b><span>Bajá el APK una sola vez y instalalo en el celular que recibe los Yapes. ' +
@@ -43590,7 +43725,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           '<div class="yp-paso"><b>3</b><span>En la app, tocá <b>Dar permiso de notificaciones</b> y activá YapeCaptor en la lista. ' +
             'Android exige que eso lo haga una persona a mano.</span></div>' +
         '</div>' +
-        '<div class="yp-zonas">' + filas + '</div>' +
         '<div class="yp-nota">El código dura 30 minutos y muere al usarse. Generar uno nuevo para el mismo equipo ' +
           '<b>cambia su secreto</b>: el celular anterior deja de entregar en el acto — es la forma de sacar de ' +
           'circulación un equipo perdido.</div>' +
@@ -43631,6 +43765,26 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.yp-eq.is-mal .yp-eq-luz{background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.2);animation:iaLatido 1.7s infinite}' +
       '.yp-eq.is-mal b{color:#fca5a5}' +
       '.yp-eq-old{color:#7dd3fc;font-weight:800}' +
+      '.yp-zcard{align-items:flex-start;padding:14px 16px}.yp-zcard .yp-eq-luz{margin-top:5px}' +
+      '.yp-zbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}' +
+      '.yp-estado{font-size:12px;font-weight:800;color:#cbd5e1}.yp-eq.is-ok .yp-estado{color:#6ee7b7}.yp-eq.is-mal .yp-estado{color:#fca5a5}' +
+      '.yp-datos{display:flex;flex-wrap:wrap;gap:6px 14px}' +
+      '.yp-dato{font-size:10.5px;color:#7488a6}.yp-dato b{display:inline;font-size:10.5px;color:#cbd5e1}.yp-dato.is-warn{color:#fcd34d}' +
+      '.yp-acts{display:flex;flex-wrap:wrap;gap:7px;margin-top:2px}' +
+      '.yp-act{font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:7px 12px;border-radius:999px;cursor:pointer;' +
+        'background:rgba(124,58,237,.14);color:#c4b5fd;border:1px solid rgba(167,139,250,.42)}' +
+      '.yp-act:hover{background:rgba(124,58,237,.28)}' +
+      '.yp-act.is-rojo{background:rgba(251,113,133,.12);color:#fb7185;border-color:rgba(251,113,133,.35)}' +
+      '.yp-act.is-verde{background:rgba(52,211,153,.12);color:#34d399;border-color:rgba(52,211,153,.35)}' +
+      '.yp-act.is-gris{background:rgba(148,163,184,.1);color:#cbd5e1;border-color:rgba(148,163,184,.3)}' +
+      '.yp-act[disabled]{opacity:.4;cursor:default}' +
+      '.yp-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.yp-nav b{font-size:13px;color:#e2e8f0}' +
+      '.yp-y-pie{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}.yp-y-pie i{font-style:normal;font-size:10px;color:#5f7192}' +
+      '.yp-sello{font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px;border:1px solid}' +
+      '.yp-sello.is-ok{color:#6ee7b7;border-color:rgba(52,211,153,.4);background:rgba(16,185,129,.1)}' +
+      '.yp-sello.is-libre{color:#c4b5fd;border-color:rgba(167,139,250,.4);background:rgba(124,58,237,.12)}' +
+      '.yp-sello.is-amb{color:#fcd34d;border-color:rgba(252,211,77,.4);background:rgba(252,211,77,.1)}' +
+      '.yp-sello.is-mal{color:#fca5a5;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.1)}' +
       '.yp-zonas{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px}' +
       '.yp-zona{display:flex;flex-direction:column;gap:9px;padding:14px;border-radius:14px;background:#0c1626;border:1px solid #223049}' +
       '.yp-z-n b{display:block;font-size:13.5px;color:#e2e8f0}' +
@@ -54334,6 +54488,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderIaPanel, iaSetRango, iaVerDia, iaCerrarDia,
     renderYapeCard, yapeGenerarCodigo, yapeRevocar,
     yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
+    yapesZonaAbrir, yapesZonaRefrescar, yapesZonaDia,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de

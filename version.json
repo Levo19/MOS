@@ -1,1 +1,1 @@
-{"version": "2.43.868", "build": "2.43.868 Tributario: los iconos de los botones van centrados (se veian rotos), y el voucher-imagen existe aunque el PDF de NubeFact no haya llegado todavia."}
+{"version": "2.43.869", "build": "2.43.869 Config > Yapes v2: una sola card por zona (estado del celular en vivo + Ver Yapes / Revocar / Cambiar de celular; Emparejar solo si no hay celular), refresco vivo cada 8 s + realtime al entrar un Yape, y 'Ver Yapes' por zona con el estado de cada uno (verificado/libre/ambiguo/ilegible) navegable por dia."}
