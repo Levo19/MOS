@@ -30,7 +30,9 @@ p.on('pageerror', e => errs.push('excepción: ' + String(e.message).slice(0,200)
 p.on('console', m => {
   const t = m.text();
   if (/\[Vue error\]|\[Vue warn\]/.test(t)) errs.push(t.slice(0,220));
-  else if (m.type()==='error' && !/favicon|tailwindcss\.com|net::ERR|Failed to load resource/i.test(t)) errs.push('consola: ' + t.slice(0,200));
+  // "Blocked call to navigator.vibrate": intervención de Chrome cuando el banner de update del
+  // SW (instalación fresca en el entorno de prueba) vibra sin gesto previo. Ruido, no error.
+  else if (m.type()==='error' && !/favicon|tailwindcss\.com|net::ERR|Failed to load resource|Blocked call to navigator\.vibrate/i.test(t)) errs.push('consola: ' + t.slice(0,200));
 });
 await p.addInitScript(id => { try { localStorage.setItem('mosexpress_deviceId', id); } catch(_){} }, DEVICE);
 await p.goto('http://127.0.0.1:8797/',{waitUntil:'domcontentloaded'});

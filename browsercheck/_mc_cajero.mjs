@@ -207,6 +207,11 @@ T('muestra el sello COBRADO', v4.sello);
 const casos = await p.evaluate(`(() => {
   const f = window.mcClaveDeEscaneo;
   return {
+    // la cadena REAL que imprime NubeFact — con espacios alrededor de cada barra
+    sunatReal   : f('20610714057 | 01 | FM02 | 000079 | 4.56 | 35.00 | 18/08/2026 | 6 | 10736984836 | pTp8GwBDfWZgKloBwDPrplIZ9iCm270eEPDMMP19ZrQ= |'),
+    // el lector en teclado ES-LatAm puede mandar otra cosa por la barra
+    barraRara   : f('20610714057 ° 01 ° FM01 ° 000053 ° 1.83 ° 12.00 ° 18/08/2026'),
+    numeroCorto : f('20610714057|03|BM01|335|2.13|17.00|18/08/2026|1|22264311|x'),
     sunatFactura: f('20610714057|01|FM01|000053|1.83|12.00|18/08/2026|'),
     sunatBoleta : f('20610714057|03|BM01|000335|0.53|3.50|18/08/2026|'),
     conEspacios : f(' 20610714057 | 01 | FM01 | 000053 | 1.83 '),
@@ -215,6 +220,9 @@ const casos = await p.evaluate(`(() => {
     basura      : f('holaquetal')
   }; })()`);
 console.log('     parser: ' + JSON.stringify(casos));
+T('la cadena REAL de NubeFact (con espacios) da su correlativo', casos.sunatReal==='FM02-000079', casos.sunatReal);
+T('con la barra mangleada por el teclado igual resuelve', casos.barraRara==='FM01-000053', casos.barraRara);
+T('numero sin ceros a la izquierda se completa a 6', casos.numeroCorto==='BM01-000335', casos.numeroCorto);
 T('el QR SUNAT de una FACTURA da su correlativo', casos.sunatFactura==='FM01-000053');
 T('el QR SUNAT de una BOLETA da su correlativo', casos.sunatBoleta==='BM01-000335');
 T('tolera espacios dentro de la cadena', casos.conEspacios==='FM01-000053');
@@ -300,9 +308,14 @@ A('nada lee la estación antes de que exista',
 A('no queda ni un panel con fondo, marco o sombra de caja',
   !/backdrop-filter:blur\(11px\)/.test(CSS) && !/border:2px solid var\(--voz\);opacity:\.3/.test(CSS)
   && !/border-radius:26px/.test(CSS));
-A('el captor global acepta la cadena de SUNAT (| . /)',
-  (src.match(/\[0-9A-Za-z\\-\|\.\/\]/g)||[]).length === 2,
-  ((src.match(/\[0-9A-Za-z\\-\|\.\/\]/g)||[]).length) + ' de 2 captores');
+A('los dos captores globales aceptan la cadena de SUNAT con sus espacios (| . / y espacio)',
+  (src.match(/\[0-9A-Za-z\\-\|\.\/ \]/g)||[]).length === 2,
+  ((src.match(/\[0-9A-Za-z\\-\|\.\/ \]/g)||[]).length) + ' de 2 captores');
+A('al cobrar VIRTUAL con Yape a la vista, se ata en el servidor (no se promete)',
+  /mcYapeAtar\(yp, t\)\.then/.test(src) && /rpc\/yape_atar_cobro/.test(src) && /queda por cuadrar/.test(src));
+A('el ticket nuevo suena al aterrizar', /watch\(\(\) => mcPendientes\.value\.length/.test(src) && /mcSon\('tick'\)/.test(src));
+A('la franja "esperando" se resuelve con efecto', /resueltos\.length\) \{ mcSon\('match'\)/.test(src));
+A('la estación dice "Son … soles"', /const mcDecirMonto/.test(src) && /mcDecirMonto\(venta\.total\)/.test(src));
 
 // MC_SHOT=1 deja capturas de los tres momentos, para MIRAR el diseño y no solo medirlo
 if (process.env.MC_SHOT) {
