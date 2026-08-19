@@ -133,7 +133,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); pintar() }
+    override fun onResume() { super.onResume(); if (!Prefs.listenerVivo(this)) YapeListener.reatar(this); pintar() }
 
     private fun permisoConcedido(): Boolean = permisoNotificaciones(this)
 

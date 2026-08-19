@@ -87,6 +87,8 @@ class LatidoReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context?, intent: Intent?) {
         val ctx = context ?: return
+        // vigilante: si el listener se desconectó y Android no lo volvió a atar, se le insiste
+        if (!Prefs.listenerVivo(ctx)) YapeListener.reatar(ctx)
         latir(ctx)
         // aprovechamos el despertar para vaciar lo que haya quedado en cola sin red
         if (Cola.tamano(ctx) > 0) ColaService.despertar(ctx)

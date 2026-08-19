@@ -1,5 +1,7 @@
 package dev.levo.yapecaptor
 
+import android.content.Context
+
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -91,7 +93,15 @@ class YapeListener : NotificationListenerService() {
                     texto = texto,
                     titulo = titulo,
                     paquete = n.packageName,
-                    tsMillis = if (n.postTime > 0) n.postTime else System.currentTimeMillis()
+                    // La hora del Yape: si el celular estuvo sin datos, al volver la señal le caen
+                    // TODAS las notificaciones juntas con postTime = ahora, y el Yape de las 9:35
+                    // queda fechado 10:07 → no calza con su ticket. Yape pone la hora real del
+                    // evento en `when`; si viene y es anterior al postTime (hasta 3 días), se usa.
+                    tsMillis = run {
+                        val post = if (n.postTime > 0) n.postTime else System.currentTimeMillis()
+                        val cuando = n.notification?.`when` ?: 0L
+                        if (cuando > 0 && cuando < post && post - cuando < 3L * 86400000L) cuando else post
+                    }
                 )
             )
             ColaService.despertar(applicationContext)
@@ -102,6 +112,17 @@ class YapeListener : NotificationListenerService() {
             // Nunca lanzar acá: una excepción en el listener puede hacer que Android
             // desconecte el servicio y el equipo deje de capturar sin que nadie se entere.
             Log.e(TAG, "error procesando notificación", e)
+        }
+    }
+
+    companion object {
+        /** Pide a Android que vuelva a atar el listener (si el permiso está dado). Idempotente. */
+        fun reatar(ctx: Context) {
+            try {
+                if (!MainActivity.permisoNotificaciones(ctx)) return
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N)
+                    android.service.notification.NotificationListenerService.requestRebind(android.content.ComponentName(ctx, YapeListener::class.java))
+            } catch (_: Throwable) {}
         }
     }
 
