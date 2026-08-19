@@ -1,1 +1,1 @@
-{"version": "2.43.859", "build": "2.43.859 Tributario avisa cuando un comprobante NO llega a SUNAT: la tarjeta de IGV en contra se marca, la franja lleva directo a la lista filtrada y cada uno dice su motivo."}
+{"version": "2.43.860", "build": "2.43.860 Tributario: compartir el comprobante por WhatsApp como imagen (con QR de SUNAT) o como PDF, y chips para filtrar por factura/boleta y por zona."}

@@ -36847,7 +36847,7 @@ const MOS = (() => {
   // ═══════════════════════════════════════════════════════════════════
   let _tribCPECache = [];
   let _tribCPEViaSupa = false;
-  const _tribCPEFiltro = { estado: 'TODOS' };
+  const _tribCPEFiltro = { estado: 'TODOS', tipo: 'TODOS', zona: 'TODAS' };
   let _tribCPEBusq = '';
 
   async function tribAbrirIGVEmitido(filtroInicial) {
@@ -36903,7 +36903,10 @@ const MOS = (() => {
   // Estado fiscal de un CPE, con una sola regla en un solo lugar.
   function _tribClasifCPE(c) {
     const e = String(c.nfEstado || '').toUpperCase();
-    if (e.indexOf('BAJA') === 0) return 'BAJA';
+    // ANULADO va con las bajas: la venta se anuló, no hay nada que reclamar. Sin esto caía en
+    // TRABADO por no tener hash y aparecía como "no llegó a SUNAT" — asustando por una venta
+    // que ya no existe, y sumando su IGV en la lista aunque el encabezado no lo cuenta.
+    if (e.indexOf('BAJA') === 0 || e.indexOf('ANULADO') === 0) return 'BAJA';
     if (e === 'RECHAZADO' || e === 'RECHAZADO_SUNAT' || e === 'ERROR') return 'RECHAZADO';
     if (c.aceptadoSunat) return 'ACEPTADO';
     // TRABADO: no llegó a NubeFact y ya se le pasó su ventana. Antes caía en "pendiente" y
@@ -36956,12 +36959,41 @@ const MOS = (() => {
         mk('RECHAZADO',  'Rechazados',       cnt.RECHAZADO,  '#fb7185') +
         mk('SIN_EMITIR', 'Sin emitir',       cnt.SIN_EMITIR, '#64748b') +
         mk('BAJA',       'Dados de baja',    cnt.BAJA,       '#64748b');
+
+      // Segunda fila: qué documento y de qué local. Las zonas salen de los propios datos —
+      // si mañana VIP empieza a emitir, su chip aparece solo, sin tocar código.
+      const nFac = lista.filter(c => String(c.tipo || '').toUpperCase() === 'FACTURA').length;
+      const nBol = lista.length - nFac;
+      const zonas = [...new Set(lista.map(c => String(c.zona || '').trim()).filter(Boolean))].sort();
+      const zonaLbl = (z) => {
+        const m = /^ZONA-?0*(\d+)$/i.exec(z);
+        if (m) return 'Zona ' + m[1];
+        return z.replace(/[_-]/g, ' ').replace(/\w/g, ch => ch.toUpperCase());
+      };
+      const mkT = (key, label, n) => n > 0 || key === 'TODOS'
+        ? '<button type="button" class="trib-chip' + (_tribCPEFiltro.tipo === key ? ' on' : '') + '" data-cpetipo="' + key + '">' +
+          _escapeHtml(label) + ' <b>' + n + '</b></button>' : '';
+      const mkZ = (key, label, n) => '<button type="button" class="trib-chip' + (_tribCPEFiltro.zona === key ? ' on' : '') +
+          '" data-cpezona="' + _escapeHtml(key) + '">' + _escapeHtml(label) + ' <b>' + n + '</b></button>';
+
+      chipsCont.innerHTML +=
+        '<span class="trib-chip-sep"></span>' +
+        mkT('TODOS', 'Todo doc.', lista.length) +
+        mkT('FACTURA', '📋 Facturas', nFac) +
+        mkT('BOLETA', '🧾 Boletas', nBol) +
+        (zonas.length > 1
+          ? '<span class="trib-chip-sep"></span>' +
+            mkZ('TODAS', 'Toda zona', lista.length) +
+            zonas.map(z => mkZ(z, zonaLbl(z), lista.filter(c => String(c.zona || '').trim() === z).length)).join('')
+          : '');
     }
 
     const f = _tribCPEFiltro.estado;
     const q = _tribCPEBusq.trim().toLowerCase();
     const filtrada = lista.filter(c => {
       if (f !== 'TODOS' && _tribClasifCPE(c) !== f) return false;
+      if (_tribCPEFiltro.tipo !== 'TODOS' && String(c.tipo || '').toUpperCase() !== _tribCPEFiltro.tipo) return false;
+      if (_tribCPEFiltro.zona !== 'TODAS' && String(c.zona || '').trim() !== _tribCPEFiltro.zona) return false;
       if (!q) return true;
       return [c.correlativo, c.cliente, c.clienteDoc, c.tipo].map(v => String(v || '').toLowerCase()).join(' ').indexOf(q) >= 0;
     });
@@ -37028,6 +37060,12 @@ const MOS = (() => {
             '<span class="trib-gocr ' + est[0] + '">' + est[1] + '</span>' +
           '</div>' +
           (c.enlacePdf ? '<button type="button" class="trib-gbtn" data-pdf="' + _escapeHtml(String(c.enlacePdf)) + '" title="Abrir el PDF del comprobante">📄</button>' : '') +
+          // Compartir: la imagen se arma acá con los datos que ya están en pantalla (instantánea,
+          // sirve aunque el cliente no abra PDFs); el PDF es el archivo fiscal de NubeFact.
+          (c.enlacePdf
+            ? '<button type="button" class="trib-gbtn img" data-cpeimg="' + _escapeHtml(String(c.idVenta || '')) + '" title="Generar imagen del comprobante y compartir">🖼</button>' +
+              '<button type="button" class="trib-gbtn wa" data-cpewa="' + _escapeHtml(String(c.idVenta || '')) + '" title="Enviar el PDF por WhatsApp">🟢</button>'
+            : '') +
           (cls !== 'ACEPTADO' && cls !== 'BAJA'
             ? '<button type="button" class="trib-gbtn" data-recpe="' + _escapeHtml(String(c.idVenta || '')) + '" ' +
               'data-corr="' + _escapeHtml(String(c.correlativo || '')) + '" data-tipo="' + _escapeHtml(String(c.tipo || '')) + '" ' +
@@ -37044,10 +37082,167 @@ const MOS = (() => {
     cont.scrollTop = 0;
   }
 
+  /* ══════════════════════════════════════════════════════════════════════════
+     COMPARTIR UN COMPROBANTE — dos caminos, porque sirven para cosas distintas:
+       IMAGEN — se dibuja acá con los datos que ya están en pantalla. Sale al instante, se ve
+         en la vista previa del chat sin abrir nada, y lleva el QR de SUNAT para que el cliente
+         valide por su cuenta. Es lo que la gente quiere cuando dice "mándamelo".
+       PDF    — el archivo fiscal de NubeFact, el que vale para su contabilidad.
+     Los dos usan Web Share con archivo cuando el equipo lo soporta (en el celular abre
+     WhatsApp con el adjunto puesto). Si no, descargan y abren el chat: nunca queda sin salida.
+     ══════════════════════════════════════════════════════════════════════════ */
+  function _tribCPEPorId(id) {
+    const lista = Array.isArray(_tribCPECache) ? _tribCPECache : [];
+    return lista.find(c => String(c.idVenta || '') === String(id)) || null;
+  }
+
+  // Formato vertical tipo tarjeta: se lee entero en el chat, sin zoom.
+  async function _tribCPEImagenBlob(c) {
+    const W = 900, H = 1180, R = 2;                 // R=2 → nítido en pantallas densas
+    const cv = document.createElement('canvas');
+    cv.width = W * R; cv.height = H * R;
+    const x = cv.getContext('2d');
+    x.scale(R, R);
+
+    const esFac  = String(c.tipo || '').toUpperCase() === 'FACTURA';
+    const acento = esFac ? '#8b7bff' : '#2de3c8';
+    const total  = parseFloat(c.total) || 0;
+    const igv    = _tribIGVdeCPE(c);
+    const base   = _money(total - igv);
+
+    const g = x.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, '#0b1220'); g.addColorStop(1, '#070d17');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    const halo = x.createRadialGradient(W / 2, 0, 0, W / 2, 0, 620);
+    halo.addColorStop(0, esFac ? 'rgba(139,123,255,.20)' : 'rgba(45,227,200,.18)');
+    halo.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = halo; x.fillRect(0, 0, W, 620);
+
+    const linea = (y, a) => { x.strokeStyle = 'rgba(255,255,255,' + a + ')'; x.lineWidth = 1;
+                              x.beginPath(); x.moveTo(60, y); x.lineTo(W - 60, y); x.stroke(); };
+    const txt = (t, px, y, col, size, peso, alin) => {
+      x.fillStyle = col; x.textAlign = alin || 'left';
+      x.font = (peso || '600') + ' ' + size + 'px ui-sans-serif, system-ui, "Segoe UI", sans-serif';
+      x.fillText(String(t == null ? '' : t), px, y);
+    };
+    const mono = (t, px, y, col, size, peso, alin) => {
+      x.fillStyle = col; x.textAlign = alin || 'left';
+      x.font = (peso || '700') + ' ' + size + 'px ui-monospace, "SF Mono", Menlo, monospace';
+      x.fillText(String(t == null ? '' : t), px, y);
+    };
+
+    txt('INVERSIONES MOS E.I.R.L.', 60, 92, '#eaf6f8', 27, '800');
+    txt('RUC 20610714057', 60, 122, '#6f8a99', 16, '600');
+    txt(esFac ? 'FACTURA ELECTRONICA' : 'BOLETA DE VENTA ELECTRONICA', W - 60, 92, acento, 17, '800', 'right');
+    mono(c.correlativo || '', W - 60, 126, '#eaf6f8', 26, '800', 'right');
+    linea(158, .10);
+
+    txt('CLIENTE', 60, 202, '#5d7a87', 13, '800');
+    const nom = String(c.cliente || 'CLIENTE VARIOS');
+    txt(nom.length > 40 ? nom.slice(0, 39) + '\u2026' : nom, 60, 236, '#eaf6f8', 24, '700');
+    if (c.clienteDoc) mono((String(c.clienteDoc).length === 11 ? 'RUC ' : 'DOC ') + c.clienteDoc, 60, 266, '#9fb9c4', 17);
+    const f = c.fecha ? new Date(c.fecha) : null;
+    if (f && !isNaN(f.getTime()))
+      txt(f.toLocaleString('es-PE', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          W - 60, 236, '#9fb9c4', 17, '600', 'right');
+    linea(300, .07);
+
+    txt('TOTAL A PAGAR', 60, 368, '#5d7a87', 14, '800');
+    mono('S/ ' + total.toFixed(2), 60, 452, '#ffffff', 76, '800');
+
+    let y = 540;
+    const fila = (lbl, val, col) => {
+      txt(lbl, 60, y, '#9fb9c4', 18, '600');
+      mono('S/ ' + (parseFloat(val) || 0).toFixed(2), W - 60, y, col || '#cfe3ea', 20, '700', 'right');
+      y += 42;
+    };
+    fila('Op. gravada', base);
+    fila('IGV 18%', igv);
+    linea(y - 18, .07);
+    y += 6;
+    fila('Total', total, '#ffffff');
+
+    const cls = _tribClasifCPE(c);
+    const badge = { ACEPTADO: ['ACEPTADO POR SUNAT', '#3ddc84'], PENDIENTE: ['EN CAMINO A SUNAT', '#ffd166'],
+                    RECHAZADO: ['RECHAZADO POR SUNAT', '#fb7185'], TRABADO: ['NO LLEGO A SUNAT', '#fb7185'],
+                    BAJA: ['DADO DE BAJA', '#94a3b8'], SIN_EMITIR: ['SIN EMITIR', '#94a3b8'] }[cls] || ['', '#94a3b8'];
+    y += 26;
+    x.fillStyle = badge[1] + '22';
+    x.beginPath(); x.roundRect(60, y - 26, 380, 44, 22); x.fill();
+    x.fillStyle = badge[1]; x.beginPath(); x.arc(88, y - 4, 6, 0, 7); x.fill();
+    txt(badge[0], 108, y + 2, badge[1], 15, '800');
+
+    // QR de SUNAT: lo que le permite al cliente validar el comprobante por su cuenta
+    const cadena = String(c.qr || '').trim();
+    if (cadena && typeof qrcode === 'function') {
+      try {
+        const q = qrcode(0, 'M'); q.addData(cadena); q.make();
+        const n = q.getModuleCount(), lado = 260, cel = lado / n, ox = (W - lado) / 2, oy = y + 78;
+        x.fillStyle = '#ffffff';
+        x.beginPath(); x.roundRect(ox - 18, oy - 18, lado + 36, lado + 36, 18); x.fill();
+        x.fillStyle = '#000000';
+        for (let r = 0; r < n; r++) for (let col = 0; col < n; col++)
+          if (q.isDark(r, col)) x.fillRect(ox + col * cel, oy + r * cel, cel + .6, cel + .6);
+        txt('Escanea para validar en SUNAT', W / 2, oy + lado + 52, '#6f8a99', 15, '600', 'center');
+      } catch (_) { /* sin QR la imagen sigue sirviendo */ }
+    }
+
+    txt('Representacion del comprobante electronico \u00b7 el documento fiscal es el PDF/XML',
+        W / 2, H - 58, '#4a626e', 14, '600', 'center');
+    txt('\u26a1 MOS', W / 2, H - 30, '#33505c', 13, '800', 'center');
+
+    return await new Promise(res => cv.toBlob(res, 'image/png'));
+  }
+
+  async function _tribCompartirArchivo(file, texto, enlace) {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: file.name, text: texto }); return true; }
+      catch (err) { if (err && err.name === 'AbortError') return true; }
+    }
+    _descargarBlob(file, file.name);
+    window.open('https://wa.me/?text=' + encodeURIComponent(texto + (enlace ? '\n' + enlace : '')), '_blank');
+    toast('Descargado \u00b7 adjuntalo en el chat', 'info', 6000);
+    return false;
+  }
+  const _tribTextoCPE = (c) => (String(c.tipo || '').toUpperCase() === 'FACTURA' ? 'Factura ' : 'Boleta ') +
+        (c.correlativo || '') + ' \u00b7 S/ ' + (parseFloat(c.total) || 0).toFixed(2);
+
+  async function _tribCompartirImagen(id) {
+    const c = _tribCPEPorId(id);
+    if (!c) { toast('No encontre ese comprobante', 'error'); return; }
+    try {
+      toast('Generando la imagen\u2026', 'info', 2000);
+      const blob = await _tribCPEImagenBlob(c);
+      if (!blob) throw new Error('no se pudo dibujar');
+      await _tribCompartirArchivo(new File([blob], (c.correlativo || 'comprobante') + '.png', { type: 'image/png' }),
+                                  _tribTextoCPE(c), '');
+    } catch (e) { toast('No se pudo generar: ' + (e && (e.message || e)), 'error', 6000); }
+  }
+
+  async function _tribCompartirPDF(id) {
+    const c = _tribCPEPorId(id);
+    if (!c) { toast('No encontre ese comprobante', 'error'); return; }
+    try {
+      toast('Preparando el PDF\u2026', 'info', 2000);
+      const r = await API.descargarCpePdf(c.idVenta);
+      const fname = r.filename || ((c.correlativo || 'comprobante') + '.pdf');
+      await _tribCompartirArchivo(new File([r.blob], fname, { type: 'application/pdf' }),
+                                  _tribTextoCPE(c), c.enlacePdf || '');
+    } catch (e) { toast('No se pudo compartir: ' + (e && (e.message || e)), 'error', 6000); }
+  }
+
   function _tribCPEClick(e) {
     const t = e.target;
     const chip = t.closest && t.closest('[data-cpefiltro]');
     if (chip) { _tribCPEFiltro.estado = chip.getAttribute('data-cpefiltro'); _finBeep && _finBeep('click'); _tribRenderCPEDetalle(); return; }
+    const chipT = t.closest && t.closest('[data-cpetipo]');
+    if (chipT) { _tribCPEFiltro.tipo = chipT.getAttribute('data-cpetipo'); _finBeep && _finBeep('click'); _tribRenderCPEDetalle(); return; }
+    const chipZ = t.closest && t.closest('[data-cpezona]');
+    if (chipZ) { _tribCPEFiltro.zona = chipZ.getAttribute('data-cpezona'); _finBeep && _finBeep('click'); _tribRenderCPEDetalle(); return; }
+    const bImg = t.closest && t.closest('[data-cpeimg]');
+    if (bImg) { _tribCompartirImagen(bImg.getAttribute('data-cpeimg')); return; }
+    const bWa = t.closest && t.closest('[data-cpewa]');
+    if (bWa) { _tribCompartirPDF(bWa.getAttribute('data-cpewa')); return; }
     const pdf = t.closest && t.closest('[data-pdf]');
     if (pdf) { _finBeep && _finBeep('click'); window.open(pdf.getAttribute('data-pdf'), '_blank', 'noopener'); return; }
     const re = t.closest && t.closest('[data-recpe]');

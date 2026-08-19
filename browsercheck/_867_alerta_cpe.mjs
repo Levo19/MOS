@@ -33,6 +33,8 @@ const casos = [
   ['boleta de hace 3 h sin llegar',   { tipo: 'BOLETA',  fecha: hace(180), nfEstado: 'PENDIENTE', aceptadoNubefact: false, aceptadoSunat: false }, 'PENDIENTE'],
   ['aceptada por SUNAT',              { tipo: 'FACTURA', fecha: hace(4320),nfEstado: 'EMITIDO',   aceptadoNubefact: true,  aceptadoSunat: true  }, 'ACEPTADO'],
   ['rechazada por SUNAT',             { tipo: 'FACTURA', fecha: hace(60),  nfEstado: 'RECHAZADO', aceptadoNubefact: true,  aceptadoSunat: false }, 'RECHAZADO'],
+  ['anulada en el POS, nunca emitida', { tipo: 'FACTURA', fecha: hace(300), nfEstado: 'ANULADO', aceptadoNubefact: false, aceptadoSunat: false }, 'BAJA'],
+  ['anulada esperando la baja',        { tipo: 'BOLETA',  fecha: hace(300), nfEstado: 'ANULADO_PEND_BAJA', aceptadoNubefact: false, aceptadoSunat: false }, 'BAJA'],
   ['dada de baja',                    { tipo: 'FACTURA', fecha: hace(60),  nfEstado: 'BAJA_ACEPTADA', aceptadoNubefact: true, aceptadoSunat: false }, 'BAJA'],
 ];
 casos.forEach(([n, c, esperado]) => {

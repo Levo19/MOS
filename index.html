@@ -3984,6 +3984,13 @@
       padding: 14px 18px calc(18px + env(safe-area-inset-bottom, 0px));
     }
     .trib-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 11px; }
+    /* separador entre grupos de chips: estado | documento | zona. Sin el, los tres ejes
+       se leen como una sola tira y no se entiende que filtran cosas distintas. */
+    .trib-chip-sep { display:inline-block; width:1px; height:20px; margin:0 8px -4px;
+                     background:linear-gradient(180deg,transparent,var(--trib-line),transparent); }
+    .trib-gbtn.img:hover { color:#8b7bff; border-color:rgba(139,123,255,.5); }
+    .trib-gbtn.wa:hover  { color:#25d366; border-color:rgba(37,211,102,.5); }
+
     .trib-chip {
       display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
       font-size: 11px; font-weight: 800; padding: 7px 12px; min-height: 34px;
@@ -21435,7 +21442,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.859';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.860';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21714,14 +21721,14 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.859"></script>
+<script src="js/api.js?v=2.43.860"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.808"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.859"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.860"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -21730,7 +21737,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.859"></script>
+<script src="js/app.js?v=2.43.860"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
