@@ -1656,8 +1656,11 @@ const MOS = (() => {
   // aplican al catálogo — el IVAP del arroz lo paga el molino, no la reventa).
   function _igvChipHTML(p) {
     const t = parseInt(p.Tipo_IGV ?? p.tipoIGV ?? p.tipo_igv ?? 1, 10) || 1;
-    if (t === 2 || t === 9) return '<span class="igv-chip igv-exo" title="EXONERADO de IGV (Apéndice I) — se factura sin IGV">EXO</span>';
-    if (t === 3 || t === 11) return '<span class="igv-chip igv-inaf" title="INAFECTO al IGV (arroz pilado en reventa) — se factura sin IGV">INAF</span>';
+    // Acepta el código INTERNO (2 exonerado, 3 inafecto) y el de NubeFact ya traducido.
+    // Ojo con el 9: en NubeFact es INAFECTO, no exonerado — esa confusión fue la que dejó
+    // 56 comprobantes sin llegar a SUNAT. El exonerado de NubeFact es el 8.
+    if (t === 2 || t === 8) return '<span class="igv-chip igv-exo" title="EXONERADO de IGV (Apéndice I) — se factura sin IGV">EXO</span>';
+    if (t === 3 || (t >= 9 && t <= 11)) return '<span class="igv-chip igv-inaf" title="INAFECTO al IGV (arroz pilado en reventa) — se factura sin IGV">INAF</span>';
     return '<span class="igv-chip igv-grav" title="GRAVADO — IGV 18% incluido en el precio">18%</span>';
   }
 

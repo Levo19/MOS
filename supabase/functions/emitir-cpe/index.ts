@@ -245,9 +245,13 @@ Deno.serve(async (req: Request) => {
       const subtotalVU = r2(valorUnitario * cantidad);
       const precioTotal = parseFloat(String(item.subtotal ?? 0));
       let igvItem: number;
+      // Catálogo NubeFact: 1 gravado · 8 exonerado · 9/10/11 inafecto · 17 IVAP.
+      // Antes acá el 8 se sumaba a IVAP y el 9/10 a exonerada — al revés de lo que NubeFact
+      // entiende. Con la traducción vieja (exonerado→9) el monto iba a total_exonerada mientras
+      // la línea declaraba inafecto, y el rechazo era "Total INAFECTA debe ser mayor a cero".
       if (tipoIgv === 1) { igvItem = r2(precioTotal - subtotalVU); totalGravada += subtotalVU; }
-      else if (tipoIgv === 8) { igvItem = r2(precioTotal - subtotalVU); totalIVAP += subtotalVU; totalImpIVAP += igvItem; }
-      else if (tipoIgv === 9 || tipoIgv === 10) { igvItem = 0; totalExonerada += precioTotal; }
+      else if (tipoIgv === 17) { igvItem = r2(precioTotal - subtotalVU); totalIVAP += subtotalVU; totalImpIVAP += igvItem; }
+      else if (tipoIgv === 8) { igvItem = 0; totalExonerada += precioTotal; }
       else { igvItem = 0; totalInafecta += precioTotal; }
       return {
         unidad_de_medida: String(item.unidad_de_medida || 'NIU'),

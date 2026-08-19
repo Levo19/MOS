@@ -1,1 +1,1 @@
-{"version": "2.43.857", "build": "2.43.857 Tributario ahora dice POR QUE un comprobante no llego a SUNAT: si NubeFact lo rechazo o quedo fuera de plazo, el card lo muestra en vez de un mudo sin emitir."}
+{"version": "2.43.858", "build": "2.43.858 Chip EXO/INAF con los codigos correctos de NubeFact: el 9 es inafecto, no exonerado."}

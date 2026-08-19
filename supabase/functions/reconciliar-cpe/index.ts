@@ -89,7 +89,7 @@ async function generarBaja(serie: string, numero: number, tipoComprobante: numbe
 // período — y eso lo decide el contador, no este código.
 // ══════════════════════════════════════════════════════════════════════════════════════
 function armarPayloadNF(data: Record<string, any>, serie: string, numero: number,
-                        tipoComprobante: number, fechaEmision: string) {
+                        tipoComprobante: number, fechaEmision: string, legacy = true) {
   const header = data.header || {};
   const items = data.items || [];
   let totalGravada = 0, totalIVAP = 0, totalImpIVAP = 0, totalExonerada = 0, totalInafecta = 0;
@@ -100,7 +100,13 @@ function armarPayloadNF(data: Record<string, any>, serie: string, numero: number
   // productos a 9), TODO comprobante con un exonerado fue rechazado en la pre-validación:
   // el monto se declaraba en total_exonerada mientras la línea decía "inafecto", y NubeFact
   // contestaba "Total INAFECTA debe ser mayor a cero".
-  const aNubeFact = (t: number): number => (t === 9 ? 8 : t === 11 ? 9 : t === 8 ? 17 : t);
+  // `legacy` = la venta es anterior al arreglo del 866. Entre el 14 y el 18 de agosto el
+  // catálogo entregaba 9 para EXONERADO, y en NubeFact el 9 es inafecto. Desde el 866 entrega
+  // 8 = exonerado y 9 = inafecto, que ya son los códigos de NubeFact y pasan tal cual.
+  // Sin esta distinción, reemitir una venta vieja la mandaría como inafecta y una nueva con
+  // exonerado se mandaría como IVAP: el mismo número significa cosas distintas a cada lado
+  // de la fecha de corte.
+  const aNubeFact = (t: number): number => legacy ? (t === 9 ? 8 : t === 11 ? 9 : t === 8 ? 17 : t) : t;
   const nfItems = items.map((item: Record<string, unknown>) => {
     const tipoIgv = aNubeFact(parseInt(String(item.tipo_igv ?? 1), 10));
     const cantidad = parseFloat(String(item.cantidad ?? 1));
@@ -271,7 +277,8 @@ Deno.serve(async (req: Request) => {
             detalle.push({ correlativo: corr, accion: 'fuera_de_plazo_requiere_decision', fecha: pj.data.fecha_venta, total: pj.data.data.header.total });
             continue;
           }
-          const armado = armarPayloadNF(pj.data.data, m[1], parseInt(m[2], 10), tipoComprobante, fechaUsar);
+          const armado = armarPayloadNF(pj.data.data, m[1], parseInt(m[2], 10), tipoComprobante,
+                                        fechaUsar, pj.data.igv_legacy !== false);
           if ((armado as Record<string, unknown>).error) {
             sinCambio++; detalle.push({ correlativo: corr, accion: 'reemision_descuadre', error: (armado as Record<string, string>).error }); continue;
           }

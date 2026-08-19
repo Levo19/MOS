@@ -86,6 +86,13 @@ begin
     -- la fecha ORIGINAL de la venta, no la de hoy: el comprobante documenta esa venta.
     -- Reemitirla con fecha de hoy cambiaría el período y es decisión del contador.
     'fecha_venta', to_char(v.fecha at time zone 'America/Lima', 'DD-MM-YYYY'),
+    -- EL CORTE. Entre el 14 y el 18 de agosto el catálogo entregó 9 para EXONERADO, que en
+    -- NubeFact es inafecto: esa confusión dejó 56 comprobantes sin llegar a SUNAT. Desde el
+    -- 866 el catálogo entrega 8 = exonerado y 9 = inafecto, que es lo correcto.
+    -- El 9 significa cosas distintas antes y después, así que la venta viaja con su marca y
+    -- el emisor sabe qué mapa aplicar. Sin esto, reemitir una venta vieja la mandaría como
+    -- inafecta, y una nueva con exonerado (8) se mandaría como IVAP.
+    'igv_legacy', (v.fecha < timestamptz '2026-08-19 01:53:07+00'),
     'data', jsonb_build_object(
       'header', jsonb_build_object(
         'tipoDoc', v.tipo_doc, 'total', v.total, 'metodo', v.forma_pago,
