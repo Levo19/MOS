@@ -15,6 +15,7 @@ class BootReceiver : BroadcastReceiver() {
         // sigue dado — pero a veces tarda o no lo hace (sobre todo tras actualizar la app). Se le
         // pide explícitamente. No cuesta nada si ya está atado.
         YapeListener.reatar(ctx)
+        GuardiaService.arrancar(ctx)
         if (Cola.tamano(ctx) > 0) ColaService.despertar(ctx)
         // el reinicio borra las alarmas: hay que volver a programar el latido
         LatidoReceiver.programar(ctx)

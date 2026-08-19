@@ -69,6 +69,7 @@ class MainActivity : AppCompatActivity() {
 
         pedirPermisoNotificaciones()
         LatidoReceiver.programar(this)
+        GuardiaService.arrancar(this)   // el equipo no se enfría entre Yapes
         buscarActualizacion(false)   // aviso silencioso al abrir
     }
 
@@ -133,7 +134,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); if (!Prefs.listenerVivo(this)) YapeListener.reatar(this); pintar() }
+    override fun onResume() { super.onResume(); if (!Prefs.listenerVivo(this)) YapeListener.reatar(this); GuardiaService.arrancar(this); pintar() }
 
     private fun permisoConcedido(): Boolean = permisoNotificaciones(this)
 
