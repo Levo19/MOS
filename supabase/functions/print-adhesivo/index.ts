@@ -132,6 +132,26 @@ function wrapTokensEtq(tokens: string[], highlights: number[]): Tok[][] {
   }
   return lines;
 }
+// [nombre largo · 19-ago] Envoltura PLANA con un ancho de carácter dado y un tope de líneas. Devuelve null si
+// no entra (para probar el siguiente escalón). Con `truncar`, la última línea se corta con "..." en vez de
+// desbordar: un adhesivo con texto encimado no sirve para nada.
+function wrapPlanoEtq(tokens: string[], charW: number, maxLines: number, truncar = false): Tok[][] | null {
+  const MAX_W = 370, SPACE = 8;
+  const lines: Tok[][] = [[]]; let curW = 0;
+  for (let c = 0; c < tokens.length; c++) {
+    const w = tokens[c].length * charW;
+    const sep = lines[lines.length - 1].length === 0 ? 0 : SPACE;
+    if (curW + sep + w <= MAX_W) { lines[lines.length - 1].push({ tok: tokens[c], hl: false, w }); curW += sep + w; continue; }
+    if (lines.length < maxLines) { lines.push([{ tok: tokens[c], hl: false, w }]); curW = w; continue; }
+    if (!truncar) return null;
+    // no entra: se recorta la última línea con "..." dentro del ancho
+    const last = lines[lines.length - 1];
+    while (last.length && last.reduce((a, o, i) => a + o.w + (i ? SPACE : 0), 0) + SPACE + 3 * charW > MAX_W) last.pop();
+    last.push({ tok: '...', hl: false, w: 3 * charW });
+    return lines;
+  }
+  return lines;
+}
 function hexToBytes(hex: string): number[] { const a: number[] = []; for (let i = 0; i < hex.length; i += 2) a.push(parseInt(hex.substr(i, 2), 16)); return a; }
 function strToBytes(s: string): number[] { const a: number[] = []; for (let i = 0; i < s.length; i++) a.push(s.charCodeAt(i) & 0xFF); return a; }
 function calcBarcodeAdaptativo(codigo: string) {
@@ -503,7 +523,19 @@ function buildTSPLMembreteWh(producto: any, esCabecera: boolean, indice: number,
   const descNorm = normalizeEtq(producto.descripcion || '');
   const tokens = descNorm.split(/\s+/);
   const highlights = detectHighlightsEtq(tokens, allEnvTokens);
-  const lines = wrapTokensEtq(tokens, highlights);
+  let lines = wrapTokensEtq(tokens, highlights);
+  // [nombre largo · 19-ago] "CLAVO DE OLOR INDONESIO PREMIUM GRANEL" no entra en 2 líneas de fuente 3:
+  // el envoltorio viejo metía el sobrante en la línea 2 y el texto salía ENCIMADO / fuera del adhesivo.
+  // Escalones: 2 líneas fuente 3 (como siempre) → 2 líneas fuente 2 (más chica) → 3 líneas fuente 2
+  // (interlineado 21) → 3 líneas fuente 2 recortadas con "...". Nunca más de 3 líneas, nunca encimado.
+  const _SP = 8, _MAXW = 370;
+  const _anchoLinea = (l: Tok[]) => l.reduce((a, o, i) => a + o.w + (i ? _SP : 0), 0);
+  let modo: 'f3' | 'f2x2' | 'f2x3' = 'f3';
+  if (lines.length > 2 || lines.some((l) => _anchoLinea(l) > _MAXW)) {
+    const l2 = wrapPlanoEtq(tokens, 12, 2);
+    if (l2) { lines = l2; modo = 'f2x2'; }
+    else { lines = wrapPlanoEtq(tokens, 12, 3) || wrapPlanoEtq(tokens, 12, 3, true)!; modo = 'f2x3'; }
+  }
   const header = ['SIZE 50 mm,25 mm','GAP ' + cfg.gapMm + ' mm,0 mm','DIRECTION 1','DENSITY ' + cfg.density,'SPEED ' + cfg.speed,'CLS','BITMAP 5,' + (8 + offsetY) + ',' + LOGO_W_BYTES + ',' + LOGO_H + ',0,'].join('\r\n');
   let bytes = strToBytes(header);
   bytes = bytes.concat(hexToBytes(LOGO_ALMACEN_WH_HEX));
@@ -514,19 +546,25 @@ function buildTSPLMembreteWh(producto: any, esCabecera: boolean, indice: number,
     const tagX = 400 - tagTexto.length * 8 - 20;
     bytes = bytes.concat(strToBytes('TEXT ' + tagX + ',' + (10 + offsetY) + ',"2",0,1,1,"' + tagTexto + '"\r\n'));
   }
-  const DESC_AREA_Y0 = 46, DESC_AREA_H = 72, LINE_H = 38, SPACE = 8;
+  const DESC_AREA_Y0 = 46, DESC_AREA_H = 72, SPACE = 8;
+  // interlineado y punto de partida según el escalón: el área útil termina en el marco del barcode (y=108)
+  const LINE_H = modo === 'f3' ? 38 : (modo === 'f2x2' ? 30 : 21);
   let startY: number;
-  if (lines.length === 1) {
+  if (modo === 'f3' && lines.length === 1) {
     const lineHasHl = lines[0].some((t) => t.hl);
     const lineHeight = lineHasHl ? 32 : 24, baselineOffset = lineHasHl ? 0 : 4;
     startY = DESC_AREA_Y0 + Math.floor((DESC_AREA_H - lineHeight) / 2) - baselineOffset + offsetY;
-  } else { startY = DESC_AREA_Y0 + offsetY; }
-  for (let li = 0; li < Math.min(lines.length, 2); li++) {
+  } else if (modo === 'f2x2') { startY = DESC_AREA_Y0 + 10 + offsetY; }        // 56 y 86 → termina en 106
+  else if (modo === 'f2x3') { startY = DESC_AREA_Y0 - 2 + offsetY; }           // 44, 65, 86 → termina en 106
+  else { startY = DESC_AREA_Y0 + offsetY; }
+  for (let li = 0; li < Math.min(lines.length, 3); li++) {
     const line = lines[li]; let totalW = 0;
     for (let ti = 0; ti < line.length; ti++) totalW += line[ti].w + (ti > 0 ? SPACE : 0);
     let x = Math.max(5, Math.round((400 - totalW) / 2)); const y = startY + li * LINE_H;
     for (let tj = 0; tj < line.length; tj++) {
-      const o = line[tj]; const font = o.hl ? '4' : '3'; const yAdj = o.hl ? y : y + 4;
+      const o = line[tj];
+      const font = modo === 'f3' ? (o.hl ? '4' : '3') : '2';
+      const yAdj = modo === 'f3' ? (o.hl ? y : y + 4) : y;
       const safe = String(o.tok).replace(/"/g, "'");
       bytes = bytes.concat(strToBytes('TEXT ' + x + ',' + yAdj + ',"' + font + '",0,1,1,"' + safe + '"\r\n')); x += o.w + SPACE;
     }
