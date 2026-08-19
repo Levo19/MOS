@@ -351,9 +351,9 @@ A('nada lee la estación antes de que exista',
 A('no queda ni un panel con fondo, marco o sombra de caja',
   !/backdrop-filter:blur\(11px\)/.test(CSS) && !/border:2px solid var\(--voz\);opacity:\.3/.test(CSS)
   && !/border-radius:26px/.test(CSS));
-A('los dos captores globales aceptan la cadena de SUNAT con sus espacios (| . / y espacio)',
-  (src.match(/\[0-9A-Za-z\\-\|\.\/ \]/g)||[]).length === 2,
-  ((src.match(/\[0-9A-Za-z\\-\|\.\/ \]/g)||[]).length) + ' de 2 captores');
+A('los TRES captores (salvapantallas, guías, estación) aceptan la cadena de SUNAT con sus espacios',
+  (src.match(/\[0-9A-Za-z\\-\|\.\/ \]/g)||[]).length === 3,
+  ((src.match(/\[0-9A-Za-z\\-\|\.\/ \]/g)||[]).length) + ' de 3 captores');
 // Decisión del dueño (19-ago): el cajero NO ata Yapes. El sistema cuadra; el admin en MOS verifica/suelta.
 A('el cajero NO ata el Yape: la caja no llama a ninguna RPC de atado',
   !/yape_atar_cobro/.test(src) && !/mcYapeAtar/.test(src));
