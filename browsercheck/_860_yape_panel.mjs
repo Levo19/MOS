@@ -23,11 +23,14 @@ await p.waitForFunction(()=>{const e=document.getElementById('yapeBody');return 
 const cfg = await p.evaluate(()=>{
   const e=document.getElementById('yapeBody');
   return { pasos: e.querySelectorAll('.yp-paso').length, zonas: e.querySelectorAll('.yp-zona').length,
-           apk: !!e.querySelector('a[href*="apk-yape"]'),
+           // el enlace va al RELEASE (último APK publicado), no a la página de Actions
+           apk: !!e.querySelector('a[href*="releases/latest"]'),
+           equipos: e.querySelectorAll('.yp-eq').length, revocar: e.querySelectorAll('.yp-eq-btn').length,
            btn: !!e.querySelector('.yp-btn') };
 });
 console.log('     config: '+JSON.stringify(cfg));
 T('explica los 3 pasos de instalación', cfg.pasos===3);
+T('lista los equipos con su estado', cfg.equipos>=1, cfg.equipos+' equipo(s)');
 T('da el enlace para descargar el APK', cfg.apk);
 T('ofrece emparejar por cada zona de venta', cfg.zonas>=2 && cfg.btn, cfg.zonas+' zonas');
 T('sin desborde horizontal', await p.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth<=1));
@@ -40,7 +43,10 @@ const caja = await p.evaluate(()=>{
   const m=String(el.getAttribute('onclick')).match(/yapesCajaAbrir\('([^']+)'\)/);
   return m?m[1]:null;
 });
-T('cada caja tiene su botón 💜 Yapes', !!caja, caja||'(no hay cajas visibles)');
+// Solo se puede comprobar con una caja ABIERTA; fuera de horario no hay ninguna y eso no es un fallo.
+const hayCajas = await p.evaluate(()=>!!document.querySelector('.cj-caja, [data-caja], .cj-card'));
+if (hayCajas) T('cada caja tiene su botón 💜 Yapes', !!caja, caja||'(caja sin botón)');
+else console.log('  ·   sin cajas abiertas ahora: el botón 💜 por caja no se puede comprobar (no es fallo)');
 if (caja) {
   await p.evaluate(id=>MOS.yapesCajaAbrir(id), caja);
   await p.waitForFunction(()=>{const e=document.getElementById('ypBody');return e && !/leyendo/.test(e.textContent);},{timeout:30000});

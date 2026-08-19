@@ -2656,6 +2656,10 @@ const API = (() => {
       if (r == null) return null;
       return r;
     }
+    if (action === 'yapeRevocar') {
+      const r = await _sbRpcMOS('yape_dispositivo_revocar', { p: { nombre: p.nombre, activar: !!p.activar } }, 'mos');
+      return r && r.ok !== false ? { status: 'success', data: r.data || {} } : { status: 'error', error: (r && r.error) || 'no se pudo' };
+    }
     if (action === 'yapeEquipos') {
       const r = await _sbRpcMOS('yape_dispositivos_estado', { p: {} }, 'mos');
       if (r == null) return null;
@@ -3056,6 +3060,7 @@ const API = (() => {
     finanzasDiaSku:              () => true,
     finanzasDiaSkuTramos:        () => true,
     yapeCodigoGenerar:           () => true,   // mos.yape_codigo_generar (858)
+    yapeRevocar:                 () => true,   // mos.yape_dispositivo_revocar (874)
     yapeEquipos:                 () => true,   // mos.yape_dispositivos_estado (862)
     yapesDeCaja:                 () => true,   // mos.yapes_de_caja (860) · panel por caja
     yapesDelDia:                 () => true,   // mos.yapes_del_dia (856) · panel de capturados

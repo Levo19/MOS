@@ -95,6 +95,9 @@ class YapeListener : NotificationListenerService() {
                 )
             )
             ColaService.despertar(applicationContext)
+            // un Yape capturado es la mejor prueba de vida: el estado en MOS se refresca ya,
+            // sin esperar al próximo latido de 10 min
+            LatidoReceiver.latir(applicationContext)
         } catch (e: Throwable) {
             // Nunca lanzar acá: una excepción en el listener puede hacer que Android
             // desconecte el servicio y el equipo deje de capturar sin que nadie se entere.

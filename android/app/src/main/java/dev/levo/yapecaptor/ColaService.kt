@@ -140,8 +140,13 @@ class ColaService : Service() {
                 val err = try { JSONObject(cuerpo).optString("error") } catch (_: Throwable) { "" }
                 Log.w(TAG, "servidor rechazó: $err")
                 Prefs.guardarUltimoError(this, err.ifBlank { "rechazado" })
-                // dispositivo revocado o mal configurado: no insistir en vano
-                if (err.contains("NO_AUTORIZADO")) return false
+                // dispositivo revocado desde MOS: este equipo ya no entrega. Se vacía la cola
+                // (esos Yapes no van a ningún lado) y la pantalla lo dice. Antes reintentaba 25
+                // veces cada captura contra una puerta cerrada.
+                if (err.contains("NO_AUTORIZADO")) {
+                    Cola.pendientes(this).forEach { Cola.quitar(this, it.notifKey) }
+                    Prefs.guardarUltimoError(this, "Equipo revocado desde MOS — pedí un código nuevo")
+                }
                 return false
             }
             Prefs.guardarUltimoError(this, "")

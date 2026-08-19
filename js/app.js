@@ -43436,7 +43436,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // consigue lo mismo: en el celular se teclean 6 letras y el servidor le entrega su secreto,
   // una sola vez. Si alguien ve el código, se genera otro y el anterior muere.
   // ══════════════════════════════════════════════════════════════════════
-  const YAPE_APK_URL = 'https://github.com/Levo19/MOS/actions/workflows/apk-yape.yml';
+  // el release SIEMPRE apunta al último APK publicado por el CI (tag yape-vN); antes mandaba a
+  // la página de Actions, donde había que adivinar qué corrida abrir y qué artefacto bajar.
+  const YAPE_APK_URL = 'https://github.com/Levo19/MOS/releases/latest';
   let _yapeCod = {};   // zona → { codigo, nombre, hasta }
 
   async function yapeGenerarCodigo(zona) {
@@ -43463,6 +43465,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return (cfgData.zonas || []).filter(z => !_esZonaAlmacen(z) && String(z.estado) !== '0');
   }
 
+  // Revocar: el celular deja de entregar en el acto y sus códigos vivos se queman. Es lo que
+  // se hace cuando un equipo se pierde o cambia de manos. Reactivar lo vuelve a aceptar.
+  async function yapeRevocar(nombre, activar) {
+    try {
+      const r = await API.post('yapeRevocar', { nombre, activar });
+      if (r && r.status === 'success') { toast(activar ? '✓ Equipo reactivado' : '⛔ Equipo revocado: ya no entrega', activar ? 'success' : 'warning'); renderYapeCard(); }
+      else toast('No se pudo: ' + ((r && r.error) || ''), 'error');
+    } catch (e) { toast('No se pudo: ' + (e && e.message || e), 'error'); }
+  }
   async function renderYapeCard() {
     _yapeInyectarCSS();
     const cont = $('yapeBody'); if (!cont) return;
@@ -43492,18 +43503,29 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
     const eqHtml = equipos.length ? ('<div class="yp-eqs">' + equipos.map(e => {
       const st = String(e.estado);
-      const cls = st === 'VIVO' ? 'is-ok' : (st === 'CAIDO' ? 'is-mal' : 'is-gris');
-      const dice = st === 'VIVO' ? 'capturando'
+      const cls = st === 'VIVO' && e.permisoOk !== false ? 'is-ok' : (st === 'CAIDO' || e.permisoOk === false ? 'is-mal' : 'is-gris');
+      const dice = st === 'REVOCADO' ? 'revocado — ya no entrega'
+                 : st === 'VIVO' && e.permisoOk === false ? 'vivo pero SIN permiso de notificaciones: no captura'
+                 : st === 'VIVO' ? 'capturando'
                  : (st === 'CAIDO' ? 'sin dar señal hace ' + (e.minSinLatir || '?') + ' min'
                                    : 'todavía no se instaló');
+      // el último Yape que entregó: la prueba de que el parser entiende lo que llega
+      const uy = e.ultimoYape;
+      const ultimo = uy ? ' · último: S/ ' + (Number(uy.monto) || 0).toFixed(2) + (uy.pagador ? ' de ' + _escapeHtml(String(uy.pagador).split(' ')[0]) : '') +
+                          (uy.hace != null ? ' hace ' + (uy.hace < 60 ? uy.hace + ' min' : Math.round(uy.hace / 60) + ' h') : '') : '';
       return '<div class="yp-eq ' + cls + '"><span class="yp-eq-luz"></span>' +
         '<div><b>' + _escapeHtml(String(e.nombre)) + '</b>' +
           '<i>' + _escapeHtml(String(e.zona || 'todas')) + ' · ' + dice +
-          (e.capturas > 0 ? ' · ' + e.capturas + ' capturas' : '') +
+          (e.hoy > 0 ? ' · ' + e.hoy + ' hoy' : '') +
+          (e.capturas > 0 ? ' · ' + e.capturas + ' en total' : '') + ultimo +
           (e.pendientes > 0 ? ' · ' + e.pendientes + ' en cola' : '') +
-          (e.permisoOk === false ? ' · ⚠ sin permiso de notificaciones' : '') +
           (e.version ? ' · v' + _escapeHtml(String(e.version)) : '') +
-          (e.atrasado ? ' · <b class="yp-eq-old">⬆ hay versión más nueva</b>' : '') + '</i></div></div>';
+          (e.atrasado ? ' · <b class="yp-eq-old">⬆ hay versión más nueva</b>' : '') + '</i></div>' +
+        (st !== 'NUNCA'
+          ? '<button type="button" class="yp-eq-btn" onclick="MOS.yapeRevocar(\'' + _esc(e.nombre) + '\',' + (st === 'REVOCADO' ? 'true' : 'false') + ')">' +
+            (st === 'REVOCADO' ? 'Reactivar' : 'Revocar') + '</button>'
+          : '') +
+        '</div>';
     }).join('') + '</div>') : '';
 
     cont.innerHTML =
@@ -43526,6 +43548,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   function _yapeInyectarCSS() {
+    if (!document.getElementById('yape-css-874')) {
+      const st = document.createElement('style'); st.id = 'yape-css-874';
+      st.textContent = '.yp-eq{display:flex;align-items:center;gap:10px}.yp-eq>div{flex:1;min-width:0}' +
+        '.yp-eq-btn{flex:none;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:6px 10px;border-radius:999px;cursor:pointer;' +
+        'background:rgba(251,113,133,.12);color:#fb7185;border:1px solid rgba(251,113,133,.35)}' +
+        '.yp-eq.is-gris .yp-eq-btn{background:rgba(52,211,153,.12);color:#34d399;border-color:rgba(52,211,153,.35)}';
+      document.head.appendChild(st);
+    }
     if (document.getElementById('yapeCSS')) return;
     const st = document.createElement('style'); st.id = 'yapeCSS';
     st.textContent =
@@ -54252,7 +54282,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _curvaTab, _curvaDock, _curvaVerBorrados, curvaIrACostos, guiaRotarFoto, finProdDesglose,
     cjTrabajadorAbrir, cjTrabajadorElegir, cjTrabajadorQuitar, cjTrabajadorCerrar,
     renderIaPanel, iaSetRango, iaVerDia, iaCerrarDia,
-    renderYapeCard, yapeGenerarCodigo,
+    renderYapeCard, yapeGenerarCodigo, yapeRevocar,
     yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
