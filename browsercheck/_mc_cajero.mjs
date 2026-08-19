@@ -92,7 +92,15 @@ window.__vm = createApp({
       mcEsperando: ref([{ idVenta:'v9', correlativo:'NVM2-000540', monto:8, hora:'14:10' }]),
       mcSobrio: ref(false), mcLatente: ref(false), mcProcesando: ref(false),
       mcReloj: ref('14:32'), mcHechoMonto: ref(5.6), mcHechoTxt: ref('EFECTIVO'),
-      mcReja: ref(null), mcAura: ref(null), mcFlash: ref(null),
+      mcReja: ref(null), mcAura: ref(null), mcFlash: ref(null), mcScan: ref(null), mcGlove: ref(null), mcDrag: ref(null),
+      // v6: cola, órbita, gestos
+      mcSiguientes: computed(()=>tickets.value.filter(v=>v.id!==(cajeroTicketActual.value&&cajeroTicketActual.value.id)).slice(0,2)),
+      mcLineas: ref([{nombre:'AJI PANCA ENTERO GRANEL',cantidad:0.25,subtotal:3.5,um:'KGM'},{nombre:'AZUCAR RUBIA 1KG',cantidad:2,subtotal:6.6,um:'NIU'},{nombre:'FIDEO SPAGHETTI 500GR',cantidad:1,subtotal:2.4,um:'NIU'}]),
+      mcCant: it => { const n=parseFloat(it.cantidad)||0, um=String(it.um||'NIU').toUpperCase(); return (Number.isInteger(n)?n:n.toFixed(3).replace(/0+$/,'').replace(/[.]$/,''))+(um==='KGM'?' kg':um==='NIU'?'×':' '+um.toLowerCase()); },
+      mcCorto: n => { const t=String(n||'').trim(); return t.length>26?t.slice(0,25)+'…':t; },
+      // en el mock, apoyar el dedo toma el ticket (la app real distingue toque de arrastre por distancia)
+      mcDragIni: (e,v) => { window.__drag = { id:v.id, x:e.clientX }; cajeroTicketActual.value=v; mcEstado.value='cobro'; },
+      mcFlingIni: (e) => { window.__fling = true; },
       mcPendientes: tickets,
       mcTotalPend: computed(()=>tickets.value.reduce((a,t)=>a+t.total,0)),
       mcYapesLibres: computed(()=>mcYapes.value.filter(y=>y.estado==='NUEVO').length),
@@ -162,7 +170,9 @@ T('la barra dice qué caja es y quién la atiende',
   v1 ? v1.caja.replace(/\s+/g,' ').trim() : '');
 
 // ── 2. tomar un ticket ──
-await p.evaluate(`document.querySelectorAll('#mcRoot .mc-tk')[0].click()`);
+await p.evaluate(`(() => { const el=document.querySelectorAll('#mcRoot .mc-tk')[0]; const r=el.getBoundingClientRect();
+  const op={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,pointerType:'touch',isPrimary:true,pointerId:7};
+  el.dispatchEvent(new PointerEvent('pointerdown',op)); el.dispatchEvent(new PointerEvent('pointerup',op)); })()`);
 await p.waitForTimeout(500);
 const v2 = await p.evaluate(`(() => { const r=document.getElementById('mcRoot');
   return { monto:(r.querySelector('.mc-monto')||{}).textContent||'', bts:r.querySelectorAll('.mc-bt').length,
@@ -174,6 +184,22 @@ T('el monto se materializa digito por digito', v2.digs===4, v2.digs+' digitos');
 T('ofrece los tres metodos, sin vuelto', v2.bts===3);
 T('avisa que ya llego el Yape de ese monto', /OLIVIA/.test(v2.yape), v2.yape.replace(/\s+/g,' ').trim());
 T('resalta VIRTUAL cuando hay Yape esperando', v2.destaca);
+// ── v6: cola, órbita, gestos ──
+const v6 = await p.evaluate(`(() => { const r=document.getElementById('mcRoot');
+  return { cola:r.querySelectorAll('.mc-cola .mc-colatk').length,
+           colaTxt:[...r.querySelectorAll('.mc-cola .mc-colas')].map(x=>x.textContent.trim()).join('/'),
+           colaNoIncluyeActual:![...r.querySelectorAll('.mc-cola .mc-colac')].some(x=>x.textContent.includes('NVM2-000531')),
+           orb:r.querySelectorAll('.mc-orbita .mc-orb').length,
+           orbTxt:(r.querySelector('.mc-orbita .mc-orb')||{}).textContent||'',
+           glove:!!r.querySelector('.mc-glove'), drag:!!r.querySelector('.mc-drag'), scan:!!r.querySelector('.mc-scan'),
+           dragRegistrado:!!(window.__drag && window.__drag.id==='t1') }; })()`);
+console.log('     v6: ' + JSON.stringify(v6));
+T('la cola muestra los dos que vienen, detrás del actual', v6.cola===2 && v6.colaNoIncluyeActual, v6.cola+' · '+v6.colaTxt);
+T('la cola dice "siguiente" y "después"', v6.colaTxt==='siguiente/después', v6.colaTxt);
+T('los productos del ticket orbitan el monto', v6.orb===3, v6.orb+' anotaciones');
+T('la anotación trae cantidad, nombre y monto', /0\.25 kg.*AJI PANCA.*S\/ 3\.50/.test(v6.orbTxt.replace(/\s+/g,' ')), v6.orbTxt.replace(/\s+/g,' ').trim());
+T('el guante, la estela de arrastre y el barrido existen', v6.glove && v6.drag && v6.scan);
+T('tocar el ticket entra por el gesto (pointerdown), no por click', v6.dragRegistrado);
 
 // ── 3. MIXTO ──
 await p.evaluate(`document.querySelector('#mcRoot .mc-bt.mix').click()`);
@@ -311,8 +337,12 @@ A('no queda ni un panel con fondo, marco o sombra de caja',
 A('los dos captores globales aceptan la cadena de SUNAT con sus espacios (| . / y espacio)',
   (src.match(/\[0-9A-Za-z\\-\|\.\/ \]/g)||[]).length === 2,
   ((src.match(/\[0-9A-Za-z\\-\|\.\/ \]/g)||[]).length) + ' de 2 captores');
-A('al cobrar VIRTUAL con Yape a la vista, se ata en el servidor (no se promete)',
-  /mcYapeAtar\(yp, t\)\.then/.test(src) && /rpc\/yape_atar_cobro/.test(src) && /queda por cuadrar/.test(src));
+// Decisión del dueño (19-ago): el cajero NO ata Yapes. El sistema cuadra; el admin en MOS verifica/suelta.
+A('el cajero NO ata el Yape: la caja no llama a ninguna RPC de atado',
+  !/yape_atar_cobro/.test(src) && !/mcYapeAtar/.test(src));
+A('el texto del cobro dice la verdad: "el sistema lo cuadra solo"', /el sistema lo cuadra solo/.test(src));
+A('el río se refresca EN VIVO por el canal de ops_meta (dominio yapes)',
+  /rec\.dominio \|\| ''\) === 'yapes'/.test(src) && /mcCargarRio\(\); \} catch/.test(src));
 A('el ticket nuevo suena al aterrizar', /watch\(\(\) => mcPendientes\.value\.length/.test(src) && /mcSon\('tick'\)/.test(src));
 A('la franja "esperando" se resuelve con efecto', /resueltos\.length\) \{ mcSon\('match'\)/.test(src));
 A('la estación dice "Son … soles"', /const mcDecirMonto/.test(src) && /mcDecirMonto\(venta\.total\)/.test(src));
@@ -323,7 +353,9 @@ if (process.env.MC_SHOT) {
   await p.setViewportSize({ width:1280, height:800 });
   await p.evaluate(`window.__vm.mcEstado='espera'; window.__vm.cajeroTicketActual=null;`);
   await p.waitForTimeout(900); await p.screenshot({ path: SH+'mc1_espera.png' });
-  await p.evaluate(`document.querySelectorAll('#mcRoot .mc-tk')[0].click()`);
+  await p.evaluate(`(() => { const el=document.querySelectorAll('#mcRoot .mc-tk')[0]; const r=el.getBoundingClientRect();
+  const op={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,pointerType:'touch',isPrimary:true,pointerId:7};
+  el.dispatchEvent(new PointerEvent('pointerdown',op)); el.dispatchEvent(new PointerEvent('pointerup',op)); })()`);
   await p.waitForTimeout(900); await p.screenshot({ path: SH+'mc2_cobro.png' });
   await p.evaluate(`document.querySelector('#mcRoot .mc-bt.mix').click()`);
   await p.waitForTimeout(700); await p.screenshot({ path: SH+'mc3_mixto.png' });

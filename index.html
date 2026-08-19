@@ -4038,6 +4038,40 @@
       .trib-gcard.cpe .trib-gacc { order: 4; width: 100%; justify-content: flex-end; }
     }
 
+    /* ── los sellos: el ciclo NubeFact → SUNAT → (baja), como tinta sobre el papel ── */
+    .trib-sellos { display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; }
+    .trib-sello {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 9.5px; font-weight: 800;
+      letter-spacing: .12em; text-transform: uppercase; line-height: 1;
+      padding: 4px 8px; border-radius: 6px; white-space: nowrap;
+      border: 1.5px solid currentColor; transform: rotate(-1.2deg);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+    }
+    .trib-sello.ok      { color: #34d399; background: rgba(52,211,153,.10); }
+    .trib-sello.espera  { color: #fbbf24; background: rgba(251,191,36,.08); border-style: dashed; animation: tribSelloEspera 2.4s ease-in-out infinite; }
+    .trib-sello.rechazo { color: #fb7185; background: rgba(251,113,133,.12); transform: rotate(-3deg); }
+    .trib-sello.baja    { color: #94a3b8; background: rgba(148,163,184,.10); text-decoration: line-through; text-decoration-thickness: 1.5px; }
+    .trib-sello.apagado { color: rgba(148,163,184,.35); border-style: dotted; background: transparent; box-shadow: none; }
+    .trib-sello-fl { width: 10px; height: 1px; background: rgba(148,163,184,.35); position: relative; flex-shrink: 0; }
+    .trib-sello-fl::after { content: ""; position: absolute; right: -1px; top: -2.5px; border: 3px solid transparent; border-left-color: rgba(148,163,184,.55); border-right: 0; }
+    @keyframes tribSelloEspera { 0%,100% { opacity: .75; } 50% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .trib-sello.espera { animation: none; } }
+    /* la leyenda del ciclo, arriba de la lista */
+    .trib-leyenda {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      padding: 8px 12px; margin: 0 0 12px; border-radius: 12px;
+      background: rgba(255,255,255,.03); border: 1px solid var(--trib-line);
+    }
+    .trib-leyenda-t { font-size: 9.5px; font-weight: 900; letter-spacing: .18em; text-transform: uppercase; color: var(--trib-ink3); margin-right: 4px; }
+    .trib-leyenda-s { font-size: 10.5px; color: var(--trib-ink3); margin-left: 4px; }
+    .trib-leyenda-sep { width: 1px; height: 14px; background: var(--trib-line); margin: 0 6px; }
+    @media (max-width: 640px) {
+      .trib-leyenda { gap: 4px; }
+      .trib-leyenda-sep { display: none; }
+      .trib-leyenda-s { flex-basis: 100%; margin: 0 0 4px 0; }
+    }
+
     .trib-gcard {
       display: flex; align-items: center; gap: 12px; padding: 11px 12px;
       border-radius: 14px; margin-bottom: 8px; min-width: 0;
@@ -21467,7 +21501,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.863';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.864';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21746,14 +21780,14 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.863"></script>
+<script src="js/api.js?v=2.43.864"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.808"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.863"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.864"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -21762,7 +21796,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.863"></script>
+<script src="js/app.js?v=2.43.864"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

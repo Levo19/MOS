@@ -31,6 +31,7 @@ console.log('  comprobantes reales cargados: ' + lista.length);
 const grab = (name, endMarker = '\n  }') => { const i = src.indexOf(name); const f = src.indexOf(endMarker, i) + endMarker.length; return src.slice(i, f); };
 const fnClasif = grab('function _tribClasifCPE(c) {');
 const fnIGV = grab('function _tribIGVdeCPE(c) {');
+const fnSellos = grab('function _tribSellos(c, cls) {');
 const fnRender = grab('function _tribRenderCPEDetalle() {');
 // el CSS del módulo tributario, entero
 const cssIni = html.indexOf('--trib-line:'); const cssBlockStart = html.lastIndexOf('<style', cssIni); const cssBlockEnd = html.indexOf('</style>', cssIni);
@@ -52,6 +53,7 @@ const _tribFmtSoles = n => 'S/ ' + (Number(n)||0).toLocaleString('es-PE',{minimu
 const _tribSheetEl = (id, sel) => document.querySelector('#' + id + ' ' + sel);
 ${fnClasif}
 ${fnIGV}
+${fnSellos}
 ${fnRender}
 _tribRenderCPEDetalle();
 </script></body></html>`;
@@ -78,8 +80,13 @@ const r = await p.evaluate(`(() => {
   const motivo = [...document.querySelectorAll('.trib-gaviso')].map(x=>x.textContent.trim()).find(x=>/anulada|rechazo/i.test(x)) || '';
   const motivoBaja = [...document.querySelectorAll('.trib-gcard.baja .trib-gaviso')].map(x=>x.textContent.trim()).find(x=>/Se emitió/i.test(x)) || '';
   const nota = ([...document.querySelectorAll('.trib-nota')].pop()||{}).textContent || '';
+  const leyenda = !!document.querySelector('.trib-leyenda');
+  const sellosOk = [...document.querySelectorAll('.trib-gcard.cpe')].filter(c => c.querySelectorAll('.trib-sello.ok').length === 2).length;
+  const sellosEspera = [...document.querySelectorAll('.trib-gcard.cpe')].filter(c => c.querySelector('.trib-sello.espera')).length;
+  const sellosBaja = [...document.querySelectorAll('.trib-gcard.cpe .trib-sello.baja')].length;
+  const semaforo = document.querySelectorAll('.trib-gcard.cpe .trib-gocr').length;
   const fechaEnCard = /\\d{2}-[a-z]{3}\\./i.test(first ? first.textContent : '');
-  return { dias: dias.length, cards: cards.length, cli, corr, meta, orden, titulos, resumen, bajas: bajas.length, bajaChip, motivo, motivoBaja, nota: nota.slice(0,240), fechaEnCard,
+  return { leyenda, sellosOk, sellosEspera, sellosBaja, semaforo, dias: dias.length, cards: cards.length, cli, corr, meta, orden, titulos, resumen, bajas: bajas.length, bajaChip, motivo, motivoBaja, nota: nota.slice(0,240), fechaEnCard,
            scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth };
 })()`);
 console.log('     ' + JSON.stringify(r));
@@ -93,6 +100,11 @@ T('las bajas se ven y dicen que no cuentan', r.bajas > 0 && /anulada/.test(r.baj
 T('la baja cuenta su historia (emitida → anulada → baja comunicada)', /Se emitió y SUNAT la aceptó/.test(r.motivoBaja || ''), (r.motivoBaja||'').slice(0,80));
 T('el motivo del anulado/rechazo se lee en el card', /Anulada|RECHAZO/i.test(r.motivo), r.motivo.slice(0, 70));
 T('la nota aclara que las bajas no suman', /bajas no suman/.test(r.nota));
+T('hay leyenda del ciclo arriba de la lista', r.leyenda);
+T('los aceptados llevan dos sellos ✓ (NubeFact → SUNAT)', r.sellosOk >= 400, r.sellosOk + ' con doble sello');
+T('las boletas en resumen llevan SUNAT ⏳', r.sellosEspera >= 20, r.sellosEspera + ' en espera');
+T('las bajas llevan el sello baja ⊘', r.sellosBaja >= 11, r.sellosBaja + ' sellos de baja');
+T('el semáforo viejo ya no está en los cards', r.semaforo === 0, r.semaforo + ' semáforos');
 T('sin desborde horizontal', r.scrollW <= r.clientW + 1, r.scrollW + '/' + r.clientW);
 T('sin errores de JS', errs.length === 0, errs.join(' | '));
 

@@ -36930,6 +36930,48 @@ const MOS = (() => {
     return _money((parseFloat(c.total) || 0) * 0.18 / 1.18);
   }
 
+  /* ══════════════════════════════════════════════════════════════════════════
+     LOS SELLOS · el ciclo de un comprobante, etapa por etapa.
+     Un CPE pasa por NubeFact (pre-valida y firma) → SUNAT (acepta o rechaza) → y, si la
+     venta se anula, BAJA (comunicación de baja a SUNAT). El semáforo de antes mezclaba
+     estado y momento en una sola luz; los sellos muestran hasta dónde llegó, y qué pasó
+     en cada puerta. Lleno = pasó · contorno = espera · rojo = rechazó · tachado = baja.
+     ══════════════════════════════════════════════════════════════════════════ */
+  function _tribSellos(c, cls) {
+    const desc = String(c.sunatDesc || '');
+    const nuncaLlego = /NUNCA_EMITIDO|nunca llego|nunca llegó/i.test(String(c.sunatCode || '') + ' ' + desc);
+    const rechNF = /^RECHAZO NubeFact/i.test(desc);
+    const enNF = !!c.aceptadoNubefact;
+    const S = (txt, estado, tip) => '<span class="trib-sello ' + estado + '" title="' + _escapeHtml(tip || '') + '">' + txt + '</span>';
+    const flecha = '<i class="trib-sello-fl"></i>';
+    let nf, su, ba = '';
+    if (nuncaLlego || cls === 'TRABADO' || rechNF) {
+      nf = S('NubeFact ✕', 'rechazo', nuncaLlego ? 'Nunca llegó a NubeFact' : (rechNF ? desc.slice(0, 160) : 'No llegó a NubeFact pasada su ventana'));
+      su = S('SUNAT', 'apagado', 'No aplica: no llegó a NubeFact');
+      if (cls === 'BAJA') ba = flecha + S('anulada', 'baja', 'La venta se anuló antes de emitirse: el número queda sin uso');
+    } else if (cls === 'RECHAZADO') {
+      nf = S('NubeFact ✓', 'ok', 'Aceptado por NubeFact');
+      su = S('SUNAT ✕', 'rechazo', desc.slice(0, 160) || 'Rechazado por SUNAT');
+    } else if (cls === 'ACEPTADO') {
+      nf = S('NubeFact ✓', 'ok', 'Aceptado por NubeFact');
+      su = S('SUNAT ✓', 'ok', 'Aceptado por SUNAT' + (c.sunatCode ? ' · código ' + c.sunatCode : ''));
+    } else if (cls === 'BAJA') {
+      nf = S('NubeFact ✓', 'ok', 'Se emitió y NubeFact la aceptó');
+      su = S('SUNAT ✓', 'ok', 'SUNAT la aceptó');
+      ba = flecha + S('baja ⊘', 'baja', 'La venta se anuló y se comunicó la baja a SUNAT');
+    } else if (cls === 'PENDIENTE' && enNF) {
+      nf = S('NubeFact ✓', 'ok', 'Aceptado por NubeFact');
+      su = S('SUNAT ⏳', 'espera', String(c.tipo || '').toUpperCase() === 'BOLETA' ? 'Viaja en el resumen diario; SUNAT responde dentro del día' : 'Esperando la respuesta de SUNAT');
+    } else if (cls === 'PENDIENTE') {
+      nf = S('NubeFact ⏳', 'espera', 'Enviándose a NubeFact');
+      su = S('SUNAT', 'apagado', 'Todavía no');
+    } else {
+      nf = S('NubeFact', 'apagado', 'Sin emitir');
+      su = S('SUNAT', 'apagado', 'Sin emitir');
+    }
+    return '<span class="trib-sellos">' + nf + flecha + su + ba + '</span>';
+  }
+
   function _tribRenderCPEDetalle() {
     const cont = _tribSheetEl('tribOvEmitido', '[data-trib-body]');
     const chipsCont = _tribSheetEl('tribOvEmitido', '[data-trib-chips]');
@@ -37013,8 +37055,20 @@ const MOS = (() => {
     };
 
     let html = _tribCPEViaSupa
-      ? '<div class="trib-nota" style="margin:0 0 10px">⚡ Estado fiscal trazado en directo desde Supabase (me.cpe_trazabilidad)</div>'
+      ? '<div class="trib-nota" style="margin:0 0 6px">⚡ Estado fiscal trazado en directo desde Supabase (me.cpe_trazabilidad)</div>'
       : '';
+    // La leyenda: qué significa cada sello. Un comprobante pasa por NubeFact → SUNAT → (baja).
+    html += '<div class="trib-leyenda">' +
+      '<span class="trib-leyenda-t">El ciclo</span>' +
+      '<span class="trib-sello ok">NubeFact ✓</span><i class="trib-sello-fl"></i><span class="trib-sello ok">SUNAT ✓</span>' +
+      '<span class="trib-leyenda-s">emitido y aceptado</span>' +
+      '<span class="trib-leyenda-sep"></span>' +
+      '<span class="trib-sello espera">SUNAT ⏳</span><span class="trib-leyenda-s">en camino (boletas: resumen diario)</span>' +
+      '<span class="trib-leyenda-sep"></span>' +
+      '<span class="trib-sello rechazo">✕</span><span class="trib-leyenda-s">rechazado en esa puerta</span>' +
+      '<span class="trib-leyenda-sep"></span>' +
+      '<span class="trib-sello baja">baja ⊘</span><span class="trib-leyenda-s">venta anulada, baja comunicada</span>' +
+      '</div>';
     let totIGV = 0;
 
     // ── agrupado por DÍA. La fecha va en la cabecera del grupo, el card solo lleva la hora:
@@ -37111,7 +37165,7 @@ const MOS = (() => {
             (esBaja
               ? '<span class="trib-gchip neutro" title="La venta se anuló y el comprobante fue dado de baja: no cuenta en el IGV">anulada · no cuenta</span>'
               : '<span class="trib-gchip en-contra" title="IGV de la operación">' + _tribFmtSoles(igv) + ' en contra</span>') +
-            '<span class="trib-gocr ' + est[0] + '">' + est[1] + '</span>' +
+            _tribSellos(c, cls) +
           '</div>' +
           '<div class="trib-gacc">' +
           (c.enlacePdf ? '<button type="button" class="trib-gbtn" data-pdf="' + _escapeHtml(String(c.enlacePdf)) + '" title="Abrir el PDF del comprobante">📄</button>' : '') +

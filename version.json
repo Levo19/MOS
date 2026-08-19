@@ -1,1 +1,1 @@
-{"version": "2.43.863", "build": "2.43.863 Tributario: los comprobantes dados de baja cuentan su historia entera (se emitio y SUNAT la acepto, despues se anulo y se comunico la baja) en vez de mezclar el mensaje viejo de aceptacion con un signo de alerta."}
+{"version": "2.43.864", "build": "2.43.864 Tributario: sellos en vez de semaforo. Cada comprobante muestra su ciclo NubeFact -> SUNAT -> (baja): lleno si paso, contorno si espera, rojo si rechazo, tachado si se anulo. Con leyenda arriba."}
