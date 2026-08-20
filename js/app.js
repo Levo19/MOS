@@ -33745,9 +33745,12 @@ const MOS = (() => {
   }
 
   // Punto de entrada — pide clave + crea sesión + abre modal optimista
-  async function abrirEspiaV2(idDispositivo) {
+  async function abrirEspiaV2(idDispositivo, esGuard) {
     if (!_esMasterSession()) { toast('Solo Master puede usar espía v2', 'error'); return; }
-    const d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
+    let d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
+    // [MosGuard] los equipos de resguardo NO viven en mos.dispositivos: se arma un device sintético.
+    // El equipo se entera de la sesión por el LATIDO (no por FCM), así que se salta el wake-push.
+    if (!d && esGuard) d = { ID_Dispositivo: idDispositivo, Nombre_Equipo: idDispositivo, _guard: true };
     if (!d) { toast('Dispositivo no encontrado', 'error'); return; }
     // [v2.43.79] Limpiar zombis ANTES de mostrar prompt. Modal espiaV2Modal tiene
     // z-index 2147483646 (max int). Si quedó zombi de intento anterior, tapa
@@ -33821,6 +33824,11 @@ const MOS = (() => {
           const cr = await API.espiaRpc('espia_crear_sesion', { masterId: _masterId, deviceId: idDispositivo, claveAdmin });
           if (cr && cr.ok && cr.data && cr.data.sesionId) {
             let pushOk = false;
+            if (esGuard) {
+              // [MosGuard] el equipo recoge la sesión en su latido (no hay FCM). Se deja pedida.
+              try { await API.post('guardEspiaSet', { nombre: idDispositivo, sesionId: cr.data.sesionId }); } catch (_) {}
+              pushOk = true;   // no dependemos del wake-push
+            } else {
             try {
               const tk = await API.fcmTokenDispositivo(idDispositivo);
               const fcm = (tk && tk.data && tk.data.fcmToken) || '';
@@ -33830,6 +33838,7 @@ const MOS = (() => {
                 pushOk = !!(pr && pr.ok && pr.data && pr.data.enviados > 0);
               }
             } catch (_) { /* push best-effort */ }
+            }
             r = { sesionId: cr.data.sesionId, token: 'sb:' + cr.data.sesionId, ttl: cr.data.ttl, pushOk };
           } else if (cr && cr.ok === false && !/APP_NO_AUTORIZADA/.test(String(cr.error || ''))) {
             // rechazo de negocio (clave mala / EN_VIVO otro master) → mostrar y NO ir a GAS (daría lo mismo).
@@ -43796,8 +43805,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             : '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgMarcar(\'' + _esc(String(e.nombre)) + '\',\'ROBADO\')">🚨 Robado</button>') +
           '<button type="button" class="mg-btn" onclick="MOS.mgFoto(\'' + _esc(String(e.nombre)) + '\')">📸 Pedir foto</button>' +
           (e.liveSeg > 0
-            ? '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgLive(\'' + _esc(String(e.nombre)) + '\',0)">■ Cerrar en vivo (' + e.liveSeg + 's)</button>'
-            : '<button type="button" class="mg-btn" onclick="MOS.mgLive(\'' + _esc(String(e.nombre)) + '\',120)">🎥 Ver en vivo</button>') +
+            ? '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgLive(\'' + _esc(String(e.nombre)) + '\',0)">■ Cerrar cuadros (' + e.liveSeg + 's)</button>'
+            : '<button type="button" class="mg-btn" onclick="MOS.mgLive(\'' + _esc(String(e.nombre)) + '\',120)">📷 Cuadros ~2s</button>') +
+          '<button type="button" class="mg-btn is-verde" onclick="MOS.mgEspia(\'' + _esc(String(e.nombre)) + '\')" title="Video + audio en vivo (Spy 2.0). Requiere el equipo activo.">👁 Ver + escuchar</button>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -43826,6 +43836,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       toast(on ? '💜 Captura de Yapes activada' : '🚫 Captura de Yapes apagada (solo resguardo)', on ? 'success' : 'info', 3500);
       _mgRender();
     } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
+  }
+  // [884] MosGuard · ver + escuchar en vivo: reusa el visor de espía (Spy 2.0). Crea la sesión y la
+  // deja pedida; el equipo la recoge en su latido y abre el WebView de streaming.
+  async function mgEspia(nombre) {
+    try { await abrirEspiaV2(nombre, true); }
+    catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
   }
   async function mgFoto(nombre) {
     try { const r = await API.post('guardFoto', { nombre }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
@@ -54628,7 +54644,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderYapeCard, yapeGenerarCodigo, yapeRevocar,
     yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
     yapesZonaAbrir, yapesZonaRefrescar, yapesZonaDia,
-    mgMarcar, mgFoto, mgLive, mgCaptura,
+    mgMarcar, mgFoto, mgLive, mgCaptura, mgEspia,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de

