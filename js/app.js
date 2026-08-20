@@ -9147,9 +9147,8 @@ const MOS = (() => {
       </div>`;
     }).join('');
 
-    let totalBruto = 0;
-    lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
-    const totalNeto = totalBruto / (1 + _IGV_RATE);
+    const _tt = _costosGuiaTotales(st);   // [886] Neto/IGV/Percep separando la percepción
+    const totalBruto = _tt.bruto, totalNeto = _tt.neto;
 
     // [v2.41.54] Header progreso "X/Y con costo" + autoguardado hint
     const totLin = lineas.length;
@@ -9175,9 +9174,10 @@ const MOS = (() => {
       ${progresoHtml}
       ${filasHtml}
       <div class="alm-v-costo-totales">
-        <span>Neto: <b id="costosGuiaTotalNeto">S/ ${totalNeto.toFixed(2)}</b></span>
-        <span>IGV: <b id="costosGuiaTotalIgv">S/ ${(totalBruto - totalNeto).toFixed(2)}</b></span>
-        <span class="alm-v-total-bruto">Total: <b id="costosGuiaTotalBruto">S/ ${totalBruto.toFixed(2)}</b></span>
+        <span>Neto: <b id="costosGuiaTotalNeto">S/ ${_money(totalNeto).toFixed(2)}</b></span>
+        <span>IGV: <b id="costosGuiaTotalIgv">S/ ${_money(_tt.igv).toFixed(2)}</b></span>
+        <span id="costosGuiaPercWrap" style="${_tt.perc > 0.005 ? '' : 'display:none'}">Percep.: <b id="costosGuiaTotalPerc">S/ ${_money(_tt.perc).toFixed(2)}</b></span>
+        <span class="alm-v-total-bruto">Total: <b id="costosGuiaTotalBruto">S/ ${_money(totalBruto).toFixed(2)}</b></span>
       </div>`;
   }
 
@@ -10195,9 +10195,8 @@ const MOS = (() => {
     // mismo que los chips). El header es UNA sola banda: contadores modernos a la
     // izquierda + el ACUMULADO de lo realmente pagado (cada línea entra con su IGV y su
     // percepción ya sumados; las bonificaciones suman S/ 0) + sello de guardado.
-    let _tBruto = 0;
-    (st.lineas || []).forEach(l => { _tBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
-    const _tNeto = _tBruto / (1 + _IGV_RATE);
+    const _tt = _costosGuiaTotales(st);           // [886] Neto/IGV/Percep bien separados
+    const _tBruto = _tt.bruto, _tNeto = _tt.neto, _tPerc = _tt.perc;
     const _hTot = (st.lineas || []).length;
     const _hConCosto = (st.lineas || []).filter(l => _costoLineaHecha(l, st)).length;
     const _hPrec = (st.lineas || []).filter(l => l._precioListo > 0).length;
@@ -10209,7 +10208,7 @@ const MOS = (() => {
       </span>
       <div class="p1-tot-head">
         <span class="p1-tot-main"><span class="ops-tot-lbl ops-tot-bruto">💵 Total pagado</span> <b id="costosGuiaTotalBruto" class="ops-tot-bruto">S/ ${_money(_tBruto).toFixed(2)}</b></span>
-        <span class="p1-tot-sub"><span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${_money(_tNeto).toFixed(2)}</b><span class="ops-tot-sep">·</span><span class="ops-tot-lbl">IGV</span> <b id="costosGuiaTotalIgv">S/ ${_money(_tBruto - _tNeto).toFixed(2)}</b></span>
+        <span class="p1-tot-sub"><span class="ops-tot-lbl">Neto</span> <b id="costosGuiaTotalNeto">S/ ${_money(_tNeto).toFixed(2)}</b><span class="ops-tot-sep">·</span><span class="ops-tot-lbl">IGV</span> <b id="costosGuiaTotalIgv">S/ ${_money(_tt.igv).toFixed(2)}</b><span id="costosGuiaPercWrap" style="${_tPerc > 0.005 ? '' : 'display:none'}"><span class="ops-tot-sep">·</span><span class="ops-tot-lbl">Percep.</span> <b id="costosGuiaTotalPerc">S/ ${_money(_tPerc).toFixed(2)}</b></span></span>
       </div>
       <span id="costosSaveState" class="p1-save">☁ se guarda solo</span>
     </div>`;
@@ -14275,6 +14274,27 @@ const MOS = (() => {
     return !!(l && l._bonif) || (_costosGuiaCalcularBruto(l, st) > 0);
   }
 
+  // [886] Desglose CORRECTO del acumulado: Neto · IGV · Percepción.
+  //   Bug histórico: se hacía `neto = totalBruto / 1.18` sobre un total que YA traía la
+  //   percepción sumada (el brutoUnit incluye IGV y percepción). La percepción NO es base
+  //   del IGV (es un adelanto de renta que va SOBRE el total con IGV), así que dividir todo
+  //   entre 1.18 inflaba neto e IGV por igual. Ej. real: factura G&A neto 164.52 · IGV 29.61
+  //   · percep 3.89 · cobrado 198.01; el modal mostraba neto 167.83 · IGV 30.21 (= ×1.02).
+  //   Fix: por cada línea saco la percepción antes de partir el IGV.
+  function _costosGuiaTotales(st) {
+    let bruto = 0, baseConIgv = 0;
+    ((st && st.lineas) || []).forEach(l => {
+      const cant = parseFloat(l.cantidad) || 0;
+      const bu = _costosGuiaCalcularBruto(l, st);           // unitario CON IGV y CON percepción
+      if (bu <= 0 || cant <= 0) return;
+      const perc = parseFloat(l && l._percPct) || 0;
+      bruto      += bu * cant;
+      baseConIgv += (perc > 0 ? bu / (1 + perc / 100) : bu) * cant;   // quita la percepción
+    });
+    const neto = baseConIgv / (1 + _IGV_RATE);
+    return { bruto, neto, igv: baseConIgv - neto, perc: bruto - baseConIgv };
+  }
+
   // [v41.21] Redirigir abrirCostosGuia al overlay del voucher en modo costos.
   // Mantengo la firma por compat con el botón 💰 viejo si lo llama otro lugar.
 
@@ -14545,13 +14565,13 @@ const MOS = (() => {
       _sum.innerHTML = brutoUnit > 0 ? `✓ ${_cantS}u × S/ ${_money(brutoUnit).toFixed(2)} <b class="cl-sum-tot">S/ ${_money(brutoUnit * _cantS).toFixed(2)}</b>` : '';
     }
     try { _costosCtaUpd(); } catch(_){}
-    // Recalcular totales
-    let totalBruto = 0;
-    st.lineas.forEach(l => { totalBruto += _costosGuiaCalcularBruto(l, st) * (parseFloat(l.cantidad) || 0); });
-    const totalNeto = totalBruto / (1 + _IGV_RATE);
-    const elN = $('costosGuiaTotalNeto');  if (elN) elN.textContent = 'S/ ' + _money(totalNeto).toFixed(2);
-    const elI = $('costosGuiaTotalIgv');   if (elI) elI.textContent = 'S/ ' + _money(totalBruto - totalNeto).toFixed(2);
-    const elB = $('costosGuiaTotalBruto'); if (elB) elB.textContent = 'S/ ' + _money(totalBruto).toFixed(2);
+    // Recalcular totales [886] con percepción fuera de la base del IGV
+    const _tt = _costosGuiaTotales(st);
+    const elN = $('costosGuiaTotalNeto');  if (elN) elN.textContent = 'S/ ' + _money(_tt.neto).toFixed(2);
+    const elI = $('costosGuiaTotalIgv');   if (elI) elI.textContent = 'S/ ' + _money(_tt.igv).toFixed(2);
+    const elB = $('costosGuiaTotalBruto'); if (elB) elB.textContent = 'S/ ' + _money(_tt.bruto).toFixed(2);
+    const elP = $('costosGuiaTotalPerc');  if (elP) elP.textContent = 'S/ ' + _money(_tt.perc).toFixed(2);
+    const elPW = $('costosGuiaPercWrap');  if (elPW) elPW.style.display = _tt.perc > 0.005 ? '' : 'none';
     // [v41.20] Dispara debounce para refrescar sugerencia inline
     _costosGuiaSugerirDebounce(idx);
     // [v2.41.54] Marca visual: el ✓/⚠ de esta línea se recalcula
