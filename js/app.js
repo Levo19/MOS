@@ -50133,6 +50133,31 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
          <div class="zona-cod-body" id="zAlmBody-${safe}" style="display:none"></div>`
       : '';
 
+    // [889] CUADRANTE + DÍAS DE COBERTURA — la métrica que el admin entiende ("¿cuánto me dura?").
+    //   Rotación diaria = "día fuerte" (último pico no-cero): la realidad mayorista es venta en picos,
+    //   no diaria pareja; si no hay pico, volumen/28. Objetivo de zona = cubrir 1 día fuerte.
+    //   Deriva 100% de lo que el panel ya trae (NO toca el backend money-safe).
+    const _picN = picos.map(_zonaNum);
+    const _picoFuerte = _picN.length ? Math.max(0, ..._picN) : 0;
+    const _rotDia = _picoFuerte > 0 ? _picoFuerte : (_zonaNum(p.volumen) > 0 ? _zonaNum(p.volumen) / 28 : 0);
+    const _diasCob = _rotDia > 0 ? (stockRaw / _rotDia) : (stockRaw > 0 ? Infinity : 0);
+    let _cuad, _cuadIco, _cuadLbl;
+    if (rotCero && stockRaw > 0)              { _cuad = 'muerto'; _cuadIco = '⚫'; _cuadLbl = 'Muerto · no rota'; }
+    else if (brecha > 0 || negativo)          { _cuad = 'pedir';  _cuadIco = '🔴'; _cuadLbl = 'Pedir ya'; }
+    else if (esp > 0 && stockRaw > esp * 3)   { _cuad = 'sobra';  _cuadIco = '🟡'; _cuadLbl = 'Te sobra'; }
+    else                                      { _cuad = 'orden';  _cuadIco = '🟢'; _cuadLbl = 'Al día'; }
+    const _diasTxt = (_cuad === 'muerto') ? 'no rota'
+      : negativo ? ('en ' + _esc(fStock))
+      : (_diasCob === Infinity ? 'de sobra'
+      : (_rotDia <= 0 ? '—'
+      : (_diasCob >= 10 ? Math.round(_diasCob) + ' días' : (_diasCob.toFixed(1).replace(/\.0$/, '')) + ' días')));
+    const _covPct = negativo ? 3 : (_rotDia <= 0 ? (stockRaw > 0 ? 100 : 0) : Math.max(2, Math.min(100, Math.round(_diasCob / 2 * 100))));
+    const _rotTxt = _rotDia > 0 ? ('vende ~' + _zonaFmtNumRaw(_picoFuerte > 0 ? _picoFuerte : _rotDia, p.esGranel) + '/día fuerte') : 'sin venta en 4 sem';
+    const covBar = `<div class="zona-cov zona-cov-${_cuad}">
+      <div class="zona-cov-head"><span class="zona-cov-state">${_cuadIco} ${_cuadLbl}</span><span class="zona-cov-days">${_diasTxt}</span><span class="zona-cov-rot">${_esc(_rotTxt)}</span></div>
+      <div class="zona-cov-track"><div class="zona-cov-fill" style="width:${_covPct}%"></div>${(_rotDia > 0 && !negativo) ? '<div class="zona-cov-target" title="objetivo: 1 día"></div>' : ''}</div>
+    </div>`;
+
     // [ROTCERO] Chip + hint para cards sin rotación (secundarias, no "rotas").
     const rotCeroChip = rotCero
       ? `<span class="zona-rotcero-chip" title="Sin rotación en la ventana">∅ sin rotación</span>`
@@ -50141,7 +50166,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ? `<div class="zona-rotcero-hint">Considera <b>anular</b> o <b>promocionar</b> este producto.</div>`
       : '';
 
-    return `<div class="zona-card ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}">
+    return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
       <div class="zona-card-top">
         <div class="zona-card-name">${nm}</div>
         <div class="flex items-center gap-2">
@@ -50150,6 +50175,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           <span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span>
         </div>
       </div>
+      ${covBar}
       ${alertaNeg}
       <div class="zona-metrics${esAlmacenCard ? ' zona-metrics-3' : ''}">
         <div><div class="zona-metric-lbl">Stock${esAlmacenCard ? ' almacén' : ' zona'}</div><div class="zona-metric-val${negativo ? ' brecha-pos' : ''}" id="zStock-${safe}">${_esc(fStock)}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.${esAlmacenCard ? 'zonaVerKardexAlmacen' : 'zonaVerKardex'}('${safe}')">🕘</span></div></div>
