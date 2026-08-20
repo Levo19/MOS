@@ -2682,6 +2682,10 @@ const API = (() => {
       const r = await _sbRpcMOS('yape_guard_live', { p: { nombre: p.nombre, seg: p.seg } }, 'mos');
       return r && r.ok !== false ? { status: 'success', data: r } : { status: 'error', error: (r && r.error) || 'no se pudo' };
     }
+    if (action === 'guardCaptura') {  // [883] prender/apagar la captura de Yapes de un equipo
+      const r = await _sbRpcMOS('yape_captura_set', { p: { nombre: p.nombre, on: !!p.on } }, 'mos');
+      return r && r.ok !== false ? { status: 'success', data: r } : { status: 'error', error: (r && r.error) || 'no se pudo' };
+    }
     if (action === 'guardMediaUrl') { // [882] URL firmada del último cuadro (Edge guard-media)
       try {
         const tk = await _mintTokenMOS();
@@ -3094,6 +3098,7 @@ const API = (() => {
     guardFoto:                   () => true,   // [882] MosGuard: pedir foto
     guardLive:                   () => true,   // [882] MosGuard: en vivo
     guardMediaUrl:               () => true,   // [882] MosGuard: URL firmada del cuadro
+    guardCaptura:                () => true,   // [883] MosGuard: toggle captura de Yapes
     yapesDeCaja:                 () => true,   // mos.yapes_de_caja (860) · panel por caja
     yapesDelDia:                 () => true,   // mos.yapes_del_dia (856) · panel de capturados
     yapeResolver:                () => true,   // mos.yape_resolver (856) · atar o soltar a mano
@@ -3158,7 +3163,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, iaUsoResumen: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, iaUsoResumen: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, guardCaptura: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.

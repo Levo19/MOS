@@ -43782,8 +43782,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           '<i>' + (e.ubicHace != null ? 'hace ' + (e.ubicHace < 60 ? e.ubicHace + ' min' : Math.round(e.ubicHace / 60) + ' h') : '') +
           (e.precM != null ? ' · ±' + Math.round(e.precM) + ' m' : '') + '</i>'
         : '<i class="mg-sinubic">sin ubicación todavía — el equipo la manda en su próximo latido (necesita permiso de ubicación y ser MosGuard)</i>';
+      const cap = e.capturaYapes !== false;
       return '<div class="mg-eq ' + (robado ? 'is-robado' : '') + '">' +
         '<div class="mg-eq-top"><b>' + nom + '</b>' +
+          '<span class="mg-cap ' + (cap ? 'on' : 'off') + '" onclick="MOS.mgCaptura(\'' + _esc(String(e.nombre)) + '\',' + (cap ? 'false' : 'true') + ')" title="Prender/apagar la captura de Yapes de este equipo">' + (cap ? '💜 Yapes: ON' : '🚫 Yapes: OFF') + '</span>' +
           (robado ? '<span class="mg-badge">🚨 ROBADO' + (e.guardDesde ? ' · ' + _escapeHtml(String(e.guardDesde)) : '') + '</span>' : '') + '</div>' +
         '<div class="mg-eq-ubic">' + ubic + '</div>' +
         (e.mediaPath ? '<div class="mg-eq-foto"><img data-eq="' + _esc(String(e.nombre)) + '" alt="cámara"><i>📸 ' +
@@ -43818,6 +43820,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const img = document.querySelector('#mgResguardo img[data-eq="' + (window.CSS && CSS.escape ? CSS.escape(nombre) : nombre) + '"]');
       if (img) img.src = r.url;
     } catch (_) {}
+  }
+  async function mgCaptura(nombre, on) {
+    try { const r = await API.post('guardCaptura', { nombre, on }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      toast(on ? '💜 Captura de Yapes activada' : '🚫 Captura de Yapes apagada (solo resguardo)', on ? 'success' : 'info', 3500);
+      _mgRender();
+    } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
   }
   async function mgFoto(nombre) {
     try { const r = await API.post('guardFoto', { nombre }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
@@ -43904,6 +43912,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.mg-eq{padding:12px 14px;border-radius:13px;background:#0c1626;border:1px solid #223049}' +
       '.mg-eq.is-robado{border-color:rgba(251,113,133,.5);background:rgba(251,113,133,.07)}' +
       '.mg-eq-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.mg-eq-top b{font-size:12.5px;color:#e2e8f0}' +
+      '.mg-cap{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;cursor:pointer;border:1px solid}' +
+      '.mg-cap.on{color:#c4b5fd;background:rgba(124,58,237,.14);border-color:rgba(167,139,250,.4)}' +
+      '.mg-cap.off{color:#94a3b8;background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.35)}' +
       '.mg-badge{font-size:10px;font-weight:800;color:#fb7185;background:rgba(251,113,133,.14);border:1px solid rgba(251,113,133,.4);border-radius:999px;padding:2px 8px}' +
       '.mg-eq-ubic{margin:6px 0;font-size:11px}.mg-eq-ubic i{font-style:normal;color:#5f7192;margin-left:6px}.mg-sinubic{color:#5f7192}' +
       '.mg-ubic{color:#5eead4;font-weight:800;text-decoration:none}.mg-ubic:hover{text-decoration:underline}' +
@@ -54617,7 +54628,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderYapeCard, yapeGenerarCodigo, yapeRevocar,
     yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
     yapesZonaAbrir, yapesZonaRefrescar, yapesZonaDia,
-    mgMarcar, mgFoto, mgLive,
+    mgMarcar, mgFoto, mgLive, mgCaptura,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de

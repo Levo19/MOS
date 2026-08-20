@@ -46,6 +46,14 @@ T('cerrar en vivo (seg=0)', off && off.status==='success');
 await p.evaluate(async ()=>API.post('guardFoto',{nombre:'Celular Yape ZONA-01'}).then(()=>null));
 // dejar limpio: apagar foto pedida no hay RPC directo, pero el equipo la limpia al subir; para el test la reseteo por estado
 T('el panel dibuja los botones 📸/🎥 por equipo', await p.evaluate(()=>{const b=[...document.querySelectorAll('#mgResguardo .mg-btn')].map(x=>x.textContent);return b.some(t=>/Pedir foto/.test(t)) && b.some(t=>/en vivo|Ver en vivo/i.test(t));}));
+// [883] toggle de captura por equipo
+T('cada equipo tiene el chip Yapes ON/OFF', await p.evaluate(()=>[...document.querySelectorAll('#mgResguardo .mg-cap')].length>=2));
+const cap = await p.evaluate(async ()=>API.post('guardCaptura',{nombre:'Celular Yape ZONA-02',on:false}));
+T('apagar captura de un equipo responde success', cap && cap.status==='success', JSON.stringify(cap));
+const est3 = await p.evaluate(async ()=>{ const r=await API.post('guardEstado',{}); const e=((r&&(r.data||r))||{}).equipos||[]; return e.find(x=>x.nombre==='Celular Yape ZONA-02'); });
+T('el equipo quedó con captura OFF', est3 && est3.capturaYapes===false, String(est3&&est3.capturaYapes));
+const on = await p.evaluate(async ()=>API.post('guardCaptura',{nombre:'Celular Yape ZONA-02',on:true}));
+T('reactivar captura vuelve a ON', on && on.status==='success');
 T('sin errores de página', errs.length===0, errs.join(' | '));
 await p.screenshot({path:'C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/_mosguard_panel.png'});
 await b.close(); srv.close();
