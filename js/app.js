@@ -50211,20 +50211,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       : (negativo ? ('En negativo · ' + _esc(fStock))
       : (_rotDia <= 0 ? '—' : ('Dura ' + _diasTxt)));
     const _covPctBar = negativo ? 4 : (_cuad === 'muerto' ? 100 : (_rotDia <= 0 ? (stockRaw > 0 ? 100 : 0) : Math.max(3, Math.min(100, Math.round(_diasCob / _objDias * 100)))));
+    // [906] Foto del producto (reemplaza el círculo) + protagonista = barra "Dura".
+    const _foto = _zonaFotoUrl(p);
+    const _duraBig = _ringNum;   // número: días / stock neg / ∞ / 0
+    const _duraCap = (_cuad === 'muerto') ? 'sin rotar' : (negativo ? 'en negativo' : (_rotDia <= 0 ? 'sin dato' : 'te dura'));
     const _codChips = _zonaCodChipsHtml(sku, p);
     return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
       <div class="zona-card-hero zona-cov-${_cuad}">
-        ${_gaugeHtml}
+        <div class="zona-foto">${_foto ? `<img src="${_esc(_foto)}" loading="lazy" alt="" onerror="this.parentNode.classList.add('noimg')">` : ''}<span class="zona-foto-ph">📦</span></div>
         <div class="zona-hero-txt">
-          <div class="zona-card-name">${nm}</div>
-          <div class="zona-dura"><span class="zona-dura-t">${_duraTxt}</span><span class="zona-dura-bar"><i style="width:${_covPctBar}%"></i></span></div>
+          <div class="zona-card-top-row">
+            <div class="zona-card-name">${nm}</div>
+            <div class="zona-hero-badges">${rotCeroChip}<span class="zona-tend-badge ${tend.cls}">${tend.lbl}</span><span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span></div>
+          </div>
+          <div class="zona-dura-hero">
+            <div class="zona-dura-num"><b>${_duraBig}</b>${_ringUni ? '<i>d</i>' : ''}<span>${_duraCap}</span></div>
+            <div class="zona-dura-bar big"><i style="width:${_covPctBar}%"></i></div>
+          </div>
           <div class="zona-rota">${_rotLbl} <b>${_esc(_zonaFmtNumRaw(_rotNum, p.esGranel))}</b> / ${_rotUniTxt}</div>
           <div class="zc-chips" id="zChips-${safe}">${_codChips}</div>
-        </div>
-        <div class="zona-hero-badges">
-          ${rotCeroChip}
-          <span class="zona-tend-badge ${tend.cls}">${tend.lbl}</span>
-          <span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span>
         </div>
       </div>
       ${alertaNeg}
@@ -50246,6 +50251,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       <div class="zt-panel" id="ztPq-wrap-${safe}" style="display:none"><div id="ztPq-${safe}"><div class="esp-loading"><span class="esp-spin"></span></div></div></div>
       <div class="zt-panel" id="ztHx-wrap-${safe}" style="display:none"><div id="ztHx-${safe}"><div class="esp-loading"><span class="esp-spin"></span></div></div></div>
     </div>`;
+  }
+  // [906] Foto del producto canónico: la busca en el catálogo por cualquiera de sus códigos (o por sku).
+  function _zonaFotoUrl(item) {
+    try {
+      const idx = _prodIndex();
+      const cods = Array.isArray(item.codigos) ? item.codigos : [];
+      for (const c of cods) {
+        const cb = String(c.codBarra != null ? c.codBarra : (c.codigoBarra != null ? c.codigoBarra : '')).trim();
+        if (cb && idx.byCod.has(cb)) { const pr = idx.byCod.get(cb); const u = String(pr.fotoUrl || pr.logoUrl || '').trim(); if (u) return u; }
+      }
+      const sku = String(item.skuBase || item.idProducto || '');
+      if (sku && idx.byId.has(sku)) { const pr = idx.byId.get(sku); const u = String(pr.fotoUrl || pr.logoUrl || '').trim(); if (u) return u; }
+    } catch (_) {}
+    return '';
   }
   // [902] Chips de código (canónico + equivalentes) con su stock; editables (autoguardado) en modo Ajustar.
   function _zonaCodChipsHtml(sku, item) {
@@ -50962,22 +50981,40 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     movs = movs.slice(0, 8);
     if (!movs.length) return '<div class="zt-mut">Sin movimientos registrados.</div>';
-    const ICO = { SALIDA_VENTA: ['🛒', 'out'], VENTA: ['🛒', 'out'], TRASLADO_IN: ['🚚', 'in'], TRASLADO: ['🚚', 'in'], INGRESO: ['📥', 'in'], AUDITORIA: ['📋', 'aud'], AJUSTE: ['✏️', 'aud'] };
-    return movs.map(m => {
+    // [905] Traducción a lenguaje HUMANO (nada de "idem"/jerga). Tipo → etiqueta clara; usuario → persona o "sistema".
+    const TIPO = {
+      SALIDA_VENTA: ['🛒', 'out', 'Venta'], VENTA: ['🛒', 'out', 'Venta'],
+      SALIDA_ZONA: ['🚚', 'out', 'Despacho a zona'], SALIDA_JEFATURA: ['🚚', 'out', 'Despacho'],
+      TRASLADO_IN: ['🚚', 'in', 'Llegó de almacén'], TRASLADO_OUT: ['🚚', 'out', 'Salió a zona'], TRASLADO: ['🚚', 'in', 'Traslado'],
+      INGRESO_PROVEEDOR: ['📥', 'in', 'Ingreso de proveedor'], INGRESO: ['📥', 'in', 'Ingreso de mercadería'],
+      AUDITORIA: ['📋', 'aud', 'Conteo (auditoría)'], AJUSTE: ['✏️', 'aud', 'Ajuste manual'], SALIDA: ['📤', 'out', 'Salida']
+    };
+    const meses = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
+    const fCorta = (f) => { const s = String(f || '').slice(0, 10); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (parseInt(m[3], 10) + ' ' + (meses[parseInt(m[2], 10)] || m[2])) : s; };
+    const quienDe = (u) => { const s = String(u || '').toLowerCase(); if (!u || u === '—') return 'sistema'; if (s.indexOf('cierre') >= 0 || s.indexOf('idem') >= 0) return 'cierre automático'; if (s.indexOf('sistema') >= 0) return 'sistema'; return u; };
+    let rows = movs.map(m => {
       const t = String(m.tipo || '').toUpperCase();
-      const ic = ICO[t] || ['•', 'aud'];
+      let meta = TIPO[t]; if (!meta) { for (const k in TIPO) { if (t.indexOf(k) === 0) { meta = TIPO[k]; break; } } }
+      meta = meta || ['•', 'aud', (t.replace(/_/g, ' ').toLowerCase() || 'movimiento')];
+      let [ic, cls, lbl] = meta;
+      const usr = String(m.usuario || '');
+      if (usr.toLowerCase().indexOf('cierre') >= 0 || usr.toLowerCase().indexOf('idem') >= 0) { ic = '🌙'; lbl = 'Cierre del día'; cls = 'aud'; }
+      const quien = quienDe(usr);
       const delta = _zonaNum(m.delta);
       const saldo = (m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : null;
-      const fecha = String(m.fecha || '').slice(0, 10);
-      const quien = m.usuario ? ' · ' + _esc(String(m.usuario)) : '';
-      const cod = m.cod_barra ? ` <span class="zt-hx-cod">${_esc(String(m.cod_barra).slice(-4))}</span>` : '';
-      return `<div class="zt-hx-row">
-        <span class="zt-hx-ic ${ic[1]}">${ic[0]}</span>
-        <span class="zt-hx-lbl">${_esc((t.replace(/_/g, ' ').toLowerCase()))}${quien}${cod}</span>
-        <span class="zt-hx-delta ${delta < 0 ? 'neg' : 'pos'}">${delta > 0 ? '+' : ''}${_esc(_zonaFmtNumRaw(delta, p && p.esGranel))}${saldo != null ? ' → ' + _esc(_zonaFmtNumRaw(saldo, p && p.esGranel)) : ''}</span>
-        <span class="zt-hx-date">${_esc(fecha)}</span>
+      const dTxt = delta === 0 ? 'sin cambio' : ((delta > 0 ? '+' : '−') + _esc(_zonaFmtNumRaw(Math.abs(delta), p && p.esGranel)));
+      const dCls = delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero');
+      const queda = (saldo != null && delta !== 0) ? ` <small>queda ${_esc(_zonaFmtNumRaw(saldo, p && p.esGranel))}</small>` : '';
+      const cod = m.cod_barra ? ` <span class="zt-hx-cod">${_esc(String(m.cod_barra))}</span>` : '';
+      return `<div class="zt-hx-row${delta === 0 ? ' is-zero' : ''}">
+        <span class="zt-hx-ic ${cls}">${ic}</span>
+        <span class="zt-hx-lbl">${_esc(lbl)} <small>· ${_esc(quien)}</small>${cod}</span>
+        <span class="zt-hx-delta ${dCls}">${dTxt}${queda}</span>
+        <span class="zt-hx-date">${_esc(fCorta(m.fecha))}</span>
       </div>`;
     }).join('');
+    const hayCierre = movs.some(m => String(m.usuario || '').toLowerCase().indexOf('cierre') >= 0 || String(m.usuario || '').toLowerCase().indexOf('idem') >= 0);
+    return rows + (hayCierre ? '<div class="zt-hx-note">🌙 «Cierre del día» = corte automático de fin de jornada (no cambia el stock).</div>' : '');
   }
   function zonaCerrarEsperado() { closeModal('modalZonaEsp'); }
 
