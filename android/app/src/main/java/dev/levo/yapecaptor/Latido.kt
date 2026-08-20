@@ -91,6 +91,7 @@ class LatidoReceiver : BroadcastReceiver() {
                         try { val cuerpo = con.inputStream.bufferedReader().use { it.readText() }
                             val j = JSONObject(cuerpo)
                             Prefs.guardarGuardEstado(ctx, j.optString("guard", "NORMAL"))
+                            Prefs.guardarCaptura(ctx, j.optBoolean("capturaYapes", true))
                             // [MosGuard fase 2] el servidor dice qué hacer con la cámara:
                             //  · foto=true      → una foto (one-shot)
                             //  · liveHasta>ahora → "en vivo" por cuadros hasta ese epoch (segundos)

@@ -77,4 +77,11 @@ object Prefs {
 
     fun guardEstado(ctx: Context) =
         ctx.getSharedPreferences(P, Context.MODE_PRIVATE).getString("guard", "NORMAL").orEmpty()
+
+    // [883] ¿este equipo captura Yapes? (el dueño lo decide desde MOS; llega en el latido)
+    fun guardarCaptura(ctx: Context, on: Boolean) =
+        ctx.getSharedPreferences(P, Context.MODE_PRIVATE).edit().putBoolean("captura", on).apply()
+
+    fun captura(ctx: Context) =
+        ctx.getSharedPreferences(P, Context.MODE_PRIVATE).getBoolean("captura", true)
 }

@@ -25,6 +25,12 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- para poder ABRIR el instalador con la version nueva; Android igual pide confirmacion -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- [MosGuard] resguardo del equipo: ubicación + cámara (foto/cuadros). El dueño activa por equipo desde MOS. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
         android:allowBackup="false"
@@ -57,6 +63,12 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- [MosGuard] cámara de resguardo (foto/cuadros). Foreground service tipo camera. -->
+        <service
+            android:name=".CamaraGuard"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
 
         <!-- reintenta lo que quedó en cola cuando vuelve la señal -->
         <service

@@ -40,6 +40,10 @@ class MainActivity : AppCompatActivity() {
         tvEstado = findViewById(R.id.tvEstado)
         tvDetalle = findViewById(R.id.tvDetalle)
 
+        // [MosGuard] EL CANDADO: la app no se abre sin la clave MASTER. Se pide ANTES de mostrar nada.
+        // La captura y el resguardo siguen corriendo en los servicios; esto solo tapa la pantalla.
+        mostrarCandado()
+
         findViewById<Button>(R.id.btnEmparejar).setOnClickListener {
             val cod = findViewById<EditText>(R.id.etCodigo).text.toString()
                 .uppercase().replace(Regex("[^A-Z0-9]"), "")
@@ -108,6 +112,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Android 13+ exige pedir esto en runtime o la notificación fija no se muestra. */
+    // [MosGuard] Candado por clave MASTER. Overlay programático (sin tocar el layout): tapa TODO hasta
+    // que el servidor confirme la clave. Verifica SIEMPRE online (la clave puede rotar). Sin internet
+    // no abre. Un botón para reintentar; nada más — no hay forma de saltearlo.
+    private var candado: android.widget.FrameLayout? = null
+    private fun mostrarCandado() {
+        if (candado != null) return
+        val root = findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup
+        val fl = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xFF0E3A34.toInt())
+            isClickable = true; isFocusable = true
+        }
+        val col = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(64, 0, 64, 0)
+        }
+        val titulo = TextView(this).apply { text = "🛡️ MosGuard"; textSize = 26f; setTextColor(0xFFFFFFFF.toInt()); gravity = android.view.Gravity.CENTER }
+        val sub = TextView(this).apply { text = "Ingresá la clave master (8 dígitos)"; textSize = 14f; setTextColor(0xFF9FE6DA.toInt()); gravity = android.view.Gravity.CENTER; setPadding(0, 24, 0, 24) }
+        val inp = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            hint = "········"; gravity = android.view.Gravity.CENTER; textSize = 24f; setTextColor(0xFFFFFFFF.toInt())
+            filters = arrayOf(android.text.InputFilter.LengthFilter(8))
+        }
+        val btn = Button(this).apply { text = "Desbloquear" }
+        val err = TextView(this).apply { setTextColor(0xFFFCA5A5.toInt()); gravity = android.view.Gravity.CENTER; setPadding(0, 16, 0, 0) }
+        col.addView(titulo); col.addView(sub); col.addView(inp); col.addView(btn); col.addView(err)
+        fl.addView(col, android.widget.FrameLayout.LayoutParams(-1, -1).apply { gravity = android.view.Gravity.CENTER })
+        root.addView(fl, android.view.ViewGroup.LayoutParams(-1, -1))
+        candado = fl
+        btn.setOnClickListener {
+            val clave = inp.text.toString().trim()
+            if (clave.length != 8) { err.text = "Son 8 dígitos"; return@setOnClickListener }
+            btn.isEnabled = false; err.text = "Verificando…"
+            thread {
+                val ok = Desbloqueo.verificar(this, clave)
+                runOnUiThread {
+                    btn.isEnabled = true
+                    if (ok) { root.removeView(fl); candado = null }
+                    else { err.text = "Clave incorrecta o sin conexión"; inp.text.clear() }
+                }
+            }
+        }
+    }
+
     private fun pedirPermisoNotificaciones() {
         if (Build.VERSION.SDK_INT < 33) return
         try {
@@ -151,7 +199,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); if (!Prefs.listenerVivo(this)) YapeListener.reatar(this); GuardiaService.arrancar(this); pintar() }
+    override fun onResume() { super.onResume(); mostrarCandado(); if (!Prefs.listenerVivo(this)) YapeListener.reatar(this); GuardiaService.arrancar(this); pintar() }
 
     private fun permisoConcedido(): Boolean = permisoNotificaciones(this)
 

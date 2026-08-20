@@ -63,48 +63,37 @@ jobs:
           echo "APK_VERSION_NAME=1.$(date +%y%m).${{ github.run_number }}" >> $GITHUB_ENV
 
       # [MosGuard] dos ediciones del mismo código: captor (YapeCaptor, producción) y guard (MosGuard).
-      - name: Compilar los APK
+      - name: Compilar el APK
         working-directory: android
-        run: gradle assembleCaptorRelease assembleGuardRelease --no-daemon --stacktrace
+        run: gradle assembleRelease --no-daemon --stacktrace
 
+      # [MosGuard] UNA sola app. El asset SE SIGUE llamando YapeCaptor-*.apk a propósito: los equipos
+      # instalados tienen el auto-update apuntando a ese nombre bajo el tag yape-v, así se actualizan
+      # a MosGuard sin que nadie toque nada. El paquete es el mismo (dev.levo.yapecaptor).
       - name: Renombrar con la fecha
         working-directory: android
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/captor/release/*.apk "out/YapeCaptor-$(date +%Y%m%d-%H%M).apk"
-          cp app/build/outputs/apk/guard/release/*.apk  "out/MosGuard-$(date +%Y%m%d-%H%M).apk"
+          cp app/build/outputs/apk/release/*.apk "out/YapeCaptor-$(date +%Y%m%d-%H%M).apk"
           ls -lh out
 
-      - name: Subir los APK (artefacto)
+      - name: Subir el APK (artefacto)
         uses: actions/upload-artifact@v4
         with:
-          name: apks
+          name: MosGuard-apk
           path: android/out/*.apk
           retention-days: 90
 
-      # RELEASE por edición: cada app se auto-actualiza buscando SU prefijo de tag (yape-v / mosguard-v).
-      # YapeCaptor = la de producción; su release queda idéntico al de siempre (make_latest).
-      - name: Publicar YapeCaptor
+      - name: Publicar la version
         uses: softprops/action-gh-release@v2
         with:
           tag_name: yape-v${{ github.run_number }}
-          name: YapeCaptor ${{ env.APK_VERSION_NAME }}
-          body: |
-            APK de captura de Yapes.
-            versionCode: ${{ github.run_number }} · versionName: ${{ env.APK_VERSION_NAME }}
-
-            Se instala encima de la anterior (firma estable): no hace falta desinstalar
-            ni volver a emparejar.
-          files: android/out/YapeCaptor-*.apk
-          make_latest: true
-
-      - name: Publicar MosGuard
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: mosguard-v${{ github.run_number }}
           name: MosGuard ${{ env.APK_VERSION_NAME }}
           body: |
-            MosGuard — captura de Yapes + resguardo del equipo (fase 1: ubicación).
+            MosGuard — captura de Yapes + resguardo del equipo (ubicación, foto, cámara por cuadros).
             versionCode: ${{ github.run_number }} · versionName: ${{ env.APK_VERSION_NAME }}
-          files: android/out/MosGuard-*.apk
-          make_latest: false
+
+            Se instala ENCIMA del YapeCaptor anterior (mismo paquete + firma estable): no hace falta
+            desinstalar ni volver a emparejar. El nombre y el ícono pasan a MosGuard.
+          files: android/out/YapeCaptor-*.apk
+          make_latest: true

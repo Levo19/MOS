@@ -74,6 +74,9 @@ class YapeListener : NotificationListenerService() {
         val n = sbn ?: return
         try {
             if (n.packageName !in PAQUETES_YAPE) return
+            // [883] MosGuard: si el dueño apagó la captura de este equipo (celular personal, solo
+            // resguardo), no se lee ni se guarda la notificación de Yape. Es privacidad, no un bug.
+            if (!Prefs.captura(applicationContext)) return
 
             val extras = n.notification?.extras ?: return
             val titulo = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
