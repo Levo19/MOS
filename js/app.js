@@ -50210,10 +50210,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       <div class="zona-metrics-lean">
         <span class="zml"><span class="zml-l">Stock${esAlmacenCard ? ' alm' : ''}</span> <b id="zStock-${safe}" class="${negativo ? 'brecha-pos' : ''}">${_esc(fStock)}</b><span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.${esAlmacenCard ? 'zonaVerKardexAlmacen' : 'zonaVerKardex'}('${safe}')">🕘</span></span>
         ${esAlmacenCard ? '' : `<span class="zml"><span class="zml-l">Almacén</span> <b class="${alm < 0 ? 'brecha-pos' : ''}">${_esc(fAlm)}</b><span class="zona-edit-ico" title="Historial almacén" onclick="MOS.zonaVerKardexAlmacen('${safe}')">🕘</span></span>`}
-        ${_porque}
       </div>
       ${esAlmacenCard ? `<div class="zona-prov" id="zProv-${safe}" data-sku="${safe}">${_zonaProvBlockHtml(sku)}</div>` : ''}
-      ${codDisc}
+      <div class="zona-tools-tog" onclick="MOS.zonaToggleTools('${safe}')"><span class="zt-caret" id="ztCaret-${safe}">▸</span> 🛠 Herramientas <small>ajustar · por qué · historial</small></div>
+      <div class="zona-tools-wrap" id="zt-${safe}" style="display:none">
+        <div class="zt-sec"><div class="zt-tag"><span class="ztn">1</span> Ajustar / contar <small>canónico + equivalentes</small></div><div class="zt-body" id="ztCod-${safe}"></div></div>
+        <div class="zt-sec"><div class="zt-tag"><span class="ztn">2</span> ¿Por qué ${_esc(fEsp)}? <small>día a día, por semana</small></div><div class="zt-body" id="ztPq-${safe}"><div class="esp-loading"><span class="esp-spin"></span></div></div></div>
+        <div class="zt-sec"><div class="zt-tag"><span class="ztn">3</span> Historial <small>cómo se movió</small></div><div class="zt-body" id="ztHx-${safe}"><div class="esp-loading"><span class="esp-spin"></span></div></div></div>
+      </div>
       ${codAlmDisc}
       ${vencHtml}
       ${rotCeroHint}
@@ -50717,27 +50721,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // [900] "¿Por qué esta cantidad?" — ahora con el DETALLE DIARIO real (4 semanas × 7 días).
   //   Muestra lo vendido cada día, resalta el PICO (día más fuerte) de cada semana, y marca cuál se
   //   usa (el de la última). Datos de mos.zona_dias_producto (misma fuente que el pico del panel).
-  async function zonaVerEsperado(sku) {
-    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
-    if (!p) return;
-    const tit = $('zonaEspTitulo');
-    if (tit) tit.textContent = (p.descripcion || p.nombre || sku);
+  // Render puro del gráfico (lo usan el modal Y el panel inline de herramientas).
+  function _zonaEsperadoRender(p, dias) {
     const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
-    const body = $('zonaEspBody');
-    openModal('modalZonaEsp');
-    _zonaSfx('pop'); _zonaVibrar(20);
-    if (body) body.innerHTML = '<div class="esp-loading"><span class="esp-spin"></span> Leyendo tus ventas, día por día…</div>';
-    let dias = null;
-    try {
-      const r = await API.zona.diasProducto({ zona: S.zonaActual, sku });
-      dias = (r && (r.data || r) && (r.data || r).dias) || null;
-    } catch (_) {}
-    if (!body) return;
     if (!Array.isArray(dias) || !dias.length) {
       const picos = Array.isArray(p.picos) ? p.picos.slice(-4).map(_zonaNum) : [];
       const pu = picos.length ? picos[picos.length - 1] : 0;
-      body.innerHTML = `<div class="esp-calc"><div class="esp-nums">pico de la última semana <b>${_esc(_zonaFmtNumRaw(pu, p.esGranel))}</b> × 1.2 = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
-      return;
+      return `<div class="esp-calc"><div class="esp-nums">pico de la última semana <b>${_esc(_zonaFmtNumRaw(pu, p.esGranel))}</b> × 1.2 = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
     }
     const DOW = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
     const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última sem'];
@@ -50764,9 +50754,81 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[s]}</span><span class="esp-wk-pico">pico ${_esc(_zonaFmtNumRaw(picoW, p.esGranel))}</span></div>
         ${isUsed ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
     });
-    body.innerHTML = `<div class="esp-help">Cada barra = lo que vendiste ese día. En cada semana se marca su <b>día más fuerte</b> (el pico). Para reponer usamos el pico de la <b>última semana</b> + 20% de colchón.</div>
+    return `<div class="esp-help">Cada barra = lo que vendiste ese día. En cada semana se marca su <b>día más fuerte</b> (el pico). Para reponer usamos el pico de la <b>última semana</b> + 20% de colchón.</div>
       <div class="esp-weeks">${semHtml}</div>
       <div class="esp-calc"><div class="esp-nums">pico de la última semana <b>${_esc(_zonaFmtNumRaw(picoUlt, p.esGranel))}</b> × 1.2 = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
+  }
+  async function _zonaDiasFetch(sku) {
+    try { const r = await API.zona.diasProducto({ zona: S.zonaActual, sku }); return (r && (r.data || r) && (r.data || r).dias) || null; } catch (_) { return null; }
+  }
+  async function zonaVerEsperado(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) return;
+    const tit = $('zonaEspTitulo');
+    if (tit) tit.textContent = (p.descripcion || p.nombre || sku);
+    const body = $('zonaEspBody');
+    openModal('modalZonaEsp');
+    _zonaSfx('pop'); _zonaVibrar(20);
+    if (body) body.innerHTML = '<div class="esp-loading"><span class="esp-spin"></span> Leyendo tus ventas, día por día…</div>';
+    const dias = await _zonaDiasFetch(sku);
+    if (body) body.innerHTML = _zonaEsperadoRender(p, dias);
+  }
+
+  // [901] PANEL INLINE de herramientas: al tocar "🛠 Herramientas" en una card, se despliega abajo con
+  //   Ajustar (códigos ±) · ¿Por qué? (gráfico diario) · Historial (kardex compacto). Lazy-load.
+  function zonaToggleTools(sku) {
+    const wrap = $('zt-' + _zonaSkuId(sku));
+    const caret = $('ztCaret-' + _zonaSkuId(sku));
+    if (!wrap) return;
+    const abierto = wrap.style.display !== 'none' && wrap.dataset.cargado === '1';
+    if (abierto) { wrap.style.display = 'none'; if (caret) caret.textContent = '▸'; _zonaSfx('tick'); _zonaVibrar(8); return; }
+    wrap.style.display = '';
+    if (caret) caret.textContent = '▾';
+    _zonaSfx('pop'); _zonaVibrar([15, 10]);
+    if (wrap.dataset.cargado !== '1') { wrap.dataset.cargado = '1'; _zonaToolsCargar(sku); }
+  }
+  async function _zonaToolsCargar(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p) return;
+    const safe = _zonaSkuId(sku);
+    // 1) Ajustar códigos (inmediato: data en p.codigos)
+    const codBox = $('ztCod-' + safe);
+    if (codBox) {
+      const cods = Array.isArray(p.codigos) ? p.codigos : [];
+      codBox.innerHTML = cods.length ? cods.map(c => _zonaCodRowHtml(sku, c, p)).join('') : '<div class="zona-cod-hint">Un solo código.</div>';
+    }
+    // 2) ¿Por qué? (gráfico diario, lazy)
+    _zonaDiasFetch(sku).then(dias => { const el = $('ztPq-' + safe); if (el) el.innerHTML = _zonaEsperadoRender(p, dias); });
+    // 3) Historial (kardex compacto, lazy)
+    const hxBox = $('ztHx-' + safe);
+    if (hxBox) {
+      try {
+        const r = await API.zona.kardexHistorial({ skuBase: sku, zona: S.zonaActual });
+        const data = (r && r.data) || r || {};
+        hxBox.innerHTML = _zonaKardexInlineHtml(data, p);
+      } catch (e) { hxBox.innerHTML = '<div class="zt-mut">No se pudo cargar el historial.</div>'; }
+    }
+  }
+  // Lista compacta de movimientos (para el panel inline; el modal completo con pestañas sigue en 🕘).
+  function _zonaKardexInlineHtml(data, p) {
+    const movs = Array.isArray(data && data.movimientos) ? data.movimientos.slice(0, 8) : [];
+    if (!movs.length) return '<div class="zt-mut">Sin movimientos registrados.</div>';
+    const ICO = { SALIDA_VENTA: ['🛒', 'out'], VENTA: ['🛒', 'out'], TRASLADO_IN: ['🚚', 'in'], TRASLADO: ['🚚', 'in'], INGRESO: ['📥', 'in'], AUDITORIA: ['📋', 'aud'], AJUSTE: ['✏️', 'aud'] };
+    return movs.map(m => {
+      const t = String(m.tipo || '').toUpperCase();
+      const ic = ICO[t] || ['•', 'aud'];
+      const delta = _zonaNum(m.delta);
+      const saldo = (m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : null;
+      const fecha = String(m.fecha || '').slice(0, 10);
+      const quien = m.usuario ? ' · ' + _esc(String(m.usuario)) : '';
+      const cod = m.cod_barra ? ` <span class="zt-hx-cod">${_esc(String(m.cod_barra).slice(-4))}</span>` : '';
+      return `<div class="zt-hx-row">
+        <span class="zt-hx-ic ${ic[1]}">${ic[0]}</span>
+        <span class="zt-hx-lbl">${_esc((t.replace(/_/g, ' ').toLowerCase()))}${quien}${cod}</span>
+        <span class="zt-hx-delta ${delta < 0 ? 'neg' : 'pos'}">${delta > 0 ? '+' : ''}${_esc(_zonaFmtNumRaw(delta, p && p.esGranel))}${saldo != null ? ' → ' + _esc(_zonaFmtNumRaw(saldo, p && p.esGranel)) : ''}</span>
+        <span class="zt-hx-date">${_esc(fecha)}</span>
+      </div>`;
+    }).join('');
   }
   function zonaCerrarEsperado() { closeModal('modalZonaEsp'); }
 
@@ -54688,7 +54750,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
-    zonaVerEsperado, zonaCerrarEsperado,
+    zonaVerEsperado, zonaCerrarEsperado, zonaToggleTools,
     zonaPedirAlmacen, zonaAgregarLista,
     // [RIZ CARRITO] carrito flotante de pedido a almacén (un paquete = un pickup con N líneas)
     zonaCarritoAbrir, zonaCarritoCerrar, zonaCarritoStep, zonaCarritoSet, zonaCarritoQuitar, zonaCarritoVaciar, zonaCarritoEnviar,
