@@ -36540,11 +36540,20 @@ const MOS = (() => {
       totalLbl: 'Total a favor',
       totalVal: _tribFmtSoles(d.igvFavor || 0),
       totalColor: 'var(--trib-favor)',
-      tools: '<div class="trib-chips" data-trib-chips="1"></div>' +
+      tools: '<div class="trib-buzon" id="tribBuzonBox">' +
+               '<div class="trib-buzon-top"><b>📥 Buzón de facturas</b>' +
+                 '<label class="trib-buzon-btn">＋ Subir factura<input type="file" accept="image/*" id="tribBuzonFile" style="display:none"></label></div>' +
+               '<div class="trib-buzon-ayuda">Facturas de compra a tu nombre que NO tienen guía de ingreso (van directo a zona). El OCR lee el IGV a tu favor; si ya está en una guía, se marca duplicada.</div>' +
+               '<div id="tribBuzonLista"></div>' +
+             '</div>' +
+             '<div class="trib-chips" data-trib-chips="1"></div>' +
              '<input class="trib-search" id="tribBuscarFavor" type="search" inputmode="search" autocomplete="off" placeholder="Buscar por guía, serie o número...">',
       body: '<div class="trib-vacio"><span class="trib-vacio-ico">⏳</span>Cargando las guías del mes...</div>',
       onClick: _tribFavorClick
     });
+    const _bf = $('tribBuzonFile');
+    if (_bf) _bf.addEventListener('change', () => _tribBuzonSubir(_bf));
+    _tribBuzonRender();
     const inp = $('tribBuscarFavor');
     if (inp) inp.addEventListener('input', () => {
       _tribIGVBusq = inp.value || '';
@@ -36733,6 +36742,62 @@ const MOS = (() => {
 
   // Delegación de clicks del overlay (nada de onclick con URLs dentro: el id
   // de la guía viaja en el data-attr y la URL se busca en la caché).
+  // [885] BUZÓN de IGV a favor: subir/listar/borrar facturas de compra sin guía.
+  const _TRIB_BUZON_EST = {
+    VALIDA:        { ico: '✅', txt: 'IGV a favor', cls: 'ok' },
+    DUPLICADA:     { ico: '♻️', txt: 'ya está en una guía', cls: 'dup' },
+    NO_ES_NUESTRA: { ico: '⚠️', txt: 'no está a tu RUC', cls: 'mal' },
+    SIN_IGV:       { ico: '—',  txt: 'sin IGV recuperable', cls: 'gris' },
+    ILEGIBLE:      { ico: '👁', txt: 'ilegible', cls: 'gris' },
+    NO_COMPROBANTE:{ ico: '🚫', txt: 'no es un comprobante', cls: 'gris' },
+    PENDIENTE:     { ico: '⏳', txt: 'procesando…', cls: 'gris' }
+  };
+  async function _tribBuzonRender() {
+    const cont = $('tribBuzonLista'); if (!cont) return;
+    let items = [];
+    try { const r = await API.post('buzonListar', { mes: _tribState.mes, anio: _tribState.anio });
+      items = ((r && (r.data || r)) || {}).items || []; } catch (_) {}
+    if (!items.length) { cont.innerHTML = '<div class="trib-buzon-vacio">Todavía no subiste ninguna factura este mes.</div>'; return; }
+    cont.innerHTML = items.map(b => {
+      const e = _TRIB_BUZON_EST[String(b.estado)] || _TRIB_BUZON_EST.PENDIENTE;
+      const doc = (b.serie ? b.serie + '-' + (b.numero || '') : (b.razonSocial || 'factura'));
+      return '<div class="trib-buzon-item is-' + e.cls + '">' +
+        '<span class="trib-buzon-ico">' + e.ico + '</span>' +
+        '<div class="trib-buzon-info"><b>' + _escapeHtml(String(b.razonSocial || b.rucEmisor || 'Factura')) + '</b>' +
+          '<i>' + _escapeHtml(String(doc)) + (b.fecha ? ' · ' + _escapeHtml(String(b.fecha)) : '') + ' · ' + e.txt + '</i></div>' +
+        '<span class="trib-buzon-igv">' + (b.estado === 'VALIDA' ? _tribFmtSoles(b.igv) : '—') + '</span>' +
+        '<button type="button" class="trib-buzon-x" onclick="MOS.tribBuzonBorrar(\'' + _esc(String(b.idBuzon)) + '\')" title="Quitar del buzón">✕</button>' +
+      '</div>';
+    }).join('');
+  }
+  async function _tribBuzonSubir(inp) {
+    const f = inp && inp.files && inp.files[0]; if (!f) return;
+    if (!/^image\//.test(f.type)) { toast('Subí una imagen de la factura', 'warning'); return; }
+    const lista = $('tribBuzonLista'); if (lista) lista.insertAdjacentHTML('afterbegin', '<div class="trib-buzon-item is-gris" id="tribBuzonSubiendo"><span class="trib-buzon-ico">⏳</span><div class="trib-buzon-info"><b>Leyendo la factura…</b><i>' + _escapeHtml(f.name) + '</i></div></div>');
+    try {
+      const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).replace(/^data:[^;]+;base64,/, '')); r.onerror = rej; r.readAsDataURL(f); });
+      const r = await API.post('buzonSubir', { jpgB64: b64, mime: f.type, mes: _tribState.mes, anio: _tribState.anio, usuario: S.session?.nombre || '' });
+      if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      const est = (r.data && r.data.estado) || '';
+      const msg = est === 'VALIDA' ? '✅ Factura agregada · IGV a favor'
+                : est === 'DUPLICADA' ? '♻️ Esa factura ya estaba en una guía — marcada duplicada'
+                : est === 'NO_ES_NUESTRA' ? '⚠️ Esa factura no está a tu RUC — no suma IGV'
+                : est === 'SIN_IGV' ? 'Sin IGV recuperable' : est === 'NO_COMPROBANTE' ? '🚫 No parece un comprobante' : 'Procesada';
+      toast(msg, est === 'VALIDA' ? 'success' : est === 'DUPLICADA' || est === 'NO_ES_NUESTRA' ? 'warning' : 'info', 5000);
+      _tribBuzonRender(); _tribFetchIGVFavor(true);   // refresca el total a favor
+    } catch (e) {
+      toast('No se pudo leer la factura: ' + (e.message || e), 'error', 6000);
+      const sub = $('tribBuzonSubiendo'); if (sub) sub.remove();
+    }
+    try { inp.value = ''; } catch (_) {}
+  }
+  async function tribBuzonBorrar(id) {
+    if (!await _modalConfirm('¿Quitar esta factura del buzón?', { warning: true, titulo: 'Quitar del buzón', okText: 'Quitar' })) return;
+    try { const r = await API.post('buzonBorrar', { idBuzon: id }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      _tribBuzonRender(); _tribFetchIGVFavor(true);
+    } catch (e) { toast('No se pudo: ' + (e.message || e), 'error'); }
+  }
+
   function _tribFavorClick(e) {
     const t = e.target;
     const chip = t.closest && t.closest('[data-filtro]');
@@ -54644,7 +54709,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderYapeCard, yapeGenerarCodigo, yapeRevocar,
     yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
     yapesZonaAbrir, yapesZonaRefrescar, yapesZonaDia,
-    mgMarcar, mgFoto, mgLive, mgCaptura, mgEspia,
+    mgMarcar, mgFoto, mgLive, mgCaptura, mgEspia, tribBuzonBorrar,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de

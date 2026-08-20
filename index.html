@@ -4003,6 +4003,23 @@
     .trib-chip b { font-weight: 900; font-variant-numeric: tabular-nums; }
     .trib-chip.on { background: rgba(255,255,255,.13); color: #f1f5f9; border-color: rgba(255,255,255,.22); }
     .trib-chip .pip { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .trib-buzon { margin:0 0 10px; padding:12px; border-radius:12px; background:rgba(52,211,153,.06); border:1px solid rgba(52,211,153,.28); }
+    .trib-buzon-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .trib-buzon-top b { font-size:13px; color:var(--trib-ink); }
+    .trib-buzon-btn { font-size:11.5px; font-weight:800; color:#0b2e2a; background:#34d399; padding:7px 12px; border-radius:999px; cursor:pointer; white-space:nowrap; }
+    .trib-buzon-btn:active { transform:scale(.97); }
+    .trib-buzon-ayuda { font-size:10.5px; color:var(--trib-ink3); margin:6px 0 4px; line-height:1.5; }
+    .trib-buzon-vacio { font-size:11px; color:var(--trib-ink3); padding:8px 2px; }
+    .trib-buzon-item { display:flex; align-items:center; gap:9px; padding:8px 6px; border-top:1px dashed rgba(148,163,184,.18); }
+    .trib-buzon-ico { font-size:15px; flex:none; width:20px; text-align:center; }
+    .trib-buzon-info { flex:1; min-width:0; }
+    .trib-buzon-info b { display:block; font-size:12px; color:var(--trib-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .trib-buzon-info i { font-style:normal; font-size:10px; color:var(--trib-ink3); }
+    .trib-buzon-item.is-ok .trib-buzon-info i { color:#34d399; }
+    .trib-buzon-item.is-mal .trib-buzon-info i { color:#fbbf24; }
+    .trib-buzon-item.is-dup .trib-buzon-info i { color:#a78bfa; }
+    .trib-buzon-igv { font-size:12.5px; font-weight:800; color:#34d399; font-variant-numeric:tabular-nums; flex:none; }
+    .trib-buzon-x { flex:none; background:none; border:0; color:var(--trib-ink3); font-size:14px; cursor:pointer; padding:2px 6px; }
     .trib-search {
       width: 100%; margin-top: 9px; min-height: 40px;
       background: rgba(255,255,255,.045); border: 1px solid var(--trib-line);
@@ -21526,7 +21543,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.876';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.877';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21805,14 +21822,14 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.876"></script>
+<script src="js/api.js?v=2.43.877"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.808"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.876"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.877"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -21821,7 +21838,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.876"></script>
+<script src="js/app.js?v=2.43.877"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

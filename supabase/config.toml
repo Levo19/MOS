@@ -80,3 +80,6 @@ verify_jwt = false
 
 [functions.mint-guard]
 verify_jwt = false
+
+[functions.buzon-igv]
+verify_jwt = false
