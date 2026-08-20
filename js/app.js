@@ -43761,7 +43761,57 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         '<div class="yp-nota">El código dura 30 minutos y muere al usarse. Generar uno nuevo para el mismo equipo ' +
           '<b>cambia su secreto</b>: el celular anterior deja de entregar en el acto — es la forma de sacar de ' +
           'circulación un equipo perdido.</div>' +
+        '<div id="mgResguardo"></div>' +
       '</div>';
+    // [881] MosGuard: el bloque de resguardo (ubicación + robado) se pinta aparte y en vivo.
+    _mgRender();
+  }
+
+  // ── [881] MosGuard · resguardo del equipo ──────────────────────────────────
+  async function _mgRender() {
+    const cont = document.getElementById('mgResguardo'); if (!cont) return;
+    let equipos = [];
+    try { const r = await API.post('guardEstado', {}); equipos = ((r && (r.data || r)) || {}).equipos || []; } catch (_) {}
+    if (!equipos.length) { cont.innerHTML = ''; return; }
+    const filas = equipos.map(e => {
+      const robado = String(e.guardEstado) === 'ROBADO';
+      const nom = _escapeHtml(String(e.nombre || ''));
+      const hay = e.lat != null && e.lon != null;
+      const ubic = hay
+        ? '<a href="https://www.google.com/maps?q=' + e.lat + ',' + e.lon + '" target="_blank" rel="noopener" class="mg-ubic">📍 ver en el mapa</a>' +
+          '<i>' + (e.ubicHace != null ? 'hace ' + (e.ubicHace < 60 ? e.ubicHace + ' min' : Math.round(e.ubicHace / 60) + ' h') : '') +
+          (e.precM != null ? ' · ±' + Math.round(e.precM) + ' m' : '') + '</i>'
+        : '<i class="mg-sinubic">sin ubicación todavía — el equipo la manda en su próximo latido (necesita permiso de ubicación y ser MosGuard)</i>';
+      return '<div class="mg-eq ' + (robado ? 'is-robado' : '') + '">' +
+        '<div class="mg-eq-top"><b>' + nom + '</b>' +
+          (robado ? '<span class="mg-badge">🚨 ROBADO' + (e.guardDesde ? ' · ' + _escapeHtml(String(e.guardDesde)) : '') + '</span>' : '') + '</div>' +
+        '<div class="mg-eq-ubic">' + ubic + '</div>' +
+        '<div class="mg-eq-acts">' +
+          (robado
+            ? '<button type="button" class="mg-btn is-verde" onclick="MOS.mgMarcar(\'' + _esc(String(e.nombre)) + '\',\'NORMAL\')">✓ Marcar recuperado</button>'
+            : '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgMarcar(\'' + _esc(String(e.nombre)) + '\',\'ROBADO\')">🚨 Marcar robado</button>') +
+        '</div>' +
+      '</div>';
+    }).join('');
+    cont.innerHTML =
+      '<div class="mg-sec">🛡️ MosGuard · resguardo de tus equipos</div>' +
+      '<div class="mg-eqs">' + filas + '</div>' +
+      '<div class="yp-nota">Marcar un equipo <b>robado</b> hace que, en su próximo latido, empiece a mandar su ubicación seguido. ' +
+        'El video en vivo y la foto llegan en la próxima versión. Solo aplica a los equipos con la app <b>MosGuard</b> instalada.</div>';
+  }
+
+  async function mgMarcar(nombre, estado) {
+    if (estado === 'ROBADO') {
+      const ok = await _modalConfirm('¿Marcar «' + nombre + '» como ROBADO?\n\nEmpezará a reportar su ubicación seguido en cada latido.',
+        { warning: true, titulo: 'Marcar robado', okText: 'Marcar robado' });
+      if (!ok) return;
+    }
+    try {
+      const r = await API.post('guardMarcar', { nombre, estado });
+      if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      toast(estado === 'ROBADO' ? '🚨 Marcado robado' : '✓ Marcado recuperado', estado === 'ROBADO' ? 'warning' : 'success');
+      _mgRender();
+    } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
   }
 
   function _yapeInyectarCSS() {
@@ -43818,6 +43868,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.yp-sello.is-libre{color:#c4b5fd;border-color:rgba(167,139,250,.4);background:rgba(124,58,237,.12)}' +
       '.yp-sello.is-amb{color:#fcd34d;border-color:rgba(252,211,77,.4);background:rgba(252,211,77,.1)}' +
       '.yp-sello.is-mal{color:#fca5a5;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.1)}' +
+      '.mg-sec{margin-top:16px;font-size:12px;font-weight:800;letter-spacing:.04em;color:#7dd3fc}' +
+      '.mg-eqs{display:flex;flex-direction:column;gap:8px;margin:10px 0}' +
+      '.mg-eq{padding:12px 14px;border-radius:13px;background:#0c1626;border:1px solid #223049}' +
+      '.mg-eq.is-robado{border-color:rgba(251,113,133,.5);background:rgba(251,113,133,.07)}' +
+      '.mg-eq-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.mg-eq-top b{font-size:12.5px;color:#e2e8f0}' +
+      '.mg-badge{font-size:10px;font-weight:800;color:#fb7185;background:rgba(251,113,133,.14);border:1px solid rgba(251,113,133,.4);border-radius:999px;padding:2px 8px}' +
+      '.mg-eq-ubic{margin:6px 0;font-size:11px}.mg-eq-ubic i{font-style:normal;color:#5f7192;margin-left:6px}.mg-sinubic{color:#5f7192}' +
+      '.mg-ubic{color:#5eead4;font-weight:800;text-decoration:none}.mg-ubic:hover{text-decoration:underline}' +
+      '.mg-eq-acts{margin-top:6px}' +
+      '.mg-btn{font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:7px 12px;border-radius:999px;cursor:pointer;border:1px solid}' +
+      '.mg-btn.is-rojo{background:rgba(251,113,133,.12);color:#fb7185;border-color:rgba(251,113,133,.4)}' +
+      '.mg-btn.is-verde{background:rgba(52,211,153,.12);color:#34d399;border-color:rgba(52,211,153,.4)}' +
       '.yp-zonas{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px}' +
       '.yp-zona{display:flex;flex-direction:column;gap:9px;padding:14px;border-radius:14px;background:#0c1626;border:1px solid #223049}' +
       '.yp-z-n b{display:block;font-size:13.5px;color:#e2e8f0}' +
@@ -54522,6 +54584,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderYapeCard, yapeGenerarCodigo, yapeRevocar,
     yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
     yapesZonaAbrir, yapesZonaRefrescar, yapesZonaDia,
+    mgMarcar,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
