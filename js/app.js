@@ -50194,16 +50194,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       : (_rotDia <= 0 ? '—'
       : (_diasCob >= 10 ? String(Math.round(_diasCob)) : _diasCob.toFixed(1).replace(/\.0$/, '')))));
     const _ringUni = (negativo || _cuad === 'muerto' || _rotDia <= 0 || _diasCob === Infinity) ? '' : 'd';
-    const covBar = `<div class="zona-cov zona-cov-${_cuad}">
-      <div class="zona-gauge">
+    const _gaugeHtml = `<div class="zona-gauge">
         <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="zg-track" cx="22" cy="22" r="18"></circle><circle class="zg-fill" cx="22" cy="22" r="18" style="stroke-dasharray:${_dash} 113"></circle></svg>
         <div class="zg-c"><b>${_ringNum}</b>${_ringUni ? `<span>${_ringUni}</span>` : ''}</div>
-      </div>
-      <div class="zona-cov-txt">
-        <div class="zona-cov-state">${_cuadIco} ${_cuadLbl}</div>
-        <div class="zona-cov-sub"><b class="zona-cov-days">${_diasTxt}</b> · ${_esc(_rotTxt)}${esAlmacenCard ? ' · meta ' + _objDias + ' d' : ''}</div>
-      </div>
-    </div>`;
+      </div>`;
+    const _porque = picos.length
+      ? `<span class="zona-porque" onclick="MOS.zonaVerEsperado('${safe}')" title="¿Por qué necesitas ${_esc(fEsp)}? (toca para ver los picos)">📊 ¿por qué ${_esc(fEsp)}?</span>`
+      : '';
 
     // [ROTCERO] Chip + hint para cards sin rotación (secundarias, no "rotas").
     const rotCeroChip = rotCero
@@ -50214,26 +50211,28 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       : '';
 
     return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
-      <div class="zona-card-top">
-        <div class="zona-card-name">${nm}</div>
-        <div class="flex items-center gap-2">
+      <div class="zona-card-hero zona-cov-${_cuad}">
+        ${_gaugeHtml}
+        <div class="zona-hero-txt">
+          <div class="zona-card-name">${nm}</div>
+          <div class="zona-cov-state">${_cuadIco} ${_cuadLbl} · <b class="zona-cov-days">${_diasTxt}</b></div>
+          <div class="zona-cov-sub">${_esc(_rotTxt)}${esAlmacenCard ? ' · meta ' + _objDias + ' d' : ''}</div>
+        </div>
+        <div class="zona-hero-badges">
           ${rotCeroChip}
           <span class="zona-tend-badge ${tend.cls}">${tend.lbl}</span>
           <span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span>
         </div>
       </div>
-      ${covBar}
       ${alertaNeg}
-      <div class="zona-metrics${esAlmacenCard ? ' zona-metrics-3' : ''}">
-        <div><div class="zona-metric-lbl">Stock${esAlmacenCard ? ' almacén' : ' zona'}</div><div class="zona-metric-val${negativo ? ' brecha-pos' : ''}" id="zStock-${safe}">${_esc(fStock)}<span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.${esAlmacenCard ? 'zonaVerKardexAlmacen' : 'zonaVerKardex'}('${safe}')">🕘</span></div></div>
-        <div><div class="zona-metric-lbl">Esperado <span class="zona-metric-uni">(global)</span></div><div class="zona-metric-val">${_esc(fEsp)}</div></div>
-        <div><div class="zona-metric-lbl">Brecha</div><div class="zona-metric-val ${brecha > 0 ? 'brecha-pos' : 'brecha-zero'}" id="zBrecha-${safe}">${brecha > 0 ? '▲ ' + _esc(fBrecha) : '✓ 0'}</div></div>
-        ${esAlmacenCard ? '' : `<div><div class="zona-metric-lbl">Almacén</div><div class="zona-metric-val${alm < 0 ? ' brecha-pos' : ''}">${_esc(fAlm)}<span class="zona-edit-ico" title="Historial almacén" onclick="MOS.zonaVerKardexAlmacen('${safe}')">🕘</span></div></div>`}
+      <div class="zona-metrics-lean">
+        <span class="zml"><span class="zml-l">Stock${esAlmacenCard ? ' alm' : ''}</span> <b id="zStock-${safe}" class="${negativo ? 'brecha-pos' : ''}">${_esc(fStock)}</b><span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.${esAlmacenCard ? 'zonaVerKardexAlmacen' : 'zonaVerKardex'}('${safe}')">🕘</span></span>
+        ${esAlmacenCard ? '' : `<span class="zml"><span class="zml-l">Almacén</span> <b class="${alm < 0 ? 'brecha-pos' : ''}">${_esc(fAlm)}</b><span class="zona-edit-ico" title="Historial almacén" onclick="MOS.zonaVerKardexAlmacen('${safe}')">🕘</span></span>`}
+        ${_porque}
       </div>
       ${esAlmacenCard ? `<div class="zona-prov" id="zProv-${safe}" data-sku="${safe}">${_zonaProvBlockHtml(sku)}</div>` : ''}
       ${codDisc}
       ${codAlmDisc}
-      ${spark}
       ${vencHtml}
       ${rotCeroHint}
       ${pedEstado}
