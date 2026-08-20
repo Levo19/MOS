@@ -77,8 +77,22 @@ class LatidoReceiver : BroadcastReceiver() {
                         .put("permiso", MainActivity.permisoNotificaciones(ctx))
                         .put("versionCode", Actualizador.versionActual(ctx))
                         .put("versionName", Actualizador.nombreActual(ctx))
+                    // [MosGuard · fase 1] solo la edición guard adjunta la ubicación (última conocida).
+                    // El YapeCaptor de producción no pide el permiso y esta rama no corre para él.
+                    if (BuildConfig.ES_GUARD) {
+                        val fix = try { Ubicacion.ultima(ctx) } catch (_: Throwable) { null }
+                        if (fix != null) { p.put("lat", fix.lat).put("lon", fix.lon)
+                            if (fix.precM >= 0) p.put("precM", fix.precM.toDouble()) }
+                    }
                     con.outputStream.use { it.write(JSONObject().put("p", p).toString().toByteArray(Charsets.UTF_8)) }
-                    con.responseCode   // basta con que llegue
+                    // la respuesta trae el estado guard (NORMAL|ROBADO): se guarda para que MosGuard sepa
+                    // si el dueño lo marcó robado (fase 2: subir ubicación seguido / foto). Hoy solo se recuerda.
+                    if (con.responseCode in 200..299 && BuildConfig.ES_GUARD) {
+                        try { val cuerpo = con.inputStream.bufferedReader().use { it.readText() }
+                            val est = JSONObject(cuerpo).optString("guard", "NORMAL")
+                            Prefs.guardarGuardEstado(ctx, est)
+                        } catch (_: Throwable) {}
+                    } else { con.responseCode }
                 } catch (_: Throwable) {
                 } finally { try { con?.disconnect() } catch (_: Throwable) {} }
             }

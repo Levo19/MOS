@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.content.FileProvider
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -30,35 +31,44 @@ import java.net.URL
 object Actualizador {
 
     private const val TAG = "YapeCaptor"
-    private const val API_ULTIMA = "https://api.github.com/repos/Levo19/MOS/releases/latest"
+    // [MosGuard] Se lee la LISTA de releases (no /latest): cada edición publica con su propio prefijo
+    // de tag (captor → "yape-v", guard → "mosguard-v"), así conviven sin robarse el auto-update.
+    // /releases/latest devuelve UN solo release global — si el otro flavor publicara después, tapaba
+    // al propio. Con la lista, cada uno busca el más nuevo de SU prefijo.
+    private const val API_LISTA = "https://api.github.com/repos/Levo19/MOS/releases?per_page=30"
 
     data class Nueva(val versionCode: Int, val nombre: String, val url: String)
 
-    /** ¿Hay una versión más nueva publicada? null si no, o si no se pudo averiguar. */
+    /** ¿Hay una versión más nueva publicada PARA ESTA EDICIÓN? null si no, o si no se pudo averiguar. */
     fun buscar(ctx: Context): Nueva? {
         var con: HttpURLConnection? = null
         try {
-            con = (URL(API_ULTIMA).openConnection() as HttpURLConnection).apply {
+            con = (URL(API_LISTA).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 12000; readTimeout = 15000
                 setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "YapeCaptor")
+                setRequestProperty("User-Agent", BuildConfig.APK_MATCH)
             }
             if (con.responseCode !in 200..299) return null
-            val j = JSONObject(con.inputStream.bufferedReader().use { it.readText() })
-
-            // el tag es "yape-v<versionCode>"
-            val tag = j.optString("tag_name")
-            val code = Regex("yape-v(\\d+)").find(tag)?.groupValues?.get(1)?.toIntOrNull() ?: return null
-            if (code <= versionActual(ctx)) return null
-
-            val assets = j.optJSONArray("assets") ?: return null
-            for (i in 0 until assets.length()) {
-                val a = assets.getJSONObject(i)
-                if (a.optString("name").endsWith(".apk")) {
-                    return Nueva(code, j.optString("name", tag), a.optString("browser_download_url"))
+            val arr = JSONArray(con.inputStream.bufferedReader().use { it.readText() })
+            val re = Regex(Regex.escape(BuildConfig.TAG_PREFIX) + "(\\d+)")
+            var mejorCode = versionActual(ctx); var mejorUrl = ""; var mejorNom = ""
+            for (i in 0 until arr.length()) {
+                val rel = arr.getJSONObject(i)
+                if (rel.optBoolean("draft") || rel.optBoolean("prerelease")) continue
+                val code = re.find(rel.optString("tag_name"))?.groupValues?.get(1)?.toIntOrNull() ?: continue
+                if (code <= mejorCode) continue
+                val assets = rel.optJSONArray("assets") ?: continue
+                for (k in 0 until assets.length()) {
+                    val a = assets.getJSONObject(k)
+                    val nom = a.optString("name")
+                    // el APK de ESTA edición (YapeCaptor* o MosGuard*), no el del otro flavor
+                    if (nom.endsWith(".apk") && nom.contains(BuildConfig.APK_MATCH)) {
+                        mejorCode = code; mejorUrl = a.optString("browser_download_url"); mejorNom = rel.optString("name", rel.optString("tag_name")); break
+                    }
                 }
             }
-            return null
+            if (mejorUrl.isEmpty()) return null
+            return Nueva(mejorCode, mejorNom, mejorUrl)
         } catch (e: Throwable) {
             Log.w(TAG, "no pude consultar la última versión: ${e.message}")
             return null

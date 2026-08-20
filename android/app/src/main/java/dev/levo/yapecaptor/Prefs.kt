@@ -70,4 +70,11 @@ object Prefs {
 
     fun ultimoError(ctx: Context) =
         ctx.getSharedPreferences(P, Context.MODE_PRIVATE).getString("err", "").orEmpty()
+
+    // [MosGuard] último estado guard que devolvió el servidor (NORMAL|ROBADO)
+    fun guardarGuardEstado(ctx: Context, e: String) =
+        ctx.getSharedPreferences(P, Context.MODE_PRIVATE).edit().putString("guard", e).apply()
+
+    fun guardEstado(ctx: Context) =
+        ctx.getSharedPreferences(P, Context.MODE_PRIVATE).getString("guard", "NORMAL").orEmpty()
 }

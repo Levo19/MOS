@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnActualizar).setOnClickListener { buscarActualizacion(true) }
 
         pedirPermisoNotificaciones()
+        pedirPermisoUbicacion()
         LatidoReceiver.programar(this)
         GuardiaService.arrancar(this)   // el equipo no se enfría entre Yapes
         buscarActualizacion(false)   // aviso silencioso al abrir
@@ -113,6 +114,19 @@ class MainActivity : AppCompatActivity() {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 91)
+            }
+        } catch (_: Throwable) {}
+    }
+
+    // [MosGuard · fase 1] la edición guard pide ubicación (para el resguardo del equipo propio).
+    // El YapeCaptor de producción NO tiene el permiso declarado, así que esto no hace nada para él.
+    private fun pedirPermisoUbicacion() {
+        if (!BuildConfig.ES_GUARD || Build.VERSION.SDK_INT < 23) return
+        try {
+            if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                           android.Manifest.permission.ACCESS_COARSE_LOCATION), 92)
             }
         } catch (_: Throwable) {}
     }

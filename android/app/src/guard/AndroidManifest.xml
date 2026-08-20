@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MosGuard (flavor `guard`) — permisos EXTRA que el YapeCaptor de producción NO pide.
+  Solo se fusionan en el APK de MosGuard; el captor jamás los declara.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- fase 2: FOREGROUND_SERVICE_LOCATION / CAMERA se agregarán acá cuando toque -->
+</manifest>

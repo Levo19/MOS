@@ -16,7 +16,33 @@ android {
         // imposible saber que version corre cada celular.
         versionCode = (System.getenv("APK_VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("APK_VERSION_NAME") ?: "1.0.0-dev"
+        manifestPlaceholders["appLabel"] = "YapeCaptor"
     }
+
+    // [MosGuard] Dos ediciones del MISMO código:
+    //   · captor = YapeCaptor de producción (dev.levo.yapecaptor), sin capacidades de resguardo.
+    //   · guard  = MosGuard (dev.levo.mosguard): agrega GPS/foto (fase 1) detrás de BuildConfig.ES_GUARD.
+    // Es un mecanismo de BUILD para desarrollar MosGuard sin tocar el APK de las zonas; NO son dos apps
+    // en el mostrador. Cuando MosGuard esté probado, reemplaza al captor y esta rama se retira.
+    flavorDimensions += "edicion"
+    productFlavors {
+        create("captor") {
+            dimension = "edicion"
+            // applicationId dev.levo.yapecaptor (de defaultConfig) — producción, sin cambios
+            buildConfigField("boolean", "ES_GUARD", "false")
+            buildConfigField("String", "TAG_PREFIX", "\"yape-v\"")
+            buildConfigField("String", "APK_MATCH", "\"YapeCaptor\"")
+        }
+        create("guard") {
+            dimension = "edicion"
+            applicationId = "dev.levo.mosguard"
+            buildConfigField("boolean", "ES_GUARD", "true")
+            buildConfigField("String", "TAG_PREFIX", "\"mosguard-v\"")
+            buildConfigField("String", "APK_MATCH", "\"MosGuard\"")
+            manifestPlaceholders["appLabel"] = "MosGuard"
+        }
+    }
+    buildFeatures { buildConfig = true }
 
     // CLAVE DE FIRMA ESTABLE. Android se niega a instalar una actualización si viene firmada
     // con otra clave que la instalada. La clave de depuración se genera NUEVA en cada máquina y
