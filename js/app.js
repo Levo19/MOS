@@ -32,7 +32,7 @@ const MOS = (() => {
     zonaFresh: true,         // (legacy) frescura de la sombra GAS — YA NO gobierna el chip
     zonaUltimoFetch: 0,      // [RIZ live] epoch ms del último fetch EXITOSO del panel (lee tablas VIVAS)
     zonaKpis: null,          // {faltan, almacen, externo, cero}
-    _zonaFiltros: { kpi: null, tend: {}, brecha: false, orden: 'brecha', q: '' },
+    _zonaFiltros: { kpi: 'c_pedir', tend: {}, brecha: false, orden: 'brecha', q: '' },   // [899] vitales = pestañas; arranca en "Pedir ya"
     // [RIZ #1 FILTRO DÍA] Filtro "del día" del grupo ROTADO (Vendidos/Despachados). Espeja la PARTICIÓN de
     //   me.zona_ticket_dia: universo ordenado por rotación, repartido en 7 días anclados al lunes ISO.
     //   modo 'todos' (default) = sin filtro; 'dia' = solo la tanda del día activo. offsetDia desplaza el día
@@ -49438,6 +49438,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     for (const p of arr) { const c = _zonaCuadDe(p); if (c === 'pedir') pedir++; else if (c === 'muerto') muerto++; else if (c === 'sobra') sobra++; else orden++; }
     const set = (id, v) => { const el = $(id); if (!el) return; if (animar) _zonaCountUp(el, v); else el.textContent = v; };
     set('zKpiFaltan', pedir); set('zKpiCero', muerto); set('zKpiSobra', sobra); set('zKpiOrden', orden);
+    // [899] marcar la pestaña activa (las vitales son pestañas: una siempre encendida)
+    try { const fk = (S._zonaFiltros || {}).kpi; document.querySelectorAll('#zonaKpis .zona-kpi').forEach(el => el.classList.toggle('active', el.dataset.kpi === fk)); } catch (_) {}
   }
   // [RIZ UX] HTML de N cards skeleton con shimmer (silueta de una zona-card real).
   function _zonaSkelCards(n) {
@@ -49844,11 +49846,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         return tendActivas.indexOf(norm) >= 0;
       });
     }
-    // [896] las vitales filtran por CUADRANTE (misma fuente _zonaCuadDe)
-    if (f.kpi === 'c_pedir')  arr = arr.filter(p => _zonaCuadDe(p) === 'pedir');
-    if (f.kpi === 'c_muerto') arr = arr.filter(p => _zonaCuadDe(p) === 'muerto');
-    if (f.kpi === 'c_sobra')  arr = arr.filter(p => _zonaCuadDe(p) === 'sobra');
-    if (f.kpi === 'c_orden')  arr = arr.filter(p => _zonaCuadDe(p) === 'orden');
+    // [899] la vital ACTIVA es la pestaña: se muestra ese cuadrante. Al buscar (q), se ignora el
+    //   cuadrante y se busca en TODO (para encontrar el producto donde sea que esté).
+    const _cuadActivo = { c_pedir: 'pedir', c_muerto: 'muerto', c_sobra: 'sobra', c_orden: 'orden' }[f.kpi];
+    if (!f.q && _cuadActivo) arr = arr.filter(p => _zonaCuadDe(p) === _cuadActivo);
 
     // Orden
     if (f.orden === 'brecha')    arr.sort((a,b) => _zonaNum(b.brecha) - _zonaNum(a.brecha));
@@ -49859,31 +49860,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const stats = $('zonaStats');
     if (stats) stats.textContent = `${arr.length} de ${S.zonaProductos.length} productos`;
 
+    const _CUAD_VACIO = {
+      c_pedir:  ['🎉', '¡Nada por pedir!', 'Todo tu stock accionable está cubierto.'],
+      c_muerto: ['✨', 'Sin muertos', 'No hay stock parado sin rotación.'],
+      c_sobra:  ['👌', 'Nada te sobra', 'Ningún producto con exceso de stock.'],
+      c_orden:  ['—', 'Nada aquí', 'Sin productos en este estado.'],
+    };
     if (!arr.length) {
-      cont.innerHTML = `<div class="text-center py-16 text-slate-500"><div class="text-4xl mb-3">🏪</div><div class="font-medium">Sin productos para mostrar</div><div class="text-xs mt-1">Ajusta los filtros</div></div>`;
+      const v = _CUAD_VACIO[f.kpi] || ['🏪', 'Sin productos', f.q ? 'Prueba otra búsqueda.' : 'Nada en este estado.'];
+      cont.innerHTML = `<div class="zona-empty"><div class="zona-empty-ic">${v[0]}</div><div class="zona-empty-t">${v[1]}</div><div class="zona-empty-s">${v[2]}</div></div>`;
+      try { _zonaCacheVitales(); } catch (_) {}
       return;
     }
 
-    // [896] CUATRO grupos por CUADRANTE de acción (reemplaza ROTADO/PARADO). Lo accionable primero.
+    // [899] Las VITALES mandan: se muestra UN cuadrante a la vez (la pestaña activa), sin grupos apilados.
+    //   arr ya viene filtrado al cuadrante activo (o a la búsqueda). Render plano y limpio; muere el
+    //   control Todos/Día + el botón imprimir (eran del modelo viejo de 2 grupos).
     const esAlmacen = _esZonaAlmacen({ idZona: S.zonaActual,
       nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
-    const _cuadListas = { pedir: [], muerto: [], sobra: [], orden: [] };
-    arr.forEach(p => { (_cuadListas[_zonaCuadDe(p)] || _cuadListas.orden).push(p); });
-    // [RIZ #1] Filtro "del día" (Todos/Día) → SOLO al grupo "Pedir ya" (donde vive su control + el ticket).
-    const diaModo = (S._zonaDiaFiltro && S._zonaDiaFiltro.modo === 'dia');
-    if (diaModo && S._zonaDiaSet) {
-      const set = S._zonaDiaSet;
-      _cuadListas.pedir = _cuadListas.pedir.filter(p => set.has(String(p.skuBase || p.idProducto || '')));
-    }
-    const _CUAD_GRP = [
-      { key:'CUAD_pedir',  cls:'is-pedir',  ico:'🔴', lbl:'Pedir ya · te vas a quedar sin',            arr:_cuadListas.pedir, esRotado:true, esAlmacen },
-      { key:'CUAD_muerto', cls:'is-muerto', ico:'⚫', lbl:(esAlmacen?'Muertos · sin despachar 4 sem':'Muertos · no rotan, plata parada'), arr:_cuadListas.muerto },
-      { key:'CUAD_sobra',  cls:'is-sobra',  ico:'🟡', lbl:'Te sobra · no pidas, tienes de más',        arr:_cuadListas.sobra, defColapsado:true },
-      { key:'CUAD_orden',  cls:'is-orden',  ico:'🟢', lbl:'En orden · al día',                         arr:_cuadListas.orden, defColapsado:true },
-    ];
-    let html = '';
-    for (const g of _CUAD_GRP) html += _zonaGrupoHtml(g);
-    cont.innerHTML = html;
+    cont.innerHTML = arr.map(_zonaCardHtml).join('');
     try { _zonaCacheVitales(); } catch (_) {}   // [893] cachear conteo de cuadrantes para el hub
     // [RIZ UX] Stagger de entrada: solo las primeras ~20 cards reciben delay incremental
     // (cap para no demorar con 800 items; el resto aparece directo vía CSS nth-child).
@@ -50182,6 +50177,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const _ringUni = (negativo || _cuad === 'muerto' || _rotDia <= 0 || _diasCob === Infinity) ? '' : 'd';
     const _gaugeHtml = `<div class="zona-gauge">
         <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="zg-track" cx="22" cy="22" r="18"></circle><circle class="zg-fill" cx="22" cy="22" r="18" style="stroke-dasharray:${_dash} 113"></circle></svg>
+        <span class="zg-orbit" aria-hidden="true"></span>
         <div class="zg-c"><b>${_ringNum}</b>${_ringUni ? `<span>${_ringUni}</span>` : ''}</div>
       </div>`;
     const _porque = picos.length
@@ -50418,9 +50414,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function zonaFiltrar()   { S._zonaFiltros.q = ($('zonaSearch') && $('zonaSearch').value || '').trim(); renderZona(); }
   function zonaToggleKpi(kpi) {
     const f = S._zonaFiltros;
-    f.kpi = (f.kpi === kpi) ? null : kpi;
+    if (f.kpi === kpi) { try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {} return; }   // [899] ya es la pestaña activa
+    f.kpi = kpi;
     document.querySelectorAll('#zonaKpis .zona-kpi').forEach(el => el.classList.toggle('active', el.dataset.kpi === f.kpi));
-    _zonaSfx('tick'); _zonaVibrar(15);
+    try { _zonaSfx('pop'); _zonaVibrar(15); } catch (_) {}
     renderZona();
   }
   function zonaToggleTend(t) {
