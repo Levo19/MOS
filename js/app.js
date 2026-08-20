@@ -49898,6 +49898,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     html += _zonaGrupoHtml(grpRot);
     html += _zonaGrupoHtml(grpPar);
     cont.innerHTML = html;
+    try { _zonaCacheVitales(); } catch (_) {}   // [893] cachear conteo de cuadrantes para el hub
     // [RIZ UX] Stagger de entrada: solo las primeras ~20 cards reciben delay incremental
     // (cap para no demorar con 800 items; el resto aparece directo vía CSS nth-child).
     // Recorremos solo .zona-card (el separador no anima) para que el índice de delay sea correcto.
@@ -50019,6 +50020,29 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try { _zonaSfx('tick'); _zonaVibrar(12); } catch (_) {}
   }
   function _zonaTendRank(t) { t = String(t||'').toLowerCase(); if (t==='asc'||t==='ascendente') return 3; if (t==='est'||t==='estable') return 2; if (t==='desc'||t==='descendente') return 1; return 0; }
+
+  // [893] Cuadrante de un producto (única fuente para card Y vitales del hub → nunca se desincronizan).
+  const _CUAD_META = { pedir: ['🔴', 'Pedir ya'], orden: ['🟢', 'Al día'], sobra: ['🟡', 'Te sobra'], muerto: ['⚫', 'Muerto · no rota'] };
+  function _zonaCuadDe(p) {
+    const stock = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
+    const esp   = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+    const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - Math.max(0, stock));
+    const neg = !!p.stockNegativo || stock < 0;
+    if (_zonaEsRotCero(p) && stock > 0) return 'muerto';
+    if (brecha > 0 || neg) return 'pedir';
+    if (esp > 0 && stock > esp * 3) return 'sobra';
+    return 'orden';
+  }
+  // Cachea el conteo de cuadrantes de la zona activa (para las vitales del hub, sin queries pesadas).
+  function _zonaCacheVitales() {
+    const arr = S.zonaProductos || []; if (!arr.length) return;
+    let pedir = 0, muerto = 0, sobra = 0, orden = 0;
+    for (const p of arr) { const c = _zonaCuadDe(p); if (c === 'pedir') pedir++; else if (c === 'muerto') muerto++; else if (c === 'sobra') sobra++; else orden++; }
+    const v = { pedir, muerto, sobra, orden, ts: Date.now() };
+    try { localStorage.setItem('mos_zona_vit_' + S.zonaActual, JSON.stringify(v)); } catch (_) {}
+    S._zonaVitCuad = S._zonaVitCuad || {}; S._zonaVitCuad[S.zonaActual] = v;
+  }
+  function _zonaVitCuadGet(id) { try { const s = localStorage.getItem('mos_zona_vit_' + id); return s ? JSON.parse(s) : null; } catch (_) { return null; } }
 
   function _zonaCardHtml(p) {
     const sku   = String(p.skuBase || p.idProducto || '');
@@ -50151,11 +50175,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const _picoFuerte = _picN.length ? Math.max(0, ..._picN) : 0;
     const _rotDia = _picoFuerte > 0 ? _picoFuerte : (_zonaNum(p.volumen) > 0 ? _zonaNum(p.volumen) / 28 : 0);
     const _diasCob = _rotDia > 0 ? (stockRaw / _rotDia) : (stockRaw > 0 ? Infinity : 0);
-    let _cuad, _cuadIco, _cuadLbl;
-    if (rotCero && stockRaw > 0)              { _cuad = 'muerto'; _cuadIco = '⚫'; _cuadLbl = 'Muerto · no rota'; }
-    else if (brecha > 0 || negativo)          { _cuad = 'pedir';  _cuadIco = '🔴'; _cuadLbl = 'Pedir ya'; }
-    else if (esp > 0 && stockRaw > esp * 3)   { _cuad = 'sobra';  _cuadIco = '🟡'; _cuadLbl = 'Te sobra'; }
-    else                                      { _cuad = 'orden';  _cuadIco = '🟢'; _cuadLbl = 'Al día'; }
+    const _cuad = _zonaCuadDe(p);
+    const _cuadIco = _CUAD_META[_cuad][0], _cuadLbl = _CUAD_META[_cuad][1];
     // [892] Objetivo por NIVEL (regla del dueño): almacén = 1 semana (7 días), zona = 1 día.
     const _objDias = esAlmacenCard ? 7 : 1;
     const _diasTxt = (_cuad === 'muerto') ? 'no rota'
@@ -50337,13 +50358,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const neg = v ? v.negativos : null;
       const isAnc = id === anchored;
       const safeId = _esc(String(id));
+      // Vitales: si ya visitaste el puesto, mostramos los cuadrantes reales (pedir/muertos) desde el
+      // cache; si no, caemos a productos+negativos (baratos, de la RPC). Se enriquece al entrar.
+      const cq = _zonaVitCuadGet(id);
+      let vitalsHtml = '';
+      if (cq && (cq.pedir || cq.muerto || cq.sobra)) {
+        vitalsHtml = `<span class="zhub-vpill neg">🔴 ${cq.pedir} pedir</span><span class="zhub-vpill dead">⚫ ${cq.muerto} muertos</span>`;
+      } else if (neg > 0) {
+        vitalsHtml = `<span class="zhub-vpill neg">⚠ ${neg} en negativo</span>`;
+      } else if (v) {
+        vitalsHtml = `<span class="zhub-vpill ok">✓ listo</span>`;
+      }
       return `<button type="button" class="zhub-st${esAlm ? ' is-alm' : ''}${isAnc ? ' is-anchored' : ''}" onclick="MOS.zonaElegirPuesto('${safeId}')">
         ${isAnc ? '<span class="zhub-st-anc">● aquí estás</span>' : ''}
         <div class="zhub-st-ico">${esAlm ? '🏪' : '🏬'}</div>
         <div class="zhub-st-role">${esAlm ? 'Surte a las zonas' : 'Vende al público'}</div>
         <div class="zhub-st-name">${_esc(nm)}</div>
         <div class="zhub-st-count">${prod != null ? prod + ' productos con stock' : 'cargando…'}</div>
-        <div class="zhub-st-vitals">${(neg > 0) ? '<span class="zhub-vpill neg">⚠ ' + neg + ' en negativo</span>' : (v ? '<span class="zhub-vpill ok">✓ sin negativos</span>' : '')}</div>
+        <div class="zhub-st-vitals">${vitalsHtml}</div>
         <div class="zhub-st-enter">Entrar al puesto <span class="zhub-arw">→</span></div>
       </button>`;
     }).join('');
