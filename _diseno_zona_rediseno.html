@@ -1,0 +1,500 @@
+<title>Tablero de Zona</title>
+<style>
+  :root{
+    /* neutrales con leve sesgo azul — elegidos, no por defecto */
+    --bg:#eef1f6; --surface:#ffffff; --surface-2:#f6f8fc; --surface-sunk:#f0f3f9;
+    --ink:#182031; --ink-soft:#414b60; --muted:#727c92; --faint:#9aa3b5;
+    --border:#e0e5ee; --border-strong:#cfd6e3;
+    /* acento MOS: índigo sólido (no degradado) */
+    --accent:#3a4ec4; --accent-ink:#ffffff; --accent-soft:#eaecfb;
+    /* semáforo = el dato, separado del acento */
+    --red:#d22b2b; --red-bg:#fdecec; --red-line:#f3c3c3;
+    --green:#1c9a56; --green-bg:#e7f5ec; --green-line:#bfe3cc;
+    --amber:#bd7a00; --amber-bg:#fbf1dc; --amber-line:#ecd7a6;
+    --gray:#59626f; --gray-bg:#edeff3; --gray-line:#d6dae2;
+    --track:#e9edf4; --target:#2c3648;
+    --shadow:0 1px 2px rgba(20,30,55,.06), 0 4px 14px rgba(20,30,55,.05);
+    --radius:11px;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0e1320; --surface:#161d2c; --surface-2:#1b2334; --surface-sunk:#121826;
+      --ink:#e7ebf4; --ink-soft:#b8c1d4; --muted:#8b95a9; --faint:#6b7488;
+      --border:#28303f; --border-strong:#38414f;
+      --accent:#7e8cf0; --accent-ink:#0e1320; --accent-soft:#232a4a;
+      --red:#f2726f; --red-bg:#33191c; --red-line:#5a2a2c;
+      --green:#54c78a; --green-bg:#152a20; --green-line:#264a37;
+      --amber:#e0a94b; --amber-bg:#2c2412; --amber-line:#4c3f1f;
+      --gray:#9aa4b3; --gray-bg:#1c2333; --gray-line:#333c4c;
+      --track:#232b3a; --target:#c4cde0;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e1320; --surface:#161d2c; --surface-2:#1b2334; --surface-sunk:#121826;
+    --ink:#e7ebf4; --ink-soft:#b8c1d4; --muted:#8b95a9; --faint:#6b7488;
+    --border:#28303f; --border-strong:#38414f;
+    --accent:#7e8cf0; --accent-ink:#0e1320; --accent-soft:#232a4a;
+    --red:#f2726f; --red-bg:#33191c; --red-line:#5a2a2c;
+    --green:#54c78a; --green-bg:#152a20; --green-line:#264a37;
+    --amber:#e0a94b; --amber-bg:#2c2412; --amber-line:#4c3f1f;
+    --gray:#9aa4b3; --gray-bg:#1c2333; --gray-line:#333c4c;
+    --track:#232b3a; --target:#c4cde0;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.28);
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;
+    -webkit-font-smoothing:antialiased;margin:0;padding:0}
+  .wrap{max-width:940px;margin:0 auto;padding:26px 18px 80px}
+  .num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+  /* ---------- encabezado del documento ---------- */
+  .doc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:8px}
+  .doc-eyebrow{font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:29px;line-height:1.12;margin:.18em 0 .12em;letter-spacing:-.02em;text-wrap:balance;font-weight:800}
+  .doc-sub{color:var(--muted);font-size:14.5px;max-width:60ch}
+  .tgl{border:1px solid var(--border-strong);background:var(--surface);color:var(--ink-soft);
+    border-radius:8px;padding:7px 11px;font-size:12.5px;cursor:pointer;font-family:var(--sans);white-space:nowrap}
+  .tgl:hover{border-color:var(--accent)}
+  .tag-note{display:inline-block;margin-top:10px;font-size:12px;color:var(--muted);
+    background:var(--surface-2);border:1px dashed var(--border-strong);border-radius:7px;padding:5px 10px}
+
+  section{margin-top:26px}
+  .sec-label{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 10px 2px}
+
+  /* ---------- franja de salud de la zona ---------- */
+  .health{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);overflow:hidden}
+  .health-top{display:flex;align-items:center;gap:12px;padding:15px 18px 13px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .zpin{width:34px;height:34px;border-radius:9px;background:var(--accent);color:var(--accent-ink);
+    display:grid;place-items:center;font-size:17px;flex:none}
+  .zname{font-size:17px;font-weight:800;letter-spacing:-.01em}
+  .zmeta{font-size:12.5px;color:var(--muted)}
+  .zclock{margin-left:auto;font-size:12px;color:var(--muted);text-align:right}
+  .semaforo{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+  .sm{padding:13px 14px;text-align:left;border-right:1px solid var(--border);cursor:pointer;
+    background:var(--surface);transition:background .12s}
+  .sm:last-child{border-right:0}
+  .sm:hover{background:var(--surface-2)}
+  .sm-n{font-size:26px;font-weight:800;line-height:1;letter-spacing:-.02em}
+  .sm-l{font-size:12px;font-weight:600;margin-top:3px}
+  .sm-h{font-size:11px;color:var(--muted);margin-top:1px}
+  .sm.r .sm-n{color:var(--red)} .sm.g .sm-n{color:var(--green)}
+  .sm.a .sm-n{color:var(--amber)} .sm.d .sm-n{color:var(--gray)}
+  .sm .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+  .sm.r .dot{background:var(--red)} .sm.g .dot{background:var(--green)}
+  .sm.a .dot{background:var(--amber)} .sm.d .dot{background:var(--gray)}
+  .health-foot{display:flex;gap:10px;align-items:center;padding:11px 18px;background:var(--surface-2);
+    font-size:13px;color:var(--ink-soft);flex-wrap:wrap}
+  .health-foot b{color:var(--ink)}
+  .pipe-chip{display:inline-flex;align-items:center;gap:7px;font-size:12px;background:var(--surface);
+    border:1px solid var(--border);border-radius:20px;padding:4px 11px;color:var(--ink-soft)}
+  .pipe-chip .pc-dot{width:7px;height:7px;border-radius:50%}
+
+  /* ---------- tarjeta de producto ---------- */
+  .bucket{margin-top:20px}
+  .bucket>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;
+    padding:9px 4px;border-bottom:2px solid var(--border);user-select:none}
+  .bucket>summary::-webkit-details-marker{display:none}
+  .bk-chip{width:11px;height:11px;border-radius:3px;flex:none}
+  .bk-title{font-size:15px;font-weight:800;letter-spacing:-.01em}
+  .bk-count{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .bk-do{margin-left:auto;font-size:12px;color:var(--muted)}
+  .bucket>summary .caret{transition:transform .18s;color:var(--faint);font-size:12px}
+  .bucket[open]>summary .caret{transform:rotate(90deg)}
+  .cards{display:flex;flex-direction:column;gap:11px;padding-top:12px}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-left-width:4px;
+    border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 15px;position:relative}
+  .card.r{border-left-color:var(--red)} .card.g{border-left-color:var(--green)}
+  .card.a{border-left-color:var(--amber)} .card.d{border-left-color:var(--gray)}
+  .card-grid{display:grid;grid-template-columns:1fr 216px;gap:16px}
+  @media(max-width:620px){.card-grid{grid-template-columns:1fr}}
+
+  .p-name{font-size:15.5px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+  .p-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .chip{font-size:11px;padding:2px 8px;border-radius:20px;border:1px solid var(--border-strong);
+    color:var(--ink-soft);background:var(--surface-2);white-space:nowrap;font-weight:600}
+  .chip.codes{color:var(--accent);border-color:var(--accent-soft);background:var(--accent-soft)}
+  .chip.trend-up{color:var(--green)} .chip.trend-dn{color:var(--red)}
+
+  /* barra de cobertura — el instrumento principal */
+  .cov{margin-top:13px}
+  .cov-lead{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+  .cov-days{font-size:22px;font-weight:800;font-family:var(--mono);letter-spacing:-.02em;line-height:1}
+  .cov-unit{font-size:12px;color:var(--muted)}
+  .cov-vs{margin-left:auto;font-size:12px;color:var(--muted)}
+  .cov-track{position:relative;height:15px;background:var(--track);border-radius:8px;overflow:hidden}
+  .cov-fill{position:absolute;left:0;top:0;bottom:0;border-radius:8px;transition:width .7s cubic-bezier(.2,.7,.2,1)}
+  .card.r .cov-fill{background:var(--red)} .card.g .cov-fill{background:var(--green)}
+  .card.a .cov-fill{background:var(--amber)} .card.d .cov-fill{background:var(--gray)}
+  .cov-target{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--target);z-index:2}
+  .cov-target::after{content:"objetivo 1 día";position:absolute;top:-15px;left:50%;transform:translateX(-50%);
+    font-size:9.5px;color:var(--muted);white-space:nowrap;font-weight:600}
+  .cov-scale{display:flex;justify-content:space-between;font-size:9.5px;color:var(--faint);
+    font-variant-numeric:tabular-nums;margin-top:3px}
+
+  /* mini barras de 4 semanas */
+  .weeks{display:flex;align-items:flex-end;gap:4px;height:30px;margin-top:11px}
+  .wk{flex:1;background:var(--surface-sunk);border-radius:3px 3px 0 0;min-height:3px;position:relative}
+  .wk.on{background:var(--accent);opacity:.42}
+  .wk.on.last{opacity:.92}
+  .weeks-lbl{font-size:10px;color:var(--faint);margin-top:3px}
+
+  /* panel de acción (columna derecha) */
+  .act{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;
+    padding:12px;display:flex;flex-direction:column;gap:9px;height:100%}
+  .card.r .act{background:var(--red-bg);border-color:var(--red-line)}
+  .card.a .act{background:var(--amber-bg);border-color:var(--amber-line)}
+  .card.d .act{background:var(--gray-bg);border-color:var(--gray-line)}
+  .card.g .act{background:var(--green-bg);border-color:var(--green-line)}
+  .act-say{font-size:13.5px;font-weight:600;color:var(--ink);line-height:1.35}
+  .act-say .qty{font-family:var(--mono);font-weight:800}
+  .act-why{font-size:11.5px;color:var(--ink-soft);line-height:1.4}
+  .act-row{display:flex;gap:7px;margin-top:auto;flex-wrap:wrap}
+  .btn{border:0;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;
+    font-family:var(--sans);flex:1;min-width:92px;text-align:center}
+  .btn.primary{background:var(--accent);color:var(--accent-ink)}
+  .btn.ghost{background:transparent;border:1px solid var(--border-strong);color:var(--ink-soft)}
+  .btn.danger{background:var(--red);color:#fff}
+  .btn.warn{background:var(--amber);color:#fff}
+  .mini-stats{display:flex;gap:14px;margin-top:11px;flex-wrap:wrap}
+  .ms{font-size:12px;color:var(--muted)}
+  .ms b{color:var(--ink);font-family:var(--mono);font-weight:700}
+
+  /* callouts numerados de enseñanza */
+  .callout{position:relative;border:1px dashed var(--accent);background:var(--accent-soft);
+    border-radius:8px;padding:10px 12px 10px 34px;font-size:12.5px;color:var(--ink-soft);margin-top:9px}
+  .callout .k{position:absolute;left:9px;top:9px;width:18px;height:18px;border-radius:50%;
+    background:var(--accent);color:var(--accent-ink);font-size:11px;font-weight:800;display:grid;place-items:center}
+  .keydot{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;
+    background:var(--accent);color:var(--accent-ink);font-size:10.5px;font-weight:800;vertical-align:1px}
+
+  /* pipeline almacén→zona */
+  .pipe{display:flex;align-items:stretch;gap:0;background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-top:12px}
+  .pnode{flex:1;padding:15px 16px;border-right:1px solid var(--border)}
+  .pnode:last-child{border-right:0}
+  .pnode .pn-t{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+  .pnode .pn-lvl{font-size:19px;font-weight:800;margin-top:5px;font-family:var(--mono);letter-spacing:-.02em}
+  .pnode .pn-goal{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .pnode .pn-bar{height:8px;border-radius:5px;background:var(--track);margin-top:9px;overflow:hidden;position:relative}
+  .pnode .pn-bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+  .pnode.ok .pn-lvl{color:var(--green)} .pnode.ok .pn-bar>i{background:var(--green)}
+  .pnode.low .pn-lvl{color:var(--red)} .pnode.low .pn-bar>i{background:var(--red)}
+  .pnode.mid .pn-lvl{color:var(--amber)} .pnode.mid .pn-bar>i{background:var(--amber)}
+  .parrow{align-self:center;padding:0 4px;color:var(--faint);font-size:18px;flex:none}
+
+  /* panel lógica */
+  .logic{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px 18px}
+  .logic h3{margin:0 0 4px;font-size:15px;font-weight:800}
+  .logic p.intro{margin:0 0 14px;font-size:13px;color:var(--muted)}
+  .rule{display:grid;grid-template-columns:26px 1fr;gap:11px;padding:10px 0;border-top:1px solid var(--border)}
+  .rule:first-of-type{border-top:0}
+  .rule .rc{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;margin-top:1px}
+  .rule.r .rc{background:var(--red-bg)} .rule.g .rc{background:var(--green-bg)}
+  .rule.a .rc{background:var(--amber-bg)} .rule.d .rc{background:var(--gray-bg)}
+  .rule .rt{font-size:13.5px}
+  .rule .rt b{font-weight:800}
+  .rule .rf{font-size:12px;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+
+  .foot{margin-top:30px;font-size:12px;color:var(--faint);text-align:center;line-height:1.6}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+
+  <div class="doc-head">
+    <div>
+      <div class="doc-eyebrow">MOS · Rediseño del módulo Zonas</div>
+      <h1>Tablero de decisión de la zona</h1>
+      <div class="doc-sub">De "¿qué rotó?" a "¿qué hago?". Cada producto agrupado por su canónico
+        (todos sus códigos juntos), con una sola métrica que el admin entiende: <b>cuántos días le dura</b>.</div>
+      <div class="tag-note">Maqueta con datos de ejemplo · Zona 1 · Centro</div>
+    </div>
+    <button class="tgl" id="tgl">◑ Tema</button>
+  </div>
+
+  <!-- ░░ 1 · SALUD DE LA ZONA ░░ -->
+  <section>
+    <p class="sec-label">1 · Salud de la zona, de un vistazo</p>
+    <div class="health">
+      <div class="health-top">
+        <div class="zpin">🏬</div>
+        <div>
+          <div class="zname">Zona 1 · Centro</div>
+          <div class="zmeta">142 productos con stock · rotación de las últimas 4 semanas</div>
+        </div>
+        <div class="zclock">Actualizado hoy 8:10 a. m.<br>al día pico de venta</div>
+      </div>
+      <div class="semaforo">
+        <div class="sm r"><div class="sm-n">9</div><div class="sm-l"><span class="dot"></span>Pedir ya</div><div class="sm-h">te vas a quedar sin</div></div>
+        <div class="sm d"><div class="sm-n">9</div><div class="sm-l"><span class="dot"></span>Muertos</div><div class="sm-h">no rotan · plata parada</div></div>
+        <div class="sm a"><div class="sm-n">6</div><div class="sm-l"><span class="dot"></span>Te sobra</div><div class="sm-h">frena el pedido</div></div>
+        <div class="sm g"><div class="sm-n">118</div><div class="sm-l"><span class="dot"></span>En orden</div><div class="sm-h">no toques nada</div></div>
+      </div>
+      <div class="health-foot">
+        <span class="pipe-chip"><span class="pc-dot" style="background:var(--green)"></span> Almacén cubre <b>7</b> de los 9 pedidos</span>
+        <span class="pipe-chip"><span class="pc-dot" style="background:var(--red)"></span> <b>2</b> hay que comprar (almacén también corto)</span>
+        <span class="pipe-chip"><span class="pc-dot" style="background:var(--gray)"></span> <b>S/ 380</b> parados en muertos</span>
+      </div>
+    </div>
+    <div class="callout"><span class="k">i</span> Lo primero que ve el admin no es una lista de 142 productos: son
+      <b>4 números</b>. Solo dos piden acción (rojo y gris). El resto lo puede ignorar con tranquilidad.</div>
+  </section>
+
+  <!-- ░░ 2 · TARJETA EXPLICADA ░░ -->
+  <section>
+    <p class="sec-label">2 · Cómo se lee una tarjeta</p>
+    <div class="card r">
+      <div class="card-grid">
+        <div>
+          <div class="p-name">Anís Mc Collins x25 un</div>
+          <div class="p-tags">
+            <span class="chip codes">📦 3 códigos juntos</span>
+            <span class="chip">caja × 25</span>
+            <span class="chip trend-up">↑ vende más que el mes pasado</span>
+          </div>
+
+          <div class="cov">
+            <div class="cov-lead">
+              <span class="cov-days" style="color:var(--red)">0.4</span>
+              <span class="cov-unit">días te queda <span class="keydot">2</span></span>
+              <span class="cov-vs">vende ~8/día <span class="keydot">3</span></span>
+            </div>
+            <div class="cov-track">
+              <div class="cov-fill" style="width:20%"></div>
+              <div class="cov-target" style="left:50%"></div>
+            </div>
+            <div class="cov-scale"><span>0</span><span>1 día</span><span>2 días</span></div>
+          </div>
+
+          <div class="weeks">
+            <div class="wk on" style="height:45%"></div>
+            <div class="wk on" style="height:60%"></div>
+            <div class="wk on" style="height:72%"></div>
+            <div class="wk on last" style="height:100%"></div>
+          </div>
+          <div class="weeks-lbl">4 semanas atrás → esta semana <span class="keydot">4</span></div>
+
+          <div class="mini-stats">
+            <span class="ms">En tu zona: <b>3 u</b></span>
+            <span class="ms">En almacén: <b>40 u</b></span>
+            <span class="ms">Objetivo del día: <b>10 u</b></span>
+          </div>
+        </div>
+
+        <div class="act">
+          <div class="act-say">Pedí <span class="qty">7</span> a almacén <span class="keydot">5</span></div>
+          <div class="act-why">Te quedan ~<b>3 horas</b> de venta. Con 7 más cubrís el día pico. Almacén tiene 40, así que no hay que comprar nada.</div>
+          <div class="act-row">
+            <button class="btn primary">Pedir 7 →</button>
+            <button class="btn ghost">Otra cantidad</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout"><span class="k">1</span> <b>Agrupado por canónico:</b> los 3 códigos del anís (caja, media caja, unidad suelta) se suman en una sola tarjeta. Ya no ves 3 filas sueltas que te confunden.</div>
+    <div class="callout"><span class="k">2</span> <b>Días de cobertura</b> — la métrica nueva y la más importante: <i>lo que tengo ÷ lo que vendo al día</i>. "0.4 días" = se acaba antes de cerrar. La marca vertical es tu objetivo (zona = 1 día).</div>
+    <div class="callout"><span class="k">3</span> <b>Rotación en palabras:</b> "vende ~8/día", no "volumen 4sem = 224". La flecha dice si sube o baja.</div>
+    <div class="callout"><span class="k">4</span> <b>Tendencia de 4 semanas:</b> 4 barritas simples en vez de una curva abstracta. Se ve de un ojo si viene subiendo.</div>
+    <div class="callout"><span class="k">5</span> <b>La orden ya calculada:</b> cuánto pedir, a quién (almacén o compra), y por qué. Un solo botón.</div>
+  </section>
+
+  <!-- ░░ 3 · LISTA DE ACCIÓN ░░ -->
+  <section>
+    <p class="sec-label">3 · Tu lista de acción, ordenada por urgencia</p>
+
+    <details class="bucket" open>
+      <summary><span class="bk-chip" style="background:var(--red)"></span>
+        <span class="bk-title">Pedir ya</span><span class="bk-count">· 9 productos</span>
+        <span class="bk-do">te vas a quedar sin stock hoy</span><span class="caret">▶</span></summary>
+      <div class="cards">
+
+        <div class="card r">
+          <div class="card-grid">
+            <div>
+              <div class="p-name">Agua Cielo 1 L chupón</div>
+              <div class="p-tags"><span class="chip codes">📦 2 códigos</span><span class="chip">caja × 12</span><span class="chip trend-up">↑ subiendo</span></div>
+              <div class="cov">
+                <div class="cov-lead"><span class="cov-days" style="color:var(--red)">0.2</span><span class="cov-unit">días te queda</span><span class="cov-vs">vende ~26/día</span></div>
+                <div class="cov-track"><div class="cov-fill" style="width:10%"></div><div class="cov-target" style="left:50%"></div></div>
+                <div class="cov-scale"><span>0</span><span>1 día</span><span>2 días</span></div>
+              </div>
+              <div class="mini-stats"><span class="ms">En tu zona: <b>6 u</b></span><span class="ms">En almacén: <b>10 u</b></span><span class="ms">Objetivo: <b>31 u</b></span></div>
+            </div>
+            <div class="act">
+              <div class="act-say">Pedí <span class="qty">10</span> + comprá <span class="qty">15</span></div>
+              <div class="act-why"><b>Almacén también está corto</b> (solo 10, y debería tener una semana). Pedí lo que hay y el resto va a tu lista de compras del lunes.</div>
+              <div class="act-row"><button class="btn primary">Pedir 10 →</button><button class="btn ghost">+ Lista compras</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card r">
+          <div class="card-grid">
+            <div>
+              <div class="p-name">Gaseosa KR Cola 350 ml</div>
+              <div class="p-tags"><span class="chip codes">📦 3 códigos</span><span class="chip">caja × 30</span><span class="chip" style="color:var(--muted)">= estable</span></div>
+              <div class="cov">
+                <div class="cov-lead"><span class="cov-days" style="color:var(--red)">0.6</span><span class="cov-unit">días te queda</span><span class="cov-vs">vende ~15/día</span></div>
+                <div class="cov-track"><div class="cov-fill" style="width:30%"></div><div class="cov-target" style="left:50%"></div></div>
+                <div class="cov-scale"><span>0</span><span>1 día</span><span>2 días</span></div>
+              </div>
+              <div class="mini-stats"><span class="ms">En tu zona: <b>9 u</b></span><span class="ms">En almacén: <b>60 u</b></span><span class="ms">Objetivo: <b>18 u</b></span></div>
+            </div>
+            <div class="act">
+              <div class="act-say">Pedí <span class="qty">9</span> a almacén</div>
+              <div class="act-why">Media jornada de stock. Almacén tiene de sobra (60). Traslado gratis, sin comprar.</div>
+              <div class="act-row"><button class="btn primary">Pedir 9 →</button><button class="btn ghost">Otra cantidad</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="bucket" open>
+      <summary><span class="bk-chip" style="background:var(--gray)"></span>
+        <span class="bk-title">Muertos</span><span class="bk-count">· 9 productos</span>
+        <span class="bk-do">0 ventas en 4 semanas · plata parada</span><span class="caret">▶</span></summary>
+      <div class="cards">
+        <div class="card d">
+          <div class="card-grid">
+            <div>
+              <div class="p-name">Chupetes Globo Pop surtido</div>
+              <div class="p-tags"><span class="chip codes">📦 1 código</span><span class="chip trend-dn">∅ sin ventas</span></div>
+              <div class="cov">
+                <div class="cov-lead"><span class="cov-days" style="color:var(--gray)">28+</span><span class="cov-unit">días sin moverse</span><span class="cov-vs">vende 0/día</span></div>
+                <div class="cov-track"><div class="cov-fill" style="width:100%"></div></div>
+                <div class="cov-scale"><span>0 ventas en 4 semanas</span><span>S/ 45 parados</span></div>
+              </div>
+              <div class="mini-stats"><span class="ms">En tu zona: <b>30 u</b></span><span class="ms">Última venta: <b>hace 41 días</b></span></div>
+            </div>
+            <div class="act">
+              <div class="act-say">Sacalo de tu zona</div>
+              <div class="act-why">30 unidades ocupando góndola y S/ 45 congelados. No lo vuelvas a pedir.</div>
+              <div class="act-row"><button class="btn warn">Rematar / Promo</button><button class="btn danger">Devolver a almacén</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="bucket">
+      <summary><span class="bk-chip" style="background:var(--amber)"></span>
+        <span class="bk-title">Te sobra</span><span class="bk-count">· 6 productos</span>
+        <span class="bk-do">no pidas — tenés de más</span><span class="caret">▶</span></summary>
+      <div class="cards">
+        <div class="card a">
+          <div class="card-grid">
+            <div>
+              <div class="p-name">Galleta Soda San Jorge</div>
+              <div class="p-tags"><span class="chip codes">📦 2 códigos</span><span class="chip trend-dn">↓ bajando</span></div>
+              <div class="cov">
+                <div class="cov-lead"><span class="cov-days" style="color:var(--amber)">12</span><span class="cov-unit">días te queda</span><span class="cov-vs">vende ~2/día</span></div>
+                <div class="cov-track"><div class="cov-fill" style="width:100%"></div><div class="cov-target" style="left:8%"></div></div>
+                <div class="cov-scale"><span>0</span><span>objetivo 1 día</span><span>tope</span></div>
+              </div>
+              <div class="mini-stats"><span class="ms">En tu zona: <b>24 u</b></span><span class="ms">Objetivo: <b>2 u</b></span></div>
+            </div>
+            <div class="act">
+              <div class="act-say">No pidas nada</div>
+              <div class="act-why">Tenés 12 días de stock y la venta viene bajando. Deja que se consuma antes de reponer.</div>
+              <div class="act-row"><button class="btn ghost">Entendido</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="bucket">
+      <summary><span class="bk-chip" style="background:var(--green)"></span>
+        <span class="bk-title">En orden</span><span class="bk-count">· 118 productos</span>
+        <span class="bk-do">stock al día — no requieren nada</span><span class="caret">▶</span></summary>
+      <div class="cards">
+        <div class="card g">
+          <div class="card-grid">
+            <div>
+              <div class="p-name">Gaseosa Oro Amarilla 350 ml</div>
+              <div class="p-tags"><span class="chip codes">📦 2 códigos</span><span class="chip" style="color:var(--muted)">= estable</span></div>
+              <div class="cov">
+                <div class="cov-lead"><span class="cov-days" style="color:var(--green)">1.1</span><span class="cov-unit">días te queda</span><span class="cov-vs">vende ~12/día</span></div>
+                <div class="cov-track"><div class="cov-fill" style="width:55%"></div><div class="cov-target" style="left:50%"></div></div>
+                <div class="cov-scale"><span>0</span><span>1 día</span><span>2 días</span></div>
+              </div>
+              <div class="mini-stats"><span class="ms">En tu zona: <b>13 u</b></span><span class="ms">Objetivo: <b>12 u</b></span></div>
+            </div>
+            <div class="act">
+              <div class="act-say">Al día ✓</div>
+              <div class="act-why">Cobertura justa para el día. No te distraigas con esto.</div>
+              <div class="act-row"><button class="btn ghost">Ok</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ░░ 4 · PIPELINE ALMACÉN→ZONA ░░ -->
+  <section>
+    <p class="sec-label">4 · La cadena: almacén 1 semana → zona 1 día</p>
+    <div class="pipe">
+      <div class="pnode mid">
+        <div class="pn-t">Proveedor</div>
+        <div class="pn-lvl">Comprar</div>
+        <div class="pn-goal">solo cuando almacén baja de su semana</div>
+        <div class="pn-bar"><i style="width:100%"></i></div>
+      </div>
+      <div class="parrow">→</div>
+      <div class="pnode low">
+        <div class="pn-t">Almacén</div>
+        <div class="pn-lvl">3 días</div>
+        <div class="pn-goal">objetivo: 7 días (1 semana)</div>
+        <div class="pn-bar"><i style="width:43%"></i></div>
+      </div>
+      <div class="parrow">→</div>
+      <div class="pnode low">
+        <div class="pn-t">Tu zona</div>
+        <div class="pn-lvl">0.4 días</div>
+        <div class="pn-goal">objetivo: 1 día</div>
+        <div class="pn-bar"><i style="width:20%"></i></div>
+      </div>
+    </div>
+    <div class="callout"><span class="k">i</span> Cada nivel tiene <b>su propio objetivo en días</b> (tu regla): almacén guarda una semana, la zona un día.
+      Cuando la zona baja, se rellena desde almacén (gratis). Cuando <b>almacén</b> baja de su semana, recién ahí se compra al proveedor.
+      Hoy el sistema usa el mismo objetivo para los dos — por eso no avisa que almacén se está quedando corto.</div>
+  </section>
+
+  <!-- ░░ 5 · EL CEREBRO ░░ -->
+  <section>
+    <p class="sec-label">5 · Cómo decide el sistema (una regla por color)</p>
+    <div class="logic">
+      <h3>El semáforo no es un adorno: es una cuenta</h3>
+      <p class="intro">Todo sale de dos números que ya tenemos — <b>stock</b> y <b>rotación diaria</b> (ventas de 4 semanas ÷ días) — más tu objetivo por nivel.</p>
+      <div class="rule r"><div class="rc">🔴</div><div><div class="rt"><b>Pedir ya</b> — la cobertura no llega al objetivo del día.</div><div class="rf">días = stock ÷ venta_día  &lt; objetivo → pedir (objetivo − stock)</div></div></div>
+      <div class="rule g"><div class="rc">🟢</div><div><div class="rt"><b>En orden</b> — cobertura ≈ objetivo. No se muestra acción.</div><div class="rf">objetivo ≤ días ≤ objetivo × 2</div></div></div>
+      <div class="rule a"><div class="rc">🟡</div><div><div class="rt"><b>Te sobra</b> — mucho más de lo que necesita el día.</div><div class="rf">días &gt; objetivo × 3 → frenar pedido</div></div></div>
+      <div class="rule d"><div class="rc">⚫</div><div><div class="rt"><b>Muerto</b> — cero ventas en 4 semanas y hay stock parado.</div><div class="rf">venta_4sem = 0  y  stock &gt; 0 → liquidar / devolver</div></div></div>
+    </div>
+    <div class="callout"><span class="k">✓</span> <b>Qué se reusa de lo que ya existe:</b> el agrupado por canónico, la ventana de 4 semanas ISO, el stock por zona/almacén y el carrito de pedidos. <b>Qué se agrega:</b> la rotación diaria, los días de cobertura, el objetivo por nivel (almacén 7 / zona 1) y los 4 cuadrantes de acción.</div>
+  </section>
+
+  <div class="foot">Maqueta de propuesta · MOS · módulo Zonas<br>Datos de ejemplo — no es la data real de la zona</div>
+</div>
+
+<script>
+  (function(){
+    var t=document.getElementById('tgl');
+    t&&t.addEventListener('click',function(){
+      var r=document.documentElement;
+      var cur=r.getAttribute('data-theme');
+      var dark=cur?cur==='dark':matchMedia('(prefers-color-scheme:dark)').matches;
+      r.setAttribute('data-theme',dark?'light':'dark');
+    });
+  })();
+</script>

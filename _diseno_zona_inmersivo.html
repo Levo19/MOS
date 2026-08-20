@@ -1,0 +1,368 @@
+<title>Centro de Mando MOS</title>
+<style>
+  /* ══ Tema único COMPROMETIDO: centro de comando oscuro (Jarvis/Minority Report) ══ */
+  :root{
+    --void:#060a13; --void-2:#0a1120; --deep:#0c1424;
+    --glass:rgba(24,36,60,.55); --glass-2:rgba(30,44,72,.42); --glass-line:rgba(120,160,220,.16);
+    --ink:#eaf1ff; --ink-soft:#b3c2df; --muted:#8093b4; --faint:#5f7099;
+    --holo:#37d2ee; --holo-2:#5aa8ff; --holo-dim:rgba(55,210,238,.14);
+    --red:#ff5d63; --red-glow:rgba(255,93,99,.34); --red-dim:rgba(255,93,99,.12);
+    --green:#2fe0a6; --green-glow:rgba(47,224,166,.30); --green-dim:rgba(47,224,166,.11);
+    --amber:#ffbe3d; --amber-glow:rgba(255,190,61,.30); --amber-dim:rgba(255,190,61,.12);
+    --gray:#8a99b5; --gray-dim:rgba(138,153,181,.13);
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--sans);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(1200px 700px at 78% -8%, rgba(55,210,238,.10), transparent 60%),
+      radial-gradient(900px 600px at 8% 10%, rgba(90,168,255,.09), transparent 55%),
+      linear-gradient(180deg,var(--void-2),var(--void) 60%);
+    background-attachment:fixed;min-height:100vh}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.35;
+    background-image:linear-gradient(rgba(120,160,220,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(120,160,220,.045) 1px,transparent 1px);
+    background-size:44px 44px;mask-image:radial-gradient(ellipse at 50% 30%,#000,transparent 85%)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .wrap{max-width:1000px;margin:0 auto;padding:26px 18px 90px;position:relative}
+  .kick{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--holo);font-weight:700;
+    display:flex;align-items:center;gap:9px}
+  .kick::before{content:"";width:26px;height:1px;background:linear-gradient(90deg,var(--holo),transparent)}
+  h1{font-size:31px;line-height:1.1;margin:.26em 0 .1em;letter-spacing:-.02em;font-weight:800;text-wrap:balance}
+  h1 .glow{color:var(--holo);text-shadow:0 0 22px var(--holo-dim)}
+  .lead{color:var(--ink-soft);font-size:14.5px;max-width:62ch}
+  .scene-label{display:flex;align-items:center;gap:12px;margin:40px 0 16px}
+  .scene-label .sn{font-family:var(--mono);font-size:12px;color:var(--holo);border:1px solid var(--glass-line);
+    border-radius:7px;padding:3px 9px;background:var(--holo-dim)}
+  .scene-label .st{font-size:13px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .scene-label .hr{flex:1;height:1px;background:linear-gradient(90deg,var(--glass-line),transparent)}
+
+  /* ══ ESCENA 1 · SELECTOR DE PUESTO (netflix) ══ */
+  .stations{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:760px){.stations{grid-template-columns:1fr}}
+  .station{position:relative;border:1px solid var(--glass-line);border-radius:16px;padding:20px 18px 18px;
+    background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);cursor:pointer;overflow:hidden;
+    transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .28s,border-color .28s}
+  .station::after{content:"";position:absolute;inset:0;border-radius:16px;pointer-events:none;
+    background:radial-gradient(320px 150px at 50% -30%,var(--holo-dim),transparent 70%);opacity:.5}
+  .station:hover{transform:translateY(-6px);border-color:rgba(55,210,238,.5);
+    box-shadow:0 18px 50px rgba(0,0,0,.5),0 0 0 1px rgba(55,210,238,.25),0 0 40px rgba(55,210,238,.12)}
+  .st-ico{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-size:23px;
+    background:var(--glass-2);border:1px solid var(--glass-line)}
+  .st-role{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:14px;font-weight:700}
+  .st-name{font-size:22px;font-weight:800;letter-spacing:-.01em;margin-top:2px}
+  .st-count{font-size:12.5px;color:var(--ink-soft);margin-top:3px}
+  .st-vitals{display:flex;gap:8px;margin-top:15px;flex-wrap:wrap}
+  .vpill{font-size:11px;font-family:var(--mono);padding:4px 9px;border-radius:20px;border:1px solid var(--glass-line);
+    display:inline-flex;align-items:center;gap:6px;color:var(--ink-soft)}
+  .vpill .vd{width:7px;height:7px;border-radius:50%}
+  .vpill.crit{color:#ffd7d8;border-color:var(--red-glow);background:var(--red-dim)}
+  .vpill.crit .vd{background:var(--red);box-shadow:0 0 10px var(--red)}
+  .vpill.dead .vd{background:var(--gray)} .vpill.warn .vd{background:var(--amber)}
+  .st-enter{margin-top:17px;display:flex;align-items:center;justify-content:space-between;
+    border-top:1px solid var(--glass-line);padding-top:13px;color:var(--holo);font-weight:700;font-size:13px}
+  .st-enter .arw{transition:transform .25s} .station:hover .st-enter .arw{transform:translateX(5px)}
+  .pulse{position:absolute;top:16px;right:16px;width:9px;height:9px;border-radius:50%;background:var(--red);
+    box-shadow:0 0 0 0 var(--red-glow);animation:pl 2.2s infinite}
+  @keyframes pl{0%{box-shadow:0 0 0 0 var(--red-glow)}70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .anchor-note{margin-top:15px;font-size:12.5px;color:var(--muted);display:flex;gap:9px;align-items:flex-start}
+  .anchor-note b{color:var(--ink-soft)}
+
+  /* ══ ESCENA 2 · CUBIERTA DE MANDO ══ */
+  .deck{border:1px solid var(--glass-line);border-radius:18px;background:var(--glass);
+    backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);overflow:hidden}
+  .cmdbar{display:flex;align-items:center;gap:14px;padding:14px 17px;border-bottom:1px solid var(--glass-line);
+    background:linear-gradient(180deg,rgba(55,210,238,.06),transparent);flex-wrap:wrap}
+  .anchored{display:inline-flex;align-items:center;gap:9px;background:var(--glass-2);border:1px solid rgba(55,210,238,.4);
+    border-radius:11px;padding:8px 13px;cursor:pointer;box-shadow:0 0 22px rgba(55,210,238,.12)}
+  .anchored .ai{font-size:17px} .anchored .an{font-weight:800;letter-spacing:.02em}
+  .anchored .sw{font-size:10.5px;color:var(--holo);border:1px solid var(--glass-line);border-radius:6px;padding:1px 6px;margin-left:3px}
+  .live{margin-left:auto;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 9px var(--green);animation:bl 1.8s infinite}
+  @keyframes bl{50%{opacity:.35}}
+  .vitals{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--glass-line)}
+  .vit{padding:14px 16px;border-right:1px solid var(--glass-line)}
+  .vit:last-child{border-right:0}
+  .vit-n{font-size:27px;font-weight:800;font-family:var(--mono);line-height:1;letter-spacing:-.02em}
+  .vit-l{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:4px;font-weight:600}
+  .vit.r .vit-n{color:var(--red);text-shadow:0 0 20px var(--red-glow)}
+  .vit.d .vit-n{color:var(--gray)} .vit.a .vit-n{color:var(--amber)} .vit.g .vit-n{color:var(--green);text-shadow:0 0 20px var(--green-glow)}
+
+  .deck-body{padding:16px}
+  .hcard{display:flex;gap:16px;align-items:center;border:1px solid var(--glass-line);border-radius:14px;
+    padding:15px;background:var(--glass-2);margin-bottom:12px;position:relative;overflow:hidden;
+    transition:transform .24s cubic-bezier(.2,.8,.2,1),box-shadow .24s,border-color .24s}
+  .hcard::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px}
+  .hcard.r::before{background:var(--red);box-shadow:0 0 16px var(--red)}
+  .hcard.d::before{background:var(--gray)}
+  .hcard:hover{transform:translateY(-3px);border-color:rgba(55,210,238,.35);box-shadow:0 14px 40px rgba(0,0,0,.4)}
+  @media(max-width:620px){.hcard{flex-direction:column;align-items:stretch}}
+
+  /* medidor circular (el instrumento) */
+  .gauge{position:relative;width:96px;height:96px;flex:none}
+  .gauge svg{transform:rotate(-90deg);width:96px;height:96px}
+  .g-track{fill:none;stroke:rgba(120,160,220,.13);stroke-width:7}
+  .g-fill{fill:none;stroke-width:7;stroke-linecap:round}
+  .gauge.r .g-fill{stroke:var(--red);filter:drop-shadow(0 0 6px var(--red-glow))}
+  .gauge.d .g-fill{stroke:var(--gray)}
+  .g-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .g-center b{font-size:22px;font-family:var(--mono);font-weight:800;line-height:1}
+  .gauge.r .g-center b{color:var(--red)} .gauge.d .g-center b{color:var(--gray)}
+  .g-center span{font-size:10px;color:var(--muted);margin-top:2px}
+
+  .hc-body{flex:1;min-width:0}
+  .hc-name{font-size:16px;font-weight:700;letter-spacing:-.01em}
+  .hc-tags{display:flex;gap:7px;flex-wrap:wrap;margin-top:6px}
+  .htag{font-size:10.5px;padding:2px 9px;border-radius:20px;border:1px solid var(--glass-line);color:var(--ink-soft);background:var(--glass-2)}
+  .htag.holo{color:var(--holo);border-color:rgba(55,210,238,.3);background:var(--holo-dim)}
+  .htag.up{color:var(--green)}
+  .hc-line{font-size:12.5px;color:var(--muted);margin-top:9px}
+  .hc-line b{color:var(--ink)}
+  .hc-act{flex:none;width:210px;display:flex;flex-direction:column;gap:8px}
+  @media(max-width:620px){.hc-act{width:auto}}
+  .act-say{font-size:14px;font-weight:700}
+  .act-say .qty{font-family:var(--mono);font-weight:800;color:var(--holo)}
+  .act-why{font-size:11.5px;color:var(--ink-soft);line-height:1.4}
+  .hbtns{display:flex;gap:7px;margin-top:2px;flex-wrap:wrap}
+  .hb{border:0;border-radius:9px;padding:9px 13px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:var(--sans);flex:1;min-width:96px}
+  .hb.go{background:linear-gradient(180deg,var(--holo),#1fb6d6);color:#04222b;box-shadow:0 0 22px rgba(55,210,238,.28)}
+  .hb.ghost{background:var(--glass-2);border:1px solid var(--glass-line);color:var(--ink-soft)}
+  .hb.warn{background:linear-gradient(180deg,var(--amber),#e0a021);color:#3a2a04}
+  .hb.dang{background:linear-gradient(180deg,var(--red),#e04046);color:#fff}
+
+  /* tarjeta EXPANDIDA con las 4 herramientas */
+  .expanded{border-color:rgba(55,210,238,.4);box-shadow:0 0 0 1px rgba(55,210,238,.2),0 18px 50px rgba(0,0,0,.5)}
+  .tools{border:1px solid var(--glass-line);border-radius:14px;background:var(--glass-2);margin:2px 0 12px;overflow:hidden}
+  .tools-head{display:flex;align-items:center;gap:10px;padding:12px 15px;border-bottom:1px solid var(--glass-line);flex-wrap:wrap}
+  .tools-head .th-n{font-size:15px;font-weight:700}
+  .tools-head .th-c{font-size:11px;color:var(--holo);background:var(--holo-dim);border-radius:20px;padding:2px 9px;font-weight:700}
+  .tools-head .th-net{font-size:12px;color:var(--red);font-weight:700;margin-left:auto}
+  .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--glass-line)}
+  @media(max-width:620px){.tgrid{grid-template-columns:1fr}}
+  .tcell{background:var(--deep);padding:14px 15px}
+  .tc-tag{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:800;margin-bottom:11px}
+  .tc-tag .tn{width:19px;height:19px;border-radius:6px;background:var(--holo);color:#04222b;display:grid;place-items:center;font-size:11px}
+  .tc-tag small{margin-left:auto;font-weight:500;color:var(--muted);font-size:10.5px}
+  .arow{display:flex;justify-content:space-between;align-items:center;gap:9px;padding:7px 0;border-top:1px solid var(--glass-line)}
+  .arow:first-of-type{border-top:0}
+  .acod{font-family:var(--mono);font-size:12px}.acod small{display:block;font-family:var(--sans);font-size:10px;color:var(--muted)}
+  .acod small.dup{color:var(--amber)}
+  .stp{display:inline-flex;align-items:center;border:1px solid var(--glass-line);border-radius:8px;overflow:hidden;background:var(--glass)}
+  .stp b{padding:0 10px;font-family:var(--mono);font-size:13px;min-width:42px;text-align:center}.stp b.neg{color:var(--red)}
+  .stp i{width:26px;height:28px;display:grid;place-items:center;background:var(--glass-2);color:var(--ink-soft);font-style:normal;font-weight:700;cursor:pointer}
+  .anote{font-size:11px;color:var(--amber);margin-top:9px;line-height:1.4}
+  .why-mini{display:flex;gap:12px;align-items:center}
+  .wbars{display:flex;align-items:flex-end;gap:5px;height:48px;width:96px;flex:none}
+  .wbars i{flex:1;background:var(--faint);opacity:.4;border-radius:3px 3px 0 0;min-height:3px;position:relative}
+  .wbars i.pk{background:var(--holo);opacity:1;box-shadow:0 0 12px var(--holo-dim)}
+  .wbars i.pk::after{content:"5";position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:10px;font-family:var(--mono);color:var(--holo);font-weight:800}
+  .why-t{font-size:12px;color:var(--ink-soft);line-height:1.45}.why-t .fx{font-family:var(--mono);color:var(--holo);font-weight:700}
+  .kx{font-size:11.5px}
+  .kxr{display:grid;grid-template-columns:42px 1fr auto;gap:9px;align-items:center;padding:6px 0;border-top:1px solid var(--glass-line)}
+  .kxr:first-of-type{border-top:0}
+  .kxd{font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .kxw{display:flex;align-items:center;gap:6px;min-width:0}
+  .kxi{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font-size:10px;flex:none}
+  .kxi.o{background:var(--red-dim)}.kxi.i{background:var(--green-dim)}.kxi.a{background:var(--amber-dim)}
+  .kv{font-family:var(--mono);font-size:9px;padding:1px 5px;border-radius:9px}
+  .kv.z0{background:var(--red-dim);color:#ffb3b5}.kv.z1{background:var(--green-dim);color:#a4f0d4}
+  .kxn{font-family:var(--mono);font-weight:800;font-size:11.5px;text-align:right}
+  .kxn.neg{color:var(--red)}.kxn.pos{color:var(--green)}
+  .kx-ins{font-size:11px;color:var(--ink-soft);background:var(--holo-dim);border-radius:8px;padding:9px 11px;margin-top:9px;line-height:1.45}
+  .kx-ins b{color:#bfeefa}
+  .full{grid-column:1/-1}
+
+  /* DOCK de herramientas del puesto */
+  .dock{margin-top:16px}
+  .dock-lbl{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px;display:flex;gap:9px;align-items:center}
+  .dock-row{display:flex;gap:9px;flex-wrap:wrap}
+  .tool{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--glass-line);border-radius:12px;
+    padding:11px 14px;background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);cursor:pointer;
+    transition:transform .2s,border-color .2s,box-shadow .2s;font-size:13px;font-weight:600}
+  .tool:hover{transform:translateY(-3px);border-color:rgba(55,210,238,.4);box-shadow:0 10px 26px rgba(0,0,0,.4)}
+  .tool .te{font-size:16px}
+  .tool .bdg{font-family:var(--mono);font-size:11px;background:var(--red);color:#fff;border-radius:20px;padding:1px 7px;box-shadow:0 0 12px var(--red-glow)}
+  .tool .bdg.q{background:var(--holo);color:#04222b;box-shadow:0 0 12px var(--holo-dim)}
+  .removed{margin-top:13px;font-size:12px;color:var(--muted);background:var(--glass-2);border:1px dashed var(--glass-line);border-radius:11px;padding:12px 14px}
+  .removed b{color:var(--ink-soft)} .removed s{color:var(--faint)}
+
+  .foot{margin-top:34px;font-size:11.5px;color:var(--faint);text-align:center;line-height:1.7}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+  <div class="kick">MOS · Zonas · versión inmersiva</div>
+  <h1>Centro de <span class="glow">mando</span> de tu tienda</h1>
+  <p class="lead">No entras a una lista: entras a un <b>puesto</b>. Eliges dónde mandas hoy, te anclas,
+    y manejas cada producto como un objeto vivo — con su medidor, su acción y sus herramientas a la mano.</p>
+
+  <!-- ══════ ESCENA 1 ══════ -->
+  <div class="scene-label"><span class="sn">01</span><span class="st">Eliges tu puesto — como en Netflix</span><span class="hr"></span></div>
+  <div class="stations">
+    <div class="station">
+      <div class="st-ico">🏪</div>
+      <div class="st-role">Surte a las zonas</div>
+      <div class="st-name">Almacén</div>
+      <div class="st-count">672 productos en stock</div>
+      <div class="st-vitals">
+        <span class="vpill warn"><span class="vd"></span>13 mermas</span>
+        <span class="vpill"><span class="vd" style="background:var(--holo)"></span>por vencer 6</span>
+      </div>
+      <div class="st-enter">Entrar al puesto <span class="arw">→</span></div>
+    </div>
+
+    <div class="station">
+      <span class="pulse"></span>
+      <div class="st-ico">🏬</div>
+      <div class="st-role">Vende al público</div>
+      <div class="st-name">Zona 1</div>
+      <div class="st-count">822 productos con stock</div>
+      <div class="st-vitals">
+        <span class="vpill crit"><span class="vd"></span>223 por pedir</span>
+        <span class="vpill dead"><span class="vd"></span>177 muertos</span>
+      </div>
+      <div class="st-enter">Entrar al puesto <span class="arw">→</span></div>
+    </div>
+
+    <div class="station">
+      <span class="pulse" style="animation-delay:.6s"></span>
+      <div class="st-ico">🏬</div>
+      <div class="st-role">Vende al público</div>
+      <div class="st-name">Zona 2</div>
+      <div class="st-count">944 productos con stock</div>
+      <div class="st-vitals">
+        <span class="vpill crit"><span class="vd"></span>118 por pedir</span>
+        <span class="vpill dead"><span class="vd"></span>155 muertos</span>
+      </div>
+      <div class="st-enter">Entrar al puesto <span class="arw">→</span></div>
+    </div>
+  </div>
+  <div class="anchor-note">🧭 <div>Al entrar <b>te anclas a ese puesto</b>: todo lo que ves es de esa zona. Para cambiar,
+    tocas el nombre arriba a la izquierda y eliges otro — como cambiar de usuario. Nada de confundir la Zona 1 con la 2.</div></div>
+
+  <!-- ══════ ESCENA 2 ══════ -->
+  <div class="scene-label"><span class="sn">02</span><span class="st">Anclado en Zona 1 — la cubierta de mando</span><span class="hr"></span></div>
+  <div class="deck">
+    <div class="cmdbar">
+      <div class="anchored"><span class="ai">🏬</span><span class="an">ZONA 1</span><span class="sw">cambiar ▾</span></div>
+      <div class="live"><span class="dot"></span>en vivo · actualizado recién</div>
+    </div>
+    <div class="vitals">
+      <div class="vit r"><div class="vit-n">223</div><div class="vit-l">Pedir ya</div></div>
+      <div class="vit d"><div class="vit-n">177</div><div class="vit-l">Muertos</div></div>
+      <div class="vit a"><div class="vit-n">209</div><div class="vit-l">Te sobra</div></div>
+      <div class="vit g"><div class="vit-n">193</div><div class="vit-l">En orden</div></div>
+    </div>
+
+    <div class="deck-body">
+      <!-- CARD 1 -->
+      <div class="hcard r">
+        <div class="gauge r">
+          <svg viewBox="0 0 96 96"><circle class="g-track" cx="48" cy="48" r="42"/><circle class="g-fill" cx="48" cy="48" r="42" style="stroke-dasharray:46 218"/></svg>
+          <div class="g-center"><b>0.2</b><span>días</span></div>
+        </div>
+        <div class="hc-body">
+          <div class="hc-name">Nircissus Champiñones 425 g lata</div>
+          <div class="hc-tags"><span class="htag holo">📦 1 código</span><span class="htag up">↑ subiendo</span><span class="htag">⭐ estrella</span></div>
+          <div class="hc-line">Tienes <b>4</b> · tu día fuerte vende <b>~24</b> · en almacén hay <b>138</b></div>
+        </div>
+        <div class="hc-act">
+          <div class="act-say">Pide <span class="qty">25</span> a almacén</div>
+          <div class="act-why">Casi sin stock. Almacén cubre todo → traslado gratis.</div>
+          <div class="hbtns"><button class="hb go">Pedir 25 →</button><button class="hb ghost">Abrir</button></div>
+        </div>
+      </div>
+
+      <!-- CARD 2 · EXPANDIDA con herramientas -->
+      <div class="hcard r expanded">
+        <div class="gauge r">
+          <svg viewBox="0 0 96 96"><circle class="g-track" cx="48" cy="48" r="42"/><circle class="g-fill" cx="48" cy="48" r="42" style="stroke-dasharray:8 256"/></svg>
+          <div class="g-center"><b>−3</b><span>en zona</span></div>
+        </div>
+        <div class="hc-body">
+          <div class="hc-name">Herbi Filtrante Manzanilla 25 un caja</div>
+          <div class="hc-tags"><span class="htag holo">📦 3 códigos juntos</span><span class="htag">tocado ✦</span></div>
+          <div class="hc-line">Descuadra entre sus códigos. Ábrelo y verás sus 4 herramientas abajo 👇</div>
+        </div>
+        <div class="hc-act">
+          <div class="act-say">Pide <span class="qty">6</span> a almacén</div>
+          <div class="act-why">Almacén tiene 105. Pero primero conviene recontar sus códigos.</div>
+          <div class="hbtns"><button class="hb go">Pedir 6 →</button><button class="hb ghost">Cerrar</button></div>
+        </div>
+      </div>
+
+      <!-- panel de herramientas de la card expandida -->
+      <div class="tools">
+        <div class="tools-head"><span class="th-n">Herbi Manzanilla — sus herramientas</span><span class="th-c">3 códigos</span><span class="th-net">en tu zona: −3</span></div>
+        <div class="tgrid">
+          <!-- 1 ajustar -->
+          <div class="tcell">
+            <div class="tc-tag"><span class="tn">1</span> Ajustar / contar <small>canónico + equivalentes</small></div>
+            <div class="arow"><div class="acod">0742832821773 <small>canónico</small></div><div class="stp"><i>−</i><b class="neg">−11</b><i>+</i></div></div>
+            <div class="arow"><div class="acod">742832821773 <small class="dup">el mismo, sin el 0</small></div><div class="stp"><i>−</i><b>8</b><i>+</i></div></div>
+            <div class="arow"><div class="acod">7758909000319 <small>equivalente</small></div><div class="stp"><i>−</i><b>0</b><i>+</i></div></div>
+            <div class="anote">⚠ los dos primeros son el mismo código con y sin el 0 — por eso descuadran.</div>
+          </div>
+          <!-- 3 por qué -->
+          <div class="tcell">
+            <div class="tc-tag"><span class="tn">2</span> ¿Por qué 6? <small>el porqué, no a ciegas</small></div>
+            <div class="why-mini">
+              <div><div class="wbars"><i style="height:8%"></i><i style="height:8%"></i><i style="height:8%"></i><i class="pk" style="height:100%"></i></div></div>
+              <div class="why-t">Tu día más fuerte vendió <b style="color:var(--ink)">5</b>. Guardamos ese día + 20%: <span class="fx">5 × 1.2 = 6</span>.</div>
+            </div>
+          </div>
+          <!-- 4 historial (ancho completo) -->
+          <div class="tcell full">
+            <div class="tc-tag"><span class="tn">3</span> Historial · cómo se movió <small>datos reales de tu zona</small></div>
+            <div class="kx">
+              <div class="kxr"><div class="kxd">19 ago</div><div class="kxw"><span class="kxi o">🛒</span> Venta · Shadya <span class="kv z0">con 0</span></div><div class="kxn neg">−2 → −11</div></div>
+              <div class="kxr"><div class="kxd">18 ago</div><div class="kxw"><span class="kxi a">📋</span> Auditoría · Marcelo <span class="kv z1">sin 0</span></div><div class="kxn neg">−12 → 8</div></div>
+              <div class="kxr"><div class="kxd">15 ago</div><div class="kxw"><span class="kxi o">🛒</span> Venta · Shadya <span class="kv z0">con 0</span></div><div class="kxn neg">−5 → −8</div></div>
+              <div class="kxr"><div class="kxd">14 ago</div><div class="kxw"><span class="kxi i">🚚</span> Traslado de almacén · Mía <span class="kv z1">sin 0</span></div><div class="kxn pos">+1 → 20</div></div>
+              <div class="kxr"><div class="kxd">10 ago</div><div class="kxw"><span class="kxi a">📋</span> Auditoría carga · Mía <span class="kv z1">sin 0</span></div><div class="kxn pos">+18 → 18</div></div>
+            </div>
+            <div class="kx-ins">👁️ El historial destapa la causa: <b>las ventas caen en el código «con 0»</b> (baja a −11) y
+              <b>las reposiciones entran al «sin 0»</b> (sube a +8). Es el mismo producto → hay que <b>unificar el código de barras</b>.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CARD 3 · muerto -->
+      <div class="hcard d">
+        <div class="gauge d">
+          <svg viewBox="0 0 96 96"><circle class="g-track" cx="48" cy="48" r="42"/><circle class="g-fill" cx="48" cy="48" r="42" style="stroke-dasharray:0 264"/></svg>
+          <div class="g-center"><b>0</b><span>rota</span></div>
+        </div>
+        <div class="hc-body">
+          <div class="hc-name">Zuko Refresco Maracuyá 15 g</div>
+          <div class="hc-tags"><span class="htag">🐕 no rota</span><span class="htag">4 semanas quieto</span></div>
+          <div class="hc-line">Tienes <b>83</b> paradas · <b>0</b> ventas en 4 semanas · plata congelada</div>
+        </div>
+        <div class="hc-act">
+          <div class="act-say">Sácalo de tu zona</div>
+          <div class="act-why">Ocupa góndola sin venderse hace más de un mes.</div>
+          <div class="hbtns"><button class="hb warn">Rematar</button><button class="hb dang">Devolver</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DOCK -->
+  <div class="dock">
+    <div class="dock-lbl">🛠 Tu dock en Zona 1 <span style="color:var(--faint);font-weight:500;text-transform:none;letter-spacing:0">— solo lo que usas</span></div>
+    <div class="dock-row">
+      <div class="tool"><span class="te">🛒</span> Pickup</div>
+      <div class="tool"><span class="te">🎯</span> Considerados <span class="bdg q">5</span></div>
+      <div class="tool"><span class="te">🚚</span> Guías <span class="bdg">10</span></div>
+      <div class="tool"><span class="te">🏠</span> Abrir Almacén</div>
+      <div class="tool"><span class="te">📅</span> Por vencer <span class="bdg">1</span></div>
+      <div class="tool"><span class="te">⚠</span> Log de errores</div>
+    </div>
+    <div class="removed">🧹 <b>Se van a la basura</b> (código incluido) los botones que no usas —
+      en Zona: <s>Matriz BCG</s> · <s>Sugerencias</s> · <s>Lista compras</s> · el resto de relleno.
+      En el puesto <b>Almacén</b> el dock cambia a: 🛒 Pickup · 🎯 Considerados · 🎯 Sorpresas · ♻️ Mermas · 📅 Por vencer · ⚠ Log — y se borran <s>Matriz BCG</s>, <s>Sugerencias</s>, <s>Lista compras</s>, <s>Abrir Almacén</s>.</div>
+  </div>
+
+  <div class="foot">MOS · módulo Zonas · concepto inmersivo con datos reales de ZONA-01<br>
+    Un solo tema oscuro a propósito — es un centro de comando. En tablet de tienda se puede ofrecer también modo claro.</div>
+</div>
