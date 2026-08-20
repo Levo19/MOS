@@ -50163,13 +50163,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const _picN = picos.map(_zonaNum);
     const _picoFuerte = _picN.length ? Math.max(0, ..._picN) : 0;
     const _rotDia = _picoFuerte > 0 ? _picoFuerte : (_zonaNum(p.volumen) > 0 ? _zonaNum(p.volumen) / 28 : 0);
-    const _diasCob = _rotDia > 0 ? (stockRaw / _rotDia) : (stockRaw > 0 ? Infinity : 0);
+    const _stockEff = Math.max(0, stockRaw);   // [908] stock NEGATIVO = error de conteo → efectivo 0 para decidir (la ⚠ avisa que hay que contar)
+    const _diasCob = _rotDia > 0 ? (_stockEff / _rotDia) : (_stockEff > 0 ? Infinity : 0);
     const _cuad = _zonaCuadDe(p);
     const _cuadIco = _CUAD_META[_cuad][0], _cuadLbl = _CUAD_META[_cuad][1];
     // [892] Objetivo por NIVEL (regla del dueño): almacén = 1 semana (7 días), zona = 1 día.
     const _objDias = esAlmacenCard ? 7 : 1;
     const _diasTxt = (_cuad === 'muerto') ? 'no rota'
-      : negativo ? ('en ' + _esc(fStock))
       : (_diasCob === Infinity ? 'de sobra'
       : (_rotDia <= 0 ? '—'
       : (_diasCob >= 10 ? Math.round(_diasCob) + ' días' : (_diasCob.toFixed(1).replace(/\.0$/, '')) + ' días')));
@@ -50178,14 +50178,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ? (_zonaNum(p.volumen) > 0 ? ('despacha ~' + _zonaFmtNumRaw(Math.round(_zonaNum(p.volumen) / 4), p.esGranel) + '/sem') : 'sin despacho en 4 sem')
       : (_rotDia > 0 ? ('vende ~' + _zonaFmtNumRaw(_picoFuerte > 0 ? _picoFuerte : _rotDia, p.esGranel) + '/día fuerte') : 'sin venta en 4 sem');
     // Medidor circular (instrumento): anillo = cobertura respecto al objetivo del nivel. Centro = días.
-    const _ringFrac = negativo ? 0 : (_rotDia <= 0 ? (stockRaw > 0 ? 1 : 0) : Math.max(0, Math.min(1, _diasCob / _objDias)));
+    const _ringFrac = (_rotDia <= 0 ? (_stockEff > 0 ? 1 : 0) : Math.max(0, Math.min(1, _diasCob / _objDias)));
     const _dash = Math.round(_ringFrac * 113);
-    const _ringNum = negativo ? _esc(fStock)
-      : (_cuad === 'muerto' ? '0'
+    const _ringNum = (_cuad === 'muerto') ? '0'
       : (_diasCob === Infinity ? '∞'
       : (_rotDia <= 0 ? '—'
-      : (_diasCob >= 10 ? String(Math.round(_diasCob)) : _diasCob.toFixed(1).replace(/\.0$/, '')))));
-    const _ringUni = (negativo || _cuad === 'muerto' || _rotDia <= 0 || _diasCob === Infinity) ? '' : 'd';
+      : (_diasCob >= 10 ? String(Math.round(_diasCob)) : _diasCob.toFixed(1).replace(/\.0$/, ''))));
+    const _ringUni = (_cuad === 'muerto' || _rotDia <= 0 || _diasCob === Infinity) ? '' : 'd';
     const _gaugeHtml = `<div class="zona-gauge">
         <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="zg-track" cx="22" cy="22" r="18"></circle><circle class="zg-fill" cx="22" cy="22" r="18" style="stroke-dasharray:${_dash} 113"></circle></svg>
         <span class="zg-orbit" aria-hidden="true"></span>
@@ -50210,11 +50209,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const _duraTxt = (_cuad === 'muerto') ? 'No rota hace 4 semanas'
       : (negativo ? ('En negativo · ' + _esc(fStock))
       : (_rotDia <= 0 ? '—' : ('Dura ' + _diasTxt)));
-    const _covPctBar = negativo ? 4 : (_cuad === 'muerto' ? 100 : (_rotDia <= 0 ? (stockRaw > 0 ? 100 : 0) : Math.max(3, Math.min(100, Math.round(_diasCob / _objDias * 100)))));
+    const _covPctBar = (_cuad === 'muerto') ? 100 : (_rotDia <= 0 ? (_stockEff > 0 ? 100 : 0) : Math.max(0, Math.min(100, Math.round(_diasCob / _objDias * 100))));
     // [906] Foto del producto (reemplaza el círculo) + protagonista = barra "Dura".
     const _foto = _zonaFotoUrl(p);
-    const _duraBig = _ringNum;   // número: días / stock neg / ∞ / 0
-    const _duraCap = (_cuad === 'muerto') ? 'sin rotar' : (negativo ? 'en negativo' : (_rotDia <= 0 ? 'sin dato' : 'te dura'));
+    const _duraBig = _ringNum;   // días (el negativo cuenta como 0 stock efectivo)
+    const _duraCap = (_cuad === 'muerto') ? 'sin rotar' : (negativo ? 'sin stock · ⚠ contar' : (_rotDia <= 0 ? 'sin dato' : 'te dura'));
     const _codChips = _zonaCodChipsHtml(sku, p);
     return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
       <div class="zona-card-hero zona-cov-${_cuad}">
