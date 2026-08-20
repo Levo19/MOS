@@ -51119,7 +51119,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     } finally { S._zonaPrintBusy = false; }
   }
-  function zonaImprimirLista()  { return _zonaImprimirFlow('lista_compras', 'Lista compras'); }
+  // [894] zonaImprimirLista ELIMINADA (botón "🖨️ Lista compras" de barra retirado; _zonaImprimirFlow sigue vivo para el ticket del día).
 
   // ════════════ [P1d] VISTA PICKUP ACUMULADO POR ZONA + HISTORIAL POR DÍA ════════════
   // Lee wh.zona_pickup_detalle (100% Supabase) → la lista única de la zona con, por producto,
@@ -51823,86 +51823,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return _zonaImprimirFlow('ticket_diario', label, fecha);
   }
 
-  // ══ [RIZ · CAPA 5] PANEL DE SUGERENCIAS CON IA REAL (Edge /functions/ia) ══
-  // Arma un PROMPT con los NÚMEROS DETERMINÍSTICOS de cada producto (la IA NO inventa cantidades:
-  // solo redacta en lenguaje natural). Si la IA falla, deja el texto local determinista de fallback.
-  // Estructura el prompt para que devuelva JSON {urgente:[],ajustar:[],cero:[]} de strings cortos.
-  function _zonaPromptSugerencias() {
-    // Tomamos hasta 30 productos relevantes (brecha>0 o rotación cero) para no inflar tokens.
-    const arr = S.zonaProductos.filter(p => {
-      const t = String(p.tendencia || '').toLowerCase();
-      return _zonaNum(p.brecha) > 0 || t === 'nula' || t === 'cero';
-    }).slice(0, 30);
-    const datos = arr.map(p => {
-      const sku = String(p.skuBase || p.idProducto || '');
-      const stock = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
-      const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
-      const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - Math.max(0, stock));
-      const alm = _zonaNum(p.stockAlmacen != null ? p.stockAlmacen : p.almacen);
-      return {
-        producto: String(p.descripcion || p.nombre || sku),
-        stockZona: stock, esperada: esp, brecha,
-        stockAlmacen: alm,
-        pedirAlmacen: Math.min(brecha, Math.max(0, alm)),
-        externo: Math.max(0, brecha - Math.max(0, alm)),
-        tendencia: String(p.tendencia || 'est'),
-        bcg: _zonaBCGClase(p)
-      };
-    });
-    return { arr, datos };
-  }
-  async function zonaAbrirSugerencias() {
-    const body = $('zonaSugBody');
-    const ztit = $('zonaSugZona');
-    if (ztit) { const zo = S.zonaList.find(x => (x.idZona || x.id || x.nombre) === S.zonaActual); ztit.textContent = (zo && zo.nombre) || S.zonaActual || 'Zona'; }
-    openModal('modalZonaSug');
-    _zonaSfx('pop'); _zonaVibrar(20);
-    // [MEJORA 6] Estado "pensando" claro (la IA del Edge tarda 2-4s, es normal).
-    if (body) body.innerHTML = `<div class="zona-thinking">
-        <span class="zona-think-ico">💡</span>
-        <span class="zona-think-txt">Pensando</span>
-        <span class="zona-think-dots"><i></i><i></i><i></i></span>
-      </div>
-      <div class="text-center text-xs text-slate-600 mb-3">La IA analiza tu zona (puede tardar unos segundos)…</div>
-      <div class="skel h-16 rounded-lg mb-2"></div><div class="skel h-16 rounded-lg"></div>`;
-    const { datos } = _zonaPromptSugerencias();
-    // Fallback local determinista (si IA falla o no hay productos).
-    const renderLocal = () => {
-      if (!body) return;
-      if (!datos.length) { body.innerHTML = '<div class="text-center py-8 text-emerald-400 text-sm">✓ Todo al día. Sin sugerencias.</div>'; return; }
-      const urg = datos.filter(d => d.brecha > 0).map(d => `• ${_esc(d.producto)}: faltan ${d.brecha}${d.pedirAlmacen > 0 ? ` — pide ${d.pedirAlmacen} a almacén` : ''}${d.externo > 0 ? `, ${d.externo} a lista del lunes` : ''}.`);
-      const cero = datos.filter(d => d.bcg === 'perro').map(d => `• ${_esc(d.producto)}: sin rotación — promociona / góndola / remate.`);
-      body.innerHTML =
-        (urg.length ? `<div class="zona-sug-grp"><div class="zona-sug-h">🔴 URGENTE (${urg.length})</div>${urg.join('<br>')}</div>` : '') +
-        (cero.length ? `<div class="zona-sug-grp"><div class="zona-sug-h">⚫ ROTACIÓN CERO (${cero.length})</div>${cero.join('<br>')}</div>` : '');
-    };
-    if (!datos.length) { renderLocal(); return; }
-    // IA real: la IA SOLO redacta; los números van crudos en el prompt.
-    const system = 'Eres un asistente de reposición de tienda. Recibes datos NUMÉRICOS exactos por producto (stock en zona, stock objetivo "esperada", brecha, stock de almacén, cuánto pedir a almacén, cuánto comprar externo, tendencia, clasificación BCG). NUNCA inventes ni cambies cantidades: usa EXACTAMENTE los números dados. Redacta en español neutral (tuteo), conciso y accionable. Responde SOLO un JSON válido con la forma {"urgente":["..."],"ajustar":["..."],"cero":["..."]} donde cada string es una línea corta para el admin. urgente=productos con brecha>0; ajustar=tendencia decreciente que conviene reducir; cero=rotación nula (BCG perro). No agregues texto fuera del JSON.';
-    const userMsg = 'Datos de la zona (JSON):\n' + JSON.stringify(datos) + '\n\nGenera las sugerencias.';
-    try {
-      const d = await API.zona.ia({
-        system,
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 2048,
-        messages: [{ role: 'user', content: userMsg }]
-      });
-      const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
-      let parsed = null;
-      try { parsed = JSON.parse(txt.replace(/^```json\s*/i, '').replace(/```\s*$/,'').trim()); } catch (_) { parsed = null; }
-      if (!parsed || typeof parsed !== 'object') throw new Error('respuesta IA no parseable');
-      if (!body) return;
-      const grp = (titulo, cls, arr2) => (Array.isArray(arr2) && arr2.length)
-        ? `<div class="zona-sug-grp"><div class="zona-sug-h">${titulo}</div>${arr2.map(s => '• ' + _esc(String(s))).join('<br>')}</div>` : '';
-      const html = grp('🔴 URGENTE', '', parsed.urgente) + grp('🟡 AJUSTAR', '', parsed.ajustar) + grp('⚫ ROTACIÓN CERO', '', parsed.cero);
-      body.innerHTML = html || '<div class="text-center py-8 text-emerald-400 text-sm">✓ Sin sugerencias.</div>';
-      _zonaSfx('pop');
-    } catch (e) {
-      try { console.warn('[RIZ] IA sugerencias falló, uso fallback local:', e && (e.message || e)); } catch (_) {}
-      renderLocal();
-    }
-  }
-  function zonaCerrarSugerencias() { closeModal('modalZonaSug'); }
+  // [894] Panel de Sugerencias IA ELIMINADO por completo (_zonaPromptSugerencias + zonaAbrirSugerencias
+  //   + zonaCerrarSugerencias + modal): el botón "💡 Sugerencias" se retiró en 890 por no usarse.
 
   // ── Historial de lotes (FIFO) ────────────────────────────────────────────
   async function zonaVerLotes(sku) {
@@ -52356,36 +52278,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   function zonaCerrarKardex() { closeModal('modalZonaKardex'); }
 
-  // ── Matriz BCG (modal 2×2 con burbujas) ──────────────────────────────────
-  function zonaAbrirBCG() {
-    const z = $('zonaBCGZona');
-    if (z) { const zo = S.zonaList.find(x => (x.idZona || x.id || x.nombre) === S.zonaActual); z.textContent = (zo && zo.nombre) || S.zonaActual || 'Zona'; }
-    const buckets = { estrella: [], vaca: [], interro: [], perro: [] };
-    const maxVol = Math.max(1, ...S.zonaProductos.map(p => _zonaNum(p.rotacion)));
-    S.zonaProductos.forEach(p => {
-      const cls = _zonaBCGClase(p);
-      if (buckets[cls]) buckets[cls].push(p);
-    });
-    const pintar = (id, cls, list) => {
-      const el = $(id);
-      if (!el) return;
-      if (!list.length) { el.innerHTML = '<span class="text-xs text-slate-600">—</span>'; return; }
-      el.innerHTML = list.map((p, i) => {
-        const sku = String(p.skuBase || p.idProducto || '');
-        const vol = _zonaNum(p.rotacion);
-        const size = Math.max(22, Math.round(22 + (vol / maxVol) * 24));   // 22..46px
-        const nm = (p.descripcion || p.nombre || sku);
-        return `<span class="zona-bubble bub-${cls}" style="min-width:${size}px;height:${size}px;animation-delay:${i*70}ms" title="${_esc(nm)} · rot ${vol}" onclick="MOS.zonaBCGTapProducto('${_zonaEsc(sku)}')">${_esc(String(nm).slice(0,8))}</span>`;
-      }).join('');
-    };
-    pintar('bcgEstrella','estrella', buckets.estrella);
-    pintar('bcgVaca',    'vaca',     buckets.vaca);
-    pintar('bcgInterro', 'interro',  buckets.interro);
-    pintar('bcgPerro',   'perro',    buckets.perro);
-    openModal('modalZonaBCG');
-    _zonaSfx('pop'); _zonaVibrar(20);
-  }
-  function zonaCerrarBCG() { closeModal('modalZonaBCG'); }
+  // [894] Matriz BCG (modal 2×2) ELIMINADA — botón retirado en 890, sin callers.
   // [RIZ · CAPA 5] Acción BCG-perro REAL (Promocionar / Mover a góndola / Rematar). Es una DECISIÓN del admin
   // sobre stock muerto: NO toca inventario ni caja (el diseño RIZ informa, no muta). Persiste en
   // me.zona_accion_perro (auditable, idempotente por localId). Optimista: resalta el botón al instante +
@@ -52439,24 +52332,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   // Compat: por si quedó algún onclick viejo a zonaPlaceholder (ya no se genera) → no-op informativo.
   function zonaPlaceholder(nombre) { _zonaSfx('pop'); toast(String(nombre || 'Acción'), 'info'); }
-  function zonaBCGTapProducto(sku) {
-    _zonaSfx('tick');
-    zonaCerrarBCG();
-    const card = $('zcard-' + sku);
-    if (card) { card.scrollIntoView({ behavior:'smooth', block:'center' }); card.classList.remove('pulse-ok'); void card.offsetWidth; card.classList.add('pulse-ok'); }
-  }
-  // Tap en un cuadrante → filtra el módulo a esa tendencia aproximada.
-  function zonaBCGFiltrarCuadrante(cuad) {
-    const f = S._zonaFiltros;
-    f.tend = {};
-    if (cuad === 'estrella' || cuad === 'interro') f.tend.asc = true;
-    else if (cuad === 'perro') f.tend.nula = true;
-    else if (cuad === 'vaca')  f.tend.est = true;
-    document.querySelectorAll('.zona-chip-f[data-tend]').forEach(el => el.classList.toggle('active', !!f.tend[el.dataset.tend]));
-    zonaCerrarBCG();
-    renderZona();
-    _zonaSfx('tick');
-  }
+  // [894] zonaBCGTapProducto / zonaBCGFiltrarCuadrante ELIMINADAS (vivían con la Matriz BCG retirada).
 
   // ══════════════════════════════════════════════════════════════════════
   // [RIZ · TRASLADO VERIFICADO] GUÍAS — FRONTEND (solo MOSTRAR · escaneo de recepción vive en ME)
@@ -54821,9 +54697,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [ASEGURAR DATA] Log de errores (master) + historial kardex zona/almacén — read-only
     zonaAbrirLogErrores, zonaCerrarLogErrores, zonaLogVerHistorial, zonaLogFiltrar, zonaLogCambiarTab, zonaLogLeyenda, zonaCerrarLogLeyenda,
     zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex, zonaKardexTab,
-    zonaAbrirBCG, zonaCerrarBCG, zonaBCGTapProducto, zonaBCGFiltrarCuadrante, zonaPlaceholder, zonaAccionPerro,
-    // [RIZ Capa 5] impresión 80mm + panel IA + lista compras
-    zonaImprimirLista, zonaAbrirSugerencias, zonaCerrarSugerencias,
+    zonaPlaceholder, zonaAccionPerro,
     zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar, zonaPickupTab,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
