@@ -50266,6 +50266,107 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (_) {}
     return '';
   }
+  // ══ [907] KARDEX GENERAL — overlay con el stock de TODOS los productos (canónico → códigos),
+  //   con kardex por código y exportación (Excel/XML/PDF). Usa S.zonaProductos (ya viene agrupado). ══
+  function zonaAbrirKardexGeneral() {
+    const box = $('zonaKgOvl'); if (!box) return;
+    S._zonaKgQ = ''; const inp = $('zonaKgSearch'); if (inp) inp.value = '';
+    box.classList.remove('hidden'); requestAnimationFrame(() => box.classList.add('open'));
+    _zonaKgRender();
+    try { _zonaSfx('pop'); _zonaVibrar(15); } catch (_) {}
+  }
+  function zonaCerrarKardexGeneral() {
+    const box = $('zonaKgOvl'); if (!box) return;
+    box.classList.remove('open'); setTimeout(() => { const b = $('zonaKgOvl'); if (b && !b.classList.contains('open')) b.classList.add('hidden'); }, 220);
+  }
+  function _zonaKgProductos() {
+    const q = String(S._zonaKgQ || '').toLowerCase().trim();
+    let arr = (S.zonaProductos || []).slice();
+    if (q) arr = arr.filter(p => String(p.descripcion || p.nombre || '').toLowerCase().indexOf(q) >= 0 || (Array.isArray(p.codigos) && p.codigos.some(c => String(c.codBarra || '').indexOf(q) >= 0)));
+    arr.sort((a, b) => String(a.descripcion || a.nombre || '').localeCompare(String(b.descripcion || b.nombre || '')));
+    return arr;
+  }
+  function _zonaKgRender() {
+    const body = $('zonaKgBody'); if (!body) return;
+    const arr = _zonaKgProductos();
+    const sub = $('zonaKgSub'); if (sub) sub.textContent = arr.length + ' productos';
+    if (!arr.length) { body.innerHTML = '<div class="kg-empty">Sin productos.</div>'; return; }
+    body.innerHTML = arr.map(p => {
+      const sku = String(p.skuBase || p.idProducto || ''); const safe = _esc(sku);
+      const cods = Array.isArray(p.codigos) ? p.codigos : [];
+      const tot = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
+      const neg = tot < 0 || cods.some(c => _zonaNum(c.stock) < 0);
+      const nm = _esc(p.descripcion || p.nombre || sku);
+      const rows = cods.map(c => {
+        const cb = String(c.codBarra != null ? c.codBarra : (c.codigoBarra || '')); const cbSafe = _zonaEsc(cb);
+        const st = _zonaNum(c.stock); const nn = st < 0;
+        return `<div class="kg-cod" onclick="MOS.zonaKgVerCodigo('${cbSafe}','${safe}')">
+          <span class="kg-cod-cb">${_esc(cb)} <i>${c.esEquivalente ? '≈ equiv' : 'canónico'}</i></span>
+          <span class="kg-cod-st ${nn ? 'neg' : ''}">${nn ? '⚠ ' : ''}${_esc(_zonaFmtNumRaw(st, p.esGranel))}</span>
+          <span class="kg-cod-go">ver kardex →</span></div>`;
+      }).join('');
+      return `<div class="kg-row${neg ? ' has-neg' : ''}">
+        <div class="kg-head" onclick="MOS.zonaKgToggle('${safe}')">
+          <span class="kg-caret" id="kgC-${safe}">▸</span>
+          <span class="kg-nm">${nm}</span>
+          ${neg ? '<span class="kg-negbadge" title="Tiene un código en negativo">⚠</span>' : ''}
+          <span class="kg-tot ${tot < 0 ? 'neg' : ''}">${_esc(_zonaFmtNumRaw(tot, p.esGranel))}</span>
+          <span class="kg-codn">${cods.length} cód</span>
+        </div>
+        <div class="kg-cods" id="kgB-${safe}" style="display:none">${rows || '<div class="kg-cod-empty">Sin códigos.</div>'}</div>
+      </div>`;
+    }).join('');
+  }
+  function zonaKgToggle(sku) { const b = $('kgB-' + _zonaSkuId(sku)), c = $('kgC-' + _zonaSkuId(sku)); if (!b) return; const open = b.style.display !== 'none'; b.style.display = open ? 'none' : ''; if (c) c.textContent = open ? '▸' : '▾'; try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {} }
+  function zonaKgBuscar(v) { S._zonaKgQ = v || ''; _zonaKgRender(); }
+  function zonaKgVerCodigo(cb, sku) {
+    const p = (S.zonaProductos || []).find(x => String(x.skuBase || x.idProducto) === sku);
+    const nm = (p && (p.descripcion || p.nombre)) || cb;
+    const esAlm = _esZonaAlmacen({ idZona: S.zonaActual, nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
+    _zonaVerKardexCore(esAlm ? 'ALMACEN' : 'ZONA', esAlm ? { codBarra: cb, _nombre: nm } : { codBarra: cb, zona: S.zonaActual, _nombre: nm });
+  }
+  // Exportación: aplana producto→código→stock y baja CSV(Excel) / XML / PDF(imprimir).
+  function _zonaKgFilas() {
+    const out = [];
+    _zonaKgProductos().forEach(p => {
+      const nm = String(p.descripcion || p.nombre || p.skuBase || '');
+      const cods = Array.isArray(p.codigos) ? p.codigos : [];
+      if (!cods.length) { out.push({ producto: nm, codigo: '', tipo: '', stock: _zonaNum(p.stockZona != null ? p.stockZona : p.stock) }); }
+      cods.forEach(c => out.push({ producto: nm, codigo: String(c.codBarra || ''), tipo: c.esEquivalente ? 'equivalente' : 'canónico', stock: _zonaNum(c.stock) }));
+    });
+    return out;
+  }
+  function zonaKgExport(fmt) {
+    const filas = _zonaKgFilas();
+    const zona = String(S.zonaActual || 'zona'); const fname = 'kardex_' + zona + '_' + _zonaHoyStr();
+    if (fmt === 'csv') {
+      const esc = s => '"' + String(s).replace(/"/g, '""') + '"';
+      const body = filas.map(f => [esc(f.producto), esc(f.codigo), esc(f.tipo), f.stock].join(',')).join('\r\n');
+      _zonaDescargar('﻿Producto,Codigo,Tipo,Stock\r\n' + body, fname + '.csv', 'text/csv;charset=utf-8');
+    } else if (fmt === 'xml') {
+      const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const xml = '<?xml version="1.0" encoding="UTF-8"?>\n<kardex zona="' + esc(zona) + '">\n' + filas.map(f => `  <item producto="${esc(f.producto)}" codigo="${esc(f.codigo)}" tipo="${esc(f.tipo)}" stock="${f.stock}"/>`).join('\n') + '\n</kardex>';
+      _zonaDescargar(xml, fname + '.xml', 'application/xml;charset=utf-8');
+    } else if (fmt === 'pdf') { _zonaKgImprimirPDF(filas, zona); }
+    try { _zonaSfx('ok'); _zonaVibrar(20); } catch (_) {}
+  }
+  function _zonaDescargar(content, filename, mime) {
+    try {
+      const blob = new Blob([content], { type: mime }); const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+      setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(url); } catch (_) {} }, 300);
+      toast('Descargando ' + filename, 'ok');
+    } catch (e) { toast('No se pudo descargar: ' + (e.message || e), 'error'); }
+  }
+  function _zonaKgImprimirPDF(filas, zona) {
+    const w = window.open('', '_blank'); if (!w) { toast('Habilita las ventanas emergentes para el PDF', 'error'); return; }
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const rows = filas.map(f => `<tr class="${f.stock < 0 ? 'neg' : ''}"><td>${esc(f.producto)}</td><td>${esc(f.codigo)}</td><td>${esc(f.tipo)}</td><td style="text-align:right">${f.stock}</td></tr>`).join('');
+    w.document.write('<html><head><title>Kardex ' + esc(zona) + '</title><style>body{font-family:Arial,sans-serif;padding:18px;color:#111}h1{font-size:18px;margin:0 0 4px}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}th,td{border:1px solid #ccc;padding:5px 7px}th{background:#f0f0f0;text-align:left}tr.neg td{color:#c00;font-weight:bold}</style></head><body><h1>Kardex de stock &middot; ' + esc(zona) + '</h1><div style="font-size:12px;color:#555">' + esc(new Date().toLocaleString()) + '</div><table><thead><tr><th>Producto</th><th>C&oacute;digo</th><th>Tipo</th><th>Stock</th></tr></thead><tbody>' + rows + '</tbody></table><scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},250);}</scr' + 'ipt></body></html>');
+    w.document.close();
+  }
+  function _zonaHoyStr() { try { return new Date().toISOString().slice(0, 10); } catch (_) { return 'hoy'; } }
+
   // [902] Chips de código (canónico + equivalentes) con su stock; editables (autoguardado) en modo Ajustar.
   function _zonaCodChipsHtml(sku, item) {
     const safe = _esc(sku);
@@ -50276,7 +50377,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const st = _zonaFmtCant(_zonaNum(stockRaw), item, true);
       const neg = _zonaNum(stockRaw) < 0;
       const lbl = String(cb) === '__GLOBAL__' ? 'stock' : String(cb);   // [904] código de barra COMPLETO (no truncado: hay que distinguir el con/sin cero)
-      return `<span class="zc-chip${esEq ? ' is-eq' : ''}${neg ? ' is-neg' : ''}" title="${_esc(String(cb))}${esEq ? ' · equivalente' : ''}">
+      return `<span class="zc-chip${esEq ? ' is-eq' : ''}${neg ? ' is-neg' : ''}" title="${_esc(String(cb))}${esEq ? ' · equivalente' : ''}${neg ? ' · STOCK NEGATIVO: ajustar' : ''}">
+        ${neg ? '<span class="zc-chip-warn" title="Stock negativo — toca Ajustar para corregir">⚠</span>' : ''}
         <span class="zc-chip-cod">${_esc(lbl)}${esEq ? ' ≈' : ''}</span>
         <span class="zc-chip-st"><b>${_esc(st)}</b></span>
         <input class="zc-chip-in" type="number" step="${step}" inputmode="decimal" value="${_esc(st)}"
@@ -54938,6 +55040,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
     zonaVerEsperado, zonaCerrarEsperado, zonaToggleTools,
     zonaAjustarToggle, zonaChipSave, zonaSecToggle,
+    zonaAbrirKardexGeneral, zonaCerrarKardexGeneral, zonaKgToggle, zonaKgBuscar, zonaKgVerCodigo, zonaKgExport,
     zonaPedirAlmacen, zonaAgregarLista,
     // [RIZ CARRITO] carrito flotante de pedido a almacén (un paquete = un pickup con N líneas)
     zonaCarritoAbrir, zonaCarritoCerrar, zonaCarritoStep, zonaCarritoSet, zonaCarritoQuitar, zonaCarritoVaciar, zonaCarritoEnviar,
