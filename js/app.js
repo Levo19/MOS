@@ -49430,18 +49430,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // [RIZ UX] Pinta los KPIs con count-up (0→valor). animar=false (re-pintado tras ajuste) → directo.
+  // [896] Las 4 vitales = conteo por CUADRANTE (mismo _zonaCuadDe que las cards y los grupos).
+  //   Todas son CUENTAS enteras (adiós al bug del float "240.14000000000001" que era una suma).
   function _zonaPintarKpis(animar) {
-    const k = S.zonaKpis || {};
-    const set = (id, v) => {
-      const el = $(id);
-      if (!el) return;
-      if (animar) _zonaCountUp(el, v);
-      else el.textContent = (v == null ? '—' : v);
-    };
-    set('zKpiFaltan',  k.faltan  != null ? k.faltan  : _zonaContar(p => _zonaNum(p.brecha) > 0));
-    set('zKpiAlmacen', k.almacen != null ? k.almacen : _zonaSumar(p => Math.min(_zonaNum(p.brecha), Math.max(0, _zonaNum(p.stockAlmacen)))));
-    set('zKpiExterno', k.externo != null ? k.externo : _zonaContar(p => _zonaNum(p.brecha) - Math.max(0, _zonaNum(p.stockAlmacen)) > 0));
-    set('zKpiCero',    k.cero    != null ? k.cero    : _zonaContar(_zonaEsRotCero));
+    const arr = S.zonaProductos || [];
+    let pedir = 0, muerto = 0, sobra = 0, orden = 0;
+    for (const p of arr) { const c = _zonaCuadDe(p); if (c === 'pedir') pedir++; else if (c === 'muerto') muerto++; else if (c === 'sobra') sobra++; else orden++; }
+    const set = (id, v) => { const el = $(id); if (!el) return; if (animar) _zonaCountUp(el, v); else el.textContent = v; };
+    set('zKpiFaltan', pedir); set('zKpiCero', muerto); set('zKpiSobra', sobra); set('zKpiOrden', orden);
   }
   // [RIZ UX] HTML de N cards skeleton con shimmer (silueta de una zona-card real).
   function _zonaSkelCards(n) {
@@ -49848,10 +49844,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         return tendActivas.indexOf(norm) >= 0;
       });
     }
-    if (f.kpi === 'faltan')  arr = arr.filter(p => _zonaNum(p.brecha) > 0);
-    if (f.kpi === 'almacen') arr = arr.filter(p => _zonaNum(p.brecha) > 0 && _zonaNum(p.stockAlmacen) > 0);
-    if (f.kpi === 'externo') arr = arr.filter(p => (_zonaNum(p.brecha) - Math.max(0, _zonaNum(p.stockAlmacen))) > 0);
-    if (f.kpi === 'cero')    arr = arr.filter(_zonaEsRotCero);
+    // [896] las vitales filtran por CUADRANTE (misma fuente _zonaCuadDe)
+    if (f.kpi === 'c_pedir')  arr = arr.filter(p => _zonaCuadDe(p) === 'pedir');
+    if (f.kpi === 'c_muerto') arr = arr.filter(p => _zonaCuadDe(p) === 'muerto');
+    if (f.kpi === 'c_sobra')  arr = arr.filter(p => _zonaCuadDe(p) === 'sobra');
+    if (f.kpi === 'c_orden')  arr = arr.filter(p => _zonaCuadDe(p) === 'orden');
 
     // Orden
     if (f.orden === 'brecha')    arr.sort((a,b) => _zonaNum(b.brecha) - _zonaNum(a.brecha));
@@ -49867,36 +49864,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       return;
     }
 
-    // [GRUPOS COLAPSABLES] Dos grupos apilados, manteniendo el orden/filtros ya aplicados DENTRO de cada uno:
-    //  (1) ROTADO: lo que rotó en 4 sem (ALMACEN=despachado · ZONA=vendido) — lo importante, arriba.
-    //  (2) PARADO: en universo por tener stock pero SIN rotación en 4 sem (candidatos a anular/no reponer).
-    // Fuente de verdad = item.grupo del backend ('ROTADO'/'PARADO'); fallback tolerante a item.rotacionCero/rotacion.
+    // [896] CUATRO grupos por CUADRANTE de acción (reemplaza ROTADO/PARADO). Lo accionable primero.
     const esAlmacen = _esZonaAlmacen({ idZona: S.zonaActual,
       nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
-    let rotados = arr.filter(p => !_zonaEsGrupoParado(p));
-    const parados = arr.filter(p =>  _zonaEsGrupoParado(p));
-    // [RIZ #1] Filtro "del día" — SOLO al grupo ROTADO. En modo 'dia' restringimos a la tanda del día activo
-    //   (skuBases que trae me.zona_ticket_dia para esa fecha → coincide exactamente con el ticket impreso).
-    //   El set se carga async (toggle/flechas); aquí usamos el cache. Si aún no está, no filtra (muestra todo).
+    const _cuadListas = { pedir: [], muerto: [], sobra: [], orden: [] };
+    arr.forEach(p => { (_cuadListas[_zonaCuadDe(p)] || _cuadListas.orden).push(p); });
+    // [RIZ #1] Filtro "del día" (Todos/Día) → SOLO al grupo "Pedir ya" (donde vive su control + el ticket).
     const diaModo = (S._zonaDiaFiltro && S._zonaDiaFiltro.modo === 'dia');
     if (diaModo && S._zonaDiaSet) {
       const set = S._zonaDiaSet;
-      rotados = rotados.filter(p => set.has(String(p.skuBase || p.idProducto || '')));
+      _cuadListas.pedir = _cuadListas.pedir.filter(p => set.has(String(p.skuBase || p.idProducto || '')));
     }
-    const grpRot = {
-      key: 'ROTADO', cls: 'is-rotado', ico: esAlmacen ? '🚚' : '🛒',
-      lbl: esAlmacen ? 'Despachados · últimas 4 sem' : 'Vendidos · últimas 4 sem',
-      arr: rotados,
-      esRotado: true, esAlmacen: esAlmacen
-    };
-    const grpPar = {
-      key: 'PARADO', cls: 'is-parado', ico: '🧊',
-      lbl: esAlmacen ? 'En stock sin despachar (4 sem)' : 'En stock sin vender (4 sem)',
-      arr: parados
-    };
+    const _CUAD_GRP = [
+      { key:'CUAD_pedir',  cls:'is-pedir',  ico:'🔴', lbl:'Pedir ya · te vas a quedar sin',            arr:_cuadListas.pedir, esRotado:true, esAlmacen },
+      { key:'CUAD_muerto', cls:'is-muerto', ico:'⚫', lbl:(esAlmacen?'Muertos · sin despachar 4 sem':'Muertos · no rotan, plata parada'), arr:_cuadListas.muerto },
+      { key:'CUAD_sobra',  cls:'is-sobra',  ico:'🟡', lbl:'Te sobra · no pidas, tienes de más',        arr:_cuadListas.sobra, defColapsado:true },
+      { key:'CUAD_orden',  cls:'is-orden',  ico:'🟢', lbl:'En orden · al día',                         arr:_cuadListas.orden, defColapsado:true },
+    ];
     let html = '';
-    html += _zonaGrupoHtml(grpRot);
-    html += _zonaGrupoHtml(grpPar);
+    for (const g of _CUAD_GRP) html += _zonaGrupoHtml(g);
     cont.innerHTML = html;
     try { _zonaCacheVitales(); } catch (_) {}   // [893] cachear conteo de cuadrantes para el hub
     // [RIZ UX] Stagger de entrada: solo las primeras ~20 cards reciben delay incremental
@@ -49929,15 +49915,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   // Clave de localStorage del estado colapsado por (zona, grupo) — recuerda la preferencia entre refrescos.
   function _zonaGrpLsKey(grpKey) { return 'rizGrp_' + (S.zonaActual || '_') + '_' + grpKey; }
-  function _zonaGrupoColapsado(grpKey) {
-    try { return localStorage.getItem(_zonaGrpLsKey(grpKey)) === '1'; } catch (_) { return false; }
+  function _zonaGrupoColapsado(grpKey, def) {
+    try { const v = localStorage.getItem(_zonaGrpLsKey(grpKey)); if (v === '1') return true; if (v === '0') return false; return !!def; } catch (_) { return !!def; }
   }
   // HTML de un grupo (encabezado clickeable + cuerpo con sus cards). Si está vacío tras filtros → se colapsa
   // y muestra "0" elegante. El chevron rota al colapsar (clase .collapsed en head y body).
   function _zonaGrupoHtml(g) {
     const n = g.arr.length;
     // Un grupo vacío arranca colapsado siempre (no estorba); si tiene items respeta la preferencia guardada.
-    const colapsado = (n === 0) ? true : _zonaGrupoColapsado(g.key);
+    const colapsado = (n === 0) ? true : _zonaGrupoColapsado(g.key, g.defColapsado);
     const colCls = colapsado ? ' collapsed' : '';
     const chev = `<svg class="zona-grp-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
     const body = n

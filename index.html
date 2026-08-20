@@ -14920,6 +14920,25 @@
     .zona-kpi.k-almacen .zona-kpi-val { color:#a5b4fc; }
     .zona-kpi.k-externo .zona-kpi-val { color:#f59e0b; }
     .zona-kpi.k-cero .zona-kpi-val { color:#94a3b8; }
+    /* [896] Vitales por cuadrante */
+    .zona-vitals .zona-kpi { text-align:center; }
+    .zona-vitals .zona-kpi-val { font-size:1.55rem; margin-top:0; }
+    .zona-vitals .zona-kpi-lbl { margin-top:.15rem; }
+    .zona-kpi.kc-pedir  .zona-kpi-val { color:#fca5a5; }
+    .zona-kpi.kc-muerto .zona-kpi-val { color:#94a3b8; }
+    .zona-kpi.kc-sobra  .zona-kpi-val { color:#fcd34d; }
+    .zona-kpi.kc-orden  .zona-kpi-val { color:#86efac; }
+    .zona-kpi.kc-pedir.active  { border-color:#ef4444; background:rgba(239,68,68,.12); box-shadow:0 0 0 1px rgba(239,68,68,.28), 0 4px 14px -6px rgba(239,68,68,.5); }
+    .zona-kpi.kc-muerto.active { border-color:#64748b; background:rgba(100,116,139,.14); box-shadow:0 0 0 1px rgba(100,116,139,.3); }
+    .zona-kpi.kc-sobra.active  { border-color:#eab308; background:rgba(234,179,8,.12); box-shadow:0 0 0 1px rgba(234,179,8,.28); }
+    .zona-kpi.kc-orden.active  { border-color:#22c55e; background:rgba(34,197,94,.12); box-shadow:0 0 0 1px rgba(34,197,94,.28); }
+    /* cabeceras de grupo por cuadrante */
+    .zona-grp-head.is-pedir  { background:rgba(40,16,18,.5); border-color:#4a2427; }
+    .zona-grp-head.is-pedir  .zona-grp-count { color:#fca5a5; background:rgba(239,68,68,.14); border-color:rgba(239,68,68,.34); }
+    .zona-grp-head.is-muerto { background:rgba(20,24,34,.6); border-color:#2a323f; }
+    .zona-grp-head.is-muerto .zona-grp-count { color:#94a3b8; background:rgba(100,116,139,.14); border-color:rgba(100,116,139,.3); }
+    .zona-grp-head.is-sobra  .zona-grp-count { color:#fcd34d; background:rgba(161,98,7,.16); border-color:rgba(202,138,4,.35); }
+    .zona-grp-head.is-orden  .zona-grp-count { color:#86efac; background:rgba(34,197,94,.13); border-color:rgba(34,197,94,.32); }
     /* Filtros + orden */
     .zona-filtros { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin-bottom:.75rem; }
     .zona-chip-f { font-size:.72rem; padding:.32rem .6rem; border-radius:999px; border:1px solid #334155; background:#0f172a; color:#cbd5e1; cursor:pointer; transition:all .15s; }
@@ -18281,26 +18300,18 @@
         </div>
       </div>
 
-      <!-- KPIs chips-filtro -->
-      <div class="zona-kpis" id="zonaKpis">
-        <button class="zona-kpi k-pedir"   data-kpi="faltan"  onclick="MOS.zonaToggleKpi('faltan')"><div class="zona-kpi-lbl">Faltan pedir</div><div class="zona-kpi-val" id="zKpiFaltan">—</div></button>
-        <button class="zona-kpi k-almacen" data-kpi="almacen" onclick="MOS.zonaToggleKpi('almacen')"><div class="zona-kpi-lbl">Pedir a almacén</div><div class="zona-kpi-val" id="zKpiAlmacen">—</div></button>
-        <button class="zona-kpi k-externo" data-kpi="externo" onclick="MOS.zonaToggleKpi('externo')"><div class="zona-kpi-lbl">Comprar externo</div><div class="zona-kpi-val" id="zKpiExterno">—</div></button>
-        <button class="zona-kpi k-cero"    data-kpi="cero"    onclick="MOS.zonaToggleKpi('cero')"><div class="zona-kpi-lbl">Rotación cero</div><div class="zona-kpi-val" id="zKpiCero">—</div></button>
+      <!-- [896] TIRA DE VITALES por cuadrante (reemplaza los KPIs viejos). Cada una filtra a su cuadrante. -->
+      <div class="zona-kpis zona-vitals" id="zonaKpis">
+        <button class="zona-kpi kc-pedir"  data-kpi="c_pedir"  onclick="MOS.zonaToggleKpi('c_pedir')"><div class="zona-kpi-val" id="zKpiFaltan">—</div><div class="zona-kpi-lbl">🔴 Pedir ya</div></button>
+        <button class="zona-kpi kc-muerto" data-kpi="c_muerto" onclick="MOS.zonaToggleKpi('c_muerto')"><div class="zona-kpi-val" id="zKpiCero">—</div><div class="zona-kpi-lbl">⚫ Muertos</div></button>
+        <button class="zona-kpi kc-sobra"  data-kpi="c_sobra"  onclick="MOS.zonaToggleKpi('c_sobra')"><div class="zona-kpi-val" id="zKpiSobra">—</div><div class="zona-kpi-lbl">🟡 Te sobra</div></button>
+        <button class="zona-kpi kc-orden"  data-kpi="c_orden"  onclick="MOS.zonaToggleKpi('c_orden')"><div class="zona-kpi-val" id="zKpiOrden">—</div><div class="zona-kpi-lbl">🟢 En orden</div></button>
       </div>
 
-      <!-- [RIZ · TRASLADO VERIFICADO] La lista de traslados por verificar salió de la vista principal:
-           ahora vive en el botón "🚚 Guías" del encabezado (layout guía-por-guía agrupado por día). -->
-
-      <!-- Filtros + orden + búsqueda -->
+      <!-- Orden + búsqueda (los chips de tendencia/brecha se retiraron: los cuadrantes ya los cubren) -->
       <div class="zona-filtros">
-        <span class="zona-chip-f" data-tend="asc"  onclick="MOS.zonaToggleTend('asc')">↑ Sube</span>
-        <span class="zona-chip-f" data-tend="desc" onclick="MOS.zonaToggleTend('desc')">↓ Baja</span>
-        <span class="zona-chip-f" data-tend="est"  onclick="MOS.zonaToggleTend('est')">≈ Estable</span>
-        <span class="zona-chip-f" data-tend="nula" onclick="MOS.zonaToggleTend('nula')">∅ Sin rotar</span>
-        <span class="zona-chip-f" data-filtro="brecha" onclick="MOS.zonaToggleFiltro('brecha')">Brecha &gt; 0</span>
         <select id="zonaOrden" class="zona-sel" onchange="MOS.zonaSetOrden(this.value)">
-          <option value="brecha">Orden: Brecha ▾</option>
+          <option value="brecha">Orden: Prioridad ▾</option>
           <option value="tendencia">Orden: Tendencia</option>
           <option value="rotacion">Orden: Rotación</option>
           <option value="az">Orden: A-Z</option>
@@ -21604,7 +21615,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.896';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.897';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21883,14 +21894,14 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.896"></script>
+<script src="js/api.js?v=2.43.897"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.808"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.896"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.897"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -21899,7 +21910,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.896"></script>
+<script src="js/app.js?v=2.43.897"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
