@@ -43750,12 +43750,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         '<div class="yp-zonas">' + filas + '</div>' +
         eqHtml +
         '<div class="yp-pasos">' +
-          '<div class="yp-paso"><b>1</b><span>Bajá el APK una sola vez y instalalo en el celular que recibe los Yapes. ' +
-            '<a href="' + YAPE_APK_URL + '" target="_blank" rel="noopener">Descargar YapeCaptor ↗</a> ' +
-            '<i>(abrí la última ejecución y bajá el archivo <b>YapeCaptor-apk</b>)</i></span></div>' +
-          '<div class="yp-paso"><b>2</b><span>Generá acá abajo el código de la zona y tipealo en la app: ' +
-            'son <b>6 letras</b> y nada más. La dirección y la clave ya vienen dentro del APK.</span></div>' +
-          '<div class="yp-paso"><b>3</b><span>En la app, tocá <b>Dar permiso de notificaciones</b> y activá YapeCaptor en la lista. ' +
+          '<div class="yp-paso"><b>1</b><span>Bajá MosGuard una sola vez e instalalo en el celular (de caja o el tuyo). ' +
+            '<a href="' + YAPE_APK_URL + '" target="_blank" rel="noopener">Descargar MosGuard ↗</a> ' +
+            '<i>(se abre solo con tu clave master)</i></span></div>' +
+          '<div class="yp-paso"><b>2</b><span>Generá acá abajo el código y tipealo en la app para <b>conectar</b> el equipo a MOS: ' +
+            'son <b>6 letras</b>. Conectar NO es capturar Yapes — eso se prende/apaga por equipo abajo (🛡️ MosGuard).</span></div>' +
+          '<div class="yp-paso"><b>3</b><span>Si este equipo va a capturar Yapes, en la app tocá <b>Dar permiso de notificaciones</b> y activá MosGuard en la lista. ' +
             'Android exige que eso lo haga una persona a mano.</span></div>' +
         '</div>' +
         '<div class="yp-nota">El código dura 30 minutos y muere al usarse. Generar uno nuevo para el mismo equipo ' +
