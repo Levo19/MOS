@@ -15065,6 +15065,33 @@
     .zona-metrics-lean b.brecha-pos { color:#fca5a5; }
     .zona-porque { margin-left:auto; font-size:.66rem; color:#8b93a7; cursor:pointer; border:1px solid #29344a; border-radius:.5rem; padding:.14rem .5rem; white-space:nowrap; }
     .zona-porque:active { transform:scale(.96); }
+    /* [900] Minigráfico "¿por qué?" — 4 semanas × 7 días, pico resaltado, "este usamos" */
+    .esp-loading { display:flex; align-items:center; gap:.6rem; justify-content:center; padding:2.5rem; color:#94a3b8; font-size:.85rem; }
+    .esp-spin { width:18px; height:18px; border:2px solid #29344a; border-top-color:#38bdf8; border-radius:50%; animation:espSpin .8s linear infinite; }
+    @keyframes espSpin { to { transform:rotate(360deg); } }
+    .esp-help { font-size:.75rem; color:#94a3b8; line-height:1.45; margin-bottom:.9rem; }
+    .esp-help b { color:#e2e8f0; }
+    .esp-weeks { display:grid; grid-template-columns:repeat(4,1fr); gap:.5rem; }
+    .esp-wk { position:relative; border:1px solid #1e293b; border-radius:.6rem; padding:.55rem .4rem .4rem; background:rgba(15,23,42,.5); }
+    .esp-wk.is-used { border-color:rgba(56,189,248,.5); box-shadow:0 0 0 1px rgba(56,189,248,.2), 0 0 18px -6px rgba(56,189,248,.5); }
+    .esp-wk.is-empty { opacity:.5; }
+    .esp-wk-bars { display:flex; align-items:flex-end; justify-content:space-between; gap:2px; height:104px; }
+    .esp-day { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:2px; min-width:0; }
+    .esp-day-v { font-size:.5rem; color:#64748b; font-variant-numeric:tabular-nums; height:.7rem; line-height:1; }
+    .esp-day-bar { width:72%; min-height:3px; border-radius:2px 2px 0 0; background:#334155; transition:height .5s cubic-bezier(.2,.8,.2,1); }
+    .esp-day.pk .esp-day-bar { background:linear-gradient(180deg,#38bdf8,#0ea5e9); box-shadow:0 0 8px rgba(56,189,248,.6); }
+    .esp-day.pk .esp-day-v { color:#7dd3fc; font-weight:800; }
+    .esp-day-d { font-size:.5rem; color:#475569; }
+    .esp-wk-foot { margin-top:.35rem; text-align:center; }
+    .esp-wk-lbl { display:block; font-size:.55rem; color:#64748b; text-transform:uppercase; letter-spacing:.03em; }
+    .esp-wk-pico { display:block; font-size:.62rem; color:#cbd5e1; font-weight:700; font-variant-numeric:tabular-nums; }
+    .esp-wk.is-used .esp-wk-pico { color:#7dd3fc; }
+    .esp-wk-flag { position:absolute; top:-.62rem; left:50%; transform:translateX(-50%); font-size:.52rem; font-weight:800; color:#04222b; background:#38bdf8; border-radius:1rem; padding:.05rem .42rem; white-space:nowrap; box-shadow:0 0 12px rgba(56,189,248,.5); }
+    .esp-calc { margin-top:1.1rem; padding:.7rem; border-radius:.6rem; background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.25); text-align:center; }
+    .esp-nums { font-size:.9rem; color:#cbd5e1; }
+    .esp-nums b { color:#e2e8f0; font-variant-numeric:tabular-nums; }
+    .esp-res { color:#38bdf8 !important; font-size:1.05rem; }
+    @media (max-width:480px){ .esp-day-v, .esp-day-d { font-size:.44rem; } .esp-wk-bars { height:88px; } }
     /* Stepper ajuste inline */
     .zona-stepper { display:inline-flex; align-items:center; gap:.35rem; margin-top:.2rem; }
     .zona-step-btn { width:30px; height:30px; border-radius:.5rem; border:1px solid #334155; background:#1e293b; color:#e2e8f0; font-size:1.1rem; font-weight:800; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
@@ -21656,7 +21683,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.899';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.900';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -21935,14 +21962,14 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.899"></script>
+<script src="js/api.js?v=2.43.900"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.808"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.899"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.900"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -21951,7 +21978,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.899"></script>
+<script src="js/app.js?v=2.43.900"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

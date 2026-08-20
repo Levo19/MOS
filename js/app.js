@@ -50714,44 +50714,59 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // ── [MEJORA 1] Modal "¿Por qué esperado = X?" (explica picos × 1.2) ───────
-  function zonaVerEsperado(sku) {
+  // [900] "¿Por qué esta cantidad?" — ahora con el DETALLE DIARIO real (4 semanas × 7 días).
+  //   Muestra lo vendido cada día, resalta el PICO (día más fuerte) de cada semana, y marca cuál se
+  //   usa (el de la última). Datos de mos.zona_dias_producto (misma fuente que el pico del panel).
+  async function zonaVerEsperado(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     if (!p) return;
     const tit = $('zonaEspTitulo');
     if (tit) tit.textContent = (p.descripcion || p.nombre || sku);
-    const picos = Array.isArray(p.picos) ? p.picos.slice(-4) : [];
     const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
-    const picoUltima = picos.length ? _zonaNum(picos[picos.length - 1]) : 0;
     const body = $('zonaEspBody');
-    if (body) {
-      const maxP = Math.max(1, ...picos.map(_zonaNum));
-      const labelsSem = (n) => ['hace 3 sem', 'hace 2 sem', 'sem pasada', 'última sem'].slice(Math.max(0, 4 - n));
-      const lbls = labelsSem(picos.length);
-      const barras = picos.length
-        ? picos.map((v, i) => {
-            const val = _zonaNum(v);
-            const h = Math.max(6, Math.round(val / maxP * 130));
-            const last = (i === picos.length - 1);
-            return `<div class="zona-esp-col${last ? ' last' : ''}">
-              <div class="zona-esp-bval">${_esc(_zonaFmtCant(val, p, true))}</div>
-              <div class="zona-esp-bar" style="height:${h}px;animation-delay:${i*90}ms"></div>
-              <div class="zona-esp-blbl">${_esc(lbls[i] || ('sem ' + (i+1)))}</div>
-            </div>`;
-          }).join('')
-        : '<div class="text-slate-500 text-sm py-6 text-center">Sin historial de picos para este producto.</div>';
-      const calc = picos.length
-        ? `<div class="zona-esp-calc">
-             <div class="zona-esp-formula">Esperado = redondear( pico de la última semana × 1.2 )</div>
-             <div class="zona-esp-nums">= redondear( <b>${_esc(_zonaFmtCant(picoUltima, p, true))}</b> × 1.2 )
-               = redondear( <b>${_esc(_zonaFmtNumRaw(picoUltima * 1.2, p.esGranel))}</b> )
-               = <b class="zona-esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div>
-             <div class="zona-esp-why">El pico es el día de mayor venta de cada semana. Reponemos un 20% extra de colchón sobre el mejor día reciente.</div>
-           </div>`
-        : `<div class="zona-esp-calc"><div class="zona-esp-nums">Esperado actual: <b class="zona-esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
-      body.innerHTML = `<div class="zona-esp-bars">${barras}</div>${calc}`;
-    }
     openModal('modalZonaEsp');
     _zonaSfx('pop'); _zonaVibrar(20);
+    if (body) body.innerHTML = '<div class="esp-loading"><span class="esp-spin"></span> Leyendo tus ventas, día por día…</div>';
+    let dias = null;
+    try {
+      const r = await API.zona.diasProducto({ zona: S.zonaActual, sku });
+      dias = (r && (r.data || r) && (r.data || r).dias) || null;
+    } catch (_) {}
+    if (!body) return;
+    if (!Array.isArray(dias) || !dias.length) {
+      const picos = Array.isArray(p.picos) ? p.picos.slice(-4).map(_zonaNum) : [];
+      const pu = picos.length ? picos[picos.length - 1] : 0;
+      body.innerHTML = `<div class="esp-calc"><div class="esp-nums">pico de la última semana <b>${_esc(_zonaFmtNumRaw(pu, p.esGranel))}</b> × 1.2 = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
+      return;
+    }
+    const DOW = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
+    const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última sem'];
+    const wks = [[], [], [], []];
+    dias.forEach(d => { const s = Math.max(0, Math.min(3, d.sem | 0)); wks[s].push(d); });
+    const maxAll = Math.max(1, ...dias.map(d => _zonaNum(d.u)));
+    const picoUlt = Math.max(0, ...wks[3].map(d => _zonaNum(d.u)));
+    let semHtml = '';
+    wks.forEach((wk, s) => {
+      wk.sort((a, b) => (a.dow | 0) - (b.dow | 0));
+      const picoW = Math.max(0, ...wk.map(d => _zonaNum(d.u)));
+      const isUsed = (s === 3);
+      const bars = wk.map(d => {
+        const u = _zonaNum(d.u);
+        const h = Math.max(3, Math.round(u / maxAll * 84));
+        const isPk = (u > 0 && u === picoW);
+        return `<div class="esp-day${isPk ? ' pk' : ''}" title="${DOW[d.dow] || ''} · ${_esc(_zonaFmtNumRaw(u, p.esGranel))}">
+          <div class="esp-day-v">${u > 0 ? _esc(_zonaFmtNumRaw(u, p.esGranel)) : ''}</div>
+          <div class="esp-day-bar" style="height:${h}px"></div>
+          <div class="esp-day-d">${DOW[d.dow] || ''}</div></div>`;
+      }).join('');
+      semHtml += `<div class="esp-wk${isUsed ? ' is-used' : ''}${picoW <= 0 ? ' is-empty' : ''}">
+        <div class="esp-wk-bars">${bars}</div>
+        <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[s]}</span><span class="esp-wk-pico">pico ${_esc(_zonaFmtNumRaw(picoW, p.esGranel))}</span></div>
+        ${isUsed ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
+    });
+    body.innerHTML = `<div class="esp-help">Cada barra = lo que vendiste ese día. En cada semana se marca su <b>día más fuerte</b> (el pico). Para reponer usamos el pico de la <b>última semana</b> + 20% de colchón.</div>
+      <div class="esp-weeks">${semHtml}</div>
+      <div class="esp-calc"><div class="esp-nums">pico de la última semana <b>${_esc(_zonaFmtNumRaw(picoUlt, p.esGranel))}</b> × 1.2 = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
   }
   function zonaCerrarEsperado() { closeModal('modalZonaEsp'); }
 
