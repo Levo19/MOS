@@ -50214,6 +50214,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const _foto = _zonaFotoUrl(p);
     const _duraBig = _ringNum;   // días (el negativo cuenta como 0 stock efectivo)
     const _duraCap = (_cuad === 'muerto') ? 'sin rotar' : (negativo ? 'sin stock · ⚠ contar' : (_rotDia <= 0 ? 'sin dato' : 'te dura'));
+    // [910] La barra va en UNIDADES: pintado = lo que TIENES (stock efectivo), el fin = la META (esperada).
+    //   Así 49 de 58 se ve ~84% (falta 9), no lleno. La rotación (🔄) va aparte, y "te dura X días" abajo.
+    const _have = _stockEff;
+    const _meta = esp;
+    const _barPct = (_cuad === 'muerto') ? 100 : (_meta > 0 ? Math.min(100, Math.round(_have / _meta * 100)) : (_have > 0 ? 100 : 0));
+    const _haveTxt = _esc(_zonaFmtNumRaw(_have, p.esGranel));
+    const _metaTxt = (_cuad !== 'muerto' && _meta > 0) ? ('meta ' + _esc(_zonaFmtNumRaw(_meta, p.esGranel))) : '';
+    const _rotShow = (_rotDia > 0) || (esAlmacenCard && _zonaNum(p.volumen) > 0);
+    const _rotLine = _rotShow ? `🔄 ${esAlmacenCard ? 'Despacha' : 'Vende'} <b>${_esc(_zonaFmtNumRaw(_rotNum, p.esGranel))}</b>/${_rotUniTxt}` : '🔄 sin rotación';
+    const _diasSub = (_cuad === 'muerto') ? 'no rota hace 4 semanas' : (negativo ? '⚠ negativo — contar' : (_rotDia <= 0 ? '' : ('te dura ~' + _diasTxt)));
     const _codChips = _zonaCodChipsHtml(sku, p);
     return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
       <div class="zona-card-hero zona-cov-${_cuad}">
@@ -50223,11 +50233,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             <div class="zona-card-name">${nm}</div>
             <div class="zona-hero-badges">${rotCeroChip}<span class="zona-tend-badge ${tend.cls}">${tend.lbl}</span><span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span></div>
           </div>
-          <div class="zona-dura-hero">
-            <div class="zona-dura-num"><b>${_duraBig}</b>${_ringUni ? '<i>d</i>' : ''}<span>${_duraCap}</span></div>
-            <div class="zona-dura-bar big"><i style="width:${_covPctBar}%"></i></div>
+          <div class="zona-meter">
+            <div class="zona-meter-rota">${_rotLine}</div>
+            <div class="zona-meter-bar" title="Tienes ${_haveTxt}${_metaTxt ? ' · ' + _metaTxt : ''}"><i style="width:${_barPct}%"></i></div>
+            <div class="zona-meter-nums"><span class="zm-have"><b>${_haveTxt}</b> tienes</span>${_metaTxt ? `<span class="zm-meta">${_metaTxt}</span>` : ''}${_diasSub ? `<span class="zm-sub">${_diasSub}</span>` : ''}</div>
           </div>
-          <div class="zona-rota">${_rotLbl} <b>${_esc(_zonaFmtNumRaw(_rotNum, p.esGranel))}</b> / ${_rotUniTxt}</div>
           <div class="zc-chips" id="zChips-${safe}">${_codChips}</div>
         </div>
       </div>
