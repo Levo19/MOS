@@ -49475,6 +49475,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const bg = $('zonaBtnGuias'), bs = $('zonaBtnSorpresas'), bm = $('zonaBtnMermas'), bv = $('zonaBtnVenc');
     if (bg) bg.classList.toggle('hidden', esAlm);
     if (bm) bm.classList.toggle('hidden', !esAlm);
+    // [891] "🏠 Abrir Almacén" no tiene sentido cuando YA estás en el puesto Almacén → ocultar ahí.
+    const ba = $('zonaBtnAbrirAlm'); if (ba) ba.classList.toggle('hidden', esAlm);
     // [Fase 2 FEFO] 📅 Por vencer en TODAS las zonas: almacén = lotes WH; zonas = libro me.zona_lotes
     if (bv) bv.classList.remove('hidden');
     if (bs) bs.classList.toggle('hidden', !esAlm || !_esAdminSesion());
