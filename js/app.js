@@ -49157,6 +49157,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } catch (_) { S.zonaList = S.zonaList || []; }
     _zonaPoblarSelector();
     if (!S.zonaActual && S.zonaList.length) S.zonaActual = S.zonaList[0].idZona || S.zonaList[0].id || S.zonaList[0].nombre;
+    // [891] Hub de puestos: restaurar el puesto ANCLADO (persistido) si sigue existiendo.
+    try {
+      const _ancla = _zonaAnclaGet();
+      if (_ancla && S.zonaList.some(z => (z.idZona || z.id || z.nombre) === _ancla)) S.zonaActual = _ancla;
+      _zonaHubActualizarChip(S.zonaActual);
+    } catch (_) {}
     // [ASEGURAR DATA] "Log de errores" SOLO visible para master (read-only, diagnóstico de stock).
     try {
       const esMaster = (S.session && (S.session.rol || '').toLowerCase() === 'master');
@@ -49168,6 +49174,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // _consPollIniciar ya dispara la primera lectura (y es idempotente: limpia el timer previo).
     _consPollIniciar();
     await _zonaCargarPanel(force);
+    // [891] Primera vez sin puesto anclado → abrir el hub para que ELIJA (tipo Netflix).
+    try { if (!_zonaAnclaGet()) zonaAbrirHub(); } catch (_) {}
   }
   // [RIZ UX] Delegado único: ripple táctil al presionar cards/botones de la lista (no rompe onclicks).
   let _zonaRippleInstalado = false;
@@ -50283,9 +50291,90 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // ── Selector / filtros / orden ─────────────────────────────────────────
   function zonaCambiarZona(idZona) {
     S.zonaActual = idZona; S.zonaProductos = [];
+    try { _zonaAnclaSet(idZona); _zonaHubActualizarChip(idZona); } catch (_) {}   // [891] persistir el puesto anclado
     // [RIZ #1] Resetear el filtro "del día" al cambiar de ámbito (el set cacheado es por zona+fecha).
     S._zonaDiaFiltro = { modo: 'todos', offset: 0 }; S._zonaDiaSet = null; S._zonaDiaSetKey = null;
     _zonaCargarPanel(true);
+  }
+
+  // ══ [891] HUB DE PUESTOS (selector tipo Netflix) — el admin elige su puesto (Almacén / Zona 1 /
+  //    Zona 2), se ANCLA (localStorage), y cambia tocando el chip del encabezado (como cambiar de
+  //    usuario). Reusa zonaCambiarZona; las vitales finas viven dentro del puesto. ════════════════
+  const _ZONA_ANCLA_KEY = 'mos_zona_ancla_v1';
+  function _zonaAnclaGet() { try { return localStorage.getItem(_ZONA_ANCLA_KEY) || ''; } catch (_) { return ''; } }
+  function _zonaAnclaSet(id) { try { localStorage.setItem(_ZONA_ANCLA_KEY, String(id || '')); } catch (_) {} }
+  function _zonaEsMock(id, nm) { const s = (String(id || '') + String(nm || '')).toUpperCase(); return s.indexOf('MOCK') >= 0 || s.indexOf('FALLBACK') >= 0; }
+
+  function _zonaHubStationsHtml() {
+    const anchored = S.zonaActual;
+    const vit = S._zonaHubVit || {};
+    const zonas = (S.zonaList || []).filter(z => !_zonaEsMock(z.idZona || z.id || z.nombre, z.nombre));
+    if (!zonas.length) return '<div class="zhub-empty">Sin puestos disponibles</div>';
+    return zonas.map(z => {
+      const id = z.idZona || z.id || z.nombre;
+      const nm = z.nombre || id;
+      const esAlm = _esZonaAlmacen({ idZona: id, nombre: nm });
+      const v = vit[id] || null;
+      const prod = v ? v.productos : null;
+      const neg = v ? v.negativos : null;
+      const isAnc = id === anchored;
+      const safeId = _esc(String(id));
+      return `<button type="button" class="zhub-st${esAlm ? ' is-alm' : ''}${isAnc ? ' is-anchored' : ''}" onclick="MOS.zonaElegirPuesto('${safeId}')">
+        ${isAnc ? '<span class="zhub-st-anc">● aquí estás</span>' : ''}
+        <div class="zhub-st-ico">${esAlm ? '🏪' : '🏬'}</div>
+        <div class="zhub-st-role">${esAlm ? 'Surte a las zonas' : 'Vende al público'}</div>
+        <div class="zhub-st-name">${_esc(nm)}</div>
+        <div class="zhub-st-count">${prod != null ? prod + ' productos con stock' : 'cargando…'}</div>
+        <div class="zhub-st-vitals">${(neg > 0) ? '<span class="zhub-vpill neg">⚠ ' + neg + ' en negativo</span>' : (v ? '<span class="zhub-vpill ok">✓ sin negativos</span>' : '')}</div>
+        <div class="zhub-st-enter">Entrar al puesto <span class="zhub-arw">→</span></div>
+      </button>`;
+    }).join('');
+  }
+  function zonaAbrirHub() {
+    const box = $('zonaHub');
+    if (!box) return;
+    const cont = $('zonaHubStations');
+    if (cont) cont.innerHTML = _zonaHubStationsHtml();
+    box.classList.remove('hidden');
+    requestAnimationFrame(() => box.classList.add('open'));
+    try { _zonaSfx('pop'); _zonaVibrar(15); } catch (_) {}
+    _zonaHubCargarVitales();
+  }
+  function zonaCerrarHub() {
+    const box = $('zonaHub');
+    if (!box) return;
+    if (!_zonaAnclaGet() && !S.zonaActual) return;   // no cerrar sin haber elegido nunca
+    box.classList.remove('open');
+    setTimeout(() => { const b = $('zonaHub'); if (b && !b.classList.contains('open')) b.classList.add('hidden'); }, 240);
+  }
+  async function _zonaHubCargarVitales() {
+    try {
+      const r = await API.zona.resumen();
+      const arr = (r && (r.data || r) && ((r.data || r).zonas)) || [];
+      const map = {};
+      arr.forEach(x => { map[x.zonaId] = { productos: _zonaNum(x.productos), negativos: _zonaNum(x.negativos) }; });
+      S._zonaHubVit = map;
+      const box = $('zonaHub'), cont = $('zonaHubStations');
+      if (cont && box && !box.classList.contains('hidden')) cont.innerHTML = _zonaHubStationsHtml();
+    } catch (_) {}
+  }
+  function zonaElegirPuesto(id) {
+    if (!id) return;
+    _zonaAnclaSet(id);
+    _zonaHubActualizarChip(id);
+    zonaCerrarHub();
+    if (id !== S.zonaActual) zonaCambiarZona(id);
+    else _zonaCargarPanel(false);
+    try { _zonaSfx('pop'); _zonaVibrar([15, 10, 20]); } catch (_) {}
+  }
+  function _zonaHubActualizarChip(id) {
+    id = id || S.zonaActual;
+    const chip = $('zonaPuestoChipNom');
+    if (!chip) return;
+    const z = (S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === id);
+    const nm = (z && z.nombre) || id || 'Puesto';
+    const esAlm = _esZonaAlmacen({ idZona: id, nombre: nm });
+    chip.textContent = (esAlm ? '🏪 ' : '🏬 ') + nm;
   }
   // [rev100 2.43.584] zonaRefrescar eliminado (su botón ⟳ se retiró; el panel se refresca solo).
   function zonaSetOrden(v) { S._zonaFiltros.orden = v; renderZona(); }
@@ -54669,6 +54758,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     facGuardarConfig, facGuardarSeries, facAlinear,
     // [RIZ Capa 4] Módulo Zona — solo activo si el flag mos_zona_modulo está ON
     loadZona, renderZona, zonaCambiarZona, zonaSetOrden, zonaFiltrar,
+    zonaAbrirHub, zonaCerrarHub, zonaElegirPuesto,
     zonaToggleGrupo,
     zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,

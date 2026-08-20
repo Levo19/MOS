@@ -4307,6 +4307,7 @@ const API = (() => {
     zona: {
       moduloOn:        _mosZonaModulo,          // bool: ¿el módulo está habilitado?
       panel:           _zonaPanelDirecto,       // mos.zona_panel(p)            → {ok,data:{zona,filtro,items:[...]},_fresh}
+      resumen:         async () => _sbRpcMOS('zonas_resumen', { p: {} }, 'mos'), // [891] conteos baratos por zona para el HUB → {ok,data:{zonas:[{zonaId,productos,negativos}]}}
       tendencia:       _zonaTendenciaDirecto,   // mos.tendencia_zona(p)        → {ok,data:{zona,semanas,umbral,items:[...]},_fresh}
       ticketDia:       _zonaTicketDiaDirecto,   // mos.zona_ticket_dia(p)       → {ok,data:{zona,fecha,origen,lotes:[...]},_fresh}
       lotesHistorial:  _zonaLotesHistorialDirecto, // mos.zona_lotes_historial(p) → {ok,data:{...,items:[lotes FIFO]},_fresh}
