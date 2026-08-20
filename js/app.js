@@ -50366,6 +50366,35 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     w.document.close();
   }
   function _zonaHoyStr() { try { return new Date().toISOString().slice(0, 10); } catch (_) { return 'hoy'; } }
+  // [908] Exporta EL kardex abierto (movimientos del tab/código activo) a Excel(CSV)/XML/PDF.
+  function zonaKardexExport(fmt) {
+    const st = _zonaKardexEstado;
+    if (!st || !st.data) { toast('Abre un kardex primero', 'error'); return; }
+    const tab = (st.tabs || []).find(t => t.id === st.activa) || (st.tabs || [])[0] || {};
+    const d = (tab && tab.data) || st.data || {};
+    const movs = Array.isArray(d.movimientos) ? d.movimientos : [];
+    if (!movs.length) { toast('Este kardex no tiene movimientos', 'error'); return; }
+    const nombre = ($('zonaKardexTitulo') && $('zonaKardexTitulo').textContent) || 'kardex';
+    const cual = tab.esTotal ? 'total' : String(tab.id || '');
+    const fname = 'kardex_' + String(nombre).replace(/[^\w]+/g, '_').slice(0, 30) + (cual ? '_' + cual : '') + '_' + _zonaHoyStr();
+    const filas = movs.map(m => ({ fecha: String(m.fecha || '').slice(0, 16), tipo: String(m.tipo || ''), delta: _zonaNum(m.delta), saldo: (m.saldo_despues != null ? _zonaNum(m.saldo_despues) : ''), usuario: String(m.usuario || ''), codigo: String(m.cod_barra || '') }));
+    if (fmt === 'csv') {
+      const e = s => '"' + String(s).replace(/"/g, '""') + '"';
+      const body = filas.map(f => [e(f.fecha), e(f.tipo), f.delta, f.saldo, e(f.usuario), e(f.codigo)].join(',')).join('\r\n');
+      _zonaDescargar('﻿Fecha,Tipo,Delta,Saldo,Usuario,Codigo\r\n' + body, fname + '.csv', 'text/csv;charset=utf-8');
+    } else if (fmt === 'xml') {
+      const e = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const xml = '<?xml version="1.0" encoding="UTF-8"?>\n<kardex producto="' + e(nombre) + '" alcance="' + e(cual) + '">\n' + filas.map(f => `  <mov fecha="${e(f.fecha)}" tipo="${e(f.tipo)}" delta="${f.delta}" saldo="${f.saldo}" usuario="${e(f.usuario)}" codigo="${e(f.codigo)}"/>`).join('\n') + '\n</kardex>';
+      _zonaDescargar(xml, fname + '.xml', 'application/xml;charset=utf-8');
+    } else if (fmt === 'pdf') {
+      const w = window.open('', '_blank'); if (!w) { toast('Habilita las ventanas emergentes para el PDF', 'error'); return; }
+      const e = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const rows = filas.map(f => `<tr class="${f.delta < 0 ? 'neg' : ''}"><td>${e(f.fecha)}</td><td>${e(f.tipo)}</td><td style="text-align:right">${f.delta}</td><td style="text-align:right">${f.saldo}</td><td>${e(f.usuario)}</td><td>${e(f.codigo)}</td></tr>`).join('');
+      w.document.write('<html><head><title>Kardex ' + e(nombre) + '</title><style>body{font-family:Arial,sans-serif;padding:18px;color:#111}h1{font-size:16px;margin:0 0 4px}table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}th,td{border:1px solid #ccc;padding:4px 6px}th{background:#f0f0f0;text-align:left}tr.neg td{color:#c00;font-weight:bold}</style></head><body><h1>Kardex &middot; ' + e(nombre) + (cual ? ' (' + e(cual) + ')' : '') + '</h1><div style="font-size:11px;color:#555">' + e(new Date().toLocaleString()) + '</div><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Delta</th><th>Saldo</th><th>Usuario</th><th>C&oacute;digo</th></tr></thead><tbody>' + rows + '</tbody></table><scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},250);}</scr' + 'ipt></body></html>');
+      w.document.close();
+    }
+    try { _zonaSfx('ok'); _zonaVibrar(20); } catch (_) {}
+  }
 
   // [902] Chips de código (canónico + equivalentes) con su stock; editables (autoguardado) en modo Ajustar.
   function _zonaCodChipsHtml(sku, item) {
@@ -55040,7 +55069,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
     zonaVerEsperado, zonaCerrarEsperado, zonaToggleTools,
     zonaAjustarToggle, zonaChipSave, zonaSecToggle,
-    zonaAbrirKardexGeneral, zonaCerrarKardexGeneral, zonaKgToggle, zonaKgBuscar, zonaKgVerCodigo, zonaKgExport,
+    zonaAbrirKardexGeneral, zonaCerrarKardexGeneral, zonaKgToggle, zonaKgBuscar, zonaKgVerCodigo, zonaKgExport, zonaKardexExport,
     zonaPedirAlmacen, zonaAgregarLista,
     // [RIZ CARRITO] carrito flotante de pedido a almacén (un paquete = un pickup con N líneas)
     zonaCarritoAbrir, zonaCarritoCerrar, zonaCarritoStep, zonaCarritoSet, zonaCarritoQuitar, zonaCarritoVaciar, zonaCarritoEnviar,
