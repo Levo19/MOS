@@ -2174,6 +2174,19 @@ const MOS = (() => {
     try {
       if (document.visibilityState !== 'visible') return;  // background → el poller/al-abrir cubre
     } catch (_) {}
+    // [887] La Mesa de Compras es un MODAL que puede estar abierto desde CUALQUIER vista
+    //   (Almacén, Catálogo, Finanzas…), así que su refresco NO puede colgar de S.view. Reusa el
+    //   MISMO WS de wh.ops_meta: cuando el operador de WH edita el proveedor / líneas / cantidades
+    //   de una guía (UPDATE en wh.guias → bump 'guias'; los registros de zona igual), la Mesa se
+    //   re-jala al instante. No hace return: deja seguir al refresh de la tab de Almacén si aplica.
+    //   Dominios que alimentan la Mesa: 'guias'/'preingresos' (WH: proveedor, cabecera, estado),
+    //   'stock_zonas' (ZONA: cantidades de una entrada libre editadas con me.editar_guia_lineas),
+    //   'stock' (ajustes WH). Cualquiera de ellos, con la Mesa abierta, la re-jala al instante.
+    try {
+      if (['guias', 'preingresos', 'stock_zonas', 'stock'].indexOf(dominio) >= 0 &&
+          document.getElementById('mesaComprasModal') &&
+          typeof _mesaRefrescarSilencioso === 'function') _mesaRefrescarSilencioso();
+    } catch (_) {}
     try {
       // ── ME ────────────────────────────────────────────────────────────
       if (app === 'me' && dominio === 'ventas') {
@@ -13495,6 +13508,39 @@ const MOS = (() => {
       const body = document.getElementById('mesaComprasBody');
       if (body) { const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) })); body.innerHTML = _mesaComprasBodyHTML(compras); }
     } catch (_) { /* silencioso: sin cotejo se sigue viendo "falta cotejar" */ }
+  }
+
+  // [887] Refresco SILENCIOSO de la Mesa por realtime (wh.ops_meta 'guias'/'preingresos').
+  //   Re-jala la data unificada (proveedor + cabecera FRESCOS), repuebla el cache de líneas
+  //   (cantidades/detalle) y re-pinta SOLO el cuerpo preservando scroll y búsqueda. Guardas:
+  //   modal cerrado → nada; card (Paso 1/2) abierta → no toca el DOM (S._mesaAbierta); un solo
+  //   vuelo a la vez (coalescer). Nunca rompe: el poll/al-reabrir es el fallback.
+  let _mesaRTVuelo = false;
+  async function _mesaRefrescarSilencioso() {
+    const m = document.getElementById('mesaComprasModal');
+    if (!m || !m.classList.contains('open')) return;
+    if (S._mesaAbierta || _mesaRTVuelo) return;
+    _mesaRTVuelo = true;
+    try {
+      const dias = S._mesaRangoServido || S._mesaRangoDias || 45;
+      const r = await API.get('getOperacionesConDetalle', { dias });
+      if (r && ((r.data || r).porDia)) {
+        S._opsData = r; S._mesaRangoServido = dias;
+        if (typeof _opsPopulateDetCacheFromData === 'function') _opsPopulateDetCacheFromData(r);
+      }
+    } catch (_) { /* silencioso */ }
+    finally { _mesaRTVuelo = false; }
+    const m2 = document.getElementById('mesaComprasModal');
+    if (!m2 || !m2.classList.contains('open') || S._mesaAbierta) return;
+    const body = document.getElementById('mesaComprasBody');
+    if (body) {
+      const sc = body.scrollTop;
+      const compras = _comprasFlat().map(op => ({ op, est: _comprasEstado(op) }));
+      body.innerHTML = _mesaComprasBodyHTML(compras);
+      try { body.scrollTop = sc; } catch (_) {}
+    }
+    try { _mesaPrefetchLineas(); _mesaPrefetchCotejo(); } catch (_) {}
+    try { _mesaComprasSyncBadge(); } catch (_) {}
   }
 
   function abrirMesaCompras(filtro) {
