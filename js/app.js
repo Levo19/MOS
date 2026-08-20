@@ -50082,6 +50082,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     let ia = '';
     if (negativo) {
       ia = `⚠ Stock negativo (revisar dónde se originó). Para estar listo necesitas ${fEsp}.`;
+    } else if (esAlmacenCard && brecha > 0) {
+      // [902] Almacén NO pide a almacén: compra a PROVEEDOR para cubrir su semana.
+      ia = `Te faltan ${fBrecha} para tu semana. Cómpralos a un proveedor.`;
     } else if (brecha > 0) {
       ia = `Te faltan ${fBrecha} para estar listo.`;
       if (pedirAlm > 0) ia += ` Almacén cubre ${_zonaFmtCant(pedirAlm, p)} → pídelos.`;
@@ -50129,6 +50132,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       acciones = `<button class="zona-btn-pedir${btnCls}" id="zPedir-${safe}" onclick="MOS.zonaPedirAlmacen('${safe}', ${sugerir})">${btnLbl}</button>
                   <button class="zona-btn-sec" ${externo > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${externo})">+ Lista compras${externo > 0 ? ' (' + _esc(_zonaFmtCant(externo, p)) + ')' : ''}</button>`;
     }
+    // [902] En ALMACÉN la acción es COMPRAR a proveedor (almacén no se pide a sí mismo). Reemplaza el pedir.
+    if (esAlmacenCard && !(bcg === 'perro' && brecha <= 0 && !negativo)) {
+      const falta = brecha > 0 ? brecha : 0;
+      acciones = `<button class="zona-btn-pedir" ${falta > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${falta})">${falta > 0 ? '🧾 Comprar ' + _esc(_zonaFmtCant(falta, p)) + ' a proveedor' : '✓ Semana cubierta'}</button>`;
+    }
 
     // [RIZ CARRITO] estado "Pedido hoy/ayer" persistido (me.zona_pedido_log, ventana 7 días). El panel lo
     // devuelve en p.pedidoEstado:{etiqueta,...}; lo mostramos como chip en el card (sobrevive a refrescos).
@@ -50165,7 +50173,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       : (_diasCob === Infinity ? 'de sobra'
       : (_rotDia <= 0 ? '—'
       : (_diasCob >= 10 ? Math.round(_diasCob) + ' días' : (_diasCob.toFixed(1).replace(/\.0$/, '')) + ' días')));
-    const _rotTxt = _rotDia > 0 ? ('vende ~' + _zonaFmtNumRaw(_picoFuerte > 0 ? _picoFuerte : _rotDia, p.esGranel) + '/día fuerte') : 'sin venta en 4 sem';
+    // [902] Almacén mide rotación SEMANAL (despachos); zona mide el día fuerte (venta en picos).
+    const _rotTxt = esAlmacenCard
+      ? (_zonaNum(p.volumen) > 0 ? ('despacha ~' + _zonaFmtNumRaw(Math.round(_zonaNum(p.volumen) / 4), p.esGranel) + '/sem') : 'sin despacho en 4 sem')
+      : (_rotDia > 0 ? ('vende ~' + _zonaFmtNumRaw(_picoFuerte > 0 ? _picoFuerte : _rotDia, p.esGranel) + '/día fuerte') : 'sin venta en 4 sem');
     // Medidor circular (instrumento): anillo = cobertura respecto al objetivo del nivel. Centro = días.
     const _ringFrac = negativo ? 0 : (_rotDia <= 0 ? (stockRaw > 0 ? 1 : 0) : Math.max(0, Math.min(1, _diasCob / _objDias)));
     const _dash = Math.round(_ringFrac * 113);
@@ -50192,13 +50203,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ? `<div class="zona-rotcero-hint">Considera <b>anular</b> o <b>promocionar</b> este producto.</div>`
       : '';
 
+    const _codChips = _zonaCodChipsHtml(sku, p);
     return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
       <div class="zona-card-hero zona-cov-${_cuad}">
         ${_gaugeHtml}
         <div class="zona-hero-txt">
           <div class="zona-card-name">${nm}</div>
-          <div class="zona-cov-state">${_cuadIco} ${_cuadLbl} · <b class="zona-cov-days">${_diasTxt}</b></div>
-          <div class="zona-cov-sub">${codigos.length > 1 ? `<span class="zona-codes-chip">📦 ${codigos.length} códigos</span> ` : ''}${_esc(_rotTxt)}${esAlmacenCard ? ' · meta ' + _objDias + ' d' : ''}</div>
+          <div class="zona-cov-state">${_cuadIco} ${_cuadLbl} · <b class="zona-cov-days">${_diasTxt}</b><span class="zona-cov-rot"> · ${_esc(_rotTxt)}${esAlmacenCard ? ' · meta ' + _objDias + 'd' : ''}</span></div>
+          <div class="zc-chips" id="zChips-${safe}">${_codChips}</div>
         </div>
         <div class="zona-hero-badges">
           ${rotCeroChip}
@@ -50207,18 +50219,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         </div>
       </div>
       ${alertaNeg}
-      <div class="zona-metrics-lean">
-        <span class="zml"><span class="zml-l">Stock${esAlmacenCard ? ' alm' : ''}</span> <b id="zStock-${safe}" class="${negativo ? 'brecha-pos' : ''}">${_esc(fStock)}</b><span class="zona-edit-ico" onclick="MOS.zonaAjusteInline('${safe}')">✎</span><span class="zona-edit-ico" title="Historial de movimientos" onclick="MOS.${esAlmacenCard ? 'zonaVerKardexAlmacen' : 'zonaVerKardex'}('${safe}')">🕘</span></span>
-        ${esAlmacenCard ? '' : `<span class="zml"><span class="zml-l">Almacén</span> <b class="${alm < 0 ? 'brecha-pos' : ''}">${_esc(fAlm)}</b><span class="zona-edit-ico" title="Historial almacén" onclick="MOS.zonaVerKardexAlmacen('${safe}')">🕘</span></span>`}
-      </div>
-      ${esAlmacenCard ? `<div class="zona-prov" id="zProv-${safe}" data-sku="${safe}">${_zonaProvBlockHtml(sku)}</div>` : ''}
-      <div class="zona-tools-tog" onclick="MOS.zonaToggleTools('${safe}')"><span class="zt-caret" id="ztCaret-${safe}">▸</span> 🛠 Herramientas <small>ajustar · por qué · historial</small></div>
-      <div class="zona-tools-wrap" id="zt-${safe}" style="display:none">
-        <div class="zt-sec"><div class="zt-tag"><span class="ztn">1</span> Ajustar / contar <small>canónico + equivalentes</small></div><div class="zt-body" id="ztCod-${safe}"></div></div>
-        <div class="zt-sec"><div class="zt-tag"><span class="ztn">2</span> ¿Por qué ${_esc(fEsp)}? <small>día a día, por semana</small></div><div class="zt-body" id="ztPq-${safe}"><div class="esp-loading"><span class="esp-spin"></span></div></div></div>
-        <div class="zt-sec"><div class="zt-tag"><span class="ztn">3</span> Historial <small>cómo se movió</small></div><div class="zt-body" id="ztHx-${safe}"><div class="esp-loading"><span class="esp-spin"></span></div></div></div>
-      </div>
-      ${codAlmDisc}
+      ${esAlmacenCard
+        ? `<div class="zona-prov" id="zProv-${safe}" data-sku="${safe}">${_zonaProvBlockHtml(sku)}</div>`
+        : `<div class="zona-almline"><span class="zml-l">En almacén hay</span> <b class="${alm < 0 ? 'brecha-pos' : ''}">${_esc(fAlm)}</b> <span class="zml-l">para pedir</span></div>`}
       ${vencHtml}
       ${rotCeroHint}
       ${pedEstado}
@@ -50226,7 +50229,95 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <div class="zona-ia">💡 ${_esc(ia)}</div>
         <div class="zona-actions">${acciones}</div>
       </div>
+      <div class="zona-tool-btns">
+        <button class="ztbtn" id="zAjBtn-${safe}" onclick="MOS.zonaAjustarToggle('${safe}')">✏️ Ajustar</button>
+        <button class="ztbtn" onclick="MOS.zonaSecToggle('${safe}','pq')">📊 ¿Por qué ${_esc(fEsp)}?</button>
+        <button class="ztbtn" onclick="MOS.zonaSecToggle('${safe}','hx')">🕘 Historial</button>
+      </div>
+      <div class="zt-panel" id="ztPq-wrap-${safe}" style="display:none"><div id="ztPq-${safe}"><div class="esp-loading"><span class="esp-spin"></span></div></div></div>
+      <div class="zt-panel" id="ztHx-wrap-${safe}" style="display:none"><div id="ztHx-${safe}"><div class="esp-loading"><span class="esp-spin"></span></div></div></div>
     </div>`;
+  }
+  // [902] Chips de código (canónico + equivalentes) con su stock; editables (autoguardado) en modo Ajustar.
+  function _zonaCodChipsHtml(sku, item) {
+    const safe = _esc(sku);
+    const step = _zonaStepAttr(item);
+    const cods = Array.isArray(item.codigos) ? item.codigos : [];
+    const chip = (cb, stockRaw, esEq) => {
+      const cbSafe = _zonaEsc(String(cb));
+      const st = _zonaFmtCant(_zonaNum(stockRaw), item, true);
+      const neg = _zonaNum(stockRaw) < 0;
+      const lbl = String(cb) === '__GLOBAL__' ? 'stock' : (String(cb).length > 5 ? '…' + String(cb).slice(-5) : String(cb));
+      return `<span class="zc-chip${esEq ? ' is-eq' : ''}${neg ? ' is-neg' : ''}" title="${_esc(String(cb))}${esEq ? ' · equivalente' : ''}">
+        <span class="zc-chip-cod">${_esc(lbl)}${esEq ? ' ≈' : ''}</span>
+        <span class="zc-chip-st"><b>${_esc(st)}</b></span>
+        <input class="zc-chip-in" type="number" step="${step}" inputmode="decimal" value="${_esc(st)}"
+          onchange="MOS.zonaChipSave('${safe}','${cbSafe}',this)" onkeydown="if(event.key==='Enter'){this.blur();}"></span>`;
+    };
+    if (!cods.length) return chip('__GLOBAL__', item.stockZona != null ? item.stockZona : item.stock, false);
+    return cods.map(c => chip(c.codBarra != null ? c.codBarra : (c.codigoBarra != null ? c.codigoBarra : ''), c.stock, !!c.esEquivalente)).join('');
+  }
+  // Alterna modo edición de los chips (autoguardado). Al salir, refresca el card (gauge/cuadrante).
+  function zonaAjustarToggle(sku) {
+    const box = $('zChips-' + _zonaSkuId(sku));
+    const btn = $('zAjBtn-' + _zonaSkuId(sku));
+    if (!box) return;
+    const editing = box.classList.toggle('editing');
+    if (btn) { btn.textContent = editing ? '✓ Listo' : '✏️ Ajustar'; btn.classList.toggle('is-on', editing); }
+    try { _zonaSfx('pop'); _zonaVibrar(15); } catch (_) {}
+    if (editing) { const inp = box.querySelector('.zc-chip-in'); if (inp) { try { inp.focus(); inp.select(); } catch (_) {} } }
+    else renderZona();
+  }
+  // Autoguarda un chip (un código, o el global si el producto no tiene desglose). Optimista + rollback.
+  async function zonaChipSave(sku, cb, el) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
+    if (!p || !el) return;
+    const nuevo = _zonaParseCant(el.value, !!p.esGranel);
+    const esGlobal = (cb === '__GLOBAL__');
+    const c = esGlobal ? null : _zonaCodFind(p, cb);
+    const antes = esGlobal ? _zonaNum(p.stockZona != null ? p.stockZona : p.stock) : (c ? _zonaNum(c.stock) : 0);
+    if (!esGlobal && !c) return;
+    if (nuevo === antes) return;
+    // optimista
+    if (esGlobal) { if (p.stockZona != null) p.stockZona = nuevo; else p.stock = nuevo; } else { c.stock = nuevo; }
+    _zonaRecalcGlobal(p); _zonaPintarKpis();
+    try { _zonaSfx('ok'); _zonaVibrar(20); } catch (_) {}
+    toast((esGlobal ? 'Stock' : 'Código') + ' ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');
+    try {
+      let r;
+      if (esGlobal) { const lid = p._ajLocalId || (p._ajLocalId = _zonaAjusteLocalId('GLOBAL')); r = await API.zona.ajustarStock({ zona: S.zonaActual, skuBase: sku, nuevo, localId: lid }); delete p._ajLocalId; }
+      else { const lid = c._ajLocalId || (c._ajLocalId = _zonaAjusteLocalId(cb)); r = await _zonaAplicarAjusteCodigo(String(cb), nuevo, lid); delete c._ajLocalId; }
+      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+    } catch (e) {
+      if (esGlobal) { if (p.stockZona != null) p.stockZona = antes; else p.stock = antes; } else { c.stock = antes; }
+      _zonaRecalcGlobal(p); try { el.value = _zonaFmtCant(antes, p, true); } catch (_) {}
+      try { _zonaSfx('error'); _zonaVibrar([120, 40, 120]); } catch (_) {}
+      toast('No se guardó: ' + (e.message || e), 'error');
+    }
+  }
+  // Abre/cierra una sección del card (Por qué / Historial), tipo "el card se abre en datos". Lazy-load.
+  function zonaSecToggle(sku, which) {
+    const id = 'zt' + (which === 'pq' ? 'Pq' : 'Hx') + '-wrap-' + _zonaSkuId(sku);
+    const wrap = $(id);
+    if (!wrap) return;
+    const open = wrap.style.display !== 'none';
+    if (open) { wrap.style.display = 'none'; try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {} return; }
+    wrap.style.display = '';
+    try { _zonaSfx('pop'); _zonaVibrar([14, 8]); } catch (_) {}
+    if (wrap.dataset.cargado !== '1') { wrap.dataset.cargado = '1'; (which === 'pq' ? _zonaSecCargarPq : _zonaSecCargarHx)(sku); }
+  }
+  async function _zonaSecCargarPq(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); if (!p) return;
+    const el = $('ztPq-' + _zonaSkuId(sku)); if (!el) return;
+    const esAlm = _esZonaAlmacen({ idZona: S.zonaActual, nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
+    const dias = esAlm ? null : await _zonaDiasFetch(sku);   // almacén: no hay ventas diarias → picos semanales
+    el.innerHTML = _zonaEsperadoRender(p, dias);
+  }
+  async function _zonaSecCargarHx(sku) {
+    const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); if (!p) return;
+    const el = $('ztHx-' + _zonaSkuId(sku)); if (!el) return;
+    try { const r = await API.zona.kardexHistorial({ skuBase: sku, zona: S.zonaActual }); el.innerHTML = _zonaKardexInlineHtml((r && r.data) || r || {}, p); }
+    catch (e) { el.innerHTML = '<div class="zt-mut">No se pudo cargar el historial.</div>'; }
   }
 
   // ══ [RIZ #4 · PROVEEDORES POR CANÓNICO] (solo ALMACEN) ════════════════════════════════════════════════════
@@ -50423,6 +50514,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     document.querySelectorAll('#zonaKpis .zona-kpi').forEach(el => el.classList.toggle('active', el.dataset.kpi === f.kpi));
     try { _zonaSfx('pop'); _zonaVibrar(15); } catch (_) {}
     renderZona();
+    // [902] barrido de luz al cambiar de cuadrante ("haz de luz a su listado")
+    try {
+      const l = $('zonaLista');
+      if (l && !_zonaReduce()) { l.classList.remove('zona-lista-sweep'); void l.offsetWidth; l.classList.add('zona-lista-sweep'); setTimeout(() => { try { l.classList.remove('zona-lista-sweep'); } catch (_) {} }, 650); }
+    } catch (_) {}
   }
   function zonaToggleTend(t) {
     const f = S._zonaFiltros;
@@ -50725,9 +50821,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaEsperadoRender(p, dias) {
     const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
     if (!Array.isArray(dias) || !dias.length) {
+      // Sin ventas diarias (ALMACÉN: es despacho, no venta) → gráfico por SEMANA usando los picos del panel.
       const picos = Array.isArray(p.picos) ? p.picos.slice(-4).map(_zonaNum) : [];
-      const pu = picos.length ? picos[picos.length - 1] : 0;
-      return `<div class="esp-calc"><div class="esp-nums">pico de la última semana <b>${_esc(_zonaFmtNumRaw(pu, p.esGranel))}</b> × 1.2 = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
+      if (!picos.length) return `<div class="esp-calc"><div class="esp-nums">objetivo <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
+      const pu = picos[picos.length - 1];
+      const maxP = Math.max(1, ...picos);
+      const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última sem'].slice(Math.max(0, 4 - picos.length));
+      const cols = picos.map((v, i) => {
+        const isU = (i === picos.length - 1);
+        const h = Math.max(4, Math.round(v / maxP * 88));
+        return `<div class="esp-wk${isU ? ' is-used' : ''}${v <= 0 ? ' is-empty' : ''}">
+          <div class="esp-wk-bars" style="justify-content:center"><div class="esp-day pk"><div class="esp-day-v">${v > 0 ? _esc(_zonaFmtNumRaw(v, p.esGranel)) : ''}</div><div class="esp-day-bar" style="height:${h}px;width:56%"></div><div class="esp-day-d">sem</div></div></div>
+          <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[i] || ''}</span><span class="esp-wk-pico">pico ${_esc(_zonaFmtNumRaw(v, p.esGranel))}</span></div>
+          ${isU ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
+      }).join('');
+      return `<div class="esp-help">Es despacho de almacén (no venta diaria). Cada barra = el <b>pico</b> de esa semana. Reponemos con el de la <b>última</b> + 20%.</div>
+        <div class="esp-weeks">${cols}</div>
+        <div class="esp-calc"><div class="esp-nums">pico última semana <b>${_esc(_zonaFmtNumRaw(pu, p.esGranel))}</b> × 1.2 = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
     }
     const DOW = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
     const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última sem'];
@@ -54751,6 +54861,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
     zonaVerEsperado, zonaCerrarEsperado, zonaToggleTools,
+    zonaAjustarToggle, zonaChipSave, zonaSecToggle,
     zonaPedirAlmacen, zonaAgregarLista,
     // [RIZ CARRITO] carrito flotante de pedido a almacén (un paquete = un pickup con N líneas)
     zonaCarritoAbrir, zonaCarritoCerrar, zonaCarritoStep, zonaCarritoSet, zonaCarritoQuitar, zonaCarritoVaciar, zonaCarritoEnviar,
