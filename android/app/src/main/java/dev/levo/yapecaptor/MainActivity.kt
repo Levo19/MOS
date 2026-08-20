@@ -116,44 +116,97 @@ class MainActivity : AppCompatActivity() {
     // que el servidor confirme la clave. Verifica SIEMPRE online (la clave puede rotar). Sin internet
     // no abre. Un botón para reintentar; nada más — no hay forma de saltearlo.
     private var candado: android.widget.FrameLayout? = null
+    private val _dpi get() = resources.displayMetrics.density
+    private fun dp(v: Int) = (v * _dpi).toInt()
+
+    // círculo/redondeado programático (sin XML de drawables)
+    private fun redondo(color: Int, radio: Int): android.graphics.drawable.GradientDrawable =
+        android.graphics.drawable.GradientDrawable().apply { setColor(color); cornerRadius = dp(radio).toFloat() }
+
     private fun mostrarCandado() {
         if (candado != null) return
         val root = findViewById<android.view.View>(android.R.id.content) as android.view.ViewGroup
-        val fl = android.widget.FrameLayout(this).apply {
-            setBackgroundColor(0xFF0E3A34.toInt())
-            isClickable = true; isFocusable = true
-        }
+        val fl = android.widget.FrameLayout(this).apply { setBackgroundColor(0xFF0B2E2A.toInt()); isClickable = true; isFocusable = true }
+
         val col = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            gravity = android.view.Gravity.CENTER
-            setPadding(64, 0, 64, 0)
+            orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER_HORIZONTAL
+            setPadding(dp(28), dp(48), dp(28), dp(28))
         }
-        val titulo = TextView(this).apply { text = "🛡️ MosGuard"; textSize = 26f; setTextColor(0xFFFFFFFF.toInt()); gravity = android.view.Gravity.CENTER }
-        val sub = TextView(this).apply { text = "Ingresá la clave master (8 dígitos)"; textSize = 14f; setTextColor(0xFF9FE6DA.toInt()); gravity = android.view.Gravity.CENTER; setPadding(0, 24, 0, 24) }
-        val inp = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
-            hint = "········"; gravity = android.view.Gravity.CENTER; textSize = 24f; setTextColor(0xFFFFFFFF.toInt())
-            filters = arrayOf(android.text.InputFilter.LengthFilter(8))
+        val escudo = TextView(this).apply { text = "🛡️"; textSize = 44f; gravity = android.view.Gravity.CENTER }
+        val titulo = TextView(this).apply { text = "MosGuard"; textSize = 24f; setTextColor(0xFFFFFFFF.toInt()); gravity = android.view.Gravity.CENTER; typeface = android.graphics.Typeface.DEFAULT_BOLD; setPadding(0, dp(6), 0, 0) }
+        val sub = TextView(this).apply { text = "Clave master"; textSize = 13f; setTextColor(0xFF7FD6C8.toInt()); gravity = android.view.Gravity.CENTER; letterSpacing = 0.08f; setPadding(0, dp(4), 0, dp(26)) }
+
+        // 8 puntos que se llenan
+        val puntos = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER }
+        val dots = ArrayList<TextView>()
+        for (i in 0 until 8) {
+            val d = TextView(this).apply { background = redondo(0x33FFFFFF, 99); width = dp(13); height = dp(13) }
+            val lp = android.widget.LinearLayout.LayoutParams(dp(13), dp(13)).apply { setMargins(dp(6), 0, dp(6), 0) }
+            puntos.addView(d, lp); dots.add(d)
         }
-        val btn = Button(this).apply { text = "Desbloquear" }
-        val err = TextView(this).apply { setTextColor(0xFFFCA5A5.toInt()); gravity = android.view.Gravity.CENTER; setPadding(0, 16, 0, 0) }
-        col.addView(titulo); col.addView(sub); col.addView(inp); col.addView(btn); col.addView(err)
-        fl.addView(col, android.widget.FrameLayout.LayoutParams(-1, -1).apply { gravity = android.view.Gravity.CENTER })
+        val err = TextView(this).apply { setTextColor(0xFFFCA5A5.toInt()); gravity = android.view.Gravity.CENTER; textSize = 12f; setPadding(0, dp(16), 0, dp(8)); height = dp(38) }
+
+        col.addView(escudo); col.addView(titulo); col.addView(sub); col.addView(puntos); col.addView(err)
+
+        // ── el teclado numérico propio (sin teclado del sistema) ──
+        val clave = StringBuilder()
+        var verificando = false
+        val pinta = { for (i in 0 until 8) dots[i].background = redondo(if (i < clave.length) 0xFF2DE3C8.toInt() else 0x33FFFFFF, 99) }
+        var onDigito: (String) -> Unit = {}
+        var onBorrar: () -> Unit = {}
+
+        fun tecla(txt: String, accion: () -> Unit): TextView = TextView(this).apply {
+            text = txt; textSize = 26f; setTextColor(0xFFEFFFFB.toInt()); gravity = android.view.Gravity.CENTER
+            background = redondo(0x14FFFFFF, 99)
+            isClickable = true
+            setOnClickListener { try { performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY) } catch (_: Throwable) {}; accion() }
+        }
+
+        val grid = android.widget.GridLayout(this).apply { columnCount = 3; rowCount = 4; setPadding(0, dp(14), 0, 0) }
+        val cel = dp(74); val gap = dp(9)
+        val orden = listOf("1","2","3","4","5","6","7","8","9","","0","⌫")
+        for ((idx, t) in orden.withIndex()) {
+            val v: android.view.View = when (t) {
+                "" -> android.view.View(this)
+                "⌫" -> tecla("⌫") { onBorrar() }
+                else -> tecla(t) { onDigito(t) }
+            }
+            val lp = android.widget.GridLayout.LayoutParams().apply {
+                width = cel; height = cel; setMargins(gap, gap, gap, gap)
+                rowSpec = android.widget.GridLayout.spec(idx / 3); columnSpec = android.widget.GridLayout.spec(idx % 3)
+            }
+            grid.addView(v, lp)
+        }
+        col.addView(grid)
+
+        fl.addView(col, android.widget.FrameLayout.LayoutParams(-2, -2).apply { gravity = android.view.Gravity.CENTER })
         root.addView(fl, android.view.ViewGroup.LayoutParams(-1, -1))
         candado = fl
-        btn.setOnClickListener {
-            val clave = inp.text.toString().trim()
-            if (clave.length != 8) { err.text = "Son 8 dígitos"; return@setOnClickListener }
-            btn.isEnabled = false; err.text = "Verificando…"
+        pinta()
+
+        val verificar = {
+            verificando = true; err.setTextColor(0xFF7FD6C8.toInt()); err.text = "Verificando…"
+            val c = clave.toString()
             thread {
-                val ok = Desbloqueo.verificar(this, clave)
+                val ok = Desbloqueo.verificar(this, c)
                 runOnUiThread {
-                    btn.isEnabled = true
+                    verificando = false
                     if (ok) { root.removeView(fl); candado = null }
-                    else { err.text = "Clave incorrecta o sin conexión"; inp.text.clear() }
+                    else {
+                        err.setTextColor(0xFFFCA5A5.toInt()); err.text = "Clave incorrecta o sin conexión"
+                        clave.setLength(0); pinta()
+                        try { puntos.animate().translationX(dp(8).toFloat()).setDuration(60).withEndAction { puntos.animate().translationX(dp(-8).toFloat()).setDuration(60).withEndAction { puntos.translationX = 0f } } } catch (_: Throwable) {}
+                    }
                 }
             }
         }
+        onDigito = d@{ dgt ->
+            if (verificando || clave.length >= 8) return@d
+            if (err.text.isNotEmpty()) err.text = ""
+            clave.append(dgt); pinta()
+            if (clave.length == 8) verificar()   // 8 dígitos → verifica solo
+        }
+        onBorrar = b@{ if (verificando || clave.isEmpty()) return@b; clave.deleteCharAt(clave.length - 1); pinta() }
     }
 
     private fun pedirPermisoNotificaciones() {
