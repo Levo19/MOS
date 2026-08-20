@@ -50202,7 +50202,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <div class="zona-hero-txt">
           <div class="zona-card-name">${nm}</div>
           <div class="zona-cov-state">${_cuadIco} ${_cuadLbl} · <b class="zona-cov-days">${_diasTxt}</b></div>
-          <div class="zona-cov-sub">${_esc(_rotTxt)}${esAlmacenCard ? ' · meta ' + _objDias + ' d' : ''}</div>
+          <div class="zona-cov-sub">${codigos.length > 1 ? `<span class="zona-codes-chip">📦 ${codigos.length} códigos</span> ` : ''}${_esc(_rotTxt)}${esAlmacenCard ? ' · meta ' + _objDias + ' d' : ''}</div>
         </div>
         <div class="zona-hero-badges">
           ${rotCeroChip}
@@ -50222,8 +50222,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ${vencHtml}
       ${rotCeroHint}
       ${pedEstado}
-      <div class="zona-ia">💡 ${_esc(ia)}</div>
-      <div class="zona-actions">${acciones}</div>
+      <div class="zona-accion zona-cov-${_cuad}">
+        <div class="zona-ia">💡 ${_esc(ia)}</div>
+        <div class="zona-actions">${acciones}</div>
+      </div>
     </div>`;
   }
 
