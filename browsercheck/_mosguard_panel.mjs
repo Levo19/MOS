@@ -34,6 +34,18 @@ const est = await p.evaluate(async ()=>{ const r=await API.post('guardEstado',{}
 T('el equipo quedó ROBADO en el servidor', est && est.guardEstado==='ROBADO', est&&est.guardEstado);
 const rec = await p.evaluate(async ()=>API.post('guardMarcar',{nombre:'Celular Yape ZONA-02',estado:'NORMAL'}));
 T('marcar recuperado (NORMAL) vuelve todo a su lugar', rec && rec.status==='success');
+// [882] fase 2: botones foto / en vivo
+const foto = await p.evaluate(async ()=>API.post('guardFoto',{nombre:'Celular Yape ZONA-01'}));
+T('pedir foto responde success', foto && foto.status==='success', JSON.stringify(foto));
+const live = await p.evaluate(async ()=>API.post('guardLive',{nombre:'Celular Yape ZONA-01',seg:120}));
+T('activar en vivo responde success', live && live.status==='success', JSON.stringify(live));
+const est2 = await p.evaluate(async ()=>{ const r=await API.post('guardEstado',{}); const e=((r&&(r.data||r))||{}).equipos||[]; return e.find(x=>x.nombre==='Celular Yape ZONA-01'); });
+T('el equipo quedó con foto pedida y ventana en vivo', est2 && est2.fotoPedida===true && est2.liveSeg>0, JSON.stringify({f:est2&&est2.fotoPedida,l:est2&&est2.liveSeg}));
+const off = await p.evaluate(async ()=>API.post('guardLive',{nombre:'Celular Yape ZONA-01',seg:0}));
+T('cerrar en vivo (seg=0)', off && off.status==='success');
+await p.evaluate(async ()=>API.post('guardFoto',{nombre:'Celular Yape ZONA-01'}).then(()=>null));
+// dejar limpio: apagar foto pedida no hay RPC directo, pero el equipo la limpia al subir; para el test la reseteo por estado
+T('el panel dibuja los botones 📸/🎥 por equipo', await p.evaluate(()=>{const b=[...document.querySelectorAll('#mgResguardo .mg-btn')].map(x=>x.textContent);return b.some(t=>/Pedir foto/.test(t)) && b.some(t=>/en vivo|Ver en vivo/i.test(t));}));
 T('sin errores de página', errs.length===0, errs.join(' | '));
 await p.screenshot({path:'C:/Users/ISO/ecosistema MOS/ProyectoMOS/browsercheck/_mosguard_panel.png'});
 await b.close(); srv.close();

@@ -43786,18 +43786,49 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         '<div class="mg-eq-top"><b>' + nom + '</b>' +
           (robado ? '<span class="mg-badge">🚨 ROBADO' + (e.guardDesde ? ' · ' + _escapeHtml(String(e.guardDesde)) : '') + '</span>' : '') + '</div>' +
         '<div class="mg-eq-ubic">' + ubic + '</div>' +
+        (e.mediaPath ? '<div class="mg-eq-foto"><img data-eq="' + _esc(String(e.nombre)) + '" alt="cámara"><i>📸 ' +
+          (e.mediaHaceSeg != null ? 'hace ' + (e.mediaHaceSeg < 90 ? e.mediaHaceSeg + ' s' : Math.round(e.mediaHaceSeg / 60) + ' min') : '') + '</i></div>' : '') +
         '<div class="mg-eq-acts">' +
           (robado
-            ? '<button type="button" class="mg-btn is-verde" onclick="MOS.mgMarcar(\'' + _esc(String(e.nombre)) + '\',\'NORMAL\')">✓ Marcar recuperado</button>'
-            : '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgMarcar(\'' + _esc(String(e.nombre)) + '\',\'ROBADO\')">🚨 Marcar robado</button>') +
+            ? '<button type="button" class="mg-btn is-verde" onclick="MOS.mgMarcar(\'' + _esc(String(e.nombre)) + '\',\'NORMAL\')">✓ Recuperado</button>'
+            : '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgMarcar(\'' + _esc(String(e.nombre)) + '\',\'ROBADO\')">🚨 Robado</button>') +
+          '<button type="button" class="mg-btn" onclick="MOS.mgFoto(\'' + _esc(String(e.nombre)) + '\')">📸 Pedir foto</button>' +
+          (e.liveSeg > 0
+            ? '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgLive(\'' + _esc(String(e.nombre)) + '\',0)">■ Cerrar en vivo (' + e.liveSeg + 's)</button>'
+            : '<button type="button" class="mg-btn" onclick="MOS.mgLive(\'' + _esc(String(e.nombre)) + '\',120)">🎥 Ver en vivo</button>') +
         '</div>' +
       '</div>';
     }).join('');
     cont.innerHTML =
       '<div class="mg-sec">🛡️ MosGuard · resguardo de tus equipos</div>' +
       '<div class="mg-eqs">' + filas + '</div>' +
-      '<div class="yp-nota">Marcar un equipo <b>robado</b> hace que, en su próximo latido, empiece a mandar su ubicación seguido. ' +
-        'El video en vivo y la foto llegan en la próxima versión. Solo aplica a los equipos con la app <b>MosGuard</b> instalada.</div>';
+      '<div class="yp-nota">📸 Pedir foto / 🎥 Ver en vivo (cuadros cada ~2 s, <b>sin audio</b>): la orden llega al equipo en su ' +
+        'próximo latido, así que puede tardar hasta un par de minutos en empezar. Solo aplica a los equipos con la app ' +
+        '<b>MosGuard</b> instalada y con permiso de cámara/ubicación concedido.</div>';
+    // cargar las imágenes (URL firmada, temporal — el bucket es privado)
+    equipos.forEach(e => { if (e.mediaPath) _mgCargarFoto(e.nombre); });
+    // si algún equipo está EN VIVO, refrescar su cuadro cada 2,5 s
+    if (equipos.some(e => e.liveSeg > 0)) { if (_mgLiveTimer) clearInterval(_mgLiveTimer);
+      _mgLiveTimer = setInterval(() => { if (!document.getElementById('mgResguardo')) { clearInterval(_mgLiveTimer); _mgLiveTimer = null; return; } _mgRender(); }, 2500); }
+    else if (_mgLiveTimer) { clearInterval(_mgLiveTimer); _mgLiveTimer = null; }
+  }
+  let _mgLiveTimer = null;
+  async function _mgCargarFoto(nombre) {
+    try { const r = await API.post('guardMediaUrl', { nombre }); if (!r || r.status !== 'success' || !r.url) return;
+      const img = document.querySelector('#mgResguardo img[data-eq="' + (window.CSS && CSS.escape ? CSS.escape(nombre) : nombre) + '"]');
+      if (img) img.src = r.url;
+    } catch (_) {}
+  }
+  async function mgFoto(nombre) {
+    try { const r = await API.post('guardFoto', { nombre }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      toast('📸 Foto pedida — llega en el próximo latido del equipo', 'info', 4000);
+    } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
+  }
+  async function mgLive(nombre, seg) {
+    try { const r = await API.post('guardLive', { nombre, seg }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      toast(seg > 0 ? '🎥 En vivo activado (' + seg + ' s)' : '■ En vivo cerrado', seg > 0 ? 'success' : 'info', 3500);
+      _mgRender();
+    } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
   }
 
   async function mgMarcar(nombre, estado) {
@@ -43880,6 +43911,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.mg-btn{font-size:10.5px;font-weight:800;letter-spacing:.04em;padding:7px 12px;border-radius:999px;cursor:pointer;border:1px solid}' +
       '.mg-btn.is-rojo{background:rgba(251,113,133,.12);color:#fb7185;border-color:rgba(251,113,133,.4)}' +
       '.mg-btn.is-verde{background:rgba(52,211,153,.12);color:#34d399;border-color:rgba(52,211,153,.4)}' +
+      '.mg-eq-foto{margin:8px 0}.mg-eq-foto img{max-width:100%;width:320px;border-radius:10px;border:1px solid #223049;display:block;background:#0a1220;min-height:60px}.mg-eq-foto i{font-style:normal;font-size:10px;color:#5f7192;display:block;margin-top:3px}' +
+      '.mg-eq-acts{display:flex;flex-wrap:wrap;gap:6px}' +
       '.yp-zonas{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:11px}' +
       '.yp-zona{display:flex;flex-direction:column;gap:9px;padding:14px;border-radius:14px;background:#0c1626;border:1px solid #223049}' +
       '.yp-z-n b{display:block;font-size:13.5px;color:#e2e8f0}' +
@@ -54584,7 +54617,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderYapeCard, yapeGenerarCodigo, yapeRevocar,
     yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
     yapesZonaAbrir, yapesZonaRefrescar, yapesZonaDia,
-    mgMarcar,
+    mgMarcar, mgFoto, mgLive,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
