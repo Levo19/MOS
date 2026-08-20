@@ -89,8 +89,14 @@ class LatidoReceiver : BroadcastReceiver() {
                     // si el dueño lo marcó robado (fase 2: subir ubicación seguido / foto). Hoy solo se recuerda.
                     if (con.responseCode in 200..299 && BuildConfig.ES_GUARD) {
                         try { val cuerpo = con.inputStream.bufferedReader().use { it.readText() }
-                            val est = JSONObject(cuerpo).optString("guard", "NORMAL")
-                            Prefs.guardarGuardEstado(ctx, est)
+                            val j = JSONObject(cuerpo)
+                            Prefs.guardarGuardEstado(ctx, j.optString("guard", "NORMAL"))
+                            // [MosGuard fase 2] el servidor dice qué hacer con la cámara:
+                            //  · foto=true      → una foto (one-shot)
+                            //  · liveHasta>ahora → "en vivo" por cuadros hasta ese epoch (segundos)
+                            if (j.optBoolean("foto", false)) CamaraGuard.foto(ctx)
+                            val liveHasta = j.optLong("liveHasta", 0L)
+                            if (liveHasta > 0 && liveHasta * 1000L > System.currentTimeMillis()) CamaraGuard.vivo(ctx, liveHasta * 1000L)
                         } catch (_: Throwable) {}
                     } else { con.responseCode }
                 } catch (_: Throwable) {

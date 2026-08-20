@@ -74,3 +74,6 @@ verify_jwt = false
 verify_jwt = false
 [functions.sustitutos-ia]
 verify_jwt = false
+
+[functions.guard-media]
+verify_jwt = false

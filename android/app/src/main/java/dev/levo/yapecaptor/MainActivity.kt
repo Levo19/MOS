@@ -123,11 +123,14 @@ class MainActivity : AppCompatActivity() {
     private fun pedirPermisoUbicacion() {
         if (!BuildConfig.ES_GUARD || Build.VERSION.SDK_INT < 23) return
         try {
-            if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION,
-                                           android.Manifest.permission.ACCESS_COARSE_LOCATION), 92)
+            val faltan = mutableListOf<String>()
+            if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                faltan.add(android.Manifest.permission.ACCESS_FINE_LOCATION); faltan.add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
             }
+            if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                faltan.add(android.Manifest.permission.CAMERA)
+            }
+            if (faltan.isNotEmpty()) requestPermissions(faltan.toTypedArray(), 92)
         } catch (_: Throwable) {}
     }
 
