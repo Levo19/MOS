@@ -50274,8 +50274,27 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const editing = box.classList.toggle('editing');
     if (btn) { btn.textContent = editing ? '✓ Listo' : '✏️ Ajustar'; btn.classList.toggle('is-on', editing); }
     try { _zonaSfx('pop'); _zonaVibrar(15); } catch (_) {}
-    if (editing) { const inp = box.querySelector('.zc-chip-in'); if (inp) { try { inp.focus(); inp.select(); } catch (_) {} } }
-    else renderZona();
+    if (editing) {
+      const inp = box.querySelector('.zc-chip-in'); if (inp) { try { inp.focus(); inp.select(); } catch (_) {} }
+      // [905] Tocar AFUERA = dar por guardado y cerrar. Antes de salir, forzamos el blur del input
+      //   activo (dispara su onchange/autoguardado) para no perder el último valor.
+      setTimeout(() => {
+        const onDoc = (ev) => {
+          if (box.contains(ev.target)) return;                 // dentro de los chips → sigue editando
+          if (btn && btn.contains(ev.target)) return;           // el botón "✓ Listo" hace su propio toggle
+          const ae = document.activeElement;
+          if (ae && ae.classList && ae.classList.contains('zc-chip-in')) { try { ae.blur(); } catch (_) {} }
+          document.removeEventListener('pointerdown', onDoc, true);
+          box._offClick = null;
+          if (box.classList.contains('editing')) zonaAjustarToggle(sku);
+        };
+        box._offClick = onDoc;
+        document.addEventListener('pointerdown', onDoc, true);
+      }, 0);
+    } else {
+      if (box._offClick) { try { document.removeEventListener('pointerdown', box._offClick, true); } catch (_) {} box._offClick = null; }
+      renderZona();
+    }
   }
   // Autoguarda un chip (un código, o el global si el producto no tiene desglose). Optimista + rollback.
   async function zonaChipSave(sku, cb, el) {
