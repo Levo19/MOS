@@ -50156,16 +50156,32 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     else if (brecha > 0 || negativo)          { _cuad = 'pedir';  _cuadIco = '🔴'; _cuadLbl = 'Pedir ya'; }
     else if (esp > 0 && stockRaw > esp * 3)   { _cuad = 'sobra';  _cuadIco = '🟡'; _cuadLbl = 'Te sobra'; }
     else                                      { _cuad = 'orden';  _cuadIco = '🟢'; _cuadLbl = 'Al día'; }
+    // [892] Objetivo por NIVEL (regla del dueño): almacén = 1 semana (7 días), zona = 1 día.
+    const _objDias = esAlmacenCard ? 7 : 1;
     const _diasTxt = (_cuad === 'muerto') ? 'no rota'
       : negativo ? ('en ' + _esc(fStock))
       : (_diasCob === Infinity ? 'de sobra'
       : (_rotDia <= 0 ? '—'
       : (_diasCob >= 10 ? Math.round(_diasCob) + ' días' : (_diasCob.toFixed(1).replace(/\.0$/, '')) + ' días')));
-    const _covPct = negativo ? 3 : (_rotDia <= 0 ? (stockRaw > 0 ? 100 : 0) : Math.max(2, Math.min(100, Math.round(_diasCob / 2 * 100))));
     const _rotTxt = _rotDia > 0 ? ('vende ~' + _zonaFmtNumRaw(_picoFuerte > 0 ? _picoFuerte : _rotDia, p.esGranel) + '/día fuerte') : 'sin venta en 4 sem';
+    // Medidor circular (instrumento): anillo = cobertura respecto al objetivo del nivel. Centro = días.
+    const _ringFrac = negativo ? 0 : (_rotDia <= 0 ? (stockRaw > 0 ? 1 : 0) : Math.max(0, Math.min(1, _diasCob / _objDias)));
+    const _dash = Math.round(_ringFrac * 113);
+    const _ringNum = negativo ? _esc(fStock)
+      : (_cuad === 'muerto' ? '0'
+      : (_diasCob === Infinity ? '∞'
+      : (_rotDia <= 0 ? '—'
+      : (_diasCob >= 10 ? String(Math.round(_diasCob)) : _diasCob.toFixed(1).replace(/\.0$/, '')))));
+    const _ringUni = (negativo || _cuad === 'muerto' || _rotDia <= 0 || _diasCob === Infinity) ? '' : 'd';
     const covBar = `<div class="zona-cov zona-cov-${_cuad}">
-      <div class="zona-cov-head"><span class="zona-cov-state">${_cuadIco} ${_cuadLbl}</span><span class="zona-cov-days">${_diasTxt}</span><span class="zona-cov-rot">${_esc(_rotTxt)}</span></div>
-      <div class="zona-cov-track"><div class="zona-cov-fill" style="width:${_covPct}%"></div>${(_rotDia > 0 && !negativo) ? '<div class="zona-cov-target" title="objetivo: 1 día"></div>' : ''}</div>
+      <div class="zona-gauge">
+        <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="zg-track" cx="22" cy="22" r="18"></circle><circle class="zg-fill" cx="22" cy="22" r="18" style="stroke-dasharray:${_dash} 113"></circle></svg>
+        <div class="zg-c"><b>${_ringNum}</b>${_ringUni ? `<span>${_ringUni}</span>` : ''}</div>
+      </div>
+      <div class="zona-cov-txt">
+        <div class="zona-cov-state">${_cuadIco} ${_cuadLbl}</div>
+        <div class="zona-cov-sub"><b class="zona-cov-days">${_diasTxt}</b> · ${_esc(_rotTxt)}${esAlmacenCard ? ' · meta ' + _objDias + ' d' : ''}</div>
+      </div>
     </div>`;
 
     // [ROTCERO] Chip + hint para cards sin rotación (secundarias, no "rotas").
