@@ -50203,13 +50203,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ? `<div class="zona-rotcero-hint">Considera <b>anular</b> o <b>promocionar</b> este producto.</div>`
       : '';
 
+    // [904] Info limpia y explícita (no todo en una línea; sin el redundante "Pedir ya" ni "meta 7d").
+    const _rotNum = esAlmacenCard ? Math.round(_zonaNum(p.volumen) / 4) : (_picoFuerte > 0 ? _picoFuerte : Math.round(_zonaNum(p.volumen) / 28));
+    const _rotLbl = esAlmacenCard ? 'Despacha' : 'Vende';
+    const _rotUniTxt = esAlmacenCard ? 'semana' : 'día';
+    const _duraTxt = (_cuad === 'muerto') ? 'No rota hace 4 semanas'
+      : (negativo ? ('En negativo · ' + _esc(fStock))
+      : (_rotDia <= 0 ? '—' : ('Dura ' + _diasTxt)));
+    const _covPctBar = negativo ? 4 : (_cuad === 'muerto' ? 100 : (_rotDia <= 0 ? (stockRaw > 0 ? 100 : 0) : Math.max(3, Math.min(100, Math.round(_diasCob / _objDias * 100)))));
     const _codChips = _zonaCodChipsHtml(sku, p);
     return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
       <div class="zona-card-hero zona-cov-${_cuad}">
         ${_gaugeHtml}
         <div class="zona-hero-txt">
           <div class="zona-card-name">${nm}</div>
-          <div class="zona-cov-state">${_cuadIco} ${_cuadLbl} · <b class="zona-cov-days">${_diasTxt}</b><span class="zona-cov-rot"> · ${_esc(_rotTxt)}${esAlmacenCard ? ' · meta ' + _objDias + 'd' : ''}</span></div>
+          <div class="zona-dura"><span class="zona-dura-t">${_duraTxt}</span><span class="zona-dura-bar"><i style="width:${_covPctBar}%"></i></span></div>
+          <div class="zona-rota">${_rotLbl} <b>${_esc(_zonaFmtNumRaw(_rotNum, p.esGranel))}</b> / ${_rotUniTxt}</div>
           <div class="zc-chips" id="zChips-${safe}">${_codChips}</div>
         </div>
         <div class="zona-hero-badges">
@@ -50247,7 +50256,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const cbSafe = _zonaEsc(String(cb));
       const st = _zonaFmtCant(_zonaNum(stockRaw), item, true);
       const neg = _zonaNum(stockRaw) < 0;
-      const lbl = String(cb) === '__GLOBAL__' ? 'stock' : (String(cb).length > 5 ? '…' + String(cb).slice(-5) : String(cb));
+      const lbl = String(cb) === '__GLOBAL__' ? 'stock' : String(cb);   // [904] código de barra COMPLETO (no truncado: hay que distinguir el con/sin cero)
       return `<span class="zc-chip${esEq ? ' is-eq' : ''}${neg ? ' is-neg' : ''}" title="${_esc(String(cb))}${esEq ? ' · equivalente' : ''}">
         <span class="zc-chip-cod">${_esc(lbl)}${esEq ? ' ≈' : ''}</span>
         <span class="zc-chip-st"><b>${_esc(st)}</b></span>
@@ -50316,8 +50325,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   async function _zonaSecCargarHx(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); if (!p) return;
     const el = $('ztHx-' + _zonaSkuId(sku)); if (!el) return;
-    try { const r = await API.zona.kardexHistorial({ skuBase: sku, zona: S.zonaActual }); el.innerHTML = _zonaKardexInlineHtml((r && r.data) || r || {}, p); }
-    catch (e) { el.innerHTML = '<div class="zt-mut">No se pudo cargar el historial.</div>'; }
+    // [903] Hay DOS kardex: el de ALMACÉN (WH) y el de ZONA (me.stock_movimientos zona1/zona2).
+    //   Según el puesto activo se pide el correcto (antes siempre pedía el de zona → vacío en almacén).
+    const esAlm = _esZonaAlmacen({ idZona: S.zonaActual, nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
+    try {
+      const r = esAlm ? await API.zona.almacenKardex({ skuBase: sku }) : await API.zona.kardexHistorial({ skuBase: sku, zona: S.zonaActual });
+      el.innerHTML = _zonaKardexInlineHtml((r && r.data) || r || {}, p);
+    } catch (e) { el.innerHTML = '<div class="zt-mut">No se pudo cargar el historial.</div>'; }
   }
 
   // ══ [RIZ #4 · PROVEEDORES POR CANÓNICO] (solo ALMACEN) ════════════════════════════════════════════════════
@@ -50921,7 +50935,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   // Lista compacta de movimientos (para el panel inline; el modal completo con pestañas sigue en 🕘).
   function _zonaKardexInlineHtml(data, p) {
-    const movs = Array.isArray(data && data.movimientos) ? data.movimientos.slice(0, 8) : [];
+    let movs = Array.isArray(data && data.movimientos) ? data.movimientos.slice() : [];
+    // [903] multi-código: si el total no trae movimientos, agregamos los de cada código (porCodigo).
+    if (!movs.length && data && data.porCodigo && typeof data.porCodigo === 'object') {
+      for (const k of Object.keys(data.porCodigo)) { const e = data.porCodigo[k]; if (Array.isArray(e && e.movimientos)) movs = movs.concat(e.movimientos); }
+      movs.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+    }
+    movs = movs.slice(0, 8);
     if (!movs.length) return '<div class="zt-mut">Sin movimientos registrados.</div>';
     const ICO = { SALIDA_VENTA: ['🛒', 'out'], VENTA: ['🛒', 'out'], TRASLADO_IN: ['🚚', 'in'], TRASLADO: ['🚚', 'in'], INGRESO: ['📥', 'in'], AUDITORIA: ['📋', 'aud'], AJUSTE: ['✏️', 'aud'] };
     return movs.map(m => {

@@ -14946,7 +14946,7 @@
     /* Card de producto */
     /* [RIZ UX] Entrada con stagger (fade + slide-up + scale). transform/opacity → 60fps.
        content-visibility recorta el costo de render con listas grandes (800 items). */
-    .zona-card { background:#0f172a; border:1px solid #1e293b; border-left:3px solid #334155; border-radius:.85rem; padding:.85rem .9rem; margin-bottom:.65rem; position:relative; overflow:hidden;
+    .zona-card { background:linear-gradient(155deg, rgba(24,33,54,.92), rgba(12,18,32,.95)); border:1px solid #232f47; border-left:3px solid #334155; border-radius:.9rem; padding:.85rem .9rem; margin-bottom:.65rem; position:relative; overflow:hidden; box-shadow:0 1px 0 rgba(148,180,255,.04) inset, 0 8px 24px -16px rgba(0,0,0,.85);
       animation: zonaCardIn .34s cubic-bezier(.34,1.56,.64,1) both;
       transition: transform .12s ease, box-shadow .18s ease, border-color .18s ease;
       content-visibility:auto; contain-intrinsic-size:0 150px; }
@@ -14997,6 +14997,15 @@
     .zg-c span { font-size:.5rem; color:#64748b; line-height:1; margin-top:1px; }
     /* [897] Fidelidad al mockup: chip de códigos + panel de acción por cuadrante + más aire */
     .zona-card { padding:.95rem 1rem; }
+    /* [904] Tratamiento premium: lift + glow al hover, hairline superior tipo pantalla */
+    .zona-card:hover { transform:translateY(-2px); border-color:rgba(56,189,248,.3); box-shadow:0 14px 32px -18px rgba(0,0,0,.9), 0 0 28px -14px rgba(56,189,248,.34); }
+    .zona-card::after { content:""; position:absolute; top:0; left:8%; right:8%; height:1px; pointer-events:none; opacity:.55;
+      background:linear-gradient(90deg, transparent, rgba(56,189,248,.4), transparent); }
+    .zona-card.zona-cuad-pedir::after  { background:linear-gradient(90deg, transparent, rgba(239,68,68,.55), transparent); }
+    .zona-card.zona-cuad-sobra::after  { background:linear-gradient(90deg, transparent, rgba(234,179,8,.45), transparent); }
+    .zona-card.zona-cuad-orden::after  { background:linear-gradient(90deg, transparent, rgba(34,197,94,.4), transparent); }
+    .zona-card.zona-cuad-muerto::after { opacity:.25; }
+    @media (prefers-reduced-motion:reduce){ .zona-card:hover{ transform:none; } }
     .zona-codes-chip { display:inline-block; font-size:.6rem; font-weight:700; color:#a5b4fc; background:rgba(126,140,240,.14); border:1px solid rgba(126,140,240,.32); border-radius:1rem; padding:.04rem .45rem; margin-right:.15rem; }
     .zona-accion { margin-top:.55rem; border-radius:.7rem; padding:.6rem .7rem; background:rgba(148,163,184,.05); border:1px solid #1e293b; }
     .zona-accion .zona-ia { margin:0 0 .5rem; }
@@ -15131,6 +15140,19 @@
     .zc-chips.editing .zc-chip-st { display:none; }
     .zc-chips.editing .zc-chip-in { display:inline-block; }
     .zona-cov-rot { color:#64748b; }
+    /* [904] Info limpia: barra "Dura X días" + línea de rotación explícita */
+    .zona-dura { display:flex; align-items:center; gap:.55rem; margin-top:.32rem; font-size:.8rem; }
+    .zona-dura-t { font-weight:800; color:#cbd5e1; white-space:nowrap; }
+    .zona-dura-bar { flex:1; height:6px; min-width:44px; max-width:150px; background:#0b1220; border:1px solid #1e293b; border-radius:4px; overflow:hidden; }
+    .zona-dura-bar i { display:block; height:100%; border-radius:4px; transition:width .6s cubic-bezier(.2,.8,.2,1); background:#64748b; }
+    .zona-cov-pedir  .zona-dura-bar i { background:linear-gradient(90deg,#ef4444,#f87171); box-shadow:0 0 8px rgba(239,68,68,.55); }
+    .zona-cov-orden  .zona-dura-bar i { background:linear-gradient(90deg,#22c55e,#4ade80); box-shadow:0 0 7px rgba(34,197,94,.4); }
+    .zona-cov-sobra  .zona-dura-bar i { background:linear-gradient(90deg,#eab308,#facc15); }
+    .zona-cov-muerto .zona-dura-bar i { background:#475569; }
+    .zona-cov-pedir  .zona-dura-t { color:#fca5a5; }
+    .zona-cov-muerto .zona-dura-t { color:#94a3b8; }
+    .zona-rota { font-size:.72rem; color:#94a3b8; margin-top:.22rem; }
+    .zona-rota b { color:#e2e8f0; font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:800; }
     .zona-almline { font-size:.74rem; color:#94a3b8; margin-top:.5rem; }
     .zona-almline b { color:#e2e8f0; font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:800; }
     .zona-almline b.brecha-pos { color:#fca5a5; }
@@ -21743,7 +21765,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.903';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.904';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22022,14 +22044,14 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.903"></script>
+<script src="js/api.js?v=2.43.904"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.808"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.903"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.904"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -22038,7 +22060,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.903"></script>
+<script src="js/app.js?v=2.43.904"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
