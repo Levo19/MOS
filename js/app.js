@@ -50024,7 +50024,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
     const eff = _zonaEffStock(p);
     const c = cuad || _zonaCuadDe(p);
-    if (c === 'pedir')  return esp > 0 ? (esp - eff) / esp : 1;      // % faltante (0..1)
+    if (c === 'pedir') {
+      let s = esp > 0 ? (esp - eff) / esp : 1;      // % faltante (0..1)
+      // [913] Prioridad DINÁMICA: si ya lo pediste (carrito o pedido registrado), baja al fondo del grupo
+      //   → te libera para atender el siguiente más urgente. Al llegar la mercadería, el realtime lo re-ordena.
+      let yaPedido = !!(p.pedidoEstado && p.pedidoEstado.etiqueta);
+      try { if (!yaPedido && _zonaCarritoCant(String(p.skuBase || p.idProducto || '')) > 0) yaPedido = true; } catch (_) {}
+      if (yaPedido) s -= 2;                          // lo manda debajo de todos los no-pedidos
+      return s;
+    }
     if (c === 'sobra')  return esp > 0 ? eff / esp : (eff || 0);     // cuánto sobra respecto a la meta
     if (c === 'muerto') return eff;                                  // más stock parado primero
     return -(esp || 0);                                             // "en orden": sin urgencia
@@ -50242,6 +50250,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const _rotShow = (_rotDia > 0) || (esAlmacenCard && _zonaNum(p.volumen) > 0);
     const _rotLine = _rotShow ? `🔄 ${esAlmacenCard ? 'Despacha' : 'Vende'} <b>${_esc(_zonaFmtNumRaw(_rotNum, p.esGranel))}</b>/${_rotUniTxt}` : '🔄 sin rotación';
     const _diasSub = (_cuad === 'muerto') ? 'no rota hace 4 semanas' : (_rotDia <= 0 ? '' : ('te dura ~' + _diasTxt));
+    // [913] Plata inmovilizada (el dueño piensa en soles): muerto = todo parado; sobra = el exceso.
+    const _costoU = (_cuad === 'muerto' || _cuad === 'sobra') ? _zonaCostoUnit(p) : 0;
+    const _plataTxt = (_costoU > 0)
+      ? (_cuad === 'muerto' ? ('S/ ' + _money(_stockEff * _costoU).toFixed(2) + ' parado')
+        : ((_meta > 0 && _stockEff > _meta) ? ('S/ ' + _money((_stockEff - _meta) * _costoU).toFixed(2) + ' de más') : ''))
+      : '';
     const _codChips = _zonaCodChipsHtml(sku, p);
     return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
       <div class="zona-card-hero zona-cov-${_cuad}">
@@ -50254,7 +50268,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           <div class="zona-meter">
             <div class="zona-meter-rota">${_rotLine}</div>
             <div class="zona-meter-bar" title="Tienes ${_haveTxt}${_metaTxt ? ' · ' + _metaTxt : ''}"><i style="width:${_barPct}%"></i></div>
-            <div class="zona-meter-nums"><span class="zm-have"><b>${_haveTxt}</b> tienes</span>${_metaTxt ? `<span class="zm-meta">${_metaTxt}</span>` : ''}${_diasSub ? `<span class="zm-sub">${_diasSub}</span>` : ''}</div>
+            <div class="zona-meter-nums"><span class="zm-have"><b>${_haveTxt}</b> tienes</span>${_metaTxt ? `<span class="zm-meta">${_metaTxt}</span>` : ''}${_plataTxt ? `<span class="zm-plata">💸 ${_plataTxt}</span>` : ''}${_diasSub ? `<span class="zm-sub">${_diasSub}</span>` : ''}</div>
           </div>
           <div class="zc-chips" id="zChips-${safe}">${_codChips}</div>
         </div>
@@ -50423,6 +50437,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try { _zonaSfx('ok'); _zonaVibrar(20); } catch (_) {}
   }
 
+  // [913] Costo unitario del producto (del catálogo, por cualquiera de sus códigos) — para "S/ inmovilizado".
+  function _zonaCostoUnit(item) {
+    try {
+      const idx = _prodIndex();
+      const cods = Array.isArray(item.codigos) ? item.codigos : [];
+      for (const c of cods) {
+        const cb = String(c.codBarra != null ? c.codBarra : (c.codigoBarra != null ? c.codigoBarra : '')).trim();
+        if (cb && idx.byCod.has(cb)) { const pr = idx.byCod.get(cb); const cost = _zonaNum(pr.precioCosto || pr.costo || pr.costoUnitario); if (cost > 0) return cost; }
+      }
+      const sku = String(item.skuBase || item.idProducto || '');
+      if (sku && idx.byId.has(sku)) { const pr = idx.byId.get(sku); const cost = _zonaNum(pr.precioCosto || pr.costo || pr.costoUnitario); if (cost > 0) return cost; }
+    } catch (_) {}
+    return 0;
+  }
   // [902] Chips de código (canónico + equivalentes) con su stock; editables (autoguardado) en modo Ajustar.
   function _zonaCodChipsHtml(sku, item) {
     const safe = _esc(sku);
