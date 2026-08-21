@@ -1180,6 +1180,12 @@ const API = (() => {
     return _adhGasRaw(action, params);
   }
 
+  // [IA sin cupo] Detecta si un error de una Edge de IA (ia / buzon-igv) es por CUOTA/CRÉDITO agotado
+  // (429 de Gemini, o Claude 400 "credit balance too low") y NO un bug → mensaje humano "sin tokens, reintenta".
+  function _iaSinCupo(status, txt) {
+    if (status === 429) return true;
+    return /quota|exceeded|resource_exhausted|credit balance|too low|rate[\s_-]*limit|sin cupo|agotad/i.test(String(txt || ''));
+  }
   // ── [RIZ · CAPA 5] IA real vía Edge `/functions/ia` (Claude, JWT-gated) ─
   // El frontend arma los `messages` (con los NÚMEROS determinísticos de las RPCs) y la Edge reenvía a
   // Claude con la API key del secret. La IA SOLO redacta texto natural; los números NO los inventa.
@@ -2689,7 +2695,11 @@ const API = (() => {
           headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
           body: JSON.stringify({ jpgB64: p.jpgB64, mime: p.mime || 'image/jpeg', mes: p.mes, anio: p.anio, usuario: p.usuario || '' }) });
         const d = await res.json().catch(() => null);
-        return d && d.ok ? { status: 'success', data: d.data } : { status: 'error', error: (d && d.error) || 'no se pudo' };
+        if (d && d.ok) return { status: 'success', data: d.data };
+        // [sin cupo] aviso humano si la IA se quedó sin tokens/cuota (no es que la factura esté mal).
+        const errTxt = (d && d.error) || ('OCR HTTP ' + res.status);
+        if (_iaSinCupo(res.status, errTxt)) return { status: 'error', sinCupo: true, error: 'Se acabaron los tokens de IA por ahora. Reintenta en unos minutos.' };
+        return { status: 'error', error: errTxt };
       } catch (e) { return { status: 'error', error: String(e && e.message || e) }; }
     }
     if (action === 'buzonListar') {   // [885] listar el buzón del mes
