@@ -50079,9 +50079,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaMetaDe(p) {
     if (_zonaActualEsAlmacen()) {
       const d = (S._zonaAlmDem || {})[String((p && (p.skuBase || p.idProducto)) || '').toUpperCase()];
-      // [928] META de almacén = rotación (despacho+envasado, smart) + lo que se DEBE (rezagado propio +
-      //   de derivados). Un producto que se debe tiene meta > 0 aunque no rote → sale de "Muertos".
-      if (d) return _zonaMetaSmart(d.sem, 0.20) + _zonaNum(d.pend) + _zonaNum(d.pendDeriv);
+      // [931] META de almacén = smart(DEMANDA SEMANAL). `sem` ya trae, por semana, despacho + envasado +
+      //   deuda propia + deuda de derivados → el smart analiza el comportamiento (la deuda vieja pesa
+      //   menos sola, por estar en semanas viejas). No se suma la deuda total de golpe.
+      if (d) return _zonaMetaSmart(d.sem, 0.20);
     }
     const m = _zonaMetaSmart(p && p.picos, 0.20);
     return m > 0 ? m : _zonaNum(p && (p.esperada != null ? p.esperada : p.esperado));
@@ -50183,13 +50184,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const eff = _zonaEffStock(p);
     const brecha = Math.max(0, esp - eff);
     if (_zonaActualEsAlmacen()) {
-      // [929] En ALMACÉN: con demanda no cubierta (falta comprar) O con DEMANDA INSATISFECHA (deuda: se
-      //   pidió y no se despachó) → "Pedir ya", AUNQUE la rotación por despacho sea 0. La deuda manda:
-      //   hay que actuar (comprar si falta, despachar si ya tienes). Solo con deuda 0 se evalúa lo demás.
-      if (brecha > 0 || _zonaAlmTieneDeuda(p)) return 'pedir';
-      // "Muerto" SOLO si no hay demanda alguna (ni despacho, ni deuda, ni envasado) y hay stock parado.
-      //   Un granel envasable / insumo va a 'orden' (se consume al envasar, no es muerto).
-      if (_zonaEsRotCero(p) && eff > 0 && esp <= 0) return _zonaSeEnvasa(p) ? 'orden' : 'muerto';
+      // [931] En ALMACÉN la meta es la DEMANDA SEMANAL inteligente (incluye la deuda por semana). Si la meta
+      //   supera el stock → "Pedir ya". La deuda vieja YA NO fuerza pedir (si la demanda se apagó, el smart
+      //   la deja baja → no urge). Pero un producto CON deuda visible no cae a "Muertos": va a 'orden'.
+      if (brecha > 0) return 'pedir';
+      if (_zonaEsRotCero(p) && eff > 0 && esp <= 0) return (_zonaSeEnvasa(p) || _zonaAlmTieneDeuda(p)) ? 'orden' : 'muerto';
       if (esp > 0 && eff > esp * 3) return 'sobra';
       return 'orden';
     }
@@ -50879,10 +50878,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
                  + bar(dd, 'dbz-dd', `🟠 <b>Derivados deben</b> · ${LBL[i]}<br><b>${fmt(dd)}</b> — ${_dbzDesc('deudaDerivados', esInsumo)}${hExp}`);
       return `<div class="dbz-wk"><div class="dbz-bars">${bars || '<div class="dbz-none"></div>'}</div><div class="dbz-wklbl">${LBL[i] || ''}</div></div>`;
     }).join('');
-    // Meta = rotación (despacho+envasado, smart) + deuda total (propia + derivados). Compra = meta − stock.
-    const rot = sem.map(s => _zonaNum(s.despacho) + _zonaNum(s.envasado));
+    // [931] Meta INTELIGENTE = smart(DEMANDA SEMANAL). Cada semana = despacho+deuda+envasado+deudaDeriv;
+    //   el smart analiza el comportamiento (si cae, proyecta bajo → la deuda vieja no infla). Compra = meta − stock.
+    const demandaSem = sem.map(s => _zonaNum(s.despacho) + _zonaNum(s.deuda) + _zonaNum(s.envasado) + _zonaNum(s.deudaDeriv));
     const deudaTot = sem.reduce((a, s) => a + _zonaNum(s.deuda) + _zonaNum(s.deudaDeriv), 0);
-    const meta = _zonaMetaSmart(rot, 0.20) + deudaTot, comprar = Math.max(0, meta - stock);
+    const meta = _zonaMetaSmart(demandaSem, 0.20), comprar = Math.max(0, meta - stock);
     return `<div class="dbz-chart">
       <div class="dbz-weeks">${cols}</div>
       <div class="dbz-tip">👆 Toca una barra para ver de dónde sale (la 🟡 dice a qué zona se debe)</div>
@@ -50901,9 +50901,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {}
     } catch (_) {}
   }
-  // [928] Meta y compra a partir del item BULK ({sem[4], pend, pendDeriv, stock}). meta = rotación + deuda.
+  // [931] Meta y compra a partir del item BULK ({sem[4]=demanda semanal, stock}). meta = smart(demanda_sem).
   function _zonaEnvMetaCompra(it) {
-    const meta = _zonaMetaSmart((it && it.sem) || [], 0.20) + _zonaNum(it && it.pend) + _zonaNum(it && it.pendDeriv);
+    const meta = _zonaMetaSmart((it && it.sem) || [], 0.20);
     const stock = _zonaNum(it && it.stock);
     return { meta, stock, comprar: Math.max(0, meta - stock) };
   }
