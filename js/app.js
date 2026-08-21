@@ -50461,12 +50461,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const st = _zonaFmtCant(_zonaNum(stockRaw), item, true);
       const neg = _zonaNum(stockRaw) < 0;
       const lbl = String(cb) === '__GLOBAL__' ? 'stock' : String(cb);   // [904] código de barra COMPLETO (no truncado: hay que distinguir el con/sin cero)
+      const gran = !!item.esGranel;
       return `<span class="zc-chip${esEq ? ' is-eq' : ''}${neg ? ' is-neg' : ''}" title="${_esc(String(cb))}${esEq ? ' · equivalente' : ''}${neg ? ' · STOCK NEGATIVO: ajustar' : ''}">
         ${neg ? '<span class="zc-chip-warn" title="Stock negativo — toca Ajustar para corregir">⚠</span>' : ''}
         <span class="zc-chip-cod">${_esc(lbl)}${esEq ? ' ≈' : ''}</span>
-        <span class="zc-chip-st"><b>${_esc(st)}</b></span>
-        <input class="zc-chip-in" type="number" step="${step}" inputmode="decimal" value="${_esc(st)}"
-          onchange="MOS.zonaChipSave('${safe}','${cbSafe}',this)" onkeydown="if(event.key==='Enter'){this.blur();}"></span>`;
+        <span class="zc-chip-st"><b>${_esc(st)}</b>${gran ? ' <i>kg</i>' : ''}</span>
+        <input class="zc-chip-in" type="number" step="${gran ? 'any' : step}" inputmode="decimal" value="${_esc(st)}" data-unit="kg"
+          onchange="MOS.zonaChipSave('${safe}','${cbSafe}',this)" onkeydown="if(event.key==='Enter'){this.blur();}">${gran ? `<button type="button" class="zc-chip-uni" onclick="MOS.zonaChipUnidad(this)" title="Cambiar entre kilos y gramos (se guarda en kg)">kg</button>` : ''}</span>`;
     };
     if (!cods.length) return chip('__GLOBAL__', item.stockZona != null ? item.stockZona : item.stock, false);
     return cods.map(c => chip(c.codBarra != null ? c.codBarra : (c.codigoBarra != null ? c.codigoBarra : ''), c.stock, !!c.esEquivalente)).join('');
@@ -50502,10 +50503,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
   // Autoguarda un chip (un código, o el global si el producto no tiene desglose). Optimista + rollback.
+  // [913] Granel: alterna la unidad de captura entre kg y g (se guarda SIEMPRE en kg → kardex en kg).
+  function zonaChipUnidad(btn) {
+    const chip = btn.parentNode; const inp = chip && chip.querySelector('.zc-chip-in'); if (!inp) return;
+    const cur = inp.dataset.unit || 'kg'; const val = parseFloat(inp.value) || 0;
+    if (cur === 'kg') { inp.dataset.unit = 'g'; inp.value = String(Math.round(val * 1000)); btn.textContent = 'g'; inp.step = '1'; }
+    else { inp.dataset.unit = 'kg'; inp.value = String(_money(val / 1000)); btn.textContent = 'kg'; inp.step = 'any'; }
+    try { inp.focus(); inp.select(); } catch (_) {}
+    try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {}
+  }
   async function zonaChipSave(sku, cb, el) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku);
     if (!p || !el) return;
-    const nuevo = _zonaParseCant(el.value, !!p.esGranel);
+    let nuevo = _zonaParseCant(el.value, !!p.esGranel);
+    if (el.dataset && el.dataset.unit === 'g') nuevo = _money(nuevo / 1000);   // gramos → kilos
     const esGlobal = (cb === '__GLOBAL__');
     const c = esGlobal ? null : _zonaCodFind(p, cb);
     const antes = esGlobal ? _zonaNum(p.stockZona != null ? p.stockZona : p.stock) : (c ? _zonaNum(c.stock) : 0);
@@ -55123,7 +55134,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
     zonaVerEsperado, zonaCerrarEsperado, zonaToggleTools,
-    zonaAjustarToggle, zonaChipSave, zonaSecToggle,
+    zonaAjustarToggle, zonaChipSave, zonaChipUnidad, zonaSecToggle,
     zonaAbrirKardexGeneral, zonaCerrarKardexGeneral, zonaKgToggle, zonaKgBuscar, zonaKgVerCodigo, zonaKgExport, zonaKardexExport,
     zonaPedirAlmacen, zonaAgregarLista,
     // [RIZ CARRITO] carrito flotante de pedido a almacén (un paquete = un pickup con N líneas)
