@@ -50005,13 +50005,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // [893] Cuadrante de un producto (única fuente para card Y vitales del hub → nunca se desincronizan).
   const _CUAD_META = { pedir: ['🔴', 'Pedir ya'], orden: ['🟢', 'Al día'], sobra: ['🟡', 'Te sobra'], muerto: ['⚫', 'Muerto · no rota'] };
   function _zonaCuadDe(p) {
-    const stock = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
-    const esp   = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
-    const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - Math.max(0, stock));
-    const neg = !!p.stockNegativo || stock < 0;
-    if (_zonaEsRotCero(p) && stock > 0) return 'muerto';
-    if (brecha > 0 || neg) return 'pedir';
-    if (esp > 0 && stock > esp * 3) return 'sobra';
+    const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+    // [911] Stock EFECTIVO = suma de códigos en positivo (un código negativo cuenta 0, NO resta).
+    const cods = Array.isArray(p.codigos) ? p.codigos : [];
+    const eff = cods.length ? cods.reduce((a, c) => a + Math.max(0, _zonaNum(c.stock)), 0) : Math.max(0, _zonaNum(p.stockZona != null ? p.stockZona : p.stock));
+    const brecha = Math.max(0, esp - eff);
+    if (_zonaEsRotCero(p) && eff > 0) return 'muerto';
+    if (brecha > 0) return 'pedir';
+    if (esp > 0 && eff > esp * 3) return 'sobra';
     return 'orden';
   }
   // Cachea el conteo de cuadrantes de la zona activa (para las vitales del hub, sin queries pesadas).
@@ -50031,9 +50032,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const nm    = _esc(p.descripcion || p.nombre || sku);
     const stockRaw = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
     const esp   = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
-    // [MEJORA 3] El backend YA corrige la brecha para negativos (=esperada). La usamos tal cual.
-    const negativo = !!p.stockNegativo;
-    const brecha = (p.brecha != null) ? _zonaNum(p.brecha) : Math.max(0, esp - Math.max(0, stockRaw));
+    // [911] Stock EFECTIVO = suma de códigos en POSITIVO. Un código negativo cuenta como 0 (error de
+    //   conteo), NO como resta. Ej. MAGGI: −203 (→0) + 145 = 145 disponible, no −58.
+    const _cods0 = Array.isArray(p.codigos) ? p.codigos : [];
+    const _effStock = _cods0.length ? _cods0.reduce((a, c) => a + Math.max(0, _zonaNum(c.stock)), 0) : Math.max(0, stockRaw);
+    const negativo = !!p.stockNegativo || stockRaw < 0 || _cods0.some(c => _zonaNum(c.stock) < 0);
+    const brecha = Math.max(0, esp - _effStock);   // brecha contra el stock efectivo
     const alm   = _zonaNum(p.stockAlmacen != null ? p.stockAlmacen : p.almacen);
     const bcg   = _zonaBCGClase(p);
     const bcgInfo = _ZONA_BCG[bcg] || _ZONA_BCG.vaca;
@@ -50163,7 +50167,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const _picN = picos.map(_zonaNum);
     const _picoFuerte = _picN.length ? Math.max(0, ..._picN) : 0;
     const _rotDia = _picoFuerte > 0 ? _picoFuerte : (_zonaNum(p.volumen) > 0 ? _zonaNum(p.volumen) / 28 : 0);
-    const _stockEff = Math.max(0, stockRaw);   // [908] stock NEGATIVO = error de conteo → efectivo 0 para decidir (la ⚠ avisa que hay que contar)
+    const _stockEff = _effStock;   // [911] efectivo = suma de códigos en positivo (negativo=0, no resta)
     const _diasCob = _rotDia > 0 ? (_stockEff / _rotDia) : (_stockEff > 0 ? Infinity : 0);
     const _cuad = _zonaCuadDe(p);
     const _cuadIco = _CUAD_META[_cuad][0], _cuadLbl = _CUAD_META[_cuad][1];
@@ -50223,7 +50227,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const _metaTxt = (_cuad !== 'muerto' && _meta > 0) ? ('meta ' + _esc(_zonaFmtNumRaw(_meta, p.esGranel))) : '';
     const _rotShow = (_rotDia > 0) || (esAlmacenCard && _zonaNum(p.volumen) > 0);
     const _rotLine = _rotShow ? `🔄 ${esAlmacenCard ? 'Despacha' : 'Vende'} <b>${_esc(_zonaFmtNumRaw(_rotNum, p.esGranel))}</b>/${_rotUniTxt}` : '🔄 sin rotación';
-    const _diasSub = (_cuad === 'muerto') ? 'no rota hace 4 semanas' : (negativo ? '⚠ negativo — contar' : (_rotDia <= 0 ? '' : ('te dura ~' + _diasTxt)));
+    const _diasSub = (_cuad === 'muerto') ? 'no rota hace 4 semanas' : (_rotDia <= 0 ? '' : ('te dura ~' + _diasTxt));
     const _codChips = _zonaCodChipsHtml(sku, p);
     return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
       <div class="zona-card-hero zona-cov-${_cuad}">
