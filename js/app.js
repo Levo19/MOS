@@ -50008,13 +50008,38 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // [893] Cuadrante de un producto (única fuente para card Y vitales del hub → nunca se desincronizan).
   const _CUAD_META = { pedir: ['🔴', 'Pedir ya'], orden: ['🟢', 'Al día'], sobra: ['🟡', 'Te sobra'], muerto: ['⚫', 'Muerto · no rota'] };
+  // [916] META INTELIGENTE: proyecta la semana que viene mirando la TENDENCIA de las 4 semanas, no solo
+  //   el pico de la última. Peso mayor a lo reciente; si sube proyecta hacia arriba, si baja usa el
+  //   promedio ponderado (para no sobre-stockear un producto que muere). + colchón. Devuelve 0 si no hay data.
+  function _zonaMetaSmart(picos, colchon) {
+    const p = (Array.isArray(picos) ? picos : []).map(_zonaNum);
+    if (!p.length) return 0;
+    const col = (colchon == null ? 0.20 : colchon);
+    const last = p[p.length - 1];
+    // Sin historial REAL (menos de 2 semanas con venta) → como antes: último pico × colchón. Evita
+    //   sobre-proyectar la venta mayorista en picos (ej. 0,0,0,48 no debe volverse 77).
+    if (p.filter(v => v > 0).length < 2) return Math.ceil(Math.max(0, last) * (1 + col));
+    let wsum = 0, w = 0; p.forEach((v, i) => { const wi = i + 1; wsum += v * wi; w += wi; });
+    const avgPond = w > 0 ? wsum / w : last;
+    const maxPk = Math.max(...p);
+    const slope = (last - p[0]) / (p.length - 1);
+    let base = Math.min(maxPk, Math.max(last, avgPond));                       // nunca por debajo de lo que vendes
+    if (slope > 0.05 * Math.max(1, last)) base = Math.min(maxPk * 1.25, Math.max(base, last + Math.max(0, slope))); // sube: proyecta, capeado
+    else if (slope < -0.05 * Math.max(1, last)) base = Math.max(last, avgPond * 0.9);                                // baja: no sobre-stockear
+    return Math.ceil(Math.max(0, base) * (1 + col));
+  }
+  // Meta efectiva del producto: la inteligente (por picos) o, si no hay picos, la del backend.
+  function _zonaMetaDe(p) {
+    const m = _zonaMetaSmart(p && p.picos, 0.20);
+    return m > 0 ? m : _zonaNum(p && (p.esperada != null ? p.esperada : p.esperado));
+  }
   // [911] Stock EFECTIVO = suma de códigos en positivo (un código negativo cuenta 0, NO resta).
   function _zonaEffStock(p) {
     const cods = Array.isArray(p.codigos) ? p.codigos : [];
     return cods.length ? cods.reduce((a, c) => a + Math.max(0, _zonaNum(c.stock)), 0) : Math.max(0, _zonaNum(p.stockZona != null ? p.stockZona : p.stock));
   }
   function _zonaCuadDe(p) {
-    const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+    const esp = _zonaMetaDe(p);   // [916] meta inteligente (tendencia 4 semanas)
     const eff = _zonaEffStock(p);
     const brecha = Math.max(0, esp - eff);
     if (_zonaEsRotCero(p) && eff > 0) return 'muerto';
@@ -50025,7 +50050,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // [912] Prioridad DENTRO de un cuadrante (mayor = más arriba). Pedir: el que más % falta.
   //   Sobra: el que más le sobra. Muerto: el que más stock parado tiene. Orden: sin urgencia.
   function _zonaPrioridad(p, cuad) {
-    const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+    const esp = _zonaMetaDe(p);   // [916] meta inteligente
     const eff = _zonaEffStock(p);
     const c = cuad || _zonaCuadDe(p);
     if (c === 'pedir') {
@@ -50073,7 +50098,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const safe  = _esc(sku);
     const nm    = _esc(p.descripcion || p.nombre || sku);
     const stockRaw = _zonaNum(p.stockZona != null ? p.stockZona : p.stock);
-    const esp   = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+    const esp   = _zonaMetaDe(p);   // [916] meta inteligente (tendencia de 4 semanas), no solo el último pico
     // [911] Stock EFECTIVO = suma de códigos en POSITIVO. Un código negativo cuenta como 0 (error de
     //   conteo), NO como resta. Ej. MAGGI: −203 (→0) + 145 = 145 disponible, no −58.
     const _cods0 = Array.isArray(p.codigos) ? p.codigos : [];
@@ -51088,7 +51113,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   //   usa (el de la última). Datos de mos.zona_dias_producto (misma fuente que el pico del panel).
   // Render puro del gráfico (lo usan el modal Y el panel inline de herramientas).
   function _zonaEsperadoRender(p, dias) {
-    const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+    const esp = _zonaMetaDe(p);   // [916] meta inteligente
+    // Explicación de la tendencia (para el gráfico): mira las 4 semanas, no solo la última.
+    const _pk = (Array.isArray(p.picos) ? p.picos.slice(-4) : []).map(_zonaNum);
+    const _last = _pk.length ? _pk[_pk.length - 1] : 0;
+    const _slope = _pk.length > 1 ? (_last - _pk[0]) / (_pk.length - 1) : 0;
+    const _tendTxt = (_slope > 0.05 * Math.max(1, _last)) ? '📈 <b>Va en subida</b> → proyectamos la próxima semana <b>hacia arriba</b> (para no quedarte corto).'
+      : (_slope < -0.05 * Math.max(1, _last)) ? '📉 <b>Va en bajada</b> → usamos el <b>promedio</b> reciente (para no sobre-stockear algo que baja).'
+      : '➡️ <b>Estable</b> → tomamos el pico reciente más alto.';
+    const _metaExpl = `<div class="esp-tend">${_tendTxt}</div><div class="esp-nums">Meta = proyección × 1.2 (colchón) = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div>`;
     if (!Array.isArray(dias) || !dias.length) {
       // Sin ventas diarias (ALMACÉN: es despacho, no venta) → gráfico por SEMANA usando los picos del panel.
       const picos = Array.isArray(p.picos) ? p.picos.slice(-4).map(_zonaNum) : [];
@@ -51106,7 +51139,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       }).join('');
       return `<div class="esp-help">Es despacho de almacén (no venta diaria). Cada barra = el <b>pico</b> de esa semana. Reponemos con el de la <b>última</b> + 20%.</div>
         <div class="esp-weeks">${cols}</div>
-        <div class="esp-calc"><div class="esp-nums">pico última semana <b>${_esc(_zonaFmtNumRaw(pu, p.esGranel))}</b> × 1.2 = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
+        <div class="esp-calc">${_metaExpl}</div>`;
     }
     const DOW = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
     const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última sem'];
@@ -51135,7 +51168,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     });
     return `<div class="esp-help">Cada barra = lo que vendiste ese día. En cada semana se marca su <b>día más fuerte</b> (el pico). Para reponer usamos el pico de la <b>última semana</b> + 20% de colchón.</div>
       <div class="esp-weeks">${semHtml}</div>
-      <div class="esp-calc"><div class="esp-nums">pico de la última semana <b>${_esc(_zonaFmtNumRaw(picoUlt, p.esGranel))}</b> × 1.2 = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div></div>`;
+      <div class="esp-calc">${_metaExpl}</div>`;
   }
   async function _zonaDiasFetch(sku) {
     try { const r = await API.zona.diasProducto({ zona: S.zonaActual, sku }); return (r && (r.data || r) && (r.data || r).dias) || null; } catch (_) { return null; }
