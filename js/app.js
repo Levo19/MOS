@@ -49898,7 +49898,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [RIZ CARRITO] el FAB/badge reflejan el carrito de la zona tras cada render (cards reconstruidos).
     try { _zonaCarritoSync(); } catch (_) {}
     // [RIZ #4] En ALMACEN, completar las cards con sus proveedores reales (1 RPC batch, no bloqueante).
-    if (esAlmacen) { try { _zonaProvCargarVisibles(); } catch (_) {} }
+    if (esAlmacen) { try { _zonaProvCargarVisibles(); } catch (_) {} try { _zonaGranelCargarVisibles(); } catch (_) {} }
   }
   // ¿El item es "rotación cero"? Fuente de verdad = backend item.rotacionCero (bool).
   // Fallback tolerante (datos viejos sin el campo): rotacion===0.
@@ -50303,7 +50303,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [924] granel envasable / insumo entra aquí (no es perro): se compra al proveedor para poder envasar.
     if (esAlmacenCard && (seEnvasa || !(bcg === 'perro' && brecha <= 0 && !negativo))) {
       const falta = brecha > 0 ? brecha : 0;
-      acciones = `<button class="zona-btn-pedir" ${falta > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${falta})">${falta > 0 ? '🧾 Comprar ' + _esc(_zonaFmtCant(falta, p)) + ' a proveedor' : '✓ Semana cubierta'}</button>`;
+      if (seEnvasa && _zonaEsGranelEnvasable(p)) {
+        // [925] La compra del granel = Σ(faltante_derivado × fcb); la calcula el RPC (async). Placeholder
+        //   hasta que _zonaGranelCargarVisibles lo rellene con la cantidad real.
+        acciones = `<button class="zona-btn-pedir" id="zGbuy-${_zonaSkuId(sku)}" disabled>🧾 Calculando envasado…</button>`;
+      } else {
+        acciones = `<button class="zona-btn-pedir" ${falta > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${falta})">${falta > 0 ? '🧾 Comprar ' + _esc(_zonaFmtCant(falta, p)) + ' a proveedor' : '✓ Semana cubierta'}</button>`;
+      }
     }
 
     // [RIZ CARRITO] estado "Pedido hoy/ayer" persistido (me.zona_pedido_log, ventana 7 días). El panel lo
@@ -50770,6 +50776,26 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ${totalDeuda > 0 ? `<div class="esp-deuda-tot">⚠ Deuda acumulada (demanda insatisfecha): <b>${_esc(_zonaFmtNumRaw(totalDeuda, p.esGranel))}</b></div>` : ''}
       <div class="esp-calc"><div class="esp-nums">Meta (despacho${hayEnv ? ' + envasado' : ''} + deuda) = <b class="esp-res">${_esc(_zonaFmtCant(metaDem, p, true))}</b></div></div>`;
   }
+  // [925] Desglose: la META del granel = Σ(faltante de cada derivado × su factor). Se muestra en el
+  //   "¿Por qué?" del granel envasable, encima del histórico de envasado.
+  function _zonaGranelBreakdownHtml(p, dem) {
+    if (!dem) return '';
+    const ders = Array.isArray(dem.derivados) ? dem.derivados : [];
+    const nec = _zonaNum(dem.granelNecesario), stk = _zonaNum(dem.stockGranel), comp = _zonaNum(dem.comprar);
+    const rows = ders.map(d => {
+      const falta = _zonaNum(d.falta), gr = _zonaNum(d.granel);
+      return `<div class="gder-row${falta > 0 ? ' gder-falta' : ''}">
+        <span class="gder-nom">${_esc(d.nombre || d.cod || '')}</span>
+        <span class="gder-calc">meta ${_esc(_zonaFmtNumRaw(_zonaNum(d.meta), false))} · tienes ${_esc(_zonaFmtNumRaw(_zonaNum(d.have), false))} → falta ${_esc(_zonaFmtNumRaw(falta, false))} × ${_esc(String(d.fcb))}</span>
+        <span class="gder-gr">${gr > 0 ? ('+' + _esc(_zonaFmtNumRaw(gr, true)) + ' kg') : '—'}</span>
+      </div>`;
+    }).join('');
+    return `<div class="gder-wrap">
+      <div class="gder-h">🏭 Meta del granel = <b>lo que falta de cada derivado × su factor</b> (lo que compras al proveedor es el granel)</div>
+      ${rows || '<div class="gder-empty">Este granel no tiene derivados con demanda.</div>'}
+      <div class="gder-tot">Para envasar hace falta <b>${_esc(_zonaFmtCant(nec, p, true))}</b> · tienes <b>${_esc(_zonaFmtCant(stk, p, true))}</b> → ${comp > 0 ? ('comprar al proveedor <b class="gder-buy">' + _esc(_zonaFmtCant(comp, p, true)) + '</b>') : '<b class="gder-ok">derivados cubiertos ✓</b>'}</div>
+    </div>`;
+  }
   async function _zonaSecCargarPq(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); if (!p) return;
     const el = $('ztPq-' + _zonaSkuId(sku)); if (!el) return;
@@ -50777,9 +50803,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (esAlm) {
       // Almacén: despachado + DEUDA (demanda insatisfecha). Le pasamos los códigos del canónico.
       const cods = (Array.isArray(p.codigos) ? p.codigos : []).map(c => String(c.codBarra != null ? c.codBarra : (c.codigoBarra || ''))).filter(Boolean);
+      // [925] Granel envasable: encabeza con el desglose de derivados (Σ faltante × fcb = meta del granel).
+      let head = '';
+      if (_zonaEsGranelEnvasable(p)) {
+        let dem = (S._zonaGranelDem || {})[String(sku).toUpperCase()];
+        if (!dem) {
+          try {
+            const rg = await API.zona.granelDemanda({ skus: [sku] });
+            const it = ((rg && (rg.data || rg) && (rg.data || rg).items) || [])[0];
+            if (it) { S._zonaGranelDem = S._zonaGranelDem || {}; dem = S._zonaGranelDem[String(sku).toUpperCase()] = Object.assign({}, it, { _ts: Date.now() }); }
+          } catch (_) {}
+        }
+        head = _zonaGranelBreakdownHtml(p, dem);
+      }
       const r = await API.zona.demandaSemanal({ sku, codigos: cods });
       const sem = (r && (r.data || r) && ((r.data || r).semanas)) || null;
-      el.innerHTML = _zonaDemandaRender(p, sem);
+      el.innerHTML = head + _zonaDemandaRender(p, sem);
     } else {
       const dias = await _zonaDiasFetch(sku);   // zona: detalle diario (venta)
       el.innerHTML = _zonaEsperadoRender(p, dias);
@@ -50850,6 +50889,48 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       });
     } catch (e) {
       try { console.warn('[RIZ] _zonaProvCargarVisibles:', e && (e.message || e)); } catch (_) {}
+    }
+  }
+  // [925] Meta del GRANEL envasable = Σ(faltante_derivado × fcb). Para los graneles visibles en ALMACÉN,
+  //   pide al RPC la cantidad a COMPRAR (necesario − stock) y rellena su botón "🧾 Comprar N a proveedor".
+  //   Cachea por sku (5 min) en S._zonaGranelDem (también lo usa el "¿Por qué?").
+  async function _zonaGranelCargarVisibles() {
+    try {
+      if (!_zonaActualEsAlmacen()) return;
+      const cont = $('zonaLista'); if (!cont) return;
+      S._zonaGranelDem = S._zonaGranelDem || {};
+      const skus = [];
+      Array.prototype.slice.call(cont.querySelectorAll('.zona-card[data-sku]')).forEach(el => {
+        const sku = el.getAttribute('data-sku');
+        const p = (S.zonaProductos || []).find(x => String(x.skuBase || x.idProducto) === sku);
+        if (p && _zonaEsGranelEnvasable(p) && skus.indexOf(sku) < 0) skus.push(sku);
+      });
+      if (!skus.length) return;
+      const pedir = skus.filter(s => { const d = S._zonaGranelDem[s.toUpperCase()]; return !d || (Date.now() - d._ts) > 300000; });
+      if (pedir.length) {
+        const r = await API.zona.granelDemanda({ skus: pedir });
+        const items = (r && (r.data || r) && (r.data || r).items) || [];
+        items.forEach(it => { S._zonaGranelDem[String(it.sku).toUpperCase()] = Object.assign({}, it, { _ts: Date.now() }); });
+        pedir.forEach(s => { const k = s.toUpperCase(); if (!S._zonaGranelDem[k]) S._zonaGranelDem[k] = { sku: s, comprar: 0, granelNecesario: 0, stockGranel: 0, derivados: [], _ts: Date.now() }; });
+      }
+      skus.forEach(sku => {
+        const dem = S._zonaGranelDem[sku.toUpperCase()]; if (!dem) return;
+        const btn = document.getElementById('zGbuy-' + _zonaSkuId(sku)); if (!btn) return;
+        const p = (S.zonaProductos || []).find(x => String(x.skuBase || x.idProducto) === sku);
+        const comprar = _zonaNum(dem.comprar);
+        if (comprar > 0) {
+          btn.disabled = false;
+          btn.textContent = '🧾 Comprar ' + _zonaFmtCant(comprar, p) + ' a proveedor';
+          btn.onclick = () => { try { MOS.zonaAgregarLista(sku, comprar); } catch (_) {} };
+        } else {
+          btn.disabled = true;
+          btn.textContent = '✓ Derivados cubiertos';
+          btn.onclick = null;
+        }
+        btn.title = 'Meta del granel (para envasar sus derivados) = ' + _zonaFmtCant(_zonaNum(dem.granelNecesario), p) + ' · tienes ' + _zonaFmtCant(_zonaNum(dem.stockGranel), p);
+      });
+    } catch (e) {
+      try { console.warn('[RIZ] _zonaGranelCargarVisibles:', e && (e.message || e)); } catch (_) {}
     }
   }
   // Compat / re-tap manual: recarga proveedores de un sku puntual (fuerza refetch) y repinta su bloque.

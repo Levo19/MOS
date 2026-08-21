@@ -4311,6 +4311,7 @@ const API = (() => {
       diasProducto:    async (p) => _sbRpcMOS('zona_dias_producto', { p: { zona: (p && p.zona) || '', sku: (p && p.sku) || '' } }, 'mos'), // [900] detalle diario 4sem×7d de un producto → {ok,data:{dias:[{dia,sem,dow,u}],desde,hasta}}
       demandaSemanal:  async (p) => _sbRpcMOS('almacen_demanda_semanal', { p: { sku: (p && p.sku) || '', codigos: (p && p.codigos) || [] } }, 'mos'), // [920] almacén: despachado + deuda (demanda insatisfecha) por semana → {ok,data:{semanas:[{sem,despachado,solicitado,deuda}]}}
       stockCruzado:    async (p) => _sbRpcMOS('zona_stock_cruzado', { p: { zona: (p && p.zona) || '' } }, 'mos'), // [921] stock de cada código en las OTRAS zonas (foquito) → {ok,data:{items:[{cod,zona,cant}]}}
+      granelDemanda:   async (p) => _sbRpcMOS('granel_demanda_derivados', { p: { skus: (p && p.skus) || [] } }, 'mos'), // [925] meta del granel = Σ(faltante_derivado × fcb) → {ok,data:{items:[{sku,granelNecesario,stockGranel,comprar,derivados:[{cod,nombre,fcb,meta,have,falta,granel}]}]}}
       tendencia:       _zonaTendenciaDirecto,   // mos.tendencia_zona(p)        → {ok,data:{zona,semanas,umbral,items:[...]},_fresh}
       ticketDia:       _zonaTicketDiaDirecto,   // mos.zona_ticket_dia(p)       → {ok,data:{zona,fecha,origen,lotes:[...]},_fresh}
       lotesHistorial:  _zonaLotesHistorialDirecto, // mos.zona_lotes_historial(p) → {ok,data:{...,items:[lotes FIFO]},_fresh}

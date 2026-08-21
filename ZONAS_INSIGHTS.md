@@ -123,13 +123,15 @@ Leyenda de matiz: **↑↑** sube fuerte · **↑** sube · **=** neutral (regla
 - **Matiz.** **↑↑** — **rescata al granel del cuadrante "muerto"**. Rotación cero + requerido para
   envasar = **prioridad EXTREMA de compra** (caso Nakamito Granel). Sin este matiz el sistema lo
   escondería como producto sin salida.
-- **Estado.** ✅ **2.43.921**. `mos.almacen_demanda_semanal` v2 (SQL 924) suma `envasado` por semana =
-  guías `SALIDA_ENVASADO` de los códigos del granel; `_zonaDemandaRender` lo pinta (segmento violeta) y lo
-  mete en la meta; `_zonaCuadDe` **rescata de "muerto"** al granel envasable en almacén (→ 'orden');
-  detección `_zonaEsGranelEnvasable` (catálogo: alguien lo tiene como `codigoProductoBase` con
-  `factorConversionBase>0`); card muestra "🏭 se envasa" + "Comprar a proveedor". (Pendiente fino: meta
-  por Σ faltante_derivado×fcb en el propio card — hoy la meta del granel usa la demanda de envasado del gráfico.)
-- **Afecta.** SQL 924, `_zonaDemandaRender`, `_zonaCuadDe`, `_zonaEsGranelEnvasable`/`_zonaSeEnvasa`, `_zonaCardHtml`.
+- **Estado.** ✅ **2.43.922 (COMPLETO)**. (a) Gráfico: `mos.almacen_demanda_semanal` v2 (SQL 924) suma
+  `envasado` (guías `SALIDA_ENVASADO`) → segmento violeta + entra a la meta; `_zonaCuadDe` rescata de
+  "muerto". (b) **META DEL GRANEL = Σ(faltante_derivado × fcb)** — `mos.granel_demanda_derivados` (SQL 925):
+  por derivado `faltante = meta(Σ zona_esperado retail) − have(wh.stock + me.stock_zonas)`, `granel = faltante×fcb`;
+  `granelNecesario = Σ`, `comprar = max(0, necesario − stock granel)`. El card carga la compra real
+  (`_zonaGranelCargarVisibles` → "🧾 Comprar N a proveedor" / "✓ Derivados cubiertos") y el "¿Por qué?"
+  muestra el desglose (`_zonaGranelBreakdownHtml`). **Lo que se compra al proveedor es el GRANEL.**
+- **Afecta.** SQL 924+925, `_zonaDemandaRender`, `_zonaCuadDe`, `_zonaEsGranelEnvasable`, `_zonaGranelCargarVisibles`,
+  `_zonaGranelBreakdownHtml`, `_zonaSecCargarPq`, `API.zona.granelDemanda`, `_zonaCardHtml` (botón `zGbuy-`).
 
 ### I-09 · **Insumos** (celofanes) en Almacén: demanda por **millares**, nunca despachados
 - **Qué.** Un insumo (`es_insumo=true`, ej. Celofán 7×10×2) **nunca se despacha a zona** → rotación por
