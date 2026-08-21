@@ -4309,6 +4309,7 @@ const API = (() => {
       panel:           _zonaPanelDirecto,       // mos.zona_panel(p)            → {ok,data:{zona,filtro,items:[...]},_fresh}
       resumen:         async () => _sbRpcMOS('zonas_resumen', { p: {} }, 'mos'), // [891] conteos baratos por zona para el HUB → {ok,data:{zonas:[{zonaId,productos,negativos}]}}
       diasProducto:    async (p) => _sbRpcMOS('zona_dias_producto', { p: { zona: (p && p.zona) || '', sku: (p && p.sku) || '' } }, 'mos'), // [900] detalle diario 4sem×7d de un producto → {ok,data:{dias:[{dia,sem,dow,u}],desde,hasta}}
+      demandaSemanal:  async (p) => _sbRpcMOS('almacen_demanda_semanal', { p: { sku: (p && p.sku) || '', codigos: (p && p.codigos) || [] } }, 'mos'), // [920] almacén: despachado + deuda (demanda insatisfecha) por semana → {ok,data:{semanas:[{sem,despachado,solicitado,deuda}]}}
       tendencia:       _zonaTendenciaDirecto,   // mos.tendencia_zona(p)        → {ok,data:{zona,semanas,umbral,items:[...]},_fresh}
       ticketDia:       _zonaTicketDiaDirecto,   // mos.zona_ticket_dia(p)       → {ok,data:{zona,fecha,origen,lotes:[...]},_fresh}
       lotesHistorial:  _zonaLotesHistorialDirecto, // mos.zona_lotes_historial(p) → {ok,data:{...,items:[lotes FIFO]},_fresh}

@@ -50595,12 +50595,49 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try { _zonaSfx('pop'); _zonaVibrar([14, 8]); } catch (_) {}
     if (wrap.dataset.cargado !== '1') { wrap.dataset.cargado = '1'; (which === 'pq' ? _zonaSecCargarPq : _zonaSecCargarHx)(sku); }
   }
+  // [920] Gráfico de DEMANDA en almacén: despachado (azul) + DEUDA (ámbar = demanda insatisfecha).
+  function _zonaDemandaRender(p, semanas) {
+    const s = Array.isArray(semanas) ? semanas : [];
+    if (!s.length) return _zonaEsperadoRender(p, null);   // fallback a los picos semanales
+    const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última sem'];
+    const demandas = s.map(x => _zonaNum(x.despachado) + _zonaNum(x.deuda));
+    const maxD = Math.max(1, ...demandas);
+    const metaDem = _zonaMetaSmart(demandas, 0.20) || _zonaMetaDe(p);
+    const totalDeuda = s.reduce((a, x) => a + _zonaNum(x.deuda), 0);
+    const cols = s.map((x, i) => {
+      const desp = _zonaNum(x.despachado), deu = _zonaNum(x.deuda);
+      const isU = (i === s.length - 1);
+      const hD = Math.max(0, Math.round(desp / maxD * 84));
+      const hE = Math.max(0, Math.round(deu / maxD * 84));
+      return `<div class="esp-wk${isU ? ' is-used' : ''}${(desp + deu) <= 0 ? ' is-empty' : ''}">
+        <div class="esp-wk-bars" style="justify-content:center">
+          <div class="dem-col" title="Despachado ${_esc(_zonaFmtNumRaw(desp, p.esGranel))} · Debido ${_esc(_zonaFmtNumRaw(deu, p.esGranel))}">
+            ${deu > 0 ? `<div class="dem-deuda" style="height:${hE}px"></div>` : ''}
+            <div class="dem-desp" style="height:${Math.max(desp > 0 ? 3 : 0, hD)}px"></div>
+          </div>
+        </div>
+        <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[i] || ''}</span><span class="esp-wk-pico">${_esc(_zonaFmtNumRaw(desp + deu, p.esGranel))}</span></div>
+        ${isU ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
+    }).join('');
+    return `<div class="esp-help"><span class="dem-leg"><i class="lg-desp"></i> despachado</span> <span class="dem-leg"><i class="lg-deuda"></i> deuda = <b>demanda insatisfecha</b></span><br>La deuda (lo que las zonas pidieron y no se despachó) <b>también cuenta</b> para la meta.</div>
+      <div class="esp-weeks">${cols}</div>
+      ${totalDeuda > 0 ? `<div class="esp-deuda-tot">⚠ Deuda acumulada (demanda insatisfecha): <b>${_esc(_zonaFmtNumRaw(totalDeuda, p.esGranel))}</b></div>` : ''}
+      <div class="esp-calc"><div class="esp-nums">Meta (incluyendo la deuda) = <b class="esp-res">${_esc(_zonaFmtCant(metaDem, p, true))}</b></div></div>`;
+  }
   async function _zonaSecCargarPq(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); if (!p) return;
     const el = $('ztPq-' + _zonaSkuId(sku)); if (!el) return;
     const esAlm = _esZonaAlmacen({ idZona: S.zonaActual, nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
-    const dias = esAlm ? null : await _zonaDiasFetch(sku);   // almacén: no hay ventas diarias → picos semanales
-    el.innerHTML = _zonaEsperadoRender(p, dias);
+    if (esAlm) {
+      // Almacén: despachado + DEUDA (demanda insatisfecha). Le pasamos los códigos del canónico.
+      const cods = (Array.isArray(p.codigos) ? p.codigos : []).map(c => String(c.codBarra != null ? c.codBarra : (c.codigoBarra || ''))).filter(Boolean);
+      const r = await API.zona.demandaSemanal({ sku, codigos: cods });
+      const sem = (r && (r.data || r) && ((r.data || r).semanas)) || null;
+      el.innerHTML = _zonaDemandaRender(p, sem);
+    } else {
+      const dias = await _zonaDiasFetch(sku);   // zona: detalle diario (venta)
+      el.innerHTML = _zonaEsperadoRender(p, dias);
+    }
   }
   async function _zonaSecCargarHx(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); if (!p) return;
