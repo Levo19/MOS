@@ -51601,8 +51601,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const usr = String(m.usuario || '');
       if (usr.toLowerCase().indexOf('cierre') >= 0 || usr.toLowerCase().indexOf('idem') >= 0) { ic = '🌙'; lbl = 'Cierre del día'; cls = 'aud'; }
       const quien = quienDe(usr);
-      const delta = _zonaNum(m.delta);
-      const saldo = (m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : null;
+      // [935] Delta robusto para AMBOS kardex: el de ZONA trae `delta`/`saldo_despues`; el de ALMACÉN trae
+      //   `cantidad`+`esIngreso`+`saldo` (antes → undefined `delta` → salía "sin cambio" aunque sí cambió).
+      let delta = (m.delta != null) ? _zonaNum(m.delta) : null;
+      if (delta == null) {
+        const cant = _zonaNum(m.cantidad);
+        if (m.esIngreso === true) delta = cant;
+        else if (m.esIngreso === false) delta = -cant;
+        else if (m.saldo != null && m.stockAntes != null) delta = _zonaNum(m.saldo) - _zonaNum(m.stockAntes);
+        else delta = 0;
+      }
+      const saldo = (m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : (m.saldo != null ? _zonaNum(m.saldo) : null);
       const dTxt = delta === 0 ? 'sin cambio' : ((delta > 0 ? '+' : '−') + _esc(_zonaFmtNumRaw(Math.abs(delta), p && p.esGranel)));
       const dCls = delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero');
       const queda = (saldo != null && delta !== 0) ? ` <small>queda ${_esc(_zonaFmtNumRaw(saldo, p && p.esGranel))}</small>` : '';
