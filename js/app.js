@@ -52595,8 +52595,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // "hoy / ayer / hace Nd" — espeja el rótulo de WH para que las dos apps hablen igual.
   function _consHaceLbl(ts){
     try {
-      const d = Math.floor((Date.now() - new Date(String(ts).slice(0, 16)).getTime()) / 86400000);
-      return d <= 0 ? 'hoy' : d === 1 ? 'ayer' : 'hace ' + d + 'd';
+      // [934] Por DÍA DE CALENDARIO (Lima), no por periodos de 24h: algo de anoche debe decir "ayer",
+      //   no "hoy". El backend ya manda la fecha en hora Lima (YYYY-MM-DDTHH:MM).
+      const s = String(ts).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+      const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+      const dd = Math.round((new Date(hoy + 'T12:00:00Z') - new Date(s + 'T12:00:00Z')) / 86400000);
+      return dd <= 0 ? 'hoy' : dd === 1 ? 'ayer' : 'hace ' + dd + ' días';
     } catch (_) { return ''; }
   }
   // Semanas transcurridas desde el bucket (lunes) en que la zona quedó debiendo.
@@ -52716,26 +52721,29 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       body = '<div class="zpk-empty">Sin considerados 🎉<br><small>cuando ingrese mercadería que alguna vez se debió, aparece aquí</small></div>';
     } else {
       body = _consItems.map(it => {
-        const zonas = (Array.isArray(it.zonas) ? it.zonas : []).map(z => {
+        // [934] Tipo de ingreso legible + SELLO de despacho por zona (¿ya se le mandó a la zona que se debía?).
+        const tipoLbl = String(it.guiaTipo || '') === 'INGRESO_ENVASADO' ? '🏭 de envasado'
+          : String(it.guiaTipo || '') === 'INGRESO_PROVEEDOR' ? '🚚 de proveedor' : _esc(it.guiaTipo || '');
+        const zonasHtml = (Array.isArray(it.zonas) ? it.zonas : []).map(z => {
           const sem = _consSemanasLbl(z.bucket);
-          return `<span class="zpk-chip zc-cdeuda">${_esc(z.zona || '—')} debía ${_zpkNum(z.pend)}${sem ? ' · ' + _esc(sem) : ''}</span>`;
-        }).join('');
+          const ok = !!z.despachadoTs;
+          const sello = ok
+            ? `<span class="cons-sello ok">✓ despachado ${_esc(_consHaceLbl(z.despachadoTs))}</span>`
+            : `<span class="cons-sello no">⏳ aún sin despachar</span>`;
+          return `<div class="cons-zrow"><span class="cons-zn">${_esc(z.zona || '—')}</span><span class="cons-zd">debía ${_zpkNum(z.pend)}${sem ? ' · ' + _esc(sem) : ''}</span>${sello}</div>`;
+        }).join('') || '<div class="cons-zrow"><span class="cons-zd">fue solicitado en semanas pasadas</span></div>';
         const chips = [
           `<span class="zpk-chip zc-ing">🆕 ingresó ${_esc(_consHaceLbl(it.creado))}</span>`,
-          it.guiaTipo ? `<span class="zpk-chip">${_esc(it.guiaTipo)}</span>` : '',
-          zonas || '<span class="zpk-chip">fue solicitado en semanas pasadas</span>'
+          tipoLbl ? `<span class="zpk-chip">${tipoLbl}</span>` : ''
         ].filter(Boolean).join('');
         return `<div class="zpk-item zpk-cons" data-cid="${_esc(it.id)}">
-            <div class="zpk-headrow">
+            <div class="zpk-headrow" style="cursor:default">
               <div class="zpk-info">
                 <div class="zpk-name">🎯 ${_esc(it.nombre || it.skuBase || '—')}</div>
                 <div class="zpk-chips">${chips}</div>
+                <div class="cons-zonas">${zonasHtml}</div>
               </div>
               <div class="zpk-qty"><b>${_zpkNum(it.cant)}</b><small>ingresó</small></div>
-              <div class="zpk-cbtns">
-                <button class="zpk-cbtn ok" data-cid="${_esc(it.id)}" data-estado="ATENDIDO" title="Ya lo atendí / ya salió">✔</button>
-                <button class="zpk-cbtn no" data-cid="${_esc(it.id)}" data-estado="DESCARTADO" title="Descartar">✕</button>
-              </div>
             </div>
           </div>`;
       }).join('');
@@ -52750,8 +52758,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
                <div class="zpk-subt"><span class="zpk-live"></span> Ingresó lo que alguna vez se debió</div></div>
           <button class="zpk-x" onclick="MOS.zonaCerrarConsiderados()" aria-label="Cerrar">✕</button>
         </div>
-        ${(!loading && n) ? `<div class="zpk-kpis"><div><b>${n}</b><small>por decidir</small></div></div>` : ''}
-        ${(!loading && n) ? '<div class="zpk-leyenda">✔ Atendido = ya lo mandaste · ✕ Descartar = no aplica · expiran solos a los 7 días</div>' : ''}
+        ${(!loading && n) ? `<div class="zpk-kpis"><div><b>${n}</b><small>ingresaron debiendo</small></div></div>` : ''}
+        ${(!loading && n) ? '<div class="zpk-leyenda">Informativo: ingresó mercadería que alguna zona debía. ✓ = ya se le despachó · ⏳ = falta despacharlo. Se limpian solos a los 7 días.</div>' : ''}
         <div class="zpk-list">${body}</div>
       </div>`;
     try { if (scrollPrev) { const l = ov.querySelector('.zpk-list'); if (l) l.scrollTop = scrollPrev; } } catch (_) {}

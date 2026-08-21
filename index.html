@@ -15927,6 +15927,14 @@
     .zpk-cbtn.ok { color:#4ade80; border-color:rgba(34,197,94,.45); } .zpk-cbtn.ok:hover { background:rgba(34,197,94,.14); }
     .zpk-cbtn.no { color:#f87171; border-color:rgba(239,68,68,.45); } .zpk-cbtn.no:hover { background:rgba(239,68,68,.14); }
     .zpk-chip.zc-cdeuda { color:#fbbf24; border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.08); }
+    /* [934] Considerados: filas por zona con SELLO de despacho (informativo) */
+    .cons-zonas { display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+    .cons-zrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:.72rem; padding:4px 8px; border-radius:8px; background:rgba(148,163,184,.06); border:1px solid rgba(148,163,184,.12); }
+    .cons-zn { font-weight:800; color:#e2e8f0; }
+    .cons-zd { color:#94a3b8; }
+    .cons-sello { margin-left:auto; font-weight:700; font-size:.68rem; padding:1px 8px; border-radius:999px; white-space:nowrap; }
+    .cons-sello.ok { color:#4ade80; background:rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.4); }
+    .cons-sello.no { color:#fbbf24; background:rgba(251,191,36,.1); border:1px solid rgba(251,191,36,.35); }
     .zpk-cons .zpk-headrow { cursor:default; }   /* la fila no despliega nada: no simular que es tocable */
   </style>
   <!-- [755] Tailwind horneado (reemplaza a cdn.tailwindcss.com). Va ÚLTIMO en el <head>
@@ -21973,7 +21981,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.929';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.930';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22252,7 +22260,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.929"></script>
+<script src="js/api.js?v=2.43.930"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22268,7 +22276,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.929"></script>
+<script src="js/app.js?v=2.43.930"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
