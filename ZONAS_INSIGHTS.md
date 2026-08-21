@@ -219,6 +219,23 @@ Leyenda de matiz: **↑↑** sube fuerte · **↑** sube · **=** neutral (regla
 - **Afecta.** `_ZONA_INSIGHTS` (app.js) es la fuente in-app; este `.md` es la fuente de ingeniería —
   **al agregar/cambiar un insight, actualizar AMBOS**.
 
+### I-15 · **Clasificación por DEMANDA (todo el grupo almacén): muerto real vs aparente**
+- **Qué.** La meta de CADA producto de almacén = **demand-flow** = despacho (🔵) + envasado (🟣) +
+  deuda propia (🟡) + deuda de derivados (🟠), proyectada a **1 semana** (+20%). Un producto solo es
+  **"muerto"** si NO tiene demanda de ningún tipo. Si se despacha, se envasa o **se DEBE** (demanda
+  insatisfecha), está **VIVO** → entra a **"Pedir ya"** aunque su rotación por despacho sea 0. Así el
+  admin se enfoca en lo que realmente falta y en lo que de verdad está muerto. **El celofán/insumo** es
+  el caso completo: se despacha a zona, se gasta al envasar, se debe por sí mismo y se debe por los
+  productos que lo usan — las 4 barras aplican.
+- **Puesto.** `[A]` (en zonas la clasificación sigue por picos/venta diaria, sin cambios).
+- **Matiz.** **↑↑** rescata de "Muertos" a todo lo que tiene demanda (deuda incluida).
+- **Estado.** ✅ **2.43.924** — `mos.almacen_demanda_bulk` (SQL 927, meta demand-flow de los 669 productos
+  con actividad) + `_zonaAlmDemAsegurar` (carga 1×, cache 2 min, re-render) + `_zonaMetaDe`/`_zonaCuadDe`
+  reescritos para almacén (deuda>0 y no cubierto → 'pedir'; 'muerto' solo si NO hay demanda). Card: chip
+  "🟡 demanda insatisfecha" (ya no "considera anular"). Gráfico: barras clickeables con texto por tipo.
+- **Afecta.** SQL 927, `_zonaMetaDe`, `_zonaCuadDe` (rama almacén), `_zonaAlmTieneDeuda`,
+  `_zonaAlmDemAsegurar`, `renderZona`, `_zonaCardHtml` (rotCeroChip/Hint), `API.zona.demandaBulk`.
+
 ---
 
 ## 2) Modelo de MATICES (cómo se combinan)

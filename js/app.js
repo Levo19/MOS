@@ -49828,6 +49828,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const cont = $('zonaLista');
     if (!cont) return;
     const f = S._zonaFiltros;
+    // [927] Asegura la meta demand-flow del grupo almacén (deuda → Pedir ya). Async + cacheado: la 1ª vez
+    //   repinta cuando llega; luego usa cache. No bloquea el render actual.
+    try { _zonaAlmDemAsegurar(); } catch (_) {}
     let arr = S.zonaProductos.slice();
     // [924] I-11: las presentaciones-huérfanas de granel (fracción sin canónico) las representa su granel;
     //   no se listan como ítem de reposición aparte (evita doble conteo / "muerto" fantasma).
@@ -50062,10 +50065,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     else tend = `➡️ <b>Estable.</b> Tomamos lo mayor entre lo que vendes (${f(ex.last)}) y el promedio ponderado (${f(ex.avgPond)}), sin pasar el pico → <b>${f(ex.base)}</b>.`;
     return `<div class="esp-tend">${tend}</div><div class="esp-nums">Meta = redondear(${ex.modo === 'pobre' ? 'última' : 'base'} × ${(1 + (ex.col != null ? ex.col : 0.20)).toFixed(1).replace(/\.0$/, '')}) = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div>`;
   }
-  // Meta efectiva del producto: la inteligente (por picos) o, si no hay picos, la del backend.
+  // Meta efectiva del producto. En ALMACÉN = demand-flow (despacho+envasado+deuda propia+deuda derivados,
+  //   RPC 927 bulk, proyección de 1 semana). En ZONAS = la inteligente por picos (venta diaria).
   function _zonaMetaDe(p) {
+    if (_zonaActualEsAlmacen()) {
+      const d = (S._zonaAlmDem || {})[String((p && (p.skuBase || p.idProducto)) || '').toUpperCase()];
+      if (d && Array.isArray(d.sem)) return _zonaMetaSmart(d.sem, 0.20);
+    }
     const m = _zonaMetaSmart(p && p.picos, 0.20);
     return m > 0 ? m : _zonaNum(p && (p.esperada != null ? p.esperada : p.esperado));
+  }
+  // ¿El producto de almacén tiene DEMANDA INSATISFECHA (deuda) en la ventana? (para no marcarlo "muerto").
+  function _zonaAlmTieneDeuda(p) {
+    if (!_zonaActualEsAlmacen()) return false;
+    const d = (S._zonaAlmDem || {})[String((p && (p.skuBase || p.idProducto)) || '').toUpperCase()];
+    return !!(d && _zonaNum(d.deuda) > 0);
   }
   // [911] Stock EFECTIVO = suma de códigos en positivo (un código negativo cuenta 0, NO resta).
   function _zonaEffStock(p) {
@@ -50107,6 +50121,27 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaActualEsAlmacen() {
     return _esZonaAlmacen({ idZona: S.zonaActual, nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
   }
+  // [927] Carga (una vez, cache 2 min) la META demand-flow de TODO el grupo almacén → reclasifica: un
+  //   producto con demanda insatisfecha (deuda) sale de "Muertos" y entra a "Pedir ya". Al llegar, re-render.
+  async function _zonaAlmDemAsegurar(force) {
+    try {
+      if (!_zonaActualEsAlmacen()) return;
+      const fresh = S._zonaAlmDemTs && (Date.now() - S._zonaAlmDemTs) < 120000;
+      if (S._zonaAlmDem && fresh && !force) return;
+      if (S._zonaAlmDemLoading) return;
+      S._zonaAlmDemLoading = true;
+      try {
+        const r = await API.zona.demandaBulk({});
+        const items = (r && (r.data || r) && (r.data || r).items) || [];
+        const m = {};
+        items.forEach(it => { m[String(it.sku).toUpperCase()] = it; });
+        const cambio = JSON.stringify(Object.keys(m).sort()) !== JSON.stringify(Object.keys(S._zonaAlmDem || {}).sort());
+        S._zonaAlmDem = m; S._zonaAlmDemTs = Date.now();
+        if (cambio || force) renderZona();   // repinta con los cuadrantes/metas corregidos
+      } catch (_) { if (!S._zonaAlmDem) S._zonaAlmDem = {}; }
+      finally { S._zonaAlmDemLoading = false; }
+    } catch (_) {}
+  }
   // [924] I-11: presentación-huérfana de granel (comparte sku con el granel pero SIN canónico propio) →
   //   la representa su granel, no se lista aparte. Set de skus que SÍ tienen canónico (factor=1, sin base).
   let _zonaCanonSet = null, _zonaCanonLen = -1;
@@ -50124,12 +50159,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return ps.some(x => String(x.skuBase || '').trim().toUpperCase() === sku && (parseFloat(x.factorConversion) || 1) !== 1);
   }
   function _zonaCuadDe(p) {
-    const esp = _zonaMetaDe(p);   // [916] meta inteligente (tendencia 4 semanas)
+    const esp = _zonaMetaDe(p);
     const eff = _zonaEffStock(p);
     const brecha = Math.max(0, esp - eff);
-    // [924] En ALMACÉN, un granel envasable o un insumo NO es "muerto": no se despacha, pero se
-    //   consume al envasar (su demanda vive en las guías de envasado). Sale del cuadrante muerto.
-    if (_zonaEsRotCero(p) && eff > 0) return (_zonaActualEsAlmacen() && _zonaSeEnvasa(p)) ? 'orden' : 'muerto';
+    if (_zonaActualEsAlmacen()) {
+      // [927] En ALMACÉN la meta es demand-flow (despacho + envasado + deuda). Con demanda no cubierta →
+      //   "Pedir ya", AUNQUE la rotación por despacho sea 0 (la deuda = demanda insatisfecha manda).
+      if (brecha > 0) return 'pedir';
+      // "Muerto" SOLO si no hay demanda alguna (ni despacho, ni deuda, ni envasado) y hay stock parado.
+      //   Un granel envasable / insumo va a 'orden' (se consume al envasar, no es muerto).
+      if (_zonaEsRotCero(p) && eff > 0 && esp <= 0 && !_zonaAlmTieneDeuda(p)) return _zonaSeEnvasa(p) ? 'orden' : 'muerto';
+      if (esp > 0 && eff > esp * 3) return 'sobra';
+      return 'orden';
+    }
+    // ZONAS (venta diaria): comportamiento original por picos.
+    if (_zonaEsRotCero(p) && eff > 0) return 'muerto';
     if (brecha > 0) return 'pedir';
     if (esp > 0 && eff > esp * 3) return 'sobra';
     return 'orden';
@@ -50370,13 +50414,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
     // [ROTCERO] Chip + hint para cards sin rotación (secundarias, no "rotas").
     // [924] Si se ENVASA (granel envasable / insumo), no es "sin rotación": el chip y el hint lo dicen.
+    // [927] En almacén, un producto con DEUDA (demanda insatisfecha) no es "sin rotación → anular":
+    //   se pidió y no se despachó, hay que reponerlo. El chip/hint lo dice y ya vive en "Pedir ya".
+    const tieneDeudaAlm = esAlmacenCard && _zonaAlmTieneDeuda(p);
     const rotCeroChip = seEnvasa
       ? `<span class="zona-rotcero-chip" style="background:rgba(139,92,246,.14);border-color:rgba(167,139,250,.5);color:#c4b5fd" title="Se consume al envasar">🏭 se envasa</span>`
+      : tieneDeudaAlm
+      ? `<span class="zona-rotcero-chip" style="background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.5);color:#fcd34d" title="Se pidió y no se despachó: hay que reponer">🟡 demanda insatisfecha</span>`
       : rotCero
       ? `<span class="zona-rotcero-chip" title="Sin rotación en la ventana">∅ sin rotación</span>`
       : '';
     const rotCeroHint = seEnvasa
       ? `<div class="zona-rotcero-hint" style="color:#a78bfa">${_zonaEsInsumo(p) ? 'Insumo de envasado: se compra por millares para envasar.' : 'Granel base: se compra para envasarlo en sus derivados.'}</div>`
+      : tieneDeudaAlm
+      ? `<div class="zona-rotcero-hint" style="color:#fbbf24">Hay <b>demanda insatisfecha</b>: se pidió y no se despachó → hay que reponerlo.</div>`
       : (rotCero && !negativo)
       ? `<div class="zona-rotcero-hint">Considera <b>anular</b> o <b>promocionar</b> este producto.</div>`
       : '';
@@ -50743,6 +50794,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     deudaDerivados: { cls:'dbz-dd',   ico:'🟠', lbl:'Deuda de derivados', desc:'lo que deben sus derivados (convertido)' },
   };
   function _dbzAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+  // Descripción de cada barra según sea GRANEL o INSUMO (el celofán se despacha, se gasta al envasar,
+  //   se debe por sí mismo, y se debe por los productos que lo usan). Super claro al clickear.
+  function _dbzDesc(k, esInsumo) {
+    if (k === 'despacho')    return esInsumo ? 'se despachó este insumo a las zonas' : 'salió como producto a las zonas';
+    if (k === 'envasado')    return esInsumo ? 'se gastó como bolsa/insumo al envasar' : 'se usó para hacer sus derivados';
+    if (k === 'deudaPropia') return 'se pidió y aún no se despacha (deuda del propio producto)';
+    if (k === 'deudaDerivados') return esInsumo ? 'el insumo que necesitan los productos que lo usan y se deben' : 'lo que deben sus derivados, convertido a granel';
+    return _ZBAR[k].desc;
+  }
   // Núcleo: barras agrupadas por semana. Cada barra lleva su explicación en data-exp (la muestra el tip al tocar).
   //   La META usa las 4 semanas (ponderado+tendencia) → NO se marca "este usamos" en una sola.
   function _zonaGrupoBarras(p, sem, keys, esInsumo, hijos) {
@@ -50755,15 +50815,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const weeks = sem.map((s, i) => {
       const bars = keys.map(k => {
         const v = _zonaNum(s[k]); if (v <= 0) return '';
-        let exp = `${_ZBAR[k].ico} <b>${_ZBAR[k].lbl}</b> · ${LBL[i]}<br><b>${fmt(v)}</b> — ${_ZBAR[k].desc}`;
+        let exp = `${_ZBAR[k].ico} <b>${_ZBAR[k].lbl}</b> · ${LBL[i]}<br><b>${fmt(v)}</b> — ${_dbzDesc(k, esInsumo)}`;
         if (k === 'deudaDerivados' && Array.isArray(hijos)) {
           const parts = hijos.map(h => {
             const ap = _zonaNum((h.aporteSem || [])[i]), du = _zonaNum((h.deudaSem || [])[i]);
-            return ap > 0 ? `${_esc(h.nombre || h.cod)}: ${_esc(_zonaFmtNumRaw(du, false))}×${_esc(String(h.factor))}=${_esc(_zonaFmtNumRaw(ap, uni))}` : '';
+            return ap > 0 ? `${_esc(h.nombre || h.cod)}: deben ${_esc(_zonaFmtNumRaw(du, false))} × ${_esc(String(h.factor))} = ${_esc(_zonaFmtNumRaw(ap, uni))}${esInsumo ? ' MIL' : ''}` : '';
           }).filter(Boolean);
-          if (parts.length) exp += `<br><span class="dbz-sub">${parts.join('<br>')}</span>`;
+          if (parts.length) exp += `<br><span class="dbz-sub">${esInsumo ? 'lo usan y se deben:' : 'derivados que se deben:'}<br>${parts.join('<br>')}</span>`;
         }
-        return `<div class="dbz-bar ${_ZBAR[k].cls}" style="height:${Math.max(6, Math.round(v / maxV * 72))}px" data-exp="${_dbzAttr(exp)}" onclick="MOS.zonaDbzTip(this)"></div>`;
+        return `<div class="dbz-bar ${_ZBAR[k].cls}" style="height:${Math.max(10, Math.round(v / maxV * 70))}px" data-exp="${_dbzAttr(exp)}" onclick="MOS.zonaDbzTip(this)"></div>`;
       }).join('');
       return `<div class="dbz-wk"><div class="dbz-bars">${bars || '<div class="dbz-none"></div>'}</div><div class="dbz-wklbl">${LBL[i] || ''}</div></div>`;
     }).join('');
@@ -50775,6 +50835,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!s.length) return _zonaEsperadoRender(p, null);
     const sem = s.map(x => ({ despacho: _zonaNum(x.despachado), envasado: _zonaNum(x.envasado), deudaPropia: _zonaNum(x.deuda) }));
     const { weeks, totals } = _zonaGrupoBarras(p, sem, ['despacho', 'envasado', 'deudaPropia'], false, null);
+    if (totals.every(t => t <= 0)) return '<div class="dbz-empty">Sin despacho ni deuda en las últimas 4 semanas.<br><small>No se despachó a zona ni quedó pendiente en la ventana. Si hubo deuda más antigua, mírala en 🎯 Considerados.</small></div>';
     const meta = _zonaMetaSmart(totals, 0.20) || _zonaMetaDe(p);
     return `<div class="dbz-chart">
       <div class="dbz-weeks">${weeks}</div>
@@ -50790,6 +50851,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const hijos = (data && data.hijos) || [];
     const { weeks, totals } = _zonaGrupoBarras(p, sem, ['despacho', 'envasado', 'deudaPropia', 'deudaDerivados'], esInsumo, hijos);
     const stock = _zonaNum(data.stockProducto), meta = _zonaMetaSmart(totals, 0.20), comprar = Math.max(0, meta - stock);
+    if (totals.every(t => t <= 0)) return `<div class="dbz-empty">Sin salidas ni deuda en las últimas 4 semanas.<br><small>No se despachó, no se envasó y sus derivados no deben nada en la ventana. Tienes ${_esc(_zonaFmtCant(stock, p, true))} en stock.</small></div>`;
     return `<div class="dbz-chart">
       <div class="dbz-weeks">${weeks}</div>
       <div class="dbz-tip">👆 Toca una barra para ver de dónde sale</div>
@@ -52143,7 +52205,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     { ic:'📦', t:'Granel envasable = prioridad extrema', m:'up', p:'A', on:1,
       d:'Un granel con derivados casi no rota, PERO se necesita para envasar. Es máxima prioridad de compra aunque parezca “muerto” (lo que falta = faltante del derivado × su factor).' },
     { ic:'🧷', t:'Insumos por millar', m:'up', p:'A', on:1,
-      d:'Los celofanes no se despachan a zona, pero se gastan al envasar. Su demanda son millares a comprar al proveedor.' },
+      d:'El celofán se puede despachar a zona (🔵), se gasta al envasar (🟣), se debe por sí mismo (🟡) y se debe por los productos que lo usan (🟠). Su compra son millares al proveedor.' },
+    { ic:'🫀', t:'Muerto real vs aparente', m:'base', p:'A', on:1,
+      d:'Un producto solo es "muerto" si NO tiene demanda de ningún tipo. Si se despacha, se envasa o se DEBE (demanda insatisfecha), está VIVO → va a "Pedir ya", no a Muertos. Así te enfocas en lo que de verdad no sale.' },
+    { ic:'📉', t:'Demanda insatisfecha = Pedir ya', m:'up', p:'A', on:1,
+      d:'La meta de almacén suma lo que te piden + lo que envasas + lo que debes. Si hay deuda y no está cubierta, el producto entra a "Pedir ya" aunque su rotación por despacho sea 0.' },
     { ic:'🛒', t:'Si ya pediste, baja', m:'down', p:'AZ', on:1,
       d:'Cuando agregas a la lista o registras el pedido, el producto baja al fondo de “Pedir ya” para que atiendas el siguiente más urgente.' },
     { ic:'📦', t:'Granel envasable en zona = casi nulo', m:'down', p:'Z', on:1,
