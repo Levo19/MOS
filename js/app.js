@@ -49884,6 +49884,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     cont.innerHTML = arr.map(_zonaCardHtml).join('');
     try { _zonaCacheVitales(); } catch (_) {}   // [893] cachear conteo de cuadrantes para el hub
     try { _zonaNegBannerRender(); } catch (_) {}   // [913] banner "recontar negativos"
+    try { _zonaCruzadoEnsure(); } catch (_) {}   // [921] carga (lazy) el stock de la otra zona (foquito)
     // [RIZ UX] Stagger de entrada: solo las primeras ~20 cards reciben delay incremental
     // (cap para no demorar con 800 items; el resto aparece directo vía CSS nth-child).
     // Recorremos solo .zona-card (el separador no anima) para que el índice de delay sea correcto.
@@ -50301,6 +50302,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ? (_cuad === 'muerto' ? ('S/ ' + _money(_stockEff * _costoU).toFixed(2) + ' parado')
         : ((_meta > 0 && _stockEff > _meta) ? ('S/ ' + _money((_stockEff - _meta) * _costoU).toFixed(2) + ' de más') : ''))
       : '';
+    // [921] Foquito: si es zona, está en "Pedir" y almacén NO cubre (externo>0), ¿la otra zona tiene?
+    const _cruz = (!esAlmacenCard && _cuad === 'pedir' && externo > 0) ? _zonaCruzadoDe(p) : null;
     const _codChips = _zonaCodChipsHtml(sku, p);
     return `<div class="zona-card zona-cuad-${_cuad} ${bcgInfo.cls}${negativo ? ' zona-neg' : ''}${rotCero ? ' zona-rotcero' : ''}" id="zcard-${safe}" data-sku="${safe}" data-cuad="${_cuad}">
       <div class="zona-card-hero zona-cov-${_cuad}">
@@ -50322,6 +50325,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ${esAlmacenCard
         ? `<div class="zona-prov" id="zProv-${safe}" data-sku="${safe}">${_zonaProvBlockHtml(sku)}</div>`
         : `<div class="zona-almline"><span class="zml-l">En almacén hay</span> <b class="${alm < 0 ? 'brecha-pos' : ''}">${_esc(fAlm)}</b> <span class="zml-l">para pedir</span></div>`}
+      ${_cruz ? `<div class="zona-foquito">🔦 En <b>${_esc(_zonaNombreZona(_cruz.zona))}</b> hay <b>${_esc(_zonaFmtNumRaw(_cruz.cant, p.esGranel))}</b> <span>· solo si almacén no cubre (no choques las zonas)</span></div>` : ''}
       ${vencHtml}
       ${rotCeroHint}
       ${pedEstado}
@@ -50495,6 +50499,33 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (sku && idx.byId.has(sku)) { const pr = idx.byId.get(sku); const cost = _zonaNum(pr.precioCosto || pr.costo || pr.costoUnitario); if (cost > 0) return cost; }
     } catch (_) {}
     return 0;
+  }
+  // [921] Foquito "en la otra zona hay": carga (lazy, cache por zona) el stock de las OTRAS zonas retail.
+  async function _zonaCruzadoEnsure() {
+    if (S._zonaCruzadoZona === S.zonaActual && S._zonaCruzado) return;
+    if (S._zonaCruzadoLoading) return;
+    S._zonaCruzadoLoading = true;
+    try {
+      const r = await API.zona.stockCruzado({ zona: S.zonaActual });
+      const items = (r && (r.data || r) && ((r.data || r).items)) || [];
+      // solo zonas RETAIL (no almacén). En este ecosistema me.stock_zonas ya es solo retail.
+      const map = {};
+      items.forEach(x => { const cod = String(x.cod); if (!map[cod]) map[cod] = { zona: x.zona, cant: 0 }; map[cod].cant += _zonaNum(x.cant); });
+      S._zonaCruzado = map; S._zonaCruzadoZona = S.zonaActual;
+    } catch (_) { S._zonaCruzado = {}; S._zonaCruzadoZona = S.zonaActual; }
+    S._zonaCruzadoLoading = false;
+    try { if (S.view === 'zona') renderZona(); } catch (_) {}
+  }
+  function _zonaCruzadoDe(item) {
+    const map = S._zonaCruzado; if (!map) return null;
+    const cods = Array.isArray(item.codigos) ? item.codigos : [];
+    let cant = 0, zona = '';
+    cods.forEach(c => { const cb = String(c.codBarra != null ? c.codBarra : (c.codigoBarra || '')); const e = map[cb]; if (e) { cant += e.cant; zona = e.zona; } });
+    return cant > 0 ? { cant, zona } : null;
+  }
+  function _zonaNombreZona(id) {
+    const z = (S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === id || String(x.idZona || x.id || '').toUpperCase() === String(id).toUpperCase());
+    return (z && z.nombre) || id;
   }
   // [902] Chips de código (canónico + equivalentes) con su stock; editables (autoguardado) en modo Ajustar.
   function _zonaCodChipsHtml(sku, item) {
