@@ -15855,6 +15855,33 @@
     @keyframes zpkPulsa { 0%,100% { opacity:1; } 50% { opacity:.55; } }
     .zpk-kroj { color:#f87171 !important; }
     .zpk-leyenda { font-size:.6rem; color:#64748b; margin:2px 16px 8px; text-align:center; }
+    /* [924] INSIGHTS overlay — leyenda in-app de la prioridad por puesto */
+    .zins-overlay { position:fixed; inset:0; z-index:5200; background:rgba(3,7,18,.72); backdrop-filter:blur(6px); display:flex; align-items:flex-end; justify-content:center; opacity:0; transition:opacity .2s; }
+    @media (min-width:640px){ .zins-overlay { align-items:center; } }
+    .zins-overlay.zins-in { opacity:1; }
+    .zins-cardw { width:100%; max-width:560px; max-height:88vh; overflow:auto; background:linear-gradient(180deg,#0f1728,#0b1220); border:1px solid #1e2a44; border-radius:20px 20px 0 0; padding:16px; box-shadow:0 -10px 40px rgba(0,0,0,.5); transform:translateY(18px); transition:transform .22s; }
+    @media (min-width:640px){ .zins-cardw { border-radius:20px; transform:scale(.98); } }
+    .zins-in .zins-cardw { transform:none; }
+    .zins-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .zins-title { font-size:1.05rem; font-weight:900; color:#f1f5f9; letter-spacing:-.01em; }
+    .zins-sub { font-size:.72rem; color:#7dd3fc; margin-top:2px; }
+    .zins-x { background:#131c30; border:1px solid #26324c; color:#94a3b8; width:32px; height:32px; border-radius:9px; cursor:pointer; font-size:.9rem; flex:0 0 auto; }
+    .zins-note { font-size:.76rem; color:#cbd5e1; background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.28); border-radius:12px; padding:9px 11px; margin-bottom:12px; line-height:1.4; }
+    .zins-sec { margin-bottom:14px; }
+    .zins-sec-h { display:flex; align-items:baseline; gap:8px; margin-bottom:6px; }
+    .zins-sec-lbl { font-size:.82rem; font-weight:800; color:#e2e8f0; }
+    .zins-sec-hint { font-size:.62rem; color:#64748b; }
+    .zins-item { display:flex; gap:10px; padding:9px 10px; border-radius:12px; background:#0d1526; border:1px solid #1a2438; margin-bottom:7px; border-left-width:3px; }
+    .zins-m-up .zins-item { border-left-color:#22c55e; }
+    .zins-m-down .zins-item { border-left-color:#fb923c; }
+    .zins-m-alert .zins-item { border-left-color:#38bdf8; }
+    .zins-m-base .zins-item { border-left-color:#64748b; }
+    .zins-item.zins-soon { opacity:.72; border-style:dashed; }
+    .zins-ic { font-size:1.2rem; flex:0 0 auto; line-height:1.4; }
+    .zins-t { font-size:.82rem; font-weight:800; color:#f1f5f9; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .zins-tag { font-size:.56rem; font-weight:700; color:#fcd34d; border:1px solid rgba(250,204,21,.4); border-radius:999px; padding:0 6px; }
+    .zins-d { font-size:.73rem; color:#94a3b8; margin-top:2px; line-height:1.35; }
+    .zins-foot { font-size:.68rem; color:#64748b; text-align:center; margin-top:4px; border-top:1px solid #182238; padding-top:8px; }
     .zpk-htitle { font-size:.72rem; color:#94a3b8; padding:6px 0 8px; border-top:1px dashed #1e293b; margin-top:2px; } .zpk-htitle b { color:#fcd34d; }
     .zpk-hrow { display:flex; align-items:center; gap:10px; padding:5px 0; font-size:.76rem; }
     .zpk-hdate { min-width:64px; white-space:nowrap; color:#cbd5e1; font-weight:700; text-transform:capitalize; }
@@ -18581,6 +18608,8 @@
           <div class="zhb-group">
             <span class="zhb-glbl">🛡 Control</span>
             <div class="zhb-gbtns">
+              <!-- [924] Insights: leyenda in-app de cómo se decide la prioridad en este puesto (visible siempre). -->
+              <button class="zona-btn-sec" style="border-color:rgba(56,189,248,.5);color:#7dd3fc" onclick="MOS.zonaAbrirInsights()" title="Cómo se decide la prioridad en este puesto: insights y matices (Almacén y Zonas ven reglas distintas)">💡 Insights</button>
               <!-- 🎯 solo MASTER/ADMIN (incluye ascendidos acceso_mos). Sorpresas/Mermas/Log = solo almacén. -->
               <button id="zonaBtnSorpresas" class="zona-btn-sec hidden" style="border-color:rgba(245,184,73,.5);color:#fcd34d" onclick="MOS.abrirSorpresasPanel()" title="Productos sorpresa: prueba de escaneo real (solo admins)">🎯 Sorpresas</button>
               <button id="zonaBtnMermas" class="zona-btn-sec hidden" style="position:relative;border-color:rgba(239,68,68,.45);color:#fca5a5" onclick="MOS.abrirMermasPanel()" title="Tratamiento de mermas: cesta, SLA y auditoría">♻️ Mermas<span id="zonaMermasBadge" class="zona-guias-badge" style="display:none">0</span></button>
@@ -21920,7 +21949,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.919';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.920';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22199,7 +22228,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.919"></script>
+<script src="js/api.js?v=2.43.920"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22215,7 +22244,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.919"></script>
+<script src="js/app.js?v=2.43.920"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

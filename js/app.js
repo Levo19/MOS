@@ -51909,6 +51909,93 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const ov = document.getElementById('zonaPickupOverlay');
     if (ov) { ov.classList.remove('zpk-in'); setTimeout(() => { try { ov.remove(); } catch(_){} }, 220); }
   }
+  // ── [924] INSIGHTS: leyenda in-app de CÓMO se decide la prioridad, POR PUESTO. ────────────
+  // El dueño no quiere los insights escondidos en un doc: un botón junto a Control los muestra en
+  // lenguaje claro, con el MATIZ (⬆ sube / ⬇ baja / 🔔 avisa / = base) que afecta la prioridad.
+  // Almacén y Zona1/2 ven insights distintos (misma nave, naturaleza logística distinta).
+  //   p: 'A' almacén · 'Z' zona · 'AZ' ambos · on: 1 activo · 0 en camino (honesto para el admin).
+  const _ZONA_INSIGHTS = [
+    { ic:'🔢', t:'Negativo = 0 por código', m:'base', p:'AZ', on:1,
+      d:'Un código en negativo cuenta como 0, nunca resta. Ej: MAGGI −203 y +145 = 145 disponibles.' },
+    { ic:'🎯', t:'Meta inteligente (4 semanas)', m:'base', p:'AZ', on:1,
+      d:'La meta mira las últimas 4 semanas y la tendencia (📈/📉), no solo la última. Ritmo: almacén por semana, zonas por día.' },
+    { ic:'⚡', t:'Prioridad dinámica', m:'base', p:'AZ', on:1,
+      d:'Todo lo que cambie el stock (tu ajuste, un despacho a mediodía) reordena al instante: el producto salta al cuadrante que le toca. Si pones 50 y la meta es 40, deja de estar en “Pedir ya”.' },
+    { ic:'🧩', t:'Presentación = fracción del granel', m:'base', p:'AZ', on:0,
+      d:'Una presentación de granel (ej. orégano 25 g) es parte del MISMO granel: no se cuenta aparte ni se repone sola.' },
+    { ic:'💰', t:'Plata inmovilizada', m:'up', p:'AZ', on:1,
+      d:'En muertos y sobrantes ves los S/ atrapados. Más plata dormida = más urgente liberarla.' },
+    { ic:'📉', t:'Deuda = demanda insatisfecha', m:'up', p:'A', on:1,
+      d:'Lo que las zonas pidieron y no se despachó SE DEBE: cuenta para la meta y sube la compra.' },
+    { ic:'⭐', t:'Estrella que urge despachar', m:'up', p:'Z', on:1,
+      d:'En el Pickup, un producto ESTRELLA que la zona aún debe despachar sube como urgente (⭐ dorado).' },
+    { ic:'📦', t:'Granel envasable = prioridad extrema', m:'up', p:'A', on:0,
+      d:'Un granel con derivados casi no rota, PERO se necesita para envasar. Es máxima prioridad de compra aunque parezca “muerto” (lo que falta = faltante del derivado × su factor).' },
+    { ic:'🧷', t:'Insumos por millar', m:'up', p:'A', on:0,
+      d:'Los celofanes no se despachan a zona, pero se gastan al envasar. Su demanda son millares a comprar al proveedor.' },
+    { ic:'🛒', t:'Si ya pediste, baja', m:'down', p:'AZ', on:1,
+      d:'Cuando agregas a la lista o registras el pedido, el producto baja al fondo de “Pedir ya” para que atiendas el siguiente más urgente.' },
+    { ic:'📦', t:'Granel envasable en zona = casi nulo', m:'down', p:'Z', on:0,
+      d:'El granel con derivados no debería vivir en zona (para eso se envasa). Solo un poco para mostrario; el exceso se devuelve a almacén, no a la otra zona.' },
+    { ic:'🔦', t:'Foquito Zona 1 ↔ Zona 2', m:'alert', p:'Z', on:1,
+      d:'Si te falta y el almacén no cubre, te avisa si la OTRA zona tiene — como último recurso, para no chocar entre zonas.' },
+    { ic:'🔔', t:'Aviso de estrellas críticas', m:'alert', p:'Z', on:1,
+      d:'Si una estrella se está agotando en la zona y SÍ hay en almacén, te llega un push: “considera cargar”.' },
+  ];
+  const _ZINS_SEC = [
+    { k:'base',  lbl:'⚙️ Cómo se calcula',  hint:'la base de todo' },
+    { k:'up',    lbl:'⬆️ Sube la prioridad', hint:'más urgente' },
+    { k:'down',  lbl:'⬇️ Baja la prioridad', hint:'menos urgente' },
+    { k:'alert', lbl:'🔔 Avisos',            hint:'te avisa sin abrir la app' },
+  ];
+  function _zonaInsightsPuesto(){
+    return _esZonaAlmacen({ idZona: S.zonaActual, nombre: ((S.zonaList||[]).find(x=>(x.idZona||x.id||x.nombre)===S.zonaActual)||{}).nombre }) ? 'A' : 'Z';
+  }
+  function zonaAbrirInsights(){
+    const puesto = _zonaInsightsPuesto();
+    const esAlm  = puesto === 'A';
+    const nombrePuesto = esAlm ? '🏬 Almacén'
+      : ('📍 ' + (((S.zonaList||[]).find(x=>(x.idZona||x.id||x.nombre)===S.zonaActual)||{}).nombre || S.zonaActual || 'Zona'));
+    const aplica = _ZONA_INSIGHTS.filter(x => x.p.indexOf(puesto) >= 0);
+    const secHtml = _ZINS_SEC.map(sec => {
+      const items = aplica.filter(x => x.m === sec.k);
+      if (!items.length) return '';
+      return `<div class="zins-sec zins-m-${sec.k}">
+          <div class="zins-sec-h"><span class="zins-sec-lbl">${sec.lbl}</span><span class="zins-sec-hint">${sec.hint}</span></div>
+          ${items.map(x => `<div class="zins-item${x.on?'':' zins-soon'}">
+              <div class="zins-ic">${x.ic}</div>
+              <div class="zins-body">
+                <div class="zins-t">${_esc(x.t)}${x.on?'':'<span class="zins-tag">en camino</span>'}</div>
+                <div class="zins-d">${_esc(x.d)}</div>
+              </div>
+            </div>`).join('')}
+        </div>`;
+    }).join('');
+    let ov = document.getElementById('zonaInsightsOverlay');
+    if (!ov) {
+      ov = document.createElement('div'); ov.id='zonaInsightsOverlay'; ov.className='zins-overlay';
+      ov.onclick=(e)=>{ if(e.target===ov) zonaCerrarInsights(); };
+      document.body.appendChild(ov);
+      requestAnimationFrame(()=>ov.classList.add('zins-in'));
+    }
+    ov.innerHTML = `<div class="zins-cardw" onclick="event.stopPropagation()">
+        <div class="zins-top">
+          <div><div class="zins-title">💡 Insights · ${_esc(nombrePuesto)}</div>
+          <div class="zins-sub">Cómo se decide la prioridad aquí · ${esAlm?'mide por semana':'mide por día'}</div></div>
+          <button class="zins-x" onclick="MOS.zonaCerrarInsights()" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="zins-note">⚡ <b>Todo es dinámico:</b> apenas ajustas stock o llega un despacho, cada producto salta al cuadrante que le toca — si ya no falta, sale de “Pedir ya”.</div>
+        <div class="zins-list">${secHtml}</div>
+        <div class="zins-foot">${esAlm
+          ? 'Almacén surte a las zonas y envasa graneles → su prioridad la mandan la deuda y el envasado.'
+          : 'La zona se surte del almacén a diario → su prioridad la manda lo que se agota y lo que ya pediste.'}</div>
+      </div>`;
+    try { _zonaSfx('pop'); _zonaVibrar([14,8]); } catch(_){}
+  }
+  function zonaCerrarInsights(){
+    const ov = document.getElementById('zonaInsightsOverlay');
+    if (ov) { ov.classList.remove('zins-in'); setTimeout(()=>{ try{ov.remove();}catch(_){} }, 200); }
+  }
   function zonaPickupToggle(sku){
     try {
       const el = document.querySelector('#zonaPickupOverlay .zpk-item[data-sku="' + (window.CSS && CSS.escape ? CSS.escape(String(sku)) : String(sku)) + '"]');
@@ -55271,6 +55358,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex, zonaKardexTab,
     zonaPlaceholder, zonaAccionPerro,
     zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar, zonaPickupTab,
+    zonaAbrirInsights, zonaCerrarInsights,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
     zonaAbrirConsiderados, zonaCerrarConsiderados,

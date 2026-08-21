@@ -203,6 +203,20 @@ Leyenda de matiz: **↑↑** sube fuerte · **↑** sube · **=** neutral (regla
   `mos-estrellas-criticas`, `mos.emitir_push`/`mos.push_tokens_para` (audiencia admin). Prueba manual:
   `select mos.cron_avisar_estrellas_criticas();` (⚠ envía push real).
 
+### I-14 · **Botón 💡 Insights in-app** (la leyenda vive en el módulo, no en un doc)
+- **Qué.** Junto al grupo **🛡 Control** del dock hay un botón **💡 Insights** que abre un overlay con
+  estos mismos insights **en lenguaje claro**, agrupados por el **matiz** que afectan (⚙️ base · ⬆️ sube ·
+  ⬇️ baja · 🔔 avisos), **distinto por puesto**: Almacén ve deuda/envasado/insumos; Zona ve
+  foquito/estrella/push. Marca "en camino" los aún no codificados (I-08/09/10/11) para que el admin
+  entienda la lógica completa. Fuente única: la constante `_ZONA_INSIGHTS` en app.js (mantener en
+  sincronía con este archivo).
+- **Puesto.** `[A][Z]` (contenido filtrado por puesto).
+- **Matiz.** `=` (es documentación viva para el admin; de aquí entiende las prioridades).
+- **Estado.** ✅ 2.43.920 — `zonaAbrirInsights`/`zonaCerrarInsights` + `_ZONA_INSIGHTS`/`_ZINS_SEC`,
+  botón en grupo Control, CSS `.zins-*`.
+- **Afecta.** `_ZONA_INSIGHTS` (app.js) es la fuente in-app; este `.md` es la fuente de ingeniería —
+  **al agregar/cambiar un insight, actualizar AMBOS**.
+
 ---
 
 ## 2) Modelo de MATICES (cómo se combinan)
