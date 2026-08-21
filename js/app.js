@@ -49849,7 +49849,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [899] la vital ACTIVA es la pestaña: se muestra ese cuadrante. Al buscar (q), se ignora el
     //   cuadrante y se busca en TODO (para encontrar el producto donde sea que esté).
     const _cuadActivo = { c_pedir: 'pedir', c_muerto: 'muerto', c_sobra: 'sobra', c_orden: 'orden' }[f.kpi];
-    if (!f.q && _cuadActivo) arr = arr.filter(p => _zonaCuadDe(p) === _cuadActivo);
+    // [913] Modo "recontar negativos": muestra TODOS los negativos (ignora cuadrante y búsqueda de tab).
+    if (S._zonaSoloNeg) arr = arr.filter(_zonaTieneNeg);
+    else if (!f.q && _cuadActivo) arr = arr.filter(p => _zonaCuadDe(p) === _cuadActivo);
 
     // Orden
     if (f.orden === 'brecha')  { const _pc = f.q ? null : _cuadActivo; arr.sort((a,b) => _zonaPrioridad(b, _pc) - _zonaPrioridad(a, _pc)); }   // [912] prioridad por cuadrante
@@ -49870,6 +49872,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const v = _CUAD_VACIO[f.kpi] || ['🏪', 'Sin productos', f.q ? 'Prueba otra búsqueda.' : 'Nada en este estado.'];
       cont.innerHTML = `<div class="zona-empty"><div class="zona-empty-ic">${v[0]}</div><div class="zona-empty-t">${v[1]}</div><div class="zona-empty-s">${v[2]}</div></div>`;
       try { _zonaCacheVitales(); } catch (_) {}
+      try { _zonaNegBannerRender(); } catch (_) {}
       return;
     }
 
@@ -49880,6 +49883,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
     cont.innerHTML = arr.map(_zonaCardHtml).join('');
     try { _zonaCacheVitales(); } catch (_) {}   // [893] cachear conteo de cuadrantes para el hub
+    try { _zonaNegBannerRender(); } catch (_) {}   // [913] banner "recontar negativos"
     // [RIZ UX] Stagger de entrada: solo las primeras ~20 cards reciben delay incremental
     // (cap para no demorar con 800 items; el resto aparece directo vía CSS nth-child).
     // Recorremos solo .zona-card (el separador no anima) para que el índice de delay sea correcto.
@@ -50047,6 +50051,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     S._zonaVitCuad = S._zonaVitCuad || {}; S._zonaVitCuad[S.zonaActual] = v;
   }
   function _zonaVitCuadGet(id) { try { const s = localStorage.getItem('mos_zona_vit_' + id); return s ? JSON.parse(s) : null; } catch (_) { return null; } }
+  // [913] ¿el producto tiene algún código (o total) en negativo? (para el modo "recontar negativos").
+  function _zonaTieneNeg(p) {
+    const c = Array.isArray(p.codigos) ? p.codigos : [];
+    return !!p.stockNegativo || (c.length ? c.some(x => _zonaNum(x.stock) < 0) : _zonaNum(p.stockZona != null ? p.stockZona : p.stock) < 0);
+  }
+  function zonaSoloNegToggle() { S._zonaSoloNeg = !S._zonaSoloNeg; try { _zonaSfx('pop'); _zonaVibrar(15); } catch (_) {} renderZona(); }
+  function _zonaNegBannerRender() {
+    const el = $('zonaNegBanner'); if (!el) return;
+    const n = (S.zonaProductos || []).filter(_zonaTieneNeg).length;
+    if (!n && !S._zonaSoloNeg) { el.innerHTML = ''; el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.className = 'zona-neg-banner' + (S._zonaSoloNeg ? ' active' : '');
+    el.innerHTML = S._zonaSoloNeg
+      ? `<span class="znb-txt">⚠ Recontando ${n} en negativo — toca ✏️ Ajustar en cada uno</span><button class="znb-btn" onclick="MOS.zonaSoloNegToggle()">✓ Ver todo</button>`
+      : `<span class="znb-txt">⚠ ${n} producto${n === 1 ? '' : 's'} con stock en negativo</span><button class="znb-btn" onclick="MOS.zonaSoloNegToggle()">Recontar →</button>`;
+  }
 
   function _zonaCardHtml(p) {
     const sku   = String(p.skuBase || p.idProducto || '');
@@ -55135,7 +55155,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
     zonaVerEsperado, zonaCerrarEsperado, zonaToggleTools,
     zonaAjustarToggle, zonaChipSave, zonaChipUnidad, zonaSecToggle,
-    zonaAbrirKardexGeneral, zonaCerrarKardexGeneral, zonaKgToggle, zonaKgBuscar, zonaKgVerCodigo, zonaKgExport, zonaKardexExport,
+    zonaAbrirKardexGeneral, zonaCerrarKardexGeneral, zonaKgToggle, zonaKgBuscar, zonaKgVerCodigo, zonaKgExport, zonaKardexExport, zonaSoloNegToggle,
     zonaPedirAlmacen, zonaAgregarLista,
     // [RIZ CARRITO] carrito flotante de pedido a almacén (un paquete = un pickup con N líneas)
     zonaCarritoAbrir, zonaCarritoCerrar, zonaCarritoStep, zonaCarritoSet, zonaCarritoQuitar, zonaCarritoVaciar, zonaCarritoEnviar,

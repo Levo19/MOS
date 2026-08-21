@@ -15198,6 +15198,15 @@
     .zm-meta { color:#64748b; font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:700; }
     .zm-sub { color:#64748b; margin-left:auto; }
     .zm-plata { color:#fcd34d; font-weight:700; font-family:ui-monospace,Menlo,Consolas,monospace; }
+    /* [913] Banner recontar negativos */
+    .zona-neg-banner { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.6rem; padding:.5rem .7rem; border-radius:.6rem;
+      background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.35); }
+    .zona-neg-banner.active { background:rgba(56,189,248,.1); border-color:rgba(56,189,248,.4); }
+    .zona-neg-banner .znb-txt { flex:1; font-size:.78rem; font-weight:700; color:#fca5a5; }
+    .zona-neg-banner.active .znb-txt { color:#7dd3fc; }
+    .zona-neg-banner .znb-btn { font-size:.72rem; font-weight:800; color:#fff; cursor:pointer; border:0; border-radius:.5rem; padding:.35rem .7rem;
+      background:linear-gradient(180deg,#ef4444,#dc2626); }
+    .zona-neg-banner.active .znb-btn { background:linear-gradient(180deg,#38bdf8,#0ea5e9); color:#04222b; }
     @media (prefers-reduced-motion:reduce){ .zona-meter-bar i, .zona-meter-bar i::after { animation:none; } }
     /* [907] Alerta ⚠ de stock negativo en el chip */
     .zc-chip-warn { color:#fca5a5; font-size:.7rem; filter:drop-shadow(0 0 4px rgba(239,68,68,.6)); animation:zonaPulseAmber 1.6s ease-in-out infinite; }
@@ -18586,6 +18595,8 @@
 
       <!-- [902] Búsqueda + orden se movieron ARRIBA, junto al dock (grupo "🔎 Buscar"). -->
 
+      <!-- [913] Banner "recontar negativos" (aparece solo si hay stock negativo) -->
+      <div id="zonaNegBanner" class="zona-neg-banner" style="display:none"></div>
       <div id="zonaStats" class="text-xs text-slate-500 mb-2"></div>
 
       <!-- Cards de producto -->
@@ -21889,7 +21900,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.914';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.915';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22168,14 +22179,14 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.914"></script>
+<script src="js/api.js?v=2.43.915"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
      bumps de sw.js. Bug reportado: usuario seguía viendo error "Lote en curso"
      de v2.43.146 después de v2.43.148. -->
 <script src="./assets/membrete/membrete-modal.js?v=2.43.808"></script>
-<script src="./assets/seguridad/seguridad-modal.js?v=2.43.914"></script>
+<script src="./assets/seguridad/seguridad-modal.js?v=2.43.915"></script>
 <!-- [v2.43.187] AdhesivoPreview — render visual del adhesivo unificado con WH.
      Mismo módulo en /assets/adhesivo/preview.js — backend Envasados.gs pixel-perfect. -->
 <script src="./assets/adhesivo/preview.js?v=1.3.0"></script>
@@ -22184,7 +22195,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.914"></script>
+<script src="js/app.js?v=2.43.915"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
