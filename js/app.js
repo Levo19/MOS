@@ -49829,6 +49829,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!cont) return;
     const f = S._zonaFiltros;
     let arr = S.zonaProductos.slice();
+    // [924] I-11: las presentaciones-huérfanas de granel (fracción sin canónico) las representa su granel;
+    //   no se listan como ítem de reposición aparte (evita doble conteo / "muerto" fantasma).
+    arr = arr.filter(x => !_zonaEsPresentacionGranel(x));
 
     // Filtros
     if (f.q) {
@@ -50029,6 +50032,36 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     else if (slope < -0.05 * Math.max(1, last)) base = Math.max(last, avgPond * 0.9);                                // baja: no sobre-stockear
     return Math.ceil(Math.max(0, base) * (1 + col));
   }
+  // [925] Espejo EXACTO de _zonaMetaSmart que además devuelve el desglose para EXPLICARLO en el gráfico
+  //   (el "¿Por qué?" mostraba la regla VIEJA "última × 1.2"; ahora dice lo que de verdad hace).
+  function _zonaMetaExplain(picos, colchon) {
+    const p = (Array.isArray(picos) ? picos : []).map(_zonaNum);
+    const col = (colchon == null ? 0.20 : colchon);
+    if (!p.length) return { meta: 0, modo: 'sin' };
+    const last = p[p.length - 1];
+    const nz = p.filter(v => v > 0).length;
+    if (nz < 2) return { meta: Math.ceil(Math.max(0, last) * (1 + col)), modo: 'pobre', last, col };
+    let wsum = 0, w = 0; p.forEach((v, i) => { const wi = i + 1; wsum += v * wi; w += wi; });
+    const avgPond = w > 0 ? wsum / w : last;
+    const maxPk = Math.max(...p);
+    const slope = (last - p[0]) / (p.length - 1);
+    let base = Math.min(maxPk, Math.max(last, avgPond)), modo = 'est';
+    if (slope > 0.05 * Math.max(1, last)) { base = Math.min(maxPk * 1.25, Math.max(base, last + Math.max(0, slope))); modo = 'asc'; }
+    else if (slope < -0.05 * Math.max(1, last)) { base = Math.max(last, avgPond * 0.9); modo = 'desc'; }
+    return { meta: Math.ceil(Math.max(0, base) * (1 + col)), modo, last, avgPond, maxPk, base, col };
+  }
+  // Texto humano del cálculo de la meta, fiel al método (promedio ponderado + tendencia + colchón).
+  function _zonaMetaExplicaHtml(p, esp) {
+    const ex = _zonaMetaExplain(p && p.picos, 0.20);
+    const f = (v) => _esc(_zonaFmtNumRaw(v, p && p.esGranel));
+    const pc = Math.round((ex.col != null ? ex.col : 0.20) * 100);
+    let tend;
+    if (ex.modo === 'pobre') tend = `Aún hay <b>menos de 2 semanas</b> con movimiento → tomamos la <b>última</b> (${f(ex.last)}) y le sumamos ${pc}% de colchón.`;
+    else if (ex.modo === 'asc') tend = `📈 <b>Va en subida.</b> Promedio ponderado de las 4 semanas (lo reciente pesa más) = <b>${f(ex.avgPond)}</b>; como sube, <b>proyectamos hacia arriba</b> hasta <b>${f(ex.base)}</b> (tope: pico×1.25 = ${f(ex.maxPk * 1.25)}).`;
+    else if (ex.modo === 'desc') tend = `📉 <b>Va en bajada.</b> Usamos el promedio reciente ×0.9 = <b>${f(ex.base)}</b> (para no sobre-stockear algo que cae), nunca por debajo de lo último (${f(ex.last)}).`;
+    else tend = `➡️ <b>Estable.</b> Tomamos lo mayor entre lo que vendes (${f(ex.last)}) y el promedio ponderado (${f(ex.avgPond)}), sin pasar el pico → <b>${f(ex.base)}</b>.`;
+    return `<div class="esp-tend">${tend}</div><div class="esp-nums">Meta = redondear(${ex.modo === 'pobre' ? 'última' : 'base'} × ${(1 + (ex.col != null ? ex.col : 0.20)).toFixed(1).replace(/\.0$/, '')}) = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div>`;
+  }
   // Meta efectiva del producto: la inteligente (por picos) o, si no hay picos, la del backend.
   function _zonaMetaDe(p) {
     const m = _zonaMetaSmart(p && p.picos, 0.20);
@@ -50039,11 +50072,64 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const cods = Array.isArray(p.codigos) ? p.codigos : [];
     return cods.length ? cods.reduce((a, c) => a + Math.max(0, _zonaNum(c.stock)), 0) : Math.max(0, _zonaNum(p.stockZona != null ? p.stockZona : p.stock));
   }
+  // [924] DETECCIÓN (backlog #1): ¿el producto se alimenta por ENVASADO?
+  //   - Granel ENVASABLE = alguien lo tiene como codigoProductoBase con factorConversionBase>0 (es padre de un derivado).
+  //   - INSUMO = esInsumo (celofanes). Ambos casi no rotan por despacho, pero SE CONSUMEN al envasar.
+  //   Fuente: catálogo ya cargado (S.productos), memoizado por tamaño.
+  let _zonaEnvSet = null, _zonaEnvLen = -1, _zonaInsSet = null, _zonaInsLen = -1;
+  function _zonaEnvasableSet() {
+    const ps = Array.isArray(S.productos) ? S.productos : [];
+    if (_zonaEnvSet && _zonaEnvLen === ps.length) return _zonaEnvSet;
+    const set = new Set();
+    ps.forEach(d => { const b = String(d.codigoProductoBase || '').trim().toUpperCase(); if (b && (parseFloat(d.factorConversionBase) || 0) > 0) set.add(b); });
+    _zonaEnvSet = set; _zonaEnvLen = ps.length; return set;
+  }
+  function _zonaInsumoSet() {
+    const ps = Array.isArray(S.productos) ? S.productos : [];
+    if (_zonaInsSet && _zonaInsLen === ps.length) return _zonaInsSet;
+    const set = new Set();
+    ps.forEach(x => { if (x.esInsumo == '1' || x.esInsumo === true) { const a = String(x.skuBase || '').trim().toUpperCase(); if (a) set.add(a); const b = String(x.idProducto || '').trim().toUpperCase(); if (b) set.add(b); } });
+    _zonaInsSet = set; _zonaInsLen = ps.length; return set;
+  }
+  function _zonaEsGranelEnvasable(p) {
+    const set = _zonaEnvasableSet();
+    const a = String(p && p.skuBase || '').trim().toUpperCase();
+    const b = String(p && p.idProducto || '').trim().toUpperCase();
+    return (!!a && set.has(a)) || (!!b && set.has(b));
+  }
+  function _zonaEsInsumo(p) {
+    const set = _zonaInsumoSet();
+    const a = String(p && p.skuBase || '').trim().toUpperCase();
+    const b = String(p && p.idProducto || '').trim().toUpperCase();
+    return (!!a && set.has(a)) || (!!b && set.has(b));
+  }
+  function _zonaSeEnvasa(p) { return _zonaEsGranelEnvasable(p) || _zonaEsInsumo(p); }
+  function _zonaActualEsAlmacen() {
+    return _esZonaAlmacen({ idZona: S.zonaActual, nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
+  }
+  // [924] I-11: presentación-huérfana de granel (comparte sku con el granel pero SIN canónico propio) →
+  //   la representa su granel, no se lista aparte. Set de skus que SÍ tienen canónico (factor=1, sin base).
+  let _zonaCanonSet = null, _zonaCanonLen = -1;
+  function _zonaCanonSkuSet() {
+    const ps = Array.isArray(S.productos) ? S.productos : [];
+    if (_zonaCanonSet && _zonaCanonLen === ps.length) return _zonaCanonSet;
+    const set = new Set();
+    ps.forEach(x => { if ((parseFloat(x.factorConversion) || 1) === 1 && !String(x.codigoProductoBase || '').trim()) { const k = String(x.skuBase || '').trim().toUpperCase(); if (k) set.add(k); } });
+    _zonaCanonSet = set; _zonaCanonLen = ps.length; return set;
+  }
+  function _zonaEsPresentacionGranel(p) {
+    const sku = String(p && p.skuBase || '').trim().toUpperCase(); if (!sku) return false;
+    if (_zonaCanonSkuSet().has(sku)) return false;            // tiene canónico → item legítimo
+    const ps = Array.isArray(S.productos) ? S.productos : [];
+    return ps.some(x => String(x.skuBase || '').trim().toUpperCase() === sku && (parseFloat(x.factorConversion) || 1) !== 1);
+  }
   function _zonaCuadDe(p) {
     const esp = _zonaMetaDe(p);   // [916] meta inteligente (tendencia 4 semanas)
     const eff = _zonaEffStock(p);
     const brecha = Math.max(0, esp - eff);
-    if (_zonaEsRotCero(p) && eff > 0) return 'muerto';
+    // [924] En ALMACÉN, un granel envasable o un insumo NO es "muerto": no se despacha, pero se
+    //   consume al envasar (su demanda vive en las guías de envasado). Sale del cuadrante muerto.
+    if (_zonaEsRotCero(p) && eff > 0) return (_zonaActualEsAlmacen() && _zonaSeEnvasa(p)) ? 'orden' : 'muerto';
     if (brecha > 0) return 'pedir';
     if (esp > 0 && eff > esp * 3) return 'sobra';
     return 'orden';
@@ -50061,6 +50147,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       let yaPedido = !!(p.pedidoEstado && p.pedidoEstado.etiqueta);
       try { if (!yaPedido && _zonaCarritoCant(String(p.skuBase || p.idProducto || '')) > 0) yaPedido = true; } catch (_) {}
       if (yaPedido) s -= 2;                          // lo manda debajo de todos los no-pedidos
+      // [924] I-10: en ZONA un granel envasable es solo mostrario (para eso se envasa) → baja prioridad.
+      if (!_zonaActualEsAlmacen() && _zonaEsGranelEnvasable(p)) s -= 1;
       return s;
     }
     if (c === 'sobra')  return esp > 0 ? eff / esp : (eff || 0);     // cuánto sobra respecto a la meta
@@ -50131,6 +50219,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [SPLIT/ROTCERO] códigos del almacén (solo lectura) + flag rotación-cero.
     const codigosAlm = Array.isArray(p.codigosAlmacen) ? p.codigosAlmacen : [];
     const rotCero = _zonaEsRotCero(p);
+    // [924] En almacén, granel envasable / insumo NO es "perro": se consume al ENVASAR (no se despacha).
+    const seEnvasa = esAlmacenCard && _zonaSeEnvasa(p);
 
     // [MEJORA 1] Sparkline CLICKABLE → modal "¿por qué esperado=X?"
     const maxP = Math.max(1, ...picos.map(_zonaNum));
@@ -50161,6 +50251,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ia = `Te faltan ${fBrecha} para estar listo.`;
       if (pedirAlm > 0) ia += ` Almacén cubre ${_zonaFmtCant(pedirAlm, p)} → pídelos.`;
       if (externo > 0)  ia += ` Los ${_zonaFmtCant(externo, p)} restantes van a tu lista del lunes.`;
+    } else if (seEnvasa) {
+      // [924] granel envasable / insumo: su demanda vive en las guías de envasado, no en el despacho.
+      ia = _zonaEsInsumo(p)
+        ? '🧷 Insumo de envasado: no se despacha a zona, se consume al envasar (se pide por millares al proveedor). Mira su salida en 📊 ¿Por qué?'
+        : '🏭 Granel para ENVASAR: casi no se despacha, pero se consume al envasar. Su salida real está en 📊 ¿Por qué?';
     } else if (bcg === 'perro') {
       ia = 'Sin rotación: considera promocionar, mover a góndola o rematar.';
     } else {
@@ -50169,7 +50264,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
     // Acciones según cuadrante
     let acciones;
-    if (bcg === 'perro' && brecha <= 0 && !negativo) {
+    if (bcg === 'perro' && brecha <= 0 && !negativo && !seEnvasa) {
       // [RIZ · CAPA 5] Acciones reales (decisión auditable, NO mutan stock/dinero). El botón de la decisión
       // vigente queda resaltado (data del panel: p.accionPerro). Optimista + idempotente backend.
       const acc = String(p.accionPerro || '').toUpperCase();
@@ -50205,7 +50300,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
                   <button class="zona-btn-sec" ${externo > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${externo})">+ Lista compras${externo > 0 ? ' (' + _esc(_zonaFmtCant(externo, p)) + ')' : ''}</button>`;
     }
     // [902] En ALMACÉN la acción es COMPRAR a proveedor (almacén no se pide a sí mismo). Reemplaza el pedir.
-    if (esAlmacenCard && !(bcg === 'perro' && brecha <= 0 && !negativo)) {
+    // [924] granel envasable / insumo entra aquí (no es perro): se compra al proveedor para poder envasar.
+    if (esAlmacenCard && (seEnvasa || !(bcg === 'perro' && brecha <= 0 && !negativo))) {
       const falta = brecha > 0 ? brecha : 0;
       acciones = `<button class="zona-btn-pedir" ${falta > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${falta})">${falta > 0 ? '🧾 Comprar ' + _esc(_zonaFmtCant(falta, p)) + ' a proveedor' : '✓ Semana cubierta'}</button>`;
     }
@@ -50267,10 +50363,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       : '';
 
     // [ROTCERO] Chip + hint para cards sin rotación (secundarias, no "rotas").
-    const rotCeroChip = rotCero
+    // [924] Si se ENVASA (granel envasable / insumo), no es "sin rotación": el chip y el hint lo dicen.
+    const rotCeroChip = seEnvasa
+      ? `<span class="zona-rotcero-chip" style="background:rgba(139,92,246,.14);border-color:rgba(167,139,250,.5);color:#c4b5fd" title="Se consume al envasar">🏭 se envasa</span>`
+      : rotCero
       ? `<span class="zona-rotcero-chip" title="Sin rotación en la ventana">∅ sin rotación</span>`
       : '';
-    const rotCeroHint = (rotCero && !negativo)
+    const rotCeroHint = seEnvasa
+      ? `<div class="zona-rotcero-hint" style="color:#a78bfa">${_zonaEsInsumo(p) ? 'Insumo de envasado: se compra por millares para envasar.' : 'Granel base: se compra para envasarlo en sus derivados.'}</div>`
+      : (rotCero && !negativo)
       ? `<div class="zona-rotcero-hint">Considera <b>anular</b> o <b>promocionar</b> este producto.</div>`
       : '';
 
@@ -50311,7 +50412,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <div class="zona-hero-txt">
           <div class="zona-card-top-row">
             <div class="zona-card-name">${nm}</div>
-            <div class="zona-hero-badges">${rotCeroChip}<span class="zona-tend-badge ${tend.cls}">${tend.lbl}</span><span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span></div>
+            <div class="zona-hero-badges">${rotCeroChip}${(!esAlmacenCard && _zonaEsGranelEnvasable(p)) ? '<span class="zona-rotcero-chip" style="background:rgba(139,92,246,.14);border-color:rgba(167,139,250,.5);color:#c4b5fd" title="Granel para mostrario; se envasa en almacén. El exceso se devuelve a almacén.">🏭 mostrario</span>' : ''}<span class="zona-tend-badge ${tend.cls}">${tend.lbl}</span><span class="zona-bcg-badge" title="BCG: ${bcg}">${bcgInfo.ico}</span></div>
           </div>
           <div class="zona-meter">
             <div class="zona-meter-rota">${_rotLine}</div>
@@ -50631,29 +50732,43 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const s = Array.isArray(semanas) ? semanas : [];
     if (!s.length) return _zonaEsperadoRender(p, null);   // fallback a los picos semanales
     const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última sem'];
-    const demandas = s.map(x => _zonaNum(x.despachado) + _zonaNum(x.deuda));
+    // [924] Demanda de almacén = despachado (a zona) + ENVASADO (a derivados / insumo consumido) + deuda.
+    //   Antes solo miraba despacho a zona → graneles e insumos salían en 0 aunque se muevan por envasado.
+    const demandas = s.map(x => _zonaNum(x.despachado) + _zonaNum(x.envasado) + _zonaNum(x.deuda));
     const maxD = Math.max(1, ...demandas);
     const metaDem = _zonaMetaSmart(demandas, 0.20) || _zonaMetaDe(p);
     const totalDeuda = s.reduce((a, x) => a + _zonaNum(x.deuda), 0);
+    const totalEnv  = s.reduce((a, x) => a + _zonaNum(x.envasado), 0);
+    const hayEnv = totalEnv > 0;
     const cols = s.map((x, i) => {
-      const desp = _zonaNum(x.despachado), deu = _zonaNum(x.deuda);
+      const desp = _zonaNum(x.despachado), env = _zonaNum(x.envasado), deu = _zonaNum(x.deuda);
+      const tot = desp + env + deu;
       const isU = (i === s.length - 1);
       const hD = Math.max(0, Math.round(desp / maxD * 84));
-      const hE = Math.max(0, Math.round(deu / maxD * 84));
-      return `<div class="esp-wk${isU ? ' is-used' : ''}${(desp + deu) <= 0 ? ' is-empty' : ''}">
+      const hV = Math.max(0, Math.round(env  / maxD * 84));
+      const hE = Math.max(0, Math.round(deu  / maxD * 84));
+      return `<div class="esp-wk${isU ? ' is-used' : ''}${tot <= 0 ? ' is-empty' : ''}">
         <div class="esp-wk-bars" style="justify-content:center">
-          <div class="dem-col" title="Despachado ${_esc(_zonaFmtNumRaw(desp, p.esGranel))} · Debido ${_esc(_zonaFmtNumRaw(deu, p.esGranel))}">
+          <div class="dem-col" title="Despachado ${_esc(_zonaFmtNumRaw(desp, p.esGranel))} · Envasado ${_esc(_zonaFmtNumRaw(env, p.esGranel))} · Debido ${_esc(_zonaFmtNumRaw(deu, p.esGranel))}">
             ${deu > 0 ? `<div class="dem-deuda" style="height:${hE}px"></div>` : ''}
-            <div class="dem-desp" style="height:${Math.max(desp > 0 ? 3 : 0, hD)}px"></div>
+            ${env > 0 ? `<div class="dem-env" style="height:${Math.max(3, hV)}px"></div>` : ''}
+            ${desp > 0 ? `<div class="dem-desp" style="height:${Math.max(3, hD)}px"></div>` : ''}
           </div>
         </div>
-        <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[i] || ''}</span><span class="esp-wk-pico">${_esc(_zonaFmtNumRaw(desp + deu, p.esGranel))}</span></div>
+        <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[i] || ''}</span><span class="esp-wk-pico">${_esc(_zonaFmtNumRaw(tot, p.esGranel))}</span></div>
         ${isU ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
     }).join('');
-    return `<div class="esp-help"><span class="dem-leg"><i class="lg-desp"></i> despachado</span> <span class="dem-leg"><i class="lg-deuda"></i> deuda = <b>demanda insatisfecha</b></span><br>La deuda (lo que las zonas pidieron y no se despachó) <b>también cuenta</b> para la meta.</div>
+    const leyenda = `<span class="dem-leg"><i class="lg-desp"></i> despachado a zona</span>`
+      + (hayEnv ? ` <span class="dem-leg"><i class="lg-env"></i> <b>envasado</b> (sale a envasarse / insumo)</span>` : '')
+      + ` <span class="dem-leg"><i class="lg-deuda"></i> deuda = demanda insatisfecha</span>`;
+    const notaEnv = hayEnv
+      ? `Este producto <b>sale por envasado</b> (${_esc(_zonaFmtNumRaw(totalEnv, p.esGranel))} en 4 semanas): aunque no se despache a zona, <b>se necesita</b> y cuenta para la meta.`
+      : `La deuda (lo que las zonas pidieron y no se despachó) <b>también cuenta</b> para la meta.`;
+    return `<div class="esp-help">${leyenda}<br>${notaEnv}</div>
       <div class="esp-weeks">${cols}</div>
+      ${hayEnv ? `<div class="esp-deuda-tot" style="border-color:rgba(167,139,250,.4);color:#c4b5fd">🏭 Envasado acumulado (4 sem): <b>${_esc(_zonaFmtNumRaw(totalEnv, p.esGranel))}</b></div>` : ''}
       ${totalDeuda > 0 ? `<div class="esp-deuda-tot">⚠ Deuda acumulada (demanda insatisfecha): <b>${_esc(_zonaFmtNumRaw(totalDeuda, p.esGranel))}</b></div>` : ''}
-      <div class="esp-calc"><div class="esp-nums">Meta (incluyendo la deuda) = <b class="esp-res">${_esc(_zonaFmtCant(metaDem, p, true))}</b></div></div>`;
+      <div class="esp-calc"><div class="esp-nums">Meta (despacho${hayEnv ? ' + envasado' : ''} + deuda) = <b class="esp-res">${_esc(_zonaFmtCant(metaDem, p, true))}</b></div></div>`;
   }
   async function _zonaSecCargarPq(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); if (!p) return;
@@ -51182,14 +51297,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Render puro del gráfico (lo usan el modal Y el panel inline de herramientas).
   function _zonaEsperadoRender(p, dias) {
     const esp = _zonaMetaDe(p);   // [916] meta inteligente
-    // Explicación de la tendencia (para el gráfico): mira las 4 semanas, no solo la última.
-    const _pk = (Array.isArray(p.picos) ? p.picos.slice(-4) : []).map(_zonaNum);
-    const _last = _pk.length ? _pk[_pk.length - 1] : 0;
-    const _slope = _pk.length > 1 ? (_last - _pk[0]) / (_pk.length - 1) : 0;
-    const _tendTxt = (_slope > 0.05 * Math.max(1, _last)) ? '📈 <b>Va en subida</b> → proyectamos la próxima semana <b>hacia arriba</b> (para no quedarte corto).'
-      : (_slope < -0.05 * Math.max(1, _last)) ? '📉 <b>Va en bajada</b> → usamos el <b>promedio</b> reciente (para no sobre-stockear algo que baja).'
-      : '➡️ <b>Estable</b> → tomamos el pico reciente más alto.';
-    const _metaExpl = `<div class="esp-tend">${_tendTxt}</div><div class="esp-nums">Meta = proyección × 1.2 (colchón) = <b class="esp-res">${_esc(_zonaFmtCant(esp, p, true))}</b></div>`;
+    // [925] Explicación FIEL al método real (_zonaMetaSmart): promedio ponderado + tendencia + colchón.
+    //   Antes decía "última × 1.2" (regla vieja) aunque el número ya salía del método inteligente.
+    const _metaExpl = _zonaMetaExplicaHtml(p, esp);
     if (!Array.isArray(dias) || !dias.length) {
       // Sin ventas diarias (ALMACÉN: es despacho, no venta) → gráfico por SEMANA usando los picos del panel.
       const picos = Array.isArray(p.picos) ? p.picos.slice(-4).map(_zonaNum) : [];
@@ -51205,7 +51315,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[i] || ''}</span><span class="esp-wk-pico">pico ${_esc(_zonaFmtNumRaw(v, p.esGranel))}</span></div>
           ${isU ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
       }).join('');
-      return `<div class="esp-help">Es despacho de almacén (no venta diaria). Cada barra = el <b>pico</b> de esa semana. Reponemos con el de la <b>última</b> + 20%.</div>
+      return `<div class="esp-help">Es despacho de almacén (no venta diaria). Cada barra = el <b>pico</b> de esa semana. La meta mira las <b>4 semanas + la tendencia</b>, no solo la última.</div>
         <div class="esp-weeks">${cols}</div>
         <div class="esp-calc">${_metaExpl}</div>`;
     }
@@ -51234,7 +51344,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[s]}</span><span class="esp-wk-pico">pico ${_esc(_zonaFmtNumRaw(picoW, p.esGranel))}</span></div>
         ${isUsed ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
     });
-    return `<div class="esp-help">Cada barra = lo que vendiste ese día. En cada semana se marca su <b>día más fuerte</b> (el pico). Para reponer usamos el pico de la <b>última semana</b> + 20% de colchón.</div>
+    return `<div class="esp-help">Cada barra = lo que vendiste ese día. En cada semana marcamos su <b>día más fuerte</b> (el pico). La meta mira las <b>4 semanas + la tendencia</b> (no solo la última).</div>
       <div class="esp-weeks">${semHtml}</div>
       <div class="esp-calc">${_metaExpl}</div>`;
   }
@@ -51921,7 +52031,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       d:'La meta mira las últimas 4 semanas y la tendencia (📈/📉), no solo la última. Ritmo: almacén por semana, zonas por día.' },
     { ic:'⚡', t:'Prioridad dinámica', m:'base', p:'AZ', on:1,
       d:'Todo lo que cambie el stock (tu ajuste, un despacho a mediodía) reordena al instante: el producto salta al cuadrante que le toca. Si pones 50 y la meta es 40, deja de estar en “Pedir ya”.' },
-    { ic:'🧩', t:'Presentación = fracción del granel', m:'base', p:'AZ', on:0,
+    { ic:'🧩', t:'Presentación = fracción del granel', m:'base', p:'AZ', on:1,
       d:'Una presentación de granel (ej. orégano 25 g) es parte del MISMO granel: no se cuenta aparte ni se repone sola.' },
     { ic:'💰', t:'Plata inmovilizada', m:'up', p:'AZ', on:1,
       d:'En muertos y sobrantes ves los S/ atrapados. Más plata dormida = más urgente liberarla.' },
@@ -51929,13 +52039,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       d:'Lo que las zonas pidieron y no se despachó SE DEBE: cuenta para la meta y sube la compra.' },
     { ic:'⭐', t:'Estrella que urge despachar', m:'up', p:'Z', on:1,
       d:'En el Pickup, un producto ESTRELLA que la zona aún debe despachar sube como urgente (⭐ dorado).' },
-    { ic:'📦', t:'Granel envasable = prioridad extrema', m:'up', p:'A', on:0,
+    { ic:'📦', t:'Granel envasable = prioridad extrema', m:'up', p:'A', on:1,
       d:'Un granel con derivados casi no rota, PERO se necesita para envasar. Es máxima prioridad de compra aunque parezca “muerto” (lo que falta = faltante del derivado × su factor).' },
-    { ic:'🧷', t:'Insumos por millar', m:'up', p:'A', on:0,
+    { ic:'🧷', t:'Insumos por millar', m:'up', p:'A', on:1,
       d:'Los celofanes no se despachan a zona, pero se gastan al envasar. Su demanda son millares a comprar al proveedor.' },
     { ic:'🛒', t:'Si ya pediste, baja', m:'down', p:'AZ', on:1,
       d:'Cuando agregas a la lista o registras el pedido, el producto baja al fondo de “Pedir ya” para que atiendas el siguiente más urgente.' },
-    { ic:'📦', t:'Granel envasable en zona = casi nulo', m:'down', p:'Z', on:0,
+    { ic:'📦', t:'Granel envasable en zona = casi nulo', m:'down', p:'Z', on:1,
       d:'El granel con derivados no debería vivir en zona (para eso se envasa). Solo un poco para mostrario; el exceso se devuelve a almacén, no a la otra zona.' },
     { ic:'🔦', t:'Foquito Zona 1 ↔ Zona 2', m:'alert', p:'Z', on:1,
       d:'Si te falta y el almacén no cubre, te avisa si la OTRA zona tiene — como último recurso, para no chocar entre zonas.' },

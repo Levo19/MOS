@@ -123,12 +123,13 @@ Leyenda de matiz: **↑↑** sube fuerte · **↑** sube · **=** neutral (regla
 - **Matiz.** **↑↑** — **rescata al granel del cuadrante "muerto"**. Rotación cero + requerido para
   envasar = **prioridad EXTREMA de compra** (caso Nakamito Granel). Sin este matiz el sistema lo
   escondería como producto sin salida.
-- **Estado.** ⛏️ **pendiente**. Necesita: (a) detectar "granel envasable" (`CANONICO` + `KGM` + es base de
-  algún `DERIVADO`); (b) RPC nuevo tipo `almacen_demanda_envasado(granel)` que sume
-  `Σ faltante_derivado × fcb` + ventas directas, leyendo guías `SALIDA_ENVASADO`; (c) matiz en
-  `_zonaCuadDe`/`_zonaPrioridad` que anteponga esto a la rotación-por-despacho.
-- **Afecta (a futuro).** nuevo RPC, `_zonaCuadDe` (excepción "no es muerto si es granel envasable con
-  demanda"), `_zonaMetaDe` (meta del granel = demanda de envasado), `_zonaDemandaRender`.
+- **Estado.** ✅ **2.43.921**. `mos.almacen_demanda_semanal` v2 (SQL 924) suma `envasado` por semana =
+  guías `SALIDA_ENVASADO` de los códigos del granel; `_zonaDemandaRender` lo pinta (segmento violeta) y lo
+  mete en la meta; `_zonaCuadDe` **rescata de "muerto"** al granel envasable en almacén (→ 'orden');
+  detección `_zonaEsGranelEnvasable` (catálogo: alguien lo tiene como `codigoProductoBase` con
+  `factorConversionBase>0`); card muestra "🏭 se envasa" + "Comprar a proveedor". (Pendiente fino: meta
+  por Σ faltante_derivado×fcb en el propio card — hoy la meta del granel usa la demanda de envasado del gráfico.)
+- **Afecta.** SQL 924, `_zonaDemandaRender`, `_zonaCuadDe`, `_zonaEsGranelEnvasable`/`_zonaSeEnvasa`, `_zonaCardHtml`.
 
 ### I-09 · **Insumos** (celofanes) en Almacén: demanda por **millares**, nunca despachados
 - **Qué.** Un insumo (`es_insumo=true`, ej. Celofán 7×10×2) **nunca se despacha a zona** → rotación por
@@ -138,11 +139,11 @@ Leyenda de matiz: **↑↑** sube fuerte · **↑** sube · **=** neutral (regla
 - **Puesto.** `[A]` **exclusivo**.
 - **Matiz.** **↑** — rescata al insumo del cuadrante "muerto". Si `stock_MIL < demanda_MIL` → **comprar
   al proveedor** (en millares).
-- **Estado.** ⛏️ **pendiente**. Necesita RPC que sume el consumo de envase por insumo (traza
-  `wh.envasados.envase_cod/envase_cant` ya existe) y matiz de rescate. Bonus ya anotado en memoria:
-  `stock_minimo` de celofanes para alerta.
-- **Afecta (a futuro).** nuevo RPC sobre `wh.envasados`, `_zonaCuadDe` (excepción insumo), unidad MIL en
-  medidor.
+- **Estado.** ✅ **2.43.921** — unificado con I-08: las guías `SALIDA_ENVASADO` incluyen la línea del
+  insumo (celofán consumido por MIL), así que el mismo `envasado` de SQL 924 lo cuenta. Detección
+  `_zonaEsInsumo` (catálogo `esInsumo=='1'`); rescate de "muerto" + card "🧷 insumo · se compra por
+  millares". (Bonus futuro: `stock_minimo` de celofanes para alerta.)
+- **Afecta.** SQL 924 (mismo `envasado`), `_zonaEsInsumo`/`_zonaSeEnvasa`, `_zonaCuadDe`, `_zonaCardHtml`.
 
 ### I-10 · Graneles envasables **NO deberían vivir en Zona 1/2** (salvo mostrario limitado)
 - **Qué.** Para eso se creó el derivado: en zona el cliente quiere el **envasado**, no el granel. Tener
@@ -152,11 +153,10 @@ Leyenda de matiz: **↑↑** sube fuerte · **↑** sube · **=** neutral (regla
 - **Matiz.** **↓↓** la prioridad de *reponer* el granel en zona. Y si `stock_zona > tope_mostrario` →
   marcar como **sobrante "devolver a almacén"** (no repartir a la otra zona vía foquito: el granel
   sobrante regresa al almacén para envasarse). **Mismo producto: EXTREMO en `[A]`, casi nulo en `[Z]`.**
-- **Estado.** ⛏️ **pendiente**. Necesita: bandera "granel envasable" (misma detección de I-08) + un
-  `tope_mostrario` (config por zona/producto, default pequeño) + matiz por puesto en `_zonaPrioridad` y
-  ruta de sobrante hacia almacén en vez de foquito.
-- **Afecta (a futuro).** `_zonaCuadDe`/`_zonaPrioridad` con conmutación por puesto, `_zonaCruzadoDe`
-  (excluir graneles envasables del foquito zona↔zona).
+- **Estado.** 🟡 **2.43.921** (parcial). En ZONA, `_zonaPrioridad` baja al granel envasable (mostrario, no
+  prioridad) y el card muestra chip "🏭 mostrario · se envasa en almacén". Pendiente fino: `tope_mostrario`
+  configurable + marcar el exceso como "devolver a almacén" y excluirlo del foquito zona↔zona.
+- **Afecta.** `_zonaEsGranelEnvasable`, `_zonaPrioridad` (rama zona), `_zonaCardHtml` (chip mostrario).
 
 ### I-11 · Presentación de un granel = **fracción del granel mismo** (no cuenta doble)
 - **Qué.** VERIFICADO: `P-ORGENT-D40` (25gr) y `P-ORGENT-F60` (60gr) son `PRESENTACION` con `sku_base`
@@ -167,10 +167,10 @@ Leyenda de matiz: **↑↑** sube fuerte · **↑** sube · **=** neutral (regla
 - **Matiz.** `=` (regla de conteo). El riesgo sería tratar la fracción como ítem propio y duplicar
   demanda o mostrar un "muerto" fantasma. **Excluir presentaciones de granel del listado de
   reposición** (su padre ya las representa).
-- **Estado.** 🟡 la migración 522 ya reescribió ventas al padre; falta **garantizar** que `renderZona`
-  no liste presentaciones de granel como ítems propios.
-- **Afecta.** filtro de `renderZona` / `panel`, `_zonaEffStock` (que no mezcle fracción con canónico dos
-  veces).
+- **Estado.** ✅ **2.43.921** — `renderZona` filtra `_zonaEsPresentacionGranel` (presentación-huérfana:
+  comparte sku pero SIN canónico propio). Verificado: solo 2 skus así en el panel (los canónicos basura
+  PRE### de memoria) — no se listan.
+- **Afecta.** `renderZona` (filtro), `_zonaEsPresentacionGranel`/`_zonaCanonSkuSet`.
 
 ### I-12 · **Estrella que falta despachar = urgente** (matiz en el botón Pickup)
 - **Qué.** En el botón **Pickup del módulo Zona** (MOS), la lista de despacho ya se ordenaba por urgencia
