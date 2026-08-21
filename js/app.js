@@ -51990,7 +51990,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           const stock = (it.stockWh == null) ? null : (parseFloat(it.stockWh) || 0);
           // [790] PRIORIZADO: ingresó al almacén en los últimos días Y la zona lo debe.
           const ing = (pend > 0 && _zpkIng && _zpkIng[String(it.skuBase)]) || null;
-          return { it, pend, veces: Math.max(1, peds.length), dias, stock, ing, score: 0, nivel: 'ok' };
+          // [922] MATIZ ESTRELLA: un producto ESTRELLA que la zona aún debe despachar es URGENTE
+          // (lo que más mueve la zona no puede quedarse sin llegar). El bcg lo trae la RPC por-zona.
+          const estrella = String(it.bcg || '').toUpperCase() === 'ESTRELLA';
+          return { it, pend, veces: Math.max(1, peds.length), dias, stock, ing, estrella, score: 0, nivel: 'ok' };
         });
         const mP = Math.max(1, ...enr.map(e => e.pend));
         const mV = Math.max(1, ...enr.map(e => e.veces));
@@ -51999,6 +52002,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           let s = 45 * (e.pend / mP) + 30 * (e.veces / mV) + 25 * (e.dias / mD);
           if (e.pend > 0 && e.stock !== null && e.stock > 0) s += (e.stock >= e.pend ? 15 : 8);
           if (e.ing) s += 20;   // [790] mercadería fresca de un producto adeudado → sube
+          if (e.estrella && e.pend > 0) s += 35;   // [922] estrella que falta despachar → urgente
           e.score = s;
           e.nivel = s >= 70 ? 'rojo' : s >= 45 ? 'naranja' : s >= 25 ? 'ambar' : 'ok';
         });
@@ -52027,6 +52031,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         // todo el pendiente, ámbar=parcial, punteado=sin stock) · alerta pulsante cuando
         // el producto es crítico Y el almacén tiene stock (no hay excusa: reclamar).
         const chips = [
+          (en.estrella && pend > 0) ? '<span class="zpk-chip zc-estrella">⭐ estrella · urge despachar</span>' : '',
           en.ing ? `<span class="zpk-chip zc-ing">🆕 ingresó ${_zpkHaceIngLbl(en.ing.ts)}</span>` : '',
           `<span class="zpk-chip">×${en.veces} ${en.veces === 1 ? 'pedido' : 'pedidos'}</span>`,
           en.dias >= 1 ? `<span class="zpk-chip">${Math.floor(en.dias)}d esperando</span>` : '',
@@ -52037,7 +52042,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           (en.nivel === 'rojo' && en.stock !== null && en.stock > 0 && pend > 0)
             ? '<span class="zpk-chip zc-reclama">⚡ hay stock · reclamar</span>' : ''
         ].filter(Boolean).join('');
-        return `<div class="zpk-item zpk-u-${en.nivel}" data-sku="${_esc(it.skuBase)}">
+        return `<div class="zpk-item zpk-u-${en.nivel}${(en.estrella && pend > 0) ? ' zpk-star' : ''}" data-sku="${_esc(it.skuBase)}">
             <div class="zpk-headrow" onclick="MOS.zonaPickupToggle('${_esc(it.skuBase)}')">
               <div class="zpk-info">
                 <div class="zpk-name">${_esc(_zpkCanonName(it.skuBase, it.nombre))}</div>
@@ -52099,7 +52104,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${tabsHtml}
         ${showKpis ? `<div class="zpk-kpis"><div><b>${nItems}</b><small>productos</small></div><div><b>${_zpkNum(total)}</b><small>uds ${esRez ? 'no despachadas' : 'pendientes'}</small></div>${(r && r._criticos) ? `<div><b class="zpk-kroj">${r._criticos}</b><small>críticos</small></div>` : ''}</div>` : ''}
         ${showKpis ? `<div class="zpk-actions">${accion}</div>` : ''}
-        ${showKpis && ((r && r.items) || []).length ? '<div class="zpk-leyenda">orden por urgencia 🔴→⚪ · deuda + veces pedido + días esperando + stock de almacén · 🆕 ingreso reciente adeudado sube</div>' : ''}
+        ${showKpis && ((r && r.items) || []).length ? '<div class="zpk-leyenda">orden por urgencia 🔴→⚪ · <b>⭐ estrella pendiente = urge despachar</b> · deuda + veces pedido + días esperando + stock de almacén · 🆕 ingreso reciente adeudado sube</div>' : ''}
         ${showKpis && !(r && r.sin_rezagado) ? `<input class="zpk-search" placeholder="🔎 Buscar producto…" oninput="MOS.zonaPickupFiltrar(this.value)" autocomplete="off">` : ''}
         <div class="zpk-list">${body}${sinBody}</div>
       </div>`;

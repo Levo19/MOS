@@ -15847,6 +15847,11 @@
     .zpk-chip.zc-reclama { color:#f87171; border-color:rgba(239,68,68,.5); background:rgba(239,68,68,.1); animation:zpkPulsa 1.6s ease-in-out infinite; }
     /* [790] PRIORIZADO: producto adeudado que acaba de ingresar al almacén */
     .zpk-chip.zc-ing { color:#c4b5fd; border-color:rgba(167,139,250,.55); background:rgba(139,92,246,.12); animation:zpkPulsa 1.6s ease-in-out infinite; }
+    /* [922] MATIZ ESTRELLA: producto estrella que la zona aún debe despachar = urgente */
+    .zpk-chip.zc-estrella { color:#fde68a; border-color:rgba(250,204,21,.6); background:rgba(234,179,8,.14); animation:zpkPulsa 1.6s ease-in-out infinite; }
+    .zpk-item.zpk-star { border-color:rgba(250,204,21,.5); box-shadow:inset 3px 0 0 #facc15, 0 0 0 1px rgba(250,204,21,.15); }
+    .zpk-item.zpk-star.zpk-u-rojo { box-shadow:inset 3px 0 0 #facc15, 0 0 14px rgba(250,204,21,.22); }
+    .zpk-item.zpk-star .zpk-name::before { content:"⭐ "; }
     @keyframes zpkPulsa { 0%,100% { opacity:1; } 50% { opacity:.55; } }
     .zpk-kroj { color:#f87171 !important; }
     .zpk-leyenda { font-size:.6rem; color:#64748b; margin:2px 16px 8px; text-align:center; }
@@ -21915,7 +21920,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.918';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.919';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22194,7 +22199,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.918"></script>
+<script src="js/api.js?v=2.43.919"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22210,7 +22215,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.918"></script>
+<script src="js/app.js?v=2.43.919"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
