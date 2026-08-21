@@ -50174,12 +50174,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const eff = _zonaEffStock(p);
     const brecha = Math.max(0, esp - eff);
     if (_zonaActualEsAlmacen()) {
-      // [927] En ALMACÉN la meta es demand-flow (despacho + envasado + deuda). Con demanda no cubierta →
-      //   "Pedir ya", AUNQUE la rotación por despacho sea 0 (la deuda = demanda insatisfecha manda).
-      if (brecha > 0) return 'pedir';
+      // [929] En ALMACÉN: con demanda no cubierta (falta comprar) O con DEMANDA INSATISFECHA (deuda: se
+      //   pidió y no se despachó) → "Pedir ya", AUNQUE la rotación por despacho sea 0. La deuda manda:
+      //   hay que actuar (comprar si falta, despachar si ya tienes). Solo con deuda 0 se evalúa lo demás.
+      if (brecha > 0 || _zonaAlmTieneDeuda(p)) return 'pedir';
       // "Muerto" SOLO si no hay demanda alguna (ni despacho, ni deuda, ni envasado) y hay stock parado.
       //   Un granel envasable / insumo va a 'orden' (se consume al envasar, no es muerto).
-      if (_zonaEsRotCero(p) && eff > 0 && esp <= 0 && !_zonaAlmTieneDeuda(p)) return _zonaSeEnvasa(p) ? 'orden' : 'muerto';
+      if (_zonaEsRotCero(p) && eff > 0 && esp <= 0) return _zonaSeEnvasa(p) ? 'orden' : 'muerto';
       if (esp > 0 && eff > esp * 3) return 'sobra';
       return 'orden';
     }
@@ -50276,6 +50277,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const rotCero = _zonaEsRotCero(p);
     // [924] En almacén, granel envasable / insumo NO es "perro": se consume al ENVASAR (no se despacha).
     const seEnvasa = esAlmacenCard && _zonaSeEnvasa(p);
+    const tieneDeudaAlm = esAlmacenCard && _zonaAlmTieneDeuda(p);   // [929] demanda insatisfecha (rezagado)
 
     // [MEJORA 1] Sparkline CLICKABLE → modal "¿por qué esperado=X?"
     const maxP = Math.max(1, ...picos.map(_zonaNum));
@@ -50306,6 +50308,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ia = `Te faltan ${fBrecha} para estar listo.`;
       if (pedirAlm > 0) ia += ` Almacén cubre ${_zonaFmtCant(pedirAlm, p)} → pídelos.`;
       if (externo > 0)  ia += ` Los ${_zonaFmtCant(externo, p)} restantes van a tu lista del lunes.`;
+    } else if (tieneDeudaAlm) {
+      // [929] Deuda cubierta por stock: no hay que COMPRAR, hay que DESPACHAR lo que se debe.
+      ia = '🟡 Demanda insatisfecha: se pidió y no se despachó, pero tienes stock → <b>despacha lo que debes</b> (mira las zonas en 📊 ¿Por qué?).';
     } else if (seEnvasa) {
       // [924] granel envasable / insumo: su demanda vive en las guías de envasado, no en el despacho.
       ia = _zonaEsInsumo(p)
@@ -50362,6 +50367,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         // [926] La compra del envasable (granel o insumo) = meta(demanda semanal) − stock; la calcula el
         //   RPC (async). Placeholder hasta que _zonaGranelCargarVisibles lo rellene.
         acciones = `<button class="zona-btn-pedir" id="zGbuy-${_zonaSkuId(sku)}" disabled>🧾 Calculando envasado…</button>`;
+      } else if (falta <= 0 && tieneDeudaAlm) {
+        // [929] Se debe pero el stock alcanza: no se compra, se DESPACHA. Botón lleva a Considerados.
+        acciones = `<button class="zona-btn-pedir" onclick="MOS.zonaAbrirConsiderados()">📦 Despachar lo que debes</button>`;
       } else {
         acciones = `<button class="zona-btn-pedir" ${falta > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${falta})">${falta > 0 ? '🧾 Comprar ' + _esc(_zonaFmtCant(falta, p)) + ' a proveedor' : '✓ Semana cubierta'}</button>`;
       }
@@ -50427,7 +50435,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [924] Si se ENVASA (granel envasable / insumo), no es "sin rotación": el chip y el hint lo dicen.
     // [927] En almacén, un producto con DEUDA (demanda insatisfecha) no es "sin rotación → anular":
     //   se pidió y no se despachó, hay que reponerlo. El chip/hint lo dice y ya vive en "Pedir ya".
-    const tieneDeudaAlm = esAlmacenCard && _zonaAlmTieneDeuda(p);
     const rotCeroChip = seEnvasa
       ? `<span class="zona-rotcero-chip" style="background:rgba(139,92,246,.14);border-color:rgba(167,139,250,.5);color:#c4b5fd" title="Se consume al envasar">🏭 se envasa</span>`
       : tieneDeudaAlm
@@ -50819,35 +50826,45 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   //   "derivados" (🟠 lo que deben sus derivados). Barras clickeables; el tip explica de dónde sale.
   //   META = smart(rotación semanal) + deuda propia + deuda de derivados. Compra = meta − stock.
   function _zonaNombreZonaSafe(id) { try { return _zonaNombreZona(id) || id; } catch (_) { return id; } }
+  // [929] Gráfico SEMANA POR SEMANA: 4 columnas (una por semana), y DENTRO de cada semana varias barras de
+  //   color según corresponda: 🔵 despacho · 🟡 deuda insatisfecha (por zona) · 🟣 envasado · 🟠 deuda de
+  //   derivados. Cada barra es clickeable y explica de dónde sale (la 🟡 dice la zona, la 🟠 el derivado).
   function _zonaDemandaRezRender(p, data) {
     const sem = (data && data.semanas) || [];
     const esInsumo = !!(data && data.esInsumo), uni = !esInsumo;
-    const pend = _zonaNum(data && data.pend), pendDeriv = _zonaNum(data && data.pendDeriv), stock = _zonaNum(data && data.stock);
-    const pendZonas = (data && data.pendZonas) || [];
-    const hijos = ((data && data.hijos) || []).filter(h => _zonaNum(h.aporte) > 0);
-    const flow = sem.map(s => _zonaNum(s.despacho) + _zonaNum(s.envasado));
-    const meta = _zonaMetaSmart(flow, 0.20) + pend + pendDeriv, comprar = Math.max(0, meta - stock);
-    if (flow.every(t => t <= 0) && pend <= 0 && pendDeriv <= 0)
-      return `<div class="dbz-empty">Sin movimiento ni deuda.<br><small>No se despachó, no se envasó y no se debe nada. Tienes ${_esc(_zonaFmtCant(stock, p, true))} en stock.</small></div>`;
+    const hijos = (data && data.hijos) || [];
+    const stock = _zonaNum(data && data.stock);
+    const vals = sem.reduce((a, s) => a.concat([_zonaNum(s.despacho), _zonaNum(s.deuda), _zonaNum(s.envasado), _zonaNum(s.deudaDeriv)]), []);
+    if (!vals.some(v => v > 0))
+      return `<div class="dbz-empty">Sin movimiento ni deuda en las últimas 4 semanas.<br><small>Tienes ${_esc(_zonaFmtCant(stock, p, true))} en stock.</small></div>`;
+    const maxV = Math.max(1, ...vals);
+    const h = (v) => Math.max(8, Math.round(v / maxV * 70));
     const fmt = (v) => _esc(_zonaFmtNumRaw(v, uni)) + (esInsumo ? ' MIL' : '');
-    const maxV = Math.max(1, pend, pendDeriv, ...sem.reduce((a, s) => a.concat([_zonaNum(s.despacho), _zonaNum(s.envasado)]), []));
-    const h = (v) => Math.max(10, Math.round(v / maxV * 70));
-    const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última'].slice(Math.max(0, 4 - sem.length));
-    const bar = (v, cls, exp) => v > 0 ? `<div class="dbz-bar ${cls}" style="height:${h(v)}px" data-exp="${_dbzAttr(exp)}" onclick="MOS.zonaDbzTip(this)"></div>` : '';
-    const weekCols = sem.map((s, i) => {
-      const d = _zonaNum(s.despacho), e = _zonaNum(s.envasado);
+    const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última'];
+    const A = _dbzAttr;
+    const bar = (v, cls, exp) => v > 0 ? `<div class="dbz-bar ${cls}" style="height:${h(v)}px" data-exp="${A(exp)}" onclick="MOS.zonaDbzTip(this)"></div>` : '';
+    const cols = sem.map((s, i) => {
+      const d = _zonaNum(s.despacho), du = _zonaNum(s.deuda), e = _zonaNum(s.envasado), dd = _zonaNum(s.deudaDeriv);
+      const zExp = ((s.deudaZonas || []).length) ? `<br><span class="dbz-sub">${(s.deudaZonas).map(z => `${_esc(_zonaNombreZonaSafe(z.zona))}: ${_esc(_zonaFmtNumRaw(_zonaNum(z.pend), uni))}`).join('<br>')}</span>` : '';
+      let hExp = '';
+      if (dd > 0) {
+        const parts = hijos.map(x => { const ap = _zonaNum((x.aporteSem || [])[i]); return ap > 0 ? `${_esc(x.nombre || x.cod)}: ${_esc(_zonaFmtNumRaw(ap, uni))}${esInsumo ? ' MIL' : ''}` : ''; }).filter(Boolean);
+        if (parts.length) hExp = `<br><span class="dbz-sub">${esInsumo ? 'lo usan y se deben:' : 'derivados que se deben:'}<br>${parts.join('<br>')}</span>`;
+      }
       const bars = bar(d, 'dbz-desp', `🔵 <b>Despachado a zona</b> · ${LBL[i]}<br><b>${fmt(d)}</b> — ${_dbzDesc('despacho', esInsumo)}`)
-                 + bar(e, 'dbz-env', `🟣 <b>Envasado</b> · ${LBL[i]}<br><b>${fmt(e)}</b> — ${_dbzDesc('envasado', esInsumo)}`);
+                 + bar(du, 'dbz-dp', `🟡 <b>Se debe</b> · ${LBL[i]}<br><b>${fmt(du)}</b> — lo que se pidió y no se despachó${zExp}`)
+                 + bar(e, 'dbz-env', `🟣 <b>Envasado</b> · ${LBL[i]}<br><b>${fmt(e)}</b> — ${_dbzDesc('envasado', esInsumo)}`)
+                 + bar(dd, 'dbz-dd', `🟠 <b>Derivados deben</b> · ${LBL[i]}<br><b>${fmt(dd)}</b> — ${_dbzDesc('deudaDerivados', esInsumo)}${hExp}`);
       return `<div class="dbz-wk"><div class="dbz-bars">${bars || '<div class="dbz-none"></div>'}</div><div class="dbz-wklbl">${LBL[i] || ''}</div></div>`;
     }).join('');
-    const zExp = pendZonas.length ? `<br><span class="dbz-sub">${pendZonas.map(z => `${_esc(_zonaNombreZonaSafe(z.zona))}: ${_esc(_zonaFmtNumRaw(_zonaNum(z.pend), uni))}`).join('<br>')}</span>` : '';
-    const debeCol = pend > 0 ? `<div class="dbz-wk"><div class="dbz-bars">${bar(pend, 'dbz-dp', `🟡 <b>Se debe ahora</b><br><b>${fmt(pend)}</b> — lo que se pidió y no se despachó (deuda por zona)${zExp}`)}</div><div class="dbz-wklbl">se debe</div></div>` : '';
-    const hExp = hijos.length ? `<br><span class="dbz-sub">${esInsumo ? 'lo usan y se deben:' : 'derivados que se deben:'}<br>${hijos.map(x => `${_esc(x.nombre || x.cod)}: ${_esc(_zonaFmtNumRaw(_zonaNum(x.pend), false))}×${_esc(String(x.factor))}=${_esc(_zonaFmtNumRaw(_zonaNum(x.aporte), uni))}`).join('<br>')}</span>` : '';
-    const derCol = pendDeriv > 0 ? `<div class="dbz-wk"><div class="dbz-bars">${bar(pendDeriv, 'dbz-dd', `🟠 <b>Derivados deben</b><br><b>${fmt(pendDeriv)}</b> — ${_dbzDesc('deudaDerivados', esInsumo)}${hExp}`)}</div><div class="dbz-wklbl">derivados</div></div>` : '';
+    // Meta = rotación (despacho+envasado, smart) + deuda total (propia + derivados). Compra = meta − stock.
+    const rot = sem.map(s => _zonaNum(s.despacho) + _zonaNum(s.envasado));
+    const deudaTot = sem.reduce((a, s) => a + _zonaNum(s.deuda) + _zonaNum(s.deudaDeriv), 0);
+    const meta = _zonaMetaSmart(rot, 0.20) + deudaTot, comprar = Math.max(0, meta - stock);
     return `<div class="dbz-chart">
-      <div class="dbz-weeks">${weekCols}${(debeCol || derCol) ? '<div class="dbz-gap"></div>' : ''}${debeCol}${derCol}</div>
-      <div class="dbz-tip">👆 Toca una barra para ver de dónde sale</div>
-      <div class="dbz-calc">Meta <b class="dbz-res">${_esc(_zonaFmtCant(meta, p, true))}</b> · tienes <b>${_esc(_zonaFmtCant(stock, p, true))}</b> → ${comprar > 0 ? ('comprar <b class="dbz-buy">' + _esc(_zonaFmtCant(comprar, p, true)) + '</b> al proveedor') : '<b class="dbz-ok">cubierto ✓ (tienes para lo que se debe)</b>'}</div>
+      <div class="dbz-weeks">${cols}</div>
+      <div class="dbz-tip">👆 Toca una barra para ver de dónde sale (la 🟡 dice a qué zona se debe)</div>
+      <div class="dbz-calc">Meta <b class="dbz-res">${_esc(_zonaFmtCant(meta, p, true))}</b> · tienes <b>${_esc(_zonaFmtCant(stock, p, true))}</b> → ${comprar > 0 ? ('comprar <b class="dbz-buy">' + _esc(_zonaFmtCant(comprar, p, true)) + '</b> al proveedor') : (deudaTot > 0 ? '<b class="dbz-ok">tienes stock ✓ — despacha lo que debes</b>' : '<b class="dbz-ok">cubierto ✓</b>')}</div>
     </div>`;
   }
   // Al tocar una barra, el tip muestra su explicación (de dónde sale ese monto).
