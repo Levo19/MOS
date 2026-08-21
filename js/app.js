@@ -50122,6 +50122,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const b = String(p && p.idProducto || '').trim().toUpperCase();
     return (!!a && set.has(a)) || (!!b && set.has(b));
   }
+  // [930] ¿Es un DERIVADO? (se ENVASA del granel padre, NO se compra al proveedor). Tiene codigoProductoBase.
+  function _zonaEsDerivado(p) { return !!(p && p.codigoProductoBase && String(p.codigoProductoBase).trim()); }
+  function _zonaGranelPadreNombre(p) {
+    const base = String(p && p.codigoProductoBase || '').trim().toUpperCase(); if (!base) return '';
+    const ps = Array.isArray(S.productos) ? S.productos : [];
+    const g = ps.find(x => (String(x.skuBase || '').trim().toUpperCase() === base || String(x.idProducto || '').trim().toUpperCase() === base)
+      && (parseFloat(x.factorConversion) || 1) === 1 && !String(x.codigoProductoBase || '').trim());
+    return g ? (g.descripcion || g.nombre || '') : '';
+  }
   function _zonaEsInsumo(p) {
     const set = _zonaInsumoSet();
     const a = String(p && p.skuBase || '').trim().toUpperCase();
@@ -50278,6 +50287,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [924] En almacén, granel envasable / insumo NO es "perro": se consume al ENVASAR (no se despacha).
     const seEnvasa = esAlmacenCard && _zonaSeEnvasa(p);
     const tieneDeudaAlm = esAlmacenCard && _zonaAlmTieneDeuda(p);   // [929] demanda insatisfecha (rezagado)
+    const esDerivadoAlm = esAlmacenCard && _zonaEsDerivado(p);      // [930] se ENVASA del granel, no se compra
 
     // [MEJORA 1] Sparkline CLICKABLE → modal "¿por qué esperado=X?"
     const maxP = Math.max(1, ...picos.map(_zonaNum));
@@ -50301,6 +50311,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     let ia = '';
     if (negativo) {
       ia = `⚠ Stock negativo (revisar dónde se originó). Para estar listo necesitas ${fEsp}.`;
+    } else if (esDerivadoAlm) {
+      // [930] Un DERIVADO se ENVASA del granel padre — NUNCA se compra a un proveedor.
+      const _gp = _zonaGranelPadreNombre(p);
+      ia = brecha > 0
+        ? `🏭 Se <b>envasa</b> del granel${_gp ? ' (' + _esc(_gp) + ')' : ''}, no se compra. Faltan ${fBrecha} → <b>envasar ${fBrecha}</b>.`
+        : (tieneDeudaAlm ? '🟡 Demanda insatisfecha: tienes stock → <b>despacha lo que debes</b>.' : 'Stock al día. Se envasa del granel cuando falte.');
     } else if (esAlmacenCard && brecha > 0) {
       // [902] Almacén NO pide a almacén: compra a PROVEEDOR para cubrir su semana.
       ia = `Te faltan ${fBrecha} para tu semana. Cómpralos a un proveedor.`;
@@ -50363,7 +50379,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [924] granel envasable / insumo entra aquí (no es perro): se compra al proveedor para poder envasar.
     if (esAlmacenCard && (seEnvasa || !(bcg === 'perro' && brecha <= 0 && !negativo))) {
       const falta = brecha > 0 ? brecha : 0;
-      if (seEnvasa) {
+      if (esDerivadoAlm) {
+        // [930] Derivado: se ENVASA del granel, no se compra. El botón lleva a Considerados (despachar) —
+        //   la compra real es del GRANEL padre (su card la calcula).
+        acciones = falta > 0
+          ? `<button class="zona-btn-pedir" onclick="MOS.zonaAbrirConsiderados()">🏭 Envasar ${_esc(_zonaFmtCant(falta, p))} · del granel</button>`
+          : (tieneDeudaAlm ? `<button class="zona-btn-pedir" onclick="MOS.zonaAbrirConsiderados()">📦 Despachar lo que debes</button>` : `<button class="zona-btn-pedir" disabled>✓ Semana cubierta</button>`);
+      } else if (seEnvasa) {
         // [926] La compra del envasable (granel o insumo) = meta(demanda semanal) − stock; la calcula el
         //   RPC (async). Placeholder hasta que _zonaGranelCargarVisibles lo rellene.
         acciones = `<button class="zona-btn-pedir" id="zGbuy-${_zonaSkuId(sku)}" disabled>🧾 Calculando envasado…</button>`;
