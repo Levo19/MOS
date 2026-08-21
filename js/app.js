@@ -50303,9 +50303,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [924] granel envasable / insumo entra aquí (no es perro): se compra al proveedor para poder envasar.
     if (esAlmacenCard && (seEnvasa || !(bcg === 'perro' && brecha <= 0 && !negativo))) {
       const falta = brecha > 0 ? brecha : 0;
-      if (seEnvasa && _zonaEsGranelEnvasable(p)) {
-        // [925] La compra del granel = Σ(faltante_derivado × fcb); la calcula el RPC (async). Placeholder
-        //   hasta que _zonaGranelCargarVisibles lo rellene con la cantidad real.
+      if (seEnvasa) {
+        // [926] La compra del envasable (granel o insumo) = meta(demanda semanal) − stock; la calcula el
+        //   RPC (async). Placeholder hasta que _zonaGranelCargarVisibles lo rellene.
         acciones = `<button class="zona-btn-pedir" id="zGbuy-${_zonaSkuId(sku)}" disabled>🧾 Calculando envasado…</button>`;
       } else {
         acciones = `<button class="zona-btn-pedir" ${falta > 0 ? '' : 'disabled'} onclick="MOS.zonaAgregarLista('${safe}', ${falta})">${falta > 0 ? '🧾 Comprar ' + _esc(_zonaFmtCant(falta, p)) + ' a proveedor' : '✓ Semana cubierta'}</button>`;
@@ -50734,91 +50734,111 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (wrap.dataset.cargado !== '1') { wrap.dataset.cargado = '1'; (which === 'pq' ? _zonaSecCargarPq : _zonaSecCargarHx)(sku); }
   }
   // [920] Gráfico de DEMANDA en almacén: despachado (azul) + DEUDA (ámbar = demanda insatisfecha).
+  // [926] Metadatos de cada SERIE (color) del gráfico de demanda de almacén. Barras LADO A LADO por semana;
+  //   cada barra es CLICKEABLE y explica de dónde sale su monto (super intuitivo, sin texto gigante arriba).
+  const _ZBAR = {
+    despacho:       { cls:'dbz-desp', ico:'🔵', lbl:'Despachado a zona',  desc:'salió como producto a las zonas' },
+    envasado:       { cls:'dbz-env',  ico:'🟣', lbl:'Envasado',           desc:'se usó para hacer sus derivados' },
+    deudaPropia:    { cls:'dbz-dp',   ico:'🟡', lbl:'Deuda propia',       desc:'lo que pidieron y aún no se despacha' },
+    deudaDerivados: { cls:'dbz-dd',   ico:'🟠', lbl:'Deuda de derivados', desc:'lo que deben sus derivados (convertido)' },
+  };
+  function _dbzAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+  // Núcleo: barras agrupadas por semana. Cada barra lleva su explicación en data-exp (la muestra el tip al tocar).
+  //   La META usa las 4 semanas (ponderado+tendencia) → NO se marca "este usamos" en una sola.
+  function _zonaGrupoBarras(p, sem, keys, esInsumo, hijos) {
+    const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última'].slice(Math.max(0, 4 - sem.length));
+    const uni = !esInsumo;   // granel = kg; insumo = millares
+    const vals = sem.map(s => keys.map(k => _zonaNum(s[k])));
+    const totals = vals.map(a => a.reduce((x, y) => x + y, 0));
+    const maxV = Math.max(1, ...vals.reduce((a, b) => a.concat(b), []));
+    const fmt = (v) => _esc(_zonaFmtNumRaw(v, uni)) + (esInsumo ? ' MIL' : '');
+    const weeks = sem.map((s, i) => {
+      const bars = keys.map(k => {
+        const v = _zonaNum(s[k]); if (v <= 0) return '';
+        let exp = `${_ZBAR[k].ico} <b>${_ZBAR[k].lbl}</b> · ${LBL[i]}<br><b>${fmt(v)}</b> — ${_ZBAR[k].desc}`;
+        if (k === 'deudaDerivados' && Array.isArray(hijos)) {
+          const parts = hijos.map(h => {
+            const ap = _zonaNum((h.aporteSem || [])[i]), du = _zonaNum((h.deudaSem || [])[i]);
+            return ap > 0 ? `${_esc(h.nombre || h.cod)}: ${_esc(_zonaFmtNumRaw(du, false))}×${_esc(String(h.factor))}=${_esc(_zonaFmtNumRaw(ap, uni))}` : '';
+          }).filter(Boolean);
+          if (parts.length) exp += `<br><span class="dbz-sub">${parts.join('<br>')}</span>`;
+        }
+        return `<div class="dbz-bar ${_ZBAR[k].cls}" style="height:${Math.max(6, Math.round(v / maxV * 72))}px" data-exp="${_dbzAttr(exp)}" onclick="MOS.zonaDbzTip(this)"></div>`;
+      }).join('');
+      return `<div class="dbz-wk"><div class="dbz-bars">${bars || '<div class="dbz-none"></div>'}</div><div class="dbz-wklbl">${LBL[i] || ''}</div></div>`;
+    }).join('');
+    return { weeks, totals };
+  }
+  // Regular (almacén no-envasable): despacho + envasado + deuda (barras separadas, clickeables). Shape RPC 924.
   function _zonaDemandaRender(p, semanas) {
     const s = Array.isArray(semanas) ? semanas : [];
-    if (!s.length) return _zonaEsperadoRender(p, null);   // fallback a los picos semanales
-    const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última sem'];
-    // [924] Demanda de almacén = despachado (a zona) + ENVASADO (a derivados / insumo consumido) + deuda.
-    //   Antes solo miraba despacho a zona → graneles e insumos salían en 0 aunque se muevan por envasado.
-    const demandas = s.map(x => _zonaNum(x.despachado) + _zonaNum(x.envasado) + _zonaNum(x.deuda));
-    const maxD = Math.max(1, ...demandas);
-    const metaDem = _zonaMetaSmart(demandas, 0.20) || _zonaMetaDe(p);
-    const totalDeuda = s.reduce((a, x) => a + _zonaNum(x.deuda), 0);
-    const totalEnv  = s.reduce((a, x) => a + _zonaNum(x.envasado), 0);
-    const hayEnv = totalEnv > 0;
-    const cols = s.map((x, i) => {
-      const desp = _zonaNum(x.despachado), env = _zonaNum(x.envasado), deu = _zonaNum(x.deuda);
-      const tot = desp + env + deu;
-      const isU = (i === s.length - 1);
-      const hD = Math.max(0, Math.round(desp / maxD * 84));
-      const hV = Math.max(0, Math.round(env  / maxD * 84));
-      const hE = Math.max(0, Math.round(deu  / maxD * 84));
-      return `<div class="esp-wk${isU ? ' is-used' : ''}${tot <= 0 ? ' is-empty' : ''}">
-        <div class="esp-wk-bars" style="justify-content:center">
-          <div class="dem-col" title="Despachado ${_esc(_zonaFmtNumRaw(desp, p.esGranel))} · Envasado ${_esc(_zonaFmtNumRaw(env, p.esGranel))} · Debido ${_esc(_zonaFmtNumRaw(deu, p.esGranel))}">
-            ${deu > 0 ? `<div class="dem-deuda" style="height:${hE}px"></div>` : ''}
-            ${env > 0 ? `<div class="dem-env" style="height:${Math.max(3, hV)}px"></div>` : ''}
-            ${desp > 0 ? `<div class="dem-desp" style="height:${Math.max(3, hD)}px"></div>` : ''}
-          </div>
-        </div>
-        <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[i] || ''}</span><span class="esp-wk-pico">${_esc(_zonaFmtNumRaw(tot, p.esGranel))}</span></div>
-        ${isU ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
-    }).join('');
-    const leyenda = `<span class="dem-leg"><i class="lg-desp"></i> despachado a zona</span>`
-      + (hayEnv ? ` <span class="dem-leg"><i class="lg-env"></i> <b>envasado</b> (sale a envasarse / insumo)</span>` : '')
-      + ` <span class="dem-leg"><i class="lg-deuda"></i> deuda = demanda insatisfecha</span>`;
-    const notaEnv = hayEnv
-      ? `Este producto <b>sale por envasado</b> (${_esc(_zonaFmtNumRaw(totalEnv, p.esGranel))} en 4 semanas): aunque no se despache a zona, <b>se necesita</b> y cuenta para la meta.`
-      : `La deuda (lo que las zonas pidieron y no se despachó) <b>también cuenta</b> para la meta.`;
-    return `<div class="esp-help">${leyenda}<br>${notaEnv}</div>
-      <div class="esp-weeks">${cols}</div>
-      ${hayEnv ? `<div class="esp-deuda-tot" style="border-color:rgba(167,139,250,.4);color:#c4b5fd">🏭 Envasado acumulado (4 sem): <b>${_esc(_zonaFmtNumRaw(totalEnv, p.esGranel))}</b></div>` : ''}
-      ${totalDeuda > 0 ? `<div class="esp-deuda-tot">⚠ Deuda acumulada (demanda insatisfecha): <b>${_esc(_zonaFmtNumRaw(totalDeuda, p.esGranel))}</b></div>` : ''}
-      <div class="esp-calc"><div class="esp-nums">Meta (despacho${hayEnv ? ' + envasado' : ''} + deuda) = <b class="esp-res">${_esc(_zonaFmtCant(metaDem, p, true))}</b></div></div>`;
-  }
-  // [925] Desglose: la META del granel = Σ(faltante de cada derivado × su factor). Se muestra en el
-  //   "¿Por qué?" del granel envasable, encima del histórico de envasado.
-  function _zonaGranelBreakdownHtml(p, dem) {
-    if (!dem) return '';
-    const ders = Array.isArray(dem.derivados) ? dem.derivados : [];
-    const nec = _zonaNum(dem.granelNecesario), stk = _zonaNum(dem.stockGranel), comp = _zonaNum(dem.comprar);
-    const rows = ders.map(d => {
-      const falta = _zonaNum(d.falta), gr = _zonaNum(d.granel);
-      return `<div class="gder-row${falta > 0 ? ' gder-falta' : ''}">
-        <span class="gder-nom">${_esc(d.nombre || d.cod || '')}</span>
-        <span class="gder-calc">meta ${_esc(_zonaFmtNumRaw(_zonaNum(d.meta), false))} · tienes ${_esc(_zonaFmtNumRaw(_zonaNum(d.have), false))} → falta ${_esc(_zonaFmtNumRaw(falta, false))} × ${_esc(String(d.fcb))}</span>
-        <span class="gder-gr">${gr > 0 ? ('+' + _esc(_zonaFmtNumRaw(gr, true)) + ' kg') : '—'}</span>
-      </div>`;
-    }).join('');
-    return `<div class="gder-wrap">
-      <div class="gder-h">🏭 Meta del granel = <b>lo que falta de cada derivado × su factor</b> (lo que compras al proveedor es el granel)</div>
-      ${rows || '<div class="gder-empty">Este granel no tiene derivados con demanda.</div>'}
-      <div class="gder-tot">Para envasar hace falta <b>${_esc(_zonaFmtCant(nec, p, true))}</b> · tienes <b>${_esc(_zonaFmtCant(stk, p, true))}</b> → ${comp > 0 ? ('comprar al proveedor <b class="gder-buy">' + _esc(_zonaFmtCant(comp, p, true)) + '</b>') : '<b class="gder-ok">derivados cubiertos ✓</b>'}</div>
+    if (!s.length) return _zonaEsperadoRender(p, null);
+    const sem = s.map(x => ({ despacho: _zonaNum(x.despachado), envasado: _zonaNum(x.envasado), deudaPropia: _zonaNum(x.deuda) }));
+    const { weeks, totals } = _zonaGrupoBarras(p, sem, ['despacho', 'envasado', 'deudaPropia'], false, null);
+    const meta = _zonaMetaSmart(totals, 0.20) || _zonaMetaDe(p);
+    return `<div class="dbz-chart">
+      <div class="dbz-weeks">${weeks}</div>
+      <div class="dbz-tip">👆 Toca una barra para ver de dónde sale</div>
+      <div class="dbz-calc">Meta <b class="dbz-res">${_esc(_zonaFmtCant(meta, p, true))}</b></div>
     </div>`;
+  }
+  // [926] Envasable (granel o insumo): 4 barras clickeables; la naranja explica derivado por derivado. Shape RPC 926.
+  function _zonaDemandaEnvasableRender(p, data) {
+    const sem = (data && data.semanas) || [];
+    if (!sem.length) return _zonaEsperadoRender(p, null);
+    const esInsumo = !!(data && data.esInsumo);
+    const hijos = (data && data.hijos) || [];
+    const { weeks, totals } = _zonaGrupoBarras(p, sem, ['despacho', 'envasado', 'deudaPropia', 'deudaDerivados'], esInsumo, hijos);
+    const stock = _zonaNum(data.stockProducto), meta = _zonaMetaSmart(totals, 0.20), comprar = Math.max(0, meta - stock);
+    return `<div class="dbz-chart">
+      <div class="dbz-weeks">${weeks}</div>
+      <div class="dbz-tip">👆 Toca una barra para ver de dónde sale</div>
+      <div class="dbz-calc">Meta <b class="dbz-res">${_esc(_zonaFmtCant(meta, p, true))}</b> · tienes <b>${_esc(_zonaFmtCant(stock, p, true))}</b> → ${comprar > 0 ? ('comprar <b class="dbz-buy">' + _esc(_zonaFmtCant(comprar, p, true)) + '</b> al proveedor') : '<b class="dbz-ok">cubierto ✓</b>'}</div>
+    </div>`;
+  }
+  // Al tocar una barra, el tip muestra su explicación (de dónde sale ese monto).
+  function zonaDbzTip(el) {
+    try {
+      const chart = el.closest('.dbz-chart'); if (!chart) return;
+      const tip = chart.querySelector('.dbz-tip'); if (!tip) return;
+      tip.innerHTML = el.getAttribute('data-exp') || '';
+      tip.classList.add('on');
+      chart.querySelectorAll('.dbz-bar.on').forEach(b => b.classList.remove('on'));
+      el.classList.add('on');
+      try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {}
+    } catch (_) {}
+  }
+  // Meta y compra de un producto envasable a partir del item del RPC 926 (una sola fuente para gráfico y botón).
+  function _zonaEnvMetaCompra(it) {
+    const sem = (it && it.semanas) || [];
+    const totals = sem.map(s => _zonaNum(s.despacho) + _zonaNum(s.envasado) + _zonaNum(s.deudaPropia) + _zonaNum(s.deudaDerivados));
+    const stock = _zonaNum(it && it.stockProducto);
+    const meta = _zonaMetaSmart(totals, 0.20);
+    return { meta, stock, comprar: Math.max(0, meta - stock) };
   }
   async function _zonaSecCargarPq(sku) {
     const p = S.zonaProductos.find(x => String(x.skuBase || x.idProducto) === sku); if (!p) return;
     const el = $('ztPq-' + _zonaSkuId(sku)); if (!el) return;
     const esAlm = _esZonaAlmacen({ idZona: S.zonaActual, nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
     if (esAlm) {
-      // Almacén: despachado + DEUDA (demanda insatisfecha). Le pasamos los códigos del canónico.
-      const cods = (Array.isArray(p.codigos) ? p.codigos : []).map(c => String(c.codBarra != null ? c.codBarra : (c.codigoBarra || ''))).filter(Boolean);
-      // [925] Granel envasable: encabeza con el desglose de derivados (Σ faltante × fcb = meta del granel).
-      let head = '';
-      if (_zonaEsGranelEnvasable(p)) {
-        let dem = (S._zonaGranelDem || {})[String(sku).toUpperCase()];
+      // [926] Envasable (granel/insumo): gráfico de 4 barras con la deuda de derivados convertida.
+      if (_zonaSeEnvasa(p)) {
+        let dem = (S._zonaEnvDem || {})[String(sku).toUpperCase()];
         if (!dem) {
           try {
-            const rg = await API.zona.granelDemanda({ skus: [sku] });
+            const rg = await API.zona.demandaEnvasable({ skus: [sku] });
             const it = ((rg && (rg.data || rg) && (rg.data || rg).items) || [])[0];
-            if (it) { S._zonaGranelDem = S._zonaGranelDem || {}; dem = S._zonaGranelDem[String(sku).toUpperCase()] = Object.assign({}, it, { _ts: Date.now() }); }
+            if (it) { S._zonaEnvDem = S._zonaEnvDem || {}; dem = S._zonaEnvDem[String(sku).toUpperCase()] = Object.assign({}, it, { _ts: Date.now() }); }
           } catch (_) {}
         }
-        head = _zonaGranelBreakdownHtml(p, dem);
+        el.innerHTML = dem ? _zonaDemandaEnvasableRender(p, dem) : '<div class="dbz-help">No se pudo calcular la demanda de envasado.</div>';
+        return;
       }
+      // Almacén regular: despachado + envasado + deuda (barras separadas). Le pasamos los códigos del canónico.
+      const cods = (Array.isArray(p.codigos) ? p.codigos : []).map(c => String(c.codBarra != null ? c.codBarra : (c.codigoBarra || ''))).filter(Boolean);
       const r = await API.zona.demandaSemanal({ sku, codigos: cods });
       const sem = (r && (r.data || r) && ((r.data || r).semanas)) || null;
-      el.innerHTML = head + _zonaDemandaRender(p, sem);
+      el.innerHTML = _zonaDemandaRender(p, sem);
     } else {
       const dias = await _zonaDiasFetch(sku);   // zona: detalle diario (venta)
       el.innerHTML = _zonaEsperadoRender(p, dias);
@@ -50898,36 +50918,36 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try {
       if (!_zonaActualEsAlmacen()) return;
       const cont = $('zonaLista'); if (!cont) return;
-      S._zonaGranelDem = S._zonaGranelDem || {};
+      S._zonaEnvDem = S._zonaEnvDem || {};
       const skus = [];
       Array.prototype.slice.call(cont.querySelectorAll('.zona-card[data-sku]')).forEach(el => {
         const sku = el.getAttribute('data-sku');
         const p = (S.zonaProductos || []).find(x => String(x.skuBase || x.idProducto) === sku);
-        if (p && _zonaEsGranelEnvasable(p) && skus.indexOf(sku) < 0) skus.push(sku);
+        if (p && _zonaSeEnvasa(p) && skus.indexOf(sku) < 0) skus.push(sku);   // [926] granel Y insumo
       });
       if (!skus.length) return;
-      const pedir = skus.filter(s => { const d = S._zonaGranelDem[s.toUpperCase()]; return !d || (Date.now() - d._ts) > 300000; });
+      const pedir = skus.filter(s => { const d = S._zonaEnvDem[s.toUpperCase()]; return !d || (Date.now() - d._ts) > 300000; });
       if (pedir.length) {
-        const r = await API.zona.granelDemanda({ skus: pedir });
+        const r = await API.zona.demandaEnvasable({ skus: pedir });
         const items = (r && (r.data || r) && (r.data || r).items) || [];
-        items.forEach(it => { S._zonaGranelDem[String(it.sku).toUpperCase()] = Object.assign({}, it, { _ts: Date.now() }); });
-        pedir.forEach(s => { const k = s.toUpperCase(); if (!S._zonaGranelDem[k]) S._zonaGranelDem[k] = { sku: s, comprar: 0, granelNecesario: 0, stockGranel: 0, derivados: [], _ts: Date.now() }; });
+        items.forEach(it => { S._zonaEnvDem[String(it.sku).toUpperCase()] = Object.assign({}, it, { _ts: Date.now() }); });
+        pedir.forEach(s => { const k = s.toUpperCase(); if (!S._zonaEnvDem[k]) S._zonaEnvDem[k] = { sku: s, semanas: [], hijos: [], stockProducto: 0, _ts: Date.now() }; });
       }
       skus.forEach(sku => {
-        const dem = S._zonaGranelDem[sku.toUpperCase()]; if (!dem) return;
+        const dem = S._zonaEnvDem[sku.toUpperCase()]; if (!dem) return;
         const btn = document.getElementById('zGbuy-' + _zonaSkuId(sku)); if (!btn) return;
         const p = (S.zonaProductos || []).find(x => String(x.skuBase || x.idProducto) === sku);
-        const comprar = _zonaNum(dem.comprar);
-        if (comprar > 0) {
+        const mc = _zonaEnvMetaCompra(dem);
+        if (mc.comprar > 0) {
           btn.disabled = false;
-          btn.textContent = '🧾 Comprar ' + _zonaFmtCant(comprar, p) + ' a proveedor';
-          btn.onclick = () => { try { MOS.zonaAgregarLista(sku, comprar); } catch (_) {} };
+          btn.textContent = '🧾 Comprar ' + _zonaFmtCant(mc.comprar, p) + ' a proveedor';
+          btn.onclick = () => { try { MOS.zonaAgregarLista(sku, mc.comprar); } catch (_) {} };
         } else {
           btn.disabled = true;
-          btn.textContent = '✓ Derivados cubiertos';
+          btn.textContent = '✓ Cubierto (nada por comprar)';
           btn.onclick = null;
         }
-        btn.title = 'Meta del granel (para envasar sus derivados) = ' + _zonaFmtCant(_zonaNum(dem.granelNecesario), p) + ' · tienes ' + _zonaFmtCant(_zonaNum(dem.stockGranel), p);
+        btn.title = 'Meta (para envasar) = ' + _zonaFmtCant(mc.meta, p) + ' · tienes ' + _zonaFmtCant(mc.stock, p);
       });
     } catch (e) {
       try { console.warn('[RIZ] _zonaGranelCargarVisibles:', e && (e.message || e)); } catch (_) {}
@@ -51394,7 +51414,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         return `<div class="esp-wk${isU ? ' is-used' : ''}${v <= 0 ? ' is-empty' : ''}">
           <div class="esp-wk-bars" style="justify-content:center"><div class="esp-day pk"><div class="esp-day-v">${v > 0 ? _esc(_zonaFmtNumRaw(v, p.esGranel)) : ''}</div><div class="esp-day-bar" style="height:${h}px;width:56%"></div><div class="esp-day-d">sem</div></div></div>
           <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[i] || ''}</span><span class="esp-wk-pico">pico ${_esc(_zonaFmtNumRaw(v, p.esGranel))}</span></div>
-          ${isU ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
+          ${isU ? '<div class="esp-wk-flag">última</div>' : ''}</div>`;
       }).join('');
       return `<div class="esp-help">Es despacho de almacén (no venta diaria). Cada barra = el <b>pico</b> de esa semana. La meta mira las <b>4 semanas + la tendencia</b>, no solo la última.</div>
         <div class="esp-weeks">${cols}</div>
@@ -51423,7 +51443,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       semHtml += `<div class="esp-wk${isUsed ? ' is-used' : ''}${picoW <= 0 ? ' is-empty' : ''}">
         <div class="esp-wk-bars">${bars}</div>
         <div class="esp-wk-foot"><span class="esp-wk-lbl">${LBL[s]}</span><span class="esp-wk-pico">pico ${_esc(_zonaFmtNumRaw(picoW, p.esGranel))}</span></div>
-        ${isUsed ? '<div class="esp-wk-flag">↑ este usamos</div>' : ''}</div>`;
+        ${isUsed ? '<div class="esp-wk-flag">última</div>' : ''}</div>`;
     });
     return `<div class="esp-help">Cada barra = lo que vendiste ese día. En cada semana marcamos su <b>día más fuerte</b> (el pico). La meta mira las <b>4 semanas + la tendencia</b> (no solo la última).</div>
       <div class="esp-weeks">${semHtml}</div>
@@ -55549,7 +55569,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaVerKardex, zonaVerKardexAlmacen, zonaCerrarKardex, zonaKardexTab,
     zonaPlaceholder, zonaAccionPerro,
     zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar, zonaPickupTab,
-    zonaAbrirInsights, zonaCerrarInsights,
+    zonaAbrirInsights, zonaCerrarInsights, zonaDbzTip,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
     zonaAbrirConsiderados, zonaCerrarConsiderados,
