@@ -3828,10 +3828,15 @@ const API = (() => {
       // (preserva el lookup SUNAT/RENIEC en vivo que solo GAS hace). El helper igual devuelve el objeto; el guard
       // de "encontrado" lo aplica aquí envolviendo el directo para que el null caiga al fallback.
       if (action === 'meConsultarCliente')     {
-        // Tras miss de sombra, el live-lookup va al Edge `consultar-documento` si el gate SUNAT está ON
-        // (con GAS como red de seguridad si el Edge falla); con el gate OFF (default) va recto a GAS = IDÉNTICO a hoy.
-        const _liveLookupCliente = () => _conFallbackMOS(() => _meConsultarClienteEdge(p));
-        return _conFallbackMOS(async () => { const r = await _getMeConsultarClienteDirecto(p); return (r && r.encontrado) ? r : null; });
+        // [929] Sombra primero; si NO tiene el doc, live-lookup por Edge `consultar-documento` (SUNAT/RENIEC)
+        //   cuando el gate está ON — ANTES este Edge estaba cableado a una var muerta y el miss caía a GAS
+        //   (enterrado) → los RUCs no vistos salían "no encontrado". GAS queda solo como última red.
+        return _conFallbackMOS(async () => {
+          const r = await _getMeConsultarClienteDirecto(p);
+          if (r && r.encontrado) return r;
+          if (_mosSunatEdge()) { const e = await _meConsultarClienteEdge(p); if (e && (e.nombre || e.status === 'success')) return e; }
+          return null;
+        });
       }
       if (action === 'getResumenTodosDia')     { return _conFallbackMOS(() => _getResumenTodosDiaDirecto(p)); }
       if (action === 'getEcoStatus')           { return _conFallbackMOS(() => _getEcoStatusDirecto(p)); }

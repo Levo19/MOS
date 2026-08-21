@@ -31485,6 +31485,9 @@ const MOS = (() => {
     $('tkConvClienteInfo').classList.add('hidden');
     _tkConvSetTipo('BOLETA');
     openModal('modalTkConvertirCPE');
+    // [929] Auto-identificar al abrir: trae nombre + dirección del RUC/DNI (sombra o SUNAT/RENIEC) sin que el
+    //   admin tenga que tocar "Buscar", y deja la dirección lista (no editable). Silencioso si no hay doc.
+    if ((t.clienteDoc || '').trim()) { try { _tkConvBuscarCliente(true); } catch (_) {} }
   }
 
   function _tkConvSetTipo(tipo) {
@@ -31517,33 +31520,39 @@ const MOS = (() => {
     box.innerHTML = _cpeReglasHtml(_cpeReglas((_tkAcc&&_tkAcc.convCPE&&_tkAcc.convCPE.tipo)||'BOLETA', total, doc, nombre, dir, medio));
   }
 
-  async function _tkConvBuscarCliente() {
+  async function _tkConvBuscarCliente(auto) {
     const doc = ($('tkConvDoc').value || '').trim();
-    if (!doc) { toast('Ingresa DNI o RUC', 'error'); return; }
+    if (!doc) { if (!auto) toast('Ingresa DNI o RUC', 'error'); return; }
     if (doc.length !== 8 && doc.length !== 11) {
-      toast('DNI debe tener 8 dígitos · RUC 11 dígitos', 'error'); return;
+      if (!auto) toast('DNI debe tener 8 dígitos · RUC 11 dígitos', 'error'); return;
     }
     const info = $('tkConvClienteInfo');
     if (info) {
       info.classList.remove('hidden');
-      info.innerHTML = '<span class="text-slate-400">🔎 Consultando...</span>';
+      info.innerHTML = '<span class="text-slate-400">🔎 Consultando…</span>';
     }
     try {
       const r = await API.get('meConsultarCliente', { doc });
-      const nombre = r?.nombre || r?.razon_social || '';
-      const direccion = r?.direccion || '';
+      // [929] lectura robusta del shape: la RPC/Edge devuelve el objeto plano, pero por si viene bajo .data.
+      const o = (r && (r.nombre || r.razon_social || r.razonSocial)) ? r : ((r && r.data) || r || {});
+      const nombre = o.nombre || o.razon_social || o.razonSocial || '';
+      const direccion = o.direccion || o.direccionFiscal || '';
       if (!nombre) {
-        info.innerHTML = '<span class="text-amber-400">⚠ No encontrado en RENIEC/SUNAT — puedes ingresar manualmente</span>';
+        // No en la sombra ni en SUNAT/RENIEC. La dirección NO es editable (se respeta la del RUC), así que
+        // sin identificar no se puede completar. Mantiene lo que traía el ticket (nombre) por si sirve.
+        if (info) info.innerHTML = '<span class="text-amber-400">⚠ No se pudo identificar el documento en SUNAT/RENIEC. Revisa el número o reintenta.</span>';
         _tkAcc.convCPE.clienteOK = false;
+        _tkConvReglasRefresh();
         return;
       }
       $('tkConvNombre').value    = nombre;
-      $('tkConvDireccion').value = direccion;
-      info.innerHTML = `<div class="text-emerald-400 font-bold">✓ ${nombre}</div>` +
-                       (direccion ? `<div class="text-slate-400">${direccion}</div>` : '');
+      if (direccion) $('tkConvDireccion').value = direccion;   // se respeta la dirección oficial del RUC
+      if (info) info.innerHTML = `<div class="text-emerald-400 font-bold">✓ ${_escapeHtml ? _escapeHtml(nombre) : nombre}</div>` +
+                       (direccion ? `<div class="text-slate-400">${_escapeHtml ? _escapeHtml(direccion) : direccion}</div>` : '<div class="text-amber-400 text-[11px]">Sin dirección registrada para este documento.</div>');
       _tkAcc.convCPE.clienteOK = true;
+      _tkConvReglasRefresh();
     } catch(e) {
-      info.innerHTML = '<span class="text-rose-400">Error: ' + e.message + '</span>';
+      if (info) info.innerHTML = '<span class="text-rose-400">Error: ' + (e && e.message || e) + '</span>';
     }
   }
 
