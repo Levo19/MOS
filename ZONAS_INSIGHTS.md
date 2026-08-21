@@ -219,6 +219,27 @@ Leyenda de matiz: **↑↑** sube fuerte · **↑** sube · **=** neutral (regla
 - **Afecta.** `_ZONA_INSIGHTS` (app.js) es la fuente in-app; este `.md` es la fuente de ingeniería —
   **al agregar/cambiar un insight, actualizar AMBOS**.
 
+### I-16 · **La DEUDA = pendiente REZAGADO de los pickups por zona** (definición de Considerados)
+- **Qué.** "Demanda insatisfecha" = lo que cada zona **pidió y no se despachó**, que vive como
+  **rezagado** en los pickups acumulados (`wh.pickups` fuente=`ACUMULADO_SEMANAL`, estado=`REZAGADO`,
+  `solicitado − despachado > 0`) — **la MISMA fuente que 🎯 Considerados**. Antes la deuda salía de
+  `me.zona_pedido_log` con ventana de 4 sem → un producto con deuda vieja (ej. COCINERO, se debe 48 =
+  Zona1 47 + Zona2 1, pedido hace 5 sem) **no aparecía**. Ahora la deuda es lo que **realmente se debe
+  hoy**, venga de cuando venga. **La barra amarilla = cuánto se le debe a cada zona.**
+- **Puesto.** `[A]`.
+- **Matiz.** **↑↑** — la deuda rezagada es demanda real → rescata de Muertos y sube la meta.
+- **Estado.** ✅ **2.43.925** — helper `mos._rez_pend_sku_zona()` + `mos.almacen_demanda_bulk` (meta de
+  todo el grupo: sem[4]=despacho+envasado, pend, pendDeriv, stock) + `mos.almacen_demanda_rez` (detalle
+  del gráfico: semanas{despacho,envasado} + pendZonas[{zona,pend}] + hijos[{cod,factor,pend,aporte}]).
+  Front: `_zonaMetaDe`/`_zonaEnvMetaCompra` = `smart(sem) + pend + pendDeriv`; `_zonaDemandaRezRender`
+  (columnas semanales + "🟡 se debe" con detalle por zona + "🟠 derivados deben" con detalle por
+  derivado, todo clickeable). `_zonaAlmTieneDeuda` = (pend+pendDeriv)>0.
+- **Nota COCINERO.** Con stock 48 y deuda 48 → meta 48, cubierto → **"En orden"** + chip "🟡 demanda
+  insatisfecha" (no "Pedir ya": no hay que COMPRAR, hay que **despachar** lo que ya tienes — eso lo
+  nuclea 🎯 Considerados). "Pedir ya" solo cuando la meta (rotación+deuda) supera el stock.
+- **Afecta.** SQL 928, `_zonaMetaDe`, `_zonaEnvMetaCompra`, `_zonaAlmTieneDeuda`, `_zonaDemandaRezRender`,
+  `_zonaSecCargarPq`, `_zonaGranelCargarVisibles`, `API.zona.demandaBulk`/`demandaRez`.
+
 ### I-15 · **Clasificación por DEMANDA (todo el grupo almacén): muerto real vs aparente**
 - **Qué.** La meta de CADA producto de almacén = **demand-flow** = despacho (🔵) + envasado (🟣) +
   deuda propia (🟡) + deuda de derivados (🟠), proyectada a **1 semana** (+20%). Un producto solo es

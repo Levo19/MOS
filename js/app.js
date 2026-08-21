@@ -50070,16 +50070,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaMetaDe(p) {
     if (_zonaActualEsAlmacen()) {
       const d = (S._zonaAlmDem || {})[String((p && (p.skuBase || p.idProducto)) || '').toUpperCase()];
-      if (d && Array.isArray(d.sem)) return _zonaMetaSmart(d.sem, 0.20);
+      // [928] META de almacén = rotación (despacho+envasado, smart) + lo que se DEBE (rezagado propio +
+      //   de derivados). Un producto que se debe tiene meta > 0 aunque no rote → sale de "Muertos".
+      if (d) return _zonaMetaSmart(d.sem, 0.20) + _zonaNum(d.pend) + _zonaNum(d.pendDeriv);
     }
     const m = _zonaMetaSmart(p && p.picos, 0.20);
     return m > 0 ? m : _zonaNum(p && (p.esperada != null ? p.esperada : p.esperado));
   }
-  // ¿El producto de almacén tiene DEMANDA INSATISFECHA (deuda) en la ventana? (para no marcarlo "muerto").
+  // ¿El producto de almacén tiene DEMANDA INSATISFECHA (deuda rezagada, propia o de derivados)?
   function _zonaAlmTieneDeuda(p) {
     if (!_zonaActualEsAlmacen()) return false;
     const d = (S._zonaAlmDem || {})[String((p && (p.skuBase || p.idProducto)) || '').toUpperCase()];
-    return !!(d && _zonaNum(d.deuda) > 0);
+    return !!(d && (_zonaNum(d.pend) + _zonaNum(d.pendDeriv)) > 0);
   }
   // [911] Stock EFECTIVO = suma de códigos en positivo (un código negativo cuenta 0, NO resta).
   function _zonaEffStock(p) {
@@ -50803,59 +50805,40 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (k === 'deudaDerivados') return esInsumo ? 'el insumo que necesitan los productos que lo usan y se deben' : 'lo que deben sus derivados, convertido a granel';
     return _ZBAR[k].desc;
   }
-  // Núcleo: barras agrupadas por semana. Cada barra lleva su explicación en data-exp (la muestra el tip al tocar).
-  //   La META usa las 4 semanas (ponderado+tendencia) → NO se marca "este usamos" en una sola.
-  function _zonaGrupoBarras(p, sem, keys, esInsumo, hijos) {
-    const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última'].slice(Math.max(0, 4 - sem.length));
-    const uni = !esInsumo;   // granel = kg; insumo = millares
-    const vals = sem.map(s => keys.map(k => _zonaNum(s[k])));
-    const totals = vals.map(a => a.reduce((x, y) => x + y, 0));
-    const maxV = Math.max(1, ...vals.reduce((a, b) => a.concat(b), []));
+  // [928] Gráfico de demanda de almacén (granel/insumo/regular): columnas semanales de ROTACIÓN
+  //   (🔵 despacho + 🟣 envasado) + columna "se debe" (🟡 deuda propia rezagada, por zona) + columna
+  //   "derivados" (🟠 lo que deben sus derivados). Barras clickeables; el tip explica de dónde sale.
+  //   META = smart(rotación semanal) + deuda propia + deuda de derivados. Compra = meta − stock.
+  function _zonaNombreZonaSafe(id) { try { return _zonaNombreZona(id) || id; } catch (_) { return id; } }
+  function _zonaDemandaRezRender(p, data) {
+    const sem = (data && data.semanas) || [];
+    const esInsumo = !!(data && data.esInsumo), uni = !esInsumo;
+    const pend = _zonaNum(data && data.pend), pendDeriv = _zonaNum(data && data.pendDeriv), stock = _zonaNum(data && data.stock);
+    const pendZonas = (data && data.pendZonas) || [];
+    const hijos = ((data && data.hijos) || []).filter(h => _zonaNum(h.aporte) > 0);
+    const flow = sem.map(s => _zonaNum(s.despacho) + _zonaNum(s.envasado));
+    const meta = _zonaMetaSmart(flow, 0.20) + pend + pendDeriv, comprar = Math.max(0, meta - stock);
+    if (flow.every(t => t <= 0) && pend <= 0 && pendDeriv <= 0)
+      return `<div class="dbz-empty">Sin movimiento ni deuda.<br><small>No se despachó, no se envasó y no se debe nada. Tienes ${_esc(_zonaFmtCant(stock, p, true))} en stock.</small></div>`;
     const fmt = (v) => _esc(_zonaFmtNumRaw(v, uni)) + (esInsumo ? ' MIL' : '');
-    const weeks = sem.map((s, i) => {
-      const bars = keys.map(k => {
-        const v = _zonaNum(s[k]); if (v <= 0) return '';
-        let exp = `${_ZBAR[k].ico} <b>${_ZBAR[k].lbl}</b> · ${LBL[i]}<br><b>${fmt(v)}</b> — ${_dbzDesc(k, esInsumo)}`;
-        if (k === 'deudaDerivados' && Array.isArray(hijos)) {
-          const parts = hijos.map(h => {
-            const ap = _zonaNum((h.aporteSem || [])[i]), du = _zonaNum((h.deudaSem || [])[i]);
-            return ap > 0 ? `${_esc(h.nombre || h.cod)}: deben ${_esc(_zonaFmtNumRaw(du, false))} × ${_esc(String(h.factor))} = ${_esc(_zonaFmtNumRaw(ap, uni))}${esInsumo ? ' MIL' : ''}` : '';
-          }).filter(Boolean);
-          if (parts.length) exp += `<br><span class="dbz-sub">${esInsumo ? 'lo usan y se deben:' : 'derivados que se deben:'}<br>${parts.join('<br>')}</span>`;
-        }
-        return `<div class="dbz-bar ${_ZBAR[k].cls}" style="height:${Math.max(10, Math.round(v / maxV * 70))}px" data-exp="${_dbzAttr(exp)}" onclick="MOS.zonaDbzTip(this)"></div>`;
-      }).join('');
+    const maxV = Math.max(1, pend, pendDeriv, ...sem.reduce((a, s) => a.concat([_zonaNum(s.despacho), _zonaNum(s.envasado)]), []));
+    const h = (v) => Math.max(10, Math.round(v / maxV * 70));
+    const LBL = ['hace 4 sem', 'hace 3 sem', 'hace 2 sem', 'última'].slice(Math.max(0, 4 - sem.length));
+    const bar = (v, cls, exp) => v > 0 ? `<div class="dbz-bar ${cls}" style="height:${h(v)}px" data-exp="${_dbzAttr(exp)}" onclick="MOS.zonaDbzTip(this)"></div>` : '';
+    const weekCols = sem.map((s, i) => {
+      const d = _zonaNum(s.despacho), e = _zonaNum(s.envasado);
+      const bars = bar(d, 'dbz-desp', `🔵 <b>Despachado a zona</b> · ${LBL[i]}<br><b>${fmt(d)}</b> — ${_dbzDesc('despacho', esInsumo)}`)
+                 + bar(e, 'dbz-env', `🟣 <b>Envasado</b> · ${LBL[i]}<br><b>${fmt(e)}</b> — ${_dbzDesc('envasado', esInsumo)}`);
       return `<div class="dbz-wk"><div class="dbz-bars">${bars || '<div class="dbz-none"></div>'}</div><div class="dbz-wklbl">${LBL[i] || ''}</div></div>`;
     }).join('');
-    return { weeks, totals };
-  }
-  // Regular (almacén no-envasable): despacho + envasado + deuda (barras separadas, clickeables). Shape RPC 924.
-  function _zonaDemandaRender(p, semanas) {
-    const s = Array.isArray(semanas) ? semanas : [];
-    if (!s.length) return _zonaEsperadoRender(p, null);
-    const sem = s.map(x => ({ despacho: _zonaNum(x.despachado), envasado: _zonaNum(x.envasado), deudaPropia: _zonaNum(x.deuda) }));
-    const { weeks, totals } = _zonaGrupoBarras(p, sem, ['despacho', 'envasado', 'deudaPropia'], false, null);
-    if (totals.every(t => t <= 0)) return '<div class="dbz-empty">Sin despacho ni deuda en las últimas 4 semanas.<br><small>No se despachó a zona ni quedó pendiente en la ventana. Si hubo deuda más antigua, mírala en 🎯 Considerados.</small></div>';
-    const meta = _zonaMetaSmart(totals, 0.20) || _zonaMetaDe(p);
+    const zExp = pendZonas.length ? `<br><span class="dbz-sub">${pendZonas.map(z => `${_esc(_zonaNombreZonaSafe(z.zona))}: ${_esc(_zonaFmtNumRaw(_zonaNum(z.pend), uni))}`).join('<br>')}</span>` : '';
+    const debeCol = pend > 0 ? `<div class="dbz-wk"><div class="dbz-bars">${bar(pend, 'dbz-dp', `🟡 <b>Se debe ahora</b><br><b>${fmt(pend)}</b> — lo que se pidió y no se despachó (deuda por zona)${zExp}`)}</div><div class="dbz-wklbl">se debe</div></div>` : '';
+    const hExp = hijos.length ? `<br><span class="dbz-sub">${esInsumo ? 'lo usan y se deben:' : 'derivados que se deben:'}<br>${hijos.map(x => `${_esc(x.nombre || x.cod)}: ${_esc(_zonaFmtNumRaw(_zonaNum(x.pend), false))}×${_esc(String(x.factor))}=${_esc(_zonaFmtNumRaw(_zonaNum(x.aporte), uni))}`).join('<br>')}</span>` : '';
+    const derCol = pendDeriv > 0 ? `<div class="dbz-wk"><div class="dbz-bars">${bar(pendDeriv, 'dbz-dd', `🟠 <b>Derivados deben</b><br><b>${fmt(pendDeriv)}</b> — ${_dbzDesc('deudaDerivados', esInsumo)}${hExp}`)}</div><div class="dbz-wklbl">derivados</div></div>` : '';
     return `<div class="dbz-chart">
-      <div class="dbz-weeks">${weeks}</div>
+      <div class="dbz-weeks">${weekCols}${(debeCol || derCol) ? '<div class="dbz-gap"></div>' : ''}${debeCol}${derCol}</div>
       <div class="dbz-tip">👆 Toca una barra para ver de dónde sale</div>
-      <div class="dbz-calc">Meta <b class="dbz-res">${_esc(_zonaFmtCant(meta, p, true))}</b></div>
-    </div>`;
-  }
-  // [926] Envasable (granel o insumo): 4 barras clickeables; la naranja explica derivado por derivado. Shape RPC 926.
-  function _zonaDemandaEnvasableRender(p, data) {
-    const sem = (data && data.semanas) || [];
-    if (!sem.length) return _zonaEsperadoRender(p, null);
-    const esInsumo = !!(data && data.esInsumo);
-    const hijos = (data && data.hijos) || [];
-    const { weeks, totals } = _zonaGrupoBarras(p, sem, ['despacho', 'envasado', 'deudaPropia', 'deudaDerivados'], esInsumo, hijos);
-    const stock = _zonaNum(data.stockProducto), meta = _zonaMetaSmart(totals, 0.20), comprar = Math.max(0, meta - stock);
-    if (totals.every(t => t <= 0)) return `<div class="dbz-empty">Sin salidas ni deuda en las últimas 4 semanas.<br><small>No se despachó, no se envasó y sus derivados no deben nada en la ventana. Tienes ${_esc(_zonaFmtCant(stock, p, true))} en stock.</small></div>`;
-    return `<div class="dbz-chart">
-      <div class="dbz-weeks">${weeks}</div>
-      <div class="dbz-tip">👆 Toca una barra para ver de dónde sale</div>
-      <div class="dbz-calc">Meta <b class="dbz-res">${_esc(_zonaFmtCant(meta, p, true))}</b> · tienes <b>${_esc(_zonaFmtCant(stock, p, true))}</b> → ${comprar > 0 ? ('comprar <b class="dbz-buy">' + _esc(_zonaFmtCant(comprar, p, true)) + '</b> al proveedor') : '<b class="dbz-ok">cubierto ✓</b>'}</div>
+      <div class="dbz-calc">Meta <b class="dbz-res">${_esc(_zonaFmtCant(meta, p, true))}</b> · tienes <b>${_esc(_zonaFmtCant(stock, p, true))}</b> → ${comprar > 0 ? ('comprar <b class="dbz-buy">' + _esc(_zonaFmtCant(comprar, p, true)) + '</b> al proveedor') : '<b class="dbz-ok">cubierto ✓ (tienes para lo que se debe)</b>'}</div>
     </div>`;
   }
   // Al tocar una barra, el tip muestra su explicación (de dónde sale ese monto).
@@ -50870,12 +50853,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {}
     } catch (_) {}
   }
-  // Meta y compra de un producto envasable a partir del item del RPC 926 (una sola fuente para gráfico y botón).
+  // [928] Meta y compra a partir del item BULK ({sem[4], pend, pendDeriv, stock}). meta = rotación + deuda.
   function _zonaEnvMetaCompra(it) {
-    const sem = (it && it.semanas) || [];
-    const totals = sem.map(s => _zonaNum(s.despacho) + _zonaNum(s.envasado) + _zonaNum(s.deudaPropia) + _zonaNum(s.deudaDerivados));
-    const stock = _zonaNum(it && it.stockProducto);
-    const meta = _zonaMetaSmart(totals, 0.20);
+    const meta = _zonaMetaSmart((it && it.sem) || [], 0.20) + _zonaNum(it && it.pend) + _zonaNum(it && it.pendDeriv);
+    const stock = _zonaNum(it && it.stock);
     return { meta, stock, comprar: Math.max(0, meta - stock) };
   }
   async function _zonaSecCargarPq(sku) {
@@ -50883,24 +50864,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const el = $('ztPq-' + _zonaSkuId(sku)); if (!el) return;
     const esAlm = _esZonaAlmacen({ idZona: S.zonaActual, nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
     if (esAlm) {
-      // [926] Envasable (granel/insumo): gráfico de 4 barras con la deuda de derivados convertida.
-      if (_zonaSeEnvasa(p)) {
-        let dem = (S._zonaEnvDem || {})[String(sku).toUpperCase()];
-        if (!dem) {
-          try {
-            const rg = await API.zona.demandaEnvasable({ skus: [sku] });
-            const it = ((rg && (rg.data || rg) && (rg.data || rg).items) || [])[0];
-            if (it) { S._zonaEnvDem = S._zonaEnvDem || {}; dem = S._zonaEnvDem[String(sku).toUpperCase()] = Object.assign({}, it, { _ts: Date.now() }); }
-          } catch (_) {}
-        }
-        el.innerHTML = dem ? _zonaDemandaEnvasableRender(p, dem) : '<div class="dbz-help">No se pudo calcular la demanda de envasado.</div>';
-        return;
+      // [928] Almacén (granel/insumo/regular): rotación semanal + deuda REZAGADA (propia + de derivados).
+      let dem = (S._zonaRezDem || {})[String(sku).toUpperCase()];
+      if (!dem) {
+        try {
+          const rg = await API.zona.demandaRez({ skus: [sku] });
+          const it = ((rg && (rg.data || rg) && (rg.data || rg).items) || [])[0];
+          if (it) { S._zonaRezDem = S._zonaRezDem || {}; dem = S._zonaRezDem[String(sku).toUpperCase()] = Object.assign({}, it, { _ts: Date.now() }); }
+        } catch (_) {}
       }
-      // Almacén regular: despachado + envasado + deuda (barras separadas). Le pasamos los códigos del canónico.
-      const cods = (Array.isArray(p.codigos) ? p.codigos : []).map(c => String(c.codBarra != null ? c.codBarra : (c.codigoBarra || ''))).filter(Boolean);
-      const r = await API.zona.demandaSemanal({ sku, codigos: cods });
-      const sem = (r && (r.data || r) && ((r.data || r).semanas)) || null;
-      el.innerHTML = _zonaDemandaRender(p, sem);
+      el.innerHTML = dem ? _zonaDemandaRezRender(p, dem) : '<div class="dbz-empty">No se pudo calcular la demanda.</div>';
     } else {
       const dias = await _zonaDiasFetch(sku);   // zona: detalle diario (venta)
       el.innerHTML = _zonaEsperadoRender(p, dias);
@@ -50976,29 +50949,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // [925] Meta del GRANEL envasable = Σ(faltante_derivado × fcb). Para los graneles visibles en ALMACÉN,
   //   pide al RPC la cantidad a COMPRAR (necesario − stock) y rellena su botón "🧾 Comprar N a proveedor".
   //   Cachea por sku (5 min) en S._zonaGranelDem (también lo usa el "¿Por qué?").
+  // [928] Rellena el botón "Comprar N a proveedor" de graneles/insumos desde el BULK ya cargado
+  //   (S._zonaAlmDem: sem+pend+pendDeriv+stock). Sin fetch extra: reusa lo que trajo _zonaAlmDemAsegurar.
   async function _zonaGranelCargarVisibles() {
     try {
       if (!_zonaActualEsAlmacen()) return;
       const cont = $('zonaLista'); if (!cont) return;
-      S._zonaEnvDem = S._zonaEnvDem || {};
-      const skus = [];
       Array.prototype.slice.call(cont.querySelectorAll('.zona-card[data-sku]')).forEach(el => {
         const sku = el.getAttribute('data-sku');
-        const p = (S.zonaProductos || []).find(x => String(x.skuBase || x.idProducto) === sku);
-        if (p && _zonaSeEnvasa(p) && skus.indexOf(sku) < 0) skus.push(sku);   // [926] granel Y insumo
-      });
-      if (!skus.length) return;
-      const pedir = skus.filter(s => { const d = S._zonaEnvDem[s.toUpperCase()]; return !d || (Date.now() - d._ts) > 300000; });
-      if (pedir.length) {
-        const r = await API.zona.demandaEnvasable({ skus: pedir });
-        const items = (r && (r.data || r) && (r.data || r).items) || [];
-        items.forEach(it => { S._zonaEnvDem[String(it.sku).toUpperCase()] = Object.assign({}, it, { _ts: Date.now() }); });
-        pedir.forEach(s => { const k = s.toUpperCase(); if (!S._zonaEnvDem[k]) S._zonaEnvDem[k] = { sku: s, semanas: [], hijos: [], stockProducto: 0, _ts: Date.now() }; });
-      }
-      skus.forEach(sku => {
-        const dem = S._zonaEnvDem[sku.toUpperCase()]; if (!dem) return;
         const btn = document.getElementById('zGbuy-' + _zonaSkuId(sku)); if (!btn) return;
+        const dem = (S._zonaAlmDem || {})[String(sku).toUpperCase()];
         const p = (S.zonaProductos || []).find(x => String(x.skuBase || x.idProducto) === sku);
+        if (!dem) { btn.disabled = true; btn.textContent = '🧾 Calculando…'; return; }
         const mc = _zonaEnvMetaCompra(dem);
         if (mc.comprar > 0) {
           btn.disabled = false;
@@ -51009,7 +50971,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           btn.textContent = '✓ Cubierto (nada por comprar)';
           btn.onclick = null;
         }
-        btn.title = 'Meta (para envasar) = ' + _zonaFmtCant(mc.meta, p) + ' · tienes ' + _zonaFmtCant(mc.stock, p);
+        btn.title = 'Meta = ' + _zonaFmtCant(mc.meta, p) + ' · tienes ' + _zonaFmtCant(mc.stock, p);
       });
     } catch (e) {
       try { console.warn('[RIZ] _zonaGranelCargarVisibles:', e && (e.message || e)); } catch (_) {}

@@ -15134,6 +15134,7 @@
     .dbz-res { color:#7dd3fc; } .dbz-buy { color:#c4b5fd; } .dbz-ok { color:#4ade80; }
     .dbz-empty { font-size:.74rem; color:#94a3b8; text-align:center; padding:12px 10px; line-height:1.5; }
     .dbz-empty small { color:#64748b; }
+    .dbz-gap { flex:0 0 auto; align-self:stretch; margin:0 2px; border-left:1px dashed #2b3852; }
     .esp-deuda-tot { font-size:.74rem; color:#fcd34d; margin-top:.6rem; text-align:center; padding:.4rem; background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.3); border-radius:.5rem; }
     .esp-deuda-tot b { color:#fbbf24; font-family:ui-monospace,Menlo,Consolas,monospace; }
     @media (max-width:480px){ .esp-day-v, .esp-day-d { font-size:.44rem; } .esp-wk-bars { height:88px; } }
@@ -21972,7 +21973,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.924';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.925';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22251,7 +22252,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.924"></script>
+<script src="js/api.js?v=2.43.925"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22267,7 +22268,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.924"></script>
+<script src="js/app.js?v=2.43.925"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

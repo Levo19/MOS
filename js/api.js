@@ -4312,7 +4312,8 @@ const API = (() => {
       demandaSemanal:  async (p) => _sbRpcMOS('almacen_demanda_semanal', { p: { sku: (p && p.sku) || '', codigos: (p && p.codigos) || [] } }, 'mos'), // [920] almacén: despachado + deuda (demanda insatisfecha) por semana → {ok,data:{semanas:[{sem,despachado,solicitado,deuda}]}}
       stockCruzado:    async (p) => _sbRpcMOS('zona_stock_cruzado', { p: { zona: (p && p.zona) || '' } }, 'mos'), // [921] stock de cada código en las OTRAS zonas (foquito) → {ok,data:{items:[{cod,zona,cant}]}}
       demandaEnvasable: async (p) => _sbRpcMOS('almacen_demanda_envasable', { p: { skus: (p && p.skus) || [] } }, 'mos'), // [926] demanda semanal de granel/insumo en 4 series (despacho/envasado/deudaPropia/deudaDerivados) + hijos + stock → el front proyecta meta y compra
-      demandaBulk:      async (p) => _sbRpcMOS('almacen_demanda_bulk', { p: {} }, 'mos'), // [927] meta demand-flow de TODOS los productos de almacén (sem[4] + deuda) → clasificación: deuda>0 = Pedir ya, no Muerto
+      demandaBulk:      async (p) => _sbRpcMOS('almacen_demanda_bulk', { p: {} }, 'mos'), // [928] meta de TODO almacén: {sku,sem[4]=despacho+envasado, pend (rezagado propio), pendDeriv, stock}. meta=smart(sem)+pend+pendDeriv
+      demandaRez:       async (p) => _sbRpcMOS('almacen_demanda_rez', { p: { skus: (p && p.skus) || [] } }, 'mos'), // [928] detalle gráfico: semanas[{despacho,envasado}] + pendZonas[{zona,pend}] + hijos[{cod,nombre,factor,pend,aporte}] + stock + esInsumo
       tendencia:       _zonaTendenciaDirecto,   // mos.tendencia_zona(p)        → {ok,data:{zona,semanas,umbral,items:[...]},_fresh}
       ticketDia:       _zonaTicketDiaDirecto,   // mos.zona_ticket_dia(p)       → {ok,data:{zona,fecha,origen,lotes:[...]},_fresh}
       lotesHistorial:  _zonaLotesHistorialDirecto, // mos.zona_lotes_historial(p) → {ok,data:{...,items:[lotes FIFO]},_fresh}
