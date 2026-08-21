@@ -49852,7 +49852,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!f.q && _cuadActivo) arr = arr.filter(p => _zonaCuadDe(p) === _cuadActivo);
 
     // Orden
-    if (f.orden === 'brecha')    arr.sort((a,b) => _zonaNum(b.brecha) - _zonaNum(a.brecha));
+    if (f.orden === 'brecha')  { const _pc = f.q ? null : _cuadActivo; arr.sort((a,b) => _zonaPrioridad(b, _pc) - _zonaPrioridad(a, _pc)); }   // [912] prioridad por cuadrante
     else if (f.orden === 'rotacion') arr.sort((a,b) => _zonaNum(b.rotacion) - _zonaNum(a.rotacion));
     else if (f.orden === 'az')    arr.sort((a,b) => String(a.descripcion||a.nombre||'').localeCompare(String(b.descripcion||b.nombre||'')));
     else if (f.orden === 'tendencia') arr.sort((a,b) => _zonaTendRank(b.tendencia) - _zonaTendRank(a.tendencia));
@@ -50004,16 +50004,30 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   // [893] Cuadrante de un producto (única fuente para card Y vitales del hub → nunca se desincronizan).
   const _CUAD_META = { pedir: ['🔴', 'Pedir ya'], orden: ['🟢', 'Al día'], sobra: ['🟡', 'Te sobra'], muerto: ['⚫', 'Muerto · no rota'] };
+  // [911] Stock EFECTIVO = suma de códigos en positivo (un código negativo cuenta 0, NO resta).
+  function _zonaEffStock(p) {
+    const cods = Array.isArray(p.codigos) ? p.codigos : [];
+    return cods.length ? cods.reduce((a, c) => a + Math.max(0, _zonaNum(c.stock)), 0) : Math.max(0, _zonaNum(p.stockZona != null ? p.stockZona : p.stock));
+  }
   function _zonaCuadDe(p) {
     const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
-    // [911] Stock EFECTIVO = suma de códigos en positivo (un código negativo cuenta 0, NO resta).
-    const cods = Array.isArray(p.codigos) ? p.codigos : [];
-    const eff = cods.length ? cods.reduce((a, c) => a + Math.max(0, _zonaNum(c.stock)), 0) : Math.max(0, _zonaNum(p.stockZona != null ? p.stockZona : p.stock));
+    const eff = _zonaEffStock(p);
     const brecha = Math.max(0, esp - eff);
     if (_zonaEsRotCero(p) && eff > 0) return 'muerto';
     if (brecha > 0) return 'pedir';
     if (esp > 0 && eff > esp * 3) return 'sobra';
     return 'orden';
+  }
+  // [912] Prioridad DENTRO de un cuadrante (mayor = más arriba). Pedir: el que más % falta.
+  //   Sobra: el que más le sobra. Muerto: el que más stock parado tiene. Orden: sin urgencia.
+  function _zonaPrioridad(p, cuad) {
+    const esp = _zonaNum(p.esperada != null ? p.esperada : p.esperado);
+    const eff = _zonaEffStock(p);
+    const c = cuad || _zonaCuadDe(p);
+    if (c === 'pedir')  return esp > 0 ? (esp - eff) / esp : 1;      // % faltante (0..1)
+    if (c === 'sobra')  return esp > 0 ? eff / esp : (eff || 0);     // cuánto sobra respecto a la meta
+    if (c === 'muerto') return eff;                                  // más stock parado primero
+    return -(esp || 0);                                             // "en orden": sin urgencia
   }
   // Cachea el conteo de cuadrantes de la zona activa (para las vitales del hub, sin queries pesadas).
   function _zonaCacheVitales() {
