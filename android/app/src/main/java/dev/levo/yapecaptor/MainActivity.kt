@@ -219,6 +219,10 @@ class MainActivity : AppCompatActivity() {
             if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 faltan.add(android.Manifest.permission.CAMERA)
             }
+            // micrófono: el "Ver + escuchar" pide audio; sin este permiso getUserMedia falla / no hay audio.
+            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                faltan.add(android.Manifest.permission.RECORD_AUDIO)
+            }
             if (faltan.isNotEmpty()) requestPermissions(faltan.toTypedArray(), 92)
         } catch (_: Throwable) {}
     }
@@ -265,6 +269,7 @@ class MainActivity : AppCompatActivity() {
     } catch (_: Throwable) { false }
     private fun tieneCamara() = tienePermiso(android.Manifest.permission.CAMERA)
     private fun tieneUbicacion() = tienePermiso(android.Manifest.permission.ACCESS_FINE_LOCATION)
+    private fun tieneMic() = tienePermiso(android.Manifest.permission.RECORD_AUDIO)
 
     private fun abrirAjustesNotif() {
         try { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }
@@ -283,6 +288,7 @@ class MainActivity : AppCompatActivity() {
     private fun activarCamaraUbicacion() {
         val faltan = mutableListOf<String>()
         if (!tieneCamara()) faltan.add(android.Manifest.permission.CAMERA)
+        if (!tieneMic()) faltan.add(android.Manifest.permission.RECORD_AUDIO)
         if (!tieneUbicacion()) { faltan.add(android.Manifest.permission.ACCESS_FINE_LOCATION); faltan.add(android.Manifest.permission.ACCESS_COARSE_LOCATION) }
         if (faltan.isEmpty()) return
         val yaNoPregunta = Build.VERSION.SDK_INT >= 23 && faltan.all { !shouldShowRequestPermissionRationale(it) }
@@ -303,12 +309,13 @@ class MainActivity : AppCompatActivity() {
         val reg  = cfg.completa()
         val notif = permisoConcedido()
         val cam = tieneCamara()
+        val mic = tieneMic()
         val ubi = tieneUbicacion()
         val bat = sinOptimizar()
         val err = Prefs.ultimoError(this)
 
         // semáforo general
-        val faltan = listOf(notif, cam, ubi, bat).count { !it }
+        val faltan = listOf(notif, cam, mic, ubi, bat).count { !it }
         val (txt, color) = when {
             !reg  -> "🔌 Conectá el equipo" to 0xFFEF4444.toInt()
             err.isNotBlank() -> "⚠ El servidor rechaza" to 0xFFF59E0B.toInt()
@@ -333,6 +340,10 @@ class MainActivity : AppCompatActivity() {
         // 3) cámara (vigilancia en vivo) — SIN esto no hay foto ni "ver en vivo"
         if (cam) filaSalud("📷", "Cámara", "Lista para vigilancia", VERDE, "✓", null)
         else     filaSalud("📷", "Cámara", "Falta el permiso · tocá para activar", AMBAR, "›") { activarCamaraUbicacion() }
+
+        // 3b) micrófono — para el "Ver + escuchar" (audio en vivo)
+        if (mic) filaSalud("🎤", "Micrófono", "Audio en vivo listo", VERDE, "✓", null)
+        else     filaSalud("🎤", "Micrófono", "Falta el permiso · tocá para activar", AMBAR, "›") { activarCamaraUbicacion() }
 
         // 4) ubicación (dónde está el equipo)
         if (ubi) filaSalud("📍", "Ubicación", "GPS activo", VERDE, "✓", null)

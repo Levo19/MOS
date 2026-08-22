@@ -83,7 +83,8 @@ class LatidoReceiver : BroadcastReceiver() {
                     // [MosGuard · fase 1] solo la edición guard adjunta la ubicación (última conocida).
                     // El YapeCaptor de producción no pide el permiso y esta rama no corre para él.
                     if (BuildConfig.ES_GUARD) {
-                        val fix = try { Ubicacion.ultima(ctx) } catch (_: Throwable) { null }
+                        // fix ACTIVO (no solo el cacheado): así el GPS llega aunque ninguna otra app lo haya usado
+                        val fix = try { Ubicacion.obtener(ctx, 8000) } catch (_: Throwable) { null }
                         if (fix != null) { p.put("lat", fix.lat).put("lon", fix.lon)
                             if (fix.precM >= 0) p.put("precM", fix.precM.toDouble()) }
                     }
