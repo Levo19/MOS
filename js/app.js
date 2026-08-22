@@ -44146,8 +44146,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         '</div>' +
       '</div>';
     }).join('');
+    // [pared] "Ver TODO" = un click → cámaras (cuadros en vivo) de TODOS los equipos a la vez, para vigilar el dinero.
+    const _nEq = equipos.length;
     cont.innerHTML =
-      '<div class="mg-sec">🛡️ MosGuard · resguardo de tus equipos</div>' +
+      '<div class="mg-sec">🛡️ MosGuard · resguardo de tus equipos' +
+        (_nEq ? '<button type="button" class="mg-vertodo" onclick="MOS.mgVerTodo()" title="Ver las cámaras de TODOS los equipos a la vez">👁 Ver TODO (' + _nEq + ')</button>' : '') +
+      '</div>' +
       '<div class="mg-eqs">' + filas + '</div>' +
       '<div class="yp-nota">📸 Pedir foto / 🎥 Ver en vivo (cuadros cada ~2 s, <b>sin audio</b>): la orden llega al equipo en su ' +
         'próximo latido, así que puede tardar hasta un par de minutos en empezar. Solo aplica a los equipos con la app ' +
@@ -44188,6 +44192,55 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       toast(seg > 0 ? '🎥 En vivo activado (' + seg + ' s)' : '■ En vivo cerrado', seg > 0 ? 'success' : 'info', 3500);
       _mgRender();
     } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
+  }
+
+  // ── [PARED] "👁 Ver TODO": con UN click, las cámaras (cuadros en vivo) de TODOS los equipos MosGuard a la vez.
+  //   Es para vigilar el dinero de un vistazo. Prende live en cada equipo, arma una grilla y refresca los cuadros
+  //   cada 2,5 s. El audio+video real (WebRTC) es por-cámara con "🔊 Escuchar" (uno a la vez; la escucha simultánea
+  //   de todos = multi-target, siguiente paso). Solo front + RPCs que ya existen → cero riesgo a producción.
+  let _mgWallTimer = null, _mgWallEqs = [];
+  async function mgVerTodo() {
+    let equipos = [];
+    try { const r = await API.post('guardEstado', {}); equipos = ((r && (r.data || r)) || {}).equipos || []; } catch (_) {}
+    if (!equipos.length) { toast('No hay equipos MosGuard registrados todavía', 'info'); return; }
+    _mgWallEqs = equipos;
+    equipos.forEach(e => { try { API.post('guardLive', { nombre: e.nombre, seg: 300 }); } catch (_) {} });   // prender cuadros 5 min
+    const prev = document.getElementById('mgWallOvl'); if (prev) prev.remove();
+    const ovl = document.createElement('div'); ovl.id = 'mgWallOvl'; ovl.className = 'mgw-back';
+    const tiles = equipos.map(e => {
+      const nm = _esc(String(e.nombre)); const viv = e.latidoEstado === 'VIVO';
+      return '<div class="mgw-tile">' +
+        '<div class="mgw-cam"><img data-eqw="' + nm + '" alt="' + nm + '"><div class="mgw-wait">⏳ esperando el próximo latido del equipo…</div></div>' +
+        '<div class="mgw-bar"><span class="mgw-nm" title="' + nm + '">📷 ' + nm + '</span>' +
+          '<span class="mgw-st ' + (viv ? 'on' : 'off') + '">' + (viv ? '● vivo' : '○ caído') + '</span>' +
+          '<button type="button" class="mgw-oir" onclick="MOS.mgWallEscuchar(\'' + nm + '\')" title="Ver + escuchar esta cámara (audio+video en vivo)">🔊 Escuchar</button>' +
+        '</div></div>';
+    }).join('');
+    ovl.innerHTML = '<div class="mgw-head"><b>👁 Cámaras en vivo · MosGuard</b>' +
+      '<span class="mgw-sub">cuadros ~2 s · la 1ra imagen puede tardar hasta un latido del equipo</span>' +
+      '<button type="button" class="mgw-x" onclick="MOS.mgCerrarWall()">✕ Cerrar</button></div>' +
+      '<div class="mgw-grid">' + tiles + '</div>';
+    document.body.appendChild(ovl);
+    _mgWallRefrescar();
+    if (_mgWallTimer) clearInterval(_mgWallTimer);
+    _mgWallTimer = setInterval(() => { if (!document.getElementById('mgWallOvl')) { clearInterval(_mgWallTimer); _mgWallTimer = null; return; } _mgWallRefrescar(); }, 2500);
+    toast('👁 Pared abierta — prendiendo cámaras de ' + equipos.length + ' equipo(s)', 'success', 3500);
+  }
+  async function _mgWallRefrescar() {
+    for (const e of _mgWallEqs) {
+      try { const r = await API.post('guardMediaUrl', { nombre: e.nombre });
+        if (r && r.status === 'success' && r.url) {
+          const img = document.querySelector('#mgWallOvl img[data-eqw="' + (window.CSS && CSS.escape ? CSS.escape(e.nombre) : e.nombre) + '"]');
+          if (img) { img.src = r.url; const w = img.parentElement.querySelector('.mgw-wait'); if (w) w.style.display = 'none'; }
+        } } catch (_) {}
+    }
+  }
+  function mgWallEscuchar(nombre) { try { mgEspia(nombre); } catch (_) {} }
+  function mgCerrarWall() {
+    if (_mgWallTimer) { clearInterval(_mgWallTimer); _mgWallTimer = null; }
+    _mgWallEqs.forEach(e => { try { API.post('guardLive', { nombre: e.nombre, seg: 0 }); } catch (_) {} });   // apagar cuadros
+    _mgWallEqs = [];
+    const ovl = document.getElementById('mgWallOvl'); if (ovl) ovl.remove();
   }
 
   async function mgMarcar(nombre, estado) {
@@ -44258,7 +44311,19 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.yp-sello.is-libre{color:#c4b5fd;border-color:rgba(167,139,250,.4);background:rgba(124,58,237,.12)}' +
       '.yp-sello.is-amb{color:#fcd34d;border-color:rgba(252,211,77,.4);background:rgba(252,211,77,.1)}' +
       '.yp-sello.is-mal{color:#fca5a5;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.1)}' +
-      '.mg-sec{margin-top:16px;font-size:12px;font-weight:800;letter-spacing:.04em;color:#7dd3fc}' +
+      '.mg-sec{margin-top:16px;font-size:12px;font-weight:800;letter-spacing:.04em;color:#7dd3fc;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}' +
+      '.mg-vertodo{font-size:11px;font-weight:800;letter-spacing:.03em;padding:7px 14px;border-radius:999px;cursor:pointer;color:#fff;border:0;background:linear-gradient(135deg,#6366f1,#4338ca);box-shadow:0 2px 9px -1px rgba(79,70,229,.55)}.mg-vertodo:active{transform:scale(.96)}' +
+      '.mgw-back{position:fixed;inset:0;z-index:99992;background:rgba(2,6,15,.96);backdrop-filter:blur(4px);display:flex;flex-direction:column}' +
+      '.mgw-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid #1c283c;color:#e2e8f0}.mgw-head b{font-size:15px}.mgw-sub{font-size:11px;color:#7488a6;flex:1}' +
+      '.mgw-x{font-size:12px;font-weight:800;padding:8px 16px;border-radius:999px;border:1px solid #33415a;background:#0c1626;color:#e2e8f0;cursor:pointer}' +
+      '.mgw-grid{flex:1;overflow-y:auto;padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-content:start}' +
+      '.mgw-tile{border-radius:14px;overflow:hidden;background:#0c1626;border:1px solid #223049}' +
+      '.mgw-cam{position:relative;aspect-ratio:4/3;background:#060c16;display:flex;align-items:center;justify-content:center}.mgw-cam img{width:100%;height:100%;object-fit:cover;display:block}' +
+      '.mgw-wait{position:absolute;font-size:11px;color:#5f7192;text-align:center;padding:0 14px}' +
+      '.mgw-bar{display:flex;align-items:center;gap:8px;padding:9px 12px}' +
+      '.mgw-nm{font-size:11.5px;font-weight:800;color:#e2e8f0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.mgw-st{font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:999px}.mgw-st.on{color:#6ee7b7;background:rgba(52,211,153,.14)}.mgw-st.off{color:#94a3b8;background:rgba(148,163,184,.12)}' +
+      '.mgw-oir{font-size:10.5px;font-weight:800;padding:6px 11px;border-radius:999px;border:1px solid rgba(52,211,153,.4);background:rgba(52,211,153,.12);color:#34d399;cursor:pointer}' +
       '.mg-eqs{display:flex;flex-direction:column;gap:8px;margin:10px 0}' +
       '.mg-eq{padding:12px 14px;border-radius:13px;background:#0c1626;border:1px solid #223049}' +
       '.mg-eq.is-robado{border-color:rgba(251,113,133,.5);background:rgba(251,113,133,.07)}' +
@@ -55974,7 +56039,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderYapeCard, yapeGenerarCodigo, yapeRevocar,
     yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
     yapesZonaAbrir, yapesZonaRefrescar, yapesZonaDia,
-    mgMarcar, mgFoto, mgLive, mgCaptura, mgEspia, tribBuzonBorrar,
+    mgMarcar, mgFoto, mgLive, mgCaptura, mgEspia, mgVerTodo, mgWallEscuchar, mgCerrarWall, tribBuzonBorrar,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de
