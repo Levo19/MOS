@@ -53050,7 +53050,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } else {
       body = _consItems.map(it => {
         // [934] Tipo de ingreso legible + SELLO de despacho por zona (¿ya se le mandó a la zona que se debía?).
-        const tipoLbl = String(it.guiaTipo || '') === 'INGRESO_ENVASADO' ? '🏭 de envasado'
+        // [945] guiaTipo 'STOCK' = ya HABÍA stock en almacén (no ingresó hoy), pero se debe y nunca se despachó.
+        const esStock = String(it.guiaTipo || '') === 'STOCK';
+        const tipoLbl = esStock ? ''
+          : String(it.guiaTipo || '') === 'INGRESO_ENVASADO' ? '🏭 de envasado'
           : String(it.guiaTipo || '') === 'INGRESO_PROVEEDOR' ? '🚚 de proveedor' : _esc(it.guiaTipo || '');
         // [942] AGRUPAR por zona: una misma zona puede aparecer en varias semanas (buckets) → se sumaba
         //   una fila por semana = confuso. Ahora: 1 fila por zona (suma la deuda, la semana más vieja,
@@ -53072,7 +53075,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           return `<div class="cons-zrow"><span class="cons-zn">${_esc(g.zona)}</span><span class="cons-zd">debía ${_zpkNum(g.pend)}${sem ? ' · ' + _esc(sem) : ''}</span>${sello}</div>`;
         }).join('') || '<div class="cons-zrow"><span class="cons-zd">fue solicitado en semanas pasadas</span></div>';
         const chips = [
-          `<span class="zpk-chip zc-ing">🆕 ingresó ${_esc(_consHaceLbl(it.creado))}</span>`,
+          esStock ? `<span class="zpk-chip zc-ing">📦 hay en almacén</span>`
+                  : `<span class="zpk-chip zc-ing">🆕 ingresó ${_esc(_consHaceLbl(it.creado))}</span>`,
           tipoLbl ? `<span class="zpk-chip">${tipoLbl}</span>` : ''
         ].filter(Boolean).join('');
         const foto = it.foto
@@ -53086,7 +53090,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
                 <div class="zpk-chips">${chips}</div>
                 <div class="cons-zonas">${zonasHtml}</div>
               </div>
-              <div class="zpk-qty"><b>${_zpkNum(it.cant)}</b><small>ingresó</small></div>
+              <div class="zpk-qty"><b>${_zpkNum(it.cant)}</b><small>${esStock ? 'en almacén' : 'ingresó'}</small></div>
             </div>
           </div>`;
       }).join('');
