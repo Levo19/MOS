@@ -25,14 +25,14 @@ class GuardAdmin : DeviceAdminReceiver() {
         fun esAdmin(ctx: Context): Boolean =
             try { dpm(ctx).isAdminActive(componente(ctx)) } catch (_: Throwable) { false }
 
-        /** Lanza el diálogo del sistema para activar el admin (desde el panel, con contexto de Activity). */
+        /** Lanza el diálogo del sistema para activar el admin (desde el panel, con contexto de Activity).
+         *  SIN FLAG_ACTIVITY_NEW_TASK: se llama desde la Activity y el NEW_TASK provocaba relanzamientos. */
         fun pedirActivar(ctx: Context) {
             try {
                 val i = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
                     .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, componente(ctx))
                     .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
                         "Activá esto para poder BLOQUEAR el equipo a distancia y que no lo puedan desinstalar si te lo roban.")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 ctx.startActivity(i)
             } catch (_: Throwable) {}
         }

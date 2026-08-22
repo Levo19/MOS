@@ -244,7 +244,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); mostrarCandado(); if (!Prefs.listenerVivo(this)) YapeListener.reatar(this); GuardiaService.arrancar(this); pintar() }
+    // cuando salimos a una pantalla del sistema (permisos, ajustes, admin), al volver NO re-bloqueamos:
+    // evita el "ciclo infinito" de re-pedir la clave cada vez que se vuelve de Ajustes.
+    private var _volviendoDeAjustes = false
+    private fun salirAAjustes(accion: () -> Unit) { _volviendoDeAjustes = true; try { accion() } catch (_: Throwable) { _volviendoDeAjustes = false } }
+
+    override fun onResume() {
+        super.onResume()
+        if (_volviendoDeAjustes) _volviendoDeAjustes = false else mostrarCandado()
+        if (!Prefs.listenerVivo(this)) YapeListener.reatar(this)
+        GuardiaService.arrancar(this)
+        pintar()
+    }
 
     // repinta el panel apenas se concede/deniega un permiso (la fila pasa a ✓ sin salir de la app)
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -335,27 +346,27 @@ class MainActivity : AppCompatActivity() {
 
         // 2) captura de Yapes (permiso de notificaciones — lo que el dueño quería ver)
         if (notif) filaSalud("🔔", "Captura de Yapes", "Escuchando notificaciones", VERDE, "✓", null)
-        else       filaSalud("🔔", "Captura de Yapes", "Falta el permiso · tocá para activar", AMBAR, "›") { abrirAjustesNotif() }
+        else       filaSalud("🔔", "Captura de Yapes", "Falta el permiso · tocá para activar", AMBAR, "›") { salirAAjustes { abrirAjustesNotif() } }
 
         // 3) cámara (vigilancia en vivo) — SIN esto no hay foto ni "ver en vivo"
         if (cam) filaSalud("📷", "Cámara", "Lista para vigilancia", VERDE, "✓", null)
-        else     filaSalud("📷", "Cámara", "Falta el permiso · tocá para activar", AMBAR, "›") { activarCamaraUbicacion() }
+        else     filaSalud("📷", "Cámara", "Falta el permiso · tocá para activar", AMBAR, "›") { salirAAjustes { activarCamaraUbicacion() } }
 
         // 3b) micrófono — para el "Ver + escuchar" (audio en vivo)
         if (mic) filaSalud("🎤", "Micrófono", "Audio en vivo listo", VERDE, "✓", null)
-        else     filaSalud("🎤", "Micrófono", "Falta el permiso · tocá para activar", AMBAR, "›") { activarCamaraUbicacion() }
+        else     filaSalud("🎤", "Micrófono", "Falta el permiso · tocá para activar", AMBAR, "›") { salirAAjustes { activarCamaraUbicacion() } }
 
         // 4) ubicación (dónde está el equipo)
         if (ubi) filaSalud("📍", "Ubicación", "GPS activo", VERDE, "✓", null)
-        else     filaSalud("📍", "Ubicación", "Falta el permiso · tocá para activar", AMBAR, "›") { activarCamaraUbicacion() }
+        else     filaSalud("📍", "Ubicación", "Falta el permiso · tocá para activar", AMBAR, "›") { salirAAjustes { activarCamaraUbicacion() } }
 
         // 5) batería (que Android no lo duerma con la pantalla apagada)
         if (bat) filaSalud("🔋", "Siempre activo", "Android no lo va a dormir", VERDE, "✓", null)
-        else     filaSalud("🔋", "Siempre activo", "Android puede dormirlo · tocá", AMBAR, "›") { pedirSinOptimizar() }
+        else     filaSalud("🔋", "Siempre activo", "Android puede dormirlo · tocá", AMBAR, "›") { salirAAjustes { pedirSinOptimizar() } }
 
         // 6) bloqueo remoto + anti-desinstalación (opcional, Device Admin) — no cuenta en el semáforo
         if (GuardAdmin.esAdmin(this)) filaSalud("🔒", "Bloqueo remoto", "Administrador activo · no se puede desinstalar", VERDE, "✓", null)
-        else                          filaSalud("🔒", "Bloqueo remoto", "Tocá para activar (lockear a distancia + anti-robo)", AMBAR, "›") { GuardAdmin.pedirActivar(this) }
+        else                          filaSalud("🔒", "Bloqueo remoto", "Tocá para activar (lockear a distancia + anti-robo)", AMBAR, "›") { salirAAjustes { GuardAdmin.pedirActivar(this) } }
 
         // detalle discreto abajo: specs del equipo (los que ve también el panel MOS) + versión
         val ult = Prefs.ultimaEntrega(this)

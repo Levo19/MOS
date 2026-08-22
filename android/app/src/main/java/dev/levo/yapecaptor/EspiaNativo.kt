@@ -332,11 +332,18 @@ class EspiaNativo : Service() {
                 val urls = ArrayList<String>()
                 val u = s.opt("urls")
                 if (u is JSONArray) for (k in 0 until u.length()) urls.add(u.optString(k)) else if (u is String) urls.add(u)
-                if (urls.isEmpty()) continue
-                val b = PeerConnection.IceServer.builder(urls)
-                if (s.optString("username", "").isNotBlank()) b.setUsername(s.optString("username"))
-                if (s.optString("credential", "").isNotBlank()) b.setPassword(s.optString("credential"))
-                out.add(b.createIceServer())
+                val user = s.optString("username", ""); val cred = s.optString("credential", "")
+                // [fix ICE] UN IceServer POR URL: si el nativo rechaza una url (ej. "?transport=tcp"), solo
+                // se pierde ESA, no todo el server TURN → el celular sí junta candidatos relay (antes 0-5).
+                for (url in urls) {
+                    val uu = url.trim(); if (uu.isEmpty()) continue
+                    try {
+                        val b = PeerConnection.IceServer.builder(uu)
+                        if (user.isNotBlank()) b.setUsername(user)
+                        if (cred.isNotBlank()) b.setPassword(cred)
+                        out.add(b.createIceServer())
+                    } catch (_: Throwable) {}
+                }
             }
         } catch (_: Throwable) {}
         if (out.isEmpty()) out.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
