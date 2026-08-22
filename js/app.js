@@ -12712,7 +12712,7 @@ const MOS = (() => {
       costo + borrados +
       // [832] puerta directa al Paso 1 de esta compra: cargar o corregir los costos sin tener
       // que ir a buscar la guía a mano en la Mesa.
-      '<button type="button" class="cvf-ir" onclick="MOS.curvaIrACostos(this.dataset.g)" data-g="' + _escapeHtml(String(d.idGuia)) + '">' +
+      '<button type="button" class="cvf-ir" onclick="MOS.curvaIrACostos(this.dataset.g, this.dataset.f)" data-g="' + _escapeHtml(String(d.idGuia)) + '" data-f="' + _escapeHtml(String(d.fecha || '')) + '">' +
         '<span class="cvf-ir-ic">✏️</span>' +
         '<span class="cvf-ir-tx"><b>Cargar los costos de esta compra</b><i>abre el Paso 1 con esta guía</i></span>' +
         '<span class="cvf-ir-go">→</span></button>' +
@@ -12726,21 +12726,33 @@ const MOS = (() => {
   // [832] Del card de la curva al Paso 1 de esa compra, sin pasar por la Mesa a buscarla.
   // La compra puede no estar en memoria (el admin llegó desde Catálogo), así que se amplía la
   // ventana de operaciones y se espera a que aparezca antes de abrir.
-  async function curvaIrACostos(idGuia) {
+  async function curvaIrACostos(idGuia, fechaGuia) {
     if (!idGuia) return;
     const btn = document.querySelector('.cvf-ir[data-g="' + idGuia + '"]');
     if (btn) { btn.classList.add('is-load'); btn.disabled = true; }
     try {
       let op = _findOpByKey('WH_' + idGuia) || _findOpByKey('ME_' + idGuia);
       if (!op) {
-        try { S._mesaRangoDias = Math.max(S._mesaRangoDias || 0, 45); } catch(_){}
-        try { _mesaAsegurarVentana(); } catch(_){}
-        for (let i = 0; i < 24 && !op; i++) {
+        // [fix bug ventana] La curva puede mostrar guías más viejas que la ventana por defecto de la Mesa
+        // (era 45 días → una compra de hace 2 meses giraba y fallaba). Ampliamos JUSTO lo necesario para
+        // alcanzar ESTA guía por su fecha (no toda la historia), y reintentamos disparar la carga si se estanca.
+        let need = 90;
+        try {
+          if (fechaGuia) {
+            const dias = Math.ceil((Date.now() - new Date(fechaGuia).getTime()) / 86400000);
+            if (dias > 0) need = Math.min(400, dias + 20);   // + colchón; tope 400d
+          }
+        } catch(_){}
+        try { S._mesaRangoDias = Math.max(S._mesaRangoDias || 0, need); } catch(_){}
+        for (let i = 0; i < 40 && !op; i++) {
+          if ((S._mesaRangoServido || 0) < (S._mesaRangoDias || 0) && !S._mesaAmpliando) {
+            try { _mesaAsegurarVentana(); } catch(_){}   // re-dispara si aún no sirvió el rango pedido
+          }
           await new Promise(r => setTimeout(r, 400));
           op = _findOpByKey('WH_' + idGuia) || _findOpByKey('ME_' + idGuia);
         }
       }
-      if (!op) { toast('No encontré esa compra en las últimas semanas', 'warn'); return; }
+      if (!op) { toast('No encontré esa compra (puede ser muy antigua)', 'warn'); return; }
 
       // [834] El Paso 1 lee las líneas del caché por guía, no de la operación. La Mesa lo llena
       // con un prefetch que acá nunca corrió → el modal abría "0 productos". Se cargan ahora.
