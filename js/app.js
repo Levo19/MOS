@@ -1178,93 +1178,694 @@ const MOS = (() => {
     _ecoRefreshTimer = setInterval(_refreshEcoStatus, 60000); // cada 60s
   }
 
-  // ── DASHBOARD ───────────────────────────────────────────────
+  // ── DASHBOARD · CABINA SEMANAL [948] ─────────────────────────
+  // El dashboard de KPIs sueltos se reemplazó por la "Cabina Semanal": la semana en
+  // acción (dinero · productos/reposición · personal · zonas · tributario), con
+  // drill-down POR BARRA (cada elemento abre su overlay con detalle REAL). El motor de
+  // datos es API.get('cabinaSemanal',{offset}) → {ok,data:{semana,dinero,productos,
+  // personal,zonas,tributario}} (offset 0=semana actual, -1=pasada, …). TODO se pinta
+  // por JS dentro de #view-dashboard; el CSS del mockup se inyecta UNA sola vez.
+  let _cabOffset = 0;          // semana visible (0=actual, negativos=hacia atrás)
+  let _cabData   = null;       // data de la semana visible
+  let _cabPrev   = null;       // data de la semana anterior → deltas REALES (nunca inventados)
+  let _cabSnd    = false;      // sonido opcional; silenciado por defecto (pedido dueño)
+  let _cabKeysBound = false;   // el listener global de teclas se ata una sola vez
+  const _cabCache = {};        // {offset: data} — no re-fetchear al navegar ‹ ›
+
+  const _cabDOW = { Mon: 'Lun', Tue: 'Mar', Wed: 'Mié', Thu: 'Jue', Fri: 'Vie', Sat: 'Sáb', Sun: 'Dom' };
+  // Dinero en DISPLAY (miles, sol entero) — SOLO display; el cálculo vive en el server.
+  const _cabMoney  = n => 'S/ ' + Math.round(parseFloat(n) || 0).toLocaleString('es-PE');
+  // Dinero en DISPLAY con céntimos (montos finos: comisiones, gastos).
+  const _cabMoney2 = n => 'S/ ' + (Math.round((parseFloat(n) || 0) * 100) / 100).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const _cabEsc    = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const _cabRM     = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; } };
+  // sku → idProducto (los top de cabina vienen por sku; la analítica pide idProducto).
+  function _cabProdId(sku) {
+    const s = String(sku || ''); if (!s) return null;
+    const p = (S.productos || []).find(x => String(x.skuBase || '') === s || String(x.idProducto) === s || String(x.sku || '') === s);
+    return p ? p.idProducto : null;
+  }
+
+  // ── sonido (Web Audio) — igual que el mockup, opcional ──
+  let _cabAC;
+  function _cabBeep(f, d, t = 'sine', v = .05) {
+    if (!_cabSnd) return;
+    try {
+      _cabAC = _cabAC || new (window.AudioContext || window.webkitAudioContext)();
+      const o = _cabAC.createOscillator(), g = _cabAC.createGain();
+      o.type = t; o.frequency.value = f; g.gain.value = v;
+      o.connect(g); g.connect(_cabAC.destination); o.start();
+      g.gain.exponentialRampToValueAtTime(.0001, _cabAC.currentTime + d);
+      o.stop(_cabAC.currentTime + d);
+    } catch (_) {}
+  }
+  const _cabTick  = () => _cabBeep(560, .05, 'triangle', .045);
+  const _cabChime = () => { _cabBeep(660, .12, 'sine', .05); setTimeout(() => _cabBeep(880, .16, 'sine', .045), 90); };
+  function cabToggleSnd() {
+    _cabSnd = !_cabSnd;
+    const b = document.getElementById('cabMut'); if (b) b.textContent = _cabSnd ? '🔊' : '🔇';
+    if (_cabSnd) _cabTick();
+  }
+
+  // ── CSS del mockup (namespaced con #cabina / .cab-* para no chocar con MOS) ──
+  function _cabInjectCss() {
+    if (document.getElementById('cabina-css')) return;
+    const st = document.createElement('style');
+    st.id = 'cabina-css';
+    st.textContent = `
+#cabina{ --cab-bg:#070c16; --cab-bg2:#0a1120; --cab-card:#0f1a2e; --cab-card2:#132038; --cab-line:rgba(148,163,184,.13);
+  --cab-ink:#e8eefb; --cab-ink2:#9db0cf; --cab-ink3:#5f7192; --cab-acc:#818cf8; --cab-acc2:#22d3ee; --cab-meta:#f5c451;
+  --cab-good:#34d399; --cab-warn:#fbbf24; --cab-bad:#f87171; --cab-r:16px; --cab-shadow:0 18px 50px -20px rgba(0,0,0,.7);
+  color:var(--cab-ink); letter-spacing:-.01em; }
+#cabina .cab-num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+#cabina .cab-wrap{max-width:1180px;margin:0 auto;padding:2px 0 40px}
+#cabina .cab-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+#cabina .cab-brand{display:flex;align-items:center;gap:11px}
+#cabina .cab-logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-weight:800;font-size:15px;background:linear-gradient(140deg,var(--cab-acc),#4f46e5);color:#fff;box-shadow:0 8px 22px -8px rgba(99,102,241,.7)}
+#cabina .cab-brand h1{font-size:16px;margin:0;font-weight:750;letter-spacing:-.02em;color:var(--cab-ink)}
+#cabina .cab-brand p{font-size:11px;margin:1px 0 0;color:var(--cab-ink3);font-weight:600}
+#cabina .cab-spacer{flex:1;min-width:8px}
+#cabina .cab-wk{display:flex;align-items:center;gap:4px;background:var(--cab-card);border:1px solid var(--cab-line);border-radius:12px;padding:4px}
+#cabina .cab-wk button{background:none;border:0;color:var(--cab-ink2);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;transition:.15s}
+#cabina .cab-wk button:hover:not(:disabled){background:var(--cab-card2);color:var(--cab-ink)}
+#cabina .cab-wk button:disabled{opacity:.3;cursor:default}
+#cabina .cab-wk .cab-lbl{padding:0 10px;font-size:12.5px;font-weight:700;min-width:150px;text-align:center;line-height:1.1;color:var(--cab-ink)}
+#cabina .cab-wk .cab-lbl small{display:block;font-size:9.5px;color:var(--cab-ink3);font-weight:600;letter-spacing:.02em}
+#cabina .cab-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:7px 11px;border-radius:10px;background:var(--cab-card);border:1px solid var(--cab-line);color:var(--cab-ink2)}
+#cabina .cab-chip .dot-green,#cabina .cab-chip .dot-gray,#cabina .cab-chip .dot-red,#cabina .cab-chip .dot-yellow,#cabina .cab-chip .dot-loading{width:7px;height:7px;border-radius:50%;display:inline-block}
+#cabina .cab-btn-avisos{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:750;padding:8px 13px;border-radius:11px;color:#0b1020;background:linear-gradient(135deg,var(--cab-meta),#e6a935);border:0;cursor:pointer;box-shadow:0 8px 20px -8px rgba(245,196,81,.6);transition:.15s}
+#cabina .cab-btn-avisos:hover{transform:translateY(-1px)}
+#cabina .cab-mut{background:var(--cab-card);border:1px solid var(--cab-line);color:var(--cab-ink2);width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:14px}
+#cabina .cab-hero{background:linear-gradient(160deg,var(--cab-card2),var(--cab-card));border:1px solid var(--cab-line);border-radius:var(--cab-r);padding:16px 20px;display:flex;align-items:center;gap:22px;margin-bottom:16px;position:relative;overflow:hidden;box-shadow:var(--cab-shadow)}
+#cabina .cab-hero::after{content:"";position:absolute;right:-40px;top:-40px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(129,140,248,.18),transparent 70%);pointer-events:none}
+#cabina .cab-lead{flex:1;min-width:0;position:relative}
+#cabina .cab-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--cab-acc)}
+#cabina .cab-big{font-size:clamp(26px,5vw,40px);font-weight:800;letter-spacing:-.03em;margin:2px 0 2px;line-height:1;color:var(--cab-ink)}
+#cabina .cab-subx{font-size:12.5px;color:var(--cab-ink2);font-weight:600}
+#cabina .cab-subx b{color:var(--cab-good)}
+#cabina .cab-days{display:flex;gap:6px;margin-top:12px}
+#cabina .cab-day{flex:1;height:38px;border-radius:8px;background:var(--cab-bg2);border:1px solid var(--cab-line);display:grid;place-items:center;font-size:10px;font-weight:800;color:var(--cab-ink3);position:relative;overflow:hidden;cursor:pointer}
+#cabina .cab-day .cab-fill{position:absolute;inset:auto 0 0 0;height:0;background:linear-gradient(180deg,var(--cab-acc),#4f46e5);opacity:.85;transition:height 1s cubic-bezier(.2,.8,.2,1)}
+#cabina .cab-day span{position:relative;z-index:1}
+#cabina .cab-day.hoy{border-color:var(--cab-acc);box-shadow:0 0 0 1px var(--cab-acc)}
+#cabina .cab-day.hoy span{color:#fff}
+#cabina .cab-day.fut{opacity:.4;cursor:default}
+#cabina .cab-ringwrap{display:grid;place-items:center;position:relative}
+#cabina .cab-ringwrap .cab-pct{position:absolute;text-align:center}
+#cabina .cab-ringwrap .cab-pct b{font-size:24px;font-weight:800;letter-spacing:-.03em;color:var(--cab-ink)}
+#cabina .cab-ringwrap .cab-pct small{display:block;font-size:9.5px;color:var(--cab-ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+#cabina .cab-ring-fg{transition:stroke-dashoffset 1.2s cubic-bezier(.2,.8,.2,1)}
+#cabina .cab-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+#cabina .cab-card{grid-column:span 6;background:var(--cab-card);border:1px solid var(--cab-line);border-radius:var(--cab-r);padding:16px 17px;cursor:pointer;transition:transform .18s,border-color .18s,box-shadow .18s;position:relative;overflow:hidden}
+#cabina .cab-card:hover{transform:translateY(-3px);border-color:rgba(129,140,248,.4);box-shadow:var(--cab-shadow)}
+#cabina .cab-card.wide{grid-column:span 12}
+#cabina .cab-card.slim{grid-column:span 4}
+#cabina .cab-card.slim2{grid-column:span 8}
+#cabina .cab-chd{display:flex;align-items:flex-start;gap:11px;margin-bottom:12px}
+#cabina .cab-ci{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:19px;flex:0 0 auto;background:var(--cab-card2);border:1px solid var(--cab-line)}
+#cabina .cab-ct{flex:1;min-width:0}
+#cabina .cab-ct h3{margin:0;font-size:14.5px;font-weight:750;letter-spacing:-.02em;color:var(--cab-ink)}
+#cabina .cab-ct p{margin:2px 0 0;font-size:11px;color:var(--cab-ink3);font-weight:600}
+#cabina .cab-delta{font-size:11px;font-weight:800;padding:4px 9px;border-radius:8px;white-space:nowrap}
+#cabina .cab-delta.up{color:var(--cab-good);background:rgba(52,211,153,.12)}
+#cabina .cab-delta.down{color:var(--cab-bad);background:rgba(248,113,113,.12)}
+#cabina .cab-metabar{height:7px;border-radius:99px;background:var(--cab-bg2);overflow:hidden;margin:2px 0 4px}
+#cabina .cab-metabar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--cab-acc),var(--cab-acc2));width:0;transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
+#cabina .cab-metabar.done i{background:linear-gradient(90deg,var(--cab-meta),#e6a935)}
+#cabina .cab-metarow{display:flex;justify-content:space-between;font-size:10.5px;font-weight:700;color:var(--cab-ink3)}
+#cabina .cab-metarow b{color:var(--cab-ink)}
+#cabina .cab-accion{margin-top:12px;font-size:11.5px;line-height:1.5;color:var(--cab-ink2);background:var(--cab-bg2);border:1px solid var(--cab-line);border-left:3px solid var(--cab-meta);border-radius:9px;padding:8px 11px;font-weight:600}
+#cabina .cab-accion b{color:var(--cab-meta)}
+#cabina .cab-peek{position:absolute;right:13px;bottom:12px;font-size:10px;font-weight:800;color:var(--cab-ink3);letter-spacing:.04em;opacity:.7}
+#cabina .cab-card:hover .cab-peek{color:var(--cab-acc)}
+#cabina svg{display:block;width:100%;overflow:visible}
+#cabina .cab-bars{display:flex;flex-direction:column;gap:7px}
+#cabina .cab-bar{display:flex;align-items:center;gap:9px;font-size:11px;cursor:pointer}
+#cabina .cab-bar .cab-nm{flex:0 0 108px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--cab-ink);font-weight:650}
+#cabina .cab-bar .cab-tk{flex:1;height:9px;border-radius:99px;background:var(--cab-bg2);overflow:hidden}
+#cabina .cab-bar .cab-tk i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--cab-acc2),var(--cab-acc));width:0;transition:width .9s cubic-bezier(.2,.8,.2,1)}
+#cabina .cab-bar .cab-vl{flex:0 0 auto;font-weight:800;color:var(--cab-ink2);font-size:10.5px}
+#cabina .cab-repos{margin-top:11px;cursor:pointer}
+#cabina .cab-heat{display:grid;gap:4px;font-size:9px}
+#cabina .cab-heat .cab-hz{color:var(--cab-ink2);font-weight:750;display:flex;align-items:center;font-size:10px}
+#cabina .cab-heat .cab-hh{color:var(--cab-ink3);font-weight:700;text-align:center}
+#cabina .cab-heat .cab-cell{height:22px;border-radius:5px;display:grid;place-items:center;font-weight:800;transition:transform .12s;cursor:pointer;font-size:8.5px}
+#cabina .cab-heat .cab-cell:hover{transform:scale(1.12)}
+#cabina .cab-skl{background:linear-gradient(90deg,var(--cab-card) 25%,var(--cab-card2) 37%,var(--cab-card) 63%);background-size:400% 100%;animation:cab-shine 1.4s ease infinite;border-radius:12px}
+#cabina .cab-msg{text-align:center;color:var(--cab-ink2);font-size:13px;font-weight:600;padding:60px 20px}
+@keyframes cab-shine{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@keyframes cab-draw{to{stroke-dashoffset:0}}
+@keyframes cab-rise{to{transform:translateY(0)}}
+@keyframes cab-fade{from{opacity:0}}
+#cabina .cab-draw{stroke-dasharray:300;stroke-dashoffset:300;animation:cab-draw 1.2s ease forwards}
+.cab-ov{position:fixed;inset:0;background:rgba(4,8,16,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:none;align-items:flex-end;justify-content:center;z-index:60;padding:0}
+.cab-ov.on{display:flex;animation:cab-fade .2s ease}
+.cab-sheet{background:linear-gradient(180deg,#132038,#0f1a2e);border:1px solid rgba(148,163,184,.13);border-bottom:0;border-radius:20px 20px 0 0;width:100%;max-width:1180px;max-height:88vh;overflow:auto;padding:20px 22px 34px;transform:translateY(30px);animation:cab-rise .32s cubic-bezier(.2,.85,.25,1) forwards;box-shadow:0 -20px 60px rgba(0,0,0,.6);color:#e8eefb;font-variant-numeric:tabular-nums}
+.cab-sheet .cab-grab{width:40px;height:4px;border-radius:99px;background:#5f7192;opacity:.5;margin:0 auto 14px}
+.cab-sheet h2{margin:0 0 2px;font-size:20px;font-weight:800;letter-spacing:-.02em}
+.cab-sheet .cab-lead2{color:#9db0cf;font-size:12.5px;font-weight:600;margin-bottom:16px}
+.cab-sh-x{float:right;background:#0f1a2e;border:1px solid rgba(148,163,184,.13);color:#9db0cf;width:34px;height:34px;border-radius:10px;cursor:pointer;font-size:15px}
+.cab-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.cab-panel{background:#0a1120;border:1px solid rgba(148,163,184,.13);border-radius:13px;padding:14px}
+.cab-panel h4{margin:0 0 10px;font-size:12px;font-weight:800;letter-spacing:.02em;color:#9db0cf}
+.cab-kv{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid rgba(148,163,184,.13);font-size:12px;gap:10px}
+.cab-kv:first-of-type{border-top:0}
+.cab-kv .cab-k{color:#9db0cf;font-weight:600}.cab-kv .cab-v{font-weight:800;text-align:right}
+.cab-list{display:flex;flex-direction:column;gap:8px}
+.cab-li{display:flex;align-items:center;gap:10px;background:#0f1a2e;border:1px solid rgba(148,163,184,.13);border-radius:10px;padding:9px 11px;font-size:12px}
+.cab-li .cab-lin{flex:1;min-width:0}.cab-li .cab-lin b{font-weight:750}.cab-li .cab-lin span{display:block;font-size:10.5px;color:#5f7192;font-weight:600}
+.cab-pill{font-size:10px;font-weight:800;padding:3px 8px;border-radius:7px;white-space:nowrap}
+.cab-pill.ok{color:#34d399;background:rgba(52,211,153,.13)}
+.cab-pill.no{color:#fbbf24;background:rgba(251,191,36,.13)}
+.cab-pill.bad{color:#f87171;background:rgba(248,113,113,.13)}
+.cab-sheet .cab-bars2{display:flex;flex-direction:column;gap:8px}
+.cab-sheet .cab-bar2{display:flex;align-items:center;gap:9px;font-size:11.5px}
+.cab-sheet .cab-bar2 .cab-nm2{flex:0 0 120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8eefb;font-weight:650}
+.cab-sheet .cab-bar2 .cab-tk2{flex:1;height:9px;border-radius:99px;background:#0a1120;overflow:hidden}
+.cab-sheet .cab-bar2 .cab-tk2 i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#22d3ee,#818cf8)}
+.cab-sheet .cab-bar2 .cab-vl2{flex:0 0 auto;font-weight:800;color:#9db0cf;font-size:11px}
+.cab-foot{text-align:center;color:#5f7192;font-size:10.5px;margin-top:22px;font-weight:600}
+@media(max-width:820px){
+  #cabina .cab-card,#cabina .cab-card.slim,#cabina .cab-card.slim2{grid-column:span 12}
+  .cab-cols{grid-template-columns:1fr}
+  #cabina .cab-hero{flex-direction:column;align-items:stretch;gap:14px}
+  #cabina .cab-wk .cab-lbl{min-width:120px}
+}
+@media(prefers-reduced-motion:reduce){
+  #cabina *,.cab-ov *,.cab-sheet{animation:none!important;transition:none!important}
+  #cabina .cab-draw{stroke-dasharray:none!important;stroke-dashoffset:0!important}
+}`;
+    document.head.appendChild(st);
+  }
+
+  // ── carga / re-render ──
   async function loadDashboard() {
     if (!API.isConfigured()) return;
-
-    // Mostrar "Conectando..." inmediatamente en los dots
-    _setEcoLoading();
-
-    // Load in parallel (eco independiente para no bloquear KPIs)
-    const [rotRes, alertasRes, mermasRes, prodRes] = await Promise.allSettled([
-      API.get('getRotacion', {}),
-      API.get('getAlertasWarehouse', {}),
-      API.get('getMermasWarehouse', { estado: 'PENDIENTE' }),
-      _getProductosCompartido()
-    ]);
-
-    // Eco status en paralelo pero sin bloquear el resto
-    _refreshEcoStatus();
-    _startEcoAutoRefresh();
-
-    // [705 · guard] Un RPC vencido por TIMEOUT puede RESOLVER con null (no rechaza) → el
-    // ternario `status==='fulfilled' ? value : default` dejaba pasar el null y la lectura
-    // `alertas.criticos` reventaba con "Cannot read properties of null (reading 'criticos')",
-    // que salía como el toast crudo "Error al cargar dashboard: …" (visto en producción).
-    // Ahora cada respuesta se normaliza a su forma esperada y, si alguna vino vacía, el
-    // dashboard se pinta con lo que hay y REINTENTA UNA vez a los 3s (S._dashRetry lo limita).
-    const _ok  = r => (r && r.status === 'fulfilled') ? r.value : null;
-    const rot0 = _ok(rotRes), alertas0 = _ok(alertasRes), mermas0 = _ok(mermasRes), prods0 = _ok(prodRes);
-    const incompleto = (rot0 == null) || (alertas0 == null) || (prods0 == null);
-
-    // KPI — stock bajo
-    const rot = Array.isArray(rot0) ? rot0 : [];
-    const stockBajo = rot.filter(r => r && r.alertaMinimo).length;
-    const kpiSV = $('kpiStockVal');
-    if (kpiSV) { kpiSV.textContent = (rot0 == null) ? '…' : stockBajo; }
-    if (stockBajo > 0) {
-      const b = $('kpiStockBadge'); if (b) b.classList.remove('hidden');
+    const cont = $('view-dashboard');
+    if (!cont) return;
+    _cabInjectCss();
+    // Sembrar S.productos en background si vacío (lo usa el drill-down de producto: sku→idProducto).
+    if (!(S.productos && S.productos.length)) {
+      _getProductosCompartido().then(p => { if (Array.isArray(p) && p.length) S.productos = p; }).catch(() => {});
     }
-
-    // KPI — vencimientos
-    const alertas = (alertas0 && typeof alertas0 === 'object') ? alertas0 : { criticos: [], alertas: [] };
-    const criticos = (alertas.criticos || []).length;
-    const kpiVV = $('kpiVencVal');
-    if (kpiVV) kpiVV.textContent = (alertas0 == null) ? '…' : criticos;
-    if (criticos > 0) { const b = $('kpiVencBadge'); if (b) b.classList.remove('hidden'); }
-
-    // KPI — mermas
-    const mermas = Array.isArray(mermas0) ? mermas0 : [];
-    const kpiMV = $('kpiMermasVal'); if (kpiMV) kpiMV.textContent = (mermas0 == null) ? '…' : mermas.length;
-
-    // KPI — productos (ACTIVOS). El prefetch trae el catálogo COMPLETO (sin filtro de
-    // estado) para que `S.productos` sea IDÉNTICO al que carga el refresh del catálogo
-    // (getProductos {}). Antes pedía {estado:'1'} y sembraba S.productos con SOLO los
-    // activos → el refresh silencioso (sin filtro) detectaba los inactivos como
-    // `added:N` en CADA ciclo (mismatch de filtro entre dos paths, no de backend).
-    // El KPI de activos se calcula client-side con _isProdActivo (paridad con el filtro
-    // server `String(estado)==='1'`), sin perder el conteo correcto.
-    const prods = Array.isArray(prods0) ? prods0 : [];
-    const kpiPV = $('kpiProductosVal'); if (kpiPV) kpiPV.textContent = (prods0 == null) ? '…' : prods.filter(p => _isProdActivo(p)).length;
-    // [705 · guard] NUNCA sembrar S.productos con [] por un timeout: dejaba el catálogo en
-    // blanco hasta el próximo refresh. Solo se reemplaza si el RPC trajo catálogo de verdad.
-    if (prods.length) S.productos = prods;
-
-    // Charts
-    renderRotacionChart(rot);
-    renderStockChart(rot);
-
-    // Alertas list
-    renderAlertas([
-      ...((alertas.criticos || []).slice(0, 3).map(a => ({ tipo: 'CRITICO', msg: (a.codigoProducto || a.descripcion || '—') + ' vence en ' + (a.diasRestantes || 0) + 'd' }))),
-      ...((alertas.alertas  || []).slice(0, 2).map(a => ({ tipo: 'ALERTA',  msg: (a.codigoProducto || a.descripcion || '—') + ' vence en ' + (a.diasRestantes || 0) + 'd' }))),
-      ...(mermas.slice(0, 2).map(m => ({ tipo: 'MERMA', msg: 'Merma pendiente: ' + (m.codigoProducto || '—') })))
-    ].slice(0, 6));
-
-    // [705] Reintento único a los 3s cuando la base venía con ventana de carga (RPC nulo).
-    // Sin toast de error: el dashboard es informativo, no bloquea nada.
-    if (incompleto && !S._dashRetry) {
-      S._dashRetry = true;
-      toast('⏳ La base tardó en responder — reintentando el dashboard…', 'info', 2600);
-      setTimeout(() => {
-        Promise.resolve()
-          .then(() => loadDashboard())
-          .catch(e => console.warn('[dashboard] reintento falló:', e && e.message))
-          .finally(() => { S._dashRetry = false; });
-      }, 3000);
-    } else if (!incompleto) {
-      S._dashRetry = false;
+    const off = _cabOffset;
+    if (!_cabCache[off]) cont.innerHTML = _cabSkeleton();
+    try {
+      // La semana anterior (off-1) se pide en paralelo SOLO para deltas reales (nunca inventados).
+      // OJO: cabinaSemanal es acción POST-directo (mapa _MOS_POST_DIRECTO en api.js) → se invoca
+      // con API.post, NO con API.get (get la rechazaría con "lectura no cableada"). Devuelve {ok,data}.
+      const [rCur, rPrev] = await Promise.all([
+        _cabCache[off] != null ? Promise.resolve({ ok: true, data: _cabCache[off] }) : API.post('cabinaSemanal', { offset: off }),
+        _cabCache[off - 1] != null ? Promise.resolve({ ok: true, data: _cabCache[off - 1] }) : API.post('cabinaSemanal', { offset: off - 1 }).catch(() => null)
+      ]);
+      const data = (rCur && rCur.ok && rCur.data) ? rCur.data : null;
+      if (!data) { cont.innerHTML = _cabMsg('No se pudo cargar la Cabina. Reintentá en unos segundos.'); return; }
+      _cabCache[off] = data;
+      const prev = (rPrev && rPrev.ok && rPrev.data) ? rPrev.data : null;
+      if (prev) _cabCache[off - 1] = prev;
+      _cabData = data; _cabPrev = prev;
+      cont.innerHTML = _cabMarkup(data, prev);
+      _cabPostRender(data);
+      // Eco status (WH/ME) — reusa el mecanismo existente (dots ecoWhDot/ecoMeDot).
+      _refreshEcoStatus();
+      _startEcoAutoRefresh();
+      _cabBindKeys();
+    } catch (e) {
+      cont.innerHTML = _cabMsg('Error al cargar la Cabina: ' + (e && e.message ? e.message : 'desconocido'));
     }
+  }
+
+  function _cabMsg(txt) { return `<div id="cabina"><div class="cab-wrap"><div class="cab-msg">${_cabEsc(txt)}</div></div></div>`; }
+  function _cabSkeleton() {
+    return `<div id="cabina"><div class="cab-wrap">
+      <div class="cab-skl" style="height:56px;margin-bottom:16px"></div>
+      <div class="cab-skl" style="height:150px;margin-bottom:16px"></div>
+      <div class="cab-grid">
+        <div class="cab-skl cab-card wide" style="height:230px"></div>
+        <div class="cab-skl cab-card slim2" style="height:200px"></div>
+        <div class="cab-skl cab-card slim" style="height:200px"></div>
+        <div class="cab-skl cab-card slim" style="height:180px"></div>
+        <div class="cab-skl cab-card slim2" style="height:180px"></div>
+      </div>
+      <div class="cab-msg">Cargando tu semana…</div>
+    </div></div>`;
+  }
+
+  // ── helpers de gráficos (SVG del mockup, adaptados a datos reales) ──
+  function _cabRingSvg(pct, color) {
+    const R = 54, C = 2 * Math.PI * R, off = C * (1 - Math.min(Math.max(pct, 0), 1));
+    return `<svg width="128" height="128" viewBox="0 0 128 128">
+      <circle cx="64" cy="64" r="${R}" fill="none" stroke="rgba(148,163,184,.14)" stroke-width="10"/>
+      <circle class="cab-ring-fg" cx="64" cy="64" r="${R}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round"
+        transform="rotate(-90 64 64)" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${C.toFixed(1)}" data-off="${off.toFixed(1)}"/>
+    </svg>`;
+  }
+  function _cabLineChart(dias, metaDia) {
+    const W = 100, H = 34, n = dias.length || 1;
+    const ventas = dias.map(d => parseFloat(d.venta) || 0);
+    const active = Math.max(1, dias.filter(d => !d.futuro).length);
+    const mx = Math.max(metaDia * 1.05, ...ventas, 1) * 1.02;
+    const pts = ventas.map((v, i) => [8 + i * ((W - 10) / (n - 1 || 1)), H - 2 - (v / mx) * (H - 6)]);
+    const path = pts.slice(0, active).map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+    const area = active > 1 ? path + ` L ${pts[active - 1][0].toFixed(1)} ${H} L ${pts[0][0].toFixed(1)} ${H} Z` : '';
+    const my = H - 2 - (Math.min(metaDia, mx) / mx) * (H - 6);
+    const dots = pts.map((p, i) => i < active ? `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${i === active - 1 ? 2.2 : 1.4}" fill="${i === active - 1 ? '#22d3ee' : '#818cf8'}"/>` : '').join('');
+    const labels = pts.map((p, i) => `<text x="${p[0].toFixed(1)}" y="${(H - .2).toFixed(1)}" font-size="3" fill="#5f7192" text-anchor="middle" font-weight="700">${_cabDOW[dias[i].dow] || ''}</text>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" style="height:120px">
+      <defs><linearGradient id="cabLg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#818cf8" stop-opacity=".35"/><stop offset="1" stop-color="#818cf8" stop-opacity="0"/></linearGradient></defs>
+      <line x1="6" y1="${my.toFixed(1)}" x2="${(W - 2)}" y2="${my.toFixed(1)}" stroke="#f5c451" stroke-width=".5" stroke-dasharray="2 2" opacity=".7"/>
+      <text x="${W - 2}" y="${(my - 1.5).toFixed(1)}" font-size="3" fill="#f5c451" text-anchor="end" font-weight="700">meta/día</text>
+      ${area ? `<path d="${area}" fill="url(#cabLg)"/>` : ''}
+      <path class="cab-draw" d="${path}" fill="none" stroke="#818cf8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}${labels}
+    </svg>`;
+  }
+  const _CAB_HEAT = ['#0f1a2e', '#1e2a52', '#3b3f8a', '#6366f1', '#8b8cf6', '#c084fc'];
+  function _cabHeatColor(bucket) { return _CAB_HEAT[Math.max(0, Math.min(5, bucket))]; }
+
+  // Delta REAL vs semana pasada (o cadena vacía si no hay comparación disponible).
+  function _cabDelta(cur, prev, lowerIsBetter) {
+    if (prev == null || !isFinite(prev) || prev === 0 || cur == null || !isFinite(cur)) return '';
+    let pct = Math.round((cur - prev) / Math.abs(prev) * 100);
+    const mejora = lowerIsBetter ? (pct < 0) : (pct >= 0);
+    return `<span class="cab-delta ${mejora ? 'up' : 'down'}">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% <span style="opacity:.7;font-weight:600">sem. pasada</span></span>`;
+  }
+
+  // ── markup principal ──
+  function _cabMarkup(d, prev) {
+    const din = d.dinero || {}, dias = Array.isArray(din.dias) ? din.dias : [];
+    const acum = parseFloat(din.acumulado) || 0, meta = parseFloat(din.meta) || 0;
+    const metaAlDia = parseFloat(din.metaAlDia) || 0;
+    const pct = meta > 0 ? acum / meta : 0;
+    const metaHecha = acum >= meta && meta > 0;
+    const sobreRitmo = acum >= metaAlDia;
+    const sem = d.semana || {};
+    const esActual = !!sem.esActual;
+    const metaDia = meta / 7;
+
+    // hero: barras por día
+    const mxV = Math.max(...dias.map(x => parseFloat(x.venta) || 0), 1);
+    const activos = Math.max(1, dias.filter(x => !x.futuro).length);
+    const heroDays = dias.map((x, i) => {
+      const v = parseFloat(x.venta) || 0, fut = !!x.futuro;
+      const h = v > 0 ? Math.max(12, (v / mxV) * 100) : 0;
+      const onc = fut ? '' : ` onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
+      const ttl = fut ? 'Día futuro' : `${_cabDOW[x.dow] || ''} ${x.fecha} · ${_cabMoney(v)}`;
+      return `<div class="cab-day ${i === activos - 1 && !fut ? 'hoy' : ''} ${fut ? 'fut' : ''}" title="${_cabEsc(ttl)}"${onc}><div class="cab-fill" data-h="${h.toFixed(0)}"></div><span>${_cabDOW[x.dow] || ''}</span></div>`;
+    }).join('');
+
+    // hero: texto
+    const eyebrow = metaHecha ? '¡Meta alcanzada! 🎯' : 'Meta de la semana · ' + _cabMoney(meta);
+    const falta = meta - acum;
+    const subHtml = metaHecha
+      ? `Superaste la meta por <b>${_cabMoney(acum - meta)}</b> · rentabilidad <b>${(parseFloat(din.rentabilidad) || 0).toFixed(1)}%</b>`
+      : `Te faltan <b style="color:var(--cab-warn)">${_cabMoney(falta)}</b> para la meta · rentabilidad ${(parseFloat(din.rentabilidad) || 0).toFixed(1)}% · comisiones ${_cabMoney2(din.comisiones)}`;
+    const ringColor = metaHecha ? '#f5c451' : '#818cf8';
+
+    // etiqueta semana
+    const wkLbl = esActual ? 'Semana actual' : (_cabOffset === -1 ? 'Semana pasada' : 'Semana');
+    const nextDisabled = _cabOffset >= 0 ? 'disabled' : '';
+
+    return `<div id="cabina"><div class="cab-wrap">
+      <div class="cab-top">
+        <div class="cab-brand">
+          <div class="cab-logo">M</div>
+          <div><h1>Cabina Semanal</h1><p>InversionesMOS · tu semana en acción</p></div>
+        </div>
+        <div class="cab-spacer"></div>
+        <div class="cab-wk">
+          <button onclick="MOS.cabMover(-1)" title="Semana anterior">‹</button>
+          <div class="cab-lbl">${wkLbl}<small>${_cabEsc(sem.label || '—')}</small></div>
+          <button onclick="MOS.cabMover(1)" title="Semana siguiente" ${nextDisabled}>›</button>
+        </div>
+        <span class="cab-chip" title="warehouseMos"><span class="dot-gray" id="ecoWhDot"></span>WH <span id="ecoWhLabel" style="color:var(--cab-ink3)">—</span></span>
+        <span class="cab-chip" id="ecoMeCard" title="MosExpress"><span class="dot-gray" id="ecoMeDot"></span>ME <span id="ecoMeLabel" style="color:var(--cab-ink3)">—</span></span>
+        <button class="cab-mut" id="cabMut" onclick="MOS.cabToggleSnd()" title="Sonido">${_cabSnd ? '🔊' : '🔇'}</button>
+        <button class="cab-btn-avisos" onclick="(typeof MOS!=='undefined' &amp;&amp; MOS.abrirEditorAdhesivos) ? MOS.abrirEditorAdhesivos() : (window.abrirEditorAdhesivos &amp;&amp; window.abrirEditorAdhesivos())" title="Editor visual de avisos y adhesivos">🎨 Editor de avisos</button>
+      </div>
+
+      <div class="cab-hero">
+        <div class="cab-lead">
+          <div class="cab-eyebrow">${eyebrow}</div>
+          <div class="cab-big cab-num" id="cabHeroBig" data-to="${acum.toFixed(0)}">${_cabMoney(acum)}</div>
+          <div class="cab-subx">${subHtml}</div>
+          <div class="cab-days">${heroDays}</div>
+        </div>
+        <div class="cab-ringwrap">
+          ${_cabRingSvg(pct, ringColor)}
+          <div class="cab-pct"><b class="cab-num" id="cabHeroPct" data-to="${Math.round(pct * 100)}">${Math.round(pct * 100)}%</b><small>${sobreRitmo ? 'sobre el ritmo' : 'de la meta'}</small></div>
+        </div>
+      </div>
+
+      <div class="cab-grid">${_cabCards(d, prev)}</div>
+
+      <div class="cab-foot">Cabina en vivo · datos reales de MOS/WH/ME · tocá cualquier barra para el detalle.</div>
+    </div>
+    <div class="cab-ov" id="cabOv" onclick="if(event.target===this)MOS.cabCerrar()"><div class="cab-sheet" id="cabSheet"></div></div>
+    </div>`;
+  }
+
+  // ── las 5 cards ──
+  function _cabCards(d, prev) {
+    const din = d.dinero || {}, prod = d.productos || {}, per = d.personal || {}, zonas = Array.isArray(d.zonas) ? d.zonas : [], trib = d.tributario || {};
+    const dias = Array.isArray(din.dias) ? din.dias : [];
+    const acum = parseFloat(din.acumulado) || 0, meta = parseFloat(din.meta) || 0, metaAlDia = parseFloat(din.metaAlDia) || 0;
+    const pct = meta > 0 ? acum / meta : 0, metaHecha = acum >= meta && meta > 0, sobreRitmo = acum >= metaAlDia;
+    const metaDia = meta / 7;
+    const pAcum = prev ? (parseFloat((prev.dinero || {}).acumulado) || 0) : null;
+
+    // ── card DINERO ──
+    const accDinero = metaHecha
+      ? `Meta alcanzada: superaste por <b>${_cabMoney(acum - meta)}</b>. Sostené el ritmo y cuidá el margen.`
+      : sobreRitmo
+        ? `Vas <b>sobre el ritmo</b> (por ${_cabMoney(acum - metaAlDia)}). Empujá los picos para cerrar la meta: faltan ${_cabMoney(meta - acum)}.`
+        : `Vas <b>${_cabMoney(metaAlDia - acum)}</b> por debajo del ritmo esperado. Faltan ${_cabMoney(meta - acum)} para la meta.`;
+    const cardDinero = _cabCard('wide', '💰', 'Dinero', 'Venta diaria · rentabilidad · comisiones', _cabDelta(acum, pAcum, false),
+      `<div class="cab-metabar ${metaHecha ? 'done' : ''}"><i data-w="${Math.min(pct * 100, 100).toFixed(1)}"></i></div>
+       <div class="cab-metarow"><span>Acumulado <b>${_cabMoney(acum)}</b></span><span>Meta <b>${_cabMoney(meta)}</b></span></div>
+       ${_cabLineChart(dias, metaDia)}`,
+      accDinero, 'ver día por día ↗', `MOS.cabAbrir('din')`);
+
+    // ── card PRODUCTOS & REPOSICIÓN ──
+    const top = Array.isArray(prod.top) ? prod.top : [];
+    const mxU = top.length ? (parseFloat(top[0].u) || 1) : 1;
+    const reposH = parseFloat(prod.reposHoras) || 0, reposMeta = parseFloat(prod.reposMeta) || 2;
+    const pReposH = prev ? (parseFloat((prev.productos || {}).reposHoras) || 0) : null;
+    const barsProd = top.slice(0, 5).map(t => {
+      const u = parseFloat(t.u) || 0;
+      const id = _cabProdId(t.sku);
+      const onc = id ? ` onclick="MOS.cabProducto('${_cabEsc(t.sku)}')"` : '';
+      return `<div class="cab-bar"${onc} title="${_cabEsc(t.nombre)}"><span class="cab-nm">${_cabEsc(t.nombre)}</span><span class="cab-tk"><i data-w="${(u / mxU * 100).toFixed(1)}"></i></span><span class="cab-vl">${_fmtQty(u)}</span></div>`;
+    }).join('');
+    const reposOk = reposH <= reposMeta;
+    const cardProd = _cabCard('slim2', '📦', 'Productos & Reposición', 'Qué se vende + cuánto tarda en reponerse', _cabDelta(reposH, pReposH, true),
+      `<div class="cab-bars">${barsProd || '<div class="cab-metarow">Sin ventas en la semana</div>'}</div>
+       <div class="cab-metarow cab-repos" onclick="MOS.cabRepos()" title="Ver reposición pendiente"><span>Reposición media <b style="color:${reposOk ? 'var(--cab-good)' : 'var(--cab-warn)'}">${reposH.toFixed(1)} h</b></span><span>Meta ≤ ${reposMeta} h · ${prod.considerados || 0} pendientes ↗</span></div>`,
+      `Reposición media <b>${reposH.toFixed(1)} h</b> vs meta ≤ ${reposMeta} h. ${reposOk ? 'Al día.' : 'Hay ' + (prod.considerados || 0) + ' considerados esperando: priorizá los de mayor rotación.'}`,
+      'producto · reposición ↗', `MOS.cabRepos()`);
+
+    // ── card TRIBUTARIO ──
+    const igvFavor = parseFloat(trib.igvFavor) || 0;
+    const balance = parseFloat(trib.balanceNetoIGV);
+    const pIgv = prev ? (parseFloat((prev.tributario || {}).igvFavor) || 0) : null;
+    const aFavor = isFinite(balance) ? balance >= 0 : igvFavor > 0;
+    const cardTrib = _cabCard('slim', '⚖️', 'Tributario', 'IGV de la semana', _cabDelta(igvFavor, pIgv, false),
+      `<div style="text-align:center;padding:6px 0 2px"><div class="cab-num" style="font-size:30px;font-weight:800;letter-spacing:-.03em;color:${aFavor ? 'var(--cab-good)' : 'var(--cab-warn)'}">${_cabMoney2(igvFavor)}</div>
+       <div style="font-size:11px;color:var(--cab-ink3);font-weight:700">IGV a favor · ${isFinite(balance) ? (aFavor ? 'balance +' + _cabMoney2(balance) : 'balance ' + _cabMoney2(balance)) : '—'}</div></div>`,
+      aFavor ? `Vas <b>a favor</b>. Revisá cuántas compras con factura faltan para cubrir el IGV emitido.` : `IGV emitido supera al de compras: <b>subí facturas de compra</b> al buzón para equilibrar.`,
+      'ir a Tributos ↗', `MOS.nav('tributario')`);
+
+    // ── card PERSONAL & HORAS PICO ──
+    const heat = Array.isArray(per.heat) ? per.heat : [];
+    // hora pico real = celda de mayor venta
+    let pico = { zona: '', h: null, venta: -1 };
+    heat.forEach(z => (z.horas || []).forEach(hh => { const v = parseFloat(hh.venta) || 0; if (v > pico.venta) pico = { zona: z.zona, h: hh.h, venta: v }; }));
+    const cardPers = _cabCard('slim', '👥', 'Personal & horas pico', 'Dónde y cuándo aprieta', '',
+      _cabHeatmap(heat),
+      pico.h != null ? `Pico real a las <b>${pico.h}:00 en ${_cabEsc(pico.zona)}</b> (${_cabMoney(pico.venta)}). Sumá 1 apoyo esa franja, no todo el día.` : 'Sin datos de tráfico por hora esta semana.',
+      'quién estuvo en el pico ↗', '');
+
+    // ── card ZONAS ──
+    const mxEst = Math.max(...zonas.map(z => parseFloat(z.estancados) || 0), 1);
+    const peorZona = zonas.slice().sort((a, b) => (parseFloat(b.estancados) || 0) - (parseFloat(a.estancados) || 0))[0];
+    const barsZona = zonas.map(z => {
+      const est = parseFloat(z.estancados) || 0;
+      return `<div class="cab-bar" onclick="MOS.cabZona('${_cabEsc(z.zona)}')" title="${_cabEsc(z.zona)}"><span class="cab-nm">${_cabEsc(z.zona)}</span><span class="cab-tk"><i data-w="${(est / mxEst * 100).toFixed(1)}" style="background:linear-gradient(90deg,var(--cab-warn),var(--cab-bad))"></i></span><span class="cab-vl">${est} estancados</span></div>`;
+    }).join('');
+    const cardZonas = _cabCard('slim2', '🗺️', 'Zonas & desperdicio', 'Estancado · stock cruzado entre zonas', '',
+      `<div class="cab-bars">${barsZona || '<div class="cab-metarow">Sin zonas</div>'}</div>
+       <div class="cab-metarow" style="margin-top:11px"><span>Zonas activas <b>${zonas.length}</b></span><span>SKUs con stock: ${_fmtQty(zonas.reduce((a, z) => a + (parseFloat(z.skus) || 0), 0))}</span></div>`,
+      peorZona ? `<b>${_cabEsc(peorZona.zona)}</b> concentra ${parseFloat(peorZona.estancados) || 0} productos estancados. Revisá cuáles devolver a almacén o mover a otra zona.` : 'Sin estancados detectados.',
+      'detalle por zona ↗', '');
+
+    return [cardDinero, cardProd, cardTrib, cardPers, cardZonas].join('');
+  }
+
+  function _cabCard(size, ic, t, sub, dl, body, acc, peek, action) {
+    const onc = action ? ` onclick="${action}"` : '';
+    return `<div class="cab-card ${size}"${onc}>
+      <div class="cab-chd"><div class="cab-ci">${ic}</div><div class="cab-ct"><h3>${t}</h3><p>${sub}</p></div>${dl || ''}</div>
+      ${body}<div class="cab-accion">💡 ${acc}</div>${peek ? `<div class="cab-peek">${peek}</div>` : ''}</div>`;
+  }
+
+  function _cabHeatmap(heat) {
+    if (!heat.length) return '<div class="cab-metarow">Sin datos por hora</div>';
+    // unión de horas presentes (ordenadas)
+    const horasSet = new Set();
+    heat.forEach(z => (z.horas || []).forEach(hh => horasSet.add(hh.h)));
+    const horas = [...horasSet].sort((a, b) => a - b);
+    let mx = 0;
+    heat.forEach(z => (z.horas || []).forEach(hh => { const v = parseFloat(hh.venta) || 0; if (v > mx) mx = v; }));
+    mx = mx || 1;
+    const cols = `grid-template-columns:38px repeat(${horas.length},1fr)`;
+    let h = `<div class="cab-heat" style="${cols}"><div></div>${horas.map(x => `<div class="cab-hh">${x}</div>`).join('')}`;
+    heat.forEach((z, zi) => {
+      const map = {}; (z.horas || []).forEach(hh => { map[hh.h] = hh; });
+      const zn = String(z.zona || '').replace(/^ZONA-?/i, 'Z').slice(0, 4);
+      h += `<div class="cab-hz">${_cabEsc(zn)}</div>` + horas.map((hr, hi) => {
+        const cell = map[hr];
+        const v = cell ? (parseFloat(cell.venta) || 0) : 0;
+        const bucket = Math.round(v / mx * 5);
+        const tk = cell ? (parseInt(cell.tk) || 0) : 0;
+        return `<div class="cab-cell" style="background:${_cabHeatColor(bucket)};color:${bucket >= 4 ? '#0b1020' : '#7c8bb0'}" onclick="MOS.cabHora(${zi},${hr})" title="${_cabEsc(z.zona)} · ${hr}:00 · ${tk} tickets · ${_cabMoney(v)}">${tk || ''}</div>`;
+      }).join('');
+    });
+    return h + '</div>';
+  }
+
+  // ── post-render: animaciones (respeta prefers-reduced-motion) ──
+  function _cabPostRender(d) {
+    const reduced = _cabRM();
+    const root = document.getElementById('cabina');
+    if (!root) return;
+    const setAll = () => {
+      root.querySelectorAll('[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; });
+      root.querySelectorAll('.cab-fill[data-h]').forEach(f => { f.style.height = f.dataset.h + '%'; });
+      root.querySelectorAll('.cab-ring-fg').forEach(c => { c.style.strokeDashoffset = c.dataset.off; });
+    };
+    if (reduced) { setAll(); }
+    else {
+      setTimeout(setAll, 70);
+      const big = document.getElementById('cabHeroBig');
+      if (big) _cabCountUp(big, parseFloat(big.dataset.to) || 0, v => _cabMoney(v));
+      const pctEl = document.getElementById('cabHeroPct');
+      if (pctEl) _cabCountUp(pctEl, parseFloat(pctEl.dataset.to) || 0, v => Math.round(v) + '%');
+    }
+    // festejo si alcanzó la meta (solo semana con sonido activo)
+    const din = d.dinero || {};
+    if ((parseFloat(din.acumulado) || 0) >= (parseFloat(din.meta) || 0) && (parseFloat(din.meta) || 0) > 0) setTimeout(_cabChime, 600);
+  }
+  function _cabCountUp(el, to, fmt) {
+    const from = 0, t0 = performance.now(), dur = 900;
+    function f(t) { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(from + (to - from) * e); if (k < 1) requestAnimationFrame(f); }
+    requestAnimationFrame(f);
+  }
+
+  // ── navegación de semana ──
+  function cabMover(dir) {
+    const next = Math.min(0, _cabOffset + dir);
+    if (next === _cabOffset) return;   // ya en el borde (no hay futuro)
+    _cabOffset = next;
+    _cabTick();
+    loadDashboard();
+  }
+  function _cabBindKeys() {
+    if (_cabKeysBound) return;
+    _cabKeysBound = true;
+    document.addEventListener('keydown', e => {
+      if (S.view !== 'dashboard') return;
+      const ovOn = (document.getElementById('cabOv') || {}).classList && document.getElementById('cabOv').classList.contains('on');
+      if (e.key === 'Escape' && ovOn) { cabCerrar(); return; }
+      if (ovOn) return;
+      if (e.key === 'ArrowLeft')  cabMover(-1);
+      if (e.key === 'ArrowRight') cabMover(1);
+    });
+  }
+
+  // ── overlays (sheet) ──
+  function _cabSheet(title, lead, bodyHtml) {
+    const sh = document.getElementById('cabSheet'); const ov = document.getElementById('cabOv');
+    if (!sh || !ov) return;
+    sh.innerHTML = `<button class="cab-sh-x" onclick="MOS.cabCerrar()">✕</button><div class="cab-grab"></div><h2>${title}</h2><div class="cab-lead2">${lead}</div>${bodyHtml}`;
+    ov.classList.add('on');
+    _cabTick();
+  }
+  function cabCerrar() {
+    const ov = document.getElementById('cabOv'); if (ov) ov.classList.remove('on');
+    _cabBeep(300, .05, 'sine', .03);
+  }
+
+  // Drill-down: card DINERO → día por día + reparto semanal + comisiones.
+  function cabAbrir(key) {
+    if (key !== 'din') return;
+    const d = _cabData; if (!d) return;
+    const din = d.dinero || {}, dias = Array.isArray(din.dias) ? din.dias : [];
+    const filasDias = dias.map(x => {
+      const v = parseFloat(x.venta) || 0, fut = !!x.futuro;
+      const onc = fut ? '' : ` style="cursor:pointer" onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
+      return `<div class="cab-kv"${onc}><span class="cab-k">${_cabDOW[x.dow] || ''} ${_cabEsc((x.fecha || '').slice(5))}${fut ? ' · futuro' : ''}</span><span class="cab-v cab-num">${fut ? '—' : _cabMoney2(v)}</span></div>`;
+    }).join('');
+    const comis = Array.isArray(din.comisionesTop) ? din.comisionesTop : [];
+    const mxC = comis.length ? (parseFloat(comis[0].monto) || 1) : 1;
+    const filasComis = comis.map(c => `<div class="cab-bar2"><span class="cab-nm2">${_cabEsc(c.nombre)}</span><span class="cab-tk2"><i style="width:${((parseFloat(c.monto) || 0) / mxC * 100).toFixed(1)}%"></i></span><span class="cab-vl2">${_cabMoney2(c.monto)}</span></div>`).join('') || '<div class="cab-lead2">Sin comisiones registradas</div>';
+    const body = `<div class="cab-cols">
+      <div class="cab-panel"><h4>VENTA POR DÍA · tocá un día para su detalle</h4>${filasDias}</div>
+      <div class="cab-panel"><h4>REPARTO DE LA SEMANA</h4>
+        <div class="cab-kv"><span class="cab-k">Venta acumulada</span><span class="cab-v cab-num">${_cabMoney2(din.acumulado)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Rentabilidad</span><span class="cab-v" style="color:var(--cab-good)">${(parseFloat(din.rentabilidad) || 0).toFixed(1)}%</span></div>
+        <div class="cab-kv"><span class="cab-k">Utilidad</span><span class="cab-v cab-num">${_cabMoney2(din.utilidad)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Gastos</span><span class="cab-v cab-num">${_cabMoney2(din.gastos)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Comisiones repartidas</span><span class="cab-v cab-num">${_cabMoney2(din.comisiones)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Meta semanal</span><span class="cab-v cab-num">${_cabMoney2(din.meta)}</span></div>
+        <h4 style="margin-top:14px">COMISIÓN POR VENDEDOR</h4>
+        <div class="cab-bars2">${filasComis}</div>
+      </div></div>`;
+    _cabSheet('💰 Dinero — día por día', 'Semana ' + _cabEsc((d.semana || {}).label || ''), body);
+  }
+
+  // Drill-down: DÍA → finanzas_dia (métodos, gastos, costo, utilidad) + comisiones de la semana.
+  async function cabDia(fecha) {
+    const d = _cabData || {};
+    const diaObj = (((d.dinero || {}).dias) || []).find(x => x.fecha === fecha) || {};
+    _cabSheet('📅 ' + _cabEsc(fecha), 'Cargando el detalle del día…', '<div class="cab-msg">Cargando…</div>');
+    let pl = null;
+    try { pl = await API.get('getFinanzasDia', { fecha }); } catch (_) { pl = null; }
+    const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;  // el user cerró
+    if (!pl) {
+      // Sin sombra fresca del día: mostramos lo que YA trae cabina para no dejar el overlay vacío.
+      const body = `<div class="cab-panel"><div class="cab-kv"><span class="cab-k">Venta del día</span><span class="cab-v cab-num">${_cabMoney2(diaObj.venta)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Meta del día</span><span class="cab-v cab-num">${_cabMoney2(diaObj.meta)}</span></div></div>
+        <div class="cab-lead2" style="margin-top:12px">El desglose fino (métodos de pago, gastos, costos) no está disponible ahora mismo.</div>`;
+      _cabSheet('📅 ' + _cabEsc(fecha), _cabDOW[diaObj.dow] || '', body);
+      return;
+    }
+    const ef = parseFloat(pl.cobradoEfectivo) || 0, vi = parseFloat(pl.cobradoVirtual) || 0, cr = parseFloat(pl.creditoOtorgado) || 0;
+    const comis = Array.isArray((d.dinero || {}).comisionesTop) ? d.dinero.comisionesTop : [];
+    const comisHtml = comis.slice(0, 5).map(c => `<div class="cab-kv"><span class="cab-k">${_cabEsc(c.nombre)} <span style="color:var(--cab-ink3)">· ${_cabEsc(c.zona)}</span></span><span class="cab-v cab-num">${_cabMoney2(c.monto)}</span></div>`).join('') || '<div class="cab-lead2">Sin comisiones</div>';
+    const body = `<div class="cab-cols">
+      <div class="cab-panel"><h4>CÓMO SE COBRÓ</h4>
+        <div class="cab-kv"><span class="cab-k">💵 Efectivo</span><span class="cab-v cab-num">${_cabMoney2(ef)}</span></div>
+        <div class="cab-kv"><span class="cab-k">📱 Virtual</span><span class="cab-v cab-num">${_cabMoney2(vi)}</span></div>
+        <div class="cab-kv"><span class="cab-k">📋 Crédito otorgado</span><span class="cab-v cab-num">${_cabMoney2(cr)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Tickets</span><span class="cab-v">${pl.tickets || 0}${pl.anulados ? ' · ' + pl.anulados + ' anulados' : ''}</span></div>
+        <div class="cab-kv"><span class="cab-k">Ticket promedio</span><span class="cab-v cab-num">${pl.ticketPromedio ? _cabMoney2(pl.ticketPromedio) : '—'}</span></div>
+      </div>
+      <div class="cab-panel"><h4>RESULTADO DEL DÍA</h4>
+        <div class="cab-kv"><span class="cab-k">Ventas netas</span><span class="cab-v cab-num">${_cabMoney2(pl.ventasNetas)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Costo de ventas</span><span class="cab-v cab-num">${_cabMoney2(pl.costoVentas)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Margen bruto</span><span class="cab-v">${(parseFloat(pl.margenBrutoPct) || 0).toFixed(1)}%</span></div>
+        <div class="cab-kv"><span class="cab-k">Gastos</span><span class="cab-v cab-num">${_cabMoney2(pl.totalGastos)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Utilidad neta</span><span class="cab-v cab-num" style="color:${(parseFloat(pl.utilidadNeta) || 0) >= 0 ? 'var(--cab-good)' : 'var(--cab-bad)'}">${_cabMoney2(pl.utilidadNeta)}</span></div>
+        <h4 style="margin-top:14px">COMISIONES DE LA SEMANA</h4>${comisHtml}
+      </div></div>`;
+    // TODO cabina: falta wire comisión POR DÍA (finanzas_dia no la trae; se muestra el top semanal).
+    _cabSheet('📅 ' + _cabEsc(fecha) + ' · ' + (_cabDOW[diaObj.dow] || ''), 'Meta del día ' + _cabMoney2(diaObj.meta) + ' · venta ' + _cabMoney2(diaObj.venta), body);
+  }
+
+  // Drill-down: PRODUCTO → analitica_producto (ventas, stock por zona, cobertura, sugerir comprar).
+  async function cabProducto(sku) {
+    const id = _cabProdId(sku);
+    const topObj = (((_cabData || {}).productos || {}).top || []).find(t => String(t.sku) === String(sku)) || {};
+    if (!id) {
+      // TODO cabina: sku sin match en S.productos → no hay idProducto para la analítica; mostramos lo de cabina.
+      _cabSheet('📦 ' + _cabEsc(topObj.nombre || sku), 'Ficha reducida', `<div class="cab-panel"><div class="cab-kv"><span class="cab-k">Vendidas esta semana</span><span class="cab-v">${_fmtQty(topObj.u || 0)}</span></div><div class="cab-kv"><span class="cab-k">SKU</span><span class="cab-v">${_cabEsc(sku)}</span></div></div><div class="cab-lead2" style="margin-top:12px">No se encontró el producto en el catálogo cargado para abrir su analítica completa.</div>`);
+      return;
+    }
+    _cabSheet('📦 ' + _cabEsc(topObj.nombre || sku), 'Cargando analítica del producto…', '<div class="cab-msg">Cargando…</div>');
+    let a = null;
+    try { a = await API.get('getAnaliticaProducto', { idProducto: id, dias: '30' }); } catch (_) { a = null; }
+    const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;
+    if (!a || !a.producto) {
+      _cabSheet('📦 ' + _cabEsc(topObj.nombre || sku), 'Ficha reducida', `<div class="cab-panel"><div class="cab-kv"><span class="cab-k">Vendidas esta semana</span><span class="cab-v">${_fmtQty(topObj.u || 0)}</span></div></div><div class="cab-lead2" style="margin-top:12px">No se pudo cargar la analítica ahora mismo.</div>`);
+      return;
+    }
+    const p = a.producto, ven = a.ventas || {}, stk = a.stock || {}, proy = a.proyeccion || {}, fin = a.financiero || {};
+    const und = p.unidad || 'u';
+    const zonasHtml = (stk.zonas || []).length
+      ? (stk.zonas).map(z => `<div class="cab-kv"><span class="cab-k">${_cabEsc(z.idZona || 'Zona')}</span><span class="cab-v">${_fmtQty(z.cantidadDisponible)} ${_cabEsc(und)}</span></div>`).join('')
+      : '<div class="cab-lead2">Sin datos de stock por zona (WH)</div>';
+    const serie = Array.isArray(ven.serie) ? ven.serie.slice(-14) : [];
+    const mxS = Math.max(...serie.map(s => parseFloat(s.u) || 0), 1);
+    const serieHtml = serie.map(s => `<div class="cab-bar2"><span class="cab-nm2">${_cabEsc((s.fecha || '').slice(5))}</span><span class="cab-tk2"><i style="width:${((parseFloat(s.u) || 0) / mxS * 100).toFixed(0)}%"></i></span><span class="cab-vl2">${_fmtQty(s.u)}</span></div>`).join('') || '<div class="cab-lead2">Sin ventas en 30 días</div>';
+    const sugerir = parseFloat(proy.sugerirComprar) || 0;
+    const cob = proy.coberturaDias;
+    const body = `<div class="cab-cols">
+      <div class="cab-panel"><h4>MOVIMIENTO (30 DÍAS)</h4>
+        <div class="cab-kv"><span class="cab-k">Vendidas</span><span class="cab-v">${_fmtQty(ven.totalUnidades)} ${_cabEsc(und)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Promedio diario</span><span class="cab-v">${(parseFloat(ven.promDia) || 0).toFixed(1)} ${_cabEsc(und)}/día</span></div>
+        <div class="cab-kv"><span class="cab-k">Ingresos</span><span class="cab-v cab-num">${_cabMoney2(ven.totalImporte)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Margen</span><span class="cab-v">${(parseFloat(fin.margenPct) || 0).toFixed(1)}%</span></div>
+        <div class="cab-kv"><span class="cab-k">Cobertura</span><span class="cab-v" style="color:${cob == null ? 'var(--cab-ink3)' : cob < 7 ? 'var(--cab-bad)' : cob < 14 ? 'var(--cab-warn)' : 'var(--cab-good)'}">${cob != null ? cob + ' días' : 'N/D'}</span></div>
+        <div class="cab-kv"><span class="cab-k">Sugerir comprar</span><span class="cab-v" style="color:${sugerir > 0 ? 'var(--cab-warn)' : 'var(--cab-good)'}">${_fmt(sugerir, 0)} ${_cabEsc(und)}</span></div>
+        <button class="cab-btn-avisos" style="margin-top:14px" onclick="MOS.cabCerrar();MOS.abrirAnalitica('${_cabEsc(id)}')">Ver ficha completa ↗</button>
+      </div>
+      <div class="cab-panel"><h4>STOCK POR ZONA</h4>${zonasHtml}
+        <h4 style="margin-top:14px">ÚLTIMOS 14 DÍAS</h4><div class="cab-bars2">${serieHtml}</div>
+      </div></div>`;
+    _cabSheet('📦 ' + _cabEsc(p.descripcion || topObj.nombre || sku), 'Analítica · 30 días', body);
+  }
+
+  // Drill-down: REPOSICIÓN → considerados_listar (pendientes cruzando ingresos vs rezagados).
+  async function cabRepos() {
+    const prod = (_cabData || {}).productos || {};
+    _cabSheet('🔁 Reposición pendiente', 'Cargando considerados…', '<div class="cab-msg">Cargando…</div>');
+    let r = null;
+    try { r = await (API.zona && API.zona.consideradosListar ? API.zona.consideradosListar() : Promise.resolve(null)); } catch (_) { r = null; }
+    const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;
+    const items = (r && r.ok && Array.isArray(r.items)) ? r.items : [];
+    const reposH = parseFloat(prod.reposHoras) || 0, reposMeta = parseFloat(prod.reposMeta) || 2;
+    const lista = items.slice(0, 40).map(it => {
+      const zonas = Array.isArray(it.zonas) ? it.zonas.map(z => z.zona).join(', ') : '';
+      return `<div class="cab-li"><div class="cab-lin"><b>${_cabEsc(it.nombre || it.skuBase)}</b><span>${_cabEsc(zonas)}${it.guiaTipo ? ' · ' + _cabEsc(it.guiaTipo) : ''}</span></div><span class="cab-pill no">${_fmtQty(it.cant || 0)}</span></div>`;
+    }).join('') || '<div class="cab-lead2">Sin considerados pendientes 🎉</div>';
+    const body = `<div class="cab-panel"><div class="cab-kv"><span class="cab-k">Reposición media</span><span class="cab-v" style="color:${reposH <= reposMeta ? 'var(--cab-good)' : 'var(--cab-warn)'}">${reposH.toFixed(1)} h</span></div>
+      <div class="cab-kv"><span class="cab-k">Meta</span><span class="cab-v">≤ ${reposMeta} h</span></div>
+      <div class="cab-kv"><span class="cab-k">Considerados pendientes</span><span class="cab-v">${(r && r.total) || items.length}</span></div></div>
+      <h4 style="margin:16px 0 10px;font-size:12px;font-weight:800;color:var(--cab-ink2)">LISTA (lo que entró y alguna zona aún debía)</h4>
+      <div class="cab-list">${lista}</div>`;
+    _cabSheet('🔁 Reposición pendiente', 'Considerados = ingresos cruzados contra rezagados de 4 semanas', body);
+  }
+
+  // Drill-down: ZONA → stock cruzado (foquito: qué otras zonas tienen el código) + conteos.
+  async function cabZona(zona) {
+    const z = ((_cabData || {}).zonas || []).find(x => x.zona === zona) || {};
+    _cabSheet('🗺️ ' + _cabEsc(zona), 'Cargando stock cruzado…', '<div class="cab-msg">Cargando…</div>');
+    let r = null;
+    try { r = await (API.zona && API.zona.stockCruzado ? API.zona.stockCruzado({ zona }) : Promise.resolve(null)); } catch (_) { r = null; }
+    const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;
+    const items = (r && r.ok && r.data && Array.isArray(r.data.items)) ? r.data.items : (r && Array.isArray(r.items) ? r.items : []);
+    const cruz = items.slice(0, 25).map(it => `<div class="cab-kv"><span class="cab-k">${_cabEsc(it.cod)} <span style="color:var(--cab-ink3)">· ${_cabEsc(it.zona)}</span></span><span class="cab-v">${_fmtQty(it.cant)}</span></div>`).join('')
+      || '<div class="cab-lead2">Sin stock del mismo código en otras zonas.</div>';
+    // TODO cabina: falta wire lista de SKUs estancados por zona → zonaDiasProducto necesita un sku
+    // concreto y cabinaSemanal solo trae el CONTEO de estancados (no la lista).
+    const body = `<div class="cab-cols">
+      <div class="cab-panel"><h4>RESUMEN DE LA ZONA</h4>
+        <div class="cab-kv"><span class="cab-k">Productos estancados</span><span class="cab-v" style="color:var(--cab-warn)">${parseFloat(z.estancados) || 0}</span></div>
+        <div class="cab-kv"><span class="cab-k">SKUs con stock</span><span class="cab-v">${_fmtQty(z.skus || 0)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Unidades en stock</span><span class="cab-v">${_fmtQty(z.stockU || 0)}</span></div>
+      </div>
+      <div class="cab-panel"><h4>🔦 STOCK EN OTRAS ZONAS</h4>${cruz}</div>
+    </div>`;
+    _cabSheet('🗺️ ' + _cabEsc(zona), 'Estancado + foquito de stock cruzado', body);
+  }
+
+  // Drill-down: HORA×ZONA → resumen de la franja (tickets, venta) del propio heat.
+  function cabHora(zi, h) {
+    const heat = ((_cabData || {}).personal || {}).heat || [];
+    const z = heat[zi] || {};
+    const cell = (z.horas || []).find(x => x.h === h) || {};
+    const tk = parseInt(cell.tk) || 0, venta = parseFloat(cell.venta) || 0;
+    // TODO cabina: falta wire "quién trabajó esa hora" (no hay action datos_turno por hora);
+    // se muestra el resumen de tráfico de la franja del propio heat de cabinaSemanal.
+    const body = `<div class="cab-panel">
+      <div class="cab-kv"><span class="cab-k">Zona</span><span class="cab-v">${_cabEsc(z.zona || '')}</span></div>
+      <div class="cab-kv"><span class="cab-k">Franja</span><span class="cab-v">${h}:00 – ${h + 1}:00</span></div>
+      <div class="cab-kv"><span class="cab-k">Tickets</span><span class="cab-v">${tk}</span></div>
+      <div class="cab-kv"><span class="cab-k">Venta</span><span class="cab-v cab-num">${_cabMoney2(venta)}</span></div>
+      <div class="cab-kv"><span class="cab-k">Ticket promedio</span><span class="cab-v cab-num">${tk ? _cabMoney2(venta / tk) : '—'}</span></div>
+    </div>
+    <div class="cab-lead2" style="margin-top:12px">El detalle de quién estuvo en caja esta franja aún no está disponible; se muestra el tráfico de la hora.</div>`;
+    _cabSheet('👥 ' + _cabEsc(z.zona || '') + ' · ' + h + ':00', 'Tráfico de la franja', body);
   }
 
   function renderRotacionChart(rot) {
@@ -55975,6 +56576,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     pv2,
     toast,
     init, nav, refresh, fabAction, iconBusy,
+    // [948] Cabina Semanal — navegación de semana, sonido y drill-downs por barra
+    cabMover, cabToggleSnd, cabAbrir, cabCerrar, cabDia, cabProducto, cabRepos, cabZona, cabHora,
     // [nav-reorg] Volver desde Almacén (anti-huérfano) + bottom-sheet "Más" (móvil)
     almVolver,
     // Facturación CPE (100% Supabase)
