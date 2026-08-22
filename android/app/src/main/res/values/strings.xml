@@ -1,16 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">MosGuard</string>
-    <string name="subtitulo">Resguardo del equipo (ubicación · cámara) y, si lo activás, captura de Yapes</string>
-    <string name="dar_permiso">Dar permiso de notificaciones</string>
-    <string name="ayuda_permiso">Solo hace falta si este equipo va a capturar Yapes. Buscá «MosGuard» en la lista y activalo.</string>
-    <string name="bateria">🔋 Que Android no lo apague</string>
-    <string name="ayuda_bateria">Sin esto, el sistema duerme la app con la pantalla apagada. Aceptá cuando pregunte.</string>
-    <string name="config_titulo">Conectar este equipo a MOS</string>
-    <string name="config_ayuda">Pedí el código en MOS → Configuración → 💜 Yapes → Conectar un celular. Dura 30 minutos y se usa una sola vez. Conectar NO es capturar Yapes: eso se prende o apaga por equipo desde MOS.</string>
-    <string name="h_codigo">CÓDIGO</string>
-    <string name="emparejar">Conectar</string>
-    <string name="probar">Enviar una captura de prueba</string>
+    <string name="subtitulo">Vigilancia del equipo · ubicación, cámara y captura de Yapes</string>
     <string name="actualizar">⬆ Buscar actualización</string>
+    <string name="probar">Enviar una captura de prueba</string>
     <string name="pie">Resguardo del equipo propio. La captura de Yapes es opcional y se controla desde MOS. No lee otras apps ni graba audio.</string>
 </resources>

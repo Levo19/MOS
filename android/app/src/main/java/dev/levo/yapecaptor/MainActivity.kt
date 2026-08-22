@@ -19,19 +19,17 @@ import java.net.URL
 import kotlin.concurrent.thread
 
 /**
- * La única pantalla. Se usa una vez, al instalar: seis letras y el permiso. Nada más.
- *
- * El emparejamiento por código evita lo que el dueño quería evitar — tipear tres cadenas
- * larguísimas en un celular. La URL y la clave anon vienen compiladas (no son secretos), y el
- * secreto propio del equipo lo entrega el servidor a cambio del código, una sola vez.
- *
- * De ahí en más el equipo trabaja solo y esta pantalla sirve para UNA cosa: ver si está
- * capturando de verdad. Por eso el semáforo es lo más grande.
+ * La única pantalla, detrás del candado de la clave MASTER. Ya no se "empareja" nada: el equipo
+ * se REGISTRA solo al desbloquear con la clave (autoRegistrar), así que esta pantalla dejó de ser
+ * un formulario de instalación y pasó a ser un PANEL DE ESTADO: de un vistazo se ve si el equipo
+ * está conectado a MOS, si captura Yapes, si la cámara/ubicación/batería están listas — y cada
+ * fila que le falte algo se TOCA para activarlo ahí mismo. Simple y útil en campo.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var tvEstado: TextView
     private lateinit var tvDetalle: TextView
+    private lateinit var listaSalud: android.widget.LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,37 +37,18 @@ class MainActivity : AppCompatActivity() {
 
         tvEstado = findViewById(R.id.tvEstado)
         tvDetalle = findViewById(R.id.tvDetalle)
+        listaSalud = findViewById(R.id.listaSalud)
 
         // [MosGuard] EL CANDADO: la app no se abre sin la clave MASTER. Se pide ANTES de mostrar nada.
         // La captura y el resguardo siguen corriendo en los servicios; esto solo tapa la pantalla.
+        // Al desbloquear, si el equipo aún no tiene secreto, se auto-registra con esa misma clave.
         mostrarCandado()
-
-        findViewById<Button>(R.id.btnEmparejar).setOnClickListener {
-            val cod = findViewById<EditText>(R.id.etCodigo).text.toString()
-                .uppercase().replace(Regex("[^A-Z0-9]"), "")
-            if (cod.length != 6) { Toast.makeText(this, "El código son 6 letras", Toast.LENGTH_LONG).show(); return@setOnClickListener }
-            emparejar(cod)
-        }
-
-        // Android NO deja conceder este permiso por código: tiene que entrar una persona a
-        // Ajustes y darlo a mano. Este botón solo lleva a la pantalla correcta.
-        findViewById<Button>(R.id.btnPermiso).setOnClickListener {
-            try { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }
-            catch (_: Throwable) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
-        }
-
-        findViewById<Button>(R.id.btnProbar).setOnClickListener { probar() }
-
-        // LA CAUSA NÚMERO UNO de que un equipo deje de capturar: Android lo "optimiza" y lo
-        // duerme. Un celular de mostrador está todo el día con la pantalla apagada, que es
-        // justo cuando el sistema decide matar procesos. Sin esta exención, la app funciona
-        // perfecto en la prueba y deja de capturar a las dos horas.
-        findViewById<Button>(R.id.btnBateria).setOnClickListener { pedirSinOptimizar() }
 
         // Actualización asistida: la app se entera sola de que hay version nueva, la baja y
         // abre el instalador. El toque final en la pantalla del sistema es obligatorio: fuera de
         // Play Store, Android no permite instalar en silencio. Ningun truco lo evita.
         findViewById<Button>(R.id.btnActualizar).setOnClickListener { buscarActualizacion(true) }
+        findViewById<Button>(R.id.btnProbar).setOnClickListener { probar() }
 
         pedirPermisoNotificaciones()
         pedirPermisoUbicacion()
@@ -192,10 +171,15 @@ class MainActivity : AppCompatActivity() {
                 // [MosGuard auto-registro] si desbloqueó (clave master OK) y el equipo aún NO tiene secreto, se
                 // registra SOLO con esa misma clave — sin código de emparejamiento. Aditivo: un equipo que YA tiene
                 // secreto (los de producción ZONA-1/2) no entra acá → intactos.
-                if (ok && !Prefs.leer(this).completa()) { try { autoRegistrar(c) } catch (_: Throwable) {} }
+                var registroNuevo = false
+                if (ok && !Prefs.leer(this).completa()) { try { registroNuevo = autoRegistrar(c) } catch (_: Throwable) {} }
                 runOnUiThread {
                     verificando = false
-                    if (ok) { root.removeView(fl); candado = null }
+                    if (ok) {
+                        root.removeView(fl); candado = null; pintar()
+                        // recién registrado → ofrecer bautizarlo (así se ubica al toque en el panel MOS)
+                        if (registroNuevo) pedirNombre()
+                    }
                     else {
                         err.setTextColor(0xFFFCA5A5.toInt()); err.text = "Clave incorrecta o sin conexión"
                         clave.setLength(0); pinta()
@@ -268,94 +252,118 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Throwable) { false }
     }
 
+    // ── helpers de permiso (para la checklist de salud) ──
+    private fun tienePermiso(p: String): Boolean = try {
+        Build.VERSION.SDK_INT < 23 || checkSelfPermission(p) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    } catch (_: Throwable) { false }
+    private fun tieneCamara() = tienePermiso(android.Manifest.permission.CAMERA)
+    private fun tieneUbicacion() = tienePermiso(android.Manifest.permission.ACCESS_FINE_LOCATION)
+
+    private fun abrirAjustesNotif() {
+        try { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }
+        catch (_: Throwable) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+    }
+
+    /**
+     * PANEL DE ESTADO. Reconstruye el semáforo grande + la checklist tocable cada vez.
+     * Cada fila: emoji, qué es, y su estado; si le falta algo, se TOCA y salta a activarlo.
+     */
     private fun pintar() {
         val cfg = Prefs.leer(this)
-        val perm = permisoConcedido()
-        val pend = Cola.tamano(this)
+        val reg  = cfg.completa()
+        val notif = permisoConcedido()
+        val cam = tieneCamara()
+        val ubi = tieneUbicacion()
+        val bat = sinOptimizar()
         val err = Prefs.ultimoError(this)
 
-        val bat = sinOptimizar()
+        // semáforo general
+        val faltan = listOf(notif, cam, ubi, bat).count { !it }
         val (txt, color) = when {
-            !cfg.completa() -> "⚙ Falta emparejar" to 0xFFF59E0B.toInt()
-            !perm           -> "⛔ Falta el permiso" to 0xFFEF4444.toInt()
+            !reg  -> "🔌 Conectá el equipo" to 0xFFEF4444.toInt()
             err.isNotBlank() -> "⚠ El servidor rechaza" to 0xFFF59E0B.toInt()
-            // captura bien, pero Android lo va a dormir: es un verde con asterisco, no un verde
-            !bat            -> "⚠ Android puede dormirlo" to 0xFFF59E0B.toInt()
-            else            -> "✅ Capturando" to 0xFF10B981.toInt()
+            faltan == 0 -> "🛡️ Equipo protegido" to 0xFF10B981.toInt()
+            else  -> "⚠ Falta activar $faltan" to 0xFFF59E0B.toInt()
         }
         tvEstado.text = txt
         tvEstado.setTextColor(color)
 
+        // ── checklist de salud ──
+        listaSalud.removeAllViews()
+        val VERDE = 0xFF10B981.toInt(); val AMBAR = 0xFFF59E0B.toInt(); val ROJO = 0xFFEF4444.toInt()
+
+        // 1) conexión a MOS (el equipo tiene secreto = está registrado y late en el panel)
+        if (reg) filaSalud("🔗", cfg.nombre.ifBlank { "Conectado a MOS" }, "Conectado · tocá para renombrar", VERDE, "✎") { pedirNombre() }
+        else     filaSalud("🔗", "Sin conectar", "Tocá para reintentar la conexión", ROJO, "›") { reconectar() }
+
+        // 2) captura de Yapes (permiso de notificaciones — lo que el dueño quería ver)
+        if (notif) filaSalud("🔔", "Captura de Yapes", "Escuchando notificaciones", VERDE, "✓", null)
+        else       filaSalud("🔔", "Captura de Yapes", "Falta el permiso · tocá para activar", AMBAR, "›") { abrirAjustesNotif() }
+
+        // 3) cámara (vigilancia en vivo)
+        if (cam) filaSalud("📷", "Cámara", "Lista para vigilancia", VERDE, "✓", null)
+        else     filaSalud("📷", "Cámara", "Falta el permiso · tocá para activar", AMBAR, "›") { pedirPermisoUbicacion() }
+
+        // 4) ubicación (dónde está el equipo)
+        if (ubi) filaSalud("📍", "Ubicación", "GPS activo", VERDE, "✓", null)
+        else     filaSalud("📍", "Ubicación", "Falta el permiso · tocá para activar", AMBAR, "›") { pedirPermisoUbicacion() }
+
+        // 5) batería (que Android no lo duerma con la pantalla apagada)
+        if (bat) filaSalud("🔋", "Siempre activo", "Android no lo va a dormir", VERDE, "✓", null)
+        else     filaSalud("🔋", "Siempre activo", "Android puede dormirlo · tocá", AMBAR, "›") { pedirSinOptimizar() }
+
+        // detalle discreto abajo: specs del equipo (los que ve también el panel MOS) + versión
         val ult = Prefs.ultimaEntrega(this)
         val cuando = if (ult == 0L) "todavía ninguna"
                      else DateUtils.getRelativeTimeSpanString(ult, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+        val marca = (android.os.Build.MANUFACTURER ?: "").replaceFirstChar { it.uppercase() }
         tvDetalle.text = buildString {
-            if (cfg.completa()) {
-                appendLine("Equipo: " + cfg.nombre.ifBlank { "(sin nombre)" })
-                appendLine("Zona: " + cfg.zona.ifBlank { "todas" })
-            } else appendLine("Sin emparejar — pedí el código en MOS → Config")
-            appendLine("Permiso de notificaciones: " + if (perm) "concedido" else "NO concedido")
-            appendLine("Exento de ahorro de batería: " + if (bat) "sí" else "NO — puede dejar de capturar")
-            appendLine("Yapes entregados: " + Prefs.total(this@MainActivity))
-            appendLine("Última entrega: $cuando")
-            appendLine("En cola por entregar: $pend")
-            appendLine("Version instalada: " + Actualizador.nombreActual(this@MainActivity) +
+            appendLine("Equipo: " + marca + " " + (android.os.Build.MODEL ?: "") + " · Android " + (android.os.Build.VERSION.RELEASE ?: ""))
+            if (reg) appendLine("Zona: " + cfg.zona.ifBlank { "sin asignar (se define en MOS)" })
+            appendLine("Yapes entregados: " + Prefs.total(this@MainActivity) + " · última: " + cuando)
+            appendLine("Version: " + Actualizador.nombreActual(this@MainActivity) +
                        " (" + Actualizador.versionActual(this@MainActivity) + ")")
             nuevaVersion?.let { appendLine("⬆ Hay version nueva: " + it.nombre + " — toca Actualizar") }
             if (err.isNotBlank()) appendLine("Último rechazo: $err")
         }.trim()
     }
 
-    /** Canjea el código por el secreto de este equipo. El código se quema al usarse. */
-    private fun emparejar(codigo: String) {
-        Toast.makeText(this, "Emparejando…", Toast.LENGTH_SHORT).show()
-        thread {
-            var con: HttpURLConnection? = null
-            var msg: String
-            try {
-                val url = URL(Backend.URL.trimEnd('/') + "/rest/v1/rpc/yape_emparejar")
-                con = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"; connectTimeout = 15000; readTimeout = 20000; doOutput = true
-                    setRequestProperty("apikey", Backend.ANON)
-                    setRequestProperty("Authorization", "Bearer " + Backend.ANON)
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Content-Profile", "mos")
-                }
-                val p = JSONObject().put("codigo", codigo).put("equipo", android.os.Build.MODEL ?: "")
-                con.outputStream.use { it.write(JSONObject().put("p", p).toString().toByteArray(Charsets.UTF_8)) }
-                val code = con.responseCode
-                val cuerpo = (if (code in 200..299) con.inputStream else con.errorStream)
-                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                val j = JSONObject(cuerpo)
-                if (j.optBoolean("ok", false)) {
-                    val d = j.getJSONObject("data")
-                    Prefs.guardar(this, Config(d.optString("secreto"), d.optString("nombre"), d.optString("zona")))
-                    Prefs.guardarUltimoError(this, "")
-                    msg = "✅ Emparejado: " + d.optString("nombre")
-                    ColaService.despertar(this)
-                } else {
-                    msg = "❌ " + j.optString("error", "no se pudo emparejar")
-                }
-            } catch (e: Throwable) {
-                msg = "❌ Sin conexión: " + (e.message ?: "")
-            } finally { try { con?.disconnect() } catch (_: Throwable) {} }
-
-            runOnUiThread {
-                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-                findViewById<EditText>(R.id.etCodigo).setText("")
-                pintar()
-            }
+    /** Una fila de la checklist de salud: emoji + qué es + estado, con un glifo a la derecha
+     *  (✓ hecho · › hay que tocar · ✎ renombrar). Si trae onTap, la fila entera es tocable. */
+    private fun filaSalud(emoji: String, titulo: String, estado: String, color: Int, glifo: String, onTap: (() -> Unit)?) {
+        val row = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            background = redondo(0xFF0F1B2E.toInt(), 12)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            if (onTap != null) { isClickable = true; setOnClickListener { onTap() } }
         }
+        val ico = TextView(this).apply { text = emoji; textSize = 20f; setPadding(0, 0, dp(12), 0) }
+        val medio = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        medio.addView(TextView(this).apply { text = titulo; textSize = 14f; setTextColor(0xFFE2E8F0.toInt()); typeface = android.graphics.Typeface.DEFAULT_BOLD })
+        medio.addView(TextView(this).apply { text = estado; textSize = 12f; setTextColor(color); setPadding(0, dp(2), 0, 0) })
+        row.addView(ico)
+        row.addView(medio, android.widget.LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(TextView(this).apply { text = glifo; textSize = 18f; setTextColor(color); typeface = android.graphics.Typeface.DEFAULT_BOLD })
+        val lp = android.widget.LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) }
+        listaSalud.addView(row, lp)
+    }
+
+    /** [reconexión] Sin secreto (el auto-registro no llegó a completarse): re-muestra el candado; al
+     *  desbloquear con la clave MASTER, autoRegistrar corre de nuevo y el equipo queda conectado. */
+    private fun reconectar() {
+        Toast.makeText(this, "Ingresá la clave master para conectar", Toast.LENGTH_SHORT).show()
+        mostrarCandado()
     }
 
     /** [MosGuard auto-registro] Sin código: la clave MASTER recién verificada en el desbloqueo AUTORIZA el registro.
      *  Identidad estable = ANDROID_ID (sobrevive reinstalación). El equipo nace solo como RESGUARDO (Yapes OFF);
      *  el Yape de una zona se le asigna después desde el panel MOS. Corre en el hilo del desbloqueo (ya es background). */
-    private fun autoRegistrar(clave: String) {
+    private fun autoRegistrar(clave: String): Boolean {
         var con: HttpURLConnection? = null
         try {
             val uuid = try { Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "" } catch (_: Throwable) { "" }
-            if (uuid.isBlank()) return
+            if (uuid.isBlank()) return false
             con = (URL(Backend.URL.trimEnd('/') + "/rest/v1/rpc/yape_guard_autoregistrar").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"; connectTimeout = 12000; readTimeout = 15000; doOutput = true
                 setRequestProperty("apikey", Backend.ANON)
@@ -363,18 +371,80 @@ class MainActivity : AppCompatActivity() {
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Content-Profile", "mos")
             }
-            val p = JSONObject().put("clave", clave).put("deviceUuid", uuid).put("modelo", android.os.Build.MODEL ?: "")
+            // specs para el panel MOS: marca (fabricante) + modelo + versión de Android
+            val marca = (android.os.Build.MANUFACTURER ?: "").replaceFirstChar { it.uppercase() }
+            val p = JSONObject().put("clave", clave).put("deviceUuid", uuid)
+                .put("modelo", android.os.Build.MODEL ?: "")
+                .put("marca", marca)
+                .put("so", "Android " + (android.os.Build.VERSION.RELEASE ?: ""))
             con.outputStream.use { it.write(JSONObject().put("p", p).toString().toByteArray(Charsets.UTF_8)) }
-            if (con.responseCode !in 200..299) return
+            if (con.responseCode !in 200..299) return false
             val r = JSONObject(con.inputStream.bufferedReader().use { it.readText() })
             if (r.optBoolean("ok", false)) {
-                val d = r.optJSONObject("data") ?: return
+                val d = r.optJSONObject("data") ?: return false
                 Prefs.guardar(this, Config(d.optString("secreto"), d.optString("nombre"), d.optString("zona")))
                 Prefs.guardarUltimoError(this, "")
                 ColaService.despertar(this)   // arranca el latido → aparece en el panel enseguida
+                return true
             }
         } catch (_: Throwable) {
         } finally { try { con?.disconnect() } catch (_: Throwable) {} }
+        return false
+    }
+
+    /** [nombre] Diálogo para bautizar el equipo (ej "Caja Zona 3") → así se ubica al toque en el panel MOS.
+     *  Se ofrece solo al registrarse por primera vez, y también al tocar la fila "Conectado". */
+    private fun pedirNombre() {
+        val cfg = Prefs.leer(this)
+        val input = EditText(this).apply {
+            setText(cfg.nombre); hint = "Ej: Caja Zona 3"
+            setSingleLine(); setSelection(text.length)
+        }
+        val cont = android.widget.FrameLayout(this).apply { setPadding(dp(20), dp(8), dp(20), 0) }
+        cont.addView(input)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Nombre del equipo")
+            .setMessage("Así lo identificás al toque en el panel MOS.")
+            .setView(cont)
+            .setPositiveButton("Guardar") { _, _ ->
+                val nom = input.text.toString().trim()
+                if (nom.isNotEmpty() && nom != cfg.nombre) renombrar(nom)
+            }
+            .setNegativeButton("Ahora no", null)
+            .show()
+    }
+
+    /** Renombra el equipo probando su identidad con su PROPIO secreto (no la clave master). */
+    private fun renombrar(nombre: String) {
+        val cfg = Prefs.leer(this)
+        if (cfg.secreto.isBlank()) { Toast.makeText(this, "Conectá el equipo primero", Toast.LENGTH_SHORT).show(); return }
+        Toast.makeText(this, "Guardando…", Toast.LENGTH_SHORT).show()
+        thread {
+            var con: HttpURLConnection? = null
+            var okNom = false
+            try {
+                con = (URL(Backend.URL.trimEnd('/') + "/rest/v1/rpc/yape_guard_renombrar").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"; connectTimeout = 12000; readTimeout = 15000; doOutput = true
+                    setRequestProperty("apikey", Backend.ANON)
+                    setRequestProperty("Authorization", "Bearer " + Backend.ANON)
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Content-Profile", "mos")
+                }
+                val p = JSONObject().put("secreto", cfg.secreto).put("nombre", nombre)
+                con.outputStream.use { it.write(JSONObject().put("p", p).toString().toByteArray(Charsets.UTF_8)) }
+                if (con.responseCode in 200..299) {
+                    val r = JSONObject(con.inputStream.bufferedReader().use { it.readText() })
+                    if (r.optBoolean("ok", false)) {
+                        Prefs.guardar(this, Config(cfg.secreto, nombre, cfg.zona)); okNom = true
+                    }
+                }
+            } catch (_: Throwable) {
+            } finally { try { con?.disconnect() } catch (_: Throwable) {} }
+            runOnUiThread {
+                Toast.makeText(this, if (okNom) "✅ Nombre guardado" else "No se pudo guardar", Toast.LENGTH_SHORT).show()
+                pintar()
+            }
+        }
     }
 
     /**
