@@ -16,6 +16,7 @@ android {
         // imposible saber que version corre cada celular.
         versionCode = (System.getenv("APK_VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("APK_VERSION_NAME") ?: "1.0.0-dev"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"   // [test] emulador CI: prueba el WebRTC nativo
         // [MosGuard] UNA sola app. El paquete sigue siendo dev.levo.yapecaptor A PROPÓSITO: así cada
         // YapeCaptor ya instalado se ACTUALIZA a MosGuard con una actualización normal (Android solo
         // actualiza dentro del mismo paquete). Lo que cambia es la identidad de cara al usuario:
@@ -25,7 +26,8 @@ android {
         // [tamaño] La lib WebRTC nativa trae .so para 4 ABIs → APK de 43MB (se corta al bajar por datos →
         // "error de análisis del paquete"). Filtramos a las 2 ABIs que usan los celulares reales (arm64
         // modernos + armv7 viejos de zona); se van x86/x86_64 → APK ~mitad, descarga confiable.
-        ndk { abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a")) }
+        // ABIs reales de los celulares (arm). Para el test en emulador CI (-PtestAbi) se usa x86_64.
+        ndk { abiFilters.addAll(if (project.hasProperty("testAbi")) listOf("x86_64") else listOf("arm64-v8a", "armeabi-v7a")) }
         buildConfigField("boolean", "ES_GUARD", "true")
         buildConfigField("String", "TAG_PREFIX", "\"yape-v\"")
         buildConfigField("String", "APK_MATCH", "\"YapeCaptor\"")   // el asset del release sigue nombrándose YapeCaptor-*.apk (continuidad del auto-update)
@@ -69,4 +71,7 @@ dependencies {
     // + PeerConnection sin WebView → video+audio en vivo desde un foreground service (EspiaNativo.kt).
     // 125 (no 114): la 114 es de 2023 y en Android 16 no enumeraba interfaces de red → 0 candidatos ICE.
     implementation("io.github.webrtc-sdk:android:125.6422.07")
+    // [test] instrumentado en emulador CI: valida que el WebRTC nativo junte candidatos ICE
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test:runner:1.5.2")
 }
