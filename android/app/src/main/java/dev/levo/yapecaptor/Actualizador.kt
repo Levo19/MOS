@@ -95,13 +95,14 @@ object Actualizador {
                 setRequestProperty("User-Agent", "YapeCaptor")
             }
             if (con.responseCode !in 200..299) { Log.w(TAG, "descarga HTTP ${con.responseCode}"); return null }
-            val esperado = con.contentLengthLong   // -1 si el server no lo informa
             con.inputStream.use { ent -> destino.outputStream().use { sal -> ent.copyTo(sal) } }
-            val bajado = destino.length()
-            // ⚠ COMPLETITUD: si el server dijo cuánto pesa y NO coincide → vino truncado (datos que se cortan) →
-            // NO instalar (un APK trunco da "error de análisis del paquete"). Se borra y el próximo intento reintenta.
-            if (esperado > 0 && bajado != esperado) { Log.w(TAG, "APK truncado $bajado/$esperado"); destino.delete(); return null }
-            if (bajado < 1_000_000) { destino.delete(); return null }   // un APK sano pesa megas
+            if (destino.length() < 1_000_000) { destino.delete(); return null }   // un APK sano pesa megas
+            // ⚠ COMPLETITUD confiable: en vez de comparar Content-Length (el CDN de GitHub lo reporta raro tras
+            // el redirect → rechazaba descargas buenas), validamos que el APK sea PARSEABLE/instalable. Si el
+            // sistema no lo puede leer (vino trunco/corrupto) → dará "error de análisis del paquete" al instalar,
+            // así que mejor borrarlo y reintentar. Si es parseable, es un APK íntegro.
+            val ok = try { ctx.packageManager.getPackageArchiveInfo(destino.absolutePath, 0) != null } catch (_: Throwable) { false }
+            if (!ok) { Log.w(TAG, "APK no parseable (trunco/corrupto)"); destino.delete(); return null }
             return destino
         } catch (e: Throwable) {
             Log.w(TAG, "fallo la descarga: ${e.message}"); try { destino.delete() } catch (_: Throwable) {}; return null
