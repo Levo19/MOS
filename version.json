@@ -1,1 +1,1 @@
-{"version": "2.43.944", "build": "Considerados (panel MOS): zonas AGRUPADAS por zona con un solo sello de despacho por zona (antes repetia una fila por semana = confuso) + FOTO del producto en la card. Mismo cambio que en WH Despacho. Se limpian solos a los 7 dias."}
+{"version": "2.43.945", "build": "Visor MosGuard: al espiar un celular (👁 Ver + escuchar) se trata como SOLO cámara+micrófono desde el inicio — se quita la UI/aviso de compartir pantalla que confundía (es un APK, no un navegador de PC). El equipo igual reconfirma por el canal."}

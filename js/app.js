@@ -33905,6 +33905,10 @@ const MOS = (() => {
       lagMs: 0,
       estado: 'conectando'
     };
+    // [MosGuard] un celular = SOLO cámara + micrófono (no comparte pantalla). Fijamos las capabilities
+    // YA, sin esperar el data-channel, para que el visor NUNCA muestre la UI de "compartir pantalla"
+    // (era confuso: es un APK, no un navegador que elige qué compartir). El equipo igual reconfirma por el canal.
+    if (esGuard) { _espiaV2.esGuard = true; _espiaV2.capabilities = { tienePantalla: false, esMobile: true, plataforma: 'mobile', camsTotales: 1 }; }
     _espiaV2RenderModal();
     // Crear sesión backend
     // [v2.43.66] API.post devuelve d.data DIRECTO (no {ok,data}). Bug histórico
@@ -34604,7 +34608,7 @@ const MOS = (() => {
     // [802] Nota "los celulares no comparten pantalla" — evita la confusión de "¿por qué no veo la
     // pantalla?" al espiar un móvil (getDisplayMedia está bloqueado en navegadores móviles).
     const notaPantalla = (caps && caps.tienePantalla === false)
-      ? `<div title="Los navegadores de celular no permiten capturar la pantalla; solo cámara y micrófono." style="font-size:9.5px;font-weight:700;padding:3px 9px;border-radius:20px;background:rgba(148,163,184,.14);color:#94a3b8;border:1px solid rgba(148,163,184,.3);display:flex;align-items:center;gap:4px;white-space:nowrap">📱 sin pantalla (límite del celular)</div>`
+      ? `<div title="Es un celular: transmite cámara y micrófono en vivo. La pantalla no se comparte (no aplica a un teléfono)." style="font-size:9.5px;font-weight:700;padding:3px 9px;border-radius:20px;background:rgba(148,163,184,.14);color:#94a3b8;border:1px solid rgba(148,163,184,.3);display:flex;align-items:center;gap:4px;white-space:nowrap">📱 cámara + audio en vivo</div>`
       : '';
 
     // ── Botones de salto entre cámaras (solo modo solo Y si hay 2+ streams) ─────────
