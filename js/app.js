@@ -43111,6 +43111,85 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (!d) { cont.innerHTML = '<div class="ia-load">Sin datos</div>'; return; }
     _iaData = d;
     cont.innerHTML = _iaPanelHTML(d);
+    _iaPendCargar();   // [937] llena la card de pendientes y arranca el refresco en tiempo real
+  }
+
+  // [937] COLA DE PENDIENTES DE IA — "cuánto falta por hacer" en tiempo real, para decidir si el cupo
+  // GRATIS de Gemini alcanza o hay que recargar Anthropic. Se refresca solo cada 30 s mientras el panel
+  // está a la vista. Los pendientes se retoman solos en cada corrida del cron (se auto-concilian).
+  let _iaPendTimer = null;
+  async function _iaPendCargar() {
+    const card = document.getElementById('iaPendCard');
+    if (!card) { if (_iaPendTimer) { clearTimeout(_iaPendTimer); _iaPendTimer = null; } return; }
+    const visible = card.offsetParent !== null && document.visibilityState !== 'hidden';
+    if (visible) {
+      let pd = null;
+      try { const r = await API.post('iaPendientes', {}); pd = (r && (r.data || r)) || null; } catch (_) {}
+      const c2 = document.getElementById('iaPendCard');
+      if (!c2) return;
+      if (pd) c2.innerHTML = _iaPendientesHTML(pd);
+    }
+    if (_iaPendTimer) clearTimeout(_iaPendTimer);
+    _iaPendTimer = setTimeout(() => _iaPendCargar(), 30000);
+  }
+
+  function _iaPendHace(iso) {
+    if (!iso) return '';
+    try {
+      const dif = (Date.now() - new Date(iso).getTime()) / 60000;   // minutos
+      if (dif < 1) return 'recién'; if (dif < 60) return Math.round(dif) + ' min';
+      if (dif < 1440) return Math.round(dif / 60) + ' h'; return Math.round(dif / 1440) + ' d';
+    } catch (_) { return ''; }
+  }
+  function _iaPendMotChip(mot) {
+    const M = { ok: ['🟢', 'al día'], sin_cupo: ['🟡', 'esperando cupo'], error: ['🔴', 'error'] };
+    const m = M[mot] || ['⚪', 'sin actividad hoy'];
+    return '<span class="iap-chip iap-' + (mot || 'nada') + '">' + m[0] + ' ' + m[1] + '</span>';
+  }
+  function _iaPendientesHTML(pd) {
+    const colas = Array.isArray(pd.colas) ? pd.colas : [];
+    const crit = +pd.criticos_pendientes || 0;
+    const tot = +pd.total_pendientes || 0;
+    const R = pd.resumen_hoy || {};
+    // Veredicto: ¿alcanza Gemini gratis?
+    let vClass, vTit, vSub;
+    if (crit === 0) {
+      vClass = 'is-ok'; vTit = '✓ Al día — el cupo gratis de Gemini alcanza';
+      vSub = 'No hay nada crítico pendiente (OCR de guías ni tributos). Por ahora no hace falta recargar Anthropic.'
+        + (tot > 0 ? ' Quedan ' + tot + ' de fondo (no urgentes), se resuelven solos.' : '');
+    } else {
+      vClass = 'is-warn'; vTit = '⏳ ' + crit + ' pendiente' + (crit === 1 ? '' : 's') + ' crítico' + (crit === 1 ? '' : 's');
+      vSub = 'OCR/tributos esperando ser procesados. Si no bajan en un rato, el cupo gratis se está quedando corto → conviene recargar Anthropic para que cubra cuando Gemini se llena.';
+    }
+    const filas = colas.map(c => {
+      const h = c.hoy || {};
+      const n = +c.pendientes || 0;
+      const viejo = (c.mas_viejo_h != null && n > 0) ? ('<i class="iap-viejo">más viejo: ' + c.mas_viejo_h + ' h</i>') : '';
+      const atasco = (+c.reintentos_max > 200) ? ('<i class="iap-atasco">⚠ 1 ítem atascado (' + c.reintentos_max + ' intentos)</i>') : '';
+      const hoyLbl = (h && (h.ok_hoy != null))
+        ? ('<i class="iap-hoy">hoy: ' + (h.ok_hoy || 0) + ' hechos'
+            + ((h.cupo_hoy || 0) > 0 ? ' · ' + h.cupo_hoy + ' esperaron cupo' : '')
+            + ((h.err_hoy || 0) > 0 ? ' · ' + h.err_hoy + ' error' : '') + '</i>')
+        : '';
+      const ult = (h && h.ultimo_ts) ? ('<i class="iap-ult">último intento ' + _iaPendHace(h.ultimo_ts) + '</i>') : '';
+      return '<div class="iap-row' + (c.critico ? ' is-crit' : '') + '">' +
+        '<div class="iap-n' + (n > 0 ? (c.critico ? ' is-crit' : ' is-pend') : ' is-cero') + '">' + n + '</div>' +
+        '<div class="iap-mid">' +
+          '<b>' + _escapeHtml(String(c.label)) + (c.critico ? ' <span class="iap-star">★</span>' : '') + '</b>' +
+          '<span class="iap-sub">' + hoyLbl + ' ' + viejo + ' ' + atasco + ' ' + ult + '</span>' +
+          '<span class="iap-cron">' + _escapeHtml(String(c.cron || '')) + '</span>' +
+        '</div>' +
+        '<div class="iap-mot">' + _iaPendMotChip(h && h.ultimo_motivo) + '</div>' +
+      '</div>';
+    }).join('');
+    return '<div class="ia-card-h">🔄 Pendientes de IA<span>cuánto falta por hacer · se actualiza solo</span></div>' +
+      '<div class="iap-veredicto ' + vClass + '"><b>' + vTit + '</b><span>' + vSub + '</span></div>' +
+      '<div class="iap-rows">' + filas + '</div>' +
+      '<div class="iap-resumen">Hoy: <b>' + (R.llamadas || 0) + '</b> llamadas · <b class="iap-g">' + (R.ok || 0) + '</b> ok · ' +
+        '<b class="iap-y">' + (R.sin_cupo || 0) + '</b> esperaron cupo · ' +
+        ((R.fallos || 0) - (R.sin_cupo || 0) > 0 ? '<b class="iap-r">' + ((R.fallos || 0) - (R.sin_cupo || 0)) + '</b> error · ' : '') +
+        '<b>' + _iaUsd(R.costo_usd) + '</b></div>' +
+      '<div class="iap-nota">🟡 <b>Esperando cupo</b> no es un error: Gemini gratis permite 5 llamadas/minuto por modelo; lo que se pasa se <b>reintenta solo</b> en la próxima corrida hasta resolverse. Solo si los <b>críticos ★</b> (OCR/tributos) se estancan conviene recargar Anthropic.</div>';
   }
 
   const _iaUsd = v => '$' + (Math.round((+v || 0) * 10000) / 10000).toFixed(4).replace(/0+$/, '').replace(/\.$/, '.00');
@@ -43248,6 +43327,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return '' +
       '<div class="ia-wrap">' +
         _iaEstadoHTML() +
+        '<div id="iaPendCard" class="ia-card ia-pend"><div class="ia-load">◍ contando pendientes…</div></div>' +
         '<div class="ia-hero">' +
           '<div class="ia-hero-main">' +
             '<span class="ia-hero-lbl">Gasto de este mes</span>' +
@@ -43338,6 +43418,32 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     st.textContent =
       '.ia-wrap{display:flex;flex-direction:column;gap:13px;padding-bottom:20px}' +
       '.ia-load,.ia-vacio{font-size:12.5px;color:#64748b;text-align:center;padding:22px 10px;line-height:1.6}' +
+      // [937] pendientes de IA
+      '.ia-pend{padding:14px 16px}' +
+      '.iap-veredicto{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border-radius:13px;margin:10px 0 12px;border:1px solid #223049}' +
+      '.iap-veredicto b{font-size:14px;font-weight:900}.iap-veredicto span{font-size:11px;color:#93a4c2;line-height:1.5}' +
+      '.iap-veredicto.is-ok{background:linear-gradient(120deg,rgba(34,197,94,.14),transparent);border-color:#1e5b3a}.iap-veredicto.is-ok b{color:#86efac}' +
+      '.iap-veredicto.is-warn{background:linear-gradient(120deg,rgba(234,179,8,.15),transparent);border-color:#6b5312}.iap-veredicto.is-warn b{color:#fde68a}' +
+      '.iap-rows{display:flex;flex-direction:column;gap:7px}' +
+      '.iap-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;background:rgba(15,23,42,.55);border:1px solid #1c283c}' +
+      '.iap-row.is-crit{border-color:#2b3d59}' +
+      '.iap-n{flex:none;min-width:44px;height:44px;display:grid;place-items:center;border-radius:11px;font-size:20px;font-weight:900;font-family:ui-monospace,monospace}' +
+      '.iap-n.is-cero{background:rgba(34,197,94,.1);color:#4ade80}' +
+      '.iap-n.is-pend{background:rgba(234,179,8,.12);color:#facc15}' +
+      '.iap-n.is-crit{background:rgba(239,68,68,.14);color:#f87171}' +
+      '.iap-mid{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}' +
+      '.iap-mid b{font-size:12.5px;color:#e2e8f0;font-weight:700}' +
+      '.iap-star{color:#fbbf24;font-size:10px}' +
+      '.iap-sub{display:flex;flex-wrap:wrap;gap:8px;font-size:10px;color:#7488a6}' +
+      '.iap-sub i{font-style:normal}.iap-viejo{color:#fbbf24}.iap-atasco{color:#f87171;font-weight:700}' +
+      '.iap-cron{font-size:9px;color:#4b5b76;letter-spacing:.02em}' +
+      '.iap-mot{flex:none}' +
+      '.iap-chip{display:inline-flex;align-items:center;gap:3px;padding:4px 9px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap}' +
+      '.iap-ok{background:rgba(34,197,94,.14);color:#86efac}.iap-sin_cupo{background:rgba(234,179,8,.16);color:#fde68a}' +
+      '.iap-error{background:rgba(239,68,68,.16);color:#fca5a5}.iap-nada{background:rgba(100,116,139,.14);color:#94a3b8}' +
+      '.iap-resumen{margin-top:11px;padding:9px 12px;border-radius:10px;background:rgba(11,20,36,.7);border:1px solid #1c283c;font-size:11px;color:#93a4c2}' +
+      '.iap-resumen b{font-family:ui-monospace,monospace;color:#e2e8f0}.iap-g{color:#4ade80!important}.iap-y{color:#facc15!important}.iap-r{color:#f87171!important}' +
+      '.iap-nota{margin-top:9px;font-size:10.5px;color:#7488a6;line-height:1.6}.iap-nota b{color:#a9b8d4}' +
       // hero
       '.ia-hero{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:18px 20px;border-radius:18px;' +
         'background:radial-gradient(120% 160% at 0% 0%,rgba(129,140,248,.22),rgba(56,189,248,.06) 55%,transparent),#0b1424;' +
