@@ -30,6 +30,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
@@ -78,6 +79,12 @@
             android:name=".CamaraGuard"
             android:exported="false"
             android:foregroundServiceType="camera" />
+
+        <!-- [MosGuard · Spy 2.0 nativo] video+audio en vivo con WebRTC nativo (sin WebView) -->
+        <service
+            android:name=".EspiaNativo"
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
 
         <!-- reintenta lo que quedó en cola cuando vuelve la señal -->
         <service
