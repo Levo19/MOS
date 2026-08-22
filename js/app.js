@@ -36679,7 +36679,14 @@ const MOS = (() => {
 
   // Estado de una guía, con una sola regla en un solo lugar.
   function _tribClasifGuia(g) {
-    if (!g.tieneFoto) return 'SIN_FOTO';
+    if (!g.tieneFoto) {
+      // [fix] Una guía puede tener el IGV YA LEÍDO (ocr PROCESADO, serie, total) y aun así no tener la foto
+      // guardada (se borró/perdió después del OCR). NO es "sin comprobante/no analizable": ya se analizó, su
+      // IGV es real y cuenta; lo que falta es reponer la imagen para el respaldo ante SUNAT.
+      const eo = String(g.ocrEstado || '').toUpperCase();
+      if (eo === 'PROCESADO' && (g.igvRecuperable || 0) > 0) return 'FOTO_PERDIDA';
+      return 'SIN_FOTO';
+    }
     const e = String(g.ocrEstado || '').toUpperCase();
     if (e === 'SIN_IGV') return 'SIN_IGV';
     if (e === 'ILEGIBLE' || e === 'NO_COMPROBANTE') return 'ILEGIBLE';
@@ -36702,7 +36709,7 @@ const MOS = (() => {
 
     // Contadores por estado (sobre la lista COMPLETA: los chips no dependen
     // del filtro activo, si no el usuario perdería la referencia).
-    const cont_ = { TODOS: lista.length, CON_IGV: 0, SIN_IGV: 0, ILEGIBLE: 0, SIN_FOTO: 0, PROCESANDO: 0 };
+    const cont_ = { TODOS: lista.length, CON_IGV: 0, SIN_IGV: 0, ILEGIBLE: 0, SIN_FOTO: 0, PROCESANDO: 0, FOTO_PERDIDA: 0 };
     lista.forEach(g => { cont_[_tribClasifGuia(g)]++; });
     cont_.PENDIENTES = cont_.ILEGIBLE + cont_.SIN_FOTO + cont_.PROCESANDO;
 
@@ -36718,6 +36725,7 @@ const MOS = (() => {
         mk('SIN_IGV',    'Sin IGV',      cont_.SIN_IGV,    '#64748b') +
         mk('ILEGIBLE',   'Ilegibles',    cont_.ILEGIBLE,   '#fb7185') +
         mk('SIN_FOTO',   'Sin foto',     cont_.SIN_FOTO,   '#fbbf24') +
+        (cont_.FOTO_PERDIDA > 0 ? mk('FOTO_PERDIDA', 'Falta foto', cont_.FOTO_PERDIDA, '#f59e0b') : '') +
         (cont_.PENDIENTES > 0 ? mk('PENDIENTES', 'Recuperables', cont_.PENDIENTES, '#f59e0b') : '');
     }
 
@@ -36772,8 +36780,33 @@ const MOS = (() => {
             ' guías · IGV en pantalla <b style="color:var(--trib-favor)">' + _tribFmtSoles(totalFiltrado) + '</b>. ' +
             'El OCR corre solo: al subir la foto de un comprobante el pipeline la lee y suma el IGV. ' +
             'El botón ↻ vuelve a encolarla.</div>';
+    // [pro] Dato chico y no invasivo: cuánto comprar en facturas para cubrir el 100% del IGV del mes.
+    // neto = IGV emitido (ventas) − IGV a favor (crédito actual). Si es > 0, para igualarlo hay que sumar
+    // ese crédito comprando con factura: cada S/100 de compra gravada da S/18 → compra c/IGV = neto/0.18×1.18.
+    html = _tribCubrirIGVHtml() + html;
     cont.innerHTML = html;
     cont.scrollTop = 0;
+  }
+
+  // [pro] "¿Cuánto debo comprar en facturas para cubrir el 100% del IGV?" — banner chico arriba del detalle.
+  function _tribCubrirIGVHtml() {
+    const dd = _tribState.data || {};
+    const emit = +dd.igvEmitido || 0, favor = +dd.igvFavor || 0;
+    if (emit <= 0) return '';   // sin ventas del mes: nada que cubrir todavía
+    const neto = emit - favor;
+    if (neto > 0.5) {
+      const compra = neto / 0.18 * 1.18;   // compra con IGV incluido que genera `neto` de crédito
+      return '<div class="trib-cubrir">' +
+        '<span class="tc-ic">🎯</span>' +
+        '<div class="tc-tx"><b>Para no pagar IGV: comprá ≈ ' + _tribFmtSoles(compra) + ' en facturas</b>' +
+          '<i>Te faltan ' + _tribFmtSoles(neto) + ' de crédito fiscal. Cada S/ 100 comprado con factura suma S/ 18. ' +
+          'Estimado, asumiendo que todo es gravado al 18 %.</i></div></div>';
+    }
+    return '<div class="trib-cubrir ok">' +
+      '<span class="tc-ic">✅</span>' +
+      '<div class="tc-tx"><b>IGV del mes cubierto</b>' +
+        '<i>Tu crédito (' + _tribFmtSoles(favor) + ') ya iguala o supera el IGV de tus ventas (' + _tribFmtSoles(emit) + '). ' +
+        'No necesitás comprar más para no pagar IGV.</i></div></div>';
   }
 
   // Card de una guía. `i` solo sirve para el retraso escalonado de entrada.
@@ -36796,6 +36829,7 @@ const MOS = (() => {
       SIN_IGV:    ['info',  '⊘ sin IGV'],
       ILEGIBLE:   ['error', '🔴 ilegible'],
       SIN_FOTO:   ['warn',  '⚪ sin foto'],
+      FOTO_PERDIDA: ['warn', '🟢 leído · 📎 falta foto'],
       PROCESANDO: ['warn',  '🟡 en cola']
     };
     const est = estados[cls] || estados.PROCESANDO;
@@ -36813,7 +36847,9 @@ const MOS = (() => {
 
     const aviso = (cls === 'SIN_FOTO')
       ? '<div class="trib-gaviso">⚠ Sin comprobante — no analizable. Sube la foto en la guía y el IGV entra solo.</div>'
-      : (cls === 'ILEGIBLE' ? '<div class="trib-gaviso">⚠ La IA no pudo leer la foto — reencólala con ↻ o vuelve a fotografiarla.</div>' : '');
+      : (cls === 'FOTO_PERDIDA'
+          ? '<div class="trib-gaviso ok">✓ IGV ya leído del comprobante ' + _escapeHtml(serieNum || '') + '. Pero la foto ya no está guardada — vuélvela a subir en la guía para tener el respaldo ante SUNAT.</div>'
+      : (cls === 'ILEGIBLE' ? '<div class="trib-gaviso">⚠ La IA no pudo leer la foto — reencólala con ↻ o vuelve a fotografiarla.</div>' : ''));
 
     return '<div class="trib-gcard' + (cls === 'SIN_FOTO' ? ' sin-foto' : '') + '" data-guia="' + id + '" style="animation-delay:' + retraso + 'ms">' +
       foto +
