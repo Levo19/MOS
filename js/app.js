@@ -31491,6 +31491,7 @@ const MOS = (() => {
     $('tkConvDoc').value      = t.clienteDoc || '';
     $('tkConvNombre').value   = t.cliente || '';
     $('tkConvDireccion').value = '';
+    $('tkConvDireccion').readOnly = true;   // por defecto readonly; el lookup lo libera solo si el RUC no trae dirección
     // [786] serie automática por zona de la venta — informativo, ya no se tipea
     const _ser = $('tkConvSerie');
     if (_ser) { _ser.value = 'automática · según la zona de la venta'; _ser.disabled = true; }
@@ -31558,9 +31559,17 @@ const MOS = (() => {
         return;
       }
       $('tkConvNombre').value    = nombre;
-      if (direccion) $('tkConvDireccion').value = direccion;   // se respeta la dirección oficial del RUC
+      const _dirEl = $('tkConvDireccion');
+      if (direccion) {
+        _dirEl.value = direccion; _dirEl.readOnly = true;       // se respeta la dirección oficial del RUC
+      } else if (_dirEl) {
+        // [fix A1] el RUC/documento no trae dirección → permitir TIPEARLA (si queda readonly + vacía, la FACTURA
+        // era imposible de emitir: el campo es obligatorio). Cuando sí hay dirección oficial, se respeta (readonly).
+        _dirEl.readOnly = false;
+        if (!_dirEl.value.trim()) _dirEl.setAttribute('placeholder', 'Escribe la dirección fiscal (no registrada en SUNAT)');
+      }
       if (info) info.innerHTML = `<div class="text-emerald-400 font-bold">✓ ${_escapeHtml ? _escapeHtml(nombre) : nombre}</div>` +
-                       (direccion ? `<div class="text-slate-400">${_escapeHtml ? _escapeHtml(direccion) : direccion}</div>` : '<div class="text-amber-400 text-[11px]">Sin dirección registrada para este documento.</div>');
+                       (direccion ? `<div class="text-slate-400">${_escapeHtml ? _escapeHtml(direccion) : direccion}</div>` : '<div class="text-amber-400 text-[11px]">Sin dirección en SUNAT — escríbela abajo para emitir la factura.</div>');
       _tkAcc.convCPE.clienteOK = true;
       _tkConvReglasRefresh();
     } catch(e) {
@@ -36881,6 +36890,19 @@ const MOS = (() => {
     NO_COMPROBANTE:{ ico: '🚫', txt: 'no es un comprobante', cls: 'gris' },
     PENDIENTE:     { ico: '⏳', txt: 'procesando…', cls: 'gris' }
   };
+  // [fix BAJO-2] tras subir/borrar una factura del buzón, el IGV a favor del mes cambia → refrescar _tribState.data
+  // para que el "Total a favor", el hero "en contra" y el banner "cuánto comprar" NO queden stale hasta reabrir.
+  async function _tribRefrescarResumen() {
+    try {
+      const rr = await API.post('tribResumenMes', { mes: _tribState.mes, anio: _tribState.anio });
+      const dd = (rr && (rr.data || rr)) || null;
+      if (!dd) return;
+      _tribState.data = dd;
+      try { _tribRender(dd, {}); } catch (_) {}                  // hero + banner del hero
+      const cub = document.getElementById('tribCubrirIGV');      // banner del overlay si está abierto
+      if (cub) cub.innerHTML = _tribCubrirIGVHtml();
+    } catch (_) {}
+  }
   async function _tribBuzonRender() {
     const cont = $('tribBuzonLista'); if (!cont) return;
     let items = [];
@@ -36926,7 +36948,7 @@ const MOS = (() => {
                 : est === 'NO_ES_NUESTRA' ? '⚠️ Esa factura no está a tu RUC — no suma IGV'
                 : est === 'SIN_IGV' ? 'Sin IGV recuperable' : est === 'NO_COMPROBANTE' ? '🚫 No parece un comprobante' : 'Procesada';
       toast(msg, est === 'VALIDA' ? 'success' : est === 'DUPLICADA' || est === 'NO_ES_NUESTRA' ? 'warning' : 'info', 5000);
-      _tribBuzonRender(); _tribFetchIGVFavor(true);   // refresca el total a favor
+      _tribBuzonRender(); _tribFetchIGVFavor(true); _tribRefrescarResumen();   // refresca lista + total + banner
     } catch (e) {
       toast('No se pudo leer la factura: ' + (e.message || e), 'error', 6000);
       const sub = $('tribBuzonSubiendo'); if (sub) sub.remove();
@@ -36936,7 +36958,7 @@ const MOS = (() => {
   async function tribBuzonBorrar(id) {
     if (!await _modalConfirm('¿Quitar esta factura del buzón?', { warning: true, titulo: 'Quitar del buzón', okText: 'Quitar' })) return;
     try { const r = await API.post('buzonBorrar', { idBuzon: id }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
-      _tribBuzonRender(); _tribFetchIGVFavor(true);
+      _tribBuzonRender(); _tribFetchIGVFavor(true); _tribRefrescarResumen();
     } catch (e) { toast('No se pudo: ' + (e.message || e), 'error'); }
   }
 

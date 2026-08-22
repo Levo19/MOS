@@ -9,8 +9,8 @@ declare
   v_sent  int  := 0;
   v_zonas int  := 0;
   rec     record;
-  v_cuerpo text;
   v_zlbl   text;
+  v_resumen text := '';   -- [fix M2] resumen agregado de TODAS las zonas nuevas → 1 push por audiencia (no N)
 begin
   create temp table _crit on commit drop as
   with eff as (
@@ -56,6 +56,9 @@ begin
   insert into mos.notif_estrella_log(zona_id, sku_base, dia)
     select zona_id, sku_base, v_dia from _new on conflict (zona_id, sku_base, dia) do nothing;
 
+  -- [fix M2] Antes: 3 push POR ZONA en el loop → con N zonas cada dispositivo recibía N avisos (y ME/WH no
+  -- targetean zona → todos recibían todo). Ahora el loop solo ARMA un resumen agregado "Zona 1: A, B · Zona 2: C…"
+  -- y se emiten 3 push en TOTAL (uno por audiencia), sin importar cuántas zonas.
   for rec in
     select zona_id, count(*)::int as n, (array_agg(nombre order by (esperado - eff) desc, nombre))[1:3] as top3
       from _new group by zona_id order by count(*) desc
@@ -63,32 +66,33 @@ begin
     v_zlbl := replace(replace(upper(rec.zona_id), 'ZONA-', ''), 'ZONA', '');
     v_zlbl := case when v_zlbl ~ '^[0-9]+$' then 'Zona ' || ltrim(v_zlbl, '0') else rec.zona_id end;
     if v_zlbl = 'Zona ' then v_zlbl := rec.zona_id; end if;
-    v_cuerpo := array_to_string(rec.top3, ', ') || case when rec.n > 3 then '… y ' || (rec.n - 3) || ' más' else '' end;
-
-    -- Admin (MOS): considera cargar.
-    perform mos.emitir_push(jsonb_build_object(
-      'audiencia', jsonb_build_object('roles', jsonb_build_array('MASTER','ADMINISTRADOR','ADMIN')),
-      'titulo', '⭐ ' || v_zlbl || ': estrellas por agotarse',
-      'cuerpo', v_cuerpo || ' — considera cargar',
-      'data', jsonb_build_object('tipo','riz_estrella','zona', rec.zona_id)));
-
-    -- WH operador: por despachar (además de la sección del dashboard).
-    perform mos.emitir_push(jsonb_build_object(
-      'audiencia', jsonb_build_object('apps', jsonb_build_array('warehouseMos')),
-      'titulo', '⭐ Estrellas urgentes · ' || v_zlbl,
-      'cuerpo', 'Por despachar a ' || v_zlbl || ': ' || v_cuerpo,
-      'data', jsonb_build_object('tipo','riz_estrella','zona', rec.zona_id)));
-
-    -- ME (por app; su zona la ve en el pickup): tus estrellas por agotarse.
-    perform mos.emitir_push(jsonb_build_object(
-      'audiencia', jsonb_build_object('apps', jsonb_build_array('mosExpress')),
-      'titulo', '⭐ Tus estrellas por agotarse',
-      'cuerpo', v_cuerpo || ' — revisa tu lista/pickup.',
-      'data', jsonb_build_object('tipo','riz_estrella','zona', rec.zona_id)));
-
+    v_resumen := v_resumen || case when v_resumen = '' then '' else ' · ' end
+              || v_zlbl || ': ' || array_to_string(rec.top3, ', ')
+              || case when rec.n > 3 then '… +' || (rec.n - 3) else '' end;
     v_sent  := v_sent + rec.n;
     v_zonas := v_zonas + 1;
   end loop;
+
+  -- Admin (MOS): considera cargar.
+  perform mos.emitir_push(jsonb_build_object(
+    'audiencia', jsonb_build_object('roles', jsonb_build_array('MASTER','ADMINISTRADOR','ADMIN')),
+    'titulo', '⭐ Estrellas por agotarse (' || v_zonas || ' zona' || case when v_zonas = 1 then '' else 's' end || ')',
+    'cuerpo', v_resumen || ' — considera cargar',
+    'data', jsonb_build_object('tipo','riz_estrella')));
+
+  -- WH operador: por despachar (además de la sección del dashboard).
+  perform mos.emitir_push(jsonb_build_object(
+    'audiencia', jsonb_build_object('apps', jsonb_build_array('warehouseMos')),
+    'titulo', '⭐ Estrellas urgentes por despachar',
+    'cuerpo', v_resumen,
+    'data', jsonb_build_object('tipo','riz_estrella')));
+
+  -- ME (por app; su zona la ve en el pickup): tus estrellas por agotarse.
+  perform mos.emitir_push(jsonb_build_object(
+    'audiencia', jsonb_build_object('apps', jsonb_build_array('mosExpress')),
+    'titulo', '⭐ Estrellas por agotarse',
+    'cuerpo', v_resumen || ' — revisa tu lista/pickup.',
+    'data', jsonb_build_object('tipo','riz_estrella')));
 
   return jsonb_build_object('ok', true, 'enviado', true, 'zonas', v_zonas, 'estrellas', v_sent);
 exception when others then

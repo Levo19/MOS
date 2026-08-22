@@ -1184,7 +1184,8 @@ const API = (() => {
   // (429 de Gemini, o Claude 400 "credit balance too low") y NO un bug → mensaje humano "sin tokens, reintenta".
   function _iaSinCupo(status, txt) {
     if (status === 429) return true;
-    return /quota|exceeded|resource_exhausted|credit balance|too low|rate[\s_-]*limit|sin cupo|agotad/i.test(String(txt || ''));
+    // [fix M1] patrones ACOTADos a cuota/crédito (no 'exceeded'/'too low' sueltos, que atrapaban errores de input largo).
+    return /quota|resource_exhausted|credit balance|rate[\s_-]*limit|too many requests|insufficient|sin cupo|agotad/i.test(String(txt || ''));
   }
   // ── [RIZ · CAPA 5] IA real vía Edge `/functions/ia` (Claude, JWT-gated) ─
   // El frontend arma los `messages` (con los NÚMEROS determinísticos de las RPCs) y la Edge reenvía a
@@ -3853,7 +3854,15 @@ const API = (() => {
         //   (enterrado) → los RUCs no vistos salían "no encontrado". GAS queda solo como última red.
         return _conFallbackMOS(async () => {
           const r = await _getMeConsultarClienteDirecto(p);
-          if (r && r.encontrado) return r;
+          if (r && r.encontrado) {
+            // [fix A1] la sombra puede traer el cliente (nombre) pero SIN dirección (clientes creados desde ventas
+            // sin domicilio). Como la dirección es OBLIGATORIA para FACTURA y el campo es no-editable, sin esto la
+            // factura quedaba imposible de emitir. Enriquecemos la dirección desde el Edge SUNAT si falta.
+            if (!String(r.direccion || '').trim() && _mosSunatEdge()) {
+              try { const e = await _meConsultarClienteEdge(p); if (e && String(e.direccion || '').trim()) r.direccion = e.direccion; } catch (_) {}
+            }
+            return r;
+          }
           if (_mosSunatEdge()) { const e = await _meConsultarClienteEdge(p); if (e && (e.nombre || e.status === 'success')) return e; }
           return null;
         });

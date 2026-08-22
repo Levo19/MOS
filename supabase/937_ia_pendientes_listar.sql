@@ -8,7 +8,7 @@
 create or replace function mos.ia_pendientes_listar(p jsonb default '{}'::jsonb)
 returns jsonb language plpgsql stable security definer set search_path to '' as $function$
 declare
-  v_desc int; v_sust int; v_ocr int; v_buz int;
+  v_desc int; v_sust int; v_ocr int; v_buz int; v_buz_err int;
   v_desc_h numeric; v_ocr_h numeric; v_sust_int int;
   v_colas jsonb; v_ia jsonb;
 begin
@@ -18,6 +18,8 @@ begin
   select count(*) into v_desc from mos.productos pr
    where pr.tipo_producto::text='CANONICO' and coalesce(pr.estado,true) and coalesce(pr.es_insumo,false)=false
      and length(btrim(pr.descripcion))>=6
+     -- [fix M1] mismo filtro anti-basura que ia_desc_pendientes (descripción puramente numérica/medida NO se procesa)
+     and pr.descripcion !~* '^[0-9 .,x*/-]+\s*(metros?|unidades?|mil(lar)?|cm|mm|gr?|kg|ml|lt|litros?)?\.?\s*$'
      and (pr.ia_refresh=true or (pr.descripcion_ia is null and coalesce(pr.fecha_creacion,pr.created_at)>now()-interval '7 days'));
 
   select count(*), max(pr.sust_intentos) into v_sust, v_sust_int from mos.productos pr
@@ -29,13 +31,19 @@ begin
    where coalesce(foto,'')<>'' and tipo like 'INGRESO%' and tipo<>'INGRESO_DEVOLUCION_ZONA'
      and (ocr_estado is null or ocr_estado='PENDIENTE');
 
-  select count(*) into v_buz from wh.igv_buzon where upper(coalesce(estado,'')) in ('PENDIENTE','ERROR');
+  -- [fix M3] "pendiente" = solo las que el cron REALMENTE reintenta (ocr_estado=PENDIENTE, intentos<6). Las ERROR
+  -- (agotaron los 6 intentos) NO drenan solas → van aparte como "atención manual", no inflan el pendiente.
+  select count(*) filter (where ocr_estado='PENDIENTE' and coalesce(ocr_intentos,0)<6),
+         count(*) filter (where upper(coalesce(estado,''))='ERROR' or coalesce(ocr_intentos,0)>=6)
+    into v_buz, v_buz_err
+    from wh.igv_buzon where upper(coalesce(estado,'')) in ('PENDIENTE','ERROR');
 
   -- edad (horas) del pendiente más viejo → si crece, el cupo NO alcanza
   select round(extract(epoch from (now()-min(coalesce(pr.fecha_creacion,pr.created_at))))/3600.0,1) into v_desc_h
     from mos.productos pr
    where pr.tipo_producto::text='CANONICO' and coalesce(pr.estado,true) and coalesce(pr.es_insumo,false)=false
      and length(btrim(pr.descripcion))>=6
+     and pr.descripcion !~* '^[0-9 .,x*/-]+\s*(metros?|unidades?|mil(lar)?|cm|mm|gr?|kg|ml|lt|litros?)?\.?\s*$'
      and (pr.ia_refresh=true or (pr.descripcion_ia is null and coalesce(pr.fecha_creacion,pr.created_at)>now()-interval '7 days'));
   select round(extract(epoch from (now()-min(fecha)))/3600.0,1) into v_ocr_h from wh.guias
    where coalesce(foto,'')<>'' and tipo like 'INGRESO%' and tipo<>'INGRESO_DEVOLUCION_ZONA'
@@ -81,7 +89,8 @@ begin
       'pendientes',v_ocr,'mas_viejo_h',v_ocr_h,'cron','wh-ocr-guias (cada 10 min, 3/tick)',
       'hoy',v_ia->'ocr_guia'),
     jsonb_build_object('tipo','buzon','label','OCR buzón IGV (tributos)','critico',true,
-      'pendientes',v_buz,'mas_viejo_h',null,'cron','al subir (usuario) — reintenta a mano',
+      'pendientes',v_buz,'error_manual',coalesce(v_buz_err,0),'mas_viejo_h',null,
+      'cron','buzon-igv-reintentar (cada 10 min) — se reanuda sola',
       'hoy',v_ia->'buzon'),
     jsonb_build_object('tipo','descripcion','label','Descripciones de productos','critico',false,
       'pendientes',v_desc,'mas_viejo_h',v_desc_h,'cron','descripcion-ia-auto (cada 30 min)',

@@ -43,40 +43,70 @@ function json(p: unknown, s = 200): Response { return new Response(JSON.stringif
 function claims(t: string): Record<string, unknown> | null { try { const b = t.split('.')[1]; return JSON.parse(atob(b.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(b.length / 4) * 4, '='))); } catch { return null; } }
 async function rpc(fn: string, body: unknown) { const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: 'POST', headers: { apikey: SB_SR, Authorization: 'Bearer ' + SB_SR, 'Content-Type': 'application/json', 'Content-Profile': 'mos' }, body: JSON.stringify(body) }); return r.json().catch(() => null); }
 
-// ¿el fallo del OCR es por CUOTA/CRÉDITO agotado (no un bug)? → la fila queda PENDIENTE y el cron reintenta sin gastar tope.
+// [fix M2] contabiliza el uso de IA del buzón en mos.ia_uso (funcion='buzonIGV') → la cola de pendientes puede
+// mostrar throughput/último motivo (ok/sin_cupo) de la cola VITAL de tributos, y el panel de costos 852 lo cuenta.
+// Nunca rompe la operación (fire-and-forget).
+function _iaLog(rec: Record<string, unknown>): void {
+  try {
+    if (!SB_URL || !SB_SR) return;
+    fetch(`${SB_URL}/rest/v1/rpc/ia_registrar_uso`, {
+      method: 'POST', headers: { apikey: SB_SR, Authorization: 'Bearer ' + SB_SR, 'Content-Type': 'application/json', 'Content-Profile': 'mos' },
+      body: JSON.stringify({ p: rec }),
+    }).catch(() => {});
+  } catch { /* contabilizar jamás rompe */ }
+}
+
+// ¿el fallo del OCR es por CUOTA/CRÉDITO agotado o SATURACIÓN transitoria (no un bug de la imagen)? → la fila queda
+// PENDIENTE y el cron reintenta SIN gastar tope. [fix M1] regex acotado a cuota/crédito (no 'exceeded'/'too low'
+// sueltos). [fix B2] 5xx/402/408/425/529 = transitorios del proveedor → tampoco cuentan intento (no llevan a ERROR
+// una imagen buena que solo tuvo saturación pasajera). Un 400/parse-fail (imagen genuinamente mala) SÍ cuenta.
 function esSinCupo(status: number, err: string): boolean {
-  if (status === 429) return true;
-  return /quota|exceeded|resource_exhausted|credit balance|too low|rate[\s_-]*limit/i.test(String(err || ''));
+  if (status === 429 || status === 402 || status === 408 || status === 425 || status >= 500) return true;
+  return /quota|resource_exhausted|credit balance|rate[\s_-]*limit|too many requests|insufficient/i.test(String(err || ''));
 }
 
 // OCR de una imagen (Gemini con fallback a Claude). Devuelve {ok, texto} o {ok:false, sinCupo, error}.
-async function ocrImagen(gkey: string, akey: string, jpgB64: string, mime: string): Promise<{ ok: boolean; texto?: string; sinCupo?: boolean; error?: string }> {
+// [fix M2] cada intento se contabiliza en mos.ia_uso (funcion='buzonIGV') vía _iaLog.
+async function ocrImagen(gkey: string, akey: string, jpgB64: string, mime: string, app: string): Promise<{ ok: boolean; texto?: string; sinCupo?: boolean; error?: string }> {
+  const t0 = Date.now();
   const mensajes = [{ role: 'user', content: [
     { type: 'image', source: { type: 'base64', media_type: mime, data: jpgB64 } },
     { type: 'text', text: 'Extraé los datos de esta factura de compra y devolvé el JSON indicado.' },
   ] }];
+  const log = (modelo: string, ok: boolean, usage: unknown, error: unknown, prov: string) =>
+    _iaLog({ app: app || '?', funcion: 'buzonIGV', modelo, ok, ms: Date.now() - t0, usage: usage || {},
+             ...(error ? { error: String(error).slice(0, 300) } : {}), meta: { proveedor: prov } });
   if (gkey) {
     const g = await geminiMessages({ key: gkey, model: GEMINI_FLASH, system: SYSTEM, messages: mensajes as any, max_tokens: 1200, json: true, timeoutMs: 60000 });
-    if (g.ok && g.data) return { ok: true, texto: (((g.data.content as Record<string, unknown>[])[0] || {}).text as string) || '' };
+    if (g.ok && g.data) {
+      log(String((g.data as Record<string, unknown>).model || GEMINI_FLASH), true, (g.data as Record<string, unknown>).usage, null, 'gemini');
+      return { ok: true, texto: (((g.data.content as Record<string, unknown>[])[0] || {}).text as string) || '' };
+    }
+    log(GEMINI_FLASH, false, null, g.error, 'gemini');
     // Gemini falló. Si es cupo/5xx y hay Claude con saldo, se intenta Claude; si no, se reporta sin_cupo/err.
     const cupo = esSinCupo(g.status, g.error || '');
     if (akey && (cupo || g.status >= 500 || g.status === 0)) {
-      const a = await ocrAnthropic(akey, mensajes);
+      const a = await ocrAnthropic(akey, mensajes, app, t0);
       if (a.ok) return a;
       return { ok: false, sinCupo: cupo || a.sinCupo, error: a.error || g.error };
     }
     return { ok: false, sinCupo: cupo, error: String(g.error || 'gemini') };
   }
-  if (akey) return ocrAnthropic(akey, mensajes);
+  if (akey) return ocrAnthropic(akey, mensajes, app, t0);
   return { ok: false, sinCupo: false, error: 'sin proveedor de IA' };
 }
-async function ocrAnthropic(akey: string, mensajes: unknown): Promise<{ ok: boolean; texto?: string; sinCupo?: boolean; error?: string }> {
+async function ocrAnthropic(akey: string, mensajes: unknown, app: string, t0: number): Promise<{ ok: boolean; texto?: string; sinCupo?: boolean; error?: string }> {
+  const log = (ok: boolean, usage: unknown, error: unknown) =>
+    _iaLog({ app: app || '?', funcion: 'buzonIGV', modelo: 'claude-haiku-4-5-20251001', ok, ms: Date.now() - t0, usage: usage || {},
+             ...(error ? { error: String(error).slice(0, 300) } : {}), meta: { proveedor: 'anthropic' } });
   try {
     const ar = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'x-api-key': akey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 1200, system: SYSTEM, messages: mensajes }) });
     const txt = await ar.text();
-    if (!ar.ok) return { ok: false, sinCupo: esSinCupo(ar.status, txt), error: 'claude ' + ar.status };
-    const aj = JSON.parse(txt); return { ok: true, texto: (aj && aj.content && aj.content[0] && aj.content[0].text) || '' };
-  } catch (e) { return { ok: false, sinCupo: false, error: String((e as Error)?.message || e) }; }
+    if (!ar.ok) { log(false, null, 'claude ' + ar.status + ': ' + txt.slice(0, 120)); return { ok: false, sinCupo: esSinCupo(ar.status, txt), error: 'claude ' + ar.status }; }
+    const aj = JSON.parse(txt);
+    log(true, aj && aj.usage, null);
+    return { ok: true, texto: (aj && aj.content && aj.content[0] && aj.content[0].text) || '' };
+  } catch (e) { log(false, null, String((e as Error)?.message || e)); return { ok: false, sinCupo: false, error: String((e as Error)?.message || e) }; }
 }
 
 function parseOCR(texto: string): Record<string, unknown> | null {
@@ -123,7 +153,7 @@ Deno.serve(async (req: Request) => {
     if (!idBuzon || !path) return json({ ok: false, error: 'falta idBuzon/foto' }, 400);
     const b64 = await bajarImagen(path);
     if (!b64) { await rpc('igv_buzon_ocr_fallo', { p: { idBuzon } }); return json({ ok: false, error: 'no se pudo bajar la imagen' }, 502); }
-    const o = await ocrImagen(gkey, akey, b64, 'image/jpeg');
+    const o = await ocrImagen(gkey, akey, b64, 'image/jpeg', 'cron');
     if (!o.ok) {
       if (o.sinCupo) return json({ ok: true, pendiente: true, idBuzon, motivo: 'sin_cupo' });   // reintenta luego, NO cuenta intento
       await rpc('igv_buzon_ocr_fallo', { p: { idBuzon } });
@@ -142,7 +172,9 @@ Deno.serve(async (req: Request) => {
   if (!jpgB64) return json({ ok: false, error: 'falta la imagen' }, 400);
   const mime = String(body.mime || 'image/jpeg');
   const usuario = String(body.usuario || '');
-  const mes = body.mes, anio = body.anio;
+  // [fix B4] si el front no manda mes/anio, defaultear al mes actual (Lima ≈ UTC-5) para no armar 'undefined-undefined/…'
+  const _hoy = new Date(Date.now() - 5 * 3600 * 1000);
+  const mes = body.mes ?? (_hoy.getUTCMonth() + 1), anio = body.anio ?? _hoy.getUTCFullYear();
 
   // 1) subir la imagen SIEMPRE (nunca perder la factura)
   let path = '';
@@ -152,7 +184,7 @@ Deno.serve(async (req: Request) => {
   if (!cr || cr.ok !== true) return json({ ok: false, error: (cr && cr.error) || 'no se registró' }, 502);
   const idBuzon = String(cr.idBuzon);
   // 3) intentar leerla ya
-  const o = await ocrImagen(gkey, akey, jpgB64, mime);
+  const o = await ocrImagen(gkey, akey, jpgB64, mime, String(c.app || 'MOS'));
   if (!o.ok) {
     if (o.sinCupo) return json({ ok: true, pendiente: true, idBuzon, mensaje: 'Factura guardada ✓ Se leerá sola apenas haya cupo de IA (unos minutos).' });
     await rpc('igv_buzon_ocr_fallo', { p: { idBuzon } });

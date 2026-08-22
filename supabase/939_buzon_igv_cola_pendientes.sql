@@ -87,13 +87,20 @@ end $function$;
 grant execute on function mos.igv_buzon_ocr_aplicar(jsonb) to authenticated, anon, service_role;
 
 -- ── 3) listar las pendientes para el cron (id + foto path; NO incrementa: sin_cupo debe poder reintentar sin tope) ──
+-- [fix A1] con gate de auth: expone paths de Storage + metadata de facturas de tributos → NO puede quedar abierta a anon.
 create or replace function mos.igv_buzon_pendientes(p jsonb default '{}'::jsonb)
-returns jsonb language sql stable security definer set search_path to '' as $function$
-  select coalesce(jsonb_agg(jsonb_build_object('idBuzon',id_buzon,'foto',foto,'mes',mes,'anio',anio) order by ts asc),'[]'::jsonb)
-    from wh.igv_buzon
-   where ocr_estado = 'PENDIENTE' and coalesce(foto,'') <> '' and coalesce(ocr_intentos,0) < 6
-   limit least(greatest(coalesce((p->>'max')::int, 3), 1), 10);
-$function$;
+returns jsonb language plpgsql stable security definer set search_path to '' as $function$
+begin
+  if not (mos._claim_ok() or wh._claim_ok()) then return '[]'::jsonb; end if;
+  return (
+    select coalesce(jsonb_agg(jsonb_build_object('idBuzon',id_buzon,'foto',foto,'mes',mes,'anio',anio) order by ts asc),'[]'::jsonb)
+      from (
+        select id_buzon, foto, mes, anio, ts from wh.igv_buzon
+         where ocr_estado = 'PENDIENTE' and coalesce(foto,'') <> '' and coalesce(ocr_intentos,0) < 6
+         order by ts asc
+         limit least(greatest(coalesce((p->>'max')::int, 3), 1), 10)
+      ) q);
+end $function$;
 grant execute on function mos.igv_buzon_pendientes(jsonb) to authenticated, anon, service_role;
 
 -- ── 4) marcar un fallo de OCR que NO es de cupo (imagen ilegible de red/parse): sube intentos; al 6º corta a ERROR ──
