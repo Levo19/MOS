@@ -1385,11 +1385,13 @@ const MOS = (() => {
       if (prev) _cabCache[off - 1] = prev;
       _cabData = data; _cabPrev = prev;
       cont.innerHTML = _cabMarkup(data, prev);
-      _cabPostRender(data);
-      // Eco status (WH/ME) — reusa el mecanismo existente (dots ecoWhDot/ecoMeDot).
-      _refreshEcoStatus();
-      _startEcoAutoRefresh();
-      _cabBindKeys();
+      // post-render (animaciones/eco/teclas): aislado para que un fallo acá NO borre el dashboard ya dibujado.
+      try {
+        _cabPostRender(data);
+        _refreshEcoStatus();      // Eco status (WH/ME) — reusa el mecanismo existente (dots ecoWhDot/ecoMeDot).
+        _startEcoAutoRefresh();
+        _cabBindKeys();
+      } catch (e2) { try { console.warn('[cabina] post-render:', e2 && e2.message); } catch (_) {} }
     } catch (e) {
       cont.innerHTML = _cabMsg('Error al cargar la Cabina: ' + (e && e.message ? e.message : 'desconocido'));
     }
