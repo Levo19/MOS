@@ -66,6 +66,22 @@
     pc = new RTCPeerConnection({ iceServers: iceServers });
     stream.getTracks().forEach(function (t) { pc.addTrack(t, stream); });
     pc.onicecandidate = function (e) { if (e.candidate) colaIce.push(e.candidate.toJSON()); };
+    // [fix móvil] El equipo AVISA sus capacidades por el data channel que abre el master: es SOLO CÁMARA
+    // (los celulares NO comparten pantalla — getDisplayMedia está bloqueado en móviles). Sin esto, el visor
+    // esperaba una "pantalla" que nunca llega y mostraba el aviso "elige qué compartir" en vez de la cámara.
+    pc.ondatachannel = function (ev) {
+      try {
+        var dc = ev.channel;
+        dc.onopen = function () {
+          try {
+            var m = (navigator.userAgent.match(/Android[^;]*;\s*([^)]+?)\s*(?:Build|\))/) || [])[1] || 'MosGuard';
+            dc.send(JSON.stringify({ __meta: 'capabilities', caps: {
+              tienePantalla: false, esMobile: true, plataforma: 'mobile',
+              camsTotales: (stream ? stream.getVideoTracks().length : 1), modelo: m } }));
+          } catch (e) {}
+        };
+      } catch (e) {}
+    };
     pc.onconnectionstatechange = function () {
       log('pc: ' + pc.connectionState);
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') cerrar('pc_' + pc.connectionState);
