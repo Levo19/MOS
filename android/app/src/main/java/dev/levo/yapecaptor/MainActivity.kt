@@ -353,6 +353,10 @@ class MainActivity : AppCompatActivity() {
         if (bat) filaSalud("🔋", "Siempre activo", "Android no lo va a dormir", VERDE, "✓", null)
         else     filaSalud("🔋", "Siempre activo", "Android puede dormirlo · tocá", AMBAR, "›") { pedirSinOptimizar() }
 
+        // 6) bloqueo remoto + anti-desinstalación (opcional, Device Admin) — no cuenta en el semáforo
+        if (GuardAdmin.esAdmin(this)) filaSalud("🔒", "Bloqueo remoto", "Administrador activo · no se puede desinstalar", VERDE, "✓", null)
+        else                          filaSalud("🔒", "Bloqueo remoto", "Tocá para activar (lockear a distancia + anti-robo)", AMBAR, "›") { GuardAdmin.pedirActivar(this) }
+
         // detalle discreto abajo: specs del equipo (los que ve también el panel MOS) + versión
         val ult = Prefs.ultimaEntrega(this)
         val cuando = if (ult == 0L) "todavía ninguna"

@@ -33841,7 +33841,7 @@ const MOS = (() => {
   }
 
   // Punto de entrada — pide clave + crea sesión + abre modal optimista
-  async function abrirEspiaV2(idDispositivo, esGuard) {
+  async function abrirEspiaV2(idDispositivo, esGuard, soloAudio) {
     if (!_esMasterSession()) { toast('Solo Master puede usar espía v2', 'error'); return; }
     let d = (cfgData.dispositivos || []).find(x => x.ID_Dispositivo === idDispositivo);
     // [MosGuard] los equipos de resguardo NO viven en mos.dispositivos: se arma un device sintético.
@@ -33926,7 +33926,7 @@ const MOS = (() => {
             let pushOk = false;
             if (esGuard) {
               // [MosGuard] el equipo recoge la sesión en su latido (no hay FCM). Se deja pedida.
-              try { await API.post('guardEspiaSet', { nombre: idDispositivo, sesionId: cr.data.sesionId }); } catch (_) {}
+              try { await API.post('guardEspiaSet', { nombre: idDispositivo, sesionId: cr.data.sesionId, soloAudio: !!soloAudio }); } catch (_) {}
               pushOk = true;   // no dependemos del wake-push
             } else {
             try {
@@ -44138,11 +44138,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           (e.precM != null ? ' · ±' + Math.round(e.precM) + ' m' : '') + '</i>'
         : '<i class="mg-sinubic">sin ubicación todavía — el equipo la manda en su próximo latido (necesita permiso de ubicación y ser MosGuard)</i>';
       const cap = e.capturaYapes !== false;
+      const nEsc = _esc(String(e.nombre));
+      // [944] telemetría nativa: batería + red/señal
+      const _tele = [
+        (e.bateria != null) ? ('🔋 ' + e.bateria + '%' + (e.cargando ? ' ⚡' : '')) : '',
+        e.redTipo ? ((e.redTipo === 'wifi' ? '📶 WiFi' : e.redTipo === 'movil' ? '📶 Datos' : '📶 ' + e.redTipo) + (e.senal != null ? ' ' + e.senal + '/4' : '')) : ''
+      ].filter(Boolean).join(' · ');
+      const teleHtml = _tele ? '<div class="mg-eq-tele">' + _tele + '</div>' : '';
+      // [944] SIM + alerta de cambio de chip (posible robo)
+      const simCambiada = (e.simAlertaHaceMin != null && e.simAlertaHaceMin < 1440);
+      const simTxt = [e.simOperador, e.simNumero].filter(Boolean).map(x => _escapeHtml(String(x))).join(' · ');
+      const simHtml = (simTxt || simCambiada)
+        ? '<div class="mg-eq-sim' + (simCambiada ? ' alerta' : '') + '">' + (simCambiada ? '⚠ CHIP CAMBIADO' : '📵') + (simTxt ? ' ' + simTxt : '') + '</div>'
+        : '';
       return '<div class="mg-eq ' + (robado ? 'is-robado' : '') + '">' +
         '<div class="mg-eq-top"><b>' + nom + '</b>' +
-          '<span class="mg-cap ' + (cap ? 'on' : 'off') + '" onclick="MOS.mgCaptura(\'' + _esc(String(e.nombre)) + '\',' + (cap ? 'false' : 'true') + ')" title="Prender/apagar la captura de Yapes de este equipo">' + (cap ? '💜 Yapes: ON' : '🚫 Yapes: OFF') + '</span>' +
+          '<span class="mg-cap ' + (cap ? 'on' : 'off') + '" onclick="MOS.mgCaptura(\'' + nEsc + '\',' + (cap ? 'false' : 'true') + ')" title="Prender/apagar la captura de Yapes de este equipo">' + (cap ? '💜 Yapes: ON' : '🚫 Yapes: OFF') + '</span>' +
           (robado ? '<span class="mg-badge">🚨 ROBADO' + (e.guardDesde ? ' · ' + _escapeHtml(String(e.guardDesde)) : '') + '</span>' : '') + '</div>' +
         spec +
+        (teleHtml || simHtml ? '<div class="mg-eq-tele-row">' + teleHtml + simHtml + '</div>' : '') +
         '<div class="mg-eq-ubic">' + ubic + '</div>' +
         (e.mediaPath ? '<div class="mg-eq-foto"><img data-eq="' + _esc(String(e.nombre)) + '" alt="cámara"><i>📸 ' +
           (e.mediaHaceSeg != null ? 'hace ' + (e.mediaHaceSeg < 90 ? e.mediaHaceSeg + ' s' : Math.round(e.mediaHaceSeg / 60) + ' min') : '') + '</i></div>' : '') +
@@ -44154,7 +44168,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           (e.liveSeg > 0
             ? '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgLive(\'' + _esc(String(e.nombre)) + '\',0)">■ Cerrar cuadros (' + e.liveSeg + 's)</button>'
             : '<button type="button" class="mg-btn" onclick="MOS.mgLive(\'' + _esc(String(e.nombre)) + '\',120)">📷 Cuadros ~2s</button>') +
-          '<button type="button" class="mg-btn is-verde" onclick="MOS.mgEspia(\'' + _esc(String(e.nombre)) + '\')" title="Video + audio en vivo (Spy 2.0). Requiere el equipo activo.">👁 Ver + escuchar</button>' +
+          '<button type="button" class="mg-btn is-verde" onclick="MOS.mgEspia(\'' + nEsc + '\')" title="Video + audio en vivo (Spy 2.0). Requiere el equipo activo.">👁 Ver + escuchar</button>' +
+          '<button type="button" class="mg-btn" onclick="MOS.mgEscuchar(\'' + nEsc + '\')" title="Escuchar el entorno (solo micrófono, más liviano)">🎤 Escuchar</button>' +
+          (e.alarmaSeg > 0
+            ? '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgAlarma(\'' + nEsc + '\',0)">■ Cortar alarma (' + e.alarmaSeg + 's)</button>'
+            : '<button type="button" class="mg-btn" onclick="MOS.mgAlarma(\'' + nEsc + '\',60)" title="Sonido fuerte + linterna, para ubicarlo/asustar">🚨 Alarma</button>') +
+          '<button type="button" class="mg-btn" onclick="MOS.mgMensaje(\'' + nEsc + '\')" title="Mostrar un mensaje a pantalla completa en el equipo">💬 Mensaje</button>' +
+          '<button type="button" class="mg-btn is-rojo" onclick="MOS.mgBloquear(\'' + nEsc + '\')" title="Bloquear la pantalla (requiere activar Administrador de dispositivo en el equipo)">🔒 Bloquear</button>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -44204,6 +44224,28 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       toast(seg > 0 ? '🎥 En vivo activado (' + seg + ' s)' : '■ En vivo cerrado', seg > 0 ? 'success' : 'info', 3500);
       _mgRender();
     } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
+  }
+  // [944] comandos nativos: alarma+linterna · mensaje a pantalla · bloqueo remoto · escucha solo-audio
+  async function mgAlarma(nombre, seg) {
+    try { const r = await API.post('guardAlarma', { nombre, seg: (seg == null ? 60 : seg) }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      toast(seg === 0 ? '■ Alarma cortada' : '🚨 Alarma enviada — suena en el próximo latido del equipo', seg === 0 ? 'info' : 'warn', 4000);
+      _mgRender();
+    } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
+  }
+  async function mgMensaje(nombre) {
+    const texto = '🛡️ Este equipo pertenece a InversionesMOS y está siendo rastreado. Devuélvelo.';
+    try { const r = await API.post('guardMensaje', { nombre, texto, seg: 120 }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      toast('💬 Mensaje enviado — aparece a pantalla completa en el próximo latido', 'info', 4500);
+    } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
+  }
+  async function mgBloquear(nombre) {
+    try { const r = await API.post('guardBloquear', { nombre }); if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      toast('🔒 Bloqueo enviado — se lockea en el próximo latido (necesita el Administrador de dispositivo activado en el equipo)', 'info', 6000);
+    } catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
+  }
+  async function mgEscuchar(nombre) {
+    try { await abrirEspiaV2(nombre, true, true); }   // esGuard + soloAudio
+    catch (e) { toast('No se pudo: ' + (e.message || e), 'error', 5000); }
   }
 
   // ── [PARED] "👁 Ver TODO": con UN click, las cámaras (cuadros en vivo) de TODOS los equipos MosGuard a la vez.
@@ -44345,6 +44387,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.mg-cap.off{color:#94a3b8;background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.35)}' +
       '.mg-badge{font-size:10px;font-weight:800;color:#fb7185;background:rgba(251,113,133,.14);border:1px solid rgba(251,113,133,.4);border-radius:999px;padding:2px 8px}' +
       '.mg-eq-spec{margin:4px 0 2px;font-size:10.5px;color:#7488a6;letter-spacing:.2px}' +
+      '.mg-eq-tele-row{display:flex;flex-wrap:wrap;gap:6px;margin:3px 0}' +
+      '.mg-eq-tele{font-size:10.5px;font-weight:700;color:#93a4c2;background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.2);border-radius:999px;padding:2px 9px}' +
+      '.mg-eq-sim{font-size:10.5px;font-weight:700;color:#93a4c2;background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.2);border-radius:999px;padding:2px 9px}' +
+      '.mg-eq-sim.alerta{color:#fecaca;background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.5)}' +
       '.mg-eq-ubic{margin:6px 0;font-size:11px}.mg-eq-ubic i{font-style:normal;color:#5f7192;margin-left:6px}.mg-sinubic{color:#5f7192}' +
       '.mg-ubic{color:#5eead4;font-weight:800;text-decoration:none}.mg-ubic:hover{text-decoration:underline}' +
       '.mg-eq-acts{margin-top:6px}' +
@@ -56067,7 +56113,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     renderYapeCard, yapeGenerarCodigo, yapeRevocar,
     yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
     yapesZonaAbrir, yapesZonaRefrescar, yapesZonaDia,
-    mgMarcar, mgFoto, mgLive, mgCaptura, mgEspia, mgVerTodo, mgWallEscuchar, mgCerrarWall, tribBuzonBorrar,
+    mgMarcar, mgFoto, mgLive, mgCaptura, mgEspia, mgVerTodo, mgWallEscuchar, mgCerrarWall, mgAlarma, mgMensaje, mgBloquear, mgEscuchar, tribBuzonBorrar,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
     // [v2.43.8] Cards origen (foto/manual) en overlay de costos
     // [v5 §11] ELIMINADO: flujo viejo jefa/printers/OCR (modalAplicarRespuestaJefa + picker de

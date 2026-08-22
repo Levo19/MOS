@@ -2689,6 +2689,18 @@ const API = (() => {
       const r = await _sbRpcMOS('yape_guard_live', { p: { nombre: p.nombre, seg: p.seg } }, 'mos');
       return r && r.ok !== false ? { status: 'success', data: r } : { status: 'error', error: (r && r.error) || 'no se pudo' };
     }
+    if (action === 'guardAlarma') {   // [944] alarma remota + linterna (seg=0 corta)
+      const r = await _sbRpcMOS('yape_guard_alarma', { p: { nombre: p.nombre, seg: p.seg } }, 'mos');
+      return r && r.ok !== false ? { status: 'success', data: r } : { status: 'error', error: (r && r.error) || 'no se pudo' };
+    }
+    if (action === 'guardMensaje') {  // [944] mensaje a pantalla completa
+      const r = await _sbRpcMOS('yape_guard_mensaje', { p: { nombre: p.nombre, texto: p.texto, seg: p.seg } }, 'mos');
+      return r && r.ok !== false ? { status: 'success' } : { status: 'error', error: (r && r.error) || 'no se pudo' };
+    }
+    if (action === 'guardBloquear') { // [944] bloqueo remoto (Device Admin)
+      const r = await _sbRpcMOS('yape_guard_bloquear', { p: { nombre: p.nombre } }, 'mos');
+      return r && r.ok !== false ? { status: 'success' } : { status: 'error', error: (r && r.error) || 'no se pudo' };
+    }
     if (action === 'buzonSubir') {    // [885] IGV a favor · buzón: OCR de una factura de compra
       try {
         const tk = await _mintTokenMOS();
@@ -2716,7 +2728,7 @@ const API = (() => {
       return r && r.ok !== false ? { status: 'success' } : { status: 'error', error: (r && r.error) || 'no se pudo' };
     }
     if (action === 'guardEspiaSet') { // [884] dejar pedida la sesión de espía para un equipo MosGuard
-      const r = await _sbRpcMOS('yape_guard_espia_set', { p: { nombre: p.nombre, sesionId: p.sesionId } }, 'mos');
+      const r = await _sbRpcMOS('yape_guard_espia_set', { p: { nombre: p.nombre, sesionId: p.sesionId, soloAudio: !!p.soloAudio } }, 'mos');
       return r && r.ok !== false ? { status: 'success' } : { status: 'error', error: (r && r.error) || 'no se pudo' };
     }
     if (action === 'guardCaptura') {  // [883] prender/apagar la captura de Yapes de un equipo
@@ -3139,6 +3151,9 @@ const API = (() => {
     guardMarcar:                 () => true,   // [881] MosGuard: marcar robado/normal
     guardFoto:                   () => true,   // [882] MosGuard: pedir foto
     guardLive:                   () => true,   // [882] MosGuard: en vivo
+    guardAlarma:                 () => true,   // [944] MosGuard: alarma+linterna
+    guardMensaje:                () => true,   // [944] MosGuard: mensaje a pantalla
+    guardBloquear:               () => true,   // [944] MosGuard: bloqueo remoto
     guardMediaUrl:               () => true,   // [882] MosGuard: URL firmada del cuadro
     guardCaptura:                () => true,   // [883] MosGuard: toggle captura de Yapes
     guardEspiaSet:               () => true,   // [884] MosGuard: pedir sesión de espía
@@ -3210,7 +3225,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, iaUsoResumen: 1, iaPendientes: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, guardCaptura: 1, guardEspiaSet: 1, buzonSubir: 1, buzonListar: 1, buzonBorrar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, iaUsoResumen: 1, iaPendientes: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, guardCaptura: 1, guardEspiaSet: 1, guardAlarma: 1, guardMensaje: 1, guardBloquear: 1, buzonSubir: 1, buzonListar: 1, buzonBorrar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.
