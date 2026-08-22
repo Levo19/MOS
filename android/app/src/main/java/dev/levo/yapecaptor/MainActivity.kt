@@ -189,6 +189,10 @@ class MainActivity : AppCompatActivity() {
             val c = clave.toString()
             thread {
                 val ok = Desbloqueo.verificar(this, c)
+                // [MosGuard auto-registro] si desbloqueó (clave master OK) y el equipo aún NO tiene secreto, se
+                // registra SOLO con esa misma clave — sin código de emparejamiento. Aditivo: un equipo que YA tiene
+                // secreto (los de producción ZONA-1/2) no entra acá → intactos.
+                if (ok && !Prefs.leer(this).completa()) { try { autoRegistrar(c) } catch (_: Throwable) {} }
                 runOnUiThread {
                     verificando = false
                     if (ok) { root.removeView(fl); candado = null }
@@ -342,6 +346,35 @@ class MainActivity : AppCompatActivity() {
                 pintar()
             }
         }
+    }
+
+    /** [MosGuard auto-registro] Sin código: la clave MASTER recién verificada en el desbloqueo AUTORIZA el registro.
+     *  Identidad estable = ANDROID_ID (sobrevive reinstalación). El equipo nace solo como RESGUARDO (Yapes OFF);
+     *  el Yape de una zona se le asigna después desde el panel MOS. Corre en el hilo del desbloqueo (ya es background). */
+    private fun autoRegistrar(clave: String) {
+        var con: HttpURLConnection? = null
+        try {
+            val uuid = try { Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "" } catch (_: Throwable) { "" }
+            if (uuid.isBlank()) return
+            con = (URL(Backend.URL.trimEnd('/') + "/rest/v1/rpc/yape_guard_autoregistrar").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"; connectTimeout = 12000; readTimeout = 15000; doOutput = true
+                setRequestProperty("apikey", Backend.ANON)
+                setRequestProperty("Authorization", "Bearer " + Backend.ANON)
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Content-Profile", "mos")
+            }
+            val p = JSONObject().put("clave", clave).put("deviceUuid", uuid).put("modelo", android.os.Build.MODEL ?: "")
+            con.outputStream.use { it.write(JSONObject().put("p", p).toString().toByteArray(Charsets.UTF_8)) }
+            if (con.responseCode !in 200..299) return
+            val r = JSONObject(con.inputStream.bufferedReader().use { it.readText() })
+            if (r.optBoolean("ok", false)) {
+                val d = r.optJSONObject("data") ?: return
+                Prefs.guardar(this, Config(d.optString("secreto"), d.optString("nombre"), d.optString("zona")))
+                Prefs.guardarUltimoError(this, "")
+                ColaService.despertar(this)   // arranca el latido → aparece en el panel enseguida
+            }
+        } catch (_: Throwable) {
+        } finally { try { con?.disconnect() } catch (_: Throwable) {} }
     }
 
     /**
