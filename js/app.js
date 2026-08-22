@@ -53002,22 +53002,37 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         // [934] Tipo de ingreso legible + SELLO de despacho por zona (¿ya se le mandó a la zona que se debía?).
         const tipoLbl = String(it.guiaTipo || '') === 'INGRESO_ENVASADO' ? '🏭 de envasado'
           : String(it.guiaTipo || '') === 'INGRESO_PROVEEDOR' ? '🚚 de proveedor' : _esc(it.guiaTipo || '');
-        const zonasHtml = (Array.isArray(it.zonas) ? it.zonas : []).map(z => {
-          const sem = _consSemanasLbl(z.bucket);
-          const ok = !!z.despachadoTs;
-          const sello = ok
-            ? `<span class="cons-sello ok">✓ despachado ${_esc(_consHaceLbl(z.despachadoTs))}</span>`
+        // [942] AGRUPAR por zona: una misma zona puede aparecer en varias semanas (buckets) → se sumaba
+        //   una fila por semana = confuso. Ahora: 1 fila por zona (suma la deuda, la semana más vieja,
+        //   un solo sello). El despacho lo calcula el server por zona+sku, así que el sello es único por zona.
+        const _g = {};
+        (Array.isArray(it.zonas) ? it.zonas : []).forEach(z => {
+          const k = String(z.zona || '—');
+          if (!_g[k]) _g[k] = { zona: k, pend: 0, bucketMin: null, desp: null };
+          _g[k].pend += (parseFloat(z.pend) || 0);
+          if (z.bucket && (!_g[k].bucketMin || z.bucket < _g[k].bucketMin)) _g[k].bucketMin = z.bucket;
+          if (z.despachadoTs && (!_g[k].desp || z.despachadoTs > _g[k].desp)) _g[k].desp = z.despachadoTs;
+        });
+        const zonasHtml = Object.keys(_g).map(k => {
+          const g = _g[k];
+          const sem = _consSemanasLbl(g.bucketMin);
+          const sello = g.desp
+            ? `<span class="cons-sello ok">✓ despachado ${_esc(_consHaceLbl(g.desp))}</span>`
             : `<span class="cons-sello no">⏳ aún sin despachar</span>`;
-          return `<div class="cons-zrow"><span class="cons-zn">${_esc(z.zona || '—')}</span><span class="cons-zd">debía ${_zpkNum(z.pend)}${sem ? ' · ' + _esc(sem) : ''}</span>${sello}</div>`;
+          return `<div class="cons-zrow"><span class="cons-zn">${_esc(g.zona)}</span><span class="cons-zd">debía ${_zpkNum(g.pend)}${sem ? ' · ' + _esc(sem) : ''}</span>${sello}</div>`;
         }).join('') || '<div class="cons-zrow"><span class="cons-zd">fue solicitado en semanas pasadas</span></div>';
         const chips = [
           `<span class="zpk-chip zc-ing">🆕 ingresó ${_esc(_consHaceLbl(it.creado))}</span>`,
           tipoLbl ? `<span class="zpk-chip">${tipoLbl}</span>` : ''
         ].filter(Boolean).join('');
+        const foto = it.foto
+          ? `<img src="${_esc(it.foto)}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover">`
+          : '<span style="font-size:1.5rem">🎯</span>';
         return `<div class="zpk-item zpk-cons" data-cid="${_esc(it.id)}">
-            <div class="zpk-headrow" style="cursor:default">
+            <div class="zpk-headrow" style="cursor:default;gap:10px">
+              <div class="cons-foto" style="flex:0 0 auto;width:52px;height:52px;border-radius:12px;overflow:hidden;background:rgba(148,163,184,.12);display:flex;align-items:center;justify-content:center">${foto}</div>
               <div class="zpk-info">
-                <div class="zpk-name">🎯 ${_esc(it.nombre || it.skuBase || '—')}</div>
+                <div class="zpk-name">${_esc(it.nombre || it.skuBase || '—')}</div>
                 <div class="zpk-chips">${chips}</div>
                 <div class="cons-zonas">${zonasHtml}</div>
               </div>
