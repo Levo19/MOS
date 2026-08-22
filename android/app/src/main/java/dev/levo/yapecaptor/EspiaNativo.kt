@@ -384,6 +384,8 @@ class EspiaNativo : Service() {
         // diagnóstico embebido en el motivo → queda en detalle_fin de la sesión (para ver por qué no conecta)
         val diag = "nat[medios=$dgMedios·local=$dgLocal·gath=$dgGath·cand=$dgCand] $motivo"
         Log.i(TAG, "cerrar: $diag")
+        // canal dedicado que SIEMPRE aterriza (el cierre de sesión lo pisa el master); se lee en yape_dispositivos.espia_diag
+        try { rpc("espia_diag", JSONObject().put("device", device).put("diag", diag)) } catch (_: Throwable) {}
         try { rpc("espia_cerrar_sesion", JSONObject().put("sesionId", sesion).put("lado", "device").put("motivo", diag)) } catch (_: Throwable) {}
         try { capturer?.stopCapture() } catch (_: Throwable) {}
         try { capturer?.dispose() } catch (_: Throwable) {}
