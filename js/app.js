@@ -36627,7 +36627,8 @@ const MOS = (() => {
       totalLbl: 'Total a favor',
       totalVal: _tribFmtSoles(d.igvFavor || 0),
       totalColor: 'var(--trib-favor)',
-      tools: '<div class="trib-buzon" id="tribBuzonBox">' +
+      tools: '<div id="tribCubrirIGV"></div>' +
+             '<div class="trib-buzon" id="tribBuzonBox">' +
                '<div class="trib-buzon-top"><b>📥 Buzón de facturas</b>' +
                  '<label class="trib-buzon-btn">＋ Subir factura<input type="file" accept="image/*" id="tribBuzonFile" style="display:none"></label></div>' +
                '<div class="trib-buzon-ayuda">Facturas de compra a tu nombre que NO tienen guía de ingreso (van directo a zona). El OCR lee el IGV a tu favor; si ya está en una guía, se marca duplicada.</div>' +
@@ -36698,6 +36699,9 @@ const MOS = (() => {
     const cont = _tribSheetEl('tribOvFavor', '[data-trib-body]');
     const chipsCont = _tribSheetEl('tribOvFavor', '[data-trib-chips]');
     if (!cont) return;
+    // [pro] banner "cuánto comprar para cubrir el IGV" — va en tools (bajo el total del encabezado), siempre visible.
+    const cub = document.getElementById('tribCubrirIGV');
+    if (cub) cub.innerHTML = _tribCubrirIGVHtml();
     lista = Array.isArray(lista) ? lista : [];
 
     if (!lista.length) {
@@ -36780,10 +36784,6 @@ const MOS = (() => {
             ' guías · IGV en pantalla <b style="color:var(--trib-favor)">' + _tribFmtSoles(totalFiltrado) + '</b>. ' +
             'El OCR corre solo: al subir la foto de un comprobante el pipeline la lee y suma el IGV. ' +
             'El botón ↻ vuelve a encolarla.</div>';
-    // [pro] Dato chico y no invasivo: cuánto comprar en facturas para cubrir el 100% del IGV del mes.
-    // neto = IGV emitido (ventas) − IGV a favor (crédito actual). Si es > 0, para igualarlo hay que sumar
-    // ese crédito comprando con factura: cada S/100 de compra gravada da S/18 → compra c/IGV = neto/0.18×1.18.
-    html = _tribCubrirIGVHtml() + html;
     cont.innerHTML = html;
     cont.scrollTop = 0;
   }
