@@ -22,6 +22,10 @@ android {
         // nombre "MosGuard" e ícono propio. Las capacidades de resguardo (GPS/cámara) están siempre
         // presentes; el dueño decide POR EQUIPO, desde MOS, qué captura Yapes y qué solo se resguarda.
         manifestPlaceholders["appLabel"] = "MosGuard"
+        // [tamaño] La lib WebRTC nativa trae .so para 4 ABIs → APK de 43MB (se corta al bajar por datos →
+        // "error de análisis del paquete"). Filtramos a las 2 ABIs que usan los celulares reales (arm64
+        // modernos + armv7 viejos de zona); se van x86/x86_64 → APK ~mitad, descarga confiable.
+        ndk { abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a")) }
         buildConfigField("boolean", "ES_GUARD", "true")
         buildConfigField("String", "TAG_PREFIX", "\"yape-v\"")
         buildConfigField("String", "APK_MATCH", "\"YapeCaptor\"")   // el asset del release sigue nombrándose YapeCaptor-*.apk (continuidad del auto-update)

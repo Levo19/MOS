@@ -87,20 +87,24 @@ object Actualizador {
     /** Baja el APK a la carpeta privada de la app. Devuelve el archivo o null. */
     fun descargar(ctx: Context, n: Nueva): File? {
         var con: HttpURLConnection? = null
+        val destino = File(ctx.cacheDir, "yapecaptor-${n.versionCode}.apk")
         try {
-            val destino = File(ctx.cacheDir, "yapecaptor-${n.versionCode}.apk")
             if (destino.exists()) destino.delete()
             con = (URL(n.url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 20000; readTimeout = 60000; instanceFollowRedirects = true
+                connectTimeout = 20000; readTimeout = 120000; instanceFollowRedirects = true   // 43MB en datos móviles: más tiempo
                 setRequestProperty("User-Agent", "YapeCaptor")
             }
             if (con.responseCode !in 200..299) { Log.w(TAG, "descarga HTTP ${con.responseCode}"); return null }
+            val esperado = con.contentLengthLong   // -1 si el server no lo informa
             con.inputStream.use { ent -> destino.outputStream().use { sal -> ent.copyTo(sal) } }
-            // un APK sano pesa megas; si vino cortado, mejor no ofrecer instalarlo
-            if (destino.length() < 500_000) { destino.delete(); return null }
+            val bajado = destino.length()
+            // ⚠ COMPLETITUD: si el server dijo cuánto pesa y NO coincide → vino truncado (datos que se cortan) →
+            // NO instalar (un APK trunco da "error de análisis del paquete"). Se borra y el próximo intento reintenta.
+            if (esperado > 0 && bajado != esperado) { Log.w(TAG, "APK truncado $bajado/$esperado"); destino.delete(); return null }
+            if (bajado < 1_000_000) { destino.delete(); return null }   // un APK sano pesa megas
             return destino
         } catch (e: Throwable) {
-            Log.w(TAG, "fallo la descarga: ${e.message}"); return null
+            Log.w(TAG, "fallo la descarga: ${e.message}"); try { destino.delete() } catch (_: Throwable) {}; return null
         } finally { try { con?.disconnect() } catch (_: Throwable) {} }
     }
 
