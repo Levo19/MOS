@@ -44120,6 +44120,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const filas = equipos.map(e => {
       const robado = String(e.guardEstado) === 'ROBADO';
       const nom = _escapeHtml(String(e.nombre || ''));
+      // specs del equipo (los manda el APK al auto-registrarse): marca · modelo · Android · versión app
+      const _spec = [
+        [e.marca, e.modelo].filter(Boolean).join(' ').trim(),
+        e.so ? String(e.so) : '',
+        e.version ? 'v' + e.version : ''
+      ].filter(Boolean).join(' · ');
+      const spec = _spec ? '<div class="mg-eq-spec">📱 ' + _escapeHtml(_spec) + '</div>' : '';
       const hay = e.lat != null && e.lon != null;
       const ubic = hay
         ? '<a href="https://www.google.com/maps?q=' + e.lat + ',' + e.lon + '" target="_blank" rel="noopener" class="mg-ubic">📍 ver en el mapa</a>' +
@@ -44131,6 +44138,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         '<div class="mg-eq-top"><b>' + nom + '</b>' +
           '<span class="mg-cap ' + (cap ? 'on' : 'off') + '" onclick="MOS.mgCaptura(\'' + _esc(String(e.nombre)) + '\',' + (cap ? 'false' : 'true') + ')" title="Prender/apagar la captura de Yapes de este equipo">' + (cap ? '💜 Yapes: ON' : '🚫 Yapes: OFF') + '</span>' +
           (robado ? '<span class="mg-badge">🚨 ROBADO' + (e.guardDesde ? ' · ' + _escapeHtml(String(e.guardDesde)) : '') + '</span>' : '') + '</div>' +
+        spec +
         '<div class="mg-eq-ubic">' + ubic + '</div>' +
         (e.mediaPath ? '<div class="mg-eq-foto"><img data-eq="' + _esc(String(e.nombre)) + '" alt="cámara"><i>📸 ' +
           (e.mediaHaceSeg != null ? 'hace ' + (e.mediaHaceSeg < 90 ? e.mediaHaceSeg + ' s' : Math.round(e.mediaHaceSeg / 60) + ' min') : '') + '</i></div>' : '') +
@@ -44332,6 +44340,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.mg-cap.on{color:#c4b5fd;background:rgba(124,58,237,.14);border-color:rgba(167,139,250,.4)}' +
       '.mg-cap.off{color:#94a3b8;background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.35)}' +
       '.mg-badge{font-size:10px;font-weight:800;color:#fb7185;background:rgba(251,113,133,.14);border:1px solid rgba(251,113,133,.4);border-radius:999px;padding:2px 8px}' +
+      '.mg-eq-spec{margin:4px 0 2px;font-size:10.5px;color:#7488a6;letter-spacing:.2px}' +
       '.mg-eq-ubic{margin:6px 0;font-size:11px}.mg-eq-ubic i{font-style:normal;color:#5f7192;margin-left:6px}.mg-sinubic{color:#5f7192}' +
       '.mg-ubic{color:#5eead4;font-weight:800;text-decoration:none}.mg-ubic:hover{text-decoration:underline}' +
       '.mg-eq-acts{margin-top:6px}' +
