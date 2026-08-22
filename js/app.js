@@ -36386,6 +36386,12 @@ const MOS = (() => {
     if (esFavor) {
       $('tribBalanceSub').innerHTML = 'Se arrastra como crédito fiscal al mes siguiente · nada que pagar por IGV';
     } else {
+      // [pro] cuánto comprar en facturas para cubrir el 100% del IGV que debes: neto/0.18×1.18 (base+IGV).
+      // Va appendeado al pie del hero, justo donde se ve "esto le debes a SUNAT". No invasivo.
+      const _netoDeuda = (d.igvEmitido || 0) - (d.igvFavor || 0);
+      const _compraTxt = _netoDeuda > 0.5
+        ? ' · 🎯 para no pagarlo, comprá ≈ <strong>' + _tribFmtSoles(_netoDeuda / 0.18 * 1.18) + '</strong> en facturas'
+        : '';
       // [fix] guarda contra fecha ausente/mala del server → antes mostraba
       // "Vence: Invalid Date · faltan undefined días".
       const fecha = new Date(d.fechaVencimiento);
@@ -36393,9 +36399,9 @@ const MOS = (() => {
       const dias = Number.isFinite(d.diasParaVencer) ? d.diasParaVencer : null;
       if (fechaOk) {
         const fStr = fecha.toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
-        $('tribBalanceSub').innerHTML = 'Vence: <strong>' + _escapeHtml(fStr) + '</strong>' + (dias != null ? ' · faltan ' + dias + ' días' : '');
+        $('tribBalanceSub').innerHTML = 'Vence: <strong>' + _escapeHtml(fStr) + '</strong>' + (dias != null ? ' · faltan ' + dias + ' días' : '') + _compraTxt;
       } else {
-        $('tribBalanceSub').innerHTML = 'Vence según el cronograma SUNAT del mes siguiente';
+        $('tribBalanceSub').innerHTML = 'Vence según el cronograma SUNAT del mes siguiente' + _compraTxt;
       }
     }
     $('tribPeriodoBar').style.width = (d.pctMes || 0) + '%';
