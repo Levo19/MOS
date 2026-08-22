@@ -36856,7 +36856,13 @@ const MOS = (() => {
         '<button type="button" class="trib-buzon-x" onclick="MOS.tribBuzonBorrar(\'' + _esc(String(b.idBuzon)) + '\')" title="Quitar del buzón">✕</button>' +
       '</div>';
     }).join('');
+    // [939] si hay facturas PENDIENTE (esperando que el cron las lea), refrescar solo en 20s para ver el drenado en vivo.
+    if (items.some(b => String(b.estado) === 'PENDIENTE')) {
+      clearTimeout(_tribBuzonTimer);
+      _tribBuzonTimer = setTimeout(() => { if (document.getElementById('tribBuzonLista')) _tribBuzonRender(); }, 20000);
+    }
   }
+  let _tribBuzonTimer = null;
   async function _tribBuzonSubir(inp) {
     const f = inp && inp.files && inp.files[0]; if (!f) return;
     if (!/^image\//.test(f.type)) { toast('Subí una imagen de la factura', 'warning'); return; }
@@ -36865,6 +36871,13 @@ const MOS = (() => {
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).replace(/^data:[^;]+;base64,/, '')); r.onerror = rej; r.readAsDataURL(f); });
       const r = await API.post('buzonSubir', { jpgB64: b64, mime: f.type, mes: _tribState.mes, anio: _tribState.anio, usuario: S.session?.nombre || '' });
       if (!r || r.status !== 'success') throw new Error((r && r.error) || 'no se pudo');
+      // [939] la factura SIEMPRE quedó guardada; si no hubo cupo de IA, va como PENDIENTE y el cron la lee sola.
+      if (r.pendiente) {
+        toast(r.mensaje || 'Factura guardada ✓ Se leerá sola apenas haya cupo de IA.', 'info', 6000);
+        _tribBuzonRender(); _tribFetchIGVFavor(true);
+        try { inp.value = ''; } catch (_) {}
+        return;
+      }
       const est = (r.data && r.data.estado) || '';
       const msg = est === 'VALIDA' ? '✅ Factura agregada · IGV a favor'
                 : est === 'DUPLICADA' ? '♻️ Esa factura ya estaba en una guía — marcada duplicada'

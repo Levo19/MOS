@@ -2695,7 +2695,11 @@ const API = (() => {
           headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
           body: JSON.stringify({ jpgB64: p.jpgB64, mime: p.mime || 'image/jpeg', mes: p.mes, anio: p.anio, usuario: p.usuario || '' }) });
         const d = await res.json().catch(() => null);
-        if (d && d.ok) return { status: 'success', data: d.data };
+        if (d && d.ok) {
+          // [939] la factura SIEMPRE se guarda; si no hubo cupo de IA, queda PENDIENTE y el cron la lee sola.
+          if (d.pendiente) return { status: 'success', pendiente: true, idBuzon: d.idBuzon || '', mensaje: d.mensaje || 'Factura guardada ✓ Se leerá sola apenas haya cupo de IA.' };
+          return { status: 'success', data: d.data };
+        }
         // [sin cupo] aviso humano si la IA se quedó sin tokens/cuota (no es que la factura esté mal).
         const errTxt = (d && d.error) || ('OCR HTTP ' + res.status);
         if (_iaSinCupo(res.status, errTxt)) return { status: 'error', sinCupo: true, error: 'Se acabaron los tokens de IA por ahora. Reintenta en unos minutos.' };
