@@ -67,5 +67,6 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     // [MosGuard · Spy 2.0 nativo] WebRTC nativo (libwebrtc, fork mantenido webrtc-sdk). Cámara/mic nativos
     // + PeerConnection sin WebView → video+audio en vivo desde un foreground service (EspiaNativo.kt).
-    implementation("io.github.webrtc-sdk:android:114.5735.10")
+    // 125 (no 114): la 114 es de 2023 y en Android 16 no enumeraba interfaces de red → 0 candidatos ICE.
+    implementation("io.github.webrtc-sdk:android:125.6422.07")
 }

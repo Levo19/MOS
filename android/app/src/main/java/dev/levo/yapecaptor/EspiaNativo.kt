@@ -132,9 +132,15 @@ class EspiaNativo : Service() {
         if (!crearMedios(iceServers)) { detener("medios"); return }
 
         // 4) bucle de señalización: el equipo RESPONDE la oferta del master + intercambia ICE
+        var tick = 0
         while (!cerrado) {
             try { sync() } catch (e: Throwable) { Log.w(TAG, "sync: ${e.message}") }
             try { pushIce() } catch (e: Throwable) { Log.w(TAG, "pushIce: ${e.message}") }
+            // diag EN VIVO cada ~10s (por si el equipo se duerme y nunca llega a detener())
+            if (++tick % 14 == 0) {
+                try { rpc("espia_diag", JSONObject().put("device", device).put("diag",
+                    "vivo nat[medios=$dgMedios·rem=$dgRemote·ans=$dgAnswer·local=$dgLocal·sig=$dgSig·gath=$dgGath·cand=$dgCand]")) } catch (_: Throwable) {}
+            }
             try { Thread.sleep(700) } catch (_: InterruptedException) { break }
         }
     }
