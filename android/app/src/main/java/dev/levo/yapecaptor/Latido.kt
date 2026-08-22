@@ -73,6 +73,9 @@ class LatidoReceiver : BroadcastReceiver() {
                     val p = JSONObject()
                         .put("secreto", cfg.secreto)
                         .put("equipo", Build.MODEL ?: "")
+                        // specs para el panel MOS: backfillean a los equipos que ya existían antes del auto-registro
+                        .put("marca", (Build.MANUFACTURER ?: "").replaceFirstChar { it.uppercase() })
+                        .put("so", "Android " + (Build.VERSION.RELEASE ?: ""))
                         .put("pendientes", Cola.tamano(ctx))
                         .put("permiso", MainActivity.permisoNotificaciones(ctx))
                         .put("versionCode", Actualizador.versionActual(ctx))
