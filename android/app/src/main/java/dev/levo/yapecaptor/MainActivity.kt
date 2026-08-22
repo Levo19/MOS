@@ -242,6 +242,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() { super.onResume(); mostrarCandado(); if (!Prefs.listenerVivo(this)) YapeListener.reatar(this); GuardiaService.arrancar(this); pintar() }
 
+    // repinta el panel apenas se concede/deniega un permiso (la fila pasa a ✓ sin salir de la app)
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        try { pintar() } catch (_: Throwable) {}
+        if (requestCode == 92) GuardiaService.arrancar(this)   // con ubicación/cámara ya puede resguardar
+    }
+
     private fun permisoConcedido(): Boolean = permisoNotificaciones(this)
 
     companion object {
@@ -262,6 +269,29 @@ class MainActivity : AppCompatActivity() {
     private fun abrirAjustesNotif() {
         try { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }
         catch (_: Throwable) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+    }
+
+    /** Ajustes de ESTA app (permisos Cámara/Ubicación se activan a mano acá cuando el diálogo ya no aparece). */
+    private fun abrirAjustesApp() {
+        try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + packageName))) }
+        catch (_: Throwable) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+    }
+
+    /** [cámara/ubicación] Sin estos permisos NADA de vigilancia anda (ni GPS, ni foto, ni ver en vivo).
+     *  Al tocar la fila: si Android todavía muestra el diálogo, lo pide; si ya fue denegado permanente,
+     *  lleva a Ajustes de la app (donde SÍ se puede activar a mano). */
+    private fun activarCamaraUbicacion() {
+        val faltan = mutableListOf<String>()
+        if (!tieneCamara()) faltan.add(android.Manifest.permission.CAMERA)
+        if (!tieneUbicacion()) { faltan.add(android.Manifest.permission.ACCESS_FINE_LOCATION); faltan.add(android.Manifest.permission.ACCESS_COARSE_LOCATION) }
+        if (faltan.isEmpty()) return
+        val yaNoPregunta = Build.VERSION.SDK_INT >= 23 && faltan.all { !shouldShowRequestPermissionRationale(it) }
+        if (yaNoPregunta) {
+            Toast.makeText(this, "Activá Cámara y Ubicación en Permisos", Toast.LENGTH_LONG).show()
+            abrirAjustesApp()
+        } else if (Build.VERSION.SDK_INT >= 23) {
+            requestPermissions(faltan.toTypedArray(), 92)
+        }
     }
 
     /**
@@ -300,13 +330,13 @@ class MainActivity : AppCompatActivity() {
         if (notif) filaSalud("🔔", "Captura de Yapes", "Escuchando notificaciones", VERDE, "✓", null)
         else       filaSalud("🔔", "Captura de Yapes", "Falta el permiso · tocá para activar", AMBAR, "›") { abrirAjustesNotif() }
 
-        // 3) cámara (vigilancia en vivo)
+        // 3) cámara (vigilancia en vivo) — SIN esto no hay foto ni "ver en vivo"
         if (cam) filaSalud("📷", "Cámara", "Lista para vigilancia", VERDE, "✓", null)
-        else     filaSalud("📷", "Cámara", "Falta el permiso · tocá para activar", AMBAR, "›") { pedirPermisoUbicacion() }
+        else     filaSalud("📷", "Cámara", "Falta el permiso · tocá para activar", AMBAR, "›") { activarCamaraUbicacion() }
 
         // 4) ubicación (dónde está el equipo)
         if (ubi) filaSalud("📍", "Ubicación", "GPS activo", VERDE, "✓", null)
-        else     filaSalud("📍", "Ubicación", "Falta el permiso · tocá para activar", AMBAR, "›") { pedirPermisoUbicacion() }
+        else     filaSalud("📍", "Ubicación", "Falta el permiso · tocá para activar", AMBAR, "›") { activarCamaraUbicacion() }
 
         // 5) batería (que Android no lo duerma con la pantalla apagada)
         if (bat) filaSalud("🔋", "Siempre activo", "Android no lo va a dormir", VERDE, "✓", null)
