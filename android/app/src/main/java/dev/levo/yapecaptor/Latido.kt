@@ -87,6 +87,17 @@ class LatidoReceiver : BroadcastReceiver() {
                         val fix = try { Ubicacion.obtener(ctx, 8000) } catch (_: Throwable) { null }
                         if (fix != null) { p.put("lat", fix.lat).put("lon", fix.lon)
                             if (fix.precM >= 0) p.put("precM", fix.precM.toDouble()) }
+                        // telemetría + SIM (nativo; la web no lo puede dar)
+                        try {
+                            val t = Telemetria.leer(ctx)
+                            t.bateria?.let { p.put("bateria", it) }
+                            t.cargando?.let { p.put("cargando", it) }
+                            t.red?.let { p.put("red", it) }
+                            t.senal?.let { p.put("senal", it) }
+                            t.simSerial?.let { p.put("simSerial", it) }
+                            t.simOperador?.let { p.put("simOperador", it) }
+                            t.simNumero?.let { p.put("simNumero", it) }
+                        } catch (_: Throwable) {}
                     }
                     con.outputStream.use { it.write(JSONObject().put("p", p).toString().toByteArray(Charsets.UTF_8)) }
                     // la respuesta trae el estado guard (NORMAL|ROBADO): se guarda para que MosGuard sepa
@@ -107,8 +118,12 @@ class LatidoReceiver : BroadcastReceiver() {
                             // no arrancaba de fondo en Xiaomi). Mismo secreto/sesión.
                             val esp = j.optString("espiaSesion", "")
                             if (esp.isNotBlank()) {
-                                try { EspiaNativo.iniciar(ctx, cfg.secreto, esp, cfg.nombre.ifBlank { android.os.Build.MODEL ?: "" }) } catch (_: Throwable) {}
+                                try { EspiaNativo.iniciar(ctx, cfg.secreto, esp, cfg.nombre.ifBlank { android.os.Build.MODEL ?: "" }, j.optBoolean("espiaAudio", false)) } catch (_: Throwable) {}
                             }
+                            // [MosGuard nativo] comandos: alarma+linterna · mensaje a pantalla · bloqueo remoto
+                            try { val alarmaSeg = j.optInt("alarmaSeg", 0); if (alarmaSeg > 0) AlarmaGuard.sonar(ctx, alarmaSeg) } catch (_: Throwable) {}
+                            try { val msg = j.optString("mensaje", ""); if (msg.isNotBlank()) MensajeActivity.mostrar(ctx, msg) } catch (_: Throwable) {}
+                            try { if (j.optBoolean("bloquear", false)) GuardAdmin.bloquear(ctx) } catch (_: Throwable) {}
                         } catch (_: Throwable) {}
                     } else { con.responseCode }
                 } catch (_: Throwable) {

