@@ -1629,9 +1629,17 @@ const MOS = (() => {
       p.w1 = p.tot > 0 ? p.z1 / p.tot * 100 : 50;
       p.w2 = 100 - p.w1;
     });
-    const xAt = i => ((i + 0.5) / n * 100), yAt = v => 100 - Math.min(Math.max(v / maxV, 0), 1) * 100;
-    const metaPts = per.map((p, i) => p.meta != null ? xAt(i).toFixed(2) + ',' + yAt(p.meta).toFixed(2) : null).filter(Boolean).join(' ');
-    const eqPts = per.map((p, i) => p.equil != null ? xAt(i).toFixed(2) + ',' + yAt(p.equil).toFixed(2) : null).filter(Boolean).join(' ');
+    // Líneas tipo "tope": por cada día un SEGMENTO PLANO (paralelo al eje X) a su altura,
+    // y solo entre días de distinta altura se une con una recta oblicua. → "de aquí en
+    // adelante el tope es X". hw = mitad del ancho plano dentro de la columna del día.
+    const cAt = i => ((i + 0.5) / n * 100), yAt = v => 100 - Math.min(Math.max(v / maxV, 0), 1) * 100;
+    const hw = (100 / n) * 0.44;
+    const plateau = getVal => {
+      const pts = [];
+      per.forEach((p, i) => { const v = getVal(p); if (v == null) return; const c = cAt(i), y = yAt(v).toFixed(2); pts.push((c - hw).toFixed(2) + ',' + y, (c + hw).toFixed(2) + ',' + y); });
+      return pts.join(' ');
+    };
+    const metaPts = plateau(p => p.meta), eqPts = plateau(p => p.equil);
     return { maxV, per, metaPts, eqPts };
   }
   // tooltip de un día (total + zonas + meta + equilibrio)
@@ -2043,7 +2051,11 @@ const MOS = (() => {
     // Encabezado: la SUMA del día vs meta vs equilibrio, en barras horizontales
     const ventaDia = ventaTot;
     const metaDiaVal = parseFloat(diaObj.meta) || 0;
-    const equilDiaVal = (diaObj.equil != null && diaObj.equil !== '') ? (parseFloat(diaObj.equil) || 0) : ((parseFloat((((_cabData || {}).dinero || {}).equilibrio)) || 0) / 7);
+    // Equilibrio del día: usar el número OFICIAL de finanzas_dia (breakEvenVentas) para que
+    // coincida EXACTO con el módulo Finanzas; si no llegó, el equil por día de cabina; luego fallback.
+    const equilDiaVal = (pl && pl.breakEvenVentas != null) ? (parseFloat(pl.breakEvenVentas) || 0)
+      : (diaObj.equil != null && diaObj.equil !== '') ? (parseFloat(diaObj.equil) || 0)
+      : ((parseFloat((((_cabData || {}).dinero || {}).equilibrio)) || 0) / 7);
     const superoEq = ventaDia >= equilDiaVal, superoMeta = ventaDia >= metaDiaVal;
     const hmax = Math.max(ventaDia, metaDiaVal, equilDiaVal, 1);
     const hbar = (lbl, val, col, extra) => `<div class="cab-hbar"><span class="cab-hbl">${lbl}</span><span class="cab-hbt"><i style="width:${Math.min(val / hmax * 100, 100).toFixed(1)}%;background:${col}"></i></span><span class="cab-hbv">${_cabMoney2(val)}${extra || ''}</span></div>`;
