@@ -43,6 +43,11 @@ begin
       'dow', trim(to_char(gs.d,'Dy')),
       'venta', coalesce((select (s->>'ventasNetas')::numeric from jsonb_array_elements(v_fr->'data'->'serie') s where s->>'fecha' = to_char(gs.d,'YYYY-MM-DD')), 0),
       'meta',  (select coalesce(sum(mos._meta_zona(zz.id_zona, gs.d::date)),0) from mos.zonas zz where zz.politica_json ? 'metaDiaria'),
+      -- punto de equilibrio de ESE día = gastos_día / ratio de margen_día (varía día a día)
+      'equil', (select case when (s->>'margenBrutoPct')::numeric > 0
+                            then round((s->>'totalGastos')::numeric / ((s->>'margenBrutoPct')::numeric/100.0))
+                            else null end
+                  from jsonb_array_elements(v_fr->'data'->'serie') s where s->>'fecha' = to_char(gs.d,'YYYY-MM-DD') limit 1),
       -- venta por zona (bruta) para pintar la barra apilada Z-01/Z-02
       'vz', (select coalesce(jsonb_agg(x order by (x->>'zona')),'[]'::jsonb) from (
                select jsonb_build_object('zona', zona_id, 'venta', round(sum(total))) x

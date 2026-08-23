@@ -1267,38 +1267,38 @@ const MOS = (() => {
 #cabina .cab-big{font-size:clamp(26px,5vw,40px);font-weight:800;letter-spacing:-.03em;margin:2px 0 2px;line-height:1;color:var(--cab-ink)}
 #cabina .cab-subx{font-size:12.5px;color:var(--cab-ink2);font-weight:600}
 #cabina .cab-subx b{color:var(--cab-good)}
-/* ── gráfico protagonista: barras verticales por día (Z1/Z2 lado a lado) + líneas neón ── */
+/* ── gráfico protagonista: barra ÚNICA por día (suma Z1+Z2, partida horizontal) + polilíneas meta/equilibrio ── */
 #cabina .cab-hero-v2{flex-direction:column;align-items:stretch;gap:6px}
 #cabina .cab-chart{margin-top:14px}
-#cabina .cab-plot{position:relative;height:158px;padding-top:8px}
-#cabina .cab-cols2{display:flex;gap:5px;height:100%;align-items:flex-end}
-#cabina .cab-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;cursor:pointer;position:relative;border-radius:7px;transition:background .15s}
-#cabina .cab-col:hover{background:rgba(129,140,248,.07)}
-#cabina .cab-col.fut{opacity:.38;cursor:default}
-#cabina .cab-colbars{flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;width:100%;min-height:0}
-#cabina .cab-b{width:44%;max-width:22px;border-radius:4px 4px 0 0;height:0;transition:height .9s cubic-bezier(.2,.8,.2,1)}
-#cabina .cab-b.z1{background:linear-gradient(180deg,#7dd3fc,#0ea5e9);box-shadow:0 0 9px rgba(56,189,248,.45)}
-#cabina .cab-b.z2{background:linear-gradient(180deg,#6ee7b7,#10b981);box-shadow:0 0 9px rgba(52,211,153,.45)}
-#cabina .cab-col span{font-size:10px;font-weight:800;color:#eaf0fd;text-shadow:0 1px 3px rgba(4,8,16,.85);z-index:1}
-#cabina .cab-col.hoy span{color:#fff}
-#cabina .cab-col.hoy::before{content:"hoy";position:absolute;top:-2px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:900;color:var(--cab-acc);letter-spacing:.05em}
-#cabina .cab-refline{position:absolute;left:0;right:0;height:0;border-top:2px dashed;pointer-events:none;z-index:2;transition:bottom .9s cubic-bezier(.2,.8,.2,1)}
-#cabina .cab-refline.meta{border-color:#fbbf24;box-shadow:0 0 7px rgba(251,191,36,.7)}
-#cabina .cab-refline.eq{border-color:#f472b6;box-shadow:0 0 7px rgba(244,114,182,.7)}
-#cabina .cab-refline i{position:absolute;right:0;top:-8px;font-size:8.5px;font-weight:800;font-style:normal;padding:1px 6px;border-radius:5px;background:var(--cab-bg2);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
-#cabina .cab-refline.meta i{color:#fbbf24}
-#cabina .cab-refline.eq i{color:#f472b6}
-#cabina .cab-chartlg{display:flex;align-items:center;gap:13px;flex-wrap:wrap;margin-top:11px;font-size:10.5px;font-weight:700;color:var(--cab-ink2)}
+#cabina .cab-plot{position:relative;height:160px}
+#cabina .cab-lines{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:2}
+#cabina .cab-ln-meta{fill:none;stroke:#fbbf24;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;filter:drop-shadow(0 0 3px rgba(251,191,36,.8))}
+#cabina .cab-ln-eq{fill:none;stroke:#ef4444;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;filter:drop-shadow(0 0 3px rgba(239,68,68,.85))}
+#cabina .cab-bars-row{display:flex;gap:6px;height:100%;align-items:flex-end;position:relative;z-index:1}
+#cabina .cab-barcol{flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;cursor:pointer;border-radius:7px;transition:background .15s;position:relative}
+#cabina .cab-barcol:hover{background:rgba(129,140,248,.08)}
+#cabina .cab-barcol.fut{opacity:.4;cursor:default}
+#cabina .cab-bar1{width:66%;max-width:38px;height:0;display:flex;align-items:stretch;border-radius:5px 5px 0 0;overflow:hidden;transition:height .9s cubic-bezier(.2,.8,.2,1);box-shadow:0 0 10px rgba(56,189,248,.25)}
+#cabina .cab-seg{display:block;height:100%}
+#cabina .cab-seg.z1{background:linear-gradient(180deg,#7dd3fc,#0ea5e9)}
+#cabina .cab-seg.z2{background:linear-gradient(180deg,#6ee7b7,#10b981)}
+#cabina .cab-barcol.hoy .cab-bar1{outline:1.5px solid rgba(129,140,248,.6);outline-offset:1px}
+#cabina .cab-barcol.hoy::before{content:"hoy";position:absolute;top:-3px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:900;color:var(--cab-acc);letter-spacing:.05em;z-index:3}
+#cabina .cab-dayrow{display:flex;gap:6px;margin-top:6px}
+#cabina .cab-dayrow span{flex:1;text-align:center;font-size:10px;font-weight:800;color:#c3d0ea}
+#cabina .cab-dayrow span.hoy{color:#fff}
+#cabina .cab-dayrow span.fut{opacity:.45}
+#cabina .cab-chartlg{display:flex;align-items:center;gap:13px;flex-wrap:wrap;margin-top:10px;font-size:10.5px;font-weight:700;color:var(--cab-ink2)}
 #cabina .cab-chartlg span{display:inline-flex;align-items:center;gap:5px}
-#cabina .cab-chartlg i{width:9px;height:9px;border-radius:3px;display:inline-block}
-#cabina .cab-chartlg .lg-z1{background:linear-gradient(180deg,#7dd3fc,#0ea5e9)}
-#cabina .cab-chartlg .lg-z2{background:linear-gradient(180deg,#6ee7b7,#10b981)}
+#cabina .cab-chartlg i{width:11px;height:4px;border-radius:2px;display:inline-block}
+#cabina .cab-chartlg .lg-z1{height:9px;width:9px;border-radius:3px;background:linear-gradient(180deg,#7dd3fc,#0ea5e9)}
+#cabina .cab-chartlg .lg-z2{height:9px;width:9px;border-radius:3px;background:linear-gradient(180deg,#6ee7b7,#10b981)}
 #cabina .cab-chartlg .lg-meta{background:#fbbf24}
-#cabina .cab-chartlg .lg-eq{background:#f472b6}
+#cabina .cab-chartlg .lg-eq{background:#ef4444}
 #cabina .cab-chartlg .lg-hint{margin-left:auto;color:var(--cab-ink3);font-weight:600;opacity:.85}
-#cabina .cab-col.cab-cash .cab-b{animation:cab-cashpulse .7s ease}
+#cabina .cab-barcol.cab-cash .cab-bar1{animation:cab-cashpulse .7s ease}
 @keyframes cab-cashpulse{0%,100%{filter:brightness(1)}40%{filter:brightness(1.7) saturate(1.3)}}
-#cabina .cab-coin{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);font-size:16px;pointer-events:none;animation:cab-coinup 1.4s ease forwards;z-index:3}
+#cabina .cab-coin{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:16px;pointer-events:none;animation:cab-coinup 1.4s ease forwards;z-index:4}
 @keyframes cab-coinup{0%{opacity:0;transform:translate(-50%,10px) scale(.7)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-40px) scale(1.1)}}
 #cabina .cab-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
 #cabina .cab-card{grid-column:span 6;background:var(--cab-card);border:1px solid var(--cab-line);border-radius:var(--cab-r);padding:16px 17px;cursor:pointer;transition:transform .18s,border-color .18s,box-shadow .18s;position:relative;overflow:hidden}
@@ -1515,33 +1515,35 @@ const MOS = (() => {
     const root = document.getElementById('cabina'); if (!root) return;
     const din = d.dinero || {}, dias = Array.isArray(din.dias) ? din.dias : [];
     const acum = parseFloat(din.acumulado) || 0, meta = parseFloat(din.meta) || 0;
-    const equil = parseFloat(din.equilibrio) || 0;
-    const metaDia = meta / 7, equilDia = equil / 7;
     const pct = meta > 0 ? acum / meta : 0;
     // número grande (cuenta desde el valor anterior, no desde 0)
     const big = document.getElementById('cabHeroBig');
     if (big) { big.dataset.to = acum.toFixed(0); _cabCountUp(big, acum, v => _cabMoney(v), prevAcum); }
-    // gráfico: recalcula alturas de barras (Z1/Z2) + líneas de meta y equilibrio; animan por transition
-    const dim = _cabChartDims(dias, metaDia, equilDia);
-    const cols = root.querySelectorAll('.cab-cols2 .cab-col');
+    // gráfico: recalcula barras (altura=suma, anchos por zona) + polilíneas meta/equilibrio
+    const m = _cabChartMetrics(dias);
+    const cols = root.querySelectorAll('.cab-bars-row .cab-barcol');
     dias.forEach((x, i) => {
-      const el = cols[i]; if (!el || x.futuro) return;
-      const b1 = el.querySelector('.cab-b.z1'), b2 = el.querySelector('.cab-b.z2');
-      if (b1) { b1.dataset.h = dim.perDay[i].h1.toFixed(1); b1.style.height = b1.dataset.h + '%'; }
-      if (b2) { b2.dataset.h = dim.perDay[i].h2.toFixed(1); b2.style.height = b2.dataset.h + '%'; }
+      const el = cols[i]; if (!el) return;
+      const p = m.per[i], bar = el.querySelector('.cab-bar1');
+      if (bar && !p.fut && p.tot > 0) {
+        bar.dataset.h = p.barH.toFixed(1); bar.style.height = p.barH.toFixed(1) + '%';
+        const s1 = bar.querySelector('.cab-seg.z1'), s2 = bar.querySelector('.cab-seg.z2');
+        if (s1) s1.style.flexBasis = p.w1.toFixed(1) + '%';
+        if (s2) s2.style.flexBasis = p.w2.toFixed(1) + '%';
+      }
     });
-    const lnMeta = root.querySelector('.cab-refline.meta'); if (lnMeta) lnMeta.style.bottom = dim.metaY.toFixed(1) + '%';
-    const lnEq = root.querySelector('.cab-refline.eq'); if (lnEq) lnEq.style.bottom = dim.eqY.toFixed(1) + '%';
+    const lnMeta = root.querySelector('.cab-ln-meta'); if (lnMeta) lnMeta.setAttribute('points', m.metaPts);
+    const lnEq = root.querySelector('.cab-ln-eq'); if (lnEq && m.eqPts) lnEq.setAttribute('points', m.eqPts);
     // barra de meta de la card Dinero (la primera .cab-metabar del grid)
     const mb = root.querySelector('.cab-grid .cab-metabar i');
     if (mb) { const w = Math.min(pct * 100, 100).toFixed(1); mb.dataset.w = w; mb.style.width = w + '%'; }
-    if (acum > prevAcum + 0.009) { _cabPlus(acum - prevAcum); _cabRainToday(root, dias); }   // "+" + lluvia de plata al día de hoy
+    if (acum > prevAcum + 0.009) { _cabPlus(acum - prevAcum); _cabRainToday(root, dias); }   // "+" + plata al día de hoy
   }
-  // efecto de plata entrando: pulso brillante en las barras del día de hoy
+  // efecto de plata entrando: pulso brillante en la barra del día de hoy
   function _cabRainToday(root, dias) {
     try {
       const activos = Math.max(1, dias.filter(x => !x.futuro).length);
-      const cols = root.querySelectorAll('.cab-cols2 .cab-col');
+      const cols = root.querySelectorAll('.cab-bars-row .cab-barcol');
       const el = cols[activos - 1]; if (!el) return;
       el.classList.remove('cab-cash'); void el.offsetWidth; el.classList.add('cab-cash');
       const coin = document.createElement('div'); coin.className = 'cab-coin'; coin.textContent = '💰';
@@ -1596,34 +1598,52 @@ const MOS = (() => {
     return { z1: parseFloat((a.find(z => z.zona === 'ZONA-01') || {}).venta) || 0,
              z2: parseFloat((a.find(z => z.zona === 'ZONA-02') || {}).venta) || 0 };
   }
-  function _cabChartDims(dias, metaDia, equilDia) {
-    let maxV = Math.max(metaDia || 0, equilDia || 0, 1);
-    dias.forEach(x => { const { z1, z2 } = _cabZV(x); maxV = Math.max(maxV, z1, z2); });
-    maxV *= 1.10;
-    const perDay = dias.map(x => {
-      const { z1, z2 } = _cabZV(x);
-      return { h1: z1 > 0 ? Math.max(3, z1 / maxV * 100) : 0, h2: z2 > 0 ? Math.max(3, z2 / maxV * 100) : 0 };
+  // Métricas del gráfico (reutilizadas por render y por el tiempo real en sitio):
+  //  barra ÚNICA por día = suma Z1+Z2 (altura) partida horizontal (anchos ∝ zona);
+  //  meta y equilibrio = polilíneas por día (una recta por día unida oblicua).
+  function _cabChartMetrics(dias) {
+    const n = dias.length || 1;
+    let maxV = 1;
+    const per = dias.map(x => {
+      const { z1, z2 } = _cabZV(x), tot = z1 + z2;
+      const meta = x.meta != null ? parseFloat(x.meta) || 0 : null;
+      const equil = (x.equil != null && x.equil !== '') ? parseFloat(x.equil) : null;
+      maxV = Math.max(maxV, tot, meta || 0, equil || 0);
+      return { z1, z2, tot, meta, equil, fut: !!x.futuro };
     });
-    return { maxV, metaY: Math.min(100, (metaDia || 0) / maxV * 100), eqY: Math.min(100, (equilDia || 0) / maxV * 100), perDay };
+    maxV *= 1.12;
+    per.forEach(p => {
+      p.barH = p.tot > 0 ? p.tot / maxV * 100 : 0;
+      p.w1 = p.tot > 0 ? p.z1 / p.tot * 100 : 50;
+      p.w2 = 100 - p.w1;
+    });
+    const xAt = i => ((i + 0.5) / n * 100), yAt = v => 100 - Math.min(Math.max(v / maxV, 0), 1) * 100;
+    const metaPts = per.map((p, i) => p.meta != null ? xAt(i).toFixed(2) + ',' + yAt(p.meta).toFixed(2) : null).filter(Boolean).join(' ');
+    const eqPts = per.map((p, i) => p.equil != null ? xAt(i).toFixed(2) + ',' + yAt(p.equil).toFixed(2) : null).filter(Boolean).join(' ');
+    return { maxV, per, metaPts, eqPts };
   }
-  function _cabChart(dias, metaDia, equilDia) {
-    const dim = _cabChartDims(dias, metaDia, equilDia);
+  function _cabChart(dias) {
+    const m = _cabChartMetrics(dias);
     const activos = Math.max(1, dias.filter(x => !x.futuro).length);
     const cols = dias.map((x, i) => {
-      const fut = !!x.futuro, { z1, z2 } = _cabZV(x), v = parseFloat(x.venta) || 0;
-      const d = dim.perDay[i], isHoy = i === activos - 1 && !fut;
-      const onc = fut ? '' : ` onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
-      const ttl = fut ? 'Día futuro'
-        : `${_cabDOW[x.dow] || ''} ${x.fecha} · Total ${_cabMoney(v)}  (Z1 ${_cabMoney(z1)} · Z2 ${_cabMoney(z2)}) · meta ${_cabMoney(metaDia)} · equilibrio ${_cabMoney(equilDia)}`;
-      const bars = fut ? '' : `<div class="cab-b z1" data-h="${d.h1.toFixed(1)}"></div><div class="cab-b z2" data-h="${d.h2.toFixed(1)}"></div>`;
-      return `<div class="cab-col ${isHoy ? 'hoy' : ''} ${fut ? 'fut' : ''}" title="${_cabEsc(ttl)}"${onc}><div class="cab-colbars">${bars}</div><span>${_cabDOW[x.dow] || ''}</span></div>`;
+      const p = m.per[i], isHoy = i === activos - 1 && !p.fut;
+      const onc = p.fut ? '' : ` onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
+      const ttl = p.fut ? 'Día futuro'
+        : `${_cabDOW[x.dow] || ''} ${x.fecha} · Total ${_cabMoney(p.tot)}  (Z1 ${_cabMoney(p.z1)} · Z2 ${_cabMoney(p.z2)}) · meta ${_cabMoney(p.meta || 0)} · equilibrio ${p.equil != null ? _cabMoney(p.equil) : '—'}`;
+      const bar = (p.fut || p.tot <= 0) ? '' :
+        `<div class="cab-bar1" data-h="${p.barH.toFixed(1)}"><span class="cab-seg z1" style="flex-basis:${p.w1.toFixed(1)}%"></span><span class="cab-seg z2" style="flex-basis:${p.w2.toFixed(1)}%"></span></div>`;
+      return `<div class="cab-barcol ${isHoy ? 'hoy' : ''} ${p.fut ? 'fut' : ''}" title="${_cabEsc(ttl)}"${onc}>${bar}</div>`;
     }).join('');
+    const labels = dias.map((x, i) => `<span class="${i === activos - 1 && !m.per[i].fut ? 'hoy' : ''} ${m.per[i].fut ? 'fut' : ''}">${_cabDOW[x.dow] || ''}</span>`).join('');
     return `<div class="cab-chart">
       <div class="cab-plot">
-        <div class="cab-refline eq" style="bottom:${dim.eqY.toFixed(1)}%"><i>equilibrio ${_cabMoney(equilDia)}</i></div>
-        <div class="cab-refline meta" style="bottom:${dim.metaY.toFixed(1)}%"><i>meta ${_cabMoney(metaDia)}</i></div>
-        <div class="cab-cols2">${cols}</div>
+        <svg class="cab-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <polyline class="cab-ln-meta" points="${m.metaPts}" vector-effect="non-scaling-stroke"/>
+          ${m.eqPts ? `<polyline class="cab-ln-eq" points="${m.eqPts}" vector-effect="non-scaling-stroke"/>` : ''}
+        </svg>
+        <div class="cab-bars-row">${cols}</div>
       </div>
+      <div class="cab-dayrow">${labels}</div>
       <div class="cab-chartlg"><span><i class="lg-z1"></i>Zona 1</span><span><i class="lg-z2"></i>Zona 2</span><span><i class="lg-meta"></i>meta/día</span><span><i class="lg-eq"></i>equilibrio/día</span><span class="lg-hint">tocá un día → detalle</span></div>
     </div>`;
   }
@@ -1711,7 +1731,7 @@ const MOS = (() => {
           <div class="cab-big cab-num" id="cabHeroBig" data-to="${acum.toFixed(0)}">${_cabMoney(acum)}</div>
           <div class="cab-subx">${subHtml}</div>
         </div>
-        ${_cabChart(dias, metaDia, equilDia)}
+        ${_cabChart(dias)}
       </div>
 
       <div class="cab-grid">${_cabCards(d, prev)}</div>
@@ -2001,7 +2021,7 @@ const MOS = (() => {
     // Encabezado: la SUMA del día vs meta vs equilibrio, en barras horizontales
     const ventaDia = ventaTot;
     const metaDiaVal = parseFloat(diaObj.meta) || 0;
-    const equilDiaVal = (parseFloat((((_cabData || {}).dinero || {}).equilibrio)) || 0) / 7;
+    const equilDiaVal = (diaObj.equil != null && diaObj.equil !== '') ? (parseFloat(diaObj.equil) || 0) : ((parseFloat((((_cabData || {}).dinero || {}).equilibrio)) || 0) / 7);
     const superoEq = ventaDia >= equilDiaVal, superoMeta = ventaDia >= metaDiaVal;
     const hmax = Math.max(ventaDia, metaDiaVal, equilDiaVal, 1);
     const hbar = (lbl, val, col, extra) => `<div class="cab-hbar"><span class="cab-hbl">${lbl}</span><span class="cab-hbt"><i style="width:${Math.min(val / hmax * 100, 100).toFixed(1)}%;background:${col}"></i></span><span class="cab-hbv">${_cabMoney2(val)}${extra || ''}</span></div>`;
