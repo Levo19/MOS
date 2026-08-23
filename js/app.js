@@ -1269,6 +1269,14 @@ const MOS = (() => {
 #cabina .cab-subx b{color:var(--cab-good)}
 /* ── gráfico protagonista: barra ÚNICA por día (suma Z1+Z2, partida horizontal) + polilíneas meta/equilibrio ── */
 #cabina .cab-hero-v2{flex-direction:column;align-items:stretch;gap:6px}
+#cabina .cab-bigrow{display:flex;align-items:center;gap:13px;flex-wrap:wrap;margin:2px 0}
+#cabina .cab-bigrow .cab-big{margin:0;cursor:pointer;transition:opacity .15s}
+#cabina .cab-bigrow .cab-big:hover{opacity:.82}
+#cabina .cab-wkbtn{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:750;padding:7px 12px;border-radius:10px;background:var(--cab-card2);border:1px solid var(--cab-line);color:var(--cab-ink);cursor:pointer;transition:.15s}
+#cabina .cab-wkbtn:hover{border-color:rgba(129,140,248,.5);transform:translateY(-1px)}
+#cabina .cab-bdelta{position:absolute;left:50%;transform:translateX(-50%);font-size:8.5px;font-weight:800;padding:1px 4px;border-radius:5px;white-space:nowrap;pointer-events:none;z-index:3;opacity:.92}
+#cabina .cab-bdelta.up{color:#34d399;background:rgba(52,211,153,.16)}
+#cabina .cab-bdelta.down{color:#f87171;background:rgba(248,113,113,.16)}
 #cabina .cab-chart{margin-top:14px}
 #cabina .cab-plot{position:relative;height:160px}
 #cabina .cab-lines{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:2}
@@ -1525,6 +1533,7 @@ const MOS = (() => {
     if (big) { big.dataset.to = acum.toFixed(0); _cabCountUp(big, acum, v => _cabMoney(v), prevAcum); }
     // gráfico: recalcula barras (altura=suma, anchos por zona) + polilíneas meta/equilibrio
     const m = _cabChartMetrics(dias);
+    const prevDias = (_cabPrev && _cabPrev.dinero && Array.isArray(_cabPrev.dinero.dias)) ? _cabPrev.dinero.dias : null;
     const cols = root.querySelectorAll('.cab-bars-row .cab-barcol');
     dias.forEach((x, i) => {
       const el = cols[i]; if (!el) return;
@@ -1543,12 +1552,12 @@ const MOS = (() => {
         if (s1) { s1.style.flexBasis = p.w1.toFixed(1) + '%'; s1.classList.toggle('cab-split', p.w1 > 0 && p.w2 > 0); }
         if (s2) s2.style.flexBasis = p.w2.toFixed(1) + '%';
       }
+      // chip de delta vs sem. pasada: reubicar/actualizar (la altura de la barra cambió)
+      const oldChip = el.querySelector('.cab-bdelta'); if (oldChip) oldChip.remove();
+      const chip = _cabBDelta(x, p, prevDias, i); if (chip) el.insertAdjacentHTML('beforeend', chip);
     });
     const lnMeta = root.querySelector('.cab-ln-meta'); if (lnMeta) lnMeta.setAttribute('points', m.metaPts);
     const lnEq = root.querySelector('.cab-ln-eq'); if (lnEq && m.eqPts) lnEq.setAttribute('points', m.eqPts);
-    // barra de meta de la card Dinero (la primera .cab-metabar del grid)
-    const mb = root.querySelector('.cab-grid .cab-metabar i');
-    if (mb) { const w = Math.min(pct * 100, 100).toFixed(1); mb.dataset.w = w; mb.style.width = w + '%'; }
     if (acum > prevAcum + 0.009) { _cabPlus(acum - prevAcum); _cabRainToday(root, dias); }   // "+" + plata al día de hoy
   }
   // efecto de plata entrando: pulso brillante en la barra del día de hoy
@@ -1656,13 +1665,24 @@ const MOS = (() => {
     }
     return `<div class="cab-bar1 cab-empty"></div>`;
   }
-  function _cabChart(dias) {
+  // chip de delta del día vs el MISMO día de la semana pasada (no invasivo, encima de la barra)
+  function _cabBDelta(x, p, prevDias, i) {
+    if (p.fut || p.tot <= 0 || !prevDias || !prevDias[i]) return '';
+    const pv = parseFloat(prevDias[i].venta) || 0, cv = parseFloat(x.venta) || 0;
+    if (pv <= 0 || cv <= 0) return '';
+    const dp = Math.round((cv - pv) / pv * 100);
+    if (dp === 0) return '';
+    const up = dp > 0;
+    return `<span class="cab-bdelta ${up ? 'up' : 'down'}" style="bottom:calc(${p.barH.toFixed(1)}% + 4px)" title="vs mismo día sem. pasada (${_cabMoney(pv)})">${up ? '▲' : '▼'}${Math.abs(dp)}%</span>`;
+  }
+  function _cabChart(dias, prev) {
     const m = _cabChartMetrics(dias);
+    const prevDias = (prev && prev.dinero && Array.isArray(prev.dinero.dias)) ? prev.dinero.dias : null;
     const activos = Math.max(1, dias.filter(x => !x.futuro).length);
     const cols = dias.map((x, i) => {
       const p = m.per[i], isHoy = i === activos - 1 && !p.fut;
       const onc = (p.fut || p.tot <= 0) ? '' : ` onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
-      return `<div class="cab-barcol ${isHoy ? 'hoy' : ''} ${p.fut ? 'fut' : ''}" title="${_cabEsc(_cabDayTtl(x, p))}"${onc}>${_cabBarHtml(p)}</div>`;
+      return `<div class="cab-barcol ${isHoy ? 'hoy' : ''} ${p.fut ? 'fut' : ''}" title="${_cabEsc(_cabDayTtl(x, p))}"${onc}>${_cabBarHtml(p)}${_cabBDelta(x, p, prevDias, i)}</div>`;
     }).join('');
     const labels = dias.map((x, i) => `<span class="${i === activos - 1 && !m.per[i].fut ? 'hoy' : ''} ${m.per[i].fut ? 'fut' : ''}">${_cabDOW[x.dow] || ''}</span>`).join('');
     return `<div class="cab-chart">
@@ -1724,6 +1744,7 @@ const MOS = (() => {
     const equilDia = equil / 7;
     const equilCubierto = equil > 0 && acum >= equil;
     const pctTxt = meta > 0 ? Math.round(pct * 100) + '%' : '—';
+    const pAcum = prev ? (parseFloat((prev.dinero || {}).acumulado) || 0) : null;
 
     // hero: texto
     const eyebrow = metaHecha ? '¡Meta alcanzada! 🎯' : 'Meta de la semana · ' + _cabMoney(meta);
@@ -1757,11 +1778,14 @@ const MOS = (() => {
 
       <div class="cab-hero cab-hero-v2">
         <div class="cab-lead">
-          <div class="cab-eyebrow">${eyebrow}</div>
-          <div class="cab-big cab-num" id="cabHeroBig" data-to="${acum.toFixed(0)}">${_cabMoney(acum)}</div>
+          <div class="cab-eyebrow">${eyebrow} ${_cabDelta(acum, pAcum, false)}</div>
+          <div class="cab-bigrow">
+            <div class="cab-big cab-num" id="cabHeroBig" data-to="${acum.toFixed(0)}" onclick="MOS.cabAbrir('din')" title="Ver resumen de la semana">${_cabMoney(acum)}</div>
+            <button class="cab-wkbtn" onclick="MOS.cabAbrir('din')">📊 Resumen semanal</button>
+          </div>
           <div class="cab-subx">${subHtml}</div>
         </div>
-        ${_cabChart(dias)}
+        ${_cabChart(dias, prev)}
       </div>
 
       <div class="cab-grid">${_cabCards(d, prev)}</div>
@@ -1781,17 +1805,8 @@ const MOS = (() => {
     const metaDia = meta / 7;
     const pAcum = prev ? (parseFloat((prev.dinero || {}).acumulado) || 0) : null;
 
-    // ── card DINERO ──
-    const accDinero = metaHecha
-      ? `Meta alcanzada: superaste por <b>${_cabMoney(acum - meta)}</b>. Sostené el ritmo y cuidá el margen.`
-      : sobreRitmo
-        ? `Vas <b>sobre el ritmo</b> (por ${_cabMoney(acum - metaAlDia)}). Empujá los picos para cerrar la meta: faltan ${_cabMoney(meta - acum)}.`
-        : `Vas <b>${_cabMoney(metaAlDia - acum)}</b> por debajo del ritmo esperado. Faltan ${_cabMoney(meta - acum)} para la meta.`;
-    const cardDinero = _cabCard('wide', '💰', 'Dinero', 'Venta diaria · rentabilidad · comisiones', _cabDelta(acum, pAcum, false),
-      `<div class="cab-metabar ${metaHecha ? 'done' : ''}"><i data-w="${Math.min(pct * 100, 100).toFixed(1)}"></i></div>
-       <div class="cab-metarow"><span>Acumulado <b>${_cabMoney(acum)}</b></span><span>Meta <b>${_cabMoney(meta)}</b></span></div>
-       ${_cabLineChart(dias, metaDia)}`,
-      accDinero, 'ver día por día ↗', `MOS.cabAbrir('din')`);
+    // (La card DINERO se eliminó: era redundante con el gráfico del hero. Su resumen semanal
+    //  vive ahora en el drill cabAbrir('din'), accesible desde el número grande del hero.)
 
     // ── card PRODUCTOS & REPOSICIÓN ──
     const top = Array.isArray(prod.top) ? prod.top : [];
@@ -1867,7 +1882,7 @@ const MOS = (() => {
       peorZona ? `<b>${_cabEsc(peorZona.zona)}</b> concentra ${parseFloat(peorZona.estancados) || 0} productos estancados. Revisá cuáles devolver a almacén o mover a otra zona.` : 'Sin estancados detectados.',
       'detalle por zona ↗', '');
 
-    return [cardDinero, cardRepos, cardTrib, cardProd, cardPers, cardZonas].join('');
+    return [cardRepos, cardTrib, cardProd, cardPers, cardZonas].join('');
   }
 
   function _cabCard(size, ic, t, sub, dl, body, acc, peek, action) {
