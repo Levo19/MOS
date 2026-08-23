@@ -1,1 +1,1 @@
-{"version": "2.43.950", "build": "Cabina Semanal: full responsive (movil/tablet/PC + safe-area iOS + heatmap con scroll) y drill-downs con datos reales — comision por dia, quien atendio cada hora, estancados por SKU con stock."}
+{"version": "2.43.951", "build": "Cabina: nueva card Reposicion & Considerados con fill-rate REAL (despacho computado por SALIDA vs creado) — responde si lo que se debia a cada zona se despacho; drill lista cuales si/no + demora + por zona. Productos queda solo que-se-vende."}

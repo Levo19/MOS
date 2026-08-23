@@ -1188,6 +1188,7 @@ const MOS = (() => {
   let _cabOffset = 0;          // semana visible (0=actual, negativos=hacia atrás)
   let _cabData   = null;       // data de la semana visible
   let _cabPrev   = null;       // data de la semana anterior → deltas REALES (nunca inventados)
+  let _cabRepos  = null;       // [950] reposición & considerados (ventana móvil 30d, no depende de la semana)
   let _cabSnd    = false;      // sonido opcional; silenciado por defecto (pedido dueño)
   let _cabKeysBound = false;   // el listener global de teclas se ata una sola vez
   const _cabCache = {};        // {offset: data} — no re-fetchear al navegar ‹ ›
@@ -1428,15 +1429,18 @@ const MOS = (() => {
       // La semana anterior (off-1) se pide en paralelo SOLO para deltas reales (nunca inventados).
       // OJO: cabinaSemanal es acción POST-directo (mapa _MOS_POST_DIRECTO en api.js) → se invoca
       // con API.post, NO con API.get (get la rechazaría con "lectura no cableada"). Devuelve {ok,data}.
-      const [rCur, rPrev] = await Promise.all([
+      const [rCur, rPrev, rRepos] = await Promise.all([
         _cabCache[off] != null ? Promise.resolve({ ok: true, data: _cabCache[off] }) : API.post('cabinaSemanal', { offset: off }),
-        _cabCache[off - 1] != null ? Promise.resolve({ ok: true, data: _cabCache[off - 1] }) : API.post('cabinaSemanal', { offset: off - 1 }).catch(() => null)
+        _cabCache[off - 1] != null ? Promise.resolve({ ok: true, data: _cabCache[off - 1] }) : API.post('cabinaSemanal', { offset: off - 1 }).catch(() => null),
+        // [950] reposición es ventana móvil (30d): se pide una vez y se reutiliza al navegar semanas
+        _cabRepos != null ? Promise.resolve({ ok: true, data: _cabRepos }) : API.post('cabinaReposicion', {}).catch(() => null)
       ]);
       const data = (rCur && rCur.ok && rCur.data) ? rCur.data : null;
       if (!data) { cont.innerHTML = _cabMsg('No se pudo cargar la Cabina. Reintentá en unos segundos.'); return; }
       _cabCache[off] = data;
       const prev = (rPrev && rPrev.ok && rPrev.data) ? rPrev.data : null;
       if (prev) _cabCache[off - 1] = prev;
+      if (rRepos && rRepos.ok && rRepos.data) _cabRepos = rRepos.data;
       _cabData = data; _cabPrev = prev;
       cont.innerHTML = _cabMarkup(data, prev);
       // post-render (animaciones/eco/teclas): aislado para que un fallo acá NO borre el dashboard ya dibujado.
@@ -1613,12 +1617,34 @@ const MOS = (() => {
       const onc = id ? ` onclick="MOS.cabProducto('${_cabEsc(t.sku)}')"` : '';
       return `<div class="cab-bar"${onc} title="${_cabEsc(t.nombre)}"><span class="cab-nm">${_cabEsc(t.nombre)}</span><span class="cab-tk"><i data-w="${(u / mxU * 100).toFixed(1)}"></i></span><span class="cab-vl">${_fmtQty(u)}</span></div>`;
     }).join('');
-    const reposOk = reposH <= reposMeta;
-    const cardProd = _cabCard('slim2', '📦', 'Productos & Reposición', 'Qué se vende + cuánto tarda en reponerse', _cabDelta(reposH, pReposH, true),
+    // ── card PRODUCTOS (solo "qué se vende"; la reposición vive en su propia card) ──
+    const cardProd = _cabCard('slim2', '📦', 'Productos', 'Lo que mueve la caja esta semana', '',
       `<div class="cab-bars">${barsProd || '<div class="cab-metarow">Sin ventas en la semana</div>'}</div>
-       <div class="cab-metarow cab-repos" onclick="MOS.cabRepos()" title="Ver reposición pendiente"><span>Reposición media <b style="color:${reposOk ? 'var(--cab-good)' : 'var(--cab-warn)'}">${reposH.toFixed(1)} h</b></span><span>Meta ≤ ${reposMeta} h · ${prod.considerados || 0} pendientes ↗</span></div>`,
-      `Reposición media <b>${reposH.toFixed(1)} h</b> vs meta ≤ ${reposMeta} h. ${reposOk ? 'Al día.' : 'Hay ' + (prod.considerados || 0) + ' considerados esperando: priorizá los de mayor rotación.'}`,
-      'producto · reposición ↗', `MOS.cabRepos()`);
+       <div class="cab-metarow" style="margin-top:11px"><span>Top ${Math.min(top.length, 5)} de ${top.length} con venta</span><span>tocá un producto para su ficha ↗</span></div>`,
+      top.length ? `<b>${_cabEsc((top[0] || {}).nombre || '')}</b> lidera con ${_fmtQty((top[0] || {}).u || 0)} u. Cuidá el stock de tus más vendidos.` : 'Sin ventas registradas en la semana.',
+      'analítica de producto ↗', '');
+
+    // ── card REPOSICIÓN & CONSIDERADOS — ¿lo que se debía se despachó? (dato puntual: fill-rate) ──
+    const rep = _cabRepos || {}; const hasRep = _cabRepos != null;
+    const fill = parseFloat(rep.fillRatePct) || 0;
+    const fillCol = !hasRep ? 'var(--cab-ink3)' : fill >= 70 ? 'var(--cab-good)' : fill >= 40 ? 'var(--cab-warn)' : 'var(--cab-bad)';
+    const zbars = (Array.isArray(rep.porZona) ? rep.porZona : []).map(z => {
+      const f = parseFloat(z.fillRatePct) || 0;
+      const col = f >= 70 ? 'var(--cab-good)' : f >= 40 ? 'var(--cab-warn)' : 'var(--cab-bad)';
+      return `<div class="cab-bar" onclick="MOS.cabRepos()"><span class="cab-nm">${_cabEsc(z.zona)}</span><span class="cab-tk"><i data-w="${f}" style="background:${col}"></i></span><span class="cab-vl">${z.despachados}/${z.total} · ${f}%</span></div>`;
+    }).join('');
+    const cardRepos = _cabCard('slim2', '🔁', 'Reposición & Considerados', 'Lo que se debía a una zona, ¿se despachó?', '',
+      `<div style="display:flex;align-items:baseline;gap:11px;margin:2px 0 9px">
+         <div class="cab-num" style="font-size:34px;font-weight:850;letter-spacing:-.03em;line-height:1;color:${fillCol}">${hasRep ? fill + '%' : '—'}</div>
+         <div style="font-size:12px;color:var(--cab-ink2);font-weight:650;line-height:1.35">despachado<br><b style="color:var(--cab-ink)">${rep.despachados || 0}</b> de ${rep.total || 0} · <b style="color:var(--cab-warn)">${rep.pendientes || 0}</b> se deben aún</div>
+       </div>
+       <div class="cab-metabar"><i data-w="${hasRep ? fill : 0}" style="background:linear-gradient(90deg,${fillCol},${fillCol})"></i></div>
+       ${zbars ? '<div class="cab-bars" style="margin-top:11px">' + zbars + '</div>' : ''}
+       <div class="cab-metarow" style="margin-top:9px"><span>Reposición media <b style="color:${reposH <= reposMeta ? 'var(--cab-good)' : 'var(--cab-warn)'}">${reposH.toFixed(1)} h</b> (pickup)</span><span>demora despacho ${rep.horasMediaDespacho != null ? rep.horasMediaDespacho + ' h' : '—'}</span></div>`,
+      !hasRep ? 'Cargando reposición…' : (fill < 40
+        ? `Alarma: solo <b>${fill}%</b> de lo considerado se despachó — <b>${rep.pendientes}</b> siguen debiéndose y vencen a los 7 días. Empujá los más viejos hoy.`
+        : `Fill-rate <b>${fill}%</b>. Priorizá los considerados sin despachar de mayor antigüedad para no perderlos.`),
+      'ver cuáles se despacharon ↗', 'MOS.cabRepos()');
 
     // ── card TRIBUTARIO ──
     const igvFavor = parseFloat(trib.igvFavor) || 0;
@@ -1648,13 +1674,13 @@ const MOS = (() => {
       const est = parseFloat(z.estancados) || 0;
       return `<div class="cab-bar" onclick="MOS.cabZona('${_cabEsc(z.zona)}')" title="${_cabEsc(z.zona)}"><span class="cab-nm">${_cabEsc(z.zona)}</span><span class="cab-tk"><i data-w="${(est / mxEst * 100).toFixed(1)}" style="background:linear-gradient(90deg,var(--cab-warn),var(--cab-bad))"></i></span><span class="cab-vl">${est} estancados</span></div>`;
     }).join('');
-    const cardZonas = _cabCard('slim2', '🗺️', 'Zonas & desperdicio', 'Estancado · stock cruzado entre zonas', '',
+    const cardZonas = _cabCard('wide', '🗺️', 'Zonas & desperdicio', 'Estancado · stock cruzado entre zonas', '',
       `<div class="cab-bars">${barsZona || '<div class="cab-metarow">Sin zonas</div>'}</div>
        <div class="cab-metarow" style="margin-top:11px"><span>Zonas activas <b>${zonas.length}</b></span><span>SKUs con stock: ${_fmtQty(zonas.reduce((a, z) => a + (parseFloat(z.skus) || 0), 0))}</span></div>`,
       peorZona ? `<b>${_cabEsc(peorZona.zona)}</b> concentra ${parseFloat(peorZona.estancados) || 0} productos estancados. Revisá cuáles devolver a almacén o mover a otra zona.` : 'Sin estancados detectados.',
       'detalle por zona ↗', '');
 
-    return [cardDinero, cardProd, cardTrib, cardPers, cardZonas].join('');
+    return [cardDinero, cardRepos, cardTrib, cardProd, cardPers, cardZonas].join('');
   }
 
   function _cabCard(size, ic, t, sub, dl, body, acc, peek, action) {
@@ -1872,24 +1898,45 @@ const MOS = (() => {
   }
 
   // Drill-down: REPOSICIÓN → considerados_listar (pendientes cruzando ingresos vs rezagados).
+  // Drill-down: REPOSICIÓN → fill-rate REAL (despacho computado por SALIDA vs creado) + cuáles se despacharon.
   async function cabRepos() {
     const prod = (_cabData || {}).productos || {};
-    _cabSheet('🔁 Reposición pendiente', 'Cargando considerados…', '<div class="cab-msg">Cargando…</div>');
-    let r = null;
-    try { r = await (API.zona && API.zona.consideradosListar ? API.zona.consideradosListar() : Promise.resolve(null)); } catch (_) { r = null; }
-    const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;
-    const items = (r && r.ok && Array.isArray(r.items)) ? r.items : [];
     const reposH = parseFloat(prod.reposHoras) || 0, reposMeta = parseFloat(prod.reposMeta) || 2;
-    const lista = items.slice(0, 40).map(it => {
-      const zonas = Array.isArray(it.zonas) ? it.zonas.map(z => z.zona).join(', ') : '';
-      return `<div class="cab-li"><div class="cab-lin"><b>${_cabEsc(it.nombre || it.skuBase)}</b><span>${_cabEsc(zonas)}${it.guiaTipo ? ' · ' + _cabEsc(it.guiaTipo) : ''}</span></div><span class="cab-pill no">${_fmtQty(it.cant || 0)}</span></div>`;
-    }).join('') || '<div class="cab-lead2">Sin considerados pendientes 🎉</div>';
-    const body = `<div class="cab-panel"><div class="cab-kv"><span class="cab-k">Reposición media</span><span class="cab-v" style="color:${reposH <= reposMeta ? 'var(--cab-good)' : 'var(--cab-warn)'}">${reposH.toFixed(1)} h</span></div>
-      <div class="cab-kv"><span class="cab-k">Meta</span><span class="cab-v">≤ ${reposMeta} h</span></div>
-      <div class="cab-kv"><span class="cab-k">Considerados pendientes</span><span class="cab-v">${(r && r.total) || items.length}</span></div></div>
-      <h4 style="margin:16px 0 10px;font-size:12px;font-weight:800;color:var(--cab-ink2)">LISTA (lo que entró y alguna zona aún debía)</h4>
-      <div class="cab-list">${lista}</div>`;
-    _cabSheet('🔁 Reposición pendiente', 'Considerados = ingresos cruzados contra rezagados de 4 semanas', body);
+    _cabSheet('🔁 Reposición & considerados', 'Cargando el detalle…', '<div class="cab-msg">Cargando…</div>');
+    let rep = _cabRepos;
+    if (!rep) { try { const r = await API.post('cabinaReposicion', {}); if (r && r.ok) { rep = r.data; _cabRepos = rep; } } catch (_) {} }
+    const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;
+    rep = rep || {};
+    const fill = parseFloat(rep.fillRatePct) || 0;
+    const fillCol = fill >= 70 ? 'var(--cab-good)' : fill >= 40 ? 'var(--cab-warn)' : 'var(--cab-bad)';
+    const zonasHtml = (Array.isArray(rep.porZona) ? rep.porZona : []).map(z => {
+      const f = parseFloat(z.fillRatePct) || 0, col = f >= 70 ? 'var(--cab-good)' : f >= 40 ? 'var(--cab-warn)' : 'var(--cab-bad)';
+      return `<div class="cab-kv"><span class="cab-k">${_cabEsc(z.zona)}</span><span class="cab-v" style="color:${col}">${z.despachados}/${z.total} · ${f}%</span></div>`;
+    }).join('') || '<div class="cab-lead2">Sin datos por zona</div>';
+    const items = Array.isArray(rep.items) ? rep.items : [];
+    const lista = items.slice(0, 60).map(it => {
+      const zonas = Array.isArray(it.zonas) ? it.zonas.map(z => (z.despachado ? '✓' : '·') + ' ' + z.zona).join('  ') : '';
+      const desp = !!it.despachado;
+      const pill = desp
+        ? `<span class="cab-pill ok">despachado${it.horasDespacho != null ? ' · ' + it.horasDespacho + 'h' : ''}</span>`
+        : `<span class="cab-pill ${it.diasDesde >= 5 ? 'bad' : 'no'}">se debe · ${it.diasDesde}d</span>`;
+      return `<div class="cab-li"><div class="cab-lin"><b>${_cabEsc(it.nombre || it.sku)}</b><span>${_cabEsc(zonas)}</span></div>${pill}</div>`;
+    }).join('') || '<div class="cab-lead2">Sin considerados en la ventana 🎉</div>';
+    const body = `<div class="cab-cols">
+      <div class="cab-panel"><h4>¿SE DESPACHÓ LO QUE SE DEBÍA? · últimos ${rep.ventanaDias || 30} días</h4>
+        <div style="text-align:center;padding:4px 0 8px"><div class="cab-num" style="font-size:40px;font-weight:850;letter-spacing:-.03em;color:${fillCol}">${fill}%</div><div style="font-size:11px;color:var(--cab-ink3);font-weight:700">FILL-RATE DE CONSIDERADOS</div></div>
+        <div class="cab-kv"><span class="cab-k">Despachados</span><span class="cab-v" style="color:var(--cab-good)">${rep.despachados || 0}</span></div>
+        <div class="cab-kv"><span class="cab-k">Se deben aún</span><span class="cab-v" style="color:var(--cab-warn)">${rep.pendientes || 0}</span></div>
+        <div class="cab-kv"><span class="cab-k">Vencidos (7d sin surtir)</span><span class="cab-v" style="color:var(--cab-bad)">${rep.vencidos || 0}</span></div>
+        <div class="cab-kv"><span class="cab-k">Demora media de despacho</span><span class="cab-v">${rep.horasMediaDespacho != null ? rep.horasMediaDespacho + ' h' : '—'}</span></div>
+        <div class="cab-kv"><span class="cab-k">Reposición media (pickup)</span><span class="cab-v" style="color:${reposH <= reposMeta ? 'var(--cab-good)' : 'var(--cab-warn)'}">${reposH.toFixed(1)} h · meta ≤ ${reposMeta}h</span></div>
+        <h4 style="margin-top:14px">FILL-RATE POR ZONA</h4>${zonasHtml}
+      </div>
+      <div class="cab-panel"><h4>CONSIDERADO POR CONSIDERADO · pendientes primero</h4>
+        <div class="cab-list">${lista}</div>
+      </div>
+    </div>`;
+    _cabSheet('🔁 Reposición & considerados', 'Despacho REAL = hubo una salida a la zona después del ingreso · no el estado', body);
   }
 
   // Drill-down: ZONA → stock cruzado (foquito: qué otras zonas tienen el código) + conteos.
