@@ -1282,6 +1282,10 @@ const MOS = (() => {
 #cabina .cab-seg{display:block;height:100%}
 #cabina .cab-seg.z1{background:linear-gradient(180deg,#7dd3fc,#0ea5e9)}
 #cabina .cab-seg.z2{background:linear-gradient(180deg,#6ee7b7,#10b981)}
+/* corte punteado entre Zona 1 y Zona 2 (para que el límite se vea, no se degrade) */
+#cabina .cab-seg.z1.cab-split{border-right:2px dashed rgba(255,255,255,.92)}
+/* día sin ventas → barra punteada vacía (más elegante que un hueco) */
+#cabina .cab-bar1.cab-empty{height:22px;background:transparent;border:1.5px dashed rgba(148,163,184,.4);box-shadow:none;border-radius:5px 5px 0 0}
 #cabina .cab-barcol.hoy .cab-bar1{outline:1.5px solid rgba(129,140,248,.6);outline-offset:1px}
 #cabina .cab-barcol.hoy::before{content:"hoy";position:absolute;top:-3px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:900;color:var(--cab-acc);letter-spacing:.05em;z-index:3}
 #cabina .cab-dayrow{display:flex;gap:6px;margin-top:6px}
@@ -1524,11 +1528,19 @@ const MOS = (() => {
     const cols = root.querySelectorAll('.cab-bars-row .cab-barcol');
     dias.forEach((x, i) => {
       const el = cols[i]; if (!el) return;
-      const p = m.per[i], bar = el.querySelector('.cab-bar1');
-      if (bar && !p.fut && p.tot > 0) {
-        bar.dataset.h = p.barH.toFixed(1); bar.style.height = p.barH.toFixed(1) + '%';
-        const s1 = bar.querySelector('.cab-seg.z1'), s2 = bar.querySelector('.cab-seg.z2');
-        if (s1) s1.style.flexBasis = p.w1.toFixed(1) + '%';
+      const p = m.per[i];
+      el.setAttribute('title', _cabDayTtl(x, p));
+      const cur = el.querySelector('.cab-bar1');
+      const wantReal = p.tot > 0, isReal = cur && !cur.classList.contains('cab-empty');
+      if (wantReal !== isReal) {
+        // cambió de vacío↔real (ej. primera venta del día): reconstruye la barra y anima
+        el.innerHTML = _cabBarHtml(p);
+        const nb = el.querySelector('.cab-bar1');
+        if (nb && wantReal) { nb.style.height = '0%'; requestAnimationFrame(() => { nb.style.height = p.barH.toFixed(1) + '%'; }); }
+      } else if (wantReal && cur) {
+        cur.dataset.h = p.barH.toFixed(1); cur.style.height = p.barH.toFixed(1) + '%';
+        const s1 = cur.querySelector('.cab-seg.z1'), s2 = cur.querySelector('.cab-seg.z2');
+        if (s1) { s1.style.flexBasis = p.w1.toFixed(1) + '%'; s1.classList.toggle('cab-split', p.w1 > 0 && p.w2 > 0); }
         if (s2) s2.style.flexBasis = p.w2.toFixed(1) + '%';
       }
     });
@@ -1622,17 +1634,27 @@ const MOS = (() => {
     const eqPts = per.map((p, i) => p.equil != null ? xAt(i).toFixed(2) + ',' + yAt(p.equil).toFixed(2) : null).filter(Boolean).join(' ');
     return { maxV, per, metaPts, eqPts };
   }
+  // tooltip de un día (total + zonas + meta + equilibrio)
+  function _cabDayTtl(x, p) {
+    if (p.fut) return 'Día futuro · sin ventas aún';
+    if (p.tot <= 0) return `${_cabDOW[x.dow] || ''} ${x.fecha} · sin ventas`;
+    return `${_cabDOW[x.dow] || ''} ${x.fecha} · Total ${_cabMoney(p.tot)}  (Z1 ${_cabMoney(p.z1)} · Z2 ${_cabMoney(p.z2)}) · meta ${_cabMoney(p.meta || 0)} · equilibrio ${p.equil != null ? _cabMoney(p.equil) : '—'}`;
+  }
+  // HTML de la barra: real (suma, partida horizontal con corte punteado) o punteada vacía si no hubo ventas
+  function _cabBarHtml(p) {
+    if (p.tot > 0) {
+      const split = (p.w1 > 0 && p.w2 > 0) ? ' cab-split' : '';
+      return `<div class="cab-bar1" data-h="${p.barH.toFixed(1)}"><span class="cab-seg z1${split}" style="flex-basis:${p.w1.toFixed(1)}%"></span><span class="cab-seg z2" style="flex-basis:${p.w2.toFixed(1)}%"></span></div>`;
+    }
+    return `<div class="cab-bar1 cab-empty"></div>`;
+  }
   function _cabChart(dias) {
     const m = _cabChartMetrics(dias);
     const activos = Math.max(1, dias.filter(x => !x.futuro).length);
     const cols = dias.map((x, i) => {
       const p = m.per[i], isHoy = i === activos - 1 && !p.fut;
-      const onc = p.fut ? '' : ` onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
-      const ttl = p.fut ? 'Día futuro'
-        : `${_cabDOW[x.dow] || ''} ${x.fecha} · Total ${_cabMoney(p.tot)}  (Z1 ${_cabMoney(p.z1)} · Z2 ${_cabMoney(p.z2)}) · meta ${_cabMoney(p.meta || 0)} · equilibrio ${p.equil != null ? _cabMoney(p.equil) : '—'}`;
-      const bar = (p.fut || p.tot <= 0) ? '' :
-        `<div class="cab-bar1" data-h="${p.barH.toFixed(1)}"><span class="cab-seg z1" style="flex-basis:${p.w1.toFixed(1)}%"></span><span class="cab-seg z2" style="flex-basis:${p.w2.toFixed(1)}%"></span></div>`;
-      return `<div class="cab-barcol ${isHoy ? 'hoy' : ''} ${p.fut ? 'fut' : ''}" title="${_cabEsc(ttl)}"${onc}>${bar}</div>`;
+      const onc = (p.fut || p.tot <= 0) ? '' : ` onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
+      return `<div class="cab-barcol ${isHoy ? 'hoy' : ''} ${p.fut ? 'fut' : ''}" title="${_cabEsc(_cabDayTtl(x, p))}"${onc}>${_cabBarHtml(p)}</div>`;
     }).join('');
     const labels = dias.map((x, i) => `<span class="${i === activos - 1 && !m.per[i].fut ? 'hoy' : ''} ${m.per[i].fut ? 'fut' : ''}">${_cabDOW[x.dow] || ''}</span>`).join('');
     return `<div class="cab-chart">
