@@ -1267,31 +1267,39 @@ const MOS = (() => {
 #cabina .cab-big{font-size:clamp(26px,5vw,40px);font-weight:800;letter-spacing:-.03em;margin:2px 0 2px;line-height:1;color:var(--cab-ink)}
 #cabina .cab-subx{font-size:12.5px;color:var(--cab-ink2);font-weight:600}
 #cabina .cab-subx b{color:var(--cab-good)}
-#cabina .cab-days{display:flex;gap:6px;margin-top:12px}
-#cabina .cab-day{flex:1;height:38px;border-radius:8px;background:var(--cab-bg2);border:1px solid var(--cab-line);display:grid;place-items:center;font-size:10px;font-weight:800;color:var(--cab-ink3);position:relative;overflow:hidden;cursor:pointer}
-#cabina .cab-day .cab-fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(180deg,var(--cab-acc),#4f46e5);opacity:.9;transition:height .9s cubic-bezier(.2,.8,.2,1),bottom .9s cubic-bezier(.2,.8,.2,1)}
-#cabina .cab-day .cab-fill.z1{background:linear-gradient(180deg,#818cf8,#4f46e5)}
-#cabina .cab-day .cab-fill.z2{background:linear-gradient(180deg,#22d3ee,#0891b2)}
-#cabina .cab-day span{position:relative;z-index:1;color:#eaf0fd;font-weight:800;text-shadow:0 1px 3px rgba(4,8,16,.85),0 0 2px rgba(4,8,16,.7)}
-#cabina .cab-day.hoy{border-color:var(--cab-acc);box-shadow:0 0 0 1px var(--cab-acc)}
-#cabina .cab-day.hoy span{color:#fff}
-#cabina .cab-day.fut{opacity:.4;cursor:default}
-#cabina .cab-ringwrap{display:flex;flex-direction:column;align-items:center;gap:7px;flex:0 0 auto}
-#cabina .cab-ringbox{position:relative;display:grid;place-items:center}
-#cabina .cab-ringwrap svg{width:128px;height:128px}
-#cabina .cab-ringlg{display:flex;gap:12px;font-size:10px;font-weight:800;color:var(--cab-ink2)}
-#cabina .cab-ringlg span{display:inline-flex;align-items:center;gap:5px}
-#cabina .cab-ringlg i{width:8px;height:8px;border-radius:3px;display:inline-block}
-#cabina .cab-daylegend{display:flex;align-items:center;gap:12px;margin-top:8px;font-size:10.5px;font-weight:700;color:var(--cab-ink2)}
-#cabina .cab-daylegend span{display:inline-flex;align-items:center;gap:5px}
-#cabina .cab-daylegend i{width:9px;height:9px;border-radius:3px;display:inline-block}
-#cabina .cab-daylegend .lg-z1{background:linear-gradient(180deg,#818cf8,#4f46e5)}
-#cabina .cab-daylegend .lg-z2{background:linear-gradient(180deg,#22d3ee,#0891b2)}
-#cabina .cab-daylegend .lg-hint{margin-left:auto;color:var(--cab-ink3);font-weight:600;opacity:.85}
-#cabina .cab-ringbox .cab-pct{position:absolute;text-align:center}
-#cabina .cab-ringbox .cab-pct b{font-size:24px;font-weight:800;letter-spacing:-.03em;color:var(--cab-ink)}
-#cabina .cab-ringbox .cab-pct small{display:block;font-size:9.5px;color:var(--cab-ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
-#cabina .cab-ring-fg{transition:stroke-dashoffset 1.2s cubic-bezier(.2,.8,.2,1)}
+/* ── gráfico protagonista: barras verticales por día (Z1/Z2 lado a lado) + líneas neón ── */
+#cabina .cab-hero-v2{flex-direction:column;align-items:stretch;gap:6px}
+#cabina .cab-chart{margin-top:14px}
+#cabina .cab-plot{position:relative;height:158px;padding-top:8px}
+#cabina .cab-cols2{display:flex;gap:5px;height:100%;align-items:flex-end}
+#cabina .cab-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;cursor:pointer;position:relative;border-radius:7px;transition:background .15s}
+#cabina .cab-col:hover{background:rgba(129,140,248,.07)}
+#cabina .cab-col.fut{opacity:.38;cursor:default}
+#cabina .cab-colbars{flex:1;display:flex;align-items:flex-end;justify-content:center;gap:3px;width:100%;min-height:0}
+#cabina .cab-b{width:44%;max-width:22px;border-radius:4px 4px 0 0;height:0;transition:height .9s cubic-bezier(.2,.8,.2,1)}
+#cabina .cab-b.z1{background:linear-gradient(180deg,#7dd3fc,#0ea5e9);box-shadow:0 0 9px rgba(56,189,248,.45)}
+#cabina .cab-b.z2{background:linear-gradient(180deg,#6ee7b7,#10b981);box-shadow:0 0 9px rgba(52,211,153,.45)}
+#cabina .cab-col span{font-size:10px;font-weight:800;color:#eaf0fd;text-shadow:0 1px 3px rgba(4,8,16,.85);z-index:1}
+#cabina .cab-col.hoy span{color:#fff}
+#cabina .cab-col.hoy::before{content:"hoy";position:absolute;top:-2px;left:50%;transform:translateX(-50%);font-size:8px;font-weight:900;color:var(--cab-acc);letter-spacing:.05em}
+#cabina .cab-refline{position:absolute;left:0;right:0;height:0;border-top:2px dashed;pointer-events:none;z-index:2;transition:bottom .9s cubic-bezier(.2,.8,.2,1)}
+#cabina .cab-refline.meta{border-color:#fbbf24;box-shadow:0 0 7px rgba(251,191,36,.7)}
+#cabina .cab-refline.eq{border-color:#f472b6;box-shadow:0 0 7px rgba(244,114,182,.7)}
+#cabina .cab-refline i{position:absolute;right:0;top:-8px;font-size:8.5px;font-weight:800;font-style:normal;padding:1px 6px;border-radius:5px;background:var(--cab-bg2);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+#cabina .cab-refline.meta i{color:#fbbf24}
+#cabina .cab-refline.eq i{color:#f472b6}
+#cabina .cab-chartlg{display:flex;align-items:center;gap:13px;flex-wrap:wrap;margin-top:11px;font-size:10.5px;font-weight:700;color:var(--cab-ink2)}
+#cabina .cab-chartlg span{display:inline-flex;align-items:center;gap:5px}
+#cabina .cab-chartlg i{width:9px;height:9px;border-radius:3px;display:inline-block}
+#cabina .cab-chartlg .lg-z1{background:linear-gradient(180deg,#7dd3fc,#0ea5e9)}
+#cabina .cab-chartlg .lg-z2{background:linear-gradient(180deg,#6ee7b7,#10b981)}
+#cabina .cab-chartlg .lg-meta{background:#fbbf24}
+#cabina .cab-chartlg .lg-eq{background:#f472b6}
+#cabina .cab-chartlg .lg-hint{margin-left:auto;color:var(--cab-ink3);font-weight:600;opacity:.85}
+#cabina .cab-col.cab-cash .cab-b{animation:cab-cashpulse .7s ease}
+@keyframes cab-cashpulse{0%,100%{filter:brightness(1)}40%{filter:brightness(1.7) saturate(1.3)}}
+#cabina .cab-coin{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);font-size:16px;pointer-events:none;animation:cab-coinup 1.4s ease forwards;z-index:3}
+@keyframes cab-coinup{0%{opacity:0;transform:translate(-50%,10px) scale(.7)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-40px) scale(1.1)}}
 #cabina .cab-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
 #cabina .cab-card{grid-column:span 6;background:var(--cab-card);border:1px solid var(--cab-line);border-radius:var(--cab-r);padding:16px 17px;cursor:pointer;transition:transform .18s,border-color .18s,box-shadow .18s;position:relative;overflow:hidden}
 #cabina .cab-card:hover{transform:translateY(-3px);border-color:rgba(129,140,248,.4);box-shadow:var(--cab-shadow)}
@@ -1364,6 +1372,13 @@ const MOS = (() => {
 .cab-sheet .cab-bar2 .cab-tk2 i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#22d3ee,#818cf8)}
 .cab-sheet .cab-bar2 .cab-vl2{flex:0 0 auto;font-weight:800;color:#9db0cf;font-size:11px}
 .cab-foot{text-align:center;color:#5f7192;font-size:10.5px;margin-top:22px;font-weight:600}
+.cab-daysum{display:flex;flex-direction:column;gap:9px;margin-bottom:16px}
+.cab-hbar{display:flex;align-items:center;gap:10px;font-size:12px}
+.cab-hbar .cab-hbl{flex:0 0 74px;font-weight:750;color:#9db0cf}
+.cab-hbar .cab-hbt{flex:1;height:12px;border-radius:99px;background:#0a1120;overflow:hidden}
+.cab-hbar .cab-hbt i{display:block;height:100%;border-radius:99px;animation:cab-hgrow .9s cubic-bezier(.2,.8,.2,1)}
+.cab-hbar .cab-hbv{flex:0 0 auto;font-weight:800;color:#e8eefb;font-variant-numeric:tabular-nums;font-size:11.5px}
+@keyframes cab-hgrow{from{width:0}}
 /* heatmap: scroll horizontal cuando no cabe (móvil/tablet estrecho) */
 #cabina .cab-heatwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;margin:0 -2px;padding-bottom:2px}
 #cabina .cab-heatwrap::-webkit-scrollbar{height:5px}
@@ -1495,41 +1510,43 @@ const MOS = (() => {
       _cabLiveApply(r.data, prevAcum);
     } catch (_) {}
   }
-  // Refresco silencioso del hero + barras + anillo + barra de meta, sin tocar el resto del DOM.
+  // Refresco silencioso del hero + gráfico de barras + barra de meta, sin tocar el resto del DOM.
   function _cabLiveApply(d, prevAcum) {
     const root = document.getElementById('cabina'); if (!root) return;
     const din = d.dinero || {}, dias = Array.isArray(din.dias) ? din.dias : [];
     const acum = parseFloat(din.acumulado) || 0, meta = parseFloat(din.meta) || 0;
     const equil = parseFloat(din.equilibrio) || 0;
-    const pct = meta > 0 ? acum / meta : 0, pctEquil = equil > 0 ? acum / equil : 0;
-    const cl = v => Math.min(Math.max(v || 0, 0), 1);
+    const metaDia = meta / 7, equilDia = equil / 7;
+    const pct = meta > 0 ? acum / meta : 0;
     // número grande (cuenta desde el valor anterior, no desde 0)
     const big = document.getElementById('cabHeroBig');
     if (big) { big.dataset.to = acum.toFixed(0); _cabCountUp(big, acum, v => _cabMoney(v), prevAcum); }
-    const pctEl = document.getElementById('cabHeroPct');
-    if (pctEl) { const pfrom = meta > 0 ? prevAcum / meta * 100 : 0; pctEl.dataset.to = Math.round(pct * 100); _cabCountUp(pctEl, Math.round(pct * 100), v => Math.round(v) + '%', pfrom); }
-    // anillos (meta exterior R=55 · equilibrio interior R=42)
-    const rings = root.querySelectorAll('.cab-ringbox .cab-ring-fg');
-    if (rings[0]) { const C = 2 * Math.PI * 55; rings[0].dataset.off = (C * (1 - cl(pct))).toFixed(1); rings[0].style.strokeDashoffset = rings[0].dataset.off; }
-    if (rings[1]) { const C2 = 2 * Math.PI * 42; rings[1].dataset.off = (C2 * (1 - cl(pctEquil))).toFixed(1); rings[1].style.strokeDashoffset = rings[1].dataset.off; }
-    // barras diarias apiladas (recalcula alturas; crecen suave por transition)
-    const mxV = Math.max(...dias.map(x => parseFloat(x.venta) || 0), 1);
-    const dayEls = root.querySelectorAll('.cab-days .cab-day');
+    // gráfico: recalcula alturas de barras (Z1/Z2) + líneas de meta y equilibrio; animan por transition
+    const dim = _cabChartDims(dias, metaDia, equilDia);
+    const cols = root.querySelectorAll('.cab-cols2 .cab-col');
     dias.forEach((x, i) => {
-      const el = dayEls[i]; if (!el || x.futuro) return;
-      const v = parseFloat(x.venta) || 0, h = v > 0 ? Math.max(12, (v / mxV) * 100) : 0;
-      const vz = Array.isArray(x.vz) ? x.vz : [];
-      const z1 = parseFloat((vz.find(z => z.zona === 'ZONA-01') || {}).venta) || 0;
-      const z2 = parseFloat((vz.find(z => z.zona === 'ZONA-02') || {}).venta) || 0;
-      const tot = z1 + z2, h1 = tot > 0 ? h * z1 / tot : h, h2 = tot > 0 ? h * z2 / tot : 0;
-      const f1 = el.querySelector('.cab-fill.z1'), f2 = el.querySelector('.cab-fill.z2');
-      if (f1) { f1.dataset.h = h1.toFixed(1); f1.style.height = h1.toFixed(1) + '%'; }
-      if (f2) { f2.dataset.h = h2.toFixed(1); f2.style.height = h2.toFixed(1) + '%'; f2.style.bottom = h1.toFixed(1) + '%'; }
+      const el = cols[i]; if (!el || x.futuro) return;
+      const b1 = el.querySelector('.cab-b.z1'), b2 = el.querySelector('.cab-b.z2');
+      if (b1) { b1.dataset.h = dim.perDay[i].h1.toFixed(1); b1.style.height = b1.dataset.h + '%'; }
+      if (b2) { b2.dataset.h = dim.perDay[i].h2.toFixed(1); b2.style.height = b2.dataset.h + '%'; }
     });
+    const lnMeta = root.querySelector('.cab-refline.meta'); if (lnMeta) lnMeta.style.bottom = dim.metaY.toFixed(1) + '%';
+    const lnEq = root.querySelector('.cab-refline.eq'); if (lnEq) lnEq.style.bottom = dim.eqY.toFixed(1) + '%';
     // barra de meta de la card Dinero (la primera .cab-metabar del grid)
     const mb = root.querySelector('.cab-grid .cab-metabar i');
     if (mb) { const w = Math.min(pct * 100, 100).toFixed(1); mb.dataset.w = w; mb.style.width = w + '%'; }
-    if (acum > prevAcum + 0.009) _cabPlus(acum - prevAcum);   // efecto "+" solo si entró plata
+    if (acum > prevAcum + 0.009) { _cabPlus(acum - prevAcum); _cabRainToday(root, dias); }   // "+" + lluvia de plata al día de hoy
+  }
+  // efecto de plata entrando: pulso brillante en las barras del día de hoy
+  function _cabRainToday(root, dias) {
+    try {
+      const activos = Math.max(1, dias.filter(x => !x.futuro).length);
+      const cols = root.querySelectorAll('.cab-cols2 .cab-col');
+      const el = cols[activos - 1]; if (!el) return;
+      el.classList.remove('cab-cash'); void el.offsetWidth; el.classList.add('cab-cash');
+      const coin = document.createElement('div'); coin.className = 'cab-coin'; coin.textContent = '💰';
+      el.appendChild(coin); setTimeout(() => { try { coin.remove(); } catch (_) {} }, 1400);
+    } catch (_) {}
   }
   function _cabPlus(delta) {
     try {
@@ -1571,6 +1588,44 @@ const MOS = (() => {
       <circle class="cab-ring-fg" cx="64" cy="64" r="${R2}" fill="none" stroke="#34d399" stroke-width="6" stroke-linecap="round"
         transform="rotate(-90 64 64)" stroke-dasharray="${C2.toFixed(1)}" stroke-dashoffset="${C2.toFixed(1)}" data-off="${off2.toFixed(1)}"/>
     </svg>`;
+  }
+  // ── gráfico protagonista: barras verticales por día (Z1 celeste · Z2 verde, lado a lado) con
+  //    dos líneas neón (meta/día ámbar · equilibrio/día magenta). Dimensiones reutilizables. ──
+  function _cabZV(x) {
+    const a = Array.isArray(x.vz) ? x.vz : [];
+    return { z1: parseFloat((a.find(z => z.zona === 'ZONA-01') || {}).venta) || 0,
+             z2: parseFloat((a.find(z => z.zona === 'ZONA-02') || {}).venta) || 0 };
+  }
+  function _cabChartDims(dias, metaDia, equilDia) {
+    let maxV = Math.max(metaDia || 0, equilDia || 0, 1);
+    dias.forEach(x => { const { z1, z2 } = _cabZV(x); maxV = Math.max(maxV, z1, z2); });
+    maxV *= 1.10;
+    const perDay = dias.map(x => {
+      const { z1, z2 } = _cabZV(x);
+      return { h1: z1 > 0 ? Math.max(3, z1 / maxV * 100) : 0, h2: z2 > 0 ? Math.max(3, z2 / maxV * 100) : 0 };
+    });
+    return { maxV, metaY: Math.min(100, (metaDia || 0) / maxV * 100), eqY: Math.min(100, (equilDia || 0) / maxV * 100), perDay };
+  }
+  function _cabChart(dias, metaDia, equilDia) {
+    const dim = _cabChartDims(dias, metaDia, equilDia);
+    const activos = Math.max(1, dias.filter(x => !x.futuro).length);
+    const cols = dias.map((x, i) => {
+      const fut = !!x.futuro, { z1, z2 } = _cabZV(x), v = parseFloat(x.venta) || 0;
+      const d = dim.perDay[i], isHoy = i === activos - 1 && !fut;
+      const onc = fut ? '' : ` onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
+      const ttl = fut ? 'Día futuro'
+        : `${_cabDOW[x.dow] || ''} ${x.fecha} · Total ${_cabMoney(v)}  (Z1 ${_cabMoney(z1)} · Z2 ${_cabMoney(z2)}) · meta ${_cabMoney(metaDia)} · equilibrio ${_cabMoney(equilDia)}`;
+      const bars = fut ? '' : `<div class="cab-b z1" data-h="${d.h1.toFixed(1)}"></div><div class="cab-b z2" data-h="${d.h2.toFixed(1)}"></div>`;
+      return `<div class="cab-col ${isHoy ? 'hoy' : ''} ${fut ? 'fut' : ''}" title="${_cabEsc(ttl)}"${onc}><div class="cab-colbars">${bars}</div><span>${_cabDOW[x.dow] || ''}</span></div>`;
+    }).join('');
+    return `<div class="cab-chart">
+      <div class="cab-plot">
+        <div class="cab-refline eq" style="bottom:${dim.eqY.toFixed(1)}%"><i>equilibrio ${_cabMoney(equilDia)}</i></div>
+        <div class="cab-refline meta" style="bottom:${dim.metaY.toFixed(1)}%"><i>meta ${_cabMoney(metaDia)}</i></div>
+        <div class="cab-cols2">${cols}</div>
+      </div>
+      <div class="cab-chartlg"><span><i class="lg-z1"></i>Zona 1</span><span><i class="lg-z2"></i>Zona 2</span><span><i class="lg-meta"></i>meta/día</span><span><i class="lg-eq"></i>equilibrio/día</span><span class="lg-hint">tocá un día → detalle</span></div>
+    </div>`;
   }
   function _cabLineChart(dias, metaDia) {
     const W = 100, H = 34, n = dias.length || 1;
@@ -1614,37 +1669,19 @@ const MOS = (() => {
     const sem = d.semana || {};
     const esActual = !!sem.esActual;
     const metaDia = meta / 7;
-    // punto de equilibrio (break-even): venta que cubre costos. 2º borde del anillo.
+    // punto de equilibrio (break-even): venta que cubre costos. Se dibuja como línea en el gráfico.
     const equil = parseFloat(din.equilibrio) || 0;
-    const pctEquil = equil > 0 ? acum / equil : 0;
+    const equilDia = equil / 7;
     const equilCubierto = equil > 0 && acum >= equil;
-
-    // hero: barras por día
-    const mxV = Math.max(...dias.map(x => parseFloat(x.venta) || 0), 1);
-    const activos = Math.max(1, dias.filter(x => !x.futuro).length);
-    const heroDays = dias.map((x, i) => {
-      const v = parseFloat(x.venta) || 0, fut = !!x.futuro;
-      const h = v > 0 ? Math.max(12, (v / mxV) * 100) : 0;
-      const vz = Array.isArray(x.vz) ? x.vz : [];
-      const z1 = parseFloat((vz.find(z => z.zona === 'ZONA-01') || {}).venta) || 0;
-      const z2 = parseFloat((vz.find(z => z.zona === 'ZONA-02') || {}).venta) || 0;
-      const tot = z1 + z2;
-      const h1 = tot > 0 ? h * z1 / tot : h;   // Z-01 abajo
-      const h2 = tot > 0 ? h * z2 / tot : 0;    // Z-02 apilado encima
-      const onc = fut ? '' : ` onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
-      const ttl = fut ? 'Día futuro' : `${_cabDOW[x.dow] || ''} ${x.fecha} · ${_cabMoney(v)}  (Z1 ${_cabMoney(z1)} · Z2 ${_cabMoney(z2)})`;
-      const fills = fut ? '' : `<div class="cab-fill z1" data-h="${h1.toFixed(1)}"></div><div class="cab-fill z2" style="bottom:${h1.toFixed(1)}%" data-h="${h2.toFixed(1)}"></div>`;
-      return `<div class="cab-day ${i === activos - 1 && !fut ? 'hoy' : ''} ${fut ? 'fut' : ''}" title="${_cabEsc(ttl)}"${onc}>${fills}<span>${_cabDOW[x.dow] || ''}</span></div>`;
-    }).join('');
+    const pctTxt = meta > 0 ? Math.round(pct * 100) + '%' : '—';
 
     // hero: texto
     const eyebrow = metaHecha ? '¡Meta alcanzada! 🎯' : 'Meta de la semana · ' + _cabMoney(meta);
     const falta = meta - acum;
     const equilTxt = equil > 0 ? ` · equilibrio ${_cabMoney(equil)} <b style="color:${equilCubierto ? 'var(--cab-good)' : 'var(--cab-warn)'}">${equilCubierto ? '✓ cubierto' : '⚠ falta'}</b>` : '';
     const subHtml = metaHecha
-      ? `Superaste la meta por <b>${_cabMoney(acum - meta)}</b> · rentabilidad <b>${(parseFloat(din.rentabilidad) || 0).toFixed(1)}%</b>${equilTxt}`
-      : `Te faltan <b style="color:var(--cab-warn)">${_cabMoney(falta)}</b> para la meta · rentabilidad ${(parseFloat(din.rentabilidad) || 0).toFixed(1)}% · comisiones ${_cabMoney2(din.comisiones)}${equilTxt}`;
-    const ringColor = metaHecha ? '#f5c451' : '#818cf8';
+      ? `<b style="color:var(--cab-good)">${pctTxt}</b> de la meta · superaste por <b>${_cabMoney(acum - meta)}</b> · rentabilidad ${(parseFloat(din.rentabilidad) || 0).toFixed(1)}%${equilTxt}`
+      : `Vas al <b style="color:${sobreRitmo ? 'var(--cab-good)' : 'var(--cab-warn)'}">${pctTxt}</b> de la meta · te faltan <b>${_cabMoney(falta)}</b> · rentabilidad ${(parseFloat(din.rentabilidad) || 0).toFixed(1)}% · comisiones ${_cabMoney2(din.comisiones)}${equilTxt}`;
 
     // etiqueta semana
     const wkLbl = esActual ? 'Semana actual' : (_cabOffset === -1 ? 'Semana pasada' : 'Semana');
@@ -1668,21 +1705,13 @@ const MOS = (() => {
         <button class="cab-btn-avisos" onclick="(typeof MOS!=='undefined' &amp;&amp; MOS.abrirEditorAdhesivos) ? MOS.abrirEditorAdhesivos() : (window.abrirEditorAdhesivos &amp;&amp; window.abrirEditorAdhesivos())" title="Editor visual de avisos y adhesivos">🎨 Editor de avisos</button>
       </div>
 
-      <div class="cab-hero">
+      <div class="cab-hero cab-hero-v2">
         <div class="cab-lead">
           <div class="cab-eyebrow">${eyebrow}</div>
           <div class="cab-big cab-num" id="cabHeroBig" data-to="${acum.toFixed(0)}">${_cabMoney(acum)}</div>
           <div class="cab-subx">${subHtml}</div>
-          <div class="cab-days">${heroDays}</div>
-          <div class="cab-daylegend"><span><i class="lg-z1"></i>Zona 1</span><span><i class="lg-z2"></i>Zona 2</span><span class="lg-hint">tocá un día → detalle por zona</span></div>
         </div>
-        <div class="cab-ringwrap">
-          <div class="cab-ringbox">
-            ${_cabRingSvg(pct, pctEquil, ringColor)}
-            <div class="cab-pct"><b class="cab-num" id="cabHeroPct" data-to="${Math.round(pct * 100)}">${Math.round(pct * 100)}%</b><small>${sobreRitmo ? 'sobre el ritmo' : 'de la meta'}</small></div>
-          </div>
-          <div class="cab-ringlg"><span><i style="background:${ringColor}"></i>meta</span><span><i style="background:var(--cab-good)"></i>equilibrio</span></div>
-        </div>
+        ${_cabChart(dias, metaDia, equilDia)}
       </div>
 
       <div class="cab-grid">${_cabCards(d, prev)}</div>
@@ -1830,7 +1859,7 @@ const MOS = (() => {
     if (!root) return;
     const setAll = () => {
       root.querySelectorAll('[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; });
-      root.querySelectorAll('.cab-fill[data-h]').forEach(f => { f.style.height = f.dataset.h + '%'; });
+      root.querySelectorAll('[data-h]').forEach(f => { f.style.height = f.dataset.h + '%'; });
       root.querySelectorAll('.cab-ring-fg').forEach(c => { c.style.strokeDashoffset = c.dataset.off; });
     };
     if (reduced) { setAll(); }
@@ -1969,8 +1998,20 @@ const MOS = (() => {
           </div>
         </div></div>` : '';
     if (!zonas.length && !pl) { _cabSheet('📅 ' + _cabEsc(fecha), _cabDOW[diaObj.dow] || '', '<div class="cab-lead2">No hay detalle disponible para este día ahora mismo.</div>'); return; }
-    const body = `<div class="cab-cols">${zonaHtml || '<div class="cab-lead2">Sin ventas por zona este día</div>'}</div>${totalPanel}`;
-    _cabSheet('📅 ' + _cabEsc(fecha) + ' · ' + (_cabDOW[diaObj.dow] || ''), 'Cada zona por separado · la suma abajo', body);
+    // Encabezado: la SUMA del día vs meta vs equilibrio, en barras horizontales
+    const ventaDia = ventaTot;
+    const metaDiaVal = parseFloat(diaObj.meta) || 0;
+    const equilDiaVal = (parseFloat((((_cabData || {}).dinero || {}).equilibrio)) || 0) / 7;
+    const superoEq = ventaDia >= equilDiaVal, superoMeta = ventaDia >= metaDiaVal;
+    const hmax = Math.max(ventaDia, metaDiaVal, equilDiaVal, 1);
+    const hbar = (lbl, val, col, extra) => `<div class="cab-hbar"><span class="cab-hbl">${lbl}</span><span class="cab-hbt"><i style="width:${Math.min(val / hmax * 100, 100).toFixed(1)}%;background:${col}"></i></span><span class="cab-hbv">${_cabMoney2(val)}${extra || ''}</span></div>`;
+    const header = `<div class="cab-daysum">
+      ${hbar('Vendido', ventaDia, 'linear-gradient(90deg,#7dd3fc,#0ea5e9)', ` <b style="color:${superoMeta ? 'var(--cab-good)' : superoEq ? 'var(--cab-warn)' : 'var(--cab-bad)'}">${superoMeta ? '✓ meta' : superoEq ? 'sobre equilibrio' : 'bajo equilibrio'}</b>`)}
+      ${hbar('Meta', metaDiaVal, '#fbbf24')}
+      ${hbar('Equilibrio', equilDiaVal, '#f472b6')}
+    </div>`;
+    const body = `${header}<div class="cab-cols">${zonaHtml || '<div class="cab-lead2">Sin ventas por zona este día</div>'}</div>${totalPanel}`;
+    _cabSheet('📅 ' + _cabEsc(fecha) + ' · ' + (_cabDOW[diaObj.dow] || ''), 'La suma del día vs meta vs equilibrio · abajo, cada zona', body);
   }
 
   // Drill-down: PRODUCTO → analitica_producto (ventas, stock por zona, cobertura, sugerir comprar).
