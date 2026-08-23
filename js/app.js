@@ -1489,13 +1489,47 @@ const MOS = (() => {
       if (!(r && r.ok && r.data)) return;
       if (S.view !== 'dashboard' || _cabOffset !== 0) return;   // pudo cambiar durante el await
       const prevAcum = parseFloat(((_cabCache[0] || {}).dinero || {}).acumulado) || 0;
-      const newAcum = parseFloat((r.data.dinero || {}).acumulado) || 0;
       _cabCache[0] = r.data; _cabData = r.data;
-      const cont = $('view-dashboard'); if (!cont) return;
-      cont.innerHTML = _cabMarkup(r.data, _cabPrev);
-      try { _cabPostRender(r.data); _refreshEcoStatus(); _cabBindKeys(); } catch (_) {}
-      if (newAcum > prevAcum + 0.009) _cabPlus(newAcum - prevAcum);   // efecto "+" acumulativo
+      // Actualización EN SITIO (no re-render → NO parpadea): solo mueve números/barras/anillo,
+      // que animan suave por sus transiciones CSS ya existentes.
+      _cabLiveApply(r.data, prevAcum);
     } catch (_) {}
+  }
+  // Refresco silencioso del hero + barras + anillo + barra de meta, sin tocar el resto del DOM.
+  function _cabLiveApply(d, prevAcum) {
+    const root = document.getElementById('cabina'); if (!root) return;
+    const din = d.dinero || {}, dias = Array.isArray(din.dias) ? din.dias : [];
+    const acum = parseFloat(din.acumulado) || 0, meta = parseFloat(din.meta) || 0;
+    const equil = parseFloat(din.equilibrio) || 0;
+    const pct = meta > 0 ? acum / meta : 0, pctEquil = equil > 0 ? acum / equil : 0;
+    const cl = v => Math.min(Math.max(v || 0, 0), 1);
+    // número grande (cuenta desde el valor anterior, no desde 0)
+    const big = document.getElementById('cabHeroBig');
+    if (big) { big.dataset.to = acum.toFixed(0); _cabCountUp(big, acum, v => _cabMoney(v), prevAcum); }
+    const pctEl = document.getElementById('cabHeroPct');
+    if (pctEl) { const pfrom = meta > 0 ? prevAcum / meta * 100 : 0; pctEl.dataset.to = Math.round(pct * 100); _cabCountUp(pctEl, Math.round(pct * 100), v => Math.round(v) + '%', pfrom); }
+    // anillos (meta exterior R=55 · equilibrio interior R=42)
+    const rings = root.querySelectorAll('.cab-ringbox .cab-ring-fg');
+    if (rings[0]) { const C = 2 * Math.PI * 55; rings[0].dataset.off = (C * (1 - cl(pct))).toFixed(1); rings[0].style.strokeDashoffset = rings[0].dataset.off; }
+    if (rings[1]) { const C2 = 2 * Math.PI * 42; rings[1].dataset.off = (C2 * (1 - cl(pctEquil))).toFixed(1); rings[1].style.strokeDashoffset = rings[1].dataset.off; }
+    // barras diarias apiladas (recalcula alturas; crecen suave por transition)
+    const mxV = Math.max(...dias.map(x => parseFloat(x.venta) || 0), 1);
+    const dayEls = root.querySelectorAll('.cab-days .cab-day');
+    dias.forEach((x, i) => {
+      const el = dayEls[i]; if (!el || x.futuro) return;
+      const v = parseFloat(x.venta) || 0, h = v > 0 ? Math.max(12, (v / mxV) * 100) : 0;
+      const vz = Array.isArray(x.vz) ? x.vz : [];
+      const z1 = parseFloat((vz.find(z => z.zona === 'ZONA-01') || {}).venta) || 0;
+      const z2 = parseFloat((vz.find(z => z.zona === 'ZONA-02') || {}).venta) || 0;
+      const tot = z1 + z2, h1 = tot > 0 ? h * z1 / tot : h, h2 = tot > 0 ? h * z2 / tot : 0;
+      const f1 = el.querySelector('.cab-fill.z1'), f2 = el.querySelector('.cab-fill.z2');
+      if (f1) { f1.dataset.h = h1.toFixed(1); f1.style.height = h1.toFixed(1) + '%'; }
+      if (f2) { f2.dataset.h = h2.toFixed(1); f2.style.height = h2.toFixed(1) + '%'; f2.style.bottom = h1.toFixed(1) + '%'; }
+    });
+    // barra de meta de la card Dinero (la primera .cab-metabar del grid)
+    const mb = root.querySelector('.cab-grid .cab-metabar i');
+    if (mb) { const w = Math.min(pct * 100, 100).toFixed(1); mb.dataset.w = w; mb.style.width = w + '%'; }
+    if (acum > prevAcum + 0.009) _cabPlus(acum - prevAcum);   // efecto "+" solo si entró plata
   }
   function _cabPlus(delta) {
     try {
@@ -1811,9 +1845,9 @@ const MOS = (() => {
     const din = d.dinero || {};
     if ((parseFloat(din.acumulado) || 0) >= (parseFloat(din.meta) || 0) && (parseFloat(din.meta) || 0) > 0) setTimeout(_cabChime, 600);
   }
-  function _cabCountUp(el, to, fmt) {
-    const from = 0, t0 = performance.now(), dur = 900;
-    function f(t) { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(from + (to - from) * e); if (k < 1) requestAnimationFrame(f); }
+  function _cabCountUp(el, to, fmt, from) {
+    const f0 = from || 0, t0 = performance.now(), dur = 900;
+    function f(t) { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(f0 + (to - f0) * e); if (k < 1) requestAnimationFrame(f); }
     requestAnimationFrame(f);
   }
 
