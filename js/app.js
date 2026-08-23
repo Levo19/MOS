@@ -1270,7 +1270,8 @@ const MOS = (() => {
 #cabina .cab-day.hoy{border-color:var(--cab-acc);box-shadow:0 0 0 1px var(--cab-acc)}
 #cabina .cab-day.hoy span{color:#fff}
 #cabina .cab-day.fut{opacity:.4;cursor:default}
-#cabina .cab-ringwrap{display:grid;place-items:center;position:relative}
+#cabina .cab-ringwrap{display:grid;place-items:center;position:relative;flex:0 0 auto}
+#cabina .cab-ringwrap svg{width:128px;height:128px}
 #cabina .cab-ringwrap .cab-pct{position:absolute;text-align:center}
 #cabina .cab-ringwrap .cab-pct b{font-size:24px;font-weight:800;letter-spacing:-.03em;color:var(--cab-ink)}
 #cabina .cab-ringwrap .cab-pct small{display:block;font-size:9.5px;color:var(--cab-ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
@@ -1320,7 +1321,7 @@ const MOS = (() => {
 #cabina .cab-draw{stroke-dasharray:300;stroke-dashoffset:300;animation:cab-draw 1.2s ease forwards}
 .cab-ov{position:fixed;inset:0;background:rgba(4,8,16,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:none;align-items:flex-end;justify-content:center;z-index:60;padding:0}
 .cab-ov.on{display:flex;animation:cab-fade .2s ease}
-.cab-sheet{background:linear-gradient(180deg,#132038,#0f1a2e);border:1px solid rgba(148,163,184,.13);border-bottom:0;border-radius:20px 20px 0 0;width:100%;max-width:1180px;max-height:88vh;overflow:auto;padding:20px 22px 34px;transform:translateY(30px);animation:cab-rise .32s cubic-bezier(.2,.85,.25,1) forwards;box-shadow:0 -20px 60px rgba(0,0,0,.6);color:#e8eefb;font-variant-numeric:tabular-nums}
+.cab-sheet{background:linear-gradient(180deg,#132038,#0f1a2e);border:1px solid rgba(148,163,184,.13);border-bottom:0;border-radius:20px 20px 0 0;width:100%;max-width:1180px;max-height:88vh;overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:20px 22px calc(34px + env(safe-area-inset-bottom,0px));transform:translateY(30px);animation:cab-rise .32s cubic-bezier(.2,.85,.25,1) forwards;box-shadow:0 -20px 60px rgba(0,0,0,.6);color:#e8eefb;font-variant-numeric:tabular-nums}
 .cab-sheet .cab-grab{width:40px;height:4px;border-radius:99px;background:#5f7192;opacity:.5;margin:0 auto 14px}
 .cab-sheet h2{margin:0 0 2px;font-size:20px;font-weight:800;letter-spacing:-.02em}
 .cab-sheet .cab-lead2{color:#9db0cf;font-size:12.5px;font-weight:600;margin-bottom:16px}
@@ -1345,11 +1346,64 @@ const MOS = (() => {
 .cab-sheet .cab-bar2 .cab-tk2 i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#22d3ee,#818cf8)}
 .cab-sheet .cab-bar2 .cab-vl2{flex:0 0 auto;font-weight:800;color:#9db0cf;font-size:11px}
 .cab-foot{text-align:center;color:#5f7192;font-size:10.5px;margin-top:22px;font-weight:600}
+/* heatmap: scroll horizontal cuando no cabe (móvil/tablet estrecho) */
+#cabina .cab-heatwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;margin:0 -2px;padding-bottom:2px}
+#cabina .cab-heatwrap::-webkit-scrollbar{height:5px}
+#cabina .cab-heatwrap::-webkit-scrollbar-thumb{background:var(--cab-line);border-radius:99px}
+
+/* ───── TABLET (≤1100px, ancho pero no full desktop): pares parejos ───── */
+@media(max-width:1100px) and (min-width:821px){
+  #cabina .cab-card.slim{grid-column:span 6}
+  #cabina .cab-card.slim2{grid-column:span 6}
+}
+/* ───── TABLET portrait / móvil grande (≤820px): una columna ───── */
 @media(max-width:820px){
-  #cabina .cab-card,#cabina .cab-card.slim,#cabina .cab-card.slim2{grid-column:span 12}
+  #cabina .cab-wrap{padding:2px 0 32px}
+  #cabina .cab-card,#cabina .cab-card.slim,#cabina .cab-card.slim2,#cabina .cab-card.wide{grid-column:span 12}
+  #cabina .cab-grid{gap:13px}
   .cab-cols{grid-template-columns:1fr}
-  #cabina .cab-hero{flex-direction:column;align-items:stretch;gap:14px}
+  #cabina .cab-hero{flex-direction:column;align-items:stretch;gap:14px;padding:15px 16px}
+  #cabina .cab-ringwrap{justify-self:center}
   #cabina .cab-wk .cab-lbl{min-width:120px}
+  .cab-sheet{max-height:92vh;padding:18px 16px calc(30px + env(safe-area-inset-bottom,0px))}
+  .cab-sheet h2{font-size:18px}
+}
+/* ───── MÓVIL (≤560px): tipografía y targets táctiles ───── */
+@media(max-width:560px){
+  #cabina .cab-top{gap:9px}
+  #cabina .cab-brand h1{font-size:15px}
+  #cabina .cab-wk{flex:1 1 100%;justify-content:space-between;order:3}
+  #cabina .cab-wk .cab-lbl{flex:1;min-width:0}
+  #cabina .cab-wk button{width:40px;height:40px;font-size:16px}
+  #cabina .cab-mut{width:40px;height:40px}
+  #cabina .cab-btn-avisos{padding:10px 13px}
+  #cabina .cab-card{padding:14px 14px}
+  #cabina .cab-grid{gap:11px}
+  #cabina .cab-big{font-size:clamp(24px,8vw,34px)}
+  #cabina .cab-bar .cab-nm{flex-basis:84px}
+  #cabina .cab-day{height:34px}
+  .cab-sheet .cab-bar2 .cab-nm2{flex-basis:92px}
+  .cab-cols{gap:12px}
+  .cab-panel{padding:12px}
+  .cab-kv{font-size:12.5px;padding:9px 0}
+  .cab-li{padding:11px}
+}
+/* ───── MÓVIL CHICO (≤380px): sin desbordes ───── */
+@media(max-width:380px){
+  #cabina .cab-brand p{display:none}
+  #cabina .cab-bar .cab-nm{flex-basis:70px}
+  #cabina .cab-big{font-size:clamp(21px,9vw,28px)}
+  .cab-sheet h2{font-size:16px}
+}
+/* ───── landscape muy bajo (móvil acostado): la hoja no debe tapar todo ───── */
+@media(max-height:480px){
+  .cab-sheet{max-height:96vh}
+}
+/* ───── puntero grueso (touch): targets cómodos aunque el ancho sea grande (tablet) ───── */
+@media(pointer:coarse){
+  #cabina .cab-wk button{min-width:38px;min-height:38px}
+  .cab-sh-x{width:40px;height:40px}
+  #cabina .cab-heat .cab-cell{min-height:24px}
 }
 @media(prefers-reduced-motion:reduce){
   #cabina *,.cab-ov *,.cab-sheet{animation:none!important;transition:none!important}
@@ -1619,8 +1673,8 @@ const MOS = (() => {
     let mx = 0;
     heat.forEach(z => (z.horas || []).forEach(hh => { const v = parseFloat(hh.venta) || 0; if (v > mx) mx = v; }));
     mx = mx || 1;
-    const cols = `grid-template-columns:38px repeat(${horas.length},1fr)`;
-    let h = `<div class="cab-heat" style="${cols}"><div></div>${horas.map(x => `<div class="cab-hh">${x}</div>`).join('')}`;
+    const cols = `grid-template-columns:34px repeat(${horas.length},minmax(26px,1fr))`;
+    let h = `<div class="cab-heatwrap"><div class="cab-heat" style="${cols}"><div></div>${horas.map(x => `<div class="cab-hh">${x}</div>`).join('')}`;
     heat.forEach((z, zi) => {
       const map = {}; (z.horas || []).forEach(hh => { map[hh.h] = hh; });
       const zn = String(z.zona || '').replace(/^ZONA-?/i, 'Z').slice(0, 4);
@@ -1632,7 +1686,7 @@ const MOS = (() => {
         return `<div class="cab-cell" style="background:${_cabHeatColor(bucket)};color:${bucket >= 4 ? '#0b1020' : '#7c8bb0'}" onclick="MOS.cabHora(${zi},${hr})" title="${_cabEsc(z.zona)} · ${hr}:00 · ${tk} tickets · ${_cabMoney(v)}">${tk || ''}</div>`;
       }).join('');
     });
-    return h + '</div>';
+    return h + '</div></div>';
   }
 
   // ── post-render: animaciones (respeta prefers-reduced-motion) ──
@@ -1730,20 +1784,31 @@ const MOS = (() => {
     const d = _cabData || {};
     const diaObj = (((d.dinero || {}).dias) || []).find(x => x.fecha === fecha) || {};
     _cabSheet('📅 ' + _cabEsc(fecha), 'Cargando el detalle del día…', '<div class="cab-msg">Cargando…</div>');
-    let pl = null;
-    try { pl = await API.get('getFinanzasDia', { fecha }); } catch (_) { pl = null; }
+    let pl = null, drill = null;
+    try {
+      const res = await Promise.all([
+        Promise.resolve(API.get('getFinanzasDia', { fecha })).catch(() => null),
+        Promise.resolve(API.post('cabinaDrill', { tipo: 'dia', fecha })).catch(() => null)
+      ]);
+      pl = res[0]; drill = res[1];
+    } catch (_) { pl = null; }
+    // [949] comisión repartida ESE día (no el top semanal)
+    const comisDia = (drill && drill.ok && drill.data && Array.isArray(drill.data.comisiones)) ? drill.data.comisiones : [];
+    const comisDiaTot = comisDia.reduce((a, c) => a + (parseFloat(c.comision) || 0), 0);
+    const comisDiaHtml = comisDia.length
+      ? comisDia.map(c => `<div class="cab-kv"><span class="cab-k">${_cabEsc(c.nombre)} <span style="color:var(--cab-ink3)">· ${_cabEsc(c.rol || '')}</span></span><span class="cab-v cab-num">${_cabMoney2(c.comision)} <small style="color:var(--cab-ink3);font-weight:600">de ${_cabMoney2(c.vendido)}</small></span></div>`).join('')
+      : '<div class="cab-lead2">Sin comisiones este día</div>';
     const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;  // el user cerró
     if (!pl) {
       // Sin sombra fresca del día: mostramos lo que YA trae cabina para no dejar el overlay vacío.
       const body = `<div class="cab-panel"><div class="cab-kv"><span class="cab-k">Venta del día</span><span class="cab-v cab-num">${_cabMoney2(diaObj.venta)}</span></div>
         <div class="cab-kv"><span class="cab-k">Meta del día</span><span class="cab-v cab-num">${_cabMoney2(diaObj.meta)}</span></div></div>
+        <div class="cab-panel" style="margin-top:12px"><h4>COMISIÓN DE ESTE DÍA${comisDiaTot ? ' · ' + _cabMoney2(comisDiaTot) : ''}</h4>${comisDiaHtml}</div>
         <div class="cab-lead2" style="margin-top:12px">El desglose fino (métodos de pago, gastos, costos) no está disponible ahora mismo.</div>`;
       _cabSheet('📅 ' + _cabEsc(fecha), _cabDOW[diaObj.dow] || '', body);
       return;
     }
     const ef = parseFloat(pl.cobradoEfectivo) || 0, vi = parseFloat(pl.cobradoVirtual) || 0, cr = parseFloat(pl.creditoOtorgado) || 0;
-    const comis = Array.isArray((d.dinero || {}).comisionesTop) ? d.dinero.comisionesTop : [];
-    const comisHtml = comis.slice(0, 5).map(c => `<div class="cab-kv"><span class="cab-k">${_cabEsc(c.nombre)} <span style="color:var(--cab-ink3)">· ${_cabEsc(c.zona)}</span></span><span class="cab-v cab-num">${_cabMoney2(c.monto)}</span></div>`).join('') || '<div class="cab-lead2">Sin comisiones</div>';
     const body = `<div class="cab-cols">
       <div class="cab-panel"><h4>CÓMO SE COBRÓ</h4>
         <div class="cab-kv"><span class="cab-k">💵 Efectivo</span><span class="cab-v cab-num">${_cabMoney2(ef)}</span></div>
@@ -1758,9 +1823,8 @@ const MOS = (() => {
         <div class="cab-kv"><span class="cab-k">Margen bruto</span><span class="cab-v">${(parseFloat(pl.margenBrutoPct) || 0).toFixed(1)}%</span></div>
         <div class="cab-kv"><span class="cab-k">Gastos</span><span class="cab-v cab-num">${_cabMoney2(pl.totalGastos)}</span></div>
         <div class="cab-kv"><span class="cab-k">Utilidad neta</span><span class="cab-v cab-num" style="color:${(parseFloat(pl.utilidadNeta) || 0) >= 0 ? 'var(--cab-good)' : 'var(--cab-bad)'}">${_cabMoney2(pl.utilidadNeta)}</span></div>
-        <h4 style="margin-top:14px">COMISIONES DE LA SEMANA</h4>${comisHtml}
+        <h4 style="margin-top:14px">COMISIÓN DE ESTE DÍA${comisDiaTot ? ' · ' + _cabMoney2(comisDiaTot) : ''}</h4>${comisDiaHtml}
       </div></div>`;
-    // TODO cabina: falta wire comisión POR DÍA (finanzas_dia no la trae; se muestra el top semanal).
     _cabSheet('📅 ' + _cabEsc(fecha) + ' · ' + (_cabDOW[diaObj.dow] || ''), 'Meta del día ' + _cabMoney2(diaObj.meta) + ' · venta ' + _cabMoney2(diaObj.venta), body);
   }
 
@@ -1831,43 +1895,68 @@ const MOS = (() => {
   // Drill-down: ZONA → stock cruzado (foquito: qué otras zonas tienen el código) + conteos.
   async function cabZona(zona) {
     const z = ((_cabData || {}).zonas || []).find(x => x.zona === zona) || {};
-    _cabSheet('🗺️ ' + _cabEsc(zona), 'Cargando stock cruzado…', '<div class="cab-msg">Cargando…</div>');
-    let r = null;
-    try { r = await (API.zona && API.zona.stockCruzado ? API.zona.stockCruzado({ zona }) : Promise.resolve(null)); } catch (_) { r = null; }
+    _cabSheet('🗺️ ' + _cabEsc(zona), 'Cargando estancados y stock cruzado…', '<div class="cab-msg">Cargando…</div>');
+    let r = null, drill = null;
+    try {
+      const res = await Promise.all([
+        Promise.resolve(API.zona && API.zona.stockCruzado ? API.zona.stockCruzado({ zona }) : null).catch(() => null),
+        Promise.resolve(API.post('cabinaDrill', { tipo: 'zona', zona })).catch(() => null)
+      ]);
+      r = res[0]; drill = res[1];
+    } catch (_) { r = null; }
     const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;
     const items = (r && r.ok && r.data && Array.isArray(r.data.items)) ? r.data.items : (r && Array.isArray(r.items) ? r.items : []);
     const cruz = items.slice(0, 25).map(it => `<div class="cab-kv"><span class="cab-k">${_cabEsc(it.cod)} <span style="color:var(--cab-ink3)">· ${_cabEsc(it.zona)}</span></span><span class="cab-v">${_fmtQty(it.cant)}</span></div>`).join('')
       || '<div class="cab-lead2">Sin stock del mismo código en otras zonas.</div>';
-    // TODO cabina: falta wire lista de SKUs estancados por zona → zonaDiasProducto necesita un sku
-    // concreto y cabinaSemanal solo trae el CONTEO de estancados (no la lista).
+    // [949] lista REAL de estancados (bcg=PERRO) por SKU con su stock en zona
+    const estanc = (drill && drill.ok && drill.data && Array.isArray(drill.data.estancados)) ? drill.data.estancados : [];
+    const trIco = t => t === 'DECRECIENTE' ? '↓' : (t === 'CRECIENTE' ? '↑' : '→');
+    const estancHtml = estanc.length
+      ? estanc.map(e => {
+          const st = parseFloat(e.stock) || 0;
+          return `<div class="cab-li"><div class="cab-lin"><b>${_cabEsc(e.nombre)}</b><span>${_cabEsc(e.sku)} · rota ${(parseFloat(e.vol4sem) || 0).toFixed(1)}/4sem ${trIco(e.tendencia)}</span></div><span class="cab-pill ${st > 0 ? 'bad' : 'no'}">${_fmtQty(st)} en stock</span></div>`;
+        }).join('')
+      : '<div class="cab-lead2">Sin productos estancados en esta zona 🎉</div>';
     const body = `<div class="cab-cols">
       <div class="cab-panel"><h4>RESUMEN DE LA ZONA</h4>
         <div class="cab-kv"><span class="cab-k">Productos estancados</span><span class="cab-v" style="color:var(--cab-warn)">${parseFloat(z.estancados) || 0}</span></div>
         <div class="cab-kv"><span class="cab-k">SKUs con stock</span><span class="cab-v">${_fmtQty(z.skus || 0)}</span></div>
         <div class="cab-kv"><span class="cab-k">Unidades en stock</span><span class="cab-v">${_fmtQty(z.stockU || 0)}</span></div>
+        <h4 style="margin-top:14px">🔦 STOCK EN OTRAS ZONAS</h4>${cruz}
       </div>
-      <div class="cab-panel"><h4>🔦 STOCK EN OTRAS ZONAS</h4>${cruz}</div>
+      <div class="cab-panel"><h4>🐕 ESTANCADOS · plata dormida (menor rotación primero)</h4>
+        <div class="cab-list">${estancHtml}</div>
+      </div>
     </div>`;
-    _cabSheet('🗺️ ' + _cabEsc(zona), 'Estancado + foquito de stock cruzado', body);
+    _cabSheet('🗺️ ' + _cabEsc(zona), 'Estancados por producto + foquito de stock cruzado', body);
   }
 
-  // Drill-down: HORA×ZONA → resumen de la franja (tickets, venta) del propio heat.
-  function cabHora(zi, h) {
+  // Drill-down: HORA×ZONA → tráfico de la franja + quién estuvo activo esa hora en la semana.
+  async function cabHora(zi, h) {
     const heat = ((_cabData || {}).personal || {}).heat || [];
     const z = heat[zi] || {};
     const cell = (z.horas || []).find(x => x.h === h) || {};
     const tk = parseInt(cell.tk) || 0, venta = parseFloat(cell.venta) || 0;
-    // TODO cabina: falta wire "quién trabajó esa hora" (no hay action datos_turno por hora);
-    // se muestra el resumen de tráfico de la franja del propio heat de cabinaSemanal.
-    const body = `<div class="cab-panel">
+    const resumen = `<div class="cab-panel">
       <div class="cab-kv"><span class="cab-k">Zona</span><span class="cab-v">${_cabEsc(z.zona || '')}</span></div>
       <div class="cab-kv"><span class="cab-k">Franja</span><span class="cab-v">${h}:00 – ${h + 1}:00</span></div>
-      <div class="cab-kv"><span class="cab-k">Tickets</span><span class="cab-v">${tk}</span></div>
-      <div class="cab-kv"><span class="cab-k">Venta</span><span class="cab-v cab-num">${_cabMoney2(venta)}</span></div>
+      <div class="cab-kv"><span class="cab-k">Tickets (semana)</span><span class="cab-v">${tk}</span></div>
+      <div class="cab-kv"><span class="cab-k">Venta (semana)</span><span class="cab-v cab-num">${_cabMoney2(venta)}</span></div>
       <div class="cab-kv"><span class="cab-k">Ticket promedio</span><span class="cab-v cab-num">${tk ? _cabMoney2(venta / tk) : '—'}</span></div>
-    </div>
-    <div class="cab-lead2" style="margin-top:12px">El detalle de quién estuvo en caja esta franja aún no está disponible; se muestra el tráfico de la hora.</div>`;
-    _cabSheet('👥 ' + _cabEsc(z.zona || '') + ' · ' + h + ':00', 'Tráfico de la franja', body);
+    </div>`;
+    _cabSheet('👥 ' + _cabEsc(z.zona || '') + ' · ' + h + ':00', 'Cargando quién estuvo en la franja…',
+      resumen + '<div class="cab-msg">Cargando…</div>');
+    // [949] quién estuvo activo esa hora/zona durante la semana visible
+    let drill = null;
+    try { drill = await API.post('cabinaDrill', { tipo: 'hora', zona: z.zona || '', hora: h, offset: _cabOffset }); } catch (_) { drill = null; }
+    const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;
+    const quienes = (drill && drill.ok && drill.data && Array.isArray(drill.data.quienes)) ? drill.data.quienes : [];
+    const mxT = quienes.length ? (parseInt(quienes[0].tickets) || 1) : 1;
+    const quienesHtml = quienes.length
+      ? quienes.map(q => `<div class="cab-bar2"><span class="cab-nm2">${_cabEsc(q.nombre)}</span><span class="cab-tk2"><i style="width:${((parseInt(q.tickets) || 0) / mxT * 100).toFixed(0)}%"></i></span><span class="cab-vl2">${q.tickets} tk · ${_cabMoney2(q.venta)}</span></div>`).join('')
+      : '<div class="cab-lead2">Sin actividad de personas registrada en esta franja.</div>';
+    const body = resumen + `<div class="cab-panel" style="margin-top:12px"><h4>QUIÉN ATENDIÓ ESTA FRANJA · toda la semana</h4><div class="cab-bars2">${quienesHtml}</div></div>`;
+    _cabSheet('👥 ' + _cabEsc(z.zona || '') + ' · ' + h + ':00', 'Tráfico de la franja + quién atendió', body);
   }
 
   function renderRotacionChart(rot) {
