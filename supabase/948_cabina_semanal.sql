@@ -17,7 +17,7 @@ declare
   v_dom   date := v_lun + 6;
   v_fin   date := least(v_dom, v_hoy);
   v_fr jsonb; v_tr jsonb;
-  v_acum numeric; v_util numeric; v_gastos numeric; v_rent numeric; v_com numeric; v_meta numeric; v_meta_dia numeric;
+  v_acum numeric; v_util numeric; v_gastos numeric; v_rent numeric; v_com numeric; v_meta numeric; v_meta_dia numeric; v_equil numeric;
   v_dias jsonb; v_comtop jsonb; v_top jsonb; v_heat jsonb; v_zonas jsonb; v_repos numeric; v_cons int;
 begin
   -- ═════ 💰 DINERO ═════
@@ -26,6 +26,8 @@ begin
   v_util   := coalesce((v_fr->'data'->'totales'->>'utilidadNeta')::numeric, 0);
   v_gastos := coalesce((v_fr->'data'->'totales'->>'totalGastos')::numeric, 0);
   v_rent   := coalesce((v_fr->'data'->'totales'->>'margenBrutoPct')::numeric, 0);
+  -- punto de equilibrio (break-even) de la semana = gastos ÷ ratio de margen bruto (venta que cubre costos)
+  v_equil  := case when v_rent > 0 then round(v_gastos / (v_rent/100.0), 0) else null end;
 
   -- META REAL de la semana (completa lun..dom) y META AL DÍA (solo días transcurridos lun..v_fin, para el "ritmo")
   select coalesce(sum(mos._meta_zona(zz.id_zona, gs.d::date)), 0) into v_meta
@@ -41,6 +43,14 @@ begin
       'dow', trim(to_char(gs.d,'Dy')),
       'venta', coalesce((select (s->>'ventasNetas')::numeric from jsonb_array_elements(v_fr->'data'->'serie') s where s->>'fecha' = to_char(gs.d,'YYYY-MM-DD')), 0),
       'meta',  (select coalesce(sum(mos._meta_zona(zz.id_zona, gs.d::date)),0) from mos.zonas zz where zz.politica_json ? 'metaDiaria'),
+      -- venta por zona (bruta) para pintar la barra apilada Z-01/Z-02
+      'vz', (select coalesce(jsonb_agg(x order by (x->>'zona')),'[]'::jsonb) from (
+               select jsonb_build_object('zona', zona_id, 'venta', round(sum(total))) x
+                 from me.ventas
+                where (fecha at time zone 'America/Lima')::date = gs.d::date
+                  and coalesce(zona_id,'') in ('ZONA-01','ZONA-02')
+                  and upper(coalesce(forma_pago,'')) not like 'ANULADO%'
+                group by zona_id) t),
       'futuro', gs.d > v_hoy
     ) order by gs.d) into v_dias
     from generate_series(v_lun, v_dom, interval '1 day') gs(d);
@@ -116,7 +126,7 @@ begin
        'label', to_char(v_lun,'DD') || ' – ' || to_char(v_dom,'DD Mon')),
     'dinero', jsonb_build_object('dias', coalesce(v_dias,'[]'::jsonb), 'acumulado', v_acum, 'meta', v_meta,
        'metaAlDia', v_meta_dia, 'rentabilidad', v_rent, 'utilidad', v_util, 'gastos', v_gastos, 'comisiones', v_com,
-       'comisionesTop', v_comtop),
+       'equilibrio', v_equil, 'comisionesTop', v_comtop),
     'productos', jsonb_build_object('top', v_top, 'considerados', v_cons, 'reposHoras', v_repos, 'reposMeta', 2),
     'personal', jsonb_build_object('heat', v_heat),
     'zonas', v_zonas,

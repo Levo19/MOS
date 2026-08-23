@@ -2648,6 +2648,11 @@ const API = (() => {
       if (r == null) return null;
       return r;   // {ok, data:{semana, dinero, productos, personal, zonas, tributario}}
     }
+    if (action === 'cabinaDiaZonas') {   // [951] detalle del día desglosado por zona (cobro/comisiones/venta)
+      const r = await _sbRpcMOS('cabina_dia_zonas', { p: { fecha: (p && p.fecha) || '' } }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:{fecha, porZona:[{zona,meta,venta,tickets,efectivo,virtual,credito,planilla,comisionTotal,comisiones}]}}
+    }
     if (action === 'cabinaReposicion') {   // [950] reposición & considerados: fill-rate real (SALIDA vs creado)
       const r = await _sbRpcMOS('cabina_reposicion', { p: { dias: (p && p.dias) || 30, limite: (p && p.limite) || 60 } }, 'mos');
       if (r == null) return null;
@@ -3165,6 +3170,7 @@ const API = (() => {
     cabinaSemanal:               () => true,   // [948] dashboard Cabina Semanal
     cabinaDrill:                 () => true,   // [949] detalle de barra/celda del dashboard
     cabinaReposicion:            () => true,   // [950] reposicion & considerados
+    cabinaDiaZonas:              () => true,   // [951] dia por zona
     finanzasDiaSkuTramos:        () => true,
     yapeCodigoGenerar:           () => true,   // mos.yape_codigo_generar (858)
     yapeRevocar:                 () => true,   // mos.yape_dispositivo_revocar (874)
@@ -3247,7 +3253,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, cabinaSemanal: 1, cabinaDrill: 1, cabinaReposicion: 1, iaUsoResumen: 1, iaPendientes: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, guardCaptura: 1, guardEspiaSet: 1, guardAlarma: 1, guardMensaje: 1, guardBloquear: 1, buzonSubir: 1, buzonListar: 1, buzonBorrar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, cabinaSemanal: 1, cabinaDrill: 1, cabinaReposicion: 1, cabinaDiaZonas: 1, iaUsoResumen: 1, iaPendientes: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, guardCaptura: 1, guardEspiaSet: 1, guardAlarma: 1, guardMensaje: 1, guardBloquear: 1, buzonSubir: 1, buzonListar: 1, buzonBorrar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.

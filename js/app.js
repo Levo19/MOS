@@ -1189,6 +1189,7 @@ const MOS = (() => {
   let _cabData   = null;       // data de la semana visible
   let _cabPrev   = null;       // data de la semana anterior → deltas REALES (nunca inventados)
   let _cabRepos  = null;       // [950] reposición & considerados (ventana móvil 30d, no depende de la semana)
+  let _cabLiveTimer = null;    // tiempo real: refresca la semana actual y acumula la barra con efecto "+"
   let _cabSnd    = false;      // sonido opcional; silenciado por defecto (pedido dueño)
   let _cabKeysBound = false;   // el listener global de teclas se ata una sola vez
   const _cabCache = {};        // {offset: data} — no re-fetchear al navegar ‹ ›
@@ -1222,6 +1223,8 @@ const MOS = (() => {
   }
   const _cabTick  = () => _cabBeep(560, .05, 'triangle', .045);
   const _cabChime = () => { _cabBeep(660, .12, 'sine', .05); setTimeout(() => _cabBeep(880, .16, 'sine', .045), 90); };
+  // Feedback háptico (vibración) — silencioso si el dispositivo/navegador no lo soporta (PC).
+  function _cabHaptic(ms) { try { if (navigator && typeof navigator.vibrate === 'function') navigator.vibrate(ms || 10); } catch (_) {} }
   function cabToggleSnd() {
     _cabSnd = !_cabSnd;
     const b = document.getElementById('cabMut'); if (b) b.textContent = _cabSnd ? '🔊' : '🔇';
@@ -1266,16 +1269,28 @@ const MOS = (() => {
 #cabina .cab-subx b{color:var(--cab-good)}
 #cabina .cab-days{display:flex;gap:6px;margin-top:12px}
 #cabina .cab-day{flex:1;height:38px;border-radius:8px;background:var(--cab-bg2);border:1px solid var(--cab-line);display:grid;place-items:center;font-size:10px;font-weight:800;color:var(--cab-ink3);position:relative;overflow:hidden;cursor:pointer}
-#cabina .cab-day .cab-fill{position:absolute;inset:auto 0 0 0;height:0;background:linear-gradient(180deg,var(--cab-acc),#4f46e5);opacity:.85;transition:height 1s cubic-bezier(.2,.8,.2,1)}
-#cabina .cab-day span{position:relative;z-index:1}
+#cabina .cab-day .cab-fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(180deg,var(--cab-acc),#4f46e5);opacity:.9;transition:height .9s cubic-bezier(.2,.8,.2,1),bottom .9s cubic-bezier(.2,.8,.2,1)}
+#cabina .cab-day .cab-fill.z1{background:linear-gradient(180deg,#818cf8,#4f46e5)}
+#cabina .cab-day .cab-fill.z2{background:linear-gradient(180deg,#22d3ee,#0891b2)}
+#cabina .cab-day span{position:relative;z-index:1;color:#eaf0fd;font-weight:800;text-shadow:0 1px 3px rgba(4,8,16,.85),0 0 2px rgba(4,8,16,.7)}
 #cabina .cab-day.hoy{border-color:var(--cab-acc);box-shadow:0 0 0 1px var(--cab-acc)}
 #cabina .cab-day.hoy span{color:#fff}
 #cabina .cab-day.fut{opacity:.4;cursor:default}
-#cabina .cab-ringwrap{display:grid;place-items:center;position:relative;flex:0 0 auto}
+#cabina .cab-ringwrap{display:flex;flex-direction:column;align-items:center;gap:7px;flex:0 0 auto}
+#cabina .cab-ringbox{position:relative;display:grid;place-items:center}
 #cabina .cab-ringwrap svg{width:128px;height:128px}
-#cabina .cab-ringwrap .cab-pct{position:absolute;text-align:center}
-#cabina .cab-ringwrap .cab-pct b{font-size:24px;font-weight:800;letter-spacing:-.03em;color:var(--cab-ink)}
-#cabina .cab-ringwrap .cab-pct small{display:block;font-size:9.5px;color:var(--cab-ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+#cabina .cab-ringlg{display:flex;gap:12px;font-size:10px;font-weight:800;color:var(--cab-ink2)}
+#cabina .cab-ringlg span{display:inline-flex;align-items:center;gap:5px}
+#cabina .cab-ringlg i{width:8px;height:8px;border-radius:3px;display:inline-block}
+#cabina .cab-daylegend{display:flex;align-items:center;gap:12px;margin-top:8px;font-size:10.5px;font-weight:700;color:var(--cab-ink2)}
+#cabina .cab-daylegend span{display:inline-flex;align-items:center;gap:5px}
+#cabina .cab-daylegend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+#cabina .cab-daylegend .lg-z1{background:linear-gradient(180deg,#818cf8,#4f46e5)}
+#cabina .cab-daylegend .lg-z2{background:linear-gradient(180deg,#22d3ee,#0891b2)}
+#cabina .cab-daylegend .lg-hint{margin-left:auto;color:var(--cab-ink3);font-weight:600;opacity:.85}
+#cabina .cab-ringbox .cab-pct{position:absolute;text-align:center}
+#cabina .cab-ringbox .cab-pct b{font-size:24px;font-weight:800;letter-spacing:-.03em;color:var(--cab-ink)}
+#cabina .cab-ringbox .cab-pct small{display:block;font-size:9.5px;color:var(--cab-ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
 #cabina .cab-ring-fg{transition:stroke-dashoffset 1.2s cubic-bezier(.2,.8,.2,1)}
 #cabina .cab-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
 #cabina .cab-card{grid-column:span 6;background:var(--cab-card);border:1px solid var(--cab-line);border-radius:var(--cab-r);padding:16px 17px;cursor:pointer;transition:transform .18s,border-color .18s,box-shadow .18s;position:relative;overflow:hidden}
@@ -1319,6 +1334,8 @@ const MOS = (() => {
 @keyframes cab-draw{to{stroke-dashoffset:0}}
 @keyframes cab-rise{to{transform:translateY(0)}}
 @keyframes cab-fade{from{opacity:0}}
+#cabina .cab-plus{position:absolute;left:2px;top:-4px;color:var(--cab-good);font-weight:850;font-size:15px;pointer-events:none;text-shadow:0 2px 10px rgba(52,211,153,.55);animation:cab-plusup 1.7s cubic-bezier(.2,.8,.2,1) forwards;z-index:3}
+@keyframes cab-plusup{0%{opacity:0;transform:translateY(8px) scale(.9)}18%{opacity:1;transform:translateY(0) scale(1.06)}100%{opacity:0;transform:translateY(-26px) scale(1)}}
 #cabina .cab-draw{stroke-dasharray:300;stroke-dashoffset:300;animation:cab-draw 1.2s ease forwards}
 .cab-ov{position:fixed;inset:0;background:rgba(4,8,16,.72);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:none;align-items:flex-end;justify-content:center;z-index:60;padding:0}
 .cab-ov.on{display:flex;animation:cab-fade .2s ease}
@@ -1449,10 +1466,45 @@ const MOS = (() => {
         _refreshEcoStatus();      // Eco status (WH/ME) — reusa el mecanismo existente (dots ecoWhDot/ecoMeDot).
         _startEcoAutoRefresh();
         _cabBindKeys();
+        _cabLiveStart();   // tiempo real (solo semana actual)
       } catch (e2) { try { console.warn('[cabina] post-render:', e2 && e2.message); } catch (_) {} }
     } catch (e) {
       cont.innerHTML = _cabMsg('Error al cargar la Cabina: ' + (e && e.message ? e.message : 'desconocido'));
     }
+  }
+
+  // ── tiempo real: la semana en curso sigue vendiendo → refresca y acumula la barra con efecto "+" ──
+  function _cabLiveStart() {
+    if (_cabLiveTimer) { clearInterval(_cabLiveTimer); _cabLiveTimer = null; }
+    _cabLiveTimer = setInterval(_cabLiveTick, 30000);
+  }
+  async function _cabLiveTick() {
+    try {
+      if (S.view !== 'dashboard') return;      // salió del dashboard
+      if (_cabOffset !== 0) return;            // solo la semana actual acumula en vivo
+      if (document.hidden) return;             // pestaña oculta → no gastar RPC
+      const ov = document.getElementById('cabOv');
+      if (ov && ov.classList.contains('on')) return;   // mirando un detalle → no re-render
+      const r = await API.post('cabinaSemanal', { offset: 0 });
+      if (!(r && r.ok && r.data)) return;
+      if (S.view !== 'dashboard' || _cabOffset !== 0) return;   // pudo cambiar durante el await
+      const prevAcum = parseFloat(((_cabCache[0] || {}).dinero || {}).acumulado) || 0;
+      const newAcum = parseFloat((r.data.dinero || {}).acumulado) || 0;
+      _cabCache[0] = r.data; _cabData = r.data;
+      const cont = $('view-dashboard'); if (!cont) return;
+      cont.innerHTML = _cabMarkup(r.data, _cabPrev);
+      try { _cabPostRender(r.data); _refreshEcoStatus(); _cabBindKeys(); } catch (_) {}
+      if (newAcum > prevAcum + 0.009) _cabPlus(newAcum - prevAcum);   // efecto "+" acumulativo
+    } catch (_) {}
+  }
+  function _cabPlus(delta) {
+    try {
+      const big = document.getElementById('cabHeroBig'); if (!big || !big.parentElement) return;
+      const f = document.createElement('div'); f.className = 'cab-plus'; f.textContent = '+' + _cabMoney(delta);
+      big.parentElement.appendChild(f);
+      _cabHaptic(8); _cabTick();
+      setTimeout(() => { try { f.remove(); } catch (_) {} }, 1700);
+    } catch (_) {}
   }
 
   function _cabMsg(txt) { return `<div id="cabina"><div class="cab-wrap"><div class="cab-msg">${_cabEsc(txt)}</div></div></div>`; }
@@ -1472,12 +1524,18 @@ const MOS = (() => {
   }
 
   // ── helpers de gráficos (SVG del mockup, adaptados a datos reales) ──
-  function _cabRingSvg(pct, color) {
-    const R = 54, C = 2 * Math.PI * R, off = C * (1 - Math.min(Math.max(pct, 0), 1));
+  // Anillo de DOBLE borde: exterior = avance vs META (color) · interior = avance vs EQUILIBRIO (verde).
+  function _cabRingSvg(pct, pctEquil, color) {
+    const cl = v => Math.min(Math.max(v || 0, 0), 1);
+    const R = 55, R2 = 42, C = 2 * Math.PI * R, C2 = 2 * Math.PI * R2;
+    const off = C * (1 - cl(pct)), off2 = C2 * (1 - cl(pctEquil));
     return `<svg width="128" height="128" viewBox="0 0 128 128">
-      <circle cx="64" cy="64" r="${R}" fill="none" stroke="rgba(148,163,184,.14)" stroke-width="10"/>
-      <circle class="cab-ring-fg" cx="64" cy="64" r="${R}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round"
+      <circle cx="64" cy="64" r="${R}" fill="none" stroke="rgba(148,163,184,.14)" stroke-width="9"/>
+      <circle cx="64" cy="64" r="${R2}" fill="none" stroke="rgba(148,163,184,.10)" stroke-width="6"/>
+      <circle class="cab-ring-fg" cx="64" cy="64" r="${R}" fill="none" stroke="${color}" stroke-width="9" stroke-linecap="round"
         transform="rotate(-90 64 64)" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${C.toFixed(1)}" data-off="${off.toFixed(1)}"/>
+      <circle class="cab-ring-fg" cx="64" cy="64" r="${R2}" fill="none" stroke="#34d399" stroke-width="6" stroke-linecap="round"
+        transform="rotate(-90 64 64)" stroke-dasharray="${C2.toFixed(1)}" stroke-dashoffset="${C2.toFixed(1)}" data-off="${off2.toFixed(1)}"/>
     </svg>`;
   }
   function _cabLineChart(dias, metaDia) {
@@ -1522,6 +1580,10 @@ const MOS = (() => {
     const sem = d.semana || {};
     const esActual = !!sem.esActual;
     const metaDia = meta / 7;
+    // punto de equilibrio (break-even): venta que cubre costos. 2º borde del anillo.
+    const equil = parseFloat(din.equilibrio) || 0;
+    const pctEquil = equil > 0 ? acum / equil : 0;
+    const equilCubierto = equil > 0 && acum >= equil;
 
     // hero: barras por día
     const mxV = Math.max(...dias.map(x => parseFloat(x.venta) || 0), 1);
@@ -1529,17 +1591,25 @@ const MOS = (() => {
     const heroDays = dias.map((x, i) => {
       const v = parseFloat(x.venta) || 0, fut = !!x.futuro;
       const h = v > 0 ? Math.max(12, (v / mxV) * 100) : 0;
+      const vz = Array.isArray(x.vz) ? x.vz : [];
+      const z1 = parseFloat((vz.find(z => z.zona === 'ZONA-01') || {}).venta) || 0;
+      const z2 = parseFloat((vz.find(z => z.zona === 'ZONA-02') || {}).venta) || 0;
+      const tot = z1 + z2;
+      const h1 = tot > 0 ? h * z1 / tot : h;   // Z-01 abajo
+      const h2 = tot > 0 ? h * z2 / tot : 0;    // Z-02 apilado encima
       const onc = fut ? '' : ` onclick="MOS.cabDia('${_cabEsc(x.fecha)}')"`;
-      const ttl = fut ? 'Día futuro' : `${_cabDOW[x.dow] || ''} ${x.fecha} · ${_cabMoney(v)}`;
-      return `<div class="cab-day ${i === activos - 1 && !fut ? 'hoy' : ''} ${fut ? 'fut' : ''}" title="${_cabEsc(ttl)}"${onc}><div class="cab-fill" data-h="${h.toFixed(0)}"></div><span>${_cabDOW[x.dow] || ''}</span></div>`;
+      const ttl = fut ? 'Día futuro' : `${_cabDOW[x.dow] || ''} ${x.fecha} · ${_cabMoney(v)}  (Z1 ${_cabMoney(z1)} · Z2 ${_cabMoney(z2)})`;
+      const fills = fut ? '' : `<div class="cab-fill z1" data-h="${h1.toFixed(1)}"></div><div class="cab-fill z2" style="bottom:${h1.toFixed(1)}%" data-h="${h2.toFixed(1)}"></div>`;
+      return `<div class="cab-day ${i === activos - 1 && !fut ? 'hoy' : ''} ${fut ? 'fut' : ''}" title="${_cabEsc(ttl)}"${onc}>${fills}<span>${_cabDOW[x.dow] || ''}</span></div>`;
     }).join('');
 
     // hero: texto
     const eyebrow = metaHecha ? '¡Meta alcanzada! 🎯' : 'Meta de la semana · ' + _cabMoney(meta);
     const falta = meta - acum;
+    const equilTxt = equil > 0 ? ` · equilibrio ${_cabMoney(equil)} <b style="color:${equilCubierto ? 'var(--cab-good)' : 'var(--cab-warn)'}">${equilCubierto ? '✓ cubierto' : '⚠ falta'}</b>` : '';
     const subHtml = metaHecha
-      ? `Superaste la meta por <b>${_cabMoney(acum - meta)}</b> · rentabilidad <b>${(parseFloat(din.rentabilidad) || 0).toFixed(1)}%</b>`
-      : `Te faltan <b style="color:var(--cab-warn)">${_cabMoney(falta)}</b> para la meta · rentabilidad ${(parseFloat(din.rentabilidad) || 0).toFixed(1)}% · comisiones ${_cabMoney2(din.comisiones)}`;
+      ? `Superaste la meta por <b>${_cabMoney(acum - meta)}</b> · rentabilidad <b>${(parseFloat(din.rentabilidad) || 0).toFixed(1)}%</b>${equilTxt}`
+      : `Te faltan <b style="color:var(--cab-warn)">${_cabMoney(falta)}</b> para la meta · rentabilidad ${(parseFloat(din.rentabilidad) || 0).toFixed(1)}% · comisiones ${_cabMoney2(din.comisiones)}${equilTxt}`;
     const ringColor = metaHecha ? '#f5c451' : '#818cf8';
 
     // etiqueta semana
@@ -1570,10 +1640,14 @@ const MOS = (() => {
           <div class="cab-big cab-num" id="cabHeroBig" data-to="${acum.toFixed(0)}">${_cabMoney(acum)}</div>
           <div class="cab-subx">${subHtml}</div>
           <div class="cab-days">${heroDays}</div>
+          <div class="cab-daylegend"><span><i class="lg-z1"></i>Zona 1</span><span><i class="lg-z2"></i>Zona 2</span><span class="lg-hint">tocá un día → detalle por zona</span></div>
         </div>
         <div class="cab-ringwrap">
-          ${_cabRingSvg(pct, ringColor)}
-          <div class="cab-pct"><b class="cab-num" id="cabHeroPct" data-to="${Math.round(pct * 100)}">${Math.round(pct * 100)}%</b><small>${sobreRitmo ? 'sobre el ritmo' : 'de la meta'}</small></div>
+          <div class="cab-ringbox">
+            ${_cabRingSvg(pct, pctEquil, ringColor)}
+            <div class="cab-pct"><b class="cab-num" id="cabHeroPct" data-to="${Math.round(pct * 100)}">${Math.round(pct * 100)}%</b><small>${sobreRitmo ? 'sobre el ritmo' : 'de la meta'}</small></div>
+          </div>
+          <div class="cab-ringlg"><span><i style="background:${ringColor}"></i>meta</span><span><i style="background:var(--cab-good)"></i>equilibrio</span></div>
         </div>
       </div>
 
@@ -1748,7 +1822,7 @@ const MOS = (() => {
     const next = Math.min(0, _cabOffset + dir);
     if (next === _cabOffset) return;   // ya en el borde (no hay futuro)
     _cabOffset = next;
-    _cabTick();
+    _cabTick(); _cabHaptic(10);
     loadDashboard();
   }
   function _cabBindKeys() {
@@ -1770,7 +1844,7 @@ const MOS = (() => {
     if (!sh || !ov) return;
     sh.innerHTML = `<button class="cab-sh-x" onclick="MOS.cabCerrar()">✕</button><div class="cab-grab"></div><h2>${title}</h2><div class="cab-lead2">${lead}</div>${bodyHtml}`;
     ov.classList.add('on');
-    _cabTick();
+    _cabTick(); _cabHaptic(12);
   }
   function cabCerrar() {
     const ov = document.getElementById('cabOv'); if (ov) ov.classList.remove('on');
@@ -1810,48 +1884,59 @@ const MOS = (() => {
     const d = _cabData || {};
     const diaObj = (((d.dinero || {}).dias) || []).find(x => x.fecha === fecha) || {};
     _cabSheet('📅 ' + _cabEsc(fecha), 'Cargando el detalle del día…', '<div class="cab-msg">Cargando…</div>');
-    let pl = null, drill = null;
+    let pl = null, dz = null;
     try {
       const res = await Promise.all([
         Promise.resolve(API.get('getFinanzasDia', { fecha })).catch(() => null),
-        Promise.resolve(API.post('cabinaDrill', { tipo: 'dia', fecha })).catch(() => null)
+        Promise.resolve(API.post('cabinaDiaZonas', { fecha })).catch(() => null)   // [951] desglose por zona
       ]);
-      pl = res[0]; drill = res[1];
-    } catch (_) { pl = null; }
-    // [949] comisión repartida ESE día (no el top semanal)
-    const comisDia = (drill && drill.ok && drill.data && Array.isArray(drill.data.comisiones)) ? drill.data.comisiones : [];
-    const comisDiaTot = comisDia.reduce((a, c) => a + (parseFloat(c.comision) || 0), 0);
-    const comisDiaHtml = comisDia.length
-      ? comisDia.map(c => `<div class="cab-kv"><span class="cab-k">${_cabEsc(c.nombre)} <span style="color:var(--cab-ink3)">· ${_cabEsc(c.rol || '')}</span></span><span class="cab-v cab-num">${_cabMoney2(c.comision)} <small style="color:var(--cab-ink3);font-weight:600">de ${_cabMoney2(c.vendido)}</small></span></div>`).join('')
-      : '<div class="cab-lead2">Sin comisiones este día</div>';
+      pl = res[0]; dz = res[1];
+    } catch (_) {}
     const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;  // el user cerró
-    if (!pl) {
-      // Sin sombra fresca del día: mostramos lo que YA trae cabina para no dejar el overlay vacío.
-      const body = `<div class="cab-panel"><div class="cab-kv"><span class="cab-k">Venta del día</span><span class="cab-v cab-num">${_cabMoney2(diaObj.venta)}</span></div>
-        <div class="cab-kv"><span class="cab-k">Meta del día</span><span class="cab-v cab-num">${_cabMoney2(diaObj.meta)}</span></div></div>
-        <div class="cab-panel" style="margin-top:12px"><h4>COMISIÓN DE ESTE DÍA${comisDiaTot ? ' · ' + _cabMoney2(comisDiaTot) : ''}</h4>${comisDiaHtml}</div>
-        <div class="cab-lead2" style="margin-top:12px">El desglose fino (métodos de pago, gastos, costos) no está disponible ahora mismo.</div>`;
-      _cabSheet('📅 ' + _cabEsc(fecha), _cabDOW[diaObj.dow] || '', body);
-      return;
-    }
-    const ef = parseFloat(pl.cobradoEfectivo) || 0, vi = parseFloat(pl.cobradoVirtual) || 0, cr = parseFloat(pl.creditoOtorgado) || 0;
-    const body = `<div class="cab-cols">
-      <div class="cab-panel"><h4>CÓMO SE COBRÓ</h4>
-        <div class="cab-kv"><span class="cab-k">💵 Efectivo</span><span class="cab-v cab-num">${_cabMoney2(ef)}</span></div>
-        <div class="cab-kv"><span class="cab-k">📱 Virtual</span><span class="cab-v cab-num">${_cabMoney2(vi)}</span></div>
-        <div class="cab-kv"><span class="cab-k">📋 Crédito otorgado</span><span class="cab-v cab-num">${_cabMoney2(cr)}</span></div>
-        <div class="cab-kv"><span class="cab-k">Tickets</span><span class="cab-v">${pl.tickets || 0}${pl.anulados ? ' · ' + pl.anulados + ' anulados' : ''}</span></div>
-        <div class="cab-kv"><span class="cab-k">Ticket promedio</span><span class="cab-v cab-num">${pl.ticketPromedio ? _cabMoney2(pl.ticketPromedio) : '—'}</span></div>
-      </div>
-      <div class="cab-panel"><h4>RESULTADO DEL DÍA</h4>
-        <div class="cab-kv"><span class="cab-k">Ventas netas</span><span class="cab-v cab-num">${_cabMoney2(pl.ventasNetas)}</span></div>
-        <div class="cab-kv"><span class="cab-k">Costo de ventas</span><span class="cab-v cab-num">${_cabMoney2(pl.costoVentas)}</span></div>
-        <div class="cab-kv"><span class="cab-k">Margen bruto</span><span class="cab-v">${(parseFloat(pl.margenBrutoPct) || 0).toFixed(1)}%</span></div>
-        <div class="cab-kv"><span class="cab-k">Gastos</span><span class="cab-v cab-num">${_cabMoney2(pl.totalGastos)}</span></div>
-        <div class="cab-kv"><span class="cab-k">Utilidad neta</span><span class="cab-v cab-num" style="color:${(parseFloat(pl.utilidadNeta) || 0) >= 0 ? 'var(--cab-good)' : 'var(--cab-bad)'}">${_cabMoney2(pl.utilidadNeta)}</span></div>
-        <h4 style="margin-top:14px">COMISIÓN DE ESTE DÍA${comisDiaTot ? ' · ' + _cabMoney2(comisDiaTot) : ''}</h4>${comisDiaHtml}
-      </div></div>`;
-    _cabSheet('📅 ' + _cabEsc(fecha) + ' · ' + (_cabDOW[diaObj.dow] || ''), 'Meta del día ' + _cabMoney2(diaObj.meta) + ' · venta ' + _cabMoney2(diaObj.venta), body);
+    const zonas = (dz && dz.ok && dz.data && Array.isArray(dz.data.porZona)) ? dz.data.porZona : [];
+    const ventaTot = zonas.reduce((a, z) => a + (parseFloat(z.venta) || 0), 0) || (parseFloat(pl && pl.ventasNetas) || parseFloat(diaObj.venta) || 0);
+    const utilNeta = parseFloat(pl && pl.utilidadNeta) || 0;
+    // Bloque POR ZONA: cobro real + comisiones reales; la utilidad se PRORRATEA por participación de venta
+    // (el costo por zona con precio_costo no es fiable → no invento un margen por zona que pelee con el oficial).
+    const zonaHtml = zonas.map(z => {
+      const zv = parseFloat(z.venta) || 0, zm = parseFloat(z.meta) || 0;
+      const share = ventaTot > 0 ? zv / ventaTot : 0;
+      const pctMeta = zm > 0 ? Math.round(zv / zm * 100) : 0;
+      const utilZ = utilNeta * share;
+      const comis = Array.isArray(z.comisiones) ? z.comisiones : [];
+      const comisHtml = comis.length
+        ? comis.map(c => `<div class="cab-kv"><span class="cab-k">${_cabEsc(c.nombre)} <span style="color:var(--cab-ink3)">· ${_cabEsc(c.rol || '')}</span></span><span class="cab-v cab-num">${_cabMoney2(c.comision)}</span></div>`).join('')
+        : '<div class="cab-lead2" style="padding:3px 0">Sin comisión repartida en esta zona</div>';
+      const pmCol = pctMeta >= 100 ? 'var(--cab-good)' : pctMeta >= 70 ? 'var(--cab-warn)' : 'var(--cab-bad)';
+      return `<div class="cab-panel" style="border-left:3px solid ${z.zona === 'ZONA-01' ? '#818cf8' : '#22d3ee'}">
+        <h4>${_cabEsc(z.zona)} · ${_cabMoney(zv)} <span style="color:${pmCol};font-weight:800">${pctMeta}%</span> <span style="color:var(--cab-ink3);font-weight:600">de ${_cabMoney(zm)}</span></h4>
+        <div class="cab-kv"><span class="cab-k">💵 Efectivo</span><span class="cab-v cab-num">${_cabMoney2(z.efectivo)}</span></div>
+        <div class="cab-kv"><span class="cab-k">📱 Virtual</span><span class="cab-v cab-num">${_cabMoney2(z.virtual)}</span></div>
+        ${(parseFloat(z.credito) || 0) > 0 ? `<div class="cab-kv"><span class="cab-k">📋 Crédito</span><span class="cab-v cab-num">${_cabMoney2(z.credito)}</span></div>` : ''}
+        ${(parseFloat(z.planilla) || 0) > 0 ? `<div class="cab-kv"><span class="cab-k">🧾 Planilla</span><span class="cab-v cab-num">${_cabMoney2(z.planilla)}</span></div>` : ''}
+        <div class="cab-kv"><span class="cab-k">Tickets</span><span class="cab-v">${z.tickets || 0}</span></div>
+        <div class="cab-kv"><span class="cab-k">Utilidad (aporte)</span><span class="cab-v cab-num" style="color:${utilZ >= 0 ? 'var(--cab-good)' : 'var(--cab-bad)'}">${_cabMoney2(utilZ)}</span></div>
+        <h4 style="margin-top:12px">COMISIÓN · ${_cabMoney2(z.comisionTotal)}</h4>${comisHtml}
+      </div>`;
+    }).join('');
+    // Panel COMBINADO (la suma) con el resultado oficial del día
+    const totalPanel = pl ? `<div class="cab-panel" style="margin-top:14px">
+        <h4>TODO EL DÍA (la suma) · meta ${_cabMoney(diaObj.meta)} · ${pl.tickets || 0} tickets${pl.anulados ? ' · ' + pl.anulados + ' anulados' : ''}</h4>
+        <div class="cab-cols">
+          <div>
+            <div class="cab-kv"><span class="cab-k">Ventas netas</span><span class="cab-v cab-num">${_cabMoney2(pl.ventasNetas)}</span></div>
+            <div class="cab-kv"><span class="cab-k">Costo de ventas</span><span class="cab-v cab-num">${_cabMoney2(pl.costoVentas)}</span></div>
+            <div class="cab-kv"><span class="cab-k">Margen bruto</span><span class="cab-v">${(parseFloat(pl.margenBrutoPct) || 0).toFixed(1)}%</span></div>
+          </div>
+          <div>
+            <div class="cab-kv"><span class="cab-k">Gastos</span><span class="cab-v cab-num">${_cabMoney2(pl.totalGastos)}</span></div>
+            <div class="cab-kv"><span class="cab-k">Utilidad neta</span><span class="cab-v cab-num" style="color:${utilNeta >= 0 ? 'var(--cab-good)' : 'var(--cab-bad)'}">${_cabMoney2(utilNeta)}</span></div>
+            <div class="cab-kv"><span class="cab-k">Ticket promedio</span><span class="cab-v cab-num">${pl.ticketPromedio ? _cabMoney2(pl.ticketPromedio) : '—'}</span></div>
+          </div>
+        </div></div>` : '';
+    if (!zonas.length && !pl) { _cabSheet('📅 ' + _cabEsc(fecha), _cabDOW[diaObj.dow] || '', '<div class="cab-lead2">No hay detalle disponible para este día ahora mismo.</div>'); return; }
+    const body = `<div class="cab-cols">${zonaHtml || '<div class="cab-lead2">Sin ventas por zona este día</div>'}</div>${totalPanel}`;
+    _cabSheet('📅 ' + _cabEsc(fecha) + ' · ' + (_cabDOW[diaObj.dow] || ''), 'Cada zona por separado · la suma abajo', body);
   }
 
   // Drill-down: PRODUCTO → analitica_producto (ventas, stock por zona, cobertura, sugerir comprar).
