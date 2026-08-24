@@ -1539,7 +1539,7 @@ const API = (() => {
     // app='MOS', así que el ON CONFLICT DO UPDATE de Storage pasa la RLS (a diferencia de wh-fotos, que no tiene).
     const res = await _sbFetchTimeout(`${_SB_URL}/storage/v1/object/producto-fotos/${path}`, {
       method: 'POST',
-      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': mime || 'image/jpeg', 'x-upsert': 'true' },
+      headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': mime || 'image/jpeg', 'x-upsert': 'true', 'cache-control': 'public, max-age=604800' },
       body: bin
     }, 30000);
     if (!res.ok) {

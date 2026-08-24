@@ -7571,32 +7571,58 @@ const MOS = (() => {
     }
     window._catFotoState = null;
   }
+  // Comprime/redimensiona una imagen en el navegador (canvas) ANTES de subirla, para no
+  // mandar fotos de 2-4MB al Storage (egress). Devuelve {dataUrl, base64, mimeType}.
+  function _catCompressImg(file, maxW, q) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+          const scale = Math.min(1, maxW / Math.max(w, h || 1));
+          w = Math.max(1, Math.round(w * scale)); h = Math.max(1, Math.round(h * scale));
+          const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          const dataUrl = cv.toDataURL('image/jpeg', q);
+          URL.revokeObjectURL(url);
+          if (!dataUrl || dataUrl.length < 32) return reject(new Error('canvas vacío'));
+          resolve({ dataUrl, base64: dataUrl.split(',')[1] || '', mimeType: 'image/jpeg' });
+        } catch (e) { URL.revokeObjectURL(url); reject(e); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('no carga')); };
+      img.src = url;
+    });
+  }
   function _catFotoOnFileSelect(ev) {
     const file = ev.target.files && ev.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast('⚠ La foto excede 5MB. Comprimila antes.', 'warn', 4500);
+    if (file.size > 15 * 1024 * 1024) {
+      toast('⚠ La foto excede 15MB.', 'warn', 4500);
       return;
     }
     try { _opsBeep && _opsBeep('tac'); } catch(_){}
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result;
-      const b64 = String(dataUrl).split(',')[1] || '';
+    const aplicar = (dataUrl, b64, mime, kb) => {
       window._catFotoState.fotoBase64 = b64;
-      window._catFotoState.mimeType   = file.type || 'image/jpeg';
-      // Actualizar preview
+      window._catFotoState.mimeType   = mime;
       const wrap = document.getElementById('catFotoPreviewWrap');
       if (wrap) {
         wrap.innerHTML = `<img id="catFotoPreviewImg" src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
         wrap.style.borderStyle = 'solid';
       }
       const st = document.getElementById('catFotoStatus');
-      if (st) { st.textContent = `Lista para subir · ${(file.size/1024).toFixed(0)} KB`; st.style.color = '#10b981'; }
+      if (st) { st.textContent = `Lista para subir · ${kb} KB`; st.style.color = '#10b981'; }
       const btn = document.getElementById('catFotoGuardarBtn');
       if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
     };
-    reader.readAsDataURL(file);
+    // Comprimir en el navegador (1000px, q0.8). Si falla, respaldo: subir el archivo tal cual.
+    _catCompressImg(file, 1000, 0.8).then(res => {
+      aplicar(res.dataUrl, res.base64, res.mimeType, Math.round(res.base64.length * 0.75 / 1024));
+    }).catch(() => {
+      const reader = new FileReader();
+      reader.onload = () => { const d = reader.result, b = String(d).split(',')[1] || ''; aplicar(d, b, file.type || 'image/jpeg', Math.round(file.size / 1024)); };
+      reader.readAsDataURL(file);
+    });
   }
   function _catFotoTomar() {
     // Forzar input file con capture para móviles que soporten cámara
