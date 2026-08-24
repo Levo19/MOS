@@ -1312,22 +1312,29 @@ const MOS = (() => {
 @keyframes cab-cashpulse{0%,100%{filter:brightness(1)}40%{filter:brightness(1.7) saturate(1.3)}}
 #cabina .cab-coin{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:16px;pointer-events:none;animation:cab-coinup 1.4s ease forwards;z-index:4}
 @keyframes cab-coinup{0%{opacity:0;transform:translate(-50%,10px) scale(.7)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-40px) scale(1.1)}}
-/* ── Tributario: cilindros 3D (a favor vs emitido) ── */
-#cabina .cab-cyl3d{display:flex;align-items:flex-end;justify-content:center;gap:20px;padding:12px 0 4px}
-#cabina .cab-cyl-wrap{display:flex;flex-direction:column;align-items:center;gap:7px}
-#cabina .cab-cyl-val{font-size:12.5px;font-weight:800;color:var(--cab-ink);font-variant-numeric:tabular-nums}
-#cabina .cab-cyl-col{height:92px;display:flex;align-items:flex-end}
-#cabina .cab-cyl{position:relative;width:44px;height:0;border-radius:0 0 3px 3px;transition:height 1.05s cubic-bezier(.2,.8,.2,1)}
-#cabina .cab-cyl.fav{background:linear-gradient(90deg,#065f46,#34d399 42%,#6ee7b7 50%,#10b981 58%,#065f46)}
-#cabina .cab-cyl.emit{background:linear-gradient(90deg,#92400e,#f59e0b 42%,#fde68a 50%,#f59e0b 58%,#92400e)}
-#cabina .cab-cyl-top{position:absolute;top:-8px;left:0;right:0;height:16px;border-radius:50%;box-shadow:inset 0 -2px 4px rgba(0,0,0,.15)}
-#cabina .cab-cyl.fav .cab-cyl-top{background:#a7f3d0}
-#cabina .cab-cyl.emit .cab-cyl-top{background:#fde68a}
-#cabina .cab-cyl::after{content:"";position:absolute;bottom:-7px;left:-3px;right:-3px;height:13px;border-radius:50%;background:rgba(0,0,0,.42);filter:blur(3px);z-index:-1}
-#cabina .cab-cyl-shine{position:absolute;top:2px;bottom:2px;left:9px;width:5px;border-radius:99px;background:rgba(255,255,255,.45);filter:blur(1px)}
-#cabina .cab-cyl-lbl{font-size:9px;font-weight:800;color:var(--cab-ink3);text-transform:uppercase;letter-spacing:.05em}
-#cabina .cab-cyl-eq{align-self:center;font-size:19px;font-weight:800;color:var(--cab-ink3);margin-bottom:26px}
-#cabina .cab-cyl-status{text-align:center;font-size:12.5px;font-weight:800;margin-top:9px}
+/* ── Tributario: BALANZA 3D animada (se inclina al lado más pesado) ── */
+#cabina .cab-scale{position:relative;height:126px;margin:4px auto 0;max-width:240px}
+#cabina .cab-glow{position:absolute;left:50%;top:38px;width:130px;height:110px;transform:translateX(-50%);border-radius:50%;filter:blur(26px);opacity:.5;z-index:0;transition:background .4s}
+#cabina .cab-scale.fav .cab-glow{background:radial-gradient(circle,#34d399,transparent 70%)}
+#cabina .cab-scale.pay .cab-glow{background:radial-gradient(circle,#f87171,transparent 70%)}
+#cabina .cab-scale.bal .cab-glow{background:radial-gradient(circle,#f5c451,transparent 70%)}
+#cabina .cab-beam{position:absolute;top:32px;left:14%;right:14%;height:6px;border-radius:4px;background:linear-gradient(90deg,#475569,#e2e8f0,#475569);transform:rotate(var(--tilt));transform-origin:50% 50%;transition:transform 1.1s cubic-bezier(.34,1.4,.5,1);animation:cab-tiltin 1.3s cubic-bezier(.34,1.5,.5,1);box-shadow:0 2px 6px rgba(0,0,0,.5);z-index:2}
+#cabina .cab-beam::before{content:"";position:absolute;left:50%;top:-4px;width:12px;height:12px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(circle at 35% 35%,#e2e8f0,#64748b);box-shadow:0 1px 2px rgba(0,0,0,.5)}
+@keyframes cab-tiltin{from{transform:rotate(0deg)}}
+@keyframes cab-untiltin{from{transform:rotate(0deg)}}
+#cabina .cab-pan{position:absolute;top:2px;width:66px;margin-left:-33px}
+#cabina .cab-pan.pL{left:0}
+#cabina .cab-pan.pR{left:100%}
+#cabina .cab-hang{transform:rotate(calc(-1*var(--tilt)));transform-origin:top center;transition:transform 1.1s cubic-bezier(.34,1.4,.5,1);animation:cab-untiltin 1.3s cubic-bezier(.34,1.5,.5,1);display:flex;flex-direction:column;align-items:center}
+#cabina .cab-str{width:1.5px;height:16px;background:rgba(148,163,184,.55)}
+#cabina .cab-dish{width:54px;height:13px;border-radius:0 0 27px 27px;border:2px solid;border-top:0;box-shadow:0 3px 6px rgba(0,0,0,.3)}
+#cabina .cab-dish.dfav{border-color:#34d399;background:linear-gradient(180deg,rgba(52,211,153,.28),rgba(52,211,153,.04))}
+#cabina .cab-dish.demit{border-color:#fbbf24;background:linear-gradient(180deg,rgba(251,191,36,.28),rgba(251,191,36,.04))}
+#cabina .cab-pan-v{margin-top:5px;font-size:11.5px;font-weight:800;color:var(--cab-ink);text-align:center;font-variant-numeric:tabular-nums;line-height:1.12}
+#cabina .cab-pan-v small{display:block;font-size:8.5px;font-weight:700;color:var(--cab-ink3);text-transform:uppercase;letter-spacing:.04em}
+#cabina .cab-fulc{position:absolute;left:50%;top:32px;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-bottom:46px solid var(--cab-card2);filter:drop-shadow(0 -1px 3px rgba(129,140,248,.35));z-index:1}
+#cabina .cab-base{position:absolute;left:50%;top:78px;transform:translateX(-50%);width:76px;height:5px;border-radius:3px;background:linear-gradient(90deg,transparent,#475569,transparent)}
+#cabina .cab-cyl-status{text-align:center;font-size:12.5px;font-weight:800;margin-top:2px}
 #cabina .cab-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
 #cabina .cab-card{grid-column:span 6;background:var(--cab-card);border:1px solid var(--cab-line);border-radius:var(--cab-r);padding:16px 17px;cursor:pointer;transition:transform .18s,border-color .18s,box-shadow .18s;position:relative;overflow:hidden}
 #cabina .cab-card:hover{transform:translateY(-3px);border-color:rgba(129,140,248,.4);box-shadow:var(--cab-shadow)}
@@ -1875,11 +1882,7 @@ const MOS = (() => {
     const tSt = balanced ? { i: '⚖️', t: 'En balance', c: 'var(--cab-good)' }
       : (neto >= 0 ? { i: '🟢', t: 'Crédito a favor', c: 'var(--cab-acc2)' } : { i: '🔴', t: 'A pagar', c: 'var(--cab-warn)' });
     const cardTrib = _cabCard('slim', '⚖️', 'Tributario', 'IGV: ¿emito ≈ compro?', _cabDelta(igvFavor, prev ? (parseFloat((prev.tributario || {}).igvFavor) || 0) : null, false),
-      `<div class="cab-cyl3d">
-         ${_cabCyl(Math.round(igvFavor / maxIgv * 100), 'fav', 'a favor', igvFavor)}
-         <div class="cab-cyl-eq">≈</div>
-         ${_cabCyl(Math.round(igvEmit / maxIgv * 100), 'emit', 'emitido', igvEmit)}
-       </div>
+      `${_cabScale(igvFavor, igvEmit)}
        <div class="cab-cyl-status" style="color:${tSt.c}">${tSt.i} ${tSt.t} · Δ ${_cabMoney2(Math.abs(neto))}</div>`,
       balanced ? `<b>Casi empatan</b> — cobrás de IGV casi lo mismo que comprás. Así pagás poco y no acumulás crédito muerto.`
         : (neto >= 0 ? `Tenés <b>${_cabMoney2(Math.abs(neto))}</b> de crédito a favor sin usar (comprás más IGV del que cobrás).`
@@ -1918,11 +1921,20 @@ const MOS = (() => {
       <div class="cab-chd"><div class="cab-ci">${ic}</div><div class="cab-ct"><h3>${t}</h3><p>${sub}</p></div>${dl || ''}</div>
       ${body}<div class="cab-accion">💡 ${acc}</div>${peek ? `<div class="cab-peek">${peek}</div>` : ''}</div>`;
   }
-  // cilindro 3D (pseudo-3D con gradiente curvo + tapa elíptica + sombra) para el Tributario
-  function _cabCyl(hPct, cls, label, val) {
-    return `<div class="cab-cyl-wrap"><div class="cab-cyl-val">${_cabMoney2(val)}</div>` +
-      `<div class="cab-cyl-col"><div class="cab-cyl ${cls}" data-h="${Math.max(2, hPct)}"><span class="cab-cyl-top"></span><span class="cab-cyl-shine"></span></div></div>` +
-      `<div class="cab-cyl-lbl">${label}</div></div>`;
+  // BALANZA 3D animada para el Tributario: se inclina al lado más pesado (a favor / a pagar),
+  // verde si el crédito manda, rojo si el emitido manda, dorado si están en balance.
+  function _cabScale(favor, emit) {
+    const maxIgv = Math.max(favor, emit, 1), neto = favor - emit;
+    const relGap = Math.abs(neto) / maxIgv;
+    const tiltMag = Math.min(14, relGap * 60);
+    const tilt = (neto > 0 ? -tiltMag : tiltMag).toFixed(1);   // a favor→izq baja · a pagar→der baja
+    const st = relGap < 0.12 ? 'bal' : (neto > 0 ? 'fav' : 'pay');
+    const pan = (side, dish, val, lbl) => `<div class="cab-pan ${side}"><div class="cab-hang"><div class="cab-str"></div><div class="cab-dish ${dish}"></div><div class="cab-pan-v">${_cabMoney2(val)}<small>${lbl}</small></div></div></div>`;
+    return `<div class="cab-scale ${st}" style="--tilt:${tilt}deg">
+      <div class="cab-glow"></div>
+      <div class="cab-beam">${pan('pL', 'dfav', favor, 'a favor')}${pan('pR', 'demit', emit, 'emitido')}</div>
+      <div class="cab-fulc"></div><div class="cab-base"></div>
+    </div>`;
   }
 
   function _cabHeatmap(heat) {
