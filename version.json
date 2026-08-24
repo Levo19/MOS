@@ -1,1 +1,1 @@
-{"version": "2.43.961", "build": "Cabina Tributario: BALANZA 3D animada en vez de cilindros — se inclina al lado mas pesado (a favor izq / a pagar der), verde/rojo/dorado segun el balance, con brillo de estado y animacion de asentamiento. Clic = resumen (a favor, emitido, balance, renta, CPE)."}
+{"version": "2.43.962", "build": "Cabina Tributario: la balanza gira suave en 3D cada ~9s (se acerca mostrando profundidad) y el monto de cada plato se resalta alternado. Ademas: todo el modulo pasado a espanol neutro (sin voseo)."}

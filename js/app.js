@@ -1313,7 +1313,10 @@ const MOS = (() => {
 #cabina .cab-coin{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:16px;pointer-events:none;animation:cab-coinup 1.4s ease forwards;z-index:4}
 @keyframes cab-coinup{0%{opacity:0;transform:translate(-50%,10px) scale(.7)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-40px) scale(1.1)}}
 /* ── Tributario: BALANZA 3D animada (se inclina al lado más pesado) ── */
-#cabina .cab-scale{position:relative;height:126px;margin:4px auto 0;max-width:240px}
+#cabina .cab-scale-wrap{perspective:720px}
+#cabina .cab-scale{position:relative;height:126px;margin:4px auto 0;max-width:240px;transform-style:preserve-3d;animation:cab-orbit 9s ease-in-out infinite}
+@keyframes cab-orbit{0%,58%{transform:rotateY(0deg) translateZ(0)}72%{transform:rotateY(21deg) translateZ(24px)}86%{transform:rotateY(-12deg) translateZ(10px)}100%{transform:rotateY(0deg) translateZ(0)}}
+@keyframes cab-panfocus{0%,80%,100%{transform:scale(1);filter:brightness(1)}90%{transform:scale(1.18);filter:brightness(1.5)}}
 #cabina .cab-glow{position:absolute;left:50%;top:38px;width:130px;height:110px;transform:translateX(-50%);border-radius:50%;filter:blur(26px);opacity:.5;z-index:0;transition:background .4s}
 #cabina .cab-scale.fav .cab-glow{background:radial-gradient(circle,#34d399,transparent 70%)}
 #cabina .cab-scale.pay .cab-glow{background:radial-gradient(circle,#f87171,transparent 70%)}
@@ -1330,7 +1333,8 @@ const MOS = (() => {
 #cabina .cab-dish{width:54px;height:13px;border-radius:0 0 27px 27px;border:2px solid;border-top:0;box-shadow:0 3px 6px rgba(0,0,0,.3)}
 #cabina .cab-dish.dfav{border-color:#34d399;background:linear-gradient(180deg,rgba(52,211,153,.28),rgba(52,211,153,.04))}
 #cabina .cab-dish.demit{border-color:#fbbf24;background:linear-gradient(180deg,rgba(251,191,36,.28),rgba(251,191,36,.04))}
-#cabina .cab-pan-v{margin-top:5px;font-size:11.5px;font-weight:800;color:var(--cab-ink);text-align:center;font-variant-numeric:tabular-nums;line-height:1.12}
+#cabina .cab-pan-v{margin-top:5px;font-size:11.5px;font-weight:800;color:var(--cab-ink);text-align:center;font-variant-numeric:tabular-nums;line-height:1.12;animation:cab-panfocus 6s ease-in-out infinite}
+#cabina .cab-pan.pR .cab-pan-v{animation-delay:3s}
 #cabina .cab-pan-v small{display:block;font-size:8.5px;font-weight:700;color:var(--cab-ink3);text-transform:uppercase;letter-spacing:.04em}
 #cabina .cab-fulc{position:absolute;left:50%;top:32px;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-bottom:46px solid var(--cab-card2);filter:drop-shadow(0 -1px 3px rgba(129,140,248,.35));z-index:1}
 #cabina .cab-base{position:absolute;left:50%;top:78px;transform:translateX(-50%);width:76px;height:5px;border-radius:3px;background:linear-gradient(90deg,transparent,#475569,transparent)}
@@ -1717,7 +1721,7 @@ const MOS = (() => {
         <div class="cab-bars-row">${cols}</div>
       </div>
       <div class="cab-dayrow">${labels}</div>
-      <div class="cab-chartlg"><span><i class="lg-z1"></i>Zona 1</span><span><i class="lg-z2"></i>Zona 2</span><span><i class="lg-meta"></i>meta/día</span><span><i class="lg-eq"></i>equilibrio/día</span><span class="lg-hint">tocá un día → detalle</span></div>
+      <div class="cab-chartlg"><span><i class="lg-z1"></i>Zona 1</span><span><i class="lg-z2"></i>Zona 2</span><span><i class="lg-meta"></i>meta/día</span><span><i class="lg-eq"></i>equilibrio/día</span><span class="lg-hint">toca un día → detalle</span></div>
     </div>`;
   }
   function _cabLineChart(dias, metaDia) {
@@ -1813,7 +1817,7 @@ const MOS = (() => {
 
       <div class="cab-grid">${_cabCards(d, prev)}</div>
 
-      <div class="cab-foot">Cabina en vivo · datos reales de MOS/WH/ME · tocá cualquier barra para el detalle.</div>
+      <div class="cab-foot">Cabina en vivo · datos reales de MOS/WH/ME · toca cualquier barra para el detalle.</div>
     </div>
     <div class="cab-ov" id="cabOv" onclick="if(event.target===this)MOS.cabCerrar()"><div class="cab-sheet" id="cabSheet"></div></div>
     </div>`;
@@ -1845,8 +1849,8 @@ const MOS = (() => {
     // ── card PRODUCTOS (solo "qué se vende"; la reposición vive en su propia card) ──
     const cardProd = _cabCard('slim2', '📦', 'Productos', 'Lo que mueve la caja esta semana', '',
       `<div class="cab-bars">${barsProd || '<div class="cab-metarow">Sin ventas en la semana</div>'}</div>
-       <div class="cab-metarow" style="margin-top:11px"><span>Top ${Math.min(top.length, 5)} de ${top.length} con venta</span><span>tocá un producto para su ficha ↗</span></div>`,
-      top.length ? `<b>${_cabEsc((top[0] || {}).nombre || '')}</b> lidera con ${_fmtQty((top[0] || {}).u || 0)} u. Cuidá el stock de tus más vendidos.` : 'Sin ventas registradas en la semana.',
+       <div class="cab-metarow" style="margin-top:11px"><span>Top ${Math.min(top.length, 5)} de ${top.length} con venta</span><span>toca un producto para su ficha ↗</span></div>`,
+      top.length ? `<b>${_cabEsc((top[0] || {}).nombre || '')}</b> lidera con ${_fmtQty((top[0] || {}).u || 0)} u. Cuida el stock de los más vendidos.` : 'Sin ventas registradas en la semana.',
       'analítica de producto ↗', '');
 
     // ── card REPOSICIÓN & CONSIDERADOS — ¿lo que se debía se despachó? (dato puntual: fill-rate) ──
@@ -1867,8 +1871,8 @@ const MOS = (() => {
        ${zbars ? '<div class="cab-bars" style="margin-top:11px">' + zbars + '</div>' : ''}
        <div class="cab-metarow" style="margin-top:9px"><span>Reposición media <b style="color:${reposH <= reposMeta ? 'var(--cab-good)' : 'var(--cab-warn)'}">${reposH.toFixed(1)} h</b> (pickup)</span><span>demora despacho ${rep.horasMediaDespacho != null ? rep.horasMediaDespacho + ' h' : '—'}</span></div>`,
       !hasRep ? 'Cargando reposición…' : (fill < 40
-        ? `Alarma: solo <b>${fill}%</b> de lo considerado se despachó — <b>${rep.pendientes}</b> siguen debiéndose y vencen a los 7 días. Empujá los más viejos hoy.`
-        : `Fill-rate <b>${fill}%</b>. Priorizá los considerados sin despachar de mayor antigüedad para no perderlos.`),
+        ? `Alarma: solo <b>${fill}%</b> de lo considerado se despachó — <b>${rep.pendientes}</b> siguen debiéndose y vencen a los 7 días. Empuja los más viejos hoy.`
+        : `Fill-rate <b>${fill}%</b>. Prioriza los considerados sin despachar de mayor antigüedad para no perderlos.`),
       'ver cuáles se despacharon ↗', 'MOS.cabRepos()');
 
     // ── card TRIBUTARIO — dos cilindros 3D: IGV a favor (compras) vs IGV emitido (ventas). El
@@ -1884,9 +1888,9 @@ const MOS = (() => {
     const cardTrib = _cabCard('slim', '⚖️', 'Tributario', 'IGV: ¿emito ≈ compro?', _cabDelta(igvFavor, prev ? (parseFloat((prev.tributario || {}).igvFavor) || 0) : null, false),
       `${_cabScale(igvFavor, igvEmit)}
        <div class="cab-cyl-status" style="color:${tSt.c}">${tSt.i} ${tSt.t} · Δ ${_cabMoney2(Math.abs(neto))}</div>`,
-      balanced ? `<b>Casi empatan</b> — cobrás de IGV casi lo mismo que comprás. Así pagás poco y no acumulás crédito muerto.`
-        : (neto >= 0 ? `Tenés <b>${_cabMoney2(Math.abs(neto))}</b> de crédito a favor sin usar (comprás más IGV del que cobrás).`
-          : `Cobrás <b>${_cabMoney2(Math.abs(neto))}</b> más de IGV del que comprás → eso pagás a SUNAT. Subí facturas de compra para equilibrar.`),
+      balanced ? `<b>Casi empatan</b> — cobras de IGV casi lo mismo que compras. Así pagas poco y no acumulas crédito muerto.`
+        : (neto >= 0 ? `Tienes <b>${_cabMoney2(Math.abs(neto))}</b> de crédito a favor sin usar (compras más IGV del que cobras).`
+          : `Cobras <b>${_cabMoney2(Math.abs(neto))}</b> más de IGV del que compras → eso pagas a SUNAT. Sube facturas de compra para equilibrar.`),
       'resumen tributario ↗', `MOS.cabTrib()`);
 
     // ── card PERSONAL & HORAS PICO ──
@@ -1896,7 +1900,7 @@ const MOS = (() => {
     heat.forEach(z => (z.horas || []).forEach(hh => { const v = parseFloat(hh.venta) || 0; if (v > pico.venta) pico = { zona: z.zona, h: hh.h, venta: v }; }));
     const cardPers = _cabCard('slim', '👥', 'Personal & horas pico', 'Dónde y cuándo aprieta', '',
       _cabHeatmap(heat),
-      pico.h != null ? `Pico real a las <b>${pico.h}:00 en ${_cabEsc(pico.zona)}</b> (${_cabMoney(pico.venta)}). Sumá 1 apoyo esa franja, no todo el día.` : 'Sin datos de tráfico por hora esta semana.',
+      pico.h != null ? `Pico real a las <b>${pico.h}:00 en ${_cabEsc(pico.zona)}</b> (${_cabMoney(pico.venta)}). Suma 1 apoyo esa franja, no todo el día.` : 'Sin datos de tráfico por hora esta semana.',
       'quién estuvo en el pico ↗', '');
 
     // ── card ZONAS ──
@@ -1909,7 +1913,7 @@ const MOS = (() => {
     const cardZonas = _cabCard('wide', '🗺️', 'Zonas & desperdicio', 'Estancado · stock cruzado entre zonas', '',
       `<div class="cab-bars">${barsZona || '<div class="cab-metarow">Sin zonas</div>'}</div>
        <div class="cab-metarow" style="margin-top:11px"><span>Zonas activas <b>${zonas.length}</b></span><span>SKUs con stock: ${_fmtQty(zonas.reduce((a, z) => a + (parseFloat(z.skus) || 0), 0))}</span></div>`,
-      peorZona ? `<b>${_cabEsc(peorZona.zona)}</b> concentra ${parseFloat(peorZona.estancados) || 0} productos estancados. Revisá cuáles devolver a almacén o mover a otra zona.` : 'Sin estancados detectados.',
+      peorZona ? `<b>${_cabEsc(peorZona.zona)}</b> concentra ${parseFloat(peorZona.estancados) || 0} productos estancados. Revisa cuáles devolver a almacén o mover a otra zona.` : 'Sin estancados detectados.',
       'detalle por zona ↗', '');
 
     return [cardRepos, cardTrib, cardProd, cardPers, cardZonas].join('');
@@ -1930,11 +1934,11 @@ const MOS = (() => {
     const tilt = (neto > 0 ? -tiltMag : tiltMag).toFixed(1);   // a favor→izq baja · a pagar→der baja
     const st = relGap < 0.12 ? 'bal' : (neto > 0 ? 'fav' : 'pay');
     const pan = (side, dish, val, lbl) => `<div class="cab-pan ${side}"><div class="cab-hang"><div class="cab-str"></div><div class="cab-dish ${dish}"></div><div class="cab-pan-v">${_cabMoney2(val)}<small>${lbl}</small></div></div></div>`;
-    return `<div class="cab-scale ${st}" style="--tilt:${tilt}deg">
+    return `<div class="cab-scale-wrap"><div class="cab-scale ${st}" style="--tilt:${tilt}deg">
       <div class="cab-glow"></div>
       <div class="cab-beam">${pan('pL', 'dfav', favor, 'a favor')}${pan('pR', 'demit', emit, 'emitido')}</div>
       <div class="cab-fulc"></div><div class="cab-base"></div>
-    </div>`;
+    </div></div>`;
   }
 
   function _cabHeatmap(heat) {
@@ -2035,7 +2039,7 @@ const MOS = (() => {
         <div class="cab-kv"><span class="cab-k">🟢 A favor (compras)</span><span class="cab-v cab-num" style="color:var(--cab-good)">${_cabMoney2(favor)}</span></div>
         <div class="cab-kv"><span class="cab-k">🟠 Emitido (ventas)</span><span class="cab-v cab-num" style="color:var(--cab-warn)">${_cabMoney2(emit)}</span></div>
         <div class="cab-kv"><span class="cab-k">Balance neto (Δ)</span><span class="cab-v cab-num" style="color:${delta >= 0 ? 'var(--cab-good)' : 'var(--cab-bad)'}">${delta >= 0 ? '+' : ''}${_cabMoney2(delta)}</span></div>
-        <div class="cab-kv"><span class="cab-k">${delta >= 0 ? 'Crédito a favor' : 'A pagar a SUNAT'}</span><span class="cab-v" style="color:${delta >= 0 ? 'var(--cab-good)' : 'var(--cab-warn)'}">${delta >= 0 ? 'no pagás este mes' : 'subí facturas de compra'}</span></div>
+        <div class="cab-kv"><span class="cab-k">${delta >= 0 ? 'Crédito a favor' : 'A pagar a SUNAT'}</span><span class="cab-v" style="color:${delta >= 0 ? 'var(--cab-good)' : 'var(--cab-warn)'}">${delta >= 0 ? 'no pagas este mes' : 'sube facturas de compra'}</span></div>
         <h4 style="margin-top:14px">IMPUESTO A LA RENTA</h4>
         <div class="cab-kv"><span class="cab-k">Renta MYPE (1.5% ventas)</span><span class="cab-v cab-num">${_cabMoney2(renta)}</span></div>
         <div class="cab-kv"><span class="cab-k">Ventas del mes</span><span class="cab-v cab-num">${_cabMoney2(t.totalVentas)}</span></div>
@@ -2068,7 +2072,7 @@ const MOS = (() => {
     const mxC = comis.length ? (parseFloat(comis[0].monto) || 1) : 1;
     const filasComis = comis.map(c => `<div class="cab-bar2"><span class="cab-nm2">${_cabEsc(c.nombre)}</span><span class="cab-tk2"><i style="width:${((parseFloat(c.monto) || 0) / mxC * 100).toFixed(1)}%"></i></span><span class="cab-vl2">${_cabMoney2(c.monto)}</span></div>`).join('') || '<div class="cab-lead2">Sin comisiones registradas</div>';
     const body = `<div class="cab-cols">
-      <div class="cab-panel"><h4>VENTA POR DÍA · tocá un día para su detalle</h4>${filasDias}</div>
+      <div class="cab-panel"><h4>VENTA POR DÍA · toca un día para su detalle</h4>${filasDias}</div>
       <div class="cab-panel"><h4>REPARTO DE LA SEMANA</h4>
         <div class="cab-kv"><span class="cab-k">Venta acumulada</span><span class="cab-v cab-num">${_cabMoney2(din.acumulado)}</span></div>
         <div class="cab-kv"><span class="cab-k">Rentabilidad</span><span class="cab-v" style="color:var(--cab-good)">${(parseFloat(din.rentabilidad) || 0).toFixed(1)}%</span></div>
