@@ -1,1 +1,1 @@
-{"version": "2.43.967", "build": "Considerados v3 UI MOS: lista ordenada por PRIORIDAD (🔥 en los primeros, chip de stock en almacen), ya NO dice 7 dias (no se borran solos; se atienden despachando y se archivan el domingo); KPI + seccion de ATENDIDOS de la semana con sello (seguimiento del master). Motor 954 en la BD."}
+{"version": "2.43.968", "build": "Actividad: horas acotadas a 7am-7pm (mas espacio). Planilla: muñecos animados por grupo (avatar que se mueve + nombre + monto), sin barra larga; al tocar despliega dia por dia con comisiones/descuentos."}

@@ -108,7 +108,7 @@ begin
                      where (v.fecha at time zone 'America/Lima')::date between v_lun and v_fin
                        and coalesce(v.zona_id,'') in ('ZONA-01','ZONA-02')
                        and upper(coalesce(v.forma_pago,'')) not like 'ANULADO%'
-                       and extract(hour from (v.fecha at time zone 'America/Lima')) between 7 and 21
+                       and extract(hour from (v.fecha at time zone 'America/Lima')) between 7 and 19
                      group by 1,2 ) q
             group by q.zona_id ) t;
 

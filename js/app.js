@@ -1462,6 +1462,33 @@ const MOS = (() => {
 .cab-plbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#22d3ee);animation:cab-hgrow .8s cubic-bezier(.2,.8,.2,1)}
 .cab-plp-days{display:none;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:11px}
 .cab-plp.open .cab-plp-days{display:grid;animation:cab-fade .25s ease}
+/* avatares animados (grid compacto) */
+.cab-plgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:9px}
+.cab-plc{background:#0f1a2e;border:1px solid rgba(148,163,184,.13);border-radius:14px;padding:11px 8px;cursor:pointer;transition:border-color .15s,transform .12s;position:relative}
+.cab-plc:hover{border-color:rgba(129,140,248,.45);transform:translateY(-2px)}
+.cab-plc:active{transform:scale(.98)}
+.cab-plc-face{display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center}
+.cab-plc-av{font-size:30px;line-height:1;animation:cab-bob 2.6s ease-in-out infinite;filter:drop-shadow(0 3px 5px rgba(0,0,0,.45))}
+@keyframes cab-bob{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-4px) rotate(3deg)}}
+.cab-plc-nm{font-size:11.5px;font-weight:750;color:#e8eefb;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cab-plc-mto{font-size:14px;font-weight:850;color:#e8eefb}
+.cab-plc-sub{font-size:8.5px;font-weight:800;color:#5f7192;text-transform:uppercase;letter-spacing:.03em}
+.cab-plc-det{display:none;margin-top:10px}
+.cab-plc.open{grid-column:1/-1}
+.cab-plc.open .cab-plc-face{flex-direction:row;align-items:center;gap:11px;text-align:left}
+.cab-plc.open .cab-plc-av{font-size:34px}
+.cab-plc.open .cab-plc-nm{flex:1;min-width:0}
+.cab-plc.open .cab-plc-mto{margin-left:auto}
+.cab-plc.open .cab-plc-sub{display:none}
+.cab-plc.open .cab-plc-det{display:block;animation:cab-fade .25s ease}
+.cab-plc-full{font-size:12px;font-weight:700;color:#9db0cf;margin-bottom:8px}
+.cab-plc-full b{color:#e8eefb}
+.cab-plc-brk{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
+.cab-plc-brk .brk{font-size:10px;font-weight:750;padding:3px 8px;border-radius:8px;white-space:nowrap}
+.cab-plc-brk .brk.g{color:#34d399;background:rgba(52,211,153,.13)}
+.cab-plc-brk .brk.c{color:#22d3ee;background:rgba(34,211,238,.13)}
+.cab-plc-brk .brk.m{color:#9db0cf;background:rgba(148,163,184,.12)}
+.cab-plc-brk .brk.r{color:#f87171;background:rgba(248,113,113,.13)}
 .cab-pld{background:#0a1120;border:1px solid rgba(148,163,184,.1);border-radius:7px;padding:6px 2px;text-align:center;opacity:.38}
 .cab-pld.on{opacity:1;border-color:rgba(129,140,248,.25)}
 .cab-pld span{display:block;font-size:8px;font-weight:800;color:#9db0cf;text-transform:uppercase}
@@ -2182,29 +2209,33 @@ const MOS = (() => {
     const zico = z => z === 'ALMACEN' ? '🏭' : z === 'ZONA-01' ? '🏪' : z === 'ZONA-02' ? '🏬' : '📍';
     const gruposHtml = grupos.map(g => {
       const sub = g.subtotal || {}, personas = Array.isArray(g.personas) ? g.personas : [];
-      const mxT = Math.max(...personas.map(p => parseFloat(p.total) || 0), 1);
-      const filas = personas.map(p => {
-        const ini = (String(p.nombre || '?').trim().charAt(0) || '?').toUpperCase();
+      const emoji = rol => { const r = String(rol || '').toUpperCase(); return r.includes('ALMACEN') ? '👷' : r.includes('CAJ') ? '💳' : r.includes('ENVAS') ? '🏭' : r.includes('VEND') ? '🧑‍💼' : '🧑'; };
+      const chips = personas.map((p, pi) => {
         const dias = (Array.isArray(p.porDia) ? p.porDia : []).map(x => {
           const on = !!x.presente || (parseFloat(x.total) || 0) > 0;
           return `<div class="cab-pld ${on ? 'on' : ''}"><span>${_cabEsc(_cabDOW[x.dow] || x.dow)}</span><b>${on ? _cabMoney2(x.total) : '—'}</b></div>`;
         }).join('');
         const brk = [];
-        if ((parseFloat(p.comision) || 0) > 0) brk.push(`<span style="color:var(--cab-good)">com ${_cabMoney2(p.comision)}</span>`);
-        if ((parseFloat(p.bonif) || 0) > 0) brk.push(`<span style="color:var(--cab-acc2)">bono ${_cabMoney2(p.bonif)}</span>`);
-        if ((parseFloat(p.sancion) || 0) > 0) brk.push(`<span style="color:var(--cab-bad)">−${_cabMoney2(p.sancion)}</span>`);
-        if ((parseFloat(p.envasado) || 0) > 0) brk.push(`<span style="color:var(--cab-ink3)">env ${_cabMoney2(p.envasado)}</span>`);
-        return `<div class="cab-plp" onclick="this.classList.toggle('open')">
-          <div class="cab-plp-h">
-            <div class="cab-plav">${_cabEsc(ini)}</div>
-            <div class="cab-plp-i"><b>${_cabEsc(p.nombre)}</b><span>${_cabEsc(p.rol || '')} · ${p.dias || 0} días</span></div>
-            <div class="cab-plp-t"><b class="cab-num">${_cabMoney2(p.total)}</b>${brk.length ? `<span>${brk.join(' · ')}</span>` : ''}</div>
+        if ((parseFloat(p.comision) || 0) > 0) brk.push(`<span class="brk g">💰 comisión ${_cabMoney2(p.comision)}</span>`);
+        if ((parseFloat(p.bonif) || 0) > 0) brk.push(`<span class="brk c">⭐ bono ${_cabMoney2(p.bonif)}</span>`);
+        if ((parseFloat(p.envasado) || 0) > 0) brk.push(`<span class="brk m">🏭 envasado ${_cabMoney2(p.envasado)}</span>`);
+        if ((parseFloat(p.sancion) || 0) > 0) brk.push(`<span class="brk r">➖ descuento ${_cabMoney2(p.sancion)}</span>`);
+        const first = _cabEsc(String(p.nombre || '?').trim().split(/\s+/)[0]);
+        return `<div class="cab-plc" onclick="this.classList.toggle('open')">
+          <div class="cab-plc-face">
+            <div class="cab-plc-av" style="animation-delay:${(pi % 6) * 0.22}s">${emoji(p.rol)}</div>
+            <div class="cab-plc-nm">${first}</div>
+            <div class="cab-plc-mto cab-num">${_cabMoney2(p.total)}</div>
+            <div class="cab-plc-sub">${p.dias || 0}d · ${_cabEsc(p.rol || '')}</div>
           </div>
-          <div class="cab-plbar"><i style="width:${((parseFloat(p.total) || 0) / mxT * 100).toFixed(0)}%"></i></div>
-          <div class="cab-plp-days">${dias}</div>
+          <div class="cab-plc-det">
+            <div class="cab-plc-full"><b>${_cabEsc(p.nombre)}</b> · ${_cabEsc(p.rol || '')} · ${p.dias || 0} días</div>
+            ${brk.length ? `<div class="cab-plc-brk">${brk.join('')}</div>` : ''}
+            <div class="cab-plp-days">${dias}</div>
+          </div>
         </div>`;
       }).join('') || '<div class="cab-lead2">Sin personal</div>';
-      return `<div class="cab-plg"><div class="cab-plg-h"><span>${zico(g.zona)} ${_cabEsc(g.zona)}</span><b>${_cabMoney2(sub.total)} <small>· ${sub.personas || 0} pers.</small></b></div>${filas}</div>`;
+      return `<div class="cab-plg"><div class="cab-plg-h"><span>${zico(g.zona)} ${_cabEsc(g.zona)}</span><b>${_cabMoney2(sub.total)} <small>· ${sub.personas || 0} pers.</small></b></div><div class="cab-plgrid">${chips}</div></div>`;
     }).join('');
     _cabSheet('👥 Planilla de la semana · ' + _cabEsc((d.semana || {}).label || ''), 'Cada persona, día por día · toca una persona para ver su detalle', header + gruposHtml);
   }
@@ -2219,7 +2250,7 @@ const MOS = (() => {
     const d = (r && r.ok && r.data) ? r.data : null;
     if (!d) { _cabSheet('📅 Actividad de la semana', '', '<div class="cab-lead2">No se pudo cargar la actividad ahora mismo.</div>'); return; }
     const maxV = parseFloat(d.maxVenta) || 1;
-    const HORAS = []; for (let h = 7; h <= 21; h++) HORAS.push(h);
+    const HORAS = []; for (let h = 7; h <= 19; h++) HORAS.push(h);
     const btn = `<button class="cab-btn-avisos" style="margin-bottom:15px" onclick="MOS.cabPersonalSemana()">💰 Ver planilla de la semana ↗</button>`;
     const cell = (map, h) => { const c = map[h], v = c ? (parseFloat(c.venta) || 0) : 0, tk = c ? (parseInt(c.tk) || 0) : 0; return `<div class="cab-dh-c" style="background:${c ? _cabHeatColor(Math.round(v / maxV * 5)) : '#0c1424'}" title="${h}:00 · ${tk} tickets · ${_cabMoney(v)}"></div>`; };
     const diasHtml = (Array.isArray(d.dias) ? d.dias : []).map(x => {
