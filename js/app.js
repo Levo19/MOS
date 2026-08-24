@@ -54173,7 +54173,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // (wh.considerados_listar) y resuelve (wh.considerado_resolver); no se tocó nada del server.
   // El overlay REUSA el lenguaje visual del pickup (clases zpk-*): mismo card, header, lista y pie.
   const CONS_POLL_MS = 60 * 1000;   // refresco del badge mientras la vista Zona esté visible
-  let _consItems = [];              // último listado conocido (fuente del badge y del overlay)
+  let _consItems = [];              // pendientes (ordenados por prioridad en el server)
+  let _consAtendidos = [];          // [v3] atendidos de la semana (con sello) — seguimiento del master
+  let _consVerAtendidos = false;    // toggle de la sección de atendidos
   let _consPollTimer = null;
   let _consCargando = false;
   let _consResolviendo = 0;   // resoluciones optimistas en vuelo: el poll no debe resucitar la fila
@@ -54217,7 +54219,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try {
       const r = await API.zona.consideradosListar();
       if (r && r.ok !== false) {
-        _consItems = Array.isArray(r.items) ? r.items : [];
+        _consItems = Array.isArray(r.pendientes) ? r.pendientes : (Array.isArray(r.items) ? r.items : []);
+        _consAtendidos = Array.isArray(r.atendidos) ? r.atendidos : [];
         _consPintarBadge();
       }
     } catch (e) {
@@ -54245,6 +54248,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _consRender(!_consItems.length);   // esqueleto solo si todavía no hay nada cargado
     _consBadgeRefrescar();             // y siempre se pide el dato fresco al abrir
   }
+  function consToggleAtendidos(){ _consVerAtendidos = !_consVerAtendidos; if (document.getElementById('zonaConsidOverlay')) _consRender(false); }
   function zonaCerrarConsiderados(){
     const ov = document.getElementById('zonaConsidOverlay');
     if (!ov) return;
@@ -54305,7 +54309,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     else if (!_consItems.length) {
       body = '<div class="zpk-empty">Sin considerados 🎉<br><small>cuando ingrese mercadería que alguna vez se debió, aparece aquí</small></div>';
     } else {
-      body = _consItems.map(it => {
+      body = _consItems.map((it, idx) => {
         // [934] Tipo de ingreso legible + SELLO de despacho por zona (¿ya se le mandó a la zona que se debía?).
         // [945] guiaTipo 'STOCK' = ya HABÍA stock en almacén (no ingresó hoy), pero se debe y nunca se despachó.
         const esStock = String(it.guiaTipo || '') === 'STOCK';
@@ -54332,8 +54336,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           return `<div class="cons-zrow"><span class="cons-zn">${_esc(g.zona)}</span><span class="cons-zd">debía ${_zpkNum(g.pend)}${sem ? ' · ' + _esc(sem) : ''}</span>${sello}</div>`;
         }).join('') || '<div class="cons-zrow"><span class="cons-zd">fue solicitado en semanas pasadas</span></div>';
         const chips = [
+          idx < 3 ? `<span class="zpk-chip" style="background:rgba(248,113,113,.15);color:#f87171">🔥 prioridad</span>` : '',
           esStock ? `<span class="zpk-chip zc-ing">📦 hay en almacén</span>`
                   : `<span class="zpk-chip zc-ing">🆕 ingresó ${_esc(_consHaceLbl(it.creado))}</span>`,
+          (parseFloat(it.stock) || 0) > 0 ? `<span class="zpk-chip">📦 ${_zpkNum(it.stock)} en almacén</span>` : '',
           tipoLbl ? `<span class="zpk-chip">${tipoLbl}</span>` : ''
         ].filter(Boolean).join('');
         const foto = it.foto
@@ -54359,11 +54365,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     ov.innerHTML = `<div class="zpk-card">
         <div class="zpk-top">
           <div><div class="zpk-zona">🎯 Considerados</div>
-               <div class="zpk-subt"><span class="zpk-live"></span> Ingresó lo que alguna vez se debió</div></div>
+               <div class="zpk-subt"><span class="zpk-live"></span> Ordenados por prioridad · lo que más conviene despachar arriba</div></div>
           <button class="zpk-x" onclick="MOS.zonaCerrarConsiderados()" aria-label="Cerrar">✕</button>
         </div>
-        ${(!loading && n) ? `<div class="zpk-kpis"><div><b>${n}</b><small>ingresaron debiendo</small></div></div>` : ''}
-        ${(!loading && n) ? '<div class="zpk-leyenda">Informativo: ingresó mercadería que alguna zona debía. ✓ = ya se le despachó · ⏳ = falta despacharlo. Se limpian solos a los 7 días.</div>' : ''}
+        ${(!loading) ? `<div class="zpk-kpis"><div><b>${n}</b><small>por despachar</small></div>${_consAtendidos.length ? `<div style="cursor:pointer" onclick="MOS.consToggleAtendidos()"><b style="color:#34d399">${_consAtendidos.length}</b><small>✓ atendidos ${_consVerAtendidos ? '▲' : '▼'}</small></div>` : ''}</div>` : ''}
+        ${(!loading && _consVerAtendidos && _consAtendidos.length) ? `<div class="cons-atn-sec">${_consAtendidos.map(a => `<div class="cons-atn-row"><span class="cons-sello ok">✓</span><div class="cons-atn-i"><b>${_esc(a.nombre || a.skuBase)}</b><span>${(Array.isArray(a.zonas) ? a.zonas : []).map(_esc).join(' · ')}</span></div><small>${_esc(_consHaceLbl(a.atendidoTs))}</small></div>`).join('')}</div>` : ''}
+        ${(!loading && n) ? '<div class="zpk-leyenda">✓ = ya se despachó a esa zona · ⏳ = falta. No se borran solos: se atienden despachando, y los atendidos se archivan el domingo. Si el almacén queda en 0, sale de la lista (imposible).</div>' : ''}
         <div class="zpk-list">${body}</div>
       </div>`;
     try { if (scrollPrev) { const l = ov.querySelector('.zpk-list'); if (l) l.scrollTop = scrollPrev; } } catch (_) {}
@@ -57262,7 +57269,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirInsights, zonaCerrarInsights, zonaDbzTip,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
-    zonaAbrirConsiderados, zonaCerrarConsiderados,
+    zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos,
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
     // [RIZ #4] proveedores reales por canónico (lazy-load por card en ALMACEN)
