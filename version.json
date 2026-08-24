@@ -1,1 +1,1 @@
-{"version": "2.43.962", "build": "Cabina Tributario: la balanza gira suave en 3D cada ~9s (se acerca mostrando profundidad) y el monto de cada plato se resalta alternado. Ademas: todo el modulo pasado a espanol neutro (sin voseo)."}
+{"version": "2.43.963", "build": "Cabina Personal: reloj de calor RADIAL 3D en vez del heatmap que se cortaba. Horas 7-21 alrededor del reloj, Zona 1 anillo exterior y Zona 2 interior, color=carga; todas visibles sin corte. Gira en 3D periodico + barrido radar; el pico late. Toca un gajo -> quien atendio."}

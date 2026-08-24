@@ -1339,6 +1339,26 @@ const MOS = (() => {
 #cabina .cab-fulc{position:absolute;left:50%;top:32px;transform:translateX(-50%);width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-bottom:46px solid var(--cab-card2);filter:drop-shadow(0 -1px 3px rgba(129,140,248,.35));z-index:1}
 #cabina .cab-base{position:absolute;left:50%;top:78px;transform:translateX(-50%);width:76px;height:5px;border-radius:3px;background:linear-gradient(90deg,transparent,#475569,transparent)}
 #cabina .cab-cyl-status{text-align:center;font-size:12.5px;font-weight:800;margin-top:2px}
+/* ── Personal: RELOJ DE CALOR radial 3D ── */
+#cabina .cab-clock-wrap{display:flex;flex-direction:column;align-items:center;gap:9px;padding:8px 0 2px}
+#cabina .cab-clock{position:relative;width:100%;max-width:224px;aspect-ratio:1;transform-style:preserve-3d;animation:cab-clockorbit 12s ease-in-out infinite}
+@keyframes cab-clockorbit{0%,58%{transform:perspective(560px) rotateX(15deg) rotateY(0deg)}78%{transform:perspective(560px) rotateX(15deg) rotateY(18deg)}100%{transform:perspective(560px) rotateX(15deg) rotateY(0deg)}}
+#cabina .cab-clocksvg{width:100%;height:100%;overflow:visible;display:block}
+#cabina .cab-sec{cursor:pointer;transition:filter .15s;stroke:#070c16;stroke-width:.6}
+#cabina .cab-sec:hover{filter:brightness(1.45)}
+#cabina .cab-sec.pico{animation:cab-picoglow 1.9s ease-in-out infinite}
+@keyframes cab-picoglow{0%,100%{filter:brightness(1)}50%{filter:brightness(1.55) drop-shadow(0 0 4px #818cf8)}}
+#cabina .cab-hlbl{fill:var(--cab-ink3);font-size:8px;font-weight:800;text-anchor:middle}
+#cabina .cab-clabel{fill:var(--cab-ink2);font-size:8px;font-weight:800;text-anchor:middle;letter-spacing:.08em;text-transform:uppercase}
+#cabina .cab-clabel2{fill:var(--cab-ink3);font-size:7px;font-weight:700;text-anchor:middle;letter-spacing:.06em;text-transform:uppercase}
+#cabina .cab-radar{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,rgba(129,140,248,.32),rgba(129,140,248,.06) 30deg,transparent 62deg);animation:cab-radarspin 5s linear infinite;pointer-events:none;mix-blend-mode:screen}
+@keyframes cab-radarspin{to{transform:rotate(360deg)}}
+#cabina .cab-clock-lg{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;font-size:9.5px;font-weight:700;color:var(--cab-ink2)}
+#cabina .cab-clock-lg span{display:inline-flex;align-items:center;gap:5px}
+#cabina .cab-clock-lg i{width:8px;height:8px;border-radius:50%;display:inline-block}
+#cabina .cab-clock-lg .d1{background:#6366f1}
+#cabina .cab-clock-lg .d2{background:#22d3ee}
+#cabina .cab-clock-lg .lg-hint{flex-basis:100%;text-align:center;color:var(--cab-ink3);font-weight:600;margin-top:1px}
 #cabina .cab-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
 #cabina .cab-card{grid-column:span 6;background:var(--cab-card);border:1px solid var(--cab-line);border-radius:var(--cab-r);padding:16px 17px;cursor:pointer;transition:transform .18s,border-color .18s,box-shadow .18s;position:relative;overflow:hidden}
 #cabina .cab-card:hover{transform:translateY(-3px);border-color:rgba(129,140,248,.4);box-shadow:var(--cab-shadow)}
@@ -1899,7 +1919,7 @@ const MOS = (() => {
     let pico = { zona: '', h: null, venta: -1 };
     heat.forEach(z => (z.horas || []).forEach(hh => { const v = parseFloat(hh.venta) || 0; if (v > pico.venta) pico = { zona: z.zona, h: hh.h, venta: v }; }));
     const cardPers = _cabCard('slim', '👥', 'Personal & horas pico', 'Dónde y cuándo aprieta', '',
-      _cabHeatmap(heat),
+      _cabHeatClock(heat),
       pico.h != null ? `Pico real a las <b>${pico.h}:00 en ${_cabEsc(pico.zona)}</b> (${_cabMoney(pico.venta)}). Suma 1 apoyo esa franja, no todo el día.` : 'Sin datos de tráfico por hora esta semana.',
       'quién estuvo en el pico ↗', '');
 
@@ -1964,6 +1984,47 @@ const MOS = (() => {
       }).join('');
     });
     return h + '</div></div>';
+  }
+
+  // RELOJ DE CALOR radial 3D: horas alrededor del reloj, Zona 1 anillo exterior y Zona 2 interior;
+  // color = qué tan cargada la hora. Todas las horas visibles (sin corte), gira en 3D + barrido radar.
+  function _cabHeatClock(heat) {
+    if (!heat.length) return '<div class="cab-metarow">Sin datos por hora</div>';
+    const horasSet = new Set();
+    heat.forEach(z => (z.horas || []).forEach(hh => horasSet.add(hh.h)));
+    const horas = [...horasSet].sort((a, b) => a - b);
+    const n = horas.length || 1;
+    let mx = 0; heat.forEach(z => (z.horas || []).forEach(hh => { const v = parseFloat(hh.venta) || 0; if (v > mx) mx = v; })); mx = mx || 1;
+    let pico = { zi: -1, h: null, v: -1, zona: '' };
+    heat.forEach((z, zi) => (z.horas || []).forEach(hh => { const v = parseFloat(hh.venta) || 0; if (v > pico.v) pico = { zi, h: hh.h, v, zona: z.zona }; }));
+    const cx = 100, cy = 100, base = -Math.PI / 2, step = 2 * Math.PI / n, gap = step * 0.14;
+    const rings = [{ ri: 64, ro: 92 }, { ri: 34, ro: 60 }];
+    const arc = (ri, ro, a0, a1) => {
+      const p = (r, a) => [(cx + r * Math.cos(a)).toFixed(2), (cy + r * Math.sin(a)).toFixed(2)];
+      const [x0o, y0o] = p(ro, a0), [x1o, y1o] = p(ro, a1), [x1i, y1i] = p(ri, a1), [x0i, y0i] = p(ri, a0);
+      const large = (a1 - a0) > Math.PI ? 1 : 0;
+      return `M${x0o},${y0o} A${ro},${ro} 0 ${large} 1 ${x1o},${y1o} L${x1i},${y1i} A${ri},${ri} 0 ${large} 0 ${x0i},${y0i} Z`;
+    };
+    let sectors = '';
+    heat.slice(0, 2).forEach((z, zi) => {
+      const rg = rings[zi] || rings[1], map = {}; (z.horas || []).forEach(hh => { map[hh.h] = hh; });
+      horas.forEach((hr, i) => {
+        const a0 = base + i * step - step / 2 + gap / 2, a1 = base + i * step + step / 2 - gap / 2;
+        const cell = map[hr], v = cell ? (parseFloat(cell.venta) || 0) : 0, tk = cell ? (parseInt(cell.tk) || 0) : 0;
+        const col = cell ? _cabHeatColor(Math.round(v / mx * 5)) : '#0c1424';
+        const isP = zi === pico.zi && hr === pico.h;
+        sectors += `<path class="cab-sec${isP ? ' pico' : ''}" d="${arc(rg.ri, rg.ro, a0, a1)}" fill="${col}" onclick="MOS.cabHora(${zi},${hr})"><title>${_cabEsc(z.zona)} · ${hr}:00 · ${tk} tickets · ${_cabMoney(v)}</title></path>`;
+      });
+    });
+    let labels = '';
+    horas.forEach((hr, i) => { const a = base + i * step, r = 98; labels += `<text class="cab-hlbl" x="${(cx + r * Math.cos(a)).toFixed(1)}" y="${(cy + r * Math.sin(a) + 2.6).toFixed(1)}">${hr}</text>`; });
+    const svg = `<svg viewBox="0 0 200 200" class="cab-clocksvg">
+      <circle cx="100" cy="100" r="33" fill="none" stroke="var(--cab-line)" stroke-width="1"/>
+      ${sectors}${labels}
+      <text x="100" y="97" class="cab-clabel">carga</text><text x="100" y="108" class="cab-clabel2">por hora</text>
+    </svg>`;
+    return `<div class="cab-clock-wrap"><div class="cab-clock">${svg}<div class="cab-radar"></div></div>
+      <div class="cab-clock-lg"><span><i class="d1"></i>Zona 1 (afuera)</span><span><i class="d2"></i>Zona 2 (adentro)</span><span class="lg-hint">toca un gajo → quién atendió</span></div></div>`;
   }
 
   // ── post-render: animaciones (respeta prefers-reduced-motion) ──
