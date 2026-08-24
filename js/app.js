@@ -1466,6 +1466,18 @@ const MOS = (() => {
 .cab-pld.on{opacity:1;border-color:rgba(129,140,248,.25)}
 .cab-pld span{display:block;font-size:8px;font-weight:800;color:#9db0cf;text-transform:uppercase}
 .cab-pld b{font-size:9px;font-weight:800;color:#e8eefb;font-variant-numeric:tabular-nums}
+/* ── Actividad por día (mapa de calor por día) ── */
+.cab-dh{margin-bottom:15px}
+.cab-dh.fut{opacity:.45}
+.cab-dh-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
+.cab-dh-h b{font-size:13px;font-weight:800;color:#e8eefb}
+.cab-dh-h span{font-size:11px;color:#9db0cf;font-weight:650;text-align:right}
+.cab-dh-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.cab-dh-grid{display:grid;gap:3px;min-width:340px;align-items:center}
+.cab-dh-hl{font-size:8px;font-weight:700;color:#5f7192;text-align:center}
+.cab-dh-z{font-size:9px;font-weight:800;color:#9db0cf}
+.cab-dh-c{height:16px;border-radius:3px;transition:transform .1s}
+.cab-dh-c:hover{transform:scale(1.25)}
 /* heatmap: scroll horizontal cuando no cabe (móvil/tablet estrecho) */
 #cabina .cab-heatwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;margin:0 -2px;padding-bottom:2px}
 #cabina .cab-heatwrap::-webkit-scrollbar{height:5px}
@@ -1949,7 +1961,7 @@ const MOS = (() => {
     const cardPers = _cabCard('slim', '👥', 'Personal & horas pico', 'Dónde y cuándo aprieta', '',
       _cabHeatClock(heat),
       pico.h != null ? `Pico real a las <b>${pico.h}:00 en ${_cabEsc(pico.zona)}</b> (${_cabMoney(pico.venta)}). Suma 1 apoyo esa franja, no todo el día.` : 'Sin datos de tráfico por hora esta semana.',
-      'planilla de la semana ↗', 'MOS.cabPersonalSemana()');
+      'actividad día por día ↗', 'MOS.cabActividadSemana()');
 
     // ── card ZONAS ──
     const mxEst = Math.max(...zonas.map(z => parseFloat(z.estancados) || 0), 1);
@@ -2195,6 +2207,39 @@ const MOS = (() => {
       return `<div class="cab-plg"><div class="cab-plg-h"><span>${zico(g.zona)} ${_cabEsc(g.zona)}</span><b>${_cabMoney2(sub.total)} <small>· ${sub.personas || 0} pers.</small></b></div>${filas}</div>`;
     }).join('');
     _cabSheet('👥 Planilla de la semana · ' + _cabEsc((d.semana || {}).label || ''), 'Cada persona, día por día · toca una persona para ver su detalle', header + gruposHtml);
+  }
+
+  // Drill-down: PERSONAL (actividad) → mapa de calor POR DÍA (lun→dom), porque cada día tiene su
+  // propio ritmo. El reloj de la card promedia la semana; esto la desglosa día a día.
+  async function cabActividadSemana() {
+    _cabSheet('📅 Actividad de la semana', 'Cargando el mapa por día…', '<div class="cab-msg">Cargando…</div>');
+    let r = null;
+    try { r = await API.post('cabinaHeatDias', { offset: _cabOffset }); } catch (_) {}
+    const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;
+    const d = (r && r.ok && r.data) ? r.data : null;
+    if (!d) { _cabSheet('📅 Actividad de la semana', '', '<div class="cab-lead2">No se pudo cargar la actividad ahora mismo.</div>'); return; }
+    const maxV = parseFloat(d.maxVenta) || 1;
+    const HORAS = []; for (let h = 7; h <= 21; h++) HORAS.push(h);
+    const btn = `<button class="cab-btn-avisos" style="margin-bottom:15px" onclick="MOS.cabPersonalSemana()">💰 Ver planilla de la semana ↗</button>`;
+    const cell = (map, h) => { const c = map[h], v = c ? (parseFloat(c.venta) || 0) : 0, tk = c ? (parseInt(c.tk) || 0) : 0; return `<div class="cab-dh-c" style="background:${c ? _cabHeatColor(Math.round(v / maxV * 5)) : '#0c1424'}" title="${h}:00 · ${tk} tickets · ${_cabMoney(v)}"></div>`; };
+    const diasHtml = (Array.isArray(d.dias) ? d.dias : []).map(x => {
+      const fut = !!x.futuro, zonas = Array.isArray(x.heat) ? x.heat : [];
+      if (fut) return `<div class="cab-dh fut"><div class="cab-dh-h"><b>${_cabEsc(_cabDOW[x.dow] || x.dow)} ${(x.fecha || '').slice(8)}</b><span>día futuro</span></div></div>`;
+      let pico = { h: null, v: -1 };
+      zonas.forEach(z => (z.horas || []).forEach(hh => { const v = parseFloat(hh.venta) || 0; if (v > pico.v) pico = { h: hh.h, v }; }));
+      const mapZ = zn => { const z = zonas.find(zz => zz.zona === zn), m = {}; ((z && z.horas) || []).forEach(hh => { m[hh.h] = hh; }); return m; };
+      const m1 = mapZ('ZONA-01'), m2 = mapZ('ZONA-02');
+      const hdr = HORAS.map(h => `<div class="cab-dh-hl">${h}</div>`).join('');
+      return `<div class="cab-dh">
+        <div class="cab-dh-h"><b>${_cabEsc(_cabDOW[x.dow] || x.dow)} ${(x.fecha || '').slice(8)}</b><span>${_cabMoney(x.total)} · ${x.tickets || 0} tk${pico.h != null ? ' · pico <b style="color:var(--cab-acc)">' + pico.h + 'h</b>' : ''}</span></div>
+        <div class="cab-dh-wrap"><div class="cab-dh-grid" style="grid-template-columns:20px repeat(${HORAS.length},1fr)">
+          <div></div>${hdr}
+          <div class="cab-dh-z">Z1</div>${HORAS.map(h => cell(m1, h)).join('')}
+          <div class="cab-dh-z">Z2</div>${HORAS.map(h => cell(m2, h)).join('')}
+        </div></div>
+      </div>`;
+    }).join('');
+    _cabSheet('📅 Actividad de la semana · ' + _cabEsc((d.semana || {}).label || ''), 'Mapa de calor por día · cada día tiene su propio ritmo', btn + diasHtml);
   }
 
   // Drill-down: card DINERO → día por día + reparto semanal + comisiones.
@@ -57188,7 +57233,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toast,
     init, nav, refresh, fabAction, iconBusy,
     // [948] Cabina Semanal — navegación de semana, sonido y drill-downs por barra
-    cabMover, cabToggleSnd, cabAbrir, cabCerrar, cabDia, cabProducto, cabRepos, cabZona, cabHora, cabTrib, cabPersonalSemana,
+    cabMover, cabToggleSnd, cabAbrir, cabCerrar, cabDia, cabProducto, cabRepos, cabZona, cabHora, cabTrib, cabPersonalSemana, cabActividadSemana,
     // [nav-reorg] Volver desde Almacén (anti-huérfano) + bottom-sheet "Más" (móvil)
     almVolver,
     // Facturación CPE (100% Supabase)
