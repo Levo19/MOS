@@ -1312,6 +1312,22 @@ const MOS = (() => {
 @keyframes cab-cashpulse{0%,100%{filter:brightness(1)}40%{filter:brightness(1.7) saturate(1.3)}}
 #cabina .cab-coin{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:16px;pointer-events:none;animation:cab-coinup 1.4s ease forwards;z-index:4}
 @keyframes cab-coinup{0%{opacity:0;transform:translate(-50%,10px) scale(.7)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-40px) scale(1.1)}}
+/* ── Tributario: cilindros 3D (a favor vs emitido) ── */
+#cabina .cab-cyl3d{display:flex;align-items:flex-end;justify-content:center;gap:20px;padding:12px 0 4px}
+#cabina .cab-cyl-wrap{display:flex;flex-direction:column;align-items:center;gap:7px}
+#cabina .cab-cyl-val{font-size:12.5px;font-weight:800;color:var(--cab-ink);font-variant-numeric:tabular-nums}
+#cabina .cab-cyl-col{height:92px;display:flex;align-items:flex-end}
+#cabina .cab-cyl{position:relative;width:44px;height:0;border-radius:0 0 3px 3px;transition:height 1.05s cubic-bezier(.2,.8,.2,1)}
+#cabina .cab-cyl.fav{background:linear-gradient(90deg,#065f46,#34d399 42%,#6ee7b7 50%,#10b981 58%,#065f46)}
+#cabina .cab-cyl.emit{background:linear-gradient(90deg,#92400e,#f59e0b 42%,#fde68a 50%,#f59e0b 58%,#92400e)}
+#cabina .cab-cyl-top{position:absolute;top:-8px;left:0;right:0;height:16px;border-radius:50%;box-shadow:inset 0 -2px 4px rgba(0,0,0,.15)}
+#cabina .cab-cyl.fav .cab-cyl-top{background:#a7f3d0}
+#cabina .cab-cyl.emit .cab-cyl-top{background:#fde68a}
+#cabina .cab-cyl::after{content:"";position:absolute;bottom:-7px;left:-3px;right:-3px;height:13px;border-radius:50%;background:rgba(0,0,0,.42);filter:blur(3px);z-index:-1}
+#cabina .cab-cyl-shine{position:absolute;top:2px;bottom:2px;left:9px;width:5px;border-radius:99px;background:rgba(255,255,255,.45);filter:blur(1px)}
+#cabina .cab-cyl-lbl{font-size:9px;font-weight:800;color:var(--cab-ink3);text-transform:uppercase;letter-spacing:.05em}
+#cabina .cab-cyl-eq{align-self:center;font-size:19px;font-weight:800;color:var(--cab-ink3);margin-bottom:26px}
+#cabina .cab-cyl-status{text-align:center;font-size:12.5px;font-weight:800;margin-top:9px}
 #cabina .cab-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
 #cabina .cab-card{grid-column:span 6;background:var(--cab-card);border:1px solid var(--cab-line);border-radius:var(--cab-r);padding:16px 17px;cursor:pointer;transition:transform .18s,border-color .18s,box-shadow .18s;position:relative;overflow:hidden}
 #cabina .cab-card:hover{transform:translateY(-3px);border-color:rgba(129,140,248,.4);box-shadow:var(--cab-shadow)}
@@ -1848,16 +1864,27 @@ const MOS = (() => {
         : `Fill-rate <b>${fill}%</b>. Priorizá los considerados sin despachar de mayor antigüedad para no perderlos.`),
       'ver cuáles se despacharon ↗', 'MOS.cabRepos()');
 
-    // ── card TRIBUTARIO ──
+    // ── card TRIBUTARIO — dos cilindros 3D: IGV a favor (compras) vs IGV emitido (ventas). El
+    //    objetivo NO es "mucho verde" sino que empaten (Δ→0): lo que cobro de IGV ≈ lo que compro. ──
     const igvFavor = parseFloat(trib.igvFavor) || 0;
-    const balance = parseFloat(trib.balanceNetoIGV);
-    const pIgv = prev ? (parseFloat((prev.tributario || {}).igvFavor) || 0) : null;
-    const aFavor = isFinite(balance) ? balance >= 0 : igvFavor > 0;
-    const cardTrib = _cabCard('slim', '⚖️', 'Tributario', 'IGV de la semana', _cabDelta(igvFavor, pIgv, false),
-      `<div style="text-align:center;padding:6px 0 2px"><div class="cab-num" style="font-size:30px;font-weight:800;letter-spacing:-.03em;color:${aFavor ? 'var(--cab-good)' : 'var(--cab-warn)'}">${_cabMoney2(igvFavor)}</div>
-       <div style="font-size:11px;color:var(--cab-ink3);font-weight:700">IGV a favor · ${isFinite(balance) ? (aFavor ? 'balance +' + _cabMoney2(balance) : 'balance ' + _cabMoney2(balance)) : '—'}</div></div>`,
-      aFavor ? `Vas <b>a favor</b>. Revisá cuántas compras con factura faltan para cubrir el IGV emitido.` : `IGV emitido supera al de compras: <b>subí facturas de compra</b> al buzón para equilibrar.`,
-      'ir a Tributos ↗', `MOS.nav('tributario')`);
+    const igvEmit = parseFloat(trib.igvEmitido) || 0;
+    const neto = igvFavor - igvEmit;   // + = crédito a favor · − = a pagar a SUNAT
+    const maxIgv = Math.max(igvFavor, igvEmit, 1);
+    const relGap = Math.abs(neto) / maxIgv;
+    const balanced = relGap < 0.12;
+    const tSt = balanced ? { i: '⚖️', t: 'En balance', c: 'var(--cab-good)' }
+      : (neto >= 0 ? { i: '🟢', t: 'Crédito a favor', c: 'var(--cab-acc2)' } : { i: '🔴', t: 'A pagar', c: 'var(--cab-warn)' });
+    const cardTrib = _cabCard('slim', '⚖️', 'Tributario', 'IGV: ¿emito ≈ compro?', _cabDelta(igvFavor, prev ? (parseFloat((prev.tributario || {}).igvFavor) || 0) : null, false),
+      `<div class="cab-cyl3d">
+         ${_cabCyl(Math.round(igvFavor / maxIgv * 100), 'fav', 'a favor', igvFavor)}
+         <div class="cab-cyl-eq">≈</div>
+         ${_cabCyl(Math.round(igvEmit / maxIgv * 100), 'emit', 'emitido', igvEmit)}
+       </div>
+       <div class="cab-cyl-status" style="color:${tSt.c}">${tSt.i} ${tSt.t} · Δ ${_cabMoney2(Math.abs(neto))}</div>`,
+      balanced ? `<b>Casi empatan</b> — cobrás de IGV casi lo mismo que comprás. Así pagás poco y no acumulás crédito muerto.`
+        : (neto >= 0 ? `Tenés <b>${_cabMoney2(Math.abs(neto))}</b> de crédito a favor sin usar (comprás más IGV del que cobrás).`
+          : `Cobrás <b>${_cabMoney2(Math.abs(neto))}</b> más de IGV del que comprás → eso pagás a SUNAT. Subí facturas de compra para equilibrar.`),
+      'resumen tributario ↗', `MOS.cabTrib()`);
 
     // ── card PERSONAL & HORAS PICO ──
     const heat = Array.isArray(per.heat) ? per.heat : [];
@@ -1890,6 +1917,12 @@ const MOS = (() => {
     return `<div class="cab-card ${size}"${onc}>
       <div class="cab-chd"><div class="cab-ci">${ic}</div><div class="cab-ct"><h3>${t}</h3><p>${sub}</p></div>${dl || ''}</div>
       ${body}<div class="cab-accion">💡 ${acc}</div>${peek ? `<div class="cab-peek">${peek}</div>` : ''}</div>`;
+  }
+  // cilindro 3D (pseudo-3D con gradiente curvo + tapa elíptica + sombra) para el Tributario
+  function _cabCyl(hPct, cls, label, val) {
+    return `<div class="cab-cyl-wrap"><div class="cab-cyl-val">${_cabMoney2(val)}</div>` +
+      `<div class="cab-cyl-col"><div class="cab-cyl ${cls}" data-h="${Math.max(2, hPct)}"><span class="cab-cyl-top"></span><span class="cab-cyl-shine"></span></div></div>` +
+      `<div class="cab-cyl-lbl">${label}</div></div>`;
   }
 
   function _cabHeatmap(heat) {
@@ -1977,6 +2010,36 @@ const MOS = (() => {
   function cabCerrar() {
     const ov = document.getElementById('cabOv'); if (ov) ov.classList.remove('on');
     _cabBeep(300, .05, 'sine', .03);
+  }
+
+  // Drill-down: TRIBUTARIO → resumen IGV a favor / emitido / balance + renta + CPE + riesgo doc.
+  function cabTrib() {
+    const t = (_cabData || {}).tributario || {};
+    const favor = parseFloat(t.igvFavor) || 0, emit = parseFloat(t.igvEmitido) || 0;
+    const delta = favor - emit;   // + = crédito a favor · − = a pagar a SUNAT
+    const renta = parseFloat(t.rentaMensual) || 0, err = parseInt(t.cpeErrores) || 0;
+    const body = `<div class="cab-cols">
+      <div class="cab-panel"><h4>IGV DEL MES · la idea: emito ≈ compro (Δ→0)</h4>
+        <div class="cab-kv"><span class="cab-k">🟢 A favor (compras)</span><span class="cab-v cab-num" style="color:var(--cab-good)">${_cabMoney2(favor)}</span></div>
+        <div class="cab-kv"><span class="cab-k">🟠 Emitido (ventas)</span><span class="cab-v cab-num" style="color:var(--cab-warn)">${_cabMoney2(emit)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Balance neto (Δ)</span><span class="cab-v cab-num" style="color:${delta >= 0 ? 'var(--cab-good)' : 'var(--cab-bad)'}">${delta >= 0 ? '+' : ''}${_cabMoney2(delta)}</span></div>
+        <div class="cab-kv"><span class="cab-k">${delta >= 0 ? 'Crédito a favor' : 'A pagar a SUNAT'}</span><span class="cab-v" style="color:${delta >= 0 ? 'var(--cab-good)' : 'var(--cab-warn)'}">${delta >= 0 ? 'no pagás este mes' : 'subí facturas de compra'}</span></div>
+        <h4 style="margin-top:14px">IMPUESTO A LA RENTA</h4>
+        <div class="cab-kv"><span class="cab-k">Renta MYPE (1.5% ventas)</span><span class="cab-v cab-num">${_cabMoney2(renta)}</span></div>
+        <div class="cab-kv"><span class="cab-k">Ventas del mes</span><span class="cab-v cab-num">${_cabMoney2(t.totalVentas)}</span></div>
+      </div>
+      <div class="cab-panel"><h4>COMPROBANTES (CPE)</h4>
+        <div class="cab-kv"><span class="cab-k">Emitidos</span><span class="cab-v">${parseInt(t.cpeEmitidos) || 0}</span></div>
+        <div class="cab-kv"><span class="cab-k">Pendientes</span><span class="cab-v">${parseInt(t.cpePendientes) || 0}</span></div>
+        <div class="cab-kv"><span class="cab-k">Con error</span><span class="cab-v" style="color:${err > 0 ? 'var(--cab-bad)' : 'var(--cab-ink)'};font-weight:800">${err}</span></div>
+        <div class="cab-kv"><span class="cab-k">Anulados</span><span class="cab-v">${parseInt(t.cpeAnulados) || 0}</span></div>
+        <h4 style="margin-top:14px">RIESGO DOCUMENTAL (SUNAT)</h4>
+        <div class="cab-kv"><span class="cab-k">Guías sin foto</span><span class="cab-v" style="color:${(parseInt(t.guiasSinFoto) || 0) > 0 ? 'var(--cab-warn)' : 'var(--cab-ink)'}">${parseInt(t.guiasSinFoto) || 0}</span></div>
+        <div class="cab-kv"><span class="cab-k">Guías ilegibles</span><span class="cab-v" style="color:${(parseInt(t.guiasIlegibles) || 0) > 0 ? 'var(--cab-warn)' : 'var(--cab-ink)'}">${parseInt(t.guiasIlegibles) || 0}</span></div>
+        <button class="cab-btn-avisos" style="margin-top:16px" onclick="MOS.cabCerrar();MOS.nav('tributario')">Ir al módulo Tributos ↗</button>
+      </div>
+    </div>`;
+    _cabSheet('⚖️ Tributario — IGV en balance', 'Lo que cobro de IGV debería empatar con lo que compro (Δ→0)', body);
   }
 
   // Drill-down: card DINERO → día por día + reparto semanal + comisiones.
@@ -56944,7 +57007,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toast,
     init, nav, refresh, fabAction, iconBusy,
     // [948] Cabina Semanal — navegación de semana, sonido y drill-downs por barra
-    cabMover, cabToggleSnd, cabAbrir, cabCerrar, cabDia, cabProducto, cabRepos, cabZona, cabHora,
+    cabMover, cabToggleSnd, cabAbrir, cabCerrar, cabDia, cabProducto, cabRepos, cabZona, cabHora, cabTrib,
     // [nav-reorg] Volver desde Almacén (anti-huérfano) + bottom-sheet "Más" (móvil)
     almVolver,
     // Facturación CPE (100% Supabase)
