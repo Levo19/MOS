@@ -1438,6 +1438,34 @@ const MOS = (() => {
 .cab-hbar .cab-hbt i{display:block;height:100%;border-radius:99px;animation:cab-hgrow .9s cubic-bezier(.2,.8,.2,1)}
 .cab-hbar .cab-hbv{flex:0 0 auto;font-weight:800;color:#e8eefb;font-variant-numeric:tabular-nums;font-size:11.5px}
 @keyframes cab-hgrow{from{width:0}}
+/* ── Planilla semanal de personal ── */
+.cab-plhdr{background:linear-gradient(160deg,#132038,#0f1a2e);border:1px solid rgba(148,163,184,.14);border-radius:15px;padding:15px 16px;margin-bottom:16px}
+.cab-plchips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.cab-plchip{background:#0a1120;border:1px solid rgba(148,163,184,.13);border-radius:10px;padding:6px 11px;display:flex;flex-direction:column;gap:1px;min-width:76px}
+.cab-plchip span{color:#9db0cf;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.04em}
+.cab-plchip b{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+.cab-plg{margin-bottom:18px}
+.cab-plg-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:800;color:#e8eefb;padding:0 2px 8px;border-bottom:1px solid rgba(148,163,184,.15);margin-bottom:9px}
+.cab-plg-h small{color:#9db0cf;font-weight:600}
+.cab-plp{background:#0f1a2e;border:1px solid rgba(148,163,184,.13);border-radius:12px;padding:11px 12px;margin-bottom:8px;cursor:pointer;transition:border-color .15s,transform .12s}
+.cab-plp:hover{border-color:rgba(129,140,248,.4)}
+.cab-plp:active{transform:scale(.995)}
+.cab-plp-h{display:flex;align-items:center;gap:11px}
+.cab-plav{width:34px;height:34px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:14px;background:linear-gradient(140deg,#6366f1,#22d3ee);color:#fff}
+.cab-plp-i{flex:1;min-width:0}
+.cab-plp-i b{font-size:13px;font-weight:750;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8eefb}
+.cab-plp-i span{font-size:10.5px;color:#5f7192;font-weight:600}
+.cab-plp-t{text-align:right;flex:0 0 auto;max-width:48%}
+.cab-plp-t b{font-size:14.5px;font-weight:850;color:#e8eefb;font-variant-numeric:tabular-nums}
+.cab-plp-t span{display:block;font-size:9.5px;font-weight:700;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cab-plbar{height:5px;border-radius:99px;background:#0a1120;overflow:hidden;margin:9px 0 0}
+.cab-plbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6366f1,#22d3ee);animation:cab-hgrow .8s cubic-bezier(.2,.8,.2,1)}
+.cab-plp-days{display:none;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:11px}
+.cab-plp.open .cab-plp-days{display:grid;animation:cab-fade .25s ease}
+.cab-pld{background:#0a1120;border:1px solid rgba(148,163,184,.1);border-radius:7px;padding:6px 2px;text-align:center;opacity:.38}
+.cab-pld.on{opacity:1;border-color:rgba(129,140,248,.25)}
+.cab-pld span{display:block;font-size:8px;font-weight:800;color:#9db0cf;text-transform:uppercase}
+.cab-pld b{font-size:9px;font-weight:800;color:#e8eefb;font-variant-numeric:tabular-nums}
 /* heatmap: scroll horizontal cuando no cabe (móvil/tablet estrecho) */
 #cabina .cab-heatwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;margin:0 -2px;padding-bottom:2px}
 #cabina .cab-heatwrap::-webkit-scrollbar{height:5px}
@@ -1921,7 +1949,7 @@ const MOS = (() => {
     const cardPers = _cabCard('slim', '👥', 'Personal & horas pico', 'Dónde y cuándo aprieta', '',
       _cabHeatClock(heat),
       pico.h != null ? `Pico real a las <b>${pico.h}:00 en ${_cabEsc(pico.zona)}</b> (${_cabMoney(pico.venta)}). Suma 1 apoyo esa franja, no todo el día.` : 'Sin datos de tráfico por hora esta semana.',
-      'quién estuvo en el pico ↗', '');
+      'planilla de la semana ↗', 'MOS.cabPersonalSemana()');
 
     // ── card ZONAS ──
     const mxEst = Math.max(...zonas.map(z => parseFloat(z.estancados) || 0), 1);
@@ -2013,7 +2041,7 @@ const MOS = (() => {
         const cell = map[hr], v = cell ? (parseFloat(cell.venta) || 0) : 0, tk = cell ? (parseInt(cell.tk) || 0) : 0;
         const col = cell ? _cabHeatColor(Math.round(v / mx * 5)) : '#0c1424';
         const isP = zi === pico.zi && hr === pico.h;
-        sectors += `<path class="cab-sec${isP ? ' pico' : ''}" d="${arc(rg.ri, rg.ro, a0, a1)}" fill="${col}" onclick="MOS.cabHora(${zi},${hr})"><title>${_cabEsc(z.zona)} · ${hr}:00 · ${tk} tickets · ${_cabMoney(v)}</title></path>`;
+        sectors += `<path class="cab-sec${isP ? ' pico' : ''}" d="${arc(rg.ri, rg.ro, a0, a1)}" fill="${col}" onclick="event.stopPropagation();MOS.cabHora(${zi},${hr})"><title>${_cabEsc(z.zona)} · ${hr}:00 · ${tk} tickets · ${_cabMoney(v)}</title></path>`;
       });
     });
     let labels = '';
@@ -2117,6 +2145,56 @@ const MOS = (() => {
       </div>
     </div>`;
     _cabSheet('⚖️ Tributario — IGV en balance', 'Lo que cobro de IGV debería empatar con lo que compro (Δ→0)', body);
+  }
+
+  // Drill-down: PERSONAL → planilla de la semana, agrupada por Almacén/Zona, persona por persona,
+  // con sueldo/comisión/bono/descuento y el detalle día por día (tocá una persona para expandir).
+  async function cabPersonalSemana() {
+    _cabSheet('👥 Planilla de la semana', 'Cargando la planilla…', '<div class="cab-msg">Cargando…</div>');
+    let r = null;
+    try { r = await API.post('cabinaPersonal', { offset: _cabOffset }); } catch (_) {}
+    const ov = document.getElementById('cabOv'); if (!ov || !ov.classList.contains('on')) return;
+    const d = (r && r.ok && r.data) ? r.data : null;
+    if (!d) { _cabSheet('👥 Planilla de la semana', '', '<div class="cab-lead2">No se pudo cargar la planilla ahora mismo.</div>'); return; }
+    const t = d.totales || {}, grupos = Array.isArray(d.grupos) ? d.grupos : [];
+    const chip = (lbl, val, col) => `<div class="cab-plchip"><span>${lbl}</span><b style="color:${col}">${_cabMoney2(val)}</b></div>`;
+    const header = `<div class="cab-plhdr">
+      <div class="cab-pltot"><div class="cab-num" style="font-size:32px;font-weight:850;letter-spacing:-.03em;line-height:1">${_cabMoney(t.total)}</div><div class="cab-lead2" style="margin:3px 0 0">gasto de planilla · ${t.personas || 0} personas · ${t.dias || 0} jornales</div></div>
+      <div class="cab-plchips">
+        ${chip('Sueldos', t.base, 'var(--cab-ink)')}
+        ${chip('Comisiones', t.comision, 'var(--cab-good)')}
+        ${chip('Bonos', t.bonif, 'var(--cab-acc2)')}
+        ${chip('Envasado', t.envasado, 'var(--cab-ink2)')}
+        ${chip('Descuentos', -(parseFloat(t.sancion) || 0), 'var(--cab-bad)')}
+      </div></div>`;
+    const zico = z => z === 'ALMACEN' ? '🏭' : z === 'ZONA-01' ? '🏪' : z === 'ZONA-02' ? '🏬' : '📍';
+    const gruposHtml = grupos.map(g => {
+      const sub = g.subtotal || {}, personas = Array.isArray(g.personas) ? g.personas : [];
+      const mxT = Math.max(...personas.map(p => parseFloat(p.total) || 0), 1);
+      const filas = personas.map(p => {
+        const ini = (String(p.nombre || '?').trim().charAt(0) || '?').toUpperCase();
+        const dias = (Array.isArray(p.porDia) ? p.porDia : []).map(x => {
+          const on = !!x.presente || (parseFloat(x.total) || 0) > 0;
+          return `<div class="cab-pld ${on ? 'on' : ''}"><span>${_cabEsc(_cabDOW[x.dow] || x.dow)}</span><b>${on ? _cabMoney2(x.total) : '—'}</b></div>`;
+        }).join('');
+        const brk = [];
+        if ((parseFloat(p.comision) || 0) > 0) brk.push(`<span style="color:var(--cab-good)">com ${_cabMoney2(p.comision)}</span>`);
+        if ((parseFloat(p.bonif) || 0) > 0) brk.push(`<span style="color:var(--cab-acc2)">bono ${_cabMoney2(p.bonif)}</span>`);
+        if ((parseFloat(p.sancion) || 0) > 0) brk.push(`<span style="color:var(--cab-bad)">−${_cabMoney2(p.sancion)}</span>`);
+        if ((parseFloat(p.envasado) || 0) > 0) brk.push(`<span style="color:var(--cab-ink3)">env ${_cabMoney2(p.envasado)}</span>`);
+        return `<div class="cab-plp" onclick="this.classList.toggle('open')">
+          <div class="cab-plp-h">
+            <div class="cab-plav">${_cabEsc(ini)}</div>
+            <div class="cab-plp-i"><b>${_cabEsc(p.nombre)}</b><span>${_cabEsc(p.rol || '')} · ${p.dias || 0} días</span></div>
+            <div class="cab-plp-t"><b class="cab-num">${_cabMoney2(p.total)}</b>${brk.length ? `<span>${brk.join(' · ')}</span>` : ''}</div>
+          </div>
+          <div class="cab-plbar"><i style="width:${((parseFloat(p.total) || 0) / mxT * 100).toFixed(0)}%"></i></div>
+          <div class="cab-plp-days">${dias}</div>
+        </div>`;
+      }).join('') || '<div class="cab-lead2">Sin personal</div>';
+      return `<div class="cab-plg"><div class="cab-plg-h"><span>${zico(g.zona)} ${_cabEsc(g.zona)}</span><b>${_cabMoney2(sub.total)} <small>· ${sub.personas || 0} pers.</small></b></div>${filas}</div>`;
+    }).join('');
+    _cabSheet('👥 Planilla de la semana · ' + _cabEsc((d.semana || {}).label || ''), 'Cada persona, día por día · toca una persona para ver su detalle', header + gruposHtml);
   }
 
   // Drill-down: card DINERO → día por día + reparto semanal + comisiones.
@@ -57110,7 +57188,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toast,
     init, nav, refresh, fabAction, iconBusy,
     // [948] Cabina Semanal — navegación de semana, sonido y drill-downs por barra
-    cabMover, cabToggleSnd, cabAbrir, cabCerrar, cabDia, cabProducto, cabRepos, cabZona, cabHora, cabTrib,
+    cabMover, cabToggleSnd, cabAbrir, cabCerrar, cabDia, cabProducto, cabRepos, cabZona, cabHora, cabTrib, cabPersonalSemana,
     // [nav-reorg] Volver desde Almacén (anti-huérfano) + bottom-sheet "Más" (móvil)
     almVolver,
     // Facturación CPE (100% Supabase)
