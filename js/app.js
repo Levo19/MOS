@@ -37344,15 +37344,18 @@ const MOS = (() => {
     let r = null; try { r = await API.post('sunatDeclaracion', {}); } catch (_) {}
     const d = (r && r.data) ? r.data : (r || {});
     _tribDeclData = d;
-    const m = d.mensual;
-    if (!m) { cont.innerHTML = ''; return; }
-    const dias = parseInt(m.diasRestantes);
-    const est = dias < 0 ? 'venc' : dias === 0 ? 'hoy' : dias <= 2 ? 'urg' : dias <= 7 ? 'alerta' : 'ok';
-    const estLbl = { venc: '⚫ VENCIÓ', hoy: '🔴 VENCE HOY', urg: '🔴 URGENTE', alerta: '🟡 PRONTO', ok: '🟢 A TIEMPO' }[est];
-    const mesNom = _TRIB_MESES[(m.periodoMes || 1) - 1];
-    const pct = Math.max(5, Math.min(100, (30 - dias) / 30 * 100));
-    const igv = parseFloat(m.igvAPagar) || 0, renta = parseFloat(m.renta) || 0, tot = parseFloat(m.totalEstimado) || 0;
-    const venc = d.vencida, anual = d.anual;
+    const per = d.periodo;
+    if (!per) { cont.innerHTML = ''; return; }
+    const dias = parseInt(per.diasRestantes), vencido = !!per.vencido;
+    const est = vencido ? 'venc' : dias === 0 ? 'hoy' : dias <= 2 ? 'urg' : dias <= 7 ? 'alerta' : 'ok';
+    const estLbl = vencido ? '⚫ VENCIÓ' : { hoy: '🔴 VENCE HOY', urg: '🔴 URGENTE', alerta: '🟡 PRONTO', ok: '🟢 A TIEMPO' }[est];
+    const mesNom = _TRIB_MESES[(per.mes || 1) - 1];
+    const pct = vencido ? 100 : Math.max(5, Math.min(100, (30 - dias) / 30 * 100));
+    const igv = parseFloat(per.igvAPagar) || 0, renta = parseFloat(per.renta) || 0, tot = parseFloat(per.totalEstimado) || 0;
+    const enc = d.enCurso, anual = d.anual;
+    const countHtml = vencido
+      ? `<div class="trib-decl-count"><b class="trib-decl-d">⚫</b><span>venció el <b>${_declFecha(per.fechaVence)}</b> · hace ${Math.abs(dias)} día${Math.abs(dias) === 1 ? '' : 's'}</span></div>`
+      : `<div class="trib-decl-count"><b class="trib-decl-d">${dias}</b><span>${dias === 0 ? '¡vence hoy!' : 'días · vence <b>' + _declFecha(per.fechaVence) + '</b>'}</span></div>`;
     cont.innerHTML = `<div class="trib-decl e-${est}" onclick="MOS.tribDeclCal()" style="cursor:pointer" title="Ver el cronograma del año">
       <div class="trib-decl-hd">
         <div class="trib-decl-ico">📋</div>
@@ -37361,17 +37364,17 @@ const MOS = (() => {
       </div>
       <div class="trib-decl-body">
         <div class="trib-decl-left">
-          <div class="trib-decl-per">Este mes declaras <b>${_esc(mesNom)} ${m.periodoAnio}</b></div>
-          <div class="trib-decl-count"><b class="trib-decl-d">${dias < 0 ? '−' + Math.abs(dias) : dias}</b><span>${dias < 0 ? 'días vencido' : dias === 0 ? '¡hoy!' : 'días · vence ' + _declFecha(m.fechaVence)}</span></div>
+          <div class="trib-decl-per">Toca declarar <b>${_esc(mesNom)} ${per.anio}</b> (mes cerrado)</div>
+          ${countHtml}
           <div class="trib-decl-bar"><i style="width:${pct.toFixed(0)}%"></i></div>
         </div>
         <div class="trib-decl-right">
           <div class="trib-decl-tot">${_tribFmtSoles(tot)}</div>
           <div class="trib-decl-desg">IGV ${_tribFmtSoles(igv)} + Renta ${_tribFmtSoles(renta)}</div>
-          <div class="trib-decl-hint">estimado a pagar</div>
+          <div class="trib-decl-hint">estimado real${vencido ? '' : ' · se actualiza'}</div>
         </div>
       </div>
-      ${venc ? `<div class="trib-decl-alert">⚠ El período anterior venció hace ${venc.diasPasados} día${venc.diasPasados === 1 ? '' : 's'} (${_declFecha(venc.fechaVence)}). Si no lo declaraste, hazlo ya.</div>` : ''}
+      ${enc ? `<div class="trib-decl-anual">🗓️ En curso: <b>${_esc(_TRIB_MESES[(enc.mes || 1) - 1])}</b> — cierra en ${enc.diasCierre} día${enc.diasCierre === 1 ? '' : 's'} (${_declFecha(enc.finMes)}); ahí recién se declara, hasta el <b>${_declFecha(enc.fechaVence)}</b></div>` : ''}
       ${anual ? `<div class="trib-decl-anual">📅 Declaración <b>anual</b> de Renta: ${_declFecha(anual.fechaVence)} ${String(anual.fechaVence).slice(0, 4)} · en ${anual.diasRestantes} días${anual.verificado ? '' : ' <i>(estimado)</i>'}</div>` : ''}
       <div class="trib-decl-toca">📅 toca para ver el cronograma del año ▾</div>
     </div><div id="tribDeclCalPanel" class="trib-declcal hidden"></div>`;
@@ -37384,8 +37387,8 @@ const MOS = (() => {
     if (!cal.length) return;
     const cells = cal.map(x => {
       const mes = _TRIB_MESES_CORTO[(x.periodoMes || 1) - 1];
-      const ic = x.estado === 'proximo' ? '👉' : x.estado === 'pasado' ? '✓' : '';
-      return `<div class="trib-cal-c est-${x.estado}"><span class="m">${_esc(mes)}</span><b>${_declFecha(x.fechaVence)}</b><small>${ic} ${x.estado === 'proximo' ? 'próximo' : x.estado === 'pasado' ? 'vencido' : 'por venir'}</small></div>`;
+      const ic = x.estado === 'actual' ? '👉' : x.estado === 'pasado' ? '✓' : '';
+      return `<div class="trib-cal-c est-${x.estado}"><span class="m">${_esc(mes)}</span><b>${_declFecha(x.fechaVence)}</b><small>${ic} ${x.estado === 'actual' ? 'a declarar' : x.estado === 'pasado' ? 'vencido' : 'por venir'}</small></div>`;
     }).join('');
     panel.innerHTML = `<div class="trib-cal-hd">Cronograma ${cal[0] ? cal[0].anio : ''} · RUC …${(_tribDeclData || {}).digito} — período que declaras → vence</div><div class="trib-cal-grid">${cells}</div>`;
     panel.classList.remove('hidden');

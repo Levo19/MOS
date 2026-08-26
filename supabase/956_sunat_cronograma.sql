@@ -45,53 +45,55 @@ declare
   v_ruc text := coalesce((select valor from mos.config where clave='EMPRESA_RUC'), '');
   v_dig int := coalesce(nullif(right(v_ruc,1),'')::int, 7);
   v_hoy date := (now() at time zone 'America/Lima')::date;
-  v_prox record; v_venc record; v_anual record;
-  v_pmes int; v_panio int; v_tr jsonb; v_igvpag numeric; v_renta numeric;
+  v_mes_act int := extract(month from v_hoy)::int;
+  v_anio_act int := extract(year from v_hoy)::int;
+  v_pmes int; v_panio int; v_venc_date date; v_verif boolean;   -- último mes CERRADO (el que toca declarar)
+  v_cmes int; v_canio int; v_cvenc date; v_finmes date;         -- mes EN CURSO (aún abierto)
+  v_tr jsonb; v_igvpag numeric; v_renta numeric; v_anual record;
 begin
-  -- MENSUAL próxima: el vencimiento MENSUAL más cercano que aún no pasó (o el de hoy)
-  select * into v_prox from mos.sunat_cronograma
-   where ultimo_digito=v_dig and tipo='MENSUAL' and fecha_vence >= v_hoy
-   order by fecha_vence asc limit 1;
-  -- MENSUAL recién vencida (pasó hace ≤12 días) → recordatorio "¿ya declaraste?"
-  select * into v_venc from mos.sunat_cronograma
-   where ultimo_digito=v_dig and tipo='MENSUAL' and fecha_vence < v_hoy and fecha_vence >= v_hoy - 12
-   order by fecha_vence desc limit 1;
-  -- ANUAL próxima
-  select * into v_anual from mos.sunat_cronograma
-   where ultimo_digito=v_dig and tipo='ANUAL' and fecha_vence >= v_hoy
-   order by fecha_vence asc limit 1;
+  -- El período a declarar es el ÚLTIMO MES CERRADO = mes anterior al actual (no se puede declarar un mes
+  -- que aún no termina). La ventana de declaración va desde que cierra ese mes hasta su vencimiento.
+  v_pmes  := case when v_mes_act = 1 then 12 else v_mes_act - 1 end;
+  v_panio := case when v_mes_act = 1 then v_anio_act - 1 else v_anio_act end;
+  select fecha_vence, verificado into v_venc_date, v_verif from mos.sunat_cronograma
+   where ultimo_digito=v_dig and tipo='MENSUAL' and periodo_mes=v_pmes and anio=v_panio;
+  -- estimado REAL de ese período (se actualiza si suben facturas atrasadas al buzón)
+  v_tr := mos.trib_resumen_mes(jsonb_build_object('mes', v_pmes, 'anio', v_panio));
+  v_igvpag := greatest(0, coalesce((v_tr->'data'->>'igvEmitido')::numeric,0) - coalesce((v_tr->'data'->>'igvFavor')::numeric,0));
+  v_renta  := coalesce((v_tr->'data'->>'rentaMensual')::numeric,0);
 
-  -- período que se declara en la próxima mensual (el mes ANTERIOR al del vencimiento)
-  if v_prox.fecha_vence is not null then
-    v_pmes  := v_prox.periodo_mes;   -- periodo_mes ya ES el mes que se declara
-    v_panio := v_prox.anio;
-    v_tr := mos.trib_resumen_mes(jsonb_build_object('mes', v_pmes, 'anio', v_panio));
-    v_igvpag := greatest(0, coalesce((v_tr->'data'->>'igvEmitido')::numeric,0) - coalesce((v_tr->'data'->>'igvFavor')::numeric,0));
-    v_renta  := coalesce((v_tr->'data'->>'rentaMensual')::numeric,0);
-  end if;
+  -- mes EN CURSO (se declarará cuando cierre)
+  v_cmes := v_mes_act; v_canio := v_anio_act;
+  v_finmes := (date_trunc('month', v_hoy) + interval '1 month - 1 day')::date;
+  select fecha_vence into v_cvenc from mos.sunat_cronograma
+   where ultimo_digito=v_dig and tipo='MENSUAL' and periodo_mes=v_cmes and anio=v_canio;
+
+  select * into v_anual from mos.sunat_cronograma
+   where ultimo_digito=v_dig and tipo='ANUAL' and fecha_vence >= v_hoy order by fecha_vence asc limit 1;
 
   return jsonb_build_object('ok', true, 'data', jsonb_build_object(
     'ruc', v_ruc, 'digito', v_dig, 'hoy', to_char(v_hoy,'YYYY-MM-DD'),
-    'mensual', case when v_prox.fecha_vence is null then null else jsonb_build_object(
-        'periodoMes', v_pmes, 'periodoAnio', v_panio,
-        'fechaVence', to_char(v_prox.fecha_vence,'YYYY-MM-DD'),
-        'diasRestantes', (v_prox.fecha_vence - v_hoy),
-        'verificado', v_prox.verificado,
-        'igvAPagar', round(v_igvpag,2), 'renta', round(v_renta,2), 'totalEstimado', round(v_igvpag + v_renta,2)
-      ) end,
-    'vencida', case when v_venc.fecha_vence is null then null else jsonb_build_object(
-        'periodoMes', v_venc.periodo_mes, 'fechaVence', to_char(v_venc.fecha_vence,'YYYY-MM-DD'),
-        'diasPasados', (v_hoy - v_venc.fecha_vence)) end,
+    -- período a declarar (último cerrado) con su estimado REAL y estado (vencido si pasó su fecha)
+    'periodo', jsonb_build_object(
+        'mes', v_pmes, 'anio', v_panio,
+        'fechaVence', to_char(v_venc_date,'YYYY-MM-DD'),
+        'diasRestantes', (v_venc_date - v_hoy),
+        'vencido', (v_venc_date < v_hoy),
+        'verificado', coalesce(v_verif,false),
+        'igvAPagar', round(v_igvpag,2), 'renta', round(v_renta,2), 'totalEstimado', round(v_igvpag + v_renta,2)),
+    -- mes en curso: aún no se declara (no da monto definitivo hasta cerrar)
+    'enCurso', jsonb_build_object('mes', v_cmes, 'anio', v_canio,
+        'diasCierre', (v_finmes - v_hoy), 'finMes', to_char(v_finmes,'YYYY-MM-DD'),
+        'fechaVence', to_char(v_cvenc,'YYYY-MM-DD')),
     'anual', case when v_anual.fecha_vence is null then null else jsonb_build_object(
         'fechaVence', to_char(v_anual.fecha_vence,'YYYY-MM-DD'),
         'diasRestantes', (v_anual.fecha_vence - v_hoy), 'verificado', v_anual.verificado) end,
-    -- calendario completo del año (12 meses) para el mini-calendario
     'calendario', (select coalesce(jsonb_agg(jsonb_build_object(
         'periodoMes', periodo_mes, 'anio', anio, 'fechaVence', to_char(fecha_vence,'YYYY-MM-DD'),
-        'estado', case when v_prox.fecha_vence is not null and fecha_vence = v_prox.fecha_vence then 'proximo'
+        'estado', case when periodo_mes=v_pmes and anio=v_panio then 'actual'
                        when fecha_vence < v_hoy then 'pasado' else 'futuro' end
       ) order by periodo_mes), '[]'::jsonb)
-      from mos.sunat_cronograma where ultimo_digito=v_dig and tipo='MENSUAL' and anio=extract(year from v_hoy)::int) ));
+      from mos.sunat_cronograma where ultimo_digito=v_dig and tipo='MENSUAL' and anio=v_anio_act) ));
 end $function$;
 grant execute on function mos.sunat_declaracion_estado(jsonb) to authenticated, anon, service_role;
 
@@ -101,18 +103,25 @@ returns jsonb language plpgsql security definer set search_path to '' as $functi
 declare v jsonb; v_m jsonb; v_a jsonb; v_d int; v_env boolean := false; v_tot text; v_fv text;
 begin
   v := mos.sunat_declaracion_estado('{}'::jsonb)->'data';
-  v_m := v->'mensual';
+  v_m := v->'periodo';
   if v_m is not null then
     v_d := (v_m->>'diasRestantes')::int;
+    v_tot := to_char(coalesce((v_m->>'totalEstimado')::numeric,0),'FM999,999,990.00');
+    v_fv  := to_char((v_m->>'fechaVence')::date, 'DD/MM');
     if v_d in (7,5,3,2,1,0) then
-      v_tot := to_char(coalesce((v_m->>'totalEstimado')::numeric,0),'FM999,999,990.00');
-      v_fv  := to_char((v_m->>'fechaVence')::date, 'DD/MM');
       perform mos.emitir_push(jsonb_build_object(
         'audiencia', jsonb_build_object('roles', jsonb_build_array('MASTER','ADMINISTRADOR','ADMIN','ASCENDIDO')),
         'titulo', case when v_d=0 then '🔴 HOY vence tu declaración SUNAT'
                        when v_d<=2 then '🔴 Declaración SUNAT en '||v_d||' día'||case when v_d=1 then '' else 's' end
                        else '📋 Declaración SUNAT en '||v_d||' días' end,
         'cuerpo', 'Vence el '||v_fv||' · estimado a pagar S/ '||v_tot||' (IGV + Renta). Declara Fácil F.621.',
+        'data', jsonb_build_object('tipo','sunat')));
+      v_env := true;
+    elsif v_d < 0 and v_d >= -3 then   -- ya venció → recordatorio de que se declare igual
+      perform mos.emitir_push(jsonb_build_object(
+        'audiencia', jsonb_build_object('roles', jsonb_build_array('MASTER','ADMINISTRADOR','ADMIN','ASCENDIDO')),
+        'titulo', '⚫ Declaración SUNAT VENCIDA',
+        'cuerpo', 'Venció el '||v_fv||' (hace '||abs(v_d)||' día'||case when abs(v_d)=1 then '' else 's' end||'). Si no la presentaste, hazlo ya para reducir la multa.',
         'data', jsonb_build_object('tipo','sunat')));
       v_env := true;
     end if;
