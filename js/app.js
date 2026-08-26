@@ -37338,10 +37338,12 @@ const MOS = (() => {
   // [956] Card de planificación de declaración SUNAT: qué período toca, cuánto, cuándo vence
   //   (según el cronograma oficial por dígito de RUC) + cuenta regresiva con semáforo.
   function _declFecha(iso) { try { const p = String(iso).split('-'); return parseInt(p[2]) + ' ' + _TRIB_MESES_CORTO[parseInt(p[1]) - 1]; } catch (_) { return iso; } }
+  let _tribDeclData = null;
   async function _tribCargarDeclaracion() {
     const cont = document.getElementById('tribDeclaracion'); if (!cont) return;
     let r = null; try { r = await API.post('sunatDeclaracion', {}); } catch (_) {}
     const d = (r && r.data) ? r.data : (r || {});
+    _tribDeclData = d;
     const m = d.mensual;
     if (!m) { cont.innerHTML = ''; return; }
     const dias = parseInt(m.diasRestantes);
@@ -37351,7 +37353,7 @@ const MOS = (() => {
     const pct = Math.max(5, Math.min(100, (30 - dias) / 30 * 100));
     const igv = parseFloat(m.igvAPagar) || 0, renta = parseFloat(m.renta) || 0, tot = parseFloat(m.totalEstimado) || 0;
     const venc = d.vencida, anual = d.anual;
-    cont.innerHTML = `<div class="trib-decl e-${est}">
+    cont.innerHTML = `<div class="trib-decl e-${est}" onclick="MOS.tribDeclCal()" style="cursor:pointer" title="Ver el cronograma del año">
       <div class="trib-decl-hd">
         <div class="trib-decl-ico">📋</div>
         <div class="trib-decl-ti"><b>Declaración SUNAT</b><span>RUC …${_esc(String(d.digito))} · Declara Fácil IGV-Renta (F.621)</span></div>
@@ -37371,7 +37373,23 @@ const MOS = (() => {
       </div>
       ${venc ? `<div class="trib-decl-alert">⚠ El período anterior venció hace ${venc.diasPasados} día${venc.diasPasados === 1 ? '' : 's'} (${_declFecha(venc.fechaVence)}). Si no lo declaraste, hazlo ya.</div>` : ''}
       ${anual ? `<div class="trib-decl-anual">📅 Declaración <b>anual</b> de Renta: ${_declFecha(anual.fechaVence)} ${String(anual.fechaVence).slice(0, 4)} · en ${anual.diasRestantes} días${anual.verificado ? '' : ' <i>(estimado)</i>'}</div>` : ''}
-    </div>`;
+      <div class="trib-decl-toca">📅 toca para ver el cronograma del año ▾</div>
+    </div><div id="tribDeclCalPanel" class="trib-declcal hidden"></div>`;
+  }
+  // mini-calendario: los 12 meses del cronograma SUNAT del año (período → vencimiento), con su estado
+  function tribDeclCal() {
+    const panel = document.getElementById('tribDeclCalPanel'); if (!panel) return;
+    if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); panel.innerHTML = ''; return; }
+    const cal = ((_tribDeclData || {}).calendario) || [];
+    if (!cal.length) return;
+    const cells = cal.map(x => {
+      const mes = _TRIB_MESES_CORTO[(x.periodoMes || 1) - 1];
+      const ic = x.estado === 'proximo' ? '👉' : x.estado === 'pasado' ? '✓' : '';
+      return `<div class="trib-cal-c est-${x.estado}"><span class="m">${_esc(mes)}</span><b>${_declFecha(x.fechaVence)}</b><small>${ic} ${x.estado === 'proximo' ? 'próximo' : x.estado === 'pasado' ? 'vencido' : 'por venir'}</small></div>`;
+    }).join('');
+    panel.innerHTML = `<div class="trib-cal-hd">Cronograma ${cal[0] ? cal[0].anio : ''} · RUC …${(_tribDeclData || {}).digito} — período que declaras → vence</div><div class="trib-cal-grid">${cells}</div>`;
+    panel.classList.remove('hidden');
+    try { _finBeep && _finBeep('pop'); } catch (_) {}
   }
   async function tribCargar() {
     if (_tribState.busy) return;
@@ -57578,7 +57596,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.42.00] Postits manojo + click modal acciones (Reasignar/Cancelar)
     _cjAbrirPostitModal, _cjCerrarPostitModal, _cjPintarPostitsManojos,
     // [v2.41.92] Centro Tributario
-    _loadTributario, tribCargar, tribAbrirIGVFavor, tribAbrirIGVEmitido,
+    _loadTributario, tribCargar, tribDeclCal, tribAbrirIGVFavor, tribAbrirIGVEmitido,
     tribReprocesarOCR, tribReintentarCPE, tribReconciliarCPEs,
     tribLimpiarHuerfanas, tribAbrirHistorico,
     // [v2.44 · rediseño] overlays de renta/ventas, selector de mes en chips,

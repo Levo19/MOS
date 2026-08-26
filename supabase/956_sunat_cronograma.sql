@@ -84,7 +84,14 @@ begin
         'diasPasados', (v_hoy - v_venc.fecha_vence)) end,
     'anual', case when v_anual.fecha_vence is null then null else jsonb_build_object(
         'fechaVence', to_char(v_anual.fecha_vence,'YYYY-MM-DD'),
-        'diasRestantes', (v_anual.fecha_vence - v_hoy), 'verificado', v_anual.verificado) end ));
+        'diasRestantes', (v_anual.fecha_vence - v_hoy), 'verificado', v_anual.verificado) end,
+    -- calendario completo del año (12 meses) para el mini-calendario
+    'calendario', (select coalesce(jsonb_agg(jsonb_build_object(
+        'periodoMes', periodo_mes, 'anio', anio, 'fechaVence', to_char(fecha_vence,'YYYY-MM-DD'),
+        'estado', case when v_prox.fecha_vence is not null and fecha_vence = v_prox.fecha_vence then 'proximo'
+                       when fecha_vence < v_hoy then 'pasado' else 'futuro' end
+      ) order by periodo_mes), '[]'::jsonb)
+      from mos.sunat_cronograma where ultimo_digito=v_dig and tipo='MENSUAL' and anio=extract(year from v_hoy)::int) ));
 end $function$;
 grant execute on function mos.sunat_declaracion_estado(jsonb) to authenticated, anon, service_role;
 
