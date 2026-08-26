@@ -2914,6 +2914,11 @@ const API = (() => {
       if (r == null) return null;
       return r;   // {ok:true, data:{igvFavor,igvEmitido,balanceNetoIGV,totalVentas,rentaMensual,...cpe/guia buckets}}
     }
+    if (action === 'sunatDeclaracion') {   // [956] planificación de declaración SUNAT (cronograma por RUC)
+      const r = await _sbRpcMOS('sunat_declaracion_estado', { p: {} }, 'mos');
+      if (r == null) return null;
+      return r;   // {ok, data:{mensual:{periodoMes,fechaVence,diasRestantes,igvAPagar,renta,totalEstimado}, vencida, anual}}
+    }
     // [762 · CERO-GAS] Los botones de OCR ya NO llaman al bridge GAS: RE-ENCOLAN (marcan
     // PENDIENTE) y el pipeline server-side (trigger foto + cron wh-ocr-guias cada 10 min +
     // Edge ocr-guia) hace el análisis. El OCR ahora es AUTOMÁTICO al subir/cambiar la foto.
@@ -3218,6 +3223,7 @@ const API = (() => {
     wh_reconciliarStockProducto: () => true,   // ⚠️stock · mos.wh_reconciliar_stock_producto (381)
     wh_reconciliarStockMasivo:   () => true,   // ⚠️stock · mos.wh_reconciliar_stock_masivo (381)
     tribResumenMes:              () => true,   // mos.trib_resumen_mes (382)
+    sunatDeclaracion:            () => true,   // [956] cronograma SUNAT
     tribHistorico12meses:        () => true,   // [761] loop client-side de 12× trib_resumen_mes
     tribReprocesarOCR:           () => true,   // [762] re-encola → pipeline server-side
     tribOCRMasivo:               () => true,   // [762] re-encola el mes → pipeline server-side
@@ -3281,7 +3287,7 @@ const API = (() => {
     // [Revisión 100x 2026-07-19 · CERO-GAS boot] las lecturas tributarias del prefetch de login
     // corrían ANTES del mint del token → null → caían al fallback GAS. Directo-requerido:
     // null LANZA (el prefetch tiene catch; el módulo carga al abrirlo con token ya listo).
-    tribResumenMes: 1, tribIGVFavorMes: 1, tribIGVEmitidoMes: 1, tribHistorico12meses: 1, tribReprocesarOCR: 1, tribOCRMasivo: 1,
+    tribResumenMes: 1, sunatDeclaracion: 1, tribIGVFavorMes: 1, tribIGVEmitidoMes: 1, tribHistorico12meses: 1, tribReprocesarOCR: 1, tribOCRMasivo: 1,
     // [cero-GAS dueño 2026-07-17] escrituras de dispositivos (panel admin): sin token/RPC → LANZA, jamás GAS.
     crearDispositivo: 1, aprobarDispositivoPendiente: 1, revocarDispositivo: 1, forzarPushDispositivo: 1, forzarWizardDispositivo: 1 };
 

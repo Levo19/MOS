@@ -37327,6 +37327,7 @@ const MOS = (() => {
     }
     _tribPintarMes();
     await tribCargar();
+    _tribCargarDeclaracion();   // [956] card de planificación de declaración SUNAT (cronograma por RUC)
     // El histórico son 12 RPCs SECUENCIALES (api.js 761): va en segundo plano y
     // alimenta tres consumidores de una sola vez — sparklines de las cards,
     // deltas vs mes anterior y el panel de 12 meses. Cache con TTL: entrar y
@@ -37334,6 +37335,44 @@ const MOS = (() => {
     _tribHistCargar();
   }
 
+  // [956] Card de planificación de declaración SUNAT: qué período toca, cuánto, cuándo vence
+  //   (según el cronograma oficial por dígito de RUC) + cuenta regresiva con semáforo.
+  function _declFecha(iso) { try { const p = String(iso).split('-'); return parseInt(p[2]) + ' ' + _TRIB_MESES_CORTO[parseInt(p[1]) - 1]; } catch (_) { return iso; } }
+  async function _tribCargarDeclaracion() {
+    const cont = document.getElementById('tribDeclaracion'); if (!cont) return;
+    let r = null; try { r = await API.post('sunatDeclaracion', {}); } catch (_) {}
+    const d = (r && r.data) ? r.data : (r || {});
+    const m = d.mensual;
+    if (!m) { cont.innerHTML = ''; return; }
+    const dias = parseInt(m.diasRestantes);
+    const est = dias < 0 ? 'venc' : dias === 0 ? 'hoy' : dias <= 2 ? 'urg' : dias <= 7 ? 'alerta' : 'ok';
+    const estLbl = { venc: '⚫ VENCIÓ', hoy: '🔴 VENCE HOY', urg: '🔴 URGENTE', alerta: '🟡 PRONTO', ok: '🟢 A TIEMPO' }[est];
+    const mesNom = _TRIB_MESES[(m.periodoMes || 1) - 1];
+    const pct = Math.max(5, Math.min(100, (30 - dias) / 30 * 100));
+    const igv = parseFloat(m.igvAPagar) || 0, renta = parseFloat(m.renta) || 0, tot = parseFloat(m.totalEstimado) || 0;
+    const venc = d.vencida, anual = d.anual;
+    cont.innerHTML = `<div class="trib-decl e-${est}">
+      <div class="trib-decl-hd">
+        <div class="trib-decl-ico">📋</div>
+        <div class="trib-decl-ti"><b>Declaración SUNAT</b><span>RUC …${_esc(String(d.digito))} · Declara Fácil IGV-Renta (F.621)</span></div>
+        <div class="trib-decl-badge">${estLbl}</div>
+      </div>
+      <div class="trib-decl-body">
+        <div class="trib-decl-left">
+          <div class="trib-decl-per">Este mes declaras <b>${_esc(mesNom)} ${m.periodoAnio}</b></div>
+          <div class="trib-decl-count"><b class="trib-decl-d">${dias < 0 ? '−' + Math.abs(dias) : dias}</b><span>${dias < 0 ? 'días vencido' : dias === 0 ? '¡hoy!' : 'días · vence ' + _declFecha(m.fechaVence)}</span></div>
+          <div class="trib-decl-bar"><i style="width:${pct.toFixed(0)}%"></i></div>
+        </div>
+        <div class="trib-decl-right">
+          <div class="trib-decl-tot">${_tribFmtSoles(tot)}</div>
+          <div class="trib-decl-desg">IGV ${_tribFmtSoles(igv)} + Renta ${_tribFmtSoles(renta)}</div>
+          <div class="trib-decl-hint">estimado a pagar</div>
+        </div>
+      </div>
+      ${venc ? `<div class="trib-decl-alert">⚠ El período anterior venció hace ${venc.diasPasados} día${venc.diasPasados === 1 ? '' : 's'} (${_declFecha(venc.fechaVence)}). Si no lo declaraste, hazlo ya.</div>` : ''}
+      ${anual ? `<div class="trib-decl-anual">📅 Declaración <b>anual</b> de Renta: ${_declFecha(anual.fechaVence)} ${String(anual.fechaVence).slice(0, 4)} · en ${anual.diasRestantes} días${anual.verificado ? '' : ' <i>(estimado)</i>'}</div>` : ''}
+    </div>`;
+  }
   async function tribCargar() {
     if (_tribState.busy) return;
     const sel = $('tribMesSelect');
