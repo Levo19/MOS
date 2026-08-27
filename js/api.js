@@ -2933,15 +2933,15 @@ const API = (() => {
     }
     if (action === 'sunatVoucherOcr') {   // [957] OCR de una constancia/voucher SUNAT (Gemini vía Edge ia)
       try {
-        const sys = 'Eres experto en constancias y declaraciones de SUNAT (Perú): Declara Fácil, PDT 621 (IGV-Renta mensual), pagos de tributos y PLAME. Recibes la foto de una constancia/voucher y extraes los montos DECLARADOS o PAGADOS. Devuelve SOLO un JSON válido, sin texto extra: {"tipo":"IGV_RENTA"|"PLAME","igv":number,"renta":number,"essalud":number,"nroOrden":string}. igv = IGV a pagar (código 1011). renta = pago a cuenta de Renta (3031/3121). essalud = EsSalud/ONP si es PLAME (0 si no). nroOrden = número de orden o de la constancia. Usa 0 en los montos que no apliquen.';
+        const sys = 'Eres experto en constancias y declaraciones de SUNAT y AFPnet (Perú): Declara Fácil, PDT 621 (IGV-Renta mensual), pagos de tributos, PLAME (EsSalud/ONP) y AFP. Recibes la foto de una constancia/voucher y extraes los montos DECLARADOS o PAGADOS. Devuelve SOLO un JSON válido, sin texto extra: {"tipo":"IGV_RENTA"|"PLAME","igv":number,"renta":number,"essalud":number,"afp":number,"nroOrden":string}. igv = IGV a pagar (código 1011). renta = pago a cuenta de Renta (3031/3121). essalud = EsSalud (5210) si es PLAME. afp = AFP o ONP/pensiones si aparece. nroOrden = número de orden o de la constancia. Usa 0 en los montos que no apliquen.';
         const d = await _zonaIA({ funcion: 'sunatVoucher', system: sys, max_tokens: 400, messages: [{ role: 'user', content: [
-          { type: 'text', text: 'Extrae los montos de esta constancia SUNAT como JSON.' },
+          { type: 'text', text: 'Extrae los montos de esta constancia SUNAT/AFP como JSON.' },
           { type: 'image', source: { type: 'base64', media_type: p.mime || 'image/jpeg', data: p.jpgB64 } }
         ] }] });
         const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
         const m = txt.match(/\{[\s\S]*\}/);
         const j = m ? JSON.parse(m[0]) : {};
-        return { status: 'success', data: { tipo: j.tipo || 'IGV_RENTA', igv: parseFloat(j.igv) || 0, renta: parseFloat(j.renta) || 0, essalud: parseFloat(j.essalud) || 0, nroOrden: String(j.nroOrden || '') } };
+        return { status: 'success', data: { tipo: j.tipo || 'IGV_RENTA', igv: parseFloat(j.igv) || 0, renta: parseFloat(j.renta) || 0, essalud: parseFloat(j.essalud) || 0, afp: parseFloat(j.afp) || 0, nroOrden: String(j.nroOrden || '') } };
       } catch (e) { return { status: 'error', error: String(e && e.message || e) }; }
     }
     if (action === 'sunatVoucherSubir') {   // [957] sube la foto del voucher al Storage y registra los montos
@@ -2955,7 +2955,7 @@ const API = (() => {
         const fotoUrl = up.ok ? `${_SB_URL}/storage/v1/object/public/igv-buzon/${path}` : '';
         const r = await _sbRpcMOS('sunat_voucher_registrar', { p: {
           mes: p.mes, anio: p.anio, tipo: p.tipo || 'IGV_RENTA', fotoUrl,
-          igv: p.igv || 0, renta: p.renta || 0, essalud: p.essalud || 0, nroOrden: p.nroOrden || '', usuario: p.usuario || ''
+          igv: p.igv || 0, renta: p.renta || 0, essalud: p.essalud || 0, afp: p.afp || 0, nroOrden: p.nroOrden || '', usuario: p.usuario || ''
         } }, 'mos');
         return r && r.ok !== false ? { status: 'success', data: r } : { status: 'error', error: (r && r.error) || 'no se pudo' };
       } catch (e) { return { status: 'error', error: String(e && e.message || e) }; }

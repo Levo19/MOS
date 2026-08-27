@@ -49,8 +49,8 @@ declare
   v_anio_act int := extract(year from v_hoy)::int;
   v_pmes int; v_panio int; v_venc_date date; v_verif boolean;   -- último mes CERRADO (el que toca declarar)
   v_cmes int; v_canio int; v_cvenc date; v_finmes date;         -- mes EN CURSO (aún abierto)
-  v_tr jsonb; v_igvpag numeric; v_renta numeric; v_plame numeric; v_anual record;
-  v_dv_igv numeric; v_dv_renta numeric; v_dv_plame numeric; v_dv_n int;   -- declarado (de los vouchers)
+  v_tr jsonb; v_igvpag numeric; v_renta numeric; v_plame numeric; v_afp numeric; v_base numeric; v_anual record;
+  v_dv_igv numeric; v_dv_renta numeric; v_dv_plame numeric; v_dv_afp numeric; v_dv_n int;   -- declarado (de los vouchers)
   v_est_tot numeric; v_dec_tot numeric;
 begin
   -- El período a declarar es el ÚLTIMO MES CERRADO = mes anterior al actual (no se puede declarar un mes
@@ -63,15 +63,18 @@ begin
   v_tr := mos.trib_resumen_mes(jsonb_build_object('mes', v_pmes, 'anio', v_panio));
   v_igvpag := greatest(0, coalesce((v_tr->'data'->>'igvEmitido')::numeric,0) - coalesce((v_tr->'data'->>'igvFavor')::numeric,0));
   v_renta  := coalesce((v_tr->'data'->>'rentaMensual')::numeric,0);
-  -- PLAME (EsSalud 9% de la planilla del mes) — estimado; el voucher da el real
-  v_plame  := round(0.09 * coalesce((select sum(coalesce(monto_base,0)) from mos.liquidaciones_dia
-                where extract(month from fecha)=v_pmes and extract(year from fecha)=v_panio),0), 2);
-  v_est_tot := v_igvpag + v_renta + v_plame;
+  -- PLAME/pensiones: los trabajadores en planilla están en sueldo mínimo (RMV). Base = personas × RMV.
+  --   EsSalud (PLAME, SUNAT) = 9% · AFP/ONP (pensiones) = 13%. RMV y nº de personas viven en mos.config (editables).
+  v_base := coalesce((select valor::numeric from mos.config where clave='SUNAT_RMV'),1130)
+            * coalesce((select valor::numeric from mos.config where clave='PLAME_PERSONAS'),5);
+  v_plame := round(0.09 * v_base, 2);
+  v_afp   := round(0.13 * v_base, 2);
+  v_est_tot := v_igvpag + v_renta + v_plame + v_afp;
   -- DECLARADO real (suma de los vouchers subidos para ese período)
-  select coalesce(sum(igv),0), coalesce(sum(renta),0), coalesce(sum(essalud),0), count(*)
-    into v_dv_igv, v_dv_renta, v_dv_plame, v_dv_n
+  select coalesce(sum(igv),0), coalesce(sum(renta),0), coalesce(sum(essalud),0), coalesce(sum(afp),0), count(*)
+    into v_dv_igv, v_dv_renta, v_dv_plame, v_dv_afp, v_dv_n
     from mos.sunat_voucher where periodo_mes=v_pmes and periodo_anio=v_panio;
-  v_dec_tot := coalesce(v_dv_igv,0) + coalesce(v_dv_renta,0) + coalesce(v_dv_plame,0);
+  v_dec_tot := coalesce(v_dv_igv,0) + coalesce(v_dv_renta,0) + coalesce(v_dv_plame,0) + coalesce(v_dv_afp,0);
 
   -- mes EN CURSO (se declarará cuando cierre)
   v_cmes := v_mes_act; v_canio := v_anio_act;
@@ -91,8 +94,8 @@ begin
         'diasRestantes', (v_venc_date - v_hoy),
         'vencido', (v_venc_date < v_hoy),
         'verificado', coalesce(v_verif,false),
-        'estimado', jsonb_build_object('igv',round(v_igvpag,2),'renta',round(v_renta,2),'plame',round(v_plame,2),'total',round(v_est_tot,2)),
-        'declarado', jsonb_build_object('igv',round(coalesce(v_dv_igv,0),2),'renta',round(coalesce(v_dv_renta,0),2),'plame',round(coalesce(v_dv_plame,0),2),'total',round(v_dec_tot,2),'nVouchers',coalesce(v_dv_n,0)),
+        'estimado', jsonb_build_object('igv',round(v_igvpag,2),'renta',round(v_renta,2),'plame',round(v_plame,2),'afp',round(v_afp,2),'total',round(v_est_tot,2)),
+        'declarado', jsonb_build_object('igv',round(coalesce(v_dv_igv,0),2),'renta',round(coalesce(v_dv_renta,0),2),'plame',round(coalesce(v_dv_plame,0),2),'afp',round(coalesce(v_dv_afp,0),2),'total',round(v_dec_tot,2),'nVouchers',coalesce(v_dv_n,0)),
         'diferencia', round(v_est_tot - v_dec_tot, 2),
         'tieneVoucher', (coalesce(v_dv_n,0) > 0),
         'multa', ((v_venc_date < v_hoy) and coalesce(v_dv_n,0) = 0),

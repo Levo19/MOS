@@ -16,8 +16,13 @@ create table if not exists mos.sunat_voucher (
   subido_por text,
   subido_ts timestamptz not null default now()
 );
+alter table mos.sunat_voucher add column if not exists afp numeric default 0;   -- AFP/ONP (pensiones)
 create index if not exists ix_sunat_voucher_periodo on mos.sunat_voucher(periodo_anio, periodo_mes, tipo);
 grant select, insert, delete on mos.sunat_voucher to authenticated, anon, service_role;
+
+-- RMV y nº de personas en planilla (editables). PLAME/AFP se estiman sobre personas × RMV (todos en mínimo).
+insert into mos.config(clave, valor) values ('SUNAT_RMV','1130') on conflict (clave) do nothing;
+insert into mos.config(clave, valor) values ('PLAME_PERSONAS','5') on conflict (clave) do nothing;
 
 -- PLAME: mismo cronograma que las obligaciones mensuales (por dígito de RUC). Seed 2026 dígito 7 = MENSUAL.
 insert into mos.sunat_cronograma (anio, ultimo_digito, periodo_mes, fecha_vence, verificado, tipo)
@@ -30,20 +35,20 @@ create or replace function mos.sunat_voucher_registrar(p jsonb)
 returns jsonb language plpgsql security definer set search_path to '' as $function$
 declare v_id text := 'VCH-'||to_char(clock_timestamp(),'YYYYMMDDHH24MISSMS')||'-'||substr(md5(random()::text),1,4);
 begin
-  insert into mos.sunat_voucher(id, periodo_mes, periodo_anio, tipo, foto_url, igv, renta, essalud, nro_orden, nota, subido_por)
+  insert into mos.sunat_voucher(id, periodo_mes, periodo_anio, tipo, foto_url, igv, renta, essalud, afp, nro_orden, nota, subido_por)
   values (v_id,
     coalesce((p->>'mes')::int, extract(month from now())::int),
     coalesce((p->>'anio')::int, extract(year from now())::int),
     coalesce(nullif(p->>'tipo',''),'IGV_RENTA'),
     p->>'fotoUrl', coalesce((p->>'igv')::numeric,0), coalesce((p->>'renta')::numeric,0),
-    coalesce((p->>'essalud')::numeric,0), p->>'nroOrden', p->>'nota', p->>'usuario');
+    coalesce((p->>'essalud')::numeric,0), coalesce((p->>'afp')::numeric,0), p->>'nroOrden', p->>'nota', p->>'usuario');
   return jsonb_build_object('ok', true, 'id', v_id);
 end $function$;
 create or replace function mos.sunat_voucher_listar(p jsonb)
 returns jsonb language plpgsql security definer set search_path to '' as $function$
 begin
   return jsonb_build_object('ok', true, 'items', coalesce((select jsonb_agg(jsonb_build_object(
-    'id', id, 'tipo', tipo, 'fotoUrl', foto_url, 'igv', igv, 'renta', renta, 'essalud', essalud,
+    'id', id, 'tipo', tipo, 'fotoUrl', foto_url, 'igv', igv, 'renta', renta, 'essalud', essalud, 'afp', afp,
     'nroOrden', nro_orden, 'subidoTs', to_char(subido_ts at time zone 'America/Lima','YYYY-MM-DD HH24:MI')
   ) order by subido_ts desc)
     from mos.sunat_voucher where periodo_mes=(p->>'mes')::int and periodo_anio=(p->>'anio')::int), '[]'::jsonb));
@@ -71,8 +76,8 @@ begin
     cross join lateral (select
       greatest(0, coalesce((t.tr->>'igvEmitido')::numeric,0) - coalesce((t.tr->>'igvFavor')::numeric,0))
         + coalesce((t.tr->>'rentaMensual')::numeric,0)
-        + 0.09 * coalesce((select sum(coalesce(monto_base,0)) from mos.liquidaciones_dia where extract(month from fecha)=m and extract(year from fecha)=v_anio),0) est,
-      coalesce((select sum(coalesce(igv,0)+coalesce(renta,0)+coalesce(essalud,0)) from mos.sunat_voucher where periodo_mes=m and periodo_anio=v_anio),0) dec,
+        + 0.22 * (coalesce((select valor::numeric from mos.config where clave='SUNAT_RMV'),1130) * coalesce((select valor::numeric from mos.config where clave='PLAME_PERSONAS'),5)) est,
+      coalesce((select sum(coalesce(igv,0)+coalesce(renta,0)+coalesce(essalud,0)+coalesce(afp,0)) from mos.sunat_voucher where periodo_mes=m and periodo_anio=v_anio),0) dec,
       coalesce((select count(*) from mos.sunat_voucher where periodo_mes=m and periodo_anio=v_anio),0) nv
     ) c), '[]'::jsonb));
 end $function$;

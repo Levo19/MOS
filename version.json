@@ -1,1 +1,1 @@
-{"version": "2.43.973", "build": "Card SUNAT como INFOGRAFIA (no meta): fuera la barra de progreso; cada tributo (IGV/Renta/PLAME) en su fila con el monto y una linea breve de DE DONDE SALE, y el total abajo. Periodo + vencimiento como texto."}
+{"version": "2.43.974", "build": "SUNAT: se agrega AFP/ONP (pensiones ~13%) ademas de EsSalud (9%). Como los 5 estan en sueldo minimo, PLAME/AFP se estiman sobre 5 x RMV (S/1,130, editable en config). El buzon/OCR ahora tambien capturan el monto de AFP. Total Julio ~S/1,700 (Renta 457 + EsSalud 508 + AFP 734)."}

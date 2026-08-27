@@ -37352,7 +37352,7 @@ const MOS = (() => {
     const mesNom = _TRIB_MESES[(per.mes || 1) - 1];
     const pct = vencido ? 100 : Math.max(5, Math.min(100, (30 - dias) / 30 * 100));
     const es = per.estimado || {}, dc = per.declarado || {};
-    const igv = parseFloat(es.igv) || 0, renta = parseFloat(es.renta) || 0, plame = parseFloat(es.plame) || 0, tot = parseFloat(es.total) || 0;
+    const igv = parseFloat(es.igv) || 0, renta = parseFloat(es.renta) || 0, plame = parseFloat(es.plame) || 0, afp = parseFloat(es.afp) || 0, tot = parseFloat(es.total) || 0;
     const nv = parseInt(dc.nVouchers) || 0, decTot = parseFloat(dc.total) || 0, dif = parseFloat(per.diferencia) || 0, difAbs = Math.abs(dif);
     const thr = Math.max(20, tot * 0.03);
     const difEst = !nv ? '' : difAbs <= thr ? 'ok' : difAbs <= tot * 0.1 ? 'mid' : 'bad';
@@ -37372,7 +37372,8 @@ const MOS = (() => {
       <div class="trib-decl-rows">
         ${row('🧾', 'IGV', igv > 0 ? 'IGV de tus ventas − IGV de tus compras con factura' : 'IGV de ventas − compras · este mes tu crédito cubrió todo', igv)}
         ${row('📊', 'Renta', '1.5% de tus ventas netas del mes (régimen MYPE)', renta)}
-        ${row('👥', 'PLAME', 'EsSalud 9% de la planilla (~5 personas) · aprox', plame)}
+        ${row('🏥', 'EsSalud (PLAME)', '9% de la planilla · 5 personas en sueldo mínimo', plame)}
+        ${row('🏦', 'AFP / ONP', '13% de pensiones retenido a la planilla · aprox', afp)}
         ${row('💰', 'Total estimado a pagar', vencido ? '' : 'se recalcula solo con cada cambio', tot, 'total')}
       </div>
       ${nv ? `<div class="trib-decl-cmp cmp-${difEst}"><span>Según tus vouchers declaraste <b>${_tribFmtSoles(decTot)}</b> (${nv})</span><span class="cmp-dif">${dif === 0 ? 'sin diferencia' : _tribFmtSoles(difAbs) + (dif > 0 ? ' menos' : ' más') + ' que mi estimado'} · ${difLbl}</span></div>` : ''}
@@ -37409,7 +37410,7 @@ const MOS = (() => {
     const items = (r && r.items) || [];
     list.innerHTML = items.length ? items.map(v => {
       const t = v.tipo === 'PLAME' ? '👥 PLAME' : '📄 IGV-Renta';
-      const montos = [v.igv > 0 ? 'IGV ' + _tribFmtSoles(v.igv) : '', v.renta > 0 ? 'Renta ' + _tribFmtSoles(v.renta) : '', v.essalud > 0 ? 'EsSalud ' + _tribFmtSoles(v.essalud) : ''].filter(Boolean).join(' · ');
+      const montos = [v.igv > 0 ? 'IGV ' + _tribFmtSoles(v.igv) : '', v.renta > 0 ? 'Renta ' + _tribFmtSoles(v.renta) : '', v.essalud > 0 ? 'EsSalud ' + _tribFmtSoles(v.essalud) : '', v.afp > 0 ? 'AFP ' + _tribFmtSoles(v.afp) : ''].filter(Boolean).join(' · ');
       return `<div class="trib-buz-row"><span class="t">${t}</span><span class="m">${_esc(montos || '—')}${v.nroOrden ? ' · Nº ' + _esc(v.nroOrden) : ''}</span><button class="x" onclick="MOS.sunatVoucherBorrar('${_esc(v.id)}')">✕</button></div>`;
     }).join('') : '<div class="trib-cal-hd" style="opacity:.6">Sin vouchers cargados aún</div>';
   }
@@ -37420,14 +37421,15 @@ const MOS = (() => {
       pend.appendChild(row);
       try {
         const img = await _catCompressImg(file, 1400, 0.82);
-        let ocr = { tipo: 'IGV_RENTA', igv: 0, renta: 0, essalud: 0, nroOrden: '' };
+        let ocr = { tipo: 'IGV_RENTA', igv: 0, renta: 0, essalud: 0, afp: 0, nroOrden: '' };
         try { const r = await API.post('sunatVoucherOcr', { jpgB64: img.base64, mime: 'image/jpeg' }); if (r && r.data) ocr = r.data; } catch (_) {}
         row.dataset.b64 = img.base64;
         row.innerHTML = `<div class="trib-buz-form">
-          <select class="tp">${['IGV_RENTA', 'PLAME'].map(t => `<option value="${t}" ${ocr.tipo === t ? 'selected' : ''}>${t === 'PLAME' ? '👥 PLAME' : '📄 IGV-Renta'}</option>`).join('')}</select>
+          <select class="tp">${['IGV_RENTA', 'PLAME'].map(t => `<option value="${t}" ${ocr.tipo === t ? 'selected' : ''}>${t === 'PLAME' ? '👥 PLAME (EsSalud/AFP/ONP)' : '📄 IGV-Renta'}</option>`).join('')}</select>
           <input class="ig" type="number" step="0.01" placeholder="IGV" value="${ocr.igv || ''}">
           <input class="re" type="number" step="0.01" placeholder="Renta" value="${ocr.renta || ''}">
           <input class="es" type="number" step="0.01" placeholder="EsSalud" value="${ocr.essalud || ''}">
+          <input class="af" type="number" step="0.01" placeholder="AFP/ONP" value="${ocr.afp || ''}">
           <input class="no" type="text" placeholder="Nº orden" value="${_esc(ocr.nroOrden || '')}">
           <button class="ok" onclick="MOS.sunatBuzonGuardar(this)">Guardar ✓</button>
         </div>`;
@@ -37442,7 +37444,7 @@ const MOS = (() => {
       const r = await API.post('sunatVoucherSubir', {
         mes: _sunatBuzonMesAnio.mes, anio: _sunatBuzonMesAnio.anio, jpgB64: row.dataset.b64,
         tipo: g('.tp').value, igv: parseFloat(g('.ig').value) || 0, renta: parseFloat(g('.re').value) || 0,
-        essalud: parseFloat(g('.es').value) || 0, nroOrden: g('.no').value || ''
+        essalud: parseFloat(g('.es').value) || 0, afp: parseFloat(g('.af').value) || 0, nroOrden: g('.no').value || ''
       });
       if (r && r.status === 'success') { row.remove(); _sunatBuzonListar(); _tribCargarDeclaracion(); try { _finBeep && _finBeep('ok'); } catch (_) {} }
       else { btn.disabled = false; btn.textContent = 'Guardar ✓'; toast('No se pudo guardar el voucher', 'error'); }
