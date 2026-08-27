@@ -1,1 +1,1 @@
-{"version": "2.43.976", "build": "5a pestaña Por activar en modulo Zona: huecos de surtido (producto del catalogo sin stock en la zona pero con presencia en otra zona/almacen). Poner stock inicial (ajuste) o descartar por zona. Backend RPC mos.zona_por_activar/descartar."}
+{"version": "2.43.977", "build": "Pestaña Por activar: el buscador de zona ahora filtra tambien esta pestaña (por descripcion/sku), con estado vacio propio de busqueda."}

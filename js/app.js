@@ -51753,16 +51753,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (stats) stats.textContent = 'Buscando huecos de surtido…';
       return;
     }
-    const items = Array.isArray(pa.items) ? pa.items : [];
-    const activos = items.filter(x => !x.descartado).length;
-    const desc = items.filter(x => x.descartado).length;
-    if (stats) stats.textContent = `${activos} ${activos === 1 ? 'hueco' : 'huecos'} por activar${pa.verDescartados ? ' · ' + desc + ' descartados' : ''}`;
+    const allItems = Array.isArray(pa.items) ? pa.items : [];
+    const activos = allItems.filter(x => !x.descartado).length;
+    const desc = allItems.filter(x => x.descartado).length;
+    // [977] El buscador de zona (S._zonaFiltros.q) también filtra ESTA pestaña — por descripción o sku.
+    const rawQ = ((S._zonaFiltros || {}).q || '').trim();
+    const q = rawQ.toLowerCase();
+    const items = q ? allItems.filter(x => String(x.descripcion || x.skuBase || '').toLowerCase().includes(q)) : allItems;
+    if (stats) stats.textContent = q
+      ? `${items.length} ${items.length === 1 ? 'resultado' : 'resultados'} para "${rawQ}"`
+      : `${activos} ${activos === 1 ? 'hueco' : 'huecos'} por activar${pa.verDescartados ? ' · ' + desc + ' descartados' : ''}`;
     const head = `<div class="zona-pa-head">
         <div class="zona-pa-intro">🆕 Productos del catálogo <b>sin stock en esta zona</b> pero con presencia en otra zona o el almacén. Ponles un stock inicial para activarlos aquí.</div>
         <button class="zona-btn-sec zona-pa-toggle${pa.verDescartados ? ' zona-accion-on' : ''}" onclick="MOS.zonaPorActivarVerDescartados()">${pa.verDescartados ? 'Ocultar descartados' : 'Ver descartados'}</button>
       </div>`;
     if (!items.length) {
-      cont.innerHTML = head + `<div class="zona-empty"><div class="zona-empty-ic">✅</div><div class="zona-empty-t">Sin huecos por activar</div><div class="zona-empty-s">Esta zona ya tiene todo su surtido con stock.</div></div>`;
+      cont.innerHTML = head + (q
+        ? `<div class="zona-empty"><div class="zona-empty-ic">🔍</div><div class="zona-empty-t">Sin resultados para "${_esc(rawQ)}"</div><div class="zona-empty-s">Ningún hueco por activar coincide con la búsqueda en esta zona.</div></div>`
+        : `<div class="zona-empty"><div class="zona-empty-ic">✅</div><div class="zona-empty-t">Sin huecos por activar</div><div class="zona-empty-s">Esta zona ya tiene todo su surtido con stock.</div></div>`);
       return;
     }
     cont.innerHTML = head + items.map(_zonaPaCardHtml).join('');
