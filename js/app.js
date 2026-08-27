@@ -37358,28 +37358,24 @@ const MOS = (() => {
     const difEst = !nv ? '' : difAbs <= thr ? 'ok' : difAbs <= tot * 0.1 ? 'mid' : 'bad';
     const difLbl = { ok: '✅ cuadra con tu estimado', mid: '🟡 hay diferencia, revisá', bad: '🔴 diferencia grande — ¿falta una factura o error del contador?' }[difEst] || '';
     const enc = d.enCurso, anual = d.anual;
-    const countHtml = vencido
-      ? `<div class="trib-decl-count"><b class="trib-decl-d">⚫</b><span>venció el <b>${_declFecha(per.fechaVence)}</b> · hace ${Math.abs(dias)} día${Math.abs(dias) === 1 ? '' : 's'}</span></div>`
-      : `<div class="trib-decl-count"><b class="trib-decl-d">${dias}</b><span>${dias === 0 ? '¡vence hoy!' : 'días · vence <b>' + _declFecha(per.fechaVence) + '</b>'}</span></div>`;
+    const vencTxt = vencido
+      ? `venció el <b>${_declFecha(per.fechaVence)}</b> · hace ${Math.abs(dias)} día${Math.abs(dias) === 1 ? '' : 's'}`
+      : dias === 0 ? `<b>vence hoy</b> (${_declFecha(per.fechaVence)})` : `vence el <b>${_declFecha(per.fechaVence)}</b> · faltan ${dias} días`;
+    const row = (ic, nm, exp, val, cls) => `<div class="trib-decl-row ${cls || ''}"><span class="ic">${ic}</span><div class="cc"><b>${nm}</b>${exp ? `<small>${exp}</small>` : ''}</div><span class="mn">${_tribFmtSoles(val)}</span></div>`;
     cont.innerHTML = `<div class="trib-decl e-${est}">
       <div class="trib-decl-hd" onclick="MOS.tribDeclCal()" style="cursor:pointer" title="Ver el cronograma del año">
         <div class="trib-decl-ico">📋</div>
-        <div class="trib-decl-ti"><b>Declaración SUNAT</b><span>RUC …${_esc(String(d.digito))} · IGV · Renta · PLAME</span></div>
+        <div class="trib-decl-ti"><b>Declaración SUNAT</b><span>RUC …${_esc(String(d.digito))} · lo que te toca pagar</span></div>
         <div class="trib-decl-badge">${estLbl}</div>
       </div>
-      <div class="trib-decl-body">
-        <div class="trib-decl-left">
-          <div class="trib-decl-per">Toca declarar <b>${_esc(mesNom)} ${per.anio}</b> (mes cerrado)</div>
-          ${countHtml}
-          <div class="trib-decl-bar"><i style="width:${pct.toFixed(0)}%"></i></div>
-        </div>
-        <div class="trib-decl-right">
-          <div class="trib-decl-tot">${_tribFmtSoles(tot)}</div>
-          <div class="trib-decl-desg">IGV ${_tribFmtSoles(igv)} · Renta ${_tribFmtSoles(renta)} · PLAME ${_tribFmtSoles(plame)}</div>
-          <div class="trib-decl-hint">estimado del sistema${vencido ? '' : ' · se actualiza'}</div>
-        </div>
+      <div class="trib-decl-period">Declaras <b>${_esc(mesNom)} ${per.anio}</b> (mes cerrado) · ${vencTxt}</div>
+      <div class="trib-decl-rows">
+        ${row('🧾', 'IGV', igv > 0 ? 'IGV de tus ventas − IGV de tus compras con factura' : 'IGV de ventas − compras · este mes tu crédito cubrió todo', igv)}
+        ${row('📊', 'Renta', '1.5% de tus ventas netas del mes (régimen MYPE)', renta)}
+        ${row('👥', 'PLAME', 'EsSalud 9% de la planilla (~5 personas) · aprox', plame)}
+        ${row('💰', 'Total estimado a pagar', vencido ? '' : 'se recalcula solo con cada cambio', tot, 'total')}
       </div>
-      ${nv ? `<div class="trib-decl-cmp cmp-${difEst}"><span>Declaraste <b>${_tribFmtSoles(decTot)}</b> · ${nv} voucher${nv === 1 ? '' : 's'}</span><span class="cmp-dif">${dif === 0 ? 'sin diferencia' : _tribFmtSoles(difAbs) + (dif > 0 ? ' menos' : ' más') + ' que mi estimado'} · ${difLbl}</span></div>` : ''}
+      ${nv ? `<div class="trib-decl-cmp cmp-${difEst}"><span>Según tus vouchers declaraste <b>${_tribFmtSoles(decTot)}</b> (${nv})</span><span class="cmp-dif">${dif === 0 ? 'sin diferencia' : _tribFmtSoles(difAbs) + (dif > 0 ? ' menos' : ' más') + ' que mi estimado'} · ${difLbl}</span></div>` : ''}
       ${per.multa ? `<div class="trib-decl-alert">⚠ VENCIÓ sin voucher cargado. Declarar fuera de plazo genera <b>multa</b> (≈1 UIT, con rebaja hasta 90% si declaras y pagas voluntariamente) + intereses. Declara y sube el voucher cuanto antes.</div>` : ''}
       ${enc ? `<div class="trib-decl-anual">🗓️ En curso: <b>${_esc(_TRIB_MESES[(enc.mes || 1) - 1])}</b> — cierra en ${enc.diasCierre} día${enc.diasCierre === 1 ? '' : 's'} (${_declFecha(enc.finMes)}); ahí recién se declara, hasta el <b>${_declFecha(enc.fechaVence)}</b></div>` : ''}
       ${anual ? `<div class="trib-decl-anual">📅 Declaración <b>anual</b> de Renta: ${_declFecha(anual.fechaVence)} ${String(anual.fechaVence).slice(0, 4)} · en ${anual.diasRestantes} días${anual.verificado ? '' : ' <i>(estimado)</i>'}</div>` : ''}
