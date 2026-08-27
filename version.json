@@ -1,1 +1,1 @@
-{"version": "2.43.975", "build": "Cabina drill del dia: Vendido ahora = ventas NETAS (cobrado), igual que Finanzas y la barra del grafico (antes mostraba el bruto incluyendo credito). Nota que explica la diferencia = credito otorgado (por cobrar, no cuenta como venta hasta cobrarse)."}
+{"version": "2.43.976", "build": "5a pestaña Por activar en modulo Zona: huecos de surtido (producto del catalogo sin stock en la zona pero con presencia en otra zona/almacen). Poner stock inicial (ajuste) o descartar por zona. Backend RPC mos.zona_por_activar/descartar."}

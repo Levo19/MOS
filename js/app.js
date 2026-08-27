@@ -47,7 +47,10 @@ const MOS = (() => {
     _trasResumen: null,      // cache del resumen (verificadas: completo/incompleto/baseline + detalle)
     _guiasFiltro: 'todas',   // filtro activo del modal: todas | pendientes | verificadas | incompletas
     _guiasOperario: '',      // filtro por operario (vacío = todos)
-    _guiaSel: null           // guía seleccionada en la vista de detalle
+    _guiaSel: null,          // guía seleccionada en la vista de detalle
+    // [976] 🆕 POR ACTIVAR (5ª pestaña del módulo Zona): cache POR ZONA de los huecos de surtido
+    // (productos del catálogo sin stock en la zona pero presentes en otra zona/almacén). RPC mos.zona_por_activar.
+    _zonaPorActivar: { zona: null, items: [], nDescartados: 0, cargando: false, verDescartados: false, _cargado: false, _verCargado: false }
   };
 
   function _getSession()      { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { return null; } }
@@ -51005,6 +51008,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       _zonaPintarFresh();
       _zonaPintarKpis(true);   // count-up animado al cargar
       renderZona();
+      // [976] precarga SILENCIOSA de los huecos "Por activar" de esta zona → mantiene vivo el badge del 5º tab
+      //   sin abrirlo. force=true (la zona pudo cambiar); silent=true (solo cache+badge, no toca la lista salvo
+      //   que el 5º tab ya esté activo). Best-effort: un fallo no rompe el panel.
+      try { _zonaPorActivarCargar(true, true); } catch (_) {}
       // [RIZ · TRASLADO VERIFICADO] refrescar el badge del botón "🚚 Guías" (pendientes) + cache de verificadas.
       _trasCargarBadge();
       _trasCargarResumen();
@@ -51210,6 +51217,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     set('zKpiFaltan', pedir); set('zKpiCero', muerto); set('zKpiSobra', sobra); set('zKpiOrden', orden);
     // [899] marcar la pestaña activa (las vitales son pestañas: una siempre encendida)
     try { const fk = (S._zonaFiltros || {}).kpi; document.querySelectorAll('#zonaKpis .zona-kpi').forEach(el => el.classList.toggle('active', el.dataset.kpi === fk)); } catch (_) {}
+    // [976] mantener el badge de la 5ª pestaña "Por activar" en sincronía en cada pintado de vitales.
+    try { _zonaPaActualizarBadge(); } catch (_) {}
   }
   // [RIZ UX] HTML de N cards skeleton con shimmer (silueta de una zona-card real).
   function _zonaSkelCards(n) {
@@ -51597,6 +51606,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function renderZona() {
     const cont = $('zonaLista');
     if (!cont) return;
+    // [976] 5ª pestaña "🆕 Por activar": ruta de render PROPIA (huecos de surtido), NO el panel normal.
+    //   Corta acá y delega en _zonaRenderPorActivar (que consume S._zonaPorActivar, no S.zonaProductos).
+    if ((S._zonaFiltros || {}).kpi === 'c_activar') { _zonaRenderPorActivar(); return; }
     const f = S._zonaFiltros;
     // [927] Asegura la meta demand-flow del grupo almacén (deuda → Pedir ya). Async + cacheado: la 1ª vez
     //   repinta cuando llega; luego usa cache. No bloquea el render actual.
@@ -51673,6 +51685,249 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [RIZ #4] En ALMACEN, completar las cards con sus proveedores reales (1 RPC batch, no bloqueante).
     if (esAlmacen) { try { _zonaProvCargarVisibles(); } catch (_) {} try { _zonaGranelCargarVisibles(); } catch (_) {} }
   }
+  // ════════════════════════════════════════════════════════════════════
+  // [976] 🆕 POR ACTIVAR — 5ª pestaña del módulo Zona.
+  //   HUECOS DE SURTIDO: productos del catálogo SIN stock en la zona activa pero con presencia en otra
+  //   zona o en el almacén (para ALMACEN: con demanda de las zonas = hueco de compra). El admin les pone
+  //   un stock inicial (→ ajuste) para activarlos, o los descarta por zona ("no aplica aquí").
+  //   Backend (contrato fijo): mos.zona_por_activar (lectura) / mos.zona_por_activar_descartar (escritura).
+  //   Fuente de verdad de la lista = S._zonaPorActivar (cache por zona); mutaciones OPTIMISTAS con rollback.
+  //   renderZona corta hacia _zonaRenderPorActivar cuando la pestaña activa es 'c_activar'.
+  // ════════════════════════════════════════════════════════════════════
+  // Prioridad → clase de color reutilizada de los cuadrantes (P3 verde=orden · P2 ámbar=sobra · P1 gris=muerto).
+  function _zonaPaCuadClase(prio) {
+    const p = _zonaNum(prio);
+    return p >= 3 ? 'zona-cuad-orden' : (p === 2 ? 'zona-cuad-sobra' : 'zona-cuad-muerto');
+  }
+  // Refresca SOLO el badge de conteo del 5º tab = huecos ACTIVOS (no descartados) de la zona en cache.
+  //   Se calcula desde los items (robusto ante la semántica de total/nDescartados del RPC). '—' si no hay cache.
+  function _zonaPaActualizarBadge() {
+    const el = $('zKpiActivar');
+    if (!el) return;
+    const pa = S._zonaPorActivar || {};
+    if (!(pa._cargado && pa.zona === S.zonaActual)) { el.textContent = '—'; return; }
+    el.textContent = String((pa.items || []).filter(x => !x.descartado).length);
+  }
+  // Carga (o recarga) los huecos de la zona activa. silent=true → solo actualiza cache+badge (precarga al abrir
+  //   el panel, sin tocar la lista salvo que el 5º tab ya esté activo). Respeta el toggle "Ver descartados".
+  async function _zonaPorActivarCargar(force, silent) {
+    const zona = S.zonaActual;
+    const pa = S._zonaPorActivar || (S._zonaPorActivar = { zona:null, items:[], nDescartados:0, cargando:false, verDescartados:false, _cargado:false, _verCargado:false });
+    if (pa.cargando) return;
+    const modoOk = pa._cargado && pa.zona === zona && (!!pa._verCargado === !!pa.verDescartados);
+    if (!force && modoOk) { if (!silent) _zonaRenderPorActivar(); return; }
+    pa.cargando = true;
+    if (!silent && S._zonaFiltros.kpi === 'c_activar') _zonaRenderPorActivar();   // pinta skeleton
+    try {
+      const r = await API.zona.porActivar({ zona, incluirDescartados: !!pa.verDescartados });
+      // La zona pudo cambiar mientras esperábamos → descartar respuesta vieja.
+      if (S.zonaActual !== zona) { pa.cargando = false; return; }
+      const data = (r && r.data) || {};
+      pa.zona = zona;
+      pa.items = Array.isArray(data.items) ? data.items : [];
+      pa.nDescartados = _zonaNum(data.nDescartados);
+      pa._cargado = true;
+      pa._verCargado = !!pa.verDescartados;
+      pa.cargando = false;
+      _zonaPaActualizarBadge();
+      if (S._zonaFiltros.kpi === 'c_activar') _zonaRenderPorActivar();
+    } catch (e) {
+      pa.cargando = false;
+      if (!silent && S._zonaFiltros.kpi === 'c_activar') {
+        const cont = $('zonaLista');
+        if (cont) cont.innerHTML = `<div class="zona-empty"><div class="zona-empty-ic">⚠️</div><div class="zona-empty-t">No se pudo cargar</div><div class="zona-empty-s">${_esc(e.message || String(e))}</div></div>`;
+      }
+    }
+  }
+  // Render de la lista "Por activar" (reemplaza el listado normal del panel mientras el 5º tab está activo).
+  function _zonaRenderPorActivar() {
+    const cont = $('zonaLista');
+    if (!cont) return;
+    const pa = S._zonaPorActivar || {};
+    _zonaPaActualizarBadge();
+    const stats = $('zonaStats');
+    // Aún no cargado para esta zona → dispara la carga y muestra skeleton.
+    if (!pa._cargado || pa.zona !== S.zonaActual || pa.cargando) {
+      if (!pa.cargando) _zonaPorActivarCargar(false);
+      cont.innerHTML = _zonaSkelCards(3);
+      if (stats) stats.textContent = 'Buscando huecos de surtido…';
+      return;
+    }
+    const items = Array.isArray(pa.items) ? pa.items : [];
+    const activos = items.filter(x => !x.descartado).length;
+    const desc = items.filter(x => x.descartado).length;
+    if (stats) stats.textContent = `${activos} ${activos === 1 ? 'hueco' : 'huecos'} por activar${pa.verDescartados ? ' · ' + desc + ' descartados' : ''}`;
+    const head = `<div class="zona-pa-head">
+        <div class="zona-pa-intro">🆕 Productos del catálogo <b>sin stock en esta zona</b> pero con presencia en otra zona o el almacén. Ponles un stock inicial para activarlos aquí.</div>
+        <button class="zona-btn-sec zona-pa-toggle${pa.verDescartados ? ' zona-accion-on' : ''}" onclick="MOS.zonaPorActivarVerDescartados()">${pa.verDescartados ? 'Ocultar descartados' : 'Ver descartados'}</button>
+      </div>`;
+    if (!items.length) {
+      cont.innerHTML = head + `<div class="zona-empty"><div class="zona-empty-ic">✅</div><div class="zona-empty-t">Sin huecos por activar</div><div class="zona-empty-s">Esta zona ya tiene todo su surtido con stock.</div></div>`;
+      return;
+    }
+    cont.innerHTML = head + items.map(_zonaPaCardHtml).join('');
+    // Stagger de entrada (igual que las cards del panel): solo las primeras ~20.
+    if (!_zonaReduce()) {
+      const cards = cont.querySelectorAll('.zona-card'), cap = Math.min(20, cards.length);
+      for (let i = 0; i < cap; i++) { try { cards[i].style.setProperty('--i', i); } catch (_) {} }
+    }
+  }
+  // HTML de una card "Por activar". Reutiliza el look de las cards de zona (.zona-card + color por cuadrante),
+  //   badges .zona-rotcero-chip para las señales y los botones .zona-btn-pedir/.zona-btn-sec para las acciones.
+  function _zonaPaCardHtml(item) {
+    const sku  = String(item.skuBase || '');
+    const safe = _esc(sku);
+    const e    = _zonaEsc(sku);
+    const nm   = _esc(item.descripcion || sku);
+    const uni  = _esc(item.unidad || '');
+    const cuadCls = _zonaPaCuadClase(item.prioridad);
+    const descartado = !!item.descartado;
+    const esAlm = _zonaEsAlmacen();
+    // Chips de señales (cantidades con _zonaFmtNumRaw = hasta 3 decimales solo si existen; NUNCA _money).
+    let chips = '';
+    if (item.enAlmacen) chips += `<span class="zona-rotcero-chip" style="background:rgba(99,102,241,.14);border-color:rgba(129,140,248,.5);color:#a5b4fc" title="Hay stock en el almacén">📦 Almacén: ${_esc(_zonaFmtNumRaw(item.stockAlmacen))}</span>`;
+    if (_zonaNum(item.rotaOtras) > 0) chips += `<span class="zona-rotcero-chip" style="background:rgba(56,189,248,.14);border-color:rgba(56,189,248,.5);color:#7dd3fc" title="${esAlm ? 'Ventas de las zonas (hueco de compra)' : 'Rota en otras zonas'}">🔁 ${esAlm ? 'Zonas' : 'Otras zonas'}: ${_esc(_zonaFmtNumRaw(item.rotaOtras))}</span>`;
+    if (item.enOtraZona) chips += `<span class="zona-rotcero-chip" title="El producto ya tiene stock en otra zona">también en otra zona</span>`;
+    if (!chips) chips = '<span class="zona-rotcero-chip">nuevo en catálogo</span>';
+    // Acciones: descartado → Restaurar; activo → Poner stock inicial + No aplica aquí.
+    const acciones = descartado
+      ? `<button class="zona-btn-sec" onclick="MOS.zonaPaRestaurar('${e}')">↩ Restaurar</button>`
+      : `<div class="zona-pa-acc" id="zPaAcc-${safe}">
+          <button class="zona-btn-pedir" onclick="MOS.zonaPaAjuste('${e}')">➕ Poner stock inicial</button>
+          <button class="zona-btn-sec" onclick="MOS.zonaPaDescartar('${e}')">No aplica aquí</button>
+        </div>`;
+    return `<div class="zona-card zona-pa-card ${cuadCls}${descartado ? ' zona-pa-desc' : ''}" id="zPaCard-${safe}" data-sku="${safe}">
+        <div class="zona-card-top-row"><div class="zona-card-name">${nm}${uni ? ` <span class="zona-pa-uni">· ${uni}</span>` : ''}</div></div>
+        <div class="zona-pa-chips">${chips}</div>
+        <div class="zona-pa-actions">${acciones}</div>
+      </div>`;
+  }
+  // Toggle de cabecera "Ver descartados" → recarga con incluirDescartados on/off.
+  function zonaPorActivarVerDescartados() {
+    const pa = S._zonaPorActivar || (S._zonaPorActivar = { zona:null, items:[], nDescartados:0, cargando:false, verDescartados:false, _cargado:false, _verCargado:false });
+    pa.verDescartados = !pa.verDescartados;
+    try { _zonaSfx('tick'); _zonaVibrar(15); } catch (_) {}
+    _zonaPorActivarCargar(true);
+  }
+  // Despliega el input inline para poner el stock inicial (reemplaza los botones de acción del card).
+  //   Usa la clase .zona-step-input → el auto-refresh se pausa mientras el admin escribe (no pisa la edición).
+  function zonaPaAjuste(sku) {
+    const pa = S._zonaPorActivar || {};
+    const item = (pa.items || []).find(x => String(x.skuBase) === String(sku));
+    if (!item) return;
+    const acc = $('zPaAcc-' + sku);
+    if (!acc) return;
+    const e = _zonaEsc(sku);
+    const step = item.esGranel ? '0.1' : '1';
+    acc.innerHTML = `<span class="zona-stepper zona-pa-stepper">
+        <input type="number" inputmode="decimal" step="${step}" min="0" class="zona-step-input" id="zPaStep-${_esc(sku)}" placeholder="cantidad" onkeydown="if(event.key==='Enter')MOS.zonaPaConfirmar('${e}')">
+        <button class="zona-step-btn" style="background:#16a34a;border-color:#16a34a" onclick="MOS.zonaPaConfirmar('${e}')" title="Guardar stock inicial">✓</button>
+        <button class="zona-step-btn zona-step-cero" onclick="MOS.zonaPaCancelarAjuste('${e}')" title="Cancelar">✕</button>
+      </span>`;
+    const inp = $('zPaStep-' + sku);
+    if (inp) { try { inp.focus(); } catch (_) {} }
+    try { _zonaSfx('tick'); _zonaVibrar(15); } catch (_) {}
+  }
+  // Cancela el input inline (re-render barato restaura los botones de acción).
+  function zonaPaCancelarAjuste(sku) {
+    _zonaRenderPorActivar();
+    try { _zonaSfx('tick'); _zonaVibrar(10); } catch (_) {}
+  }
+  // Confirma el stock inicial: ZONA → me.stock_zonas (set-absoluto por skuBase) · ALMACEN → wh.stock (por código).
+  //   OPTIMISTA: quita el hueco de la lista al instante; rollback si el backend no commitea.
+  async function zonaPaConfirmar(sku) {
+    const pa = S._zonaPorActivar || {};
+    const item = (pa.items || []).find(x => String(x.skuBase) === String(sku));
+    if (!item) return;
+    const inp = $('zPaStep-' + sku);
+    const nuevo = _zonaParseCant(inp ? inp.value : 0, !!item.esGranel);
+    if (!(nuevo > 0)) {
+      try { _zonaSfx('error'); _zonaVibrar([80,30,80]); } catch (_) {}
+      toast('Escribe una cantidad mayor a 0 para activar el producto.', 'info');
+      if (inp) { try { inp.focus(); } catch (_) {} }
+      return;
+    }
+    const zona = S.zonaActual;
+    const usuario = S.session?.nombre || '';
+    // localId ESTABLE por gesto (idempotencia dura en backend): un doble-tap reusa el id → no duplica el ajuste.
+    const localId = 'RIZPA_' + (_zonaEsAlmacen() ? 'ALM' : (zona || 'Z')) + '_' + String(sku).replace(/[^A-Za-z0-9]/g, '') + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+    const idx = pa.items.indexOf(item);
+    if (idx >= 0) pa.items.splice(idx, 1);   // OPTIMISTA: fuera de la lista (pasará a los 4 cuadrantes en el próximo panel)
+    _zonaRenderPorActivar();
+    try { _zonaSfx('ok'); _zonaVibrar(30); } catch (_) {}
+    toast('Stock inicial de "' + (item.descripcion || sku) + '" puesto en ' + _zonaFmtNumRaw(nuevo, item.esGranel), 'ok');
+    try {
+      let r;
+      if (_zonaEsAlmacen()) {
+        // ALMACÉN: ajuste del stock real (wh.stock) por código; el hueco trae su codBarra.
+        const cod = String(item.codBarra != null ? item.codBarra : '');
+        if (!cod) throw new Error('Sin código de almacén para ajustar');
+        r = await API.zona.almacenAjustar({ zona, codProducto: cod, conteo: nuevo, idAjuste: localId, usuario });
+      } else {
+        // ZONA: set-absoluto en me.stock_zonas; el backend resuelve el canónico del skuBase.
+        r = await API.zona.ajustarStock({ zona, skuBase: sku, nuevo, usuario, localId });
+      }
+      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      // Éxito: refresco SILENCIOSO del panel (sin skeleton) para que el producto aparezca ya en su cuadrante.
+      try { _zonaAutoRefrescar(); } catch (_) {}
+    } catch (e) {
+      // ROLLBACK: devolver el hueco a la lista.
+      if (idx >= 0) pa.items.splice(Math.min(idx, pa.items.length), 0, item); else pa.items.push(item);
+      _zonaRenderPorActivar();
+      try { _zonaSfx('error'); _zonaVibrar([120,40,120]); } catch (_) {}
+      toast('No se pudo activar: ' + (e.message || e), 'error');
+    }
+  }
+  // "No aplica aquí" → descarta el hueco por zona (mos.zona_por_activar_descartar). OPTIMISTA + rollback.
+  async function zonaPaDescartar(sku) {
+    const pa = S._zonaPorActivar || {};
+    const item = (pa.items || []).find(x => String(x.skuBase) === String(sku));
+    if (!item) return;
+    const zona = S.zonaActual, usuario = S.session?.nombre || '';
+    const idx = pa.items.indexOf(item);
+    // Mostrando descartados → marcar; si no, sacarlo de la lista.
+    if (pa.verDescartados) { item.descartado = true; }
+    else if (idx >= 0) { pa.items.splice(idx, 1); }
+    pa.nDescartados = _zonaNum(pa.nDescartados) + 1;
+    _zonaRenderPorActivar();
+    try { _zonaSfx('tick'); _zonaVibrar(15); } catch (_) {}
+    toast('"' + (item.descripcion || sku) + '" marcado como "no aplica aquí".', 'info');
+    try {
+      const r = await API.zona.porActivarDescartar({ zona, skuBase: sku, usuario });
+      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+    } catch (e) {
+      // ROLLBACK
+      if (pa.verDescartados) { item.descartado = false; }
+      else if (idx >= 0) { pa.items.splice(Math.min(idx, pa.items.length), 0, item); } else { pa.items.push(item); }
+      pa.nDescartados = Math.max(0, _zonaNum(pa.nDescartados) - 1);
+      _zonaRenderPorActivar();
+      try { _zonaSfx('error'); _zonaVibrar([120,40,120]); } catch (_) {}
+      toast('No se pudo descartar: ' + (e.message || e), 'error');
+    }
+  }
+  // "Restaurar" (visible solo con "Ver descartados") → revierte el descarte. OPTIMISTA + rollback.
+  async function zonaPaRestaurar(sku) {
+    const pa = S._zonaPorActivar || {};
+    const item = (pa.items || []).find(x => String(x.skuBase) === String(sku));
+    if (!item) return;
+    const zona = S.zonaActual, usuario = S.session?.nombre || '';
+    item.descartado = false;   // OPTIMISTA
+    pa.nDescartados = Math.max(0, _zonaNum(pa.nDescartados) - 1);
+    _zonaRenderPorActivar();
+    try { _zonaSfx('ok'); _zonaVibrar(20); } catch (_) {}
+    toast('"' + (item.descripcion || sku) + '" restaurado a los huecos por activar.', 'ok');
+    try {
+      const r = await API.zona.porActivarDescartar({ zona, skuBase: sku, usuario, revertir: true });
+      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+    } catch (e) {
+      item.descartado = true;   // ROLLBACK
+      pa.nDescartados = _zonaNum(pa.nDescartados) + 1;
+      _zonaRenderPorActivar();
+      try { _zonaSfx('error'); _zonaVibrar([120,40,120]); } catch (_) {}
+      toast('No se pudo restaurar: ' + (e.message || e), 'error');
+    }
+  }
+
   // ¿El item es "rotación cero"? Fuente de verdad = backend item.rotacionCero (bool).
   // Fallback tolerante (datos viejos sin el campo): rotacion===0.
   function _zonaEsRotCero(p) {
@@ -52822,6 +53077,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try { _zonaAnclaSet(idZona); _zonaHubActualizarChip(idZona); } catch (_) {}   // [891] persistir el puesto anclado
     // [RIZ #1] Resetear el filtro "del día" al cambiar de ámbito (el set cacheado es por zona+fecha).
     S._zonaDiaFiltro = { modo: 'todos', offset: 0 }; S._zonaDiaSet = null; S._zonaDiaSetKey = null;
+    // [976] Invalidar el cache de "Por activar" (es POR ZONA): se recarga limpio en el nuevo puesto (sin descartados).
+    S._zonaPorActivar = { zona: null, items: [], nDescartados: 0, cargando: false, verDescartados: false, _cargado: false, _verCargado: false };
     _zonaCargarPanel(true);
   }
 
@@ -57437,6 +57694,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirHub, zonaCerrarHub, zonaElegirPuesto,
     zonaToggleGrupo,
     zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
+    // [976] 🆕 Por activar (5ª pestaña): huecos de surtido de la zona
+    zonaPorActivarVerDescartados, zonaPaAjuste, zonaPaCancelarAjuste, zonaPaConfirmar, zonaPaDescartar, zonaPaRestaurar,
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
     zonaVerEsperado, zonaCerrarEsperado, zonaToggleTools,

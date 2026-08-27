@@ -15149,6 +15149,25 @@
     .zona-kpi.kc-orden.active::after  { background:#22c55e; box-shadow:0 0 10px #22c55e; }
     .zona-vitals .zona-kpi:not(.active) { opacity:.6; }
     .zona-vitals .zona-kpi.active { opacity:1; }
+    /* [976] 5ª pestaña "Por activar": fila propia (full-width) bajo los 4 cuadrantes + acento teal (huecos de surtido) */
+    .zona-vitals .zona-kpi-wide { grid-column:1 / -1; display:flex; align-items:center; justify-content:center; gap:.5rem; text-align:center; }
+    .zona-vitals .zona-kpi-wide .zona-kpi-val { font-size:1.15rem; margin:0; }
+    .zona-vitals .zona-kpi-wide .zona-kpi-lbl { margin:0; }
+    .zona-kpi.kc-activar .zona-kpi-val { color:#5eead4; }
+    .zona-kpi.kc-activar.active  { border-color:#14b8a6; background:rgba(20,184,166,.12); box-shadow:0 0 0 1px rgba(20,184,166,.3), 0 4px 14px -6px rgba(20,184,166,.5); }
+    .zona-kpi.kc-activar.active::after { background:#14b8a6; box-shadow:0 0 10px #14b8a6; }
+    /* [976] Lista "Por activar": cabecera + card (reutiliza .zona-card y colores por cuadrante) */
+    .zona-pa-head { display:flex; align-items:center; gap:.6rem; justify-content:space-between; flex-wrap:wrap; margin-bottom:.6rem; }
+    .zona-pa-intro { flex:1; min-width:200px; font-size:.72rem; color:#94a3b8; line-height:1.35; }
+    .zona-pa-intro b { color:#cbd5e1; }
+    .zona-pa-toggle { flex:0 0 auto; white-space:nowrap; }
+    .zona-pa-card .zona-pa-uni { font-weight:500; color:#94a3b8; font-size:.8rem; }
+    .zona-pa-chips { display:flex; flex-wrap:wrap; gap:.35rem; margin:.5rem 0 .6rem; }
+    .zona-pa-actions { display:flex; }
+    .zona-pa-acc { display:flex; gap:.5rem; flex-wrap:wrap; width:100%; }
+    .zona-pa-card.zona-pa-desc { opacity:.62; filter:saturate(.6); }
+    .zona-pa-stepper { display:inline-flex; align-items:center; gap:.4rem; }
+    .zona-pa-stepper .zona-step-input { width:6rem; }
     /* [899] Dock de botones MODERNO (glass + glow al pasar) */
     .zhb-gbtns .zona-btn-sec { background:linear-gradient(180deg,rgba(30,41,64,.55),rgba(17,24,38,.5)); border:1px solid #29344a; border-radius:.7rem;
       backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); transition:transform .18s, border-color .18s, box-shadow .18s; }
@@ -18792,6 +18811,8 @@
         <button class="zona-kpi kc-muerto" data-kpi="c_muerto" onclick="MOS.zonaToggleKpi('c_muerto')"><div class="zona-kpi-val" id="zKpiCero">—</div><div class="zona-kpi-lbl">⚫ Muertos</div></button>
         <button class="zona-kpi kc-sobra"  data-kpi="c_sobra"  onclick="MOS.zonaToggleKpi('c_sobra')"><div class="zona-kpi-val" id="zKpiSobra">—</div><div class="zona-kpi-lbl">🟡 Te sobra</div></button>
         <button class="zona-kpi kc-orden"  data-kpi="c_orden"  onclick="MOS.zonaToggleKpi('c_orden')"><div class="zona-kpi-val" id="zKpiOrden">—</div><div class="zona-kpi-lbl">🟢 En orden</div></button>
+        <!-- [976] 5ª pestaña "Por activar": huecos de surtido (fila propia, full-width, distinta a los 4 cuadrantes). -->
+        <button class="zona-kpi kc-activar zona-kpi-wide" data-kpi="c_activar" onclick="MOS.zonaToggleKpi('c_activar')"><div class="zona-kpi-val" id="zKpiActivar">—</div><div class="zona-kpi-lbl">🆕 Por activar</div></button>
       </div>
 
       <!-- [902] Búsqueda + orden se movieron ARRIBA, junto al dock (grupo "🔎 Buscar"). -->
@@ -22101,7 +22122,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.975';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.976';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22380,7 +22401,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.975"></script>
+<script src="js/api.js?v=2.43.976"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22396,7 +22417,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.975"></script>
+<script src="js/app.js?v=2.43.976"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

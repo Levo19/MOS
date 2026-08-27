@@ -4488,6 +4488,11 @@ const API = (() => {
       kardexHistorial: _zonaKardexHistorial,    // mos.zona_kardex_historial(p {zona,codBarra|skuBase}) → {ok,data:{movimientos:[...]},_fresh}
       proveedores:     _zonaProveedores,        // mos.zona_proveedores(p {sku|skus}) → {ok,data:{proveedores:{"<sku>":[...]}},_fresh} (ALMACEN, lazy por card)
       almacenKardex:   _almacenKardexHistorial, // mos.almacen_kardex_historial(p {codBarra|skuBase}) → {ok,data:{movimientos:[...]},_fresh}
+      // [976] 🆕 POR ACTIVAR — huecos de surtido: producto del catálogo SIN stock en la zona pero con
+      // presencia en otra zona/almacén. Lectura mos.zona_por_activar → {ok,data:{zona,total,nDescartados,items:[...]}}.
+      porActivar:          async (p) => _sbRpcMOS('zona_por_activar', { p: { zona: (p && (p.zona||p.zonaId)) || '', limite: (p && p.limite) || 400, incluirDescartados: !!(p && p.incluirDescartados) } }, 'mos'),
+      // Escritura mos.zona_por_activar_descartar → {ok,data:{descartado:true | revertido:true}} (revertir:true restaura).
+      porActivarDescartar: async (p) => _sbRpcMOSWrite('zona_por_activar_descartar', { p: { zona: (p && p.zona) || '', skuBase: (p && p.skuBase) || '', usuario: (p && p.usuario) || '', revertir: !!(p && p.revertir) } }),
       // [RIZ · TRASLADO VERIFICADO] ingreso por almacén con ESCANEO (supabase/141). El stock real (me.stock_zonas)
       // queda GATED/INERTE en el backend (zona_traslado_cerrar.v_aplicar_stock=false); sólo registra kardex + verificación.
       trasladosPendientes: _zonaTrasladosPendientes, // mos.zona_traslados_pendientes(p {zona}) → {ok,data:{total,items:[{idGuia,fecha,lineas,totalEnviado,edadSeg,edadLbl,...}]},_fresh}
