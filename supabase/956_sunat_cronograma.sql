@@ -133,12 +133,21 @@ begin
         'cuerpo', 'Vence el '||v_fv||' · estimado a pagar S/ '||v_tot||' (IGV + Renta). Declara Fácil F.621.',
         'data', jsonb_build_object('tipo','sunat')));
       v_env := true;
-    elsif v_d < 0 and v_d >= -3 then   -- ya venció → recordatorio de que se declare igual
+    elsif v_d < 0 and v_d >= -3 and not (v_m->>'tieneVoucher')::boolean then   -- venció sin voucher → recordatorio
       perform mos.emitir_push(jsonb_build_object(
         'audiencia', jsonb_build_object('roles', jsonb_build_array('MASTER','ADMINISTRADOR','ADMIN','ASCENDIDO')),
         'titulo', '⚫ Declaración SUNAT VENCIDA',
-        'cuerpo', 'Venció el '||v_fv||' (hace '||abs(v_d)||' día'||case when abs(v_d)=1 then '' else 's' end||'). Si no la presentaste, hazlo ya para reducir la multa.',
+        'cuerpo', 'Venció el '||v_fv||' (hace '||abs(v_d)||' día'||case when abs(v_d)=1 then '' else 's' end||') sin voucher. Declara y sube la constancia para reducir la multa.',
         'data', jsonb_build_object('tipo','sunat')));
+      v_env := true;
+    end if;
+    -- alerta de DIFERENCIA: si hay voucher y difiere mucho del estimado (posible factura faltante o error del contador)
+    if (v_m->>'tieneVoucher')::boolean and abs(coalesce((v_m->>'diferencia')::numeric,0)) > greatest(20, coalesce((v_m->'estimado'->>'total')::numeric,0)*0.10) then
+      perform mos.emitir_push(jsonb_build_object(
+        'audiencia', jsonb_build_object('roles', jsonb_build_array('MASTER','ADMINISTRADOR','ASCENDIDO')),
+        'titulo', '🔎 Diferencia en tu declaración',
+        'cuerpo', 'Declaraste S/ '||to_char(coalesce((v_m->'declarado'->>'total')::numeric,0),'FM999,999,990.00')||' pero mi estimado era S/ '||to_char(coalesce((v_m->'estimado'->>'total')::numeric,0),'FM999,999,990.00')||'. Revisa: puede faltar una factura o ser un error.',
+        'data', jsonb_build_object('tipo','sunat_diferencia')));
       v_env := true;
     end if;
   end if;
