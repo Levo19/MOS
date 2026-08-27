@@ -3707,6 +3707,41 @@
     .trib-cal-c.est-actual{border-color:rgba(251,191,36,.6);background:rgba(251,191,36,.1);box-shadow:0 0 16px -6px rgba(251,191,36,.5)}
     .trib-cal-c.est-actual small{color:#fbbf24}
     .trib-cal-c.est-actual b{color:#fbbf24}
+    /* comparación estimado vs declarado */
+    .trib-decl-cmp{margin-top:11px;padding:9px 11px;border-radius:10px;display:flex;flex-direction:column;gap:2px;font-size:11.5px;font-weight:650;border:1px solid var(--trib-line)}
+    .trib-decl-cmp .cmp-dif{font-size:11px;font-weight:700}
+    .trib-decl-cmp.cmp-ok{background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.3);color:#cbd5e1}
+    .trib-decl-cmp.cmp-ok .cmp-dif{color:#4ade80}
+    .trib-decl-cmp.cmp-mid{background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.3);color:#cbd5e1}
+    .trib-decl-cmp.cmp-mid .cmp-dif{color:#fbbf24}
+    .trib-decl-cmp.cmp-bad{background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.35);color:#cbd5e1}
+    .trib-decl-cmp.cmp-bad .cmp-dif{color:#f87171}
+    .trib-decl-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .trib-decl-btn{font-size:11.5px;font-weight:750;padding:8px 12px;border-radius:10px;background:var(--trib-favor,#6366f1);color:#fff;border:0;cursor:pointer;transition:transform .12s}
+    .trib-decl-btn:hover{transform:translateY(-1px)}
+    .trib-decl-btn.ghost{background:rgba(148,163,184,.12);color:#cbd5e1}
+    /* buzón */
+    .trib-buz-drop{display:block;text-align:center;padding:13px;border-radius:12px;border:1.5px dashed rgba(148,163,184,.4);color:#94a3b8;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:10px}
+    .trib-buz-drop:hover{border-color:#6366f1;color:#cbd5e1}
+    .trib-buz-pend{background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.25);border-radius:10px;padding:9px;margin-bottom:8px;font-size:11px;color:#94a3b8}
+    .trib-buz-form{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    .trib-buz-form select,.trib-buz-form input{background:#0a1120;border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:7px 8px;color:#e8eefb;font-size:11px}
+    .trib-buz-form .tp{grid-column:1/-1}
+    .trib-buz-form .ok{grid-column:1/-1;background:#34d399;color:#052e16;border:0;font-weight:800;padding:8px;border-radius:8px;cursor:pointer}
+    .trib-buz-row{display:flex;align-items:center;gap:8px;font-size:11.5px;padding:7px 9px;border-radius:9px;background:rgba(148,163,184,.05);border:1px solid var(--trib-line);margin-bottom:6px}
+    .trib-buz-row .t{font-weight:800;color:#e8eefb;flex:0 0 auto}
+    .trib-buz-row .m{flex:1;color:#94a3b8}
+    .trib-buz-row .x{background:none;border:0;color:#f87171;cursor:pointer;font-size:13px}
+    /* historial */
+    .trib-hist{display:flex;flex-direction:column;gap:5px}
+    .trib-hist-r{display:grid;grid-template-columns:38px 1fr 1fr 60px;gap:6px;align-items:center;font-size:11px;padding:6px 8px;border-radius:8px;background:rgba(148,163,184,.05);border-left:3px solid #64748b}
+    .trib-hist-r.cls-ok{border-left-color:#34d399}
+    .trib-hist-r.cls-bad{border-left-color:#f87171}
+    .trib-hist-r.cls-sin{border-left-color:#fbbf24;opacity:.7}
+    .trib-hist-r .hm{font-weight:800;color:#e8eefb;text-transform:uppercase}
+    .trib-hist-r .he{color:#94a3b8}
+    .trib-hist-r .hd{color:#cbd5e1}
+    .trib-hist-r .hx{text-align:right;font-weight:800;color:#e8eefb}
     .trib-fac-card {
       width: 100%; display: flex; align-items: center; gap: 12px;
       padding: 13px 16px; margin-bottom: 14px; border-radius: 14px; text-align: left;
@@ -22052,7 +22087,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.971';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.972';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22331,7 +22366,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.971"></script>
+<script src="js/api.js?v=2.43.972"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22347,7 +22382,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.971"></script>
+<script src="js/app.js?v=2.43.972"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se

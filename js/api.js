@@ -2917,7 +2917,48 @@ const API = (() => {
     if (action === 'sunatDeclaracion') {   // [956] planificación de declaración SUNAT (cronograma por RUC)
       const r = await _sbRpcMOS('sunat_declaracion_estado', { p: {} }, 'mos');
       if (r == null) return null;
-      return r;   // {ok, data:{mensual:{periodoMes,fechaVence,diasRestantes,igvAPagar,renta,totalEstimado}, vencida, anual}}
+      return r;   // {ok, data:{periodo:{estimado,declarado,diferencia,multa,...}, enCurso, anual, calendario}}
+    }
+    if (action === 'sunatHistorial') {   // [957] historial 12 meses estimado vs declarado
+      const r = await _sbRpcMOS('sunat_historial', { p: { anio: p.anio || 0 } }, 'mos');
+      if (r == null) return null; return r;
+    }
+    if (action === 'sunatVoucherListar') {
+      const r = await _sbRpcMOS('sunat_voucher_listar', { p: { mes: p.mes, anio: p.anio } }, 'mos');
+      if (r == null) return null; return r;
+    }
+    if (action === 'sunatVoucherBorrar') {
+      const r = await _sbRpcMOS('sunat_voucher_borrar', { p: { id: p.id } }, 'mos');
+      return r && r.ok !== false ? { status: 'success' } : { status: 'error', error: (r && r.error) || 'no se pudo' };
+    }
+    if (action === 'sunatVoucherOcr') {   // [957] OCR de una constancia/voucher SUNAT (Gemini vía Edge ia)
+      try {
+        const sys = 'Eres experto en constancias y declaraciones de SUNAT (Perú): Declara Fácil, PDT 621 (IGV-Renta mensual), pagos de tributos y PLAME. Recibes la foto de una constancia/voucher y extraes los montos DECLARADOS o PAGADOS. Devuelve SOLO un JSON válido, sin texto extra: {"tipo":"IGV_RENTA"|"PLAME","igv":number,"renta":number,"essalud":number,"nroOrden":string}. igv = IGV a pagar (código 1011). renta = pago a cuenta de Renta (3031/3121). essalud = EsSalud/ONP si es PLAME (0 si no). nroOrden = número de orden o de la constancia. Usa 0 en los montos que no apliquen.';
+        const d = await _zonaIA({ funcion: 'sunatVoucher', system: sys, max_tokens: 400, messages: [{ role: 'user', content: [
+          { type: 'text', text: 'Extrae los montos de esta constancia SUNAT como JSON.' },
+          { type: 'image', source: { type: 'base64', media_type: p.mime || 'image/jpeg', data: p.jpgB64 } }
+        ] }] });
+        const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
+        const m = txt.match(/\{[\s\S]*\}/);
+        const j = m ? JSON.parse(m[0]) : {};
+        return { status: 'success', data: { tipo: j.tipo || 'IGV_RENTA', igv: parseFloat(j.igv) || 0, renta: parseFloat(j.renta) || 0, essalud: parseFloat(j.essalud) || 0, nroOrden: String(j.nroOrden || '') } };
+      } catch (e) { return { status: 'error', error: String(e && e.message || e) }; }
+    }
+    if (action === 'sunatVoucherSubir') {   // [957] sube la foto del voucher al Storage y registra los montos
+      try {
+        const token = await _mintTokenMOS();
+        const b64 = String(p.jpgB64 || '').replace(/^data:[^;]+;base64,/, '');
+        const path = `vouchers/${p.anio}-${String(p.mes).padStart(2, '0')}/VCH_${Date.now()}.jpg`;
+        const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+        const up = await _sbFetchTimeout(`${_SB_URL}/storage/v1/object/igv-buzon/${path}`, { method: 'POST',
+          headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + token, 'Content-Type': 'image/jpeg', 'x-upsert': 'true', 'cache-control': 'public, max-age=604800' }, body: bin }, 30000);
+        const fotoUrl = up.ok ? `${_SB_URL}/storage/v1/object/public/igv-buzon/${path}` : '';
+        const r = await _sbRpcMOS('sunat_voucher_registrar', { p: {
+          mes: p.mes, anio: p.anio, tipo: p.tipo || 'IGV_RENTA', fotoUrl,
+          igv: p.igv || 0, renta: p.renta || 0, essalud: p.essalud || 0, nroOrden: p.nroOrden || '', usuario: p.usuario || ''
+        } }, 'mos');
+        return r && r.ok !== false ? { status: 'success', data: r } : { status: 'error', error: (r && r.error) || 'no se pudo' };
+      } catch (e) { return { status: 'error', error: String(e && e.message || e) }; }
     }
     // [762 · CERO-GAS] Los botones de OCR ya NO llaman al bridge GAS: RE-ENCOLAN (marcan
     // PENDIENTE) y el pipeline server-side (trigger foto + cron wh-ocr-guias cada 10 min +
@@ -3224,6 +3265,11 @@ const API = (() => {
     wh_reconciliarStockMasivo:   () => true,   // ⚠️stock · mos.wh_reconciliar_stock_masivo (381)
     tribResumenMes:              () => true,   // mos.trib_resumen_mes (382)
     sunatDeclaracion:            () => true,   // [956] cronograma SUNAT
+    sunatHistorial:              () => true,
+    sunatVoucherListar:          () => true,
+    sunatVoucherBorrar:          () => true,
+    sunatVoucherOcr:             () => true,
+    sunatVoucherSubir:           () => true,   // [957] buzon de vouchers
     tribHistorico12meses:        () => true,   // [761] loop client-side de 12× trib_resumen_mes
     tribReprocesarOCR:           () => true,   // [762] re-encola → pipeline server-side
     tribOCRMasivo:               () => true,   // [762] re-encola el mes → pipeline server-side
@@ -3287,7 +3333,7 @@ const API = (() => {
     // [Revisión 100x 2026-07-19 · CERO-GAS boot] las lecturas tributarias del prefetch de login
     // corrían ANTES del mint del token → null → caían al fallback GAS. Directo-requerido:
     // null LANZA (el prefetch tiene catch; el módulo carga al abrirlo con token ya listo).
-    tribResumenMes: 1, sunatDeclaracion: 1, tribIGVFavorMes: 1, tribIGVEmitidoMes: 1, tribHistorico12meses: 1, tribReprocesarOCR: 1, tribOCRMasivo: 1,
+    tribResumenMes: 1, sunatDeclaracion: 1, sunatHistorial: 1, sunatVoucherListar: 1, sunatVoucherBorrar: 1, sunatVoucherOcr: 1, sunatVoucherSubir: 1, tribIGVFavorMes: 1, tribIGVEmitidoMes: 1, tribHistorico12meses: 1, tribReprocesarOCR: 1, tribOCRMasivo: 1,
     // [cero-GAS dueño 2026-07-17] escrituras de dispositivos (panel admin): sin token/RPC → LANZA, jamás GAS.
     crearDispositivo: 1, aprobarDispositivoPendiente: 1, revocarDispositivo: 1, forzarPushDispositivo: 1, forzarWizardDispositivo: 1 };
 

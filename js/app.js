@@ -37351,15 +37351,20 @@ const MOS = (() => {
     const estLbl = vencido ? '⚫ VENCIÓ' : { hoy: '🔴 VENCE HOY', urg: '🔴 URGENTE', alerta: '🟡 PRONTO', ok: '🟢 A TIEMPO' }[est];
     const mesNom = _TRIB_MESES[(per.mes || 1) - 1];
     const pct = vencido ? 100 : Math.max(5, Math.min(100, (30 - dias) / 30 * 100));
-    const igv = parseFloat(per.igvAPagar) || 0, renta = parseFloat(per.renta) || 0, tot = parseFloat(per.totalEstimado) || 0;
+    const es = per.estimado || {}, dc = per.declarado || {};
+    const igv = parseFloat(es.igv) || 0, renta = parseFloat(es.renta) || 0, plame = parseFloat(es.plame) || 0, tot = parseFloat(es.total) || 0;
+    const nv = parseInt(dc.nVouchers) || 0, decTot = parseFloat(dc.total) || 0, dif = parseFloat(per.diferencia) || 0, difAbs = Math.abs(dif);
+    const thr = Math.max(20, tot * 0.03);
+    const difEst = !nv ? '' : difAbs <= thr ? 'ok' : difAbs <= tot * 0.1 ? 'mid' : 'bad';
+    const difLbl = { ok: '✅ cuadra con tu estimado', mid: '🟡 hay diferencia, revisá', bad: '🔴 diferencia grande — ¿falta una factura o error del contador?' }[difEst] || '';
     const enc = d.enCurso, anual = d.anual;
     const countHtml = vencido
       ? `<div class="trib-decl-count"><b class="trib-decl-d">⚫</b><span>venció el <b>${_declFecha(per.fechaVence)}</b> · hace ${Math.abs(dias)} día${Math.abs(dias) === 1 ? '' : 's'}</span></div>`
       : `<div class="trib-decl-count"><b class="trib-decl-d">${dias}</b><span>${dias === 0 ? '¡vence hoy!' : 'días · vence <b>' + _declFecha(per.fechaVence) + '</b>'}</span></div>`;
-    cont.innerHTML = `<div class="trib-decl e-${est}" onclick="MOS.tribDeclCal()" style="cursor:pointer" title="Ver el cronograma del año">
-      <div class="trib-decl-hd">
+    cont.innerHTML = `<div class="trib-decl e-${est}">
+      <div class="trib-decl-hd" onclick="MOS.tribDeclCal()" style="cursor:pointer" title="Ver el cronograma del año">
         <div class="trib-decl-ico">📋</div>
-        <div class="trib-decl-ti"><b>Declaración SUNAT</b><span>RUC …${_esc(String(d.digito))} · Declara Fácil IGV-Renta (F.621)</span></div>
+        <div class="trib-decl-ti"><b>Declaración SUNAT</b><span>RUC …${_esc(String(d.digito))} · IGV · Renta · PLAME</span></div>
         <div class="trib-decl-badge">${estLbl}</div>
       </div>
       <div class="trib-decl-body">
@@ -37370,14 +37375,101 @@ const MOS = (() => {
         </div>
         <div class="trib-decl-right">
           <div class="trib-decl-tot">${_tribFmtSoles(tot)}</div>
-          <div class="trib-decl-desg">IGV ${_tribFmtSoles(igv)} + Renta ${_tribFmtSoles(renta)}</div>
-          <div class="trib-decl-hint">estimado real${vencido ? '' : ' · se actualiza'}</div>
+          <div class="trib-decl-desg">IGV ${_tribFmtSoles(igv)} · Renta ${_tribFmtSoles(renta)} · PLAME ${_tribFmtSoles(plame)}</div>
+          <div class="trib-decl-hint">estimado del sistema${vencido ? '' : ' · se actualiza'}</div>
         </div>
       </div>
+      ${nv ? `<div class="trib-decl-cmp cmp-${difEst}"><span>Declaraste <b>${_tribFmtSoles(decTot)}</b> · ${nv} voucher${nv === 1 ? '' : 's'}</span><span class="cmp-dif">${dif === 0 ? 'sin diferencia' : _tribFmtSoles(difAbs) + (dif > 0 ? ' menos' : ' más') + ' que mi estimado'} · ${difLbl}</span></div>` : ''}
+      ${per.multa ? `<div class="trib-decl-alert">⚠ VENCIÓ sin voucher cargado. Declarar fuera de plazo genera <b>multa</b> (≈1 UIT, con rebaja hasta 90% si declaras y pagas voluntariamente) + intereses. Declara y sube el voucher cuanto antes.</div>` : ''}
       ${enc ? `<div class="trib-decl-anual">🗓️ En curso: <b>${_esc(_TRIB_MESES[(enc.mes || 1) - 1])}</b> — cierra en ${enc.diasCierre} día${enc.diasCierre === 1 ? '' : 's'} (${_declFecha(enc.finMes)}); ahí recién se declara, hasta el <b>${_declFecha(enc.fechaVence)}</b></div>` : ''}
       ${anual ? `<div class="trib-decl-anual">📅 Declaración <b>anual</b> de Renta: ${_declFecha(anual.fechaVence)} ${String(anual.fechaVence).slice(0, 4)} · en ${anual.diasRestantes} días${anual.verificado ? '' : ' <i>(estimado)</i>'}</div>` : ''}
-      <div class="trib-decl-toca">📅 toca para ver el cronograma del año ▾</div>
-    </div><div id="tribDeclCalPanel" class="trib-declcal hidden"></div>`;
+      <div class="trib-decl-actions">
+        <button type="button" class="trib-decl-btn" onclick="MOS.sunatBuzon(${per.mes},${per.anio})">📎 Buzón de vouchers${nv ? ' · ' + nv : ''}</button>
+        <button type="button" class="trib-decl-btn ghost" onclick="MOS.sunatHistorial()">📊 Historial</button>
+        <button type="button" class="trib-decl-btn ghost" onclick="MOS.tribDeclCal()">📅 Cronograma</button>
+      </div>
+    </div>
+    <div id="tribDeclCalPanel" class="trib-declcal hidden"></div>
+    <div id="tribBuzonPanel" class="trib-declcal hidden"></div>
+    <div id="tribHistPanel" class="trib-declcal hidden"></div>`;
+  }
+  // Buzón de vouchers (una sola cola para todos los tributos). Multi-foto galería/cámara → OCR → confirmar → guardar.
+  let _sunatBuzonMesAnio = { mes: 0, anio: 0 };
+  async function sunatBuzon(mes, anio) {
+    const panel = document.getElementById('tribBuzonPanel'); if (!panel) return;
+    _sunatBuzonMesAnio = { mes: mes || _sunatBuzonMesAnio.mes, anio: anio || _sunatBuzonMesAnio.anio };
+    if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); panel.innerHTML = ''; return; }
+    document.getElementById('tribDeclCalPanel') && document.getElementById('tribDeclCalPanel').classList.add('hidden');
+    document.getElementById('tribHistPanel') && document.getElementById('tribHistPanel').classList.add('hidden');
+    panel.classList.remove('hidden');
+    panel.innerHTML = `<div class="trib-cal-hd">📎 Buzón de vouchers · ${_esc(_TRIB_MESES_CORTO[(_sunatBuzonMesAnio.mes || 1) - 1])} ${_sunatBuzonMesAnio.anio}</div>
+      <label class="trib-buz-drop"><input type="file" accept="image/*" multiple style="display:none" onchange="MOS.sunatBuzonFiles(this.files)">📷 Subir fotos (galería o cámara) — varias a la vez</label>
+      <div id="tribBuzonPend"></div><div id="tribBuzonList"></div>`;
+    _sunatBuzonListar();
+  }
+  async function _sunatBuzonListar() {
+    const list = document.getElementById('tribBuzonList'); if (!list) return;
+    let r = null; try { r = await API.post('sunatVoucherListar', _sunatBuzonMesAnio); } catch (_) {}
+    const items = (r && r.items) || [];
+    list.innerHTML = items.length ? items.map(v => {
+      const t = v.tipo === 'PLAME' ? '👥 PLAME' : '📄 IGV-Renta';
+      const montos = [v.igv > 0 ? 'IGV ' + _tribFmtSoles(v.igv) : '', v.renta > 0 ? 'Renta ' + _tribFmtSoles(v.renta) : '', v.essalud > 0 ? 'EsSalud ' + _tribFmtSoles(v.essalud) : ''].filter(Boolean).join(' · ');
+      return `<div class="trib-buz-row"><span class="t">${t}</span><span class="m">${_esc(montos || '—')}${v.nroOrden ? ' · Nº ' + _esc(v.nroOrden) : ''}</span><button class="x" onclick="MOS.sunatVoucherBorrar('${_esc(v.id)}')">✕</button></div>`;
+    }).join('') : '<div class="trib-cal-hd" style="opacity:.6">Sin vouchers cargados aún</div>';
+  }
+  async function sunatBuzonFiles(files) {
+    const pend = document.getElementById('tribBuzonPend'); if (!pend || !files || !files.length) return;
+    for (const file of Array.from(files)) {
+      const row = document.createElement('div'); row.className = 'trib-buz-pend'; row.innerHTML = '◍ leyendo con OCR…';
+      pend.appendChild(row);
+      try {
+        const img = await _catCompressImg(file, 1400, 0.82);
+        let ocr = { tipo: 'IGV_RENTA', igv: 0, renta: 0, essalud: 0, nroOrden: '' };
+        try { const r = await API.post('sunatVoucherOcr', { jpgB64: img.base64, mime: 'image/jpeg' }); if (r && r.data) ocr = r.data; } catch (_) {}
+        row.dataset.b64 = img.base64;
+        row.innerHTML = `<div class="trib-buz-form">
+          <select class="tp">${['IGV_RENTA', 'PLAME'].map(t => `<option value="${t}" ${ocr.tipo === t ? 'selected' : ''}>${t === 'PLAME' ? '👥 PLAME' : '📄 IGV-Renta'}</option>`).join('')}</select>
+          <input class="ig" type="number" step="0.01" placeholder="IGV" value="${ocr.igv || ''}">
+          <input class="re" type="number" step="0.01" placeholder="Renta" value="${ocr.renta || ''}">
+          <input class="es" type="number" step="0.01" placeholder="EsSalud" value="${ocr.essalud || ''}">
+          <input class="no" type="text" placeholder="Nº orden" value="${_esc(ocr.nroOrden || '')}">
+          <button class="ok" onclick="MOS.sunatBuzonGuardar(this)">Guardar ✓</button>
+        </div>`;
+      } catch (e) { row.innerHTML = '⚠ No se pudo leer la foto'; }
+    }
+  }
+  async function sunatBuzonGuardar(btn) {
+    const row = btn.closest('.trib-buz-pend'); if (!row) return;
+    const g = s => row.querySelector(s);
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    try {
+      const r = await API.post('sunatVoucherSubir', {
+        mes: _sunatBuzonMesAnio.mes, anio: _sunatBuzonMesAnio.anio, jpgB64: row.dataset.b64,
+        tipo: g('.tp').value, igv: parseFloat(g('.ig').value) || 0, renta: parseFloat(g('.re').value) || 0,
+        essalud: parseFloat(g('.es').value) || 0, nroOrden: g('.no').value || ''
+      });
+      if (r && r.status === 'success') { row.remove(); _sunatBuzonListar(); _tribCargarDeclaracion(); try { _finBeep && _finBeep('ok'); } catch (_) {} }
+      else { btn.disabled = false; btn.textContent = 'Guardar ✓'; toast('No se pudo guardar el voucher', 'error'); }
+    } catch (e) { btn.disabled = false; btn.textContent = 'Guardar ✓'; toast('Error: ' + (e.message || e), 'error'); }
+  }
+  async function sunatVoucherBorrar(id) {
+    try { await API.post('sunatVoucherBorrar', { id }); _sunatBuzonListar(); _tribCargarDeclaracion(); } catch (_) {}
+  }
+  async function sunatHistorial() {
+    const panel = document.getElementById('tribHistPanel'); if (!panel) return;
+    if (!panel.classList.contains('hidden')) { panel.classList.add('hidden'); panel.innerHTML = ''; return; }
+    document.getElementById('tribDeclCalPanel') && document.getElementById('tribDeclCalPanel').classList.add('hidden');
+    document.getElementById('tribBuzonPanel') && document.getElementById('tribBuzonPanel').classList.add('hidden');
+    panel.classList.remove('hidden');
+    panel.innerHTML = '<div class="trib-cal-hd">◍ cargando historial…</div>';
+    let r = null; try { r = await API.post('sunatHistorial', {}); } catch (_) {}
+    const items = (r && r.items) || [];
+    if (!items.length) { panel.innerHTML = '<div class="trib-cal-hd">Aún no hay meses cerrados este año</div>'; return; }
+    panel.innerHTML = `<div class="trib-cal-hd">📊 Estimado vs declarado (meses cerrados)</div><div class="trib-hist">${items.map(x => {
+      const dif = parseFloat(x.diferencia) || 0, nv = parseInt(x.nVouchers) || 0;
+      const cls = !nv ? 'sin' : Math.abs(dif) <= Math.max(20, x.estimado * 0.03) ? 'ok' : 'bad';
+      return `<div class="trib-hist-r cls-${cls}"><span class="hm">${_esc(_TRIB_MESES_CORTO[(x.mes || 1) - 1])}</span><span class="he">est ${_tribFmtSoles(x.estimado)}</span><span class="hd">${nv ? 'dec ' + _tribFmtSoles(x.declarado) : 'sin voucher'}</span><span class="hx">${nv ? (dif === 0 ? '✅' : (dif > 0 ? '▼' : '▲') + _tribFmtSoles(Math.abs(dif))) : '—'}</span></div>`;
+    }).join('')}</div>`;
   }
   // mini-calendario: los 12 meses del cronograma SUNAT del año (período → vencimiento), con su estado
   function tribDeclCal() {
@@ -57599,7 +57691,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [v2.42.00] Postits manojo + click modal acciones (Reasignar/Cancelar)
     _cjAbrirPostitModal, _cjCerrarPostitModal, _cjPintarPostitsManojos,
     // [v2.41.92] Centro Tributario
-    _loadTributario, tribCargar, tribDeclCal, tribAbrirIGVFavor, tribAbrirIGVEmitido,
+    _loadTributario, tribCargar, tribDeclCal, sunatBuzon, sunatBuzonFiles, sunatBuzonGuardar, sunatVoucherBorrar, sunatHistorial, tribAbrirIGVFavor, tribAbrirIGVEmitido,
     tribReprocesarOCR, tribReintentarCPE, tribReconciliarCPEs,
     tribLimpiarHuerfanas, tribAbrirHistorico,
     // [v2.44 · rediseño] overlays de renta/ventas, selector de mes en chips,
