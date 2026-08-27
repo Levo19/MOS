@@ -2357,8 +2357,11 @@ const MOS = (() => {
           </div>
         </div></div>` : '';
     if (!zonas.length && !pl) { _cabSheet('📅 ' + _cabEsc(fecha), _cabDOW[diaObj.dow] || '', '<div class="cab-lead2">No hay detalle disponible para este día ahora mismo.</div>'); return; }
-    // Encabezado: la SUMA del día vs meta vs equilibrio, en barras horizontales
-    const ventaDia = ventaTot;
+    // Encabezado: la SUMA del día vs meta vs equilibrio, en barras horizontales.
+    // "Vendido" = ventas NETAS oficiales (lo COBRADO), igual que el módulo Finanzas y la barra del gráfico.
+    // El crédito otorgado NO cuenta como venta hasta cobrarse → se explica aparte para que los números cuadren.
+    const credito = pl ? (parseFloat(pl.creditoOtorgado) || 0) : 0;
+    const ventaDia = (pl && pl.ventasNetas != null) ? (parseFloat(pl.ventasNetas) || 0) : ventaTot;
     const metaDiaVal = parseFloat(diaObj.meta) || 0;
     // Equilibrio del día: usar el número OFICIAL de finanzas_dia (breakEvenVentas) para que
     // coincida EXACTO con el módulo Finanzas; si no llegó, el equil por día de cabina; luego fallback.
@@ -2372,7 +2375,8 @@ const MOS = (() => {
       ${hbar('Vendido', ventaDia, 'linear-gradient(90deg,#7dd3fc,#0ea5e9)', ` <b style="color:${superoMeta ? 'var(--cab-good)' : superoEq ? 'var(--cab-warn)' : 'var(--cab-bad)'}">${superoMeta ? '✓ meta' : superoEq ? 'sobre equilibrio' : 'bajo equilibrio'}</b>`)}
       ${hbar('Meta', metaDiaVal, '#fbbf24')}
       ${hbar('Equilibrio', equilDiaVal, '#f472b6')}
-    </div>`;
+    </div>
+    ${credito > 0.005 ? `<div class="cab-lead2" style="margin:-8px 0 14px;font-size:11px;line-height:1.5">ℹ <b>Vendido</b> = lo <b>cobrado</b> (igual que Finanzas). Se facturó ${_cabMoney2(ventaTot)}, pero ${_cabMoney2(credito)} fue a <b>crédito</b> (por cobrar) y no cuenta como venta hasta cobrarse.</div>` : ''}`;
     const body = `${header}<div class="cab-cols">${zonaHtml || '<div class="cab-lead2">Sin ventas por zona este día</div>'}</div>${totalPanel}`;
     _cabSheet('📅 ' + _cabEsc(fecha) + ' · ' + (_cabDOW[diaObj.dow] || ''), 'La suma del día vs meta vs equilibrio · abajo, cada zona', body);
   }
