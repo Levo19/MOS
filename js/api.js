@@ -2801,6 +2801,54 @@ const API = (() => {
       if (r == null) return null;
       return r;
     }
+    // ── [964] Buzón Directo: tickets de reportes/dudas/capacitaciones con push dirigido ──
+    if (action === 'buzonCrear') {
+      const r = await _sbRpcMOS('buzon_crear', { p: {
+        categoria: p.categoria, titulo: p.titulo, campos: p.campos || {}, texto: p.texto || '',
+        media: p.media || [], autorNombre: p.autorNombre || '', autorZona: p.autorZona || '', autorRol: p.autorRol || '' } }, 'mos');
+      return r == null ? null : r;
+    }
+    if (action === 'buzonResponder') {
+      const r = await _sbRpcMOS('buzon_responder', { p: {
+        idTicket: p.idTicket, autorTipo: p.autorTipo, autorNombre: p.autorNombre || '', texto: p.texto || '', media: p.media || [] } }, 'mos');
+      return r == null ? null : r;
+    }
+    if (action === 'buzonEstado') {
+      const r = await _sbRpcMOS('buzon_estado', { p: { idTicket: p.idTicket, estado: p.estado } }, 'mos');
+      return r == null ? null : r;
+    }
+    if (action === 'buzonVisto') {
+      const r = await _sbRpcMOS('buzon_visto', { p: { idTicket: p.idTicket, quien: p.quien } }, 'mos');
+      return r == null ? null : r;
+    }
+    if (action === 'buzonBandeja') {
+      const r = await _sbRpcMOS('buzon_bandeja', { p: { categoria: p.categoria || '' } }, 'mos');
+      return r == null ? null : r;
+    }
+    if (action === 'buzonMis') {
+      const r = await _sbRpcMOS('buzon_mis', { p: { autorNombre: p.autorNombre || '' } }, 'mos');
+      return r == null ? null : r;
+    }
+    if (action === 'buzonTicket') {
+      const r = await _sbRpcMOS('buzon_ticket', { p: { idTicket: p.idTicket } }, 'mos');
+      return r == null ? null : r;
+    }
+    if (action === 'buzonBadge') {
+      const r = await _sbRpcMOS('buzon_badge', { p: { esMaster: !!p.esMaster, autorNombre: p.autorNombre || '' } }, 'mos');
+      return r == null ? null : r;
+    }
+    if (action === 'buzonRepSubir') {   // [964] sube 1 foto/video del Buzón de REPORTES (distinto del buzón IGV) → {ok, data:{url, path, tipo}}
+      const b64 = String(p.base64 || '').trim();
+      const mime = String(p.mimeType || 'image/jpeg');
+      if (!b64) return { ok: false, error: 'sin archivo' };
+      try {
+        const seed = 'b' + Date.now() + '_' + Math.floor(Math.random() * 1e6);
+        // nota: el nombre puede quedar .jpg aunque sea video; se reproduce igual porque el Content-Type
+        // subido es el mime real (video/mp4) y <video>/<img> se eligen por 'tipo', no por extensión.
+        const up = await _subirFotoStorageMOS('_buzon', b64, mime, seed);
+        return { ok: true, data: { url: up.url, path: up.path, tipo: /video/.test(mime) ? 'video' : 'foto' } };
+      } catch (e) { if (e && e.sinToken) return null; return { ok: false, error: String((e && e.message) || e) }; }
+    }
     if (action === 'iaUsoResumen') {
       const r = await _sbRpcMOS('ia_uso_resumen', { p: { dias: p.dias || 30 } }, 'mos');
       if (r == null) return null;
@@ -3256,6 +3304,15 @@ const API = (() => {
     yapesDelDia:                 () => true,   // mos.yapes_del_dia (856) · panel de capturados
     yapeResolver:                () => true,   // mos.yape_resolver (856) · atar o soltar a mano
     yapeAtarGlobal:              () => true,   // mos.yape_atar_global (959) · 1 Yape = varios tickets
+    buzonCrear:                  () => true,   // [964] Buzón de reportes
+    buzonResponder:              () => true,
+    buzonEstado:                 () => true,
+    buzonVisto:                  () => true,
+    buzonBandeja:                () => true,
+    buzonMis:                    () => true,
+    buzonTicket:                 () => true,
+    buzonBadge:                  () => true,
+    buzonRepSubir:               () => true,
     iaUsoResumen:                () => true,   // mos.ia_uso_resumen (852) · consumo de IA · PURA
     iaPendientes:                () => true,   // [937] cola de pendientes de IA · PURA lectura
     turnosDelDia:                () => true,   // mos.turnos_del_dia (848) · turnos abiertos del día · PURA
@@ -3324,7 +3381,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, cabinaSemanal: 1, cabinaDrill: 1, cabinaReposicion: 1, cabinaDiaZonas: 1, cabinaPersonal: 1, cabinaHeatDias: 1, iaUsoResumen: 1, iaPendientes: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, guardCaptura: 1, guardEspiaSet: 1, guardAlarma: 1, guardMensaje: 1, guardBloquear: 1, buzonSubir: 1, buzonListar: 1, buzonBorrar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, yapeAtarGlobal: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, cabinaSemanal: 1, cabinaDrill: 1, cabinaReposicion: 1, cabinaDiaZonas: 1, cabinaPersonal: 1, cabinaHeatDias: 1, iaUsoResumen: 1, iaPendientes: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, guardCaptura: 1, guardEspiaSet: 1, guardAlarma: 1, guardMensaje: 1, guardBloquear: 1, buzonSubir: 1, buzonListar: 1, buzonBorrar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, yapeAtarGlobal: 1, buzonCrear: 1, buzonResponder: 1, buzonEstado: 1, buzonVisto: 1, buzonBandeja: 1, buzonMis: 1, buzonTicket: 1, buzonBadge: 1, buzonRepSubir: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.

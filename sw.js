@@ -45,7 +45,7 @@ try {
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.43.984';
+const VERSION = '2.43.985';
 const CACHE   = 'mos-v' + VERSION;
 // ⚠️ Los assets propios versionados (app.js/api.js) DEBEN cachearse con EL MISMO
 // `?v=` que index.html usa en su <script src>, o el match offline falla por
@@ -58,6 +58,7 @@ const ASSETS  = [
   './liquidacion.html',
   './js/app.js?v=' + VERSION,
   './js/api.js?v=' + VERSION,
+  './js/buzon.js?v=' + VERSION,
   // [755] Tailwind horneado: antes venía del CDN (que además ni offline servía).
   // Mismo trato que app.js/api.js — el `?v=` DEBE coincidir con el de index.html.
   './css/tw.css?v=' + VERSION,
