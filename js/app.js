@@ -53013,17 +53013,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (esGlobal) { if (p.stockZona != null) p.stockZona = nuevo; else p.stock = nuevo; } else { c.stock = nuevo; }
     _zonaRecalcGlobal(p); _zonaPintarKpis();
     try { _zonaSfx('ok'); _zonaVibrar(20); } catch (_) {}
-    toast((esGlobal ? 'Stock' : 'Código') + ' ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');
     try {
       let r;
       if (esGlobal) { const lid = p._ajLocalId || (p._ajLocalId = _zonaAjusteLocalId('GLOBAL')); r = await API.zona.ajustarStock({ zona: S.zonaActual, skuBase: sku, nuevo, localId: lid }); delete p._ajLocalId; }
       else { const lid = c._ajLocalId || (c._ajLocalId = _zonaAjusteLocalId(cb)); r = await _zonaAplicarAjusteCodigo(String(cb), nuevo, lid); delete c._ajLocalId; }
       if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
+      toast((esGlobal ? 'Stock' : 'Código') + ' ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');   // [F1] tras confirmar
     } catch (e) {
       if (esGlobal) { if (p.stockZona != null) p.stockZona = antes; else p.stock = antes; } else { c.stock = antes; }
       _zonaRecalcGlobal(p); try { el.value = _zonaFmtCant(antes, p, true); } catch (_) {}
       try { _zonaSfx('error'); _zonaVibrar([120, 40, 120]); } catch (_) {}
-      toast('No se guardó: ' + (e.message || e), 'error');
+      const msg = String(e.message || e || '');
+      toast(/^No puedes|guía abierta/i.test(msg) ? msg : ('No se guardó: ' + msg), 'error');
     }
   }
   // Abre/cierra una sección del card (Por qué / Historial), tipo "el card se abre en datos". Lazy-load.
@@ -53514,7 +53515,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     renderZona();
     _zonaSfx('ok'); _zonaVibrar(30);
-    toast('Stock ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');
+    // [F1] El aviso de éxito se muestra DESPUÉS de confirmar (no antes): si el guardián bloquea (guía abierta),
+    //   no aparece un falso "ajustado" — solo revierte con el mensaje claro.
     // BACKGROUND: ZONA → SET-ABSOLUTO me.stock_zonas ; ALMACEN → DELTA wh.stock (ver api.js cabecera RIZ).
     try {
       let r;
@@ -53531,6 +53533,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
       delete p._ajLocalId;   // gesto confirmado → liberar el id (un nuevo conteo usará otro)
       _zonaPintarKpis();
+      toast('Stock ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');   // [F1] éxito confirmado
     } catch (e) {
       // ROLLBACK + shake
       delete p._ajLocalId;   // fallo → liberar el id; un reintento manual cuenta como gesto nuevo
@@ -53545,7 +53548,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const c2 = $('zcard-' + sku);
       if (c2) { c2.classList.remove('shake'); void c2.offsetWidth; c2.classList.add('shake'); }
       _zonaSfx('error'); _zonaVibrar([120,40,120]);
-      toast('No se pudo ajustar: ' + (e.message || e), 'error');
+      // El mensaje del guardián ya viene completo ("No puedes ajustar: …") → no prefijar de nuevo.
+      const msg = String(e.message || e || '');
+      toast(/^No puedes|guía abierta/i.test(msg) ? msg : ('No se pudo ajustar: ' + msg), 'error');
     }
   }
 
@@ -53643,7 +53648,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // re-abrir el disclosure (renderZona lo cierra) para que se vea el efecto.
     zonaToggleCodigos(sku);
     _zonaSfx('ok'); _zonaVibrar(30);
-    toast('Código ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');
     // localId estampado en el código mientras dura el gesto → un reintento del MISMO gesto reusa el id (idempotente).
     const localId = c._ajLocalId || (c._ajLocalId = _zonaAjusteLocalId(cb));
     try {
@@ -53652,6 +53656,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
       delete c._ajLocalId;   // gesto confirmado → liberar el id (un nuevo conteo del mismo código usará otro)
       _zonaPintarKpis();
+      toast('Código ajustado a ' + _zonaFmtCant(nuevo, p), 'ok');   // [F1] tras confirmar
     } catch (e) {
       // ROLLBACK + shake
       c.stock = antes;
@@ -53660,7 +53665,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const c2 = $('zcard-' + sku);
       if (c2) { c2.classList.remove('shake'); void c2.offsetWidth; c2.classList.add('shake'); }
       _zonaSfx('error'); _zonaVibrar([120,40,120]);
-      toast('No se pudo ajustar el código: ' + (e.message || e), 'error');
+      const msg = String(e.message || e || '');
+      toast(/^No puedes|guía abierta/i.test(msg) ? msg : ('No se pudo ajustar el código: ' + msg), 'error');
     }
   }
   // Recalcula el stock global del producto (suma de sus códigos) + brecha/negativo derivados.
