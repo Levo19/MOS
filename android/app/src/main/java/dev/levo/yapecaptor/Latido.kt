@@ -98,6 +98,17 @@ class LatidoReceiver : BroadcastReceiver() {
                             t.simOperador?.let { p.put("simOperador", it) }
                             t.simNumero?.let { p.put("simNumero", it) }
                         } catch (_: Throwable) {}
+                        // [readiness] qué permisos/exenciones tiene concedidos → MOS analiza si este equipo
+                        // está LISTO para el anti-robo (arranque con app cerrada, cámara, mic, GPS) o qué falta.
+                        try {
+                            fun ok(perm: String) = androidx.core.content.ContextCompat.checkSelfPermission(ctx, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            p.put("permCam", ok(android.Manifest.permission.CAMERA))
+                            p.put("permMic", ok(android.Manifest.permission.RECORD_AUDIO))
+                            p.put("permUbi", ok(android.Manifest.permission.ACCESS_FINE_LOCATION))
+                            p.put("permOverlay", Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(ctx))
+                            p.put("permBat", try { (ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isIgnoringBatteryOptimizations(ctx.packageName) } catch (_: Throwable) { false })
+                            p.put("permAdmin", try { GuardAdmin.esAdmin(ctx) } catch (_: Throwable) { false })
+                        } catch (_: Throwable) {}
                     }
                     con.outputStream.use { it.write(JSONObject().put("p", p).toString().toByteArray(Charsets.UTF_8)) }
                     // la respuesta trae el estado guard (NORMAL|ROBADO): se guarda para que MosGuard sepa

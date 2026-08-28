@@ -45598,6 +45598,40 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // ── [881] MosGuard · resguardo del equipo ──────────────────────────────────
+  // [958] Pista de configuración por fabricante (el arranque de fondo depende del OEM, no de Android).
+  function _mgPistaMarca(marca) {
+    const m = String(marca || '').toLowerCase();
+    if (/xiaomi|redmi|poco/.test(m))            return 'Xiaomi/HyperOS: activá «Inicio automático» y batería «Sin restricciones» para MosGuard.';
+    if (/huawei|honor/.test(m))                 return 'Huawei/Honor: «Inicio automático» + quitar optimización de batería.';
+    if (/oppo|realme|oneplus/.test(m))          return 'Oppo/Realme/OnePlus: «Inicio automático» + batería sin optimizar.';
+    if (/vivo|iqoo/.test(m))                    return 'Vivo/iQOO: permití «Inicio automático» y alto consumo en 2.º plano.';
+    if (/samsung/.test(m))                      return 'Samsung/One UI: sacalo de «Apps en reposo» + batería sin optimizar.';
+    if (/motorola|moto|nokia|google|pixel/.test(m)) return 'Android casi puro: suele bastar con batería sin optimizar.';
+    return 'Activá «Inicio automático» y batería sin optimizar en los ajustes del fabricante.';
+  }
+  // Analiza si el equipo está LISTO para el anti-robo con los permisos que reporta el latido.
+  function _mgReadiness(e) {
+    if (e.permCam == null && e.permOverlay == null && e.permMic == null) {
+      return { estado: 'desconocido', faltan: [], texto: 'Actualizá MosGuard (v32+) para ver el diagnóstico' };
+    }
+    const req = [
+      { ok: e.permCam,     label: 'Cámara' },
+      { ok: e.permMic,     label: 'Micrófono' },
+      { ok: e.permUbi,     label: 'Ubicación' },
+      { ok: e.permOverlay, label: 'Ver con app cerrada' },
+      { ok: e.permBat,     label: 'Batería sin límite' }
+    ];
+    if (e.capturaYapes) req.push({ ok: e.permNotif, label: 'Notificaciones (Yapes)' });
+    const faltan = req.filter(x => x.ok === false).map(x => x.label);
+    // crítico = sin esto NO se puede ver la cámara con la app cerrada (el resto degrada, no impide)
+    const critico = (e.permCam === false) || (e.permOverlay === false);
+    return {
+      estado: faltan.length === 0 ? 'listo' : (critico ? 'no' : 'parcial'),
+      faltan,
+      texto: faltan.length === 0 ? 'Listo para anti-robo' : ('Falta: ' + faltan.join(' · '))
+    };
+  }
+
   async function _mgRender() {
     const cont = document.getElementById('mgResguardo'); if (!cont) return;
     let equipos = [];
@@ -45633,11 +45667,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const simHtml = (simTxt || simCambiada)
         ? '<div class="mg-eq-sim' + (simCambiada ? ' alerta' : '') + '">' + (simCambiada ? '⚠ CHIP CAMBIADO' : '📵') + (simTxt ? ' ' + simTxt : '') + '</div>'
         : '';
+      // [958] diagnóstico de readiness (¿listo para anti-robo? ¿qué falta? pista por fabricante)
+      const rd = _mgReadiness(e);
+      const rdCol = rd.estado === 'listo' ? '#10b981' : rd.estado === 'no' ? '#f87171' : rd.estado === 'parcial' ? '#fbbf24' : '#94a3b8';
+      const rdIco = rd.estado === 'listo' ? '🛡️' : rd.estado === 'desconocido' ? '🔎' : '⚠️';
+      const readyHtml = '<div class="mg-eq-ready" style="margin-top:5px;padding:5px 8px;border-radius:9px;background:rgba(255,255,255,.04);border:1px solid ' + rdCol + '33;font-size:11px;line-height:1.35">' +
+        '<b style="color:' + rdCol + '">' + rdIco + ' ' + _escapeHtml(rd.texto) + '</b>' +
+        (rd.faltan.length ? '<div style="color:#94a3b8;font-size:10px;margin-top:2px">💡 ' + _escapeHtml(_mgPistaMarca(e.marca)) + '</div>' : '') +
+        '</div>';
       return '<div class="mg-eq ' + (robado ? 'is-robado' : '') + '">' +
         '<div class="mg-eq-top"><b>' + nom + '</b>' +
           '<span class="mg-cap ' + (cap ? 'on' : 'off') + '" onclick="MOS.mgCaptura(\'' + nEsc + '\',' + (cap ? 'false' : 'true') + ')" title="Prender/apagar la captura de Yapes de este equipo">' + (cap ? '💜 Yapes: ON' : '🚫 Yapes: OFF') + '</span>' +
           (robado ? '<span class="mg-badge">🚨 ROBADO' + (e.guardDesde ? ' · ' + _escapeHtml(String(e.guardDesde)) : '') + '</span>' : '') + '</div>' +
         spec +
+        readyHtml +
         (teleHtml || simHtml ? '<div class="mg-eq-tele-row">' + teleHtml + simHtml + '</div>' : '') +
         '<div class="mg-eq-ubic">' + ubic + '</div>' +
         (e.mediaPath ? '<div class="mg-eq-foto"><img data-eq="' + _esc(String(e.nombre)) + '" alt="cámara"><i>📸 ' +

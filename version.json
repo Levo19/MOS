@@ -1,1 +1,1 @@
-{"version": "2.43.982", "build": "MosGuard: se elimina el recuadro fantasma 'Sin trasera' (el celular transmite UNA camara y la rota, no dos a la vez) + etiquetas de camara neutras."}
+{"version": "2.43.983", "build": "MosGuard: diagnostico de 'readiness' por equipo en Config>Yapes — analiza los permisos que reporta cada Android y dice si esta LISTO para anti-robo o que falta, con pista por fabricante (Xiaomi/Samsung/etc)."}
