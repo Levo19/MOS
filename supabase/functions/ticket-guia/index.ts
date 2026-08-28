@@ -224,6 +224,9 @@ Deno.serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const idGuia = String(body.idGuia || '');
     if (!idGuia) return json({ ok: false, error: 'idGuia requerido' }, 400);
+    // [963] Ticket de pickup para el operador de zona: SIN lista de productos (solo QR + id + aviso).
+    //   Lo pasa warehouseMos al auto-imprimir el pickup. Desde wh/guias (manual) NO se pasa → lista completa.
+    const soloQR = body.soloQR === true;
 
     if (!SB_URL || !SB_KEY) {
       return json({ ok: false, error: 'SUPABASE_URL / SERVICE_ROLE_KEY no configurados' }, 500);
@@ -568,7 +571,27 @@ Deno.serve(async (req: Request) => {
       bLn(prefix + nombreCorto + Array(pad + 1).join(' ') + cantTxt);
     }
 
-    if (sombraClasif) {
+    if (soloQR) {
+      // [963] SIN lista: el operador NO se guía por el papel, cuenta escaneando en su app.
+      b1(0x1b); b1(0x61); b1(0x01);                                   // centrar
+      b1(0x1b); b1(0x45); b1(0x01); bLn('GUIA DE INGRESO'); b1(0x1b); b1(0x45); b1(0x00);
+      bLn(idGuia);                                                    // id visible por si el QR se borra
+      bLn(SEP2);
+      b1(0x1b); b1(0x45); b1(0x01); bLn('TU CARGA VA EN CAMINO'); b1(0x1b); b1(0x45); b1(0x00);
+      b1(0x1b); b1(0x61); b1(0x00);                                   // izquierda
+      bLn('Tu carga fue enviada y verificada');
+      bLn('por almacen.');
+      bLn('');
+      bLn('Los productos salieron correctos:');
+      bLn('revisalos con confianza.');
+      bLn('');
+      bLn('Cuenta bien, revisa bien y escanea');
+      bLn('cada codigo en tu app.');
+      bLn('');
+      bLn('Tu conteo cuida el stock de tu zona.');
+      bLn('Gracias por hacerlo bien!');
+      bLn(SEP);
+    } else if (sombraClasif) {
       // ─── Header especial para sombra ───
       b1(0x1b); b1(0x61); b1(0x01); b1(0x1b); b1(0x45); b1(0x01);
       bLn('DESPACHO POR LISTA SOMBRA');
@@ -686,9 +709,15 @@ Deno.serve(async (req: Request) => {
     }
 
     if (reporteUrl) {
-      _imprimirQR(reporteUrl, 'REPORTE EN TIEMPO REAL',
-        'Escanea con la camara',
-        'para ver el detalle al instante');
+      if (soloQR) {
+        _imprimirQR(reporteUrl, 'ESCANEA EN TU APP',
+          'Abre MosExpress y escanea',
+          'este codigo para ingresar');
+      } else {
+        _imprimirQR(reporteUrl, 'REPORTE EN TIEMPO REAL',
+          'Escanea con la camara',
+          'para ver el detalle al instante');
+      }
     }
 
     // ── BLOQUE PREINGRESO ─────────────────────────────────────────────
