@@ -1,1 +1,1 @@
-{"version": "2.43.979", "build": "MosGuard: el visor de Ver+escuchar espera hasta 3 min a que el equipo despierte por su latido (antes cortaba a los 45s, imposible para equipos sin FCM). TURN Metered en config."}
+{"version": "2.43.980", "build": "MosGuard: visor muestra contador 'despertando equipo Ns / ~180s' + barra mientras conecta (el equipo tarda hasta ~2,5 min por su latido). TURN Metered corregido a standard.relay.metered.ca."}

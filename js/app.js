@@ -35477,6 +35477,15 @@ const MOS = (() => {
     if (!_espiaV2) return;
     // Polling de respuesta + ICE del device
     _espiaV2.pollTimer = setInterval(_espiaV2Poll, 600);
+    // [957] repinta 1×/s mientras CONECTA (equipo guard) para que el contador "despertando equipo Ns"
+    // avance solo. Se corta al conectar o cerrar. No repinta en vivo (no molesta al video).
+    if (_espiaV2.esGuard) {
+      _espiaV2._espHintTimer = setInterval(() => {
+        if (!_espiaV2) return;
+        if (_espiaV2.estado === 'live' || (_espiaV2.pc && _espiaV2.pc.connectionState === 'connected')) return;
+        try { _espiaV2RenderModal(); } catch(_){}
+      }, 1000);
+    }
     // [833] Repintado único al vencer la espera de streams: si a los 15s la pantalla no llegó,
     // su tile sale del mosaico y el placeholder explica por qué. Sin esto el visor no se
     // refresca hasta el próximo evento y el spinner se queda eterno.
@@ -35757,6 +35766,7 @@ const MOS = (() => {
     if (!_espiaV2) return;
     try { _espiaSfx('whoosh'); } catch(_){}
     if (_espiaV2.pollTimer) clearInterval(_espiaV2.pollTimer);
+    try { clearInterval(_espiaV2._espHintTimer); } catch(_){}
     // [v2.43.90] Limpiar TODOS los timers nuevos
     try { clearInterval(_espiaV2._iceFlushTimer); } catch(_){}
     try { clearInterval(_espiaV2._iceWatchdogTimer); } catch(_){}
@@ -35936,6 +35946,17 @@ const MOS = (() => {
       ? `<button onclick="MOS._espiaV2RotarCam()" title="Rotar cámara del equipo (frontal ↔ trasera)" style="background:rgba(244,114,182,.16);${btnCss};width:auto;padding:0 12px;gap:6px;font-size:12px;font-weight:800;color:#fbcfe8;border-color:rgba(244,114,182,.4)" onmouseover="this.style.background='rgba(244,114,182,.3)'" onmouseout="this.style.background='rgba(244,114,182,.16)'"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="2.5" y="7.5" width="19" height="12" rx="2.5"/><path d="M8.5 7.5 10 5h4l1.5 2.5"/><path d="M9 13.5a3 3 0 0 1 5-2.2"/><polyline points="14 9.4 14 11.5 11.9 11.5"/><path d="M15 13.5a3 3 0 0 1-5 2.2"/><polyline points="10 17.6 10 15.5 12.1 15.5"/></svg>Rotar</button>`
       : '';
 
+    // [957] Feedback de espera para equipos guard: NO tienen FCM → despiertan por su latido (hasta ~2,5 min).
+    // Sin esto, "CONECTANDO" parecía colgado. Mostramos segundos transcurridos + barra sobre el máximo (180s).
+    const _espMax = _espiaV2.esGuard ? 180 : 45;
+    const _espSeg = Math.min(_espMax, Math.round((Date.now() - (_espiaV2.tsInicio || Date.now())) / 1000));
+    const _espHint = (!live && _espiaV2.esGuard)
+      ? `<div style="display:flex;flex-direction:column;gap:3px;min-width:120px">
+           <span style="font-size:9.5px;font-weight:800;color:#fbbf24;white-space:nowrap;letter-spacing:.3px">⏳ despertando equipo · ${_espSeg}s <span style="opacity:.55;font-weight:600">/ ~${_espMax}s</span></span>
+           <span style="height:4px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;display:block"><span style="display:block;height:100%;width:${Math.round(_espSeg / _espMax * 100)}%;background:linear-gradient(90deg,#f59e0b,#fbbf24);border-radius:3px;transition:width .6s ease"></span></span>
+           <span style="font-size:8.5px;color:#94a3b8;white-space:nowrap">el celular chequea cada ~2,5 min</span>
+         </div>`
+      : '';
     const html = `<div id="espiaV2Modal" style="position:fixed;inset:0;background:#000;z-index:2147483646;overflow:hidden;animation:espiaV2In .3s ease-out">
       <!-- STAGE: mosaico o solo -->
       <div id="espiaV2Grid" data-n="${n}" ${solo ? 'data-solo="1"' : ''} style="position:absolute;inset:0;display:grid;gap:${solo ? '0' : '8px'};padding:${solo ? '0' : '8px'};box-sizing:border-box">
@@ -35952,6 +35973,7 @@ const MOS = (() => {
             </span>
             <span style="font-size:11px;font-weight:900;color:${live ? '#10b981' : '#f59e0b'};letter-spacing:.6px">${live ? 'EN VIVO' : 'CONECTANDO'}</span>
           </div>
+          ${_espHint}
           ${badgePlataforma}
           ${notaPantalla}
           <div style="min-width:0">
