@@ -53869,14 +53869,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const fuente = String(m.fuente || '').toLowerCase();
     const tipoOp = String(m.tipoOperacion || '').toUpperCase();
     const noDoc = /AJUSTE|AUDITOR|CUADRE/.test(String(m.tipo || '').toUpperCase() + tipoOp);
-    // Solo VENTA y GUÍA CON documento formal (cabecera) se abren como documento completo; el resto
-    // (ajuste, auditoría, cuadre, recepción por escaneo, envasado, o guía sin cabecera) se dibuja del
-    // PROPIO movimiento — que siempre trae quién/cuándo/cuánto. Así nunca sale "no encontrado".
-    const fetchable = !noDoc && !!m.idGuia && (fuente === 'venta' || fuente === 'guia');
+    // Intentamos abrir el documento (ticket de venta o guía de ZONA/ALMACÉN) siempre que haya un idGuia y
+    // no sea un ajuste/auditoría/cuadre. Los movimientos de ALMACÉN a veces no traen `fuente` (idGuia = su
+    // guía local G_/ENV_ en wh.guias), así que también intentamos con fuente vacía. Si el backend no lo
+    // encuentra, cae al detalle del PROPIO movimiento — nunca sale "no encontrado".
+    const fetchable = !noDoc && !!m.idGuia && (fuente === 'venta' || fuente === 'guia' || fuente === '' || fuente === 'recepcion');
     _zonaMovOverlay('load');
     if (!fetchable) { _zonaMovRenderMov(m); return; }
     try {
-      const r = await API.post('zonaMovDetalle', { id: m.idGuia, fuente: fuente, codBarras: cache.codBarras || [] });
+      const fte = (fuente === 'venta' || tipoOp.indexOf('VENTA') >= 0) ? 'venta' : 'guia';
+      const r = await API.post('zonaMovDetalle', { id: m.idGuia, fuente: fte, codBarras: cache.codBarras || [] });
       const d = (r && (r.data || r)) || {};
       if (!r || r.ok === false || !d.header) { _zonaMovRenderMov(m); return; }   // sin documento → muestro el movimiento
       _zonaMovRenderDoc(d);
@@ -53952,7 +53954,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       : [_zonaMovTipoGuia(h.tipo), (h.fecha || ''), (h.zona || '') + (h.destino ? ' → ' + h.destino : '')].filter(Boolean).join(' · ');
     const meta = esVenta
       ? '👤 ' + _esc(h.vendedor || '—') + (h.caja ? ' · 💼 ' + _esc(h.caja) : '') + (h.forma_pago ? ' · ' + _esc(h.forma_pago) : '')
-      : '👤 ' + _esc(h.vendedor || '—') + (h.estado ? ' · ' + _esc(h.estado) : '') + (h.obs ? ' · ' + _esc(String(h.obs).slice(0,40)) : '');
+      : (d.origen === 'almacen' ? '🏭 Guía de almacén · ' : '') + '👤 ' + _esc(h.vendedor || '—') + (h.estado ? ' · ' + _esc(h.estado) : '') + (h.obs ? ' · ' + _esc(String(h.obs).slice(0,50)) : '');
     const nMatch = lineas.filter(l => l.match).length;
     const filas = lineas.map(l => {
       const cant = _esc(_zonaFmtNumRaw(_zonaNum(l.cantidad), false));
