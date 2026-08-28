@@ -51441,6 +51441,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === S.zonaActual) || {}).nombre });
     const bg = $('zonaBtnGuias'), bs = $('zonaBtnSorpresas'), bm = $('zonaBtnMermas'), bv = $('zonaBtnVenc');
     if (bg) bg.classList.toggle('hidden', esAlm);
+    // [978] 🎯 Considerados: SOLO en la zona de almacén (a zona1/zona2 no les sirve — es despacho desde almacén).
+    const bc = $('zonaBtnConsiderados'); if (bc) bc.classList.toggle('hidden', !esAlm);
+    // [978] 🚚 Guías por zona (fusión zona1/zona2 en pestañas): SOLO en almacén.
+    const bgz = $('zonaBtnGuiasAlm'); if (bgz) bgz.classList.toggle('hidden', !esAlm);
     if (bm) bm.classList.toggle('hidden', !esAlm);
     // [891] "🏠 Abrir Almacén" no tiene sentido cuando YA estás en el puesto Almacén → ocultar ahí.
     const ba = $('zonaBtnAbrirAlm'); if (ba) ba.classList.toggle('hidden', esAlm);
@@ -51811,7 +51815,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Filtros
     if (f.q) {
       const q = f.q.toLowerCase();
-      arr = arr.filter(p => (String(p.descripcion||p.nombre||'').toLowerCase().indexOf(q) >= 0) || (String(p.skuBase||'').toLowerCase().indexOf(q) >= 0));
+      // [978] Busca por nombre, sku Y por CÓDIGO DE BARRA (cualquiera de sus códigos) — el dueño escanea/teclea el código.
+      arr = arr.filter(p => (String(p.descripcion||p.nombre||'').toLowerCase().indexOf(q) >= 0)
+        || (String(p.skuBase||'').toLowerCase().indexOf(q) >= 0)
+        || (String(p.codigoBarra||p.codBarra||'').toLowerCase().indexOf(q) >= 0)
+        || (Array.isArray(p.codigos) && p.codigos.some(cc => String((cc && (cc.codBarra != null ? cc.codBarra : cc.codigoBarra)) != null ? (cc.codBarra != null ? cc.codBarra : cc.codigoBarra) : cc || '').toLowerCase().indexOf(q) >= 0)));
     }
     if (f.brecha) arr = arr.filter(p => _zonaNum(p.brecha) > 0);
     const tendActivas = Object.keys(f.tend).filter(k => f.tend[k]);
@@ -53374,6 +53382,16 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // [rev100 2.43.584] zonaRefrescar eliminado (su botón ⟳ se retiró; el panel se refresca solo).
   function zonaSetOrden(v) { S._zonaFiltros.orden = v; renderZona(); }
   function zonaFiltrar()   { S._zonaFiltros.q = ($('zonaSearch') && $('zonaSearch').value || '').trim(); renderZona(); }
+  // [978] Escanear con la cámara trasera → el código va al buscador de zona (busca por código de barra).
+  function zonaScanBuscar() {
+    try { _zonaSfx && _zonaSfx('tick'); } catch (_) {}
+    scanCodigo({ onHit: (codigo) => {
+      const inp = $('zonaSearch'); const c = String(codigo || '').trim();
+      if (inp) inp.value = c;
+      S._zonaFiltros.q = c; renderZona();
+      try { toast('Buscando: ' + c, 'ok', 1800); } catch (_) {}
+    } });
+  }
   function zonaToggleKpi(kpi) {
     const f = S._zonaFiltros;
     if (f.kpi === kpi) { try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {} return; }   // [899] ya es la pestaña activa
@@ -55300,7 +55318,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _consBadgeRefrescar();             // y siempre se pide el dato fresco al abrir
   }
   function consToggleAtendidos(){ _consVerAtendidos = !_consVerAtendidos; if (document.getElementById('zonaConsidOverlay')) _consRender(false); }
+  function consBuscar(v){ S._consFiltro = String(v || ''); if (document.getElementById('zonaConsidOverlay')) _consRender(false); }
   function zonaCerrarConsiderados(){
+    S._consFiltro = '';   // [978] limpiar la búsqueda al cerrar
     const ov = document.getElementById('zonaConsidOverlay');
     if (!ov) return;
     ov.id = '';   // el id se libera YA: reabrir durante el fade-out crea un overlay limpio, no revive el moribundo
@@ -55355,12 +55375,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     let scrollPrev = 0;
     try { const l = ov.querySelector('.zpk-list'); if (l) scrollPrev = l.scrollTop || 0; } catch (_) {}
+    // [978] preservar foco/cursor del buscador entre re-renders (poll de 60s + typing).
+    let _sFoco = false, _sSel = 0;
+    try { const si = ov.querySelector('#consSearch'); if (si && document.activeElement === si) { _sFoco = true; _sSel = si.selectionStart || 0; } } catch (_) {}
+    // [978] Buscador por nombre o CÓDIGO dentro del overlay.
+    const _cq = String(S._consFiltro || '').toLowerCase().trim();
+    const _consVis = _cq ? _consItems.filter(it =>
+      (String(it.nombre || '').toLowerCase().indexOf(_cq) >= 0)
+      || (String(it.skuBase || '').toLowerCase().indexOf(_cq) >= 0)
+      || (String(it.codBarra || it.codigoBarra || it.cod || '').toLowerCase().indexOf(_cq) >= 0)
+      || (Array.isArray(it.codigos) && it.codigos.some(c => String((c && (c.codBarra != null ? c.codBarra : c.codigoBarra)) != null ? (c.codBarra != null ? c.codBarra : c.codigoBarra) : c || '').toLowerCase().indexOf(_cq) >= 0))
+    ) : _consItems;
     let body;
     if (loading) body = '<div class="zpk-skel"></div><div class="zpk-skel"></div><div class="zpk-skel"></div>';
     else if (!_consItems.length) {
       body = '<div class="zpk-empty">Sin considerados 🎉<br><small>cuando ingrese mercadería que alguna vez se debió, aparece aquí</small></div>';
+    } else if (!_consVis.length) {
+      body = '<div class="zpk-empty">Nada coincide con “' + _esc(S._consFiltro || '') + '”<br><small>prueba con otro nombre o código</small></div>';
     } else {
-      body = _consItems.map((it, idx) => {
+      body = _consVis.map((it, idx) => {
         // [934] Tipo de ingreso legible + SELLO de despacho por zona (¿ya se le mandó a la zona que se debía?).
         // [945] guiaTipo 'STOCK' = ya HABÍA stock en almacén (no ingresó hoy), pero se debe y nunca se despachó.
         const esStock = String(it.guiaTipo || '') === 'STOCK';
@@ -55421,10 +55454,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         </div>
         ${(!loading) ? `<div class="zpk-kpis"><div><b>${n}</b><small>por despachar</small></div>${_consAtendidos.length ? `<div style="cursor:pointer" onclick="MOS.consToggleAtendidos()"><b style="color:#34d399">${_consAtendidos.length}</b><small>✓ atendidos ${_consVerAtendidos ? '▲' : '▼'}</small></div>` : ''}</div>` : ''}
         ${(!loading && _consVerAtendidos && _consAtendidos.length) ? `<div class="cons-atn-sec">${_consAtendidos.map(a => `<div class="cons-atn-row"><span class="cons-sello ok">✓</span><div class="cons-atn-i"><b>${_esc(a.nombre || a.skuBase)}</b><span>${(Array.isArray(a.zonas) ? a.zonas : []).map(_esc).join(' · ')}</span></div><small>${_esc(_consHaceLbl(a.atendidoTs))}</small></div>`).join('')}</div>` : ''}
+        ${(!loading && _consItems.length) ? `<div style="padding:.2rem 1rem .55rem"><input id="consSearch" class="zpk-search" type="search" placeholder="🔎 Buscar por nombre o código…" value="${_esc(S._consFiltro || '')}" oninput="MOS.consBuscar(this.value)" autocomplete="off"></div>` : ''}
         ${(!loading && n) ? '<div class="zpk-leyenda">✓ = ya se despachó a esa zona · ⏳ = falta. No se borran solos: se atienden despachando, y los atendidos se archivan el domingo. Si el almacén queda en 0, sale de la lista (imposible).</div>' : ''}
         <div class="zpk-list">${body}</div>
       </div>`;
     try { if (scrollPrev) { const l = ov.querySelector('.zpk-list'); if (l) l.scrollTop = scrollPrev; } } catch (_) {}
+    if (_sFoco) { try { const si = ov.querySelector('#consSearch'); if (si) { si.focus(); si.setSelectionRange(_sSel, _sSel); } } catch (_) {} }
   }
 
   // [RIZ #2] Imprime el ticket desde el ÍCONO del grupo ROTADO. Respeta el filtro "del día":
@@ -55983,7 +56018,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Carga pendientes + resumen y actualiza SOLO el badge del botón "🚚 Guías" (la lista ya no vive en la vista).
   async function _trasCargarBadge() {
     try {
-      const r = await API.zona.trasladosPendientes({ zona: S.zonaActual });
+      const r = await API.zona.trasladosPendientes({ zona: _trasZonaGuias() });
       const data = (r && r.data) || r || {};
       const items = Array.isArray(data.items) ? data.items : [];
       S._trasPend = items;
@@ -56003,7 +56038,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Carga el resumen (verificadas) y refresca el badge desde ambas fuentes.
   async function _trasCargarResumen() {
     try {
-      const r = await API.zona.trasladosResumen({ zona: S.zonaActual });
+      const r = await API.zona.trasladosResumen({ zona: _trasZonaGuias() });
       S._trasResumen = (r && r.data) || r || {};
     } catch (e) {
       try { console.warn('[RIZ] trasladosResumen:', e && (e.message || e)); } catch (_) {}
@@ -56093,7 +56128,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // [Reparación #3] Carga las guías internas de la zona (informativas).
   async function _trasCargarInternas() {
     try {
-      const r = await API.zona.guiasInternas({ zona: S.zonaActual });
+      const r = await API.zona.guiasInternas({ zona: _trasZonaGuias() });
       const data = (r && r.data) || r || {};
       S._trasInternas = Array.isArray(data.items) ? data.items : [];
     } catch (e) {
@@ -56118,8 +56153,41 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
 
   // ── Modal "🚚 Guías" ────────────────────────────────────────────────────────────────────────────────────
-  function trasAbrirGuias() {
+  // [978] Zona activa para las guías: normalmente la zona actual; en el modo Almacén (pestañas) manda el override.
+  function _trasZonaGuias() { return S._guiasZonaOverride || S.zonaActual; }
+
+  // [978] Abrir Guías desde ALMACÉN: mismo overlay, pero con PESTAÑAS de zona (zona1/zona2). Reusa todo el
+  //   motor de guías (que ya lee _trasZonaGuias()). Empieza en la primera zona real.
+  function zonaAbrirGuiasAlmacen() {
+    const zonas = (S.zonaList || []).filter(z => !_esZonaAlmacen(z))
+      .map(z => ({ id: String(z.idZona || z.id || z.nombre), nombre: String(z.nombre || z.idZona || z.id) }));
+    if (!zonas.length) { toast('No hay zonas configuradas', 'info'); return; }
+    S._guiasAlmZonas = zonas;
+    S._guiasZonaOverride = zonas[0].id;
+    trasAbrirGuias(true);             // reusa el overlay; los loaders ya usan _trasZonaGuias()
+    _trasInyectarTabsZona();
+    const tit = $('zonaGuiasZona'); if (tit) tit.textContent = zonas[0].nombre;
+  }
+  function _trasInyectarTabsZona() {
+    const cont = $('zonaGuiasZonaTabs'); const zonas = S._guiasAlmZonas || [];
+    if (!cont) return;
+    if (!zonas.length) { cont.style.display = 'none'; cont.innerHTML = ''; return; }
+    cont.style.display = '';
+    cont.innerHTML = zonas.map(z => `<button class="zona-guias-chip${String(z.id) === String(S._guiasZonaOverride) ? ' active' : ''}" onclick="MOS.zonaGuiasAlmTab('${_zonaEsc(z.id)}')">${_esc(z.nombre)}</button>`).join('');
+  }
+  function zonaGuiasAlmTab(id) {
+    S._guiasZonaOverride = String(id);
+    _zonaSfx('tick'); _zonaVibrar(12);
+    _trasInyectarTabsZona();
+    const z = (S._guiasAlmZonas || []).find(x => String(x.id) === String(id));
+    const tit = $('zonaGuiasZona'); if (tit) tit.textContent = (z && z.nombre) || id;
+    _trasMostrarLista();
+    Promise.all([_trasCargarBadge(), _trasCargarResumen(), _trasCargarInternas()]).then(() => { _trasPintarBadge(); _trasRenderGuias(); _trasPoblarOperarios(); });
+  }
+
+  function trasAbrirGuias(_alm) {
     _zonaSfx('pop'); _zonaVibrar(20);
+    if (!_alm) { S._guiasZonaOverride = null; S._guiasAlmZonas = null; const c = $('zonaGuiasZonaTabs'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }
     S._guiasFiltro = S._guiasFiltro || 'todas';
     S._guiasOperario = '';
     S._guiaSel = null;
@@ -56130,7 +56198,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // refrescar datos al abrir (por si cambió algo desde el último panel).
     Promise.all([_trasCargarBadge(), _trasCargarResumen(), _trasCargarInternas()]).then(() => { _trasPintarBadge(); _trasRenderGuias(); _trasPoblarOperarios(); });
   }
-  function trasCerrarGuias() { closeModal('modalZonaGuias'); S._guiaSel = null; }
+  function trasCerrarGuias() { closeModal('modalZonaGuias'); S._guiaSel = null;
+    S._guiasZonaOverride = null; S._guiasAlmZonas = null; const c = $('zonaGuiasZonaTabs'); if (c) { c.style.display = 'none'; c.innerHTML = ''; } }
 
   // Muestra la vista lista (oculta la de detalle) + repinta.
   function _trasMostrarLista() {
@@ -58322,7 +58391,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     facLookup, facEmitir, facCargarHistorial, facAnular, _facReglasRefresh,
     facGuardarConfig, facGuardarSeries, facAlinear,
     // [RIZ Capa 4] Módulo Zona — solo activo si el flag mos_zona_modulo está ON
-    loadZona, renderZona, zonaCambiarZona, zonaSetOrden, zonaFiltrar,
+    loadZona, renderZona, zonaCambiarZona, zonaSetOrden, zonaFiltrar, zonaScanBuscar,
+    zonaAbrirGuiasAlmacen, zonaGuiasAlmTab,
     zonaAbrirHub, zonaCerrarHub, zonaElegirPuesto,
     zonaToggleGrupo,
     zonaToggleKpi, zonaToggleTend, zonaToggleFiltro,
@@ -58345,7 +58415,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirInsights, zonaCerrarInsights, zonaDbzTip,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
-    zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos,
+    zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos, consBuscar,
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
     // [RIZ #4] proveedores reales por canónico (lazy-load por card en ALMACEN)
