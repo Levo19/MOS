@@ -53850,6 +53850,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const meses = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
     const fCorta = (f) => { const s = String(f || '').slice(0, 10); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (parseInt(m[3], 10) + ' ' + (meses[parseInt(m[2], 10)] || m[2])) : s; };
     const quienDe = (u) => { const s = String(u || '').toLowerCase(); if (!u || u === '—') return 'sistema'; if (s.indexOf('cierre') >= 0 || s.indexOf('idem') >= 0) return 'cierre automático'; if (s.indexOf('sistema') >= 0) return 'sistema'; return u; };
+    let huboCierre = false;
     let rows = movs.map((m, i) => {
       // [935] Delta robusto para AMBOS kardex: el de ZONA trae `delta`/`saldo_despues`; el de ALMACÉN trae
       //   `cantidad`+`esIngreso`+`saldo` (antes → undefined `delta` → salía "sin cambio" aunque sí cambió).
@@ -53864,6 +53865,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       // [992] etiqueta + icono + acento ESPECÍFICOS por tipo real de movimiento
       const usr = String(m.usuario || '');
       let [ic, cls, lbl] = _zonaHxClasificar(m, delta);
+      if (lbl === 'Cierre del día') huboCierre = true;
       const quien = quienDe(usr);
       const saldo = (m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : (m.saldo != null ? _zonaNum(m.saldo) : null);
       const dTxt = delta === 0 ? 'sin cambio' : ((delta > 0 ? '+' : '−') + _esc(_zonaFmtNumRaw(Math.abs(delta), p && p.esGranel)));
@@ -53882,8 +53884,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <span class="zt-hx-chev">›</span>
       </div>`;
     }).join('');
-    const hayCierre = movs.some(m => String(m.usuario || '').toLowerCase().indexOf('cierre') >= 0 || String(m.usuario || '').toLowerCase().indexOf('idem') >= 0);
-    return rows + (hayCierre ? '<div class="zt-hx-note">🌙 «Cierre del día» = corte automático de fin de jornada (no cambia el stock).</div>' : '');
+    return rows + (huboCierre ? '<div class="zt-hx-note">🌙 «Cierre del día» = corte automático de fin de jornada (no cambia el stock).</div>' : '');
   }
 
   // ══ [965] Detalle de un movimiento del historial — overlay moderno ═══════════════════════════════
@@ -54023,9 +54024,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     //   dilo con claridad (evita el "¿por qué +1 y la guía dice 122.6?"). El saldo sigue el cambio real.
     let reconc = '';
     if (m && !esVenta) { const rd = _zonaMovAbsDelta(m); const ml = lineas.find(l => l.match);
-      if (ml && rd != null && rd > 0) { const lc = Math.abs(_zonaNum(ml.aplicada != null ? ml.aplicada : ml.cantidad));
-        if (lc > 0 && Math.abs(lc - rd) > Math.max(0.01, lc * 0.02))
-          reconc = '<div class="zmv-note zmv-reconc">⚖️ El kardex movió <b>' + _esc(_zonaFmtNumRaw(rd, false)) + '</b> de este producto, pero la guía declara <b>' + _esc(_zonaFmtNumRaw(lc, false)) + '</b>. El saldo del kardex sigue el <b>cambio real de stock</b>; la guía es solo el documento (posible recepción parcial o ajuste posterior).</div>';
+      if (ml && rd != null) { const lc = Math.abs(_zonaNum(ml.aplicada != null ? ml.aplicada : ml.cantidad));
+        if (lc > 0 && Math.abs(lc - rd) > Math.max(0.01, lc * 0.02)) {
+          const lcT = _esc(_zonaFmtNumRaw(lc, false)), rdT = _esc(_zonaFmtNumRaw(rd, false)), difT = _esc(_zonaFmtNumRaw(Math.abs(lc - rd), false));
+          const esIngG = /INGRESO|ENTRADA|PROVEEDOR/.test(String(h.tipo || '').toUpperCase()) || (m.esIngreso === true);
+          if (esIngG && lc > rd)
+            reconc = '<div class="zmv-note zmv-reconc">⚠ La guía registra que entraron <b>' + lcT + '</b> de este producto, pero al stock solo se le sumó <b>' + rdT + '</b>. El ingreso <b>no se acreditó completo</b> (faltan <b>' + difT + '</b>) — parece un error a corregir. El saldo del kardex muestra lo que realmente se sumó (' + rdT + '); por eso el stock puede verse más bajo de lo real.</div>';
+          else if (!esIngG && lc > rd)
+            reconc = '<div class="zmv-note zmv-reconc">⚠ La guía registra <b>' + lcT + '</b> de este producto, pero del stock solo se descontó <b>' + rdT + '</b>. Puede ser un despacho parcial o un error; el saldo sigue el movimiento real (' + rdT + ').</div>';
+          else
+            reconc = '<div class="zmv-note zmv-reconc">⚖️ La guía declara <b>' + lcT + '</b> y el stock se movió <b>' + rdT + '</b>. El saldo del kardex sigue el <b>cambio real de stock</b>; la guía es solo el documento.</div>';
+        }
       } }
     const filas = lineas.map(l => {
       const cant = _esc(_zonaFmtNumRaw(_zonaNum(l.cantidad), false));
