@@ -53789,6 +53789,38 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
   }
   // Lista compacta de movimientos (para el panel inline; el modal completo con pestañas sigue en 🕘).
+  // [992] Clasificador INTUITIVO del historial: icono + acento (out=rojo · in=verde · aud=ámbar) + etiqueta
+  //   ESPECÍFICA por tipo real (Venta, Envasado, Despacho, Auditoría, Ajuste, Merma…), nunca un "Salida"
+  //   genérico. Se apoya en tipoOperacion (crudo/fiable de ambos kardex) y cae al `tipo` + dirección del delta.
+  function _zonaHxClasificar(m, delta) {
+    const op = String(m.tipoOperacion || '').toUpperCase();
+    const tp = String(m.tipo || '').toUpperCase();
+    const usr = String(m.usuario || '').toLowerCase();
+    const s = op + ' ' + tp;
+    const isIn = delta > 0, isOut = delta < 0;
+    if (usr.indexOf('cierre') >= 0 || usr.indexOf('idem') >= 0) return ['🌙', 'aud', 'Cierre del día'];
+    if (/ENVASAD/.test(s)) {
+      if (/INGRESO|DERIVADO|PRODUC/.test(s) || (isIn && !/BASE|ENVASE|SALIDA/.test(s))) return ['🏭', 'in', 'Producido (envasado)'];
+      if (/ENVASE/.test(s)) return ['🏭', 'out', 'Envasado · envase'];
+      return ['🏭', 'out', 'Envasado'];
+    }
+    if (/AUDITOR/.test(s)) return ['📋', 'aud', 'Auditoría'];
+    if (/CUADRE/.test(s)) return ['⚖️', 'aud', 'Cuadre de stock'];
+    if (/ANULAC|REVERSO|REABRIR|DUPLICAD/.test(s)) return ['↩️', 'aud', 'Anulación / reverso'];
+    if (/AJUSTE|CORRECCION|EDICION|REKEY/.test(s)) return ['✏️', 'aud', 'Ajuste manual'];
+    if (/MERMA/.test(s)) return isIn ? ['♻️', 'in', 'Merma repuesta'] : ['🗑️', 'out', 'Merma'];
+    if (/VENTA/.test(s)) return ['🛒', 'out', 'Venta'];
+    if (/DEVOLUC/.test(s)) return isIn ? ['↩️', 'in', 'Devolución (entra)'] : ['↩️', 'out', 'Devolución (sale)'];
+    if (/PROVEEDOR/.test(s)) return ['📥', 'in', 'Ingreso de proveedor'];
+    if (/TRASLADO_IN|ENTRADA_TRASLADO|ENTRADA_ALMACEN|RECEP/.test(s)) return ['📦', 'in', 'Llegó de almacén'];
+    if (/TRASLADO_OUT|SALIDA_ZONA|SALIDA_JEFA|SALIDA_MOVIMIENTO|DESPACHO/.test(s)) return ['🚚', 'out', 'Despacho a zona'];
+    if (/CIERRE_GUIA/.test(s)) return isIn ? ['📦', 'in', 'Ingreso de guía'] : ['🚚', 'out', 'Despacho'];
+    if (/INICIAL/.test(s)) return ['🎬', 'in', 'Saldo inicial'];
+    if (/INGRESO|ENTRADA/.test(s) || isIn) return ['📥', 'in', 'Ingreso'];
+    if (/SALIDA/.test(s) || isOut) return ['📤', 'out', 'Salida'];
+    return ['•', 'aud', (tp.replace(/_/g, ' ').toLowerCase() || 'movimiento')];
+  }
+
   function _zonaKardexInlineHtml(data, p) {
     let movs = Array.isArray(data && data.movimientos) ? data.movimientos.slice() : [];
     // [903] multi-código: si el total no trae movimientos, agregamos los de cada código (porCodigo).
@@ -53802,25 +53834,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // analizado (para resaltar su línea en el overlay de detalle).
     const _tok = 'hx' + (++_zonaHxSeq);
     _zonaHxCache[_tok] = { movs: movs, codBarras: (data && data.codBarras) || [] };
-    // [905] Traducción a lenguaje HUMANO (nada de "idem"/jerga). Tipo → etiqueta clara; usuario → persona o "sistema".
-    const TIPO = {
-      SALIDA_VENTA: ['🛒', 'out', 'Venta'], VENTA: ['🛒', 'out', 'Venta'],
-      SALIDA_ZONA: ['🚚', 'out', 'Despacho a zona'], SALIDA_JEFATURA: ['🚚', 'out', 'Despacho'],
-      TRASLADO_IN: ['🚚', 'in', 'Llegó de almacén'], TRASLADO_OUT: ['🚚', 'out', 'Salió a zona'], TRASLADO: ['🚚', 'in', 'Traslado'],
-      INGRESO_PROVEEDOR: ['📥', 'in', 'Ingreso de proveedor'], INGRESO: ['📥', 'in', 'Ingreso de mercadería'],
-      AUDITORIA: ['📋', 'aud', 'Conteo (auditoría)'], AJUSTE: ['✏️', 'aud', 'Ajuste manual'], SALIDA: ['📤', 'out', 'Salida']
-    };
+    // [992] Etiqueta específica por tipo → ver _zonaHxClasificar. Usuario → persona o "sistema".
     const meses = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
     const fCorta = (f) => { const s = String(f || '').slice(0, 10); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (parseInt(m[3], 10) + ' ' + (meses[parseInt(m[2], 10)] || m[2])) : s; };
     const quienDe = (u) => { const s = String(u || '').toLowerCase(); if (!u || u === '—') return 'sistema'; if (s.indexOf('cierre') >= 0 || s.indexOf('idem') >= 0) return 'cierre automático'; if (s.indexOf('sistema') >= 0) return 'sistema'; return u; };
     let rows = movs.map((m, i) => {
-      const t = String(m.tipo || '').toUpperCase();
-      let meta = TIPO[t]; if (!meta) { for (const k in TIPO) { if (t.indexOf(k) === 0) { meta = TIPO[k]; break; } } }
-      meta = meta || ['•', 'aud', (t.replace(/_/g, ' ').toLowerCase() || 'movimiento')];
-      let [ic, cls, lbl] = meta;
-      const usr = String(m.usuario || '');
-      if (usr.toLowerCase().indexOf('cierre') >= 0 || usr.toLowerCase().indexOf('idem') >= 0) { ic = '🌙'; lbl = 'Cierre del día'; cls = 'aud'; }
-      const quien = quienDe(usr);
       // [935] Delta robusto para AMBOS kardex: el de ZONA trae `delta`/`saldo_despues`; el de ALMACÉN trae
       //   `cantidad`+`esIngreso`+`saldo` (antes → undefined `delta` → salía "sin cambio" aunque sí cambió).
       let delta = (m.delta != null) ? _zonaNum(m.delta) : null;
@@ -53831,6 +53849,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         else if (m.saldo != null && m.stockAntes != null) delta = _zonaNum(m.saldo) - _zonaNum(m.stockAntes);
         else delta = 0;
       }
+      // [992] etiqueta + icono + acento ESPECÍFICOS por tipo real de movimiento
+      const usr = String(m.usuario || '');
+      let [ic, cls, lbl] = _zonaHxClasificar(m, delta);
+      const quien = quienDe(usr);
       const saldo = (m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : (m.saldo != null ? _zonaNum(m.saldo) : null);
       const dTxt = delta === 0 ? 'sin cambio' : ((delta > 0 ? '+' : '−') + _esc(_zonaFmtNumRaw(Math.abs(delta), p && p.esGranel)));
       const dCls = delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero');
@@ -53870,19 +53892,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try { navigator.vibrate && navigator.vibrate(12); } catch(_){}   // [991] háptico: tick al tocar
     const fuente = String(m.fuente || '').toLowerCase();
     const tipoOp = String(m.tipoOperacion || '').toUpperCase();
-    const noDoc = /AJUSTE|AUDITOR|CUADRE/.test(String(m.tipo || '').toUpperCase() + tipoOp);
-    // Intentamos abrir el documento (ticket de venta o guía de ZONA/ALMACÉN) siempre que haya un idGuia y
-    // no sea un ajuste/auditoría/cuadre. Los movimientos de ALMACÉN a veces no traen `fuente` (idGuia = su
-    // guía local G_/ENV_ en wh.guias), así que también intentamos con fuente vacía. Si el backend no lo
-    // encuentra, cae al detalle del PROPIO movimiento — nunca sale "no encontrado".
-    const fetchable = !noDoc && !!m.idGuia && (fuente === 'venta' || fuente === 'guia' || fuente === '' || fuente === 'recepcion');
+    const idG = String(m.idGuia || '');
+    // ENVASADO: id ENV_… o tipoOperacion ENVASADO_* → transformación (wh.envasados), NO es guía de wh.guias.
+    const esEnv = /^ENV_/.test(idG) || tipoOp.indexOf('ENVASAD') >= 0;
+    const noDoc = !esEnv && /AJUSTE|AUDITOR|CUADRE/.test(String(m.tipo || '').toUpperCase() + tipoOp);
+    // Intentamos abrir el documento (ticket de venta · guía de ZONA/ALMACÉN · envasado) siempre que haya un
+    // idGuia y no sea un ajuste/auditoría/cuadre. Los movimientos de ALMACÉN a veces no traen `fuente` (idGuia
+    // = su id local G_/ENV_), así que también intentamos con fuente vacía. Si el backend no lo encuentra, cae
+    // al detalle del PROPIO movimiento — nunca sale "no encontrado".
+    const fetchable = esEnv || (!noDoc && !!m.idGuia && (fuente === 'venta' || fuente === 'guia' || fuente === '' || fuente === 'recepcion'));
     _zonaMovOverlay('load');
     if (!fetchable) { _zonaMovRenderMov(m); return; }
     try {
-      const fte = (fuente === 'venta' || tipoOp.indexOf('VENTA') >= 0) ? 'venta' : 'guia';
+      const fte = esEnv ? 'envasado' : ((fuente === 'venta' || tipoOp.indexOf('VENTA') >= 0) ? 'venta' : 'guia');
       const r = await API.post('zonaMovDetalle', { id: m.idGuia, fuente: fte, codBarras: cache.codBarras || [] });
       const d = (r && (r.data || r)) || {};
       if (!r || r.ok === false || !d.header) { _zonaMovRenderMov(m); return; }   // sin documento → muestro el movimiento
+      if (d.tipo === 'envasado') { _zonaMovRenderEnv(d); return; }
       _zonaMovRenderDoc(d);
     } catch (e) { _zonaMovRenderMov(m); }
   }
@@ -53981,6 +54007,55 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         try { navigator.vibrate && navigator.vibrate([8, 32, 16]); } catch(_){} }   // [991] háptico: "encontré tu producto"
       try { _finBeep?.('shimmer'); } catch(_){} }, 120);
   }
+  // ENVASADO → transformación: insumo(s) consumido(s) → producto envasado producido. Resalta el rol del
+  //   producto que se está analizando (insumo / envase / producido). [967/992]
+  function _zonaMovRenderEnv(d) {
+    const h = d.header || {}, lineas = d.lineas || [];
+    const outs = lineas.filter(l => l.dir === 'out'), ins = lineas.filter(l => l.dir !== 'out');
+    const fh = _zonaMovFechaHora(h.fecha);
+    const quien = (h.usuario && h.usuario !== '—') ? h.usuario : 'sistema';
+    const ini = (String(quien).trim()[0] || '?').toUpperCase();
+    const prod = ins[0] || {};
+    const prodCant = _zonaFmtNumRaw(_zonaNum(prod.cantidad), false);
+    const rolMatch = (lineas.find(l => l.match) || {}).rol || '';
+    const ef = Number(h.eficiencia || 0), merma = _zonaNum(h.merma);
+    const item = (l) => {
+      const dir = l.dir === 'out' ? 'out' : 'in';
+      const sign = l.dir === 'out' ? '−' : '+';
+      const q = _zonaFmtNumRaw(_zonaNum(l.cantidad), false);
+      const u = l.unidad ? (' ' + _esc(String(l.unidad))) : '';
+      return '<div class="zmv-env-item ' + dir + (l.match ? ' is-match' : '') + '"' + (l.match ? ' data-match="1"' : '') + '>' +
+        '<span class="zmv-env-rol">' + _esc(l.rol || '') + (l.match ? ' <b>◆ analizado</b>' : '') + '</span>' +
+        '<span class="zmv-env-nm">' + _esc(l.nombre || l.cod || '') + '</span>' +
+        '<span class="zmv-env-q ' + dir + '">' + sign + _esc(q) + u + '</span>' +
+      '</div>';
+    };
+    _zonaMovSet(
+      _zonaMovHead('🏭', 'Envasado', ['Produjo ' + prodCant + ' und', (h.fecha || ''), (h.estado || '')].filter(Boolean).join(' · '), 'a') +
+      '<div class="zmv-body">' +
+        '<div class="zmv-who"><span class="zmv-ini" style="background:linear-gradient(135deg,#f0abfc,#a855f7)">' + _esc(ini) + '</span>' +
+          '<div><b>' + _esc(quien) + (h.colaborador ? ' <small style="color:#8aa0c2;font-weight:600">+ ' + _esc(h.colaborador) + '</small>' : '') + '</b>' +
+          '<i>' + _esc(fh.dia) + ' · 🕐 ' + _esc(fh.hora) + '</i></div></div>' +
+        (rolMatch ? '<div class="zmv-badge">◆ Analizando: ' + _esc(rolMatch) + '</div>' : '') +
+        '<div class="zmv-env-flow">' +
+          '<div class="zmv-env-col"><span class="zmv-env-cap out">Consumió</span>' + (outs.map(item).join('') || '<div class="zmv-env-item out">—</div>') + '</div>' +
+          '<div class="zmv-env-mid"><span>🏭</span><i>envasa</i><span class="zmv-env-dn">↓</span></div>' +
+          '<div class="zmv-env-col"><span class="zmv-env-cap in">Produjo</span>' + (ins.map(item).join('') || '<div class="zmv-env-item in">—</div>') + '</div>' +
+        '</div>' +
+        '<div class="zmv-env-stats">' +
+          '<div class="zmv-env-stat"><span>Eficiencia</span><b class="' + (ef >= 90 ? 'pos' : ef >= 70 ? '' : 'neg') + '">' + (ef ? ef.toFixed(0) + '%' : '—') + '</b></div>' +
+          '<div class="zmv-env-stat"><span>Merma</span><b class="' + (merma > 0 ? 'neg' : '') + '">' + (merma ? _esc(_zonaFmtNumRaw(merma, false)) : '0') + '</b></div>' +
+        '</div>' +
+        (h.obs ? '<div class="zmv-note">📝 ' + _esc(String(h.obs)) + '</div>' : '') +
+        '<div class="zmv-ref">📎 ' + _esc(String(h.id || '')) + '</div>' +
+      '</div>');
+    setTimeout(() => { const ov = document.getElementById('zonaMovOvl'); if (!ov) return;
+      const first = ov.querySelector('.zmv-env-item[data-match]'); if (first) { try { first.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(_){}
+        first.classList.add('flash'); setTimeout(() => first.classList.remove('flash'), 900);
+        try { navigator.vibrate && navigator.vibrate([8, 32, 16]); } catch(_){} }
+      try { _finBeep?.('shimmer'); } catch(_){} }, 120);
+  }
+
   function _zonaMovTipoGuia(t) { t = String(t || '').toUpperCase();
     if (t.indexOf('SALIDA_VENTAS') >= 0) return 'Salida por ventas'; if (t.indexOf('ENTRADA') >= 0 || t.indexOf('TRASLADO_IN') >= 0) return 'Ingreso a zona';
     if (t.indexOf('SALIDA') >= 0) return 'Despacho a zona'; return (t.replace(/_/g,' ').toLowerCase() || 'Guía'); }
@@ -54032,7 +54107,30 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.zmv-lin.is-match{background:linear-gradient(90deg,rgba(251,191,36,.16),rgba(251,191,36,.04));box-shadow:inset 3px 0 0 #fbbf24}',
       '.zmv-lin.is-match .zmv-lin-n{color:#fde68a;font-weight:700}',
       '@keyframes zmvFlash{0%,100%{background:linear-gradient(90deg,rgba(251,191,36,.16),rgba(251,191,36,.04))}50%{background:rgba(251,191,36,.42)}}',
-      '.zmv-lin.flash{animation:zmvFlash .9s ease}',
+      '.zmv-lin.flash,.zmv-env-item.flash{animation:zmvFlash .9s ease}',
+      // ── envasado (transformación) ──
+      '.zmv-env-flow{display:flex;flex-direction:column;gap:8px;margin:4px 0 2px}',
+      '.zmv-env-col{display:flex;flex-direction:column;gap:6px}',
+      '.zmv-env-cap{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#7488a6}',
+      '.zmv-env-cap.out{color:#f4a3a3}.zmv-env-cap.in{color:#7fe3bd}',
+      '.zmv-env-item{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;padding:9px 12px;border-radius:13px;',
+        'background:#0c1626;border:1px solid #223049}',
+      '.zmv-env-item.out{box-shadow:inset 3px 0 0 #f87171}.zmv-env-item.in{box-shadow:inset 3px 0 0 #34d399}',
+      '.zmv-env-rol{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#7f92b3;grid-column:1}',
+      '.zmv-env-rol b{color:#fbbf24;font-weight:800}',
+      '.zmv-env-nm{grid-column:1;grid-row:2;color:#e6eefc;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.zmv-env-q{grid-column:2;grid-row:1/3;align-self:center;font-weight:900;font-size:15px;white-space:nowrap}',
+      '.zmv-env-q.out{color:#f87171}.zmv-env-q.in{color:#34d399}',
+      '.zmv-env-item.is-match{border-color:#fbbf24;background:linear-gradient(90deg,rgba(251,191,36,.16),rgba(251,191,36,.04))}',
+      '.zmv-env-item.is-match .zmv-env-nm{color:#fde68a}',
+      '.zmv-env-mid{display:flex;align-items:center;justify-content:center;gap:8px;color:#a855f7;font-size:15px}',
+      '.zmv-env-mid i{font-style:normal;font-size:10.5px;color:#8b78c0;text-transform:uppercase;letter-spacing:.08em}',
+      '.zmv-env-mid .zmv-env-dn{font-size:18px}',
+      '.zmv-env-stats{display:flex;gap:10px;margin-top:12px}',
+      '.zmv-env-stat{flex:1;text-align:center;background:#0c1626;border:1px solid #223049;border-radius:13px;padding:9px 6px}',
+      '.zmv-env-stat span{display:block;font-size:9.5px;color:#7488a6;text-transform:uppercase;letter-spacing:.05em}',
+      '.zmv-env-stat b{display:block;font-size:18px;color:#eaf2ff;font-weight:800;margin-top:2px}',
+      '.zmv-env-stat b.pos{color:#34d399}.zmv-env-stat b.neg{color:#f87171}',
       '.zt-hx-click{cursor:pointer;transition:background .12s}.zt-hx-click:hover{background:rgba(56,189,248,.07)}',
       '.zt-hx-click:focus-visible{outline:2px solid #38bdf8;outline-offset:-2px}',
       '.zt-hx-chev{color:#4a5b78;font-size:16px;font-weight:700;margin-left:2px}',
