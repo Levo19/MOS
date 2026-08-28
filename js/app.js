@@ -53815,6 +53815,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       return ['🏭', 'out', 'Envasado'];
     }
     if (/RECONCILIACION/.test(s)) return ['🔗', 'in', 'Ajuste por reconciliación'];
+    if (/CORRECCION_INGRESO/.test(s)) return ['🔧', 'in', 'Corrección de ingreso'];
     if (/AUDITOR/.test(s)) return ['📋', 'aud', 'Auditoría'];
     if (/CUADRE/.test(s)) return ['⚖️', 'aud', 'Cuadre de stock'];
     if (/ANULAC|REVERSO|REABRIR|DUPLICAD/.test(s)) return ['↩️', 'aud', 'Anulación / reverso'];
@@ -53828,7 +53829,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (/TRASLADO_IN|ENTRADA_TRASLADO|ENTRADA_ALMACEN|RECEP/.test(s)) return ['📦', 'in', 'Llegó de almacén'];
     if (/TRASLADO_OUT|SALIDA_ZONA|SALIDA_JEFA|SALIDA_MOVIMIENTO|DESPACHO/.test(s)) return ['🚚', 'out', 'Despacho a zona'];
     if (/CIERRE_GUIA/.test(s)) return isIn ? ['📦', 'in', 'Ingreso de guía'] : ['🚚', 'out', 'Despacho'];
-    if (/CORRECCION_INGRESO/.test(s)) return ['🔧', 'in', 'Corrección de ingreso'];
     if (/SALDO_INICIAL|INICIAL/.test(s)) return ['🎬', 'in', 'Saldo inicial'];
     if (/INGRESO|ENTRADA/.test(s) || isIn) return ['📥', 'in', 'Ingreso'];
     if (/SALIDA/.test(s) || isOut) return ['📤', 'out', 'Salida'];
