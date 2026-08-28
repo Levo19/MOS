@@ -1,1 +1,1 @@
-{"version":"2.44.7","build":"[2.44.7] Ver+escuchar: sensor de diagnostico getStats en el panel (ICE state + tipo de par host/srflx/relay + framesReceived/bytesReceived del video). Queda en detalle_fin de la sesion para diagnosticar pantalla negra en WiFi restrictiva. Solo telemetria, no toca WebRTC."}
+{"version":"2.44.8","build":"[2.44.8] Fix _mgCargarDescarga (ReferenceError que rompia la tarjeta de Yapes en Config): se define la funcion que resuelve el link directo al APK mas nuevo via API de releases de GitHub. Mantiene el sensor getStats de Ver+escuchar (2.44.7)."}

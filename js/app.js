@@ -45855,6 +45855,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     else if (_mgLiveTimer) { clearInterval(_mgLiveTimer); _mgLiveTimer = null; }
   }
   let _mgLiveTimer = null;
+  // [2.44.8] Faltaba la definición (el commit del banner agregó la llamada pero no la función → ReferenceError
+  // repetido en consola). Resuelve el link DIRECTO al APK más nuevo vía la API pública de releases de GitHub
+  // (CORS abierto) y actualiza el banner. Si falla (rate-limit/offline), el <a> ya apunta a /releases/latest.
+  async function _mgCargarDescarga() {
+    try {
+      const r = await fetch('https://api.github.com/repos/Levo19/MOS/releases/latest', { headers: { 'Accept': 'application/vnd.github+json' } });
+      if (!r.ok) return;
+      const rel = await r.json();
+      const assets = Array.isArray(rel.assets) ? rel.assets : [];
+      const apk = assets.find(a => /yapecaptor.*\.apk$/i.test(a.name || '')) || assets.find(a => /\.apk$/i.test(a.name || ''));
+      const linkEl = document.getElementById('mgDlBanner');
+      const verEl = document.getElementById('mgDlVer');
+      if (apk && linkEl) linkEl.href = apk.browser_download_url;
+      if (verEl) verEl.textContent = apk ? ('última: ' + (rel.tag_name || rel.name || '') + ' · ' + apk.name) : (rel.tag_name || 'ver releases');
+    } catch (_) {}
+  }
   async function _mgCargarFoto(nombre) {
     try { const r = await API.post('guardMediaUrl', { nombre }); if (!r || r.status !== 'success' || !r.url) return;
       const img = document.querySelector('#mgResguardo img[data-eq="' + (window.CSS && CSS.escape ? CSS.escape(nombre) : nombre) + '"]');
