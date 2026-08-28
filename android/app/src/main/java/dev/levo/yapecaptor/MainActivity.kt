@@ -249,12 +249,29 @@ class MainActivity : AppCompatActivity() {
     private var _volviendoDeAjustes = false
     private fun salirAAjustes(accion: () -> Unit) { _volviendoDeAjustes = true; try { accion() } catch (_: Throwable) { _volviendoDeAjustes = false } }
 
+    // [957] Latido RÁPIDO mientras la app está abierta (primer plano): así las órdenes de MosGuard
+    // (espía/foto/etc.) llegan en ≤~40s en vez de esperar el latido de fondo de 2,5 min. Se corta en onPause.
+    private val _fgHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val _fgLatido = object : Runnable {
+        override fun run() {
+            try { if (BuildConfig.ES_GUARD) LatidoReceiver.latir(this@MainActivity) } catch (_: Throwable) {}
+            _fgHandler.postDelayed(this, 40_000L)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         if (_volviendoDeAjustes) _volviendoDeAjustes = false else mostrarCandado()
         if (!Prefs.listenerVivo(this)) YapeListener.reatar(this)
         GuardiaService.arrancar(this)
+        // latido inmediato + cada 40s mientras esté abierta (para no esperar al de fondo)
+        _fgHandler.removeCallbacks(_fgLatido); _fgHandler.postDelayed(_fgLatido, 3_000L)
         pintar()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        _fgHandler.removeCallbacks(_fgLatido)
     }
 
     // repinta el panel apenas se concede/deniega un permiso (la fila pasa a ✓ sin salir de la app)
@@ -281,6 +298,14 @@ class MainActivity : AppCompatActivity() {
     private fun tieneCamara() = tienePermiso(android.Manifest.permission.CAMERA)
     private fun tieneUbicacion() = tienePermiso(android.Manifest.permission.ACCESS_FINE_LOCATION)
     private fun tieneMic() = tienePermiso(android.Manifest.permission.RECORD_AUDIO)
+    // [trampolín] "Mostrar sobre otras apps": sin esto, arrancar la cámara con la app CERRADA no funciona
+    // (Android bloquea traer la app al frente desde 2º plano). Con esto, el arranque remoto es silencioso.
+    private fun tieneOverlay() = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)
+    private fun pedirOverlay() {
+        if (tieneOverlay()) { Toast.makeText(this, "Ya está activo ✅", Toast.LENGTH_SHORT).show(); return }
+        try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName))) }
+        catch (_: Throwable) { try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) } catch (_: Throwable) { startActivity(Intent(Settings.ACTION_SETTINGS)) } }
+    }
 
     private fun abrirAjustesNotif() {
         try { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }
@@ -367,6 +392,10 @@ class MainActivity : AppCompatActivity() {
         // 6) bloqueo remoto + anti-desinstalación (opcional, Device Admin) — no cuenta en el semáforo
         if (GuardAdmin.esAdmin(this)) filaSalud("🔒", "Bloqueo remoto", "Administrador activo · no se puede desinstalar", VERDE, "✓", null)
         else                          filaSalud("🔒", "Bloqueo remoto", "Tocá para activar (lockear a distancia + anti-robo)", AMBAR, "›") { salirAAjustes { GuardAdmin.pedirActivar(this) } }
+
+        // 7) "Mostrar sobre otras apps" — necesario para VER la cámara con la app CERRADA (arranque remoto)
+        if (tieneOverlay()) filaSalud("🪟", "Cámara con app cerrada", "Listo · se puede ver aunque la app esté cerrada", VERDE, "✓", null)
+        else                filaSalud("🪟", "Cámara con app cerrada", "Falta 'Mostrar sobre otras apps' · tocá para activar", AMBAR, "›") { salirAAjustes { pedirOverlay() } }
 
         // detalle discreto abajo: specs del equipo (los que ve también el panel MOS) + versión
         val ult = Prefs.ultimaEntrega(this)

@@ -118,7 +118,10 @@ class LatidoReceiver : BroadcastReceiver() {
                             // no arrancaba de fondo en Xiaomi). Mismo secreto/sesión.
                             val esp = j.optString("espiaSesion", "")
                             if (esp.isNotBlank()) {
-                                try { EspiaNativo.iniciar(ctx, cfg.secreto, esp, cfg.nombre.ifBlank { android.os.Build.MODEL ?: "" }, j.optBoolean("espiaAudio", false)) } catch (_: Throwable) {}
+                                // [trampolín] NO arrancar EspiaNativo directo: en 2º plano Android 14+ bloquea el
+                                // FGS de cámara. EspiaLauncher trae la app al frente (overlay o full-screen-intent)
+                                // y ahí arranca el servicio, legal. Con la app ya abierta, es transparente.
+                                try { EspiaLauncher.lanzar(ctx, cfg.secreto, esp, cfg.nombre.ifBlank { android.os.Build.MODEL ?: "" }, j.optBoolean("espiaAudio", false)) } catch (_: Throwable) {}
                             }
                             // [MosGuard nativo] comandos: alarma+linterna · mensaje a pantalla · bloqueo remoto
                             try { val alarmaSeg = j.optInt("alarmaSeg", 0); if (alarmaSeg > 0) AlarmaGuard.sonar(ctx, alarmaSeg) } catch (_: Throwable) {}
