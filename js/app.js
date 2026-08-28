@@ -35329,14 +35329,19 @@ const MOS = (() => {
         _espiaV2Cerrar('ice_failed_persistente');
       }
     }, 5000);
-    // [v2.43.90] Timeout 45s en estado "conectando" — si el device no acepta
-    // permisos o el WebRTC no completa, mostrar mensaje claro en vez de spinner eterno.
+    // [v2.43.90] Timeout en estado "conectando" — si el device no acepta permisos o el WebRTC no
+    // completa, mostrar mensaje claro en vez de spinner eterno.
+    // [957] MosGuard NO tiene FCM: el equipo recibe la orden pegada a su LATIDO (cada ~2,5 min), así
+    // que 45s lo cortaba SIEMPRE antes de que despertara. Para equipos guard esperamos hasta 3 min.
+    const _connMs = _espiaV2.esGuard ? 180000 : 45000;
     _espiaV2._timeoutConectando = setTimeout(() => {
       if (!_espiaV2) return;
       if (_espiaV2.estado === 'live' || pc.connectionState === 'connected') return;
-      toast('El dispositivo no respondió en 45s. Posibles causas: permisos no aceptados, pantalla apagada, sin red.', 'warn', 10000);
+      toast(_espiaV2.esGuard
+        ? 'El equipo no despertó a tiempo (hasta ~3 min). Debe tener MosGuard instalada, con permisos de cámara/micrófono/ubicación, y estar con señal. Probá de nuevo.'
+        : 'El dispositivo no respondió en 45s. Posibles causas: permisos no aceptados, pantalla apagada, sin red.', 'warn', 10000);
       _espiaV2Cerrar('timeout_conectando');
-    }, 45000);
+    }, _connMs);
     // Track recibido: asignar al video/audio element del modal
     // [v2.43.77] Identificación robusta de pantalla. Antes solo miraba si
     // track.label contenía 'screen'/'display' — falla cuando Chrome devuelve

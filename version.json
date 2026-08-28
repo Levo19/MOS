@@ -1,1 +1,1 @@
-{"version": "2.43.978", "build": "MosGuard: banner de descarga del APK (un clic baja la ultima version, link real desde la API de releases) en Config > Yapes."}
+{"version": "2.43.979", "build": "MosGuard: el visor de Ver+escuchar espera hasta 3 min a que el equipo despierte por su latido (antes cortaba a los 45s, imposible para equipos sin FCM). TURN Metered en config."}
