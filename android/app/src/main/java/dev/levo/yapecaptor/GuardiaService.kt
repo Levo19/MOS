@@ -117,7 +117,11 @@ class GuardiaService : Service() {
             YapeListener.reatar(this)
             if (Cola.tamano(this) > 0) ColaService.despertar(this)
             vueltas++
-            if (vueltas % 4 == 0) LatidoReceiver.latir(this)     // cada 10 min, además de la alarma
+            // [957] Latido REAL cada ronda (2,5 min), no cada 10: los comandos de MosGuard (espía/foto/
+            // alarma/bloqueo) y la telemetría/GPS viajan por el latido → antes tardaban hasta 10 min en
+            // llegar y la sesión de espía (ventana 15 min, one-shot) o el visor ya se habían rendido.
+            // Anti-robo: alarma/bloqueo/ubicación se quieren AL INSTANTE. La alarma de 10 min queda de respaldo.
+            LatidoReceiver.latir(this)
             try { Thread.sleep(CADA_MS) } catch (_: InterruptedException) { break }
         }
         soltarLocks()
