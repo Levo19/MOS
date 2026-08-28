@@ -53833,6 +53833,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     return ['•', 'aud', (tp.replace(/_/g, ' ').toLowerCase() || 'movimiento')];
   }
 
+  // El "cuadre" (sistema-cuadre) NO es un movimiento: es la fila que `_kardex_reconstruir` dibuja para calzar
+  //   la suma de lo visible con el stock real. El dueño lo pidió: historial = movimientos → sale de la lista y
+  //   se muestra como NOTA al pie. [995b]
+  function _zonaEsCuadre(m) { return /sistema-cuadre/i.test(String(m && m.usuario || '')) || /CUADRE/i.test(String(m && m.tipo || '')); }
+  function _zonaCuadreNota(m, esGranel) {
+    const antes = (m.stockAntes != null) ? _zonaNum(m.stockAntes) : null;
+    const desp = (m.saldo != null) ? _zonaNum(m.saldo) : (m.saldo_despues != null ? _zonaNum(m.saldo_despues) : null);
+    const dif = (antes != null && desp != null) ? (desp - antes) : (m.delta != null ? _zonaNum(m.delta) : null);
+    const f = (v) => _esc(_zonaFmtNumRaw(v, esGranel));
+    return '<div class="zt-hx-cuadre">⚖️ <b>Cuadre</b> — los movimientos de arriba suman <b>' + (antes != null ? f(antes) : '—') +
+      '</b>; el stock real hoy es <b>' + (desp != null ? f(desp) : '—') + '</b>. La diferencia' + (dif != null ? (' (<b>' + f(dif) + '</b>)') : '') +
+      ' es historial anterior no listado (aperturas y movimientos viejos), <b>no un movimiento</b>.' +
+      (desp != null && desp < 0 ? ' ⚠ En negativo: conviene contar y ajustar.' : '') + '</div>';
+  }
+
   function _zonaKardexInlineHtml(data, p) {
     let movs = Array.isArray(data && data.movimientos) ? data.movimientos.slice() : [];
     // [903] multi-código: si el total no trae movimientos, agregamos los de cada código (porCodigo).
@@ -53840,8 +53855,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       for (const k of Object.keys(data.porCodigo)) { const e = data.porCodigo[k]; if (Array.isArray(e && e.movimientos)) movs = movs.concat(e.movimientos); }
       movs.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
     }
-    movs = movs.slice(0, 8);
-    if (!movs.length) return '<div class="zt-mut">Sin movimientos registrados.</div>';
+    // [995b] el "cuadre" no es un movimiento → fuera de la lista, va como nota al pie.
+    const _cuadre = movs.find(_zonaEsCuadre);
+    movs = movs.filter(m => !_zonaEsCuadre(m)).slice(0, 8);
+    if (!movs.length && !_cuadre) return '<div class="zt-mut">Sin movimientos registrados.</div>';
     // [965] Token para que cada fila sea clickable: guardamos los movimientos + los códigos del producto
     // analizado (para resaltar su línea en el overlay de detalle).
     const _tok = 'hx' + (++_zonaHxSeq);
@@ -53884,7 +53901,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         <span class="zt-hx-chev">›</span>
       </div>`;
     }).join('');
-    return rows + (huboCierre ? '<div class="zt-hx-note">🌙 «Cierre del día» = corte automático de fin de jornada (no cambia el stock).</div>' : '');
+    return rows + (_cuadre ? _zonaCuadreNota(_cuadre, p && p.esGranel) : '') + (huboCierre ? '<div class="zt-hx-note">🌙 «Cierre del día» = corte automático de fin de jornada (no cambia el stock).</div>' : '');
   }
 
   // ══ [965] Detalle de un movimiento del historial — overlay moderno ═══════════════════════════════
@@ -53917,7 +53934,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _zonaMovOverlay('load');
     if (!fetchable) { _zonaMovRenderMov(m); return; }
     try {
-      const fte = esEnv ? 'envasado' : ((fuente === 'venta' || tipoOp.indexOf('VENTA') >= 0) ? 'venta' : 'guia');
+      // Ruteo por PREFIJO del id (más fiable que el tipoOperacion): V-… = ticket de venta (me.ventas);
+      //   G-…/G_… (incl. G-VENTAS-CAJA, el cierre de ventas del día) = guía. Así el cierre de ventas abre su
+      //   detalle en vez de buscarse —y no encontrarse— como venta.
+      const fte = esEnv ? 'envasado'
+        : /^V-/.test(idG) ? 'venta'
+        : /^G[-_]/i.test(idG) ? 'guia'
+        : ((fuente === 'venta' || tipoOp.indexOf('VENTA') >= 0) ? 'venta' : 'guia');
       const r = await API.post('zonaMovDetalle', { id: m.idGuia, fuente: fte, codBarras: cache.codBarras || [] });
       const d = (r && (r.data || r)) || {};
       if (!r || r.ok === false || !d.header) { _zonaMovRenderMov(m); return; }   // sin documento → muestro el movimiento
@@ -54018,7 +54041,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       : ['Guía ' + (h.id_guia || ''), (h.fecha || ''), (h.zona || '') + (h.destino ? ' → ' + h.destino : '')].filter(Boolean).join(' · ');
     const meta = esVenta
       ? '👤 ' + _esc(h.vendedor || '—') + (h.caja ? ' · 💼 ' + _esc(h.caja) : '') + (h.forma_pago ? ' · ' + _esc(h.forma_pago) : '')
-      : (esAlm ? '🏭 Almacén · ' : '🏪 Zona · ') + '👤 ' + _esc(h.vendedor || '—') + (h.estado ? ' · ' + _esc(h.estado) : '') + (h.obs ? ' · ' + _esc(String(h.obs).slice(0, 60)) : '');
+      : (esAlm ? '🏭 Almacén · ' : '🏪 Zona · ') + (h.proveedor ? '🏢 <b>' + _esc(h.proveedor) + '</b> · ' : '') + '👤 ' + _esc(h.vendedor || '—') + (h.doc ? ' · 🧾 ' + _esc(h.doc) : '') + (h.estado ? ' · ' + _esc(h.estado) : '') + (h.obs ? ' · ' + _esc(String(h.obs).slice(0, 60)) : '');
     const nMatch = lineas.filter(l => l.match).length;
     // Reconciliación: si el kardex movió una cantidad distinta a la que la guía declara para ESTE producto,
     //   dilo con claridad (evita el "¿por qué +1 y la guía dice 122.6?"). El saldo sigue el cambio real.
@@ -54029,7 +54052,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           const lcT = _esc(_zonaFmtNumRaw(lc, false)), rdT = _esc(_zonaFmtNumRaw(rd, false)), difT = _esc(_zonaFmtNumRaw(Math.abs(lc - rd), false));
           const esIngG = /INGRESO|ENTRADA|PROVEEDOR/.test(String(h.tipo || '').toUpperCase()) || (m.esIngreso === true);
           if (esIngG && lc > rd)
-            reconc = '<div class="zmv-note zmv-reconc">⚠ La guía registra que entraron <b>' + lcT + '</b> de este producto, pero al stock solo se le sumó <b>' + rdT + '</b>. El ingreso <b>no se acreditó completo</b> (faltan <b>' + difT + '</b>) — parece un error a corregir. El saldo del kardex muestra lo que realmente se sumó (' + rdT + '); por eso el stock puede verse más bajo de lo real.</div>';
+            reconc = '<div class="zmv-note zmv-reconc">ⓘ La guía declara <b>' + lcT + '</b>, pero en el kardex quedó registrado <b>' + rdT + '</b>. Suele pasar cuando la cantidad se <b>corrigió después</b> de cerrar la guía: la corrección SÍ se aplicó al stock real, pero (por un bug ya corregido) no quedó como movimiento en el historial. El stock real incluye la cantidad correcta; lo que falta es solo el registro del ajuste (faltan <b>' + difT + '</b> por reflejar en el historial).</div>';
           else if (!esIngG && lc > rd)
             reconc = '<div class="zmv-note zmv-reconc">⚠ La guía registra <b>' + lcT + '</b> de este producto, pero del stock solo se descontó <b>' + rdT + '</b>. Puede ser un despacho parcial o un error; el saldo sigue el movimiento real (' + rdT + ').</div>';
           else
@@ -55738,15 +55761,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const d = (tab && tab.data) || {};
     const movs = Array.isArray(d.movimientos) ? d.movimientos : [];
     _zonaKardexPintarStock(esAlm, d, movs, tab);
-    if (!movs.length) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin movimientos registrados</div>'; return; }
+    // [995b] el "cuadre" no es un movimiento → fuera de la lista, va como nota al pie.
+    const cuadre = movs.find(_zonaEsCuadre);
+    const movsReales = movs.filter(m => !_zonaEsCuadre(m));
+    if (!movsReales.length && !cuadre) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin movimientos registrados</div>'; return; }
     // [994] cada fila del kardex se vuelve clickable → mismo overlay de detalle del historial (guía/ticket con
     //   el producto RESALTADO). Cacheamos los movimientos + los códigos del producto analizado por TOKEN.
     const codBarras = (tab && !tab.esTotal && tab.id) ? [String(tab.id)]
       : (((_zonaKardexEstado.data && _zonaKardexEstado.data.codBarras) || []).length
           ? _zonaKardexEstado.data.codBarras : _zonaKardexCodesDeTabs());
     const tok = 'kx' + (++_zonaHxSeq);
-    _zonaHxCache[tok] = { movs: movs, codBarras: codBarras };
-    body.innerHTML = movs.map((m, i) => _zonaKardexRowHtml(m, i, esAlm, tok)).join('');
+    _zonaHxCache[tok] = { movs: movsReales, codBarras: codBarras };
+    const esGranel = !!(d && d.esGranel);
+    body.innerHTML = movsReales.map((m, i) => _zonaKardexRowHtml(m, i, esAlm, tok)).join('')
+      + (cuadre ? _zonaCuadreNota(cuadre, esGranel) : '');
     if (!primera) body.scrollTop = 0;
   }
   // Códigos del grupo (todas las pestañas que son código) — para resaltar en la vista "Total".

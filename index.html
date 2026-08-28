@@ -15322,6 +15322,10 @@
     .zt-hx-row.is-zero { opacity:.6; }
     @media (prefers-reduced-motion:reduce){ .zt-hx-row,.zt-hx-chev{ transition:none; } }
     .zt-hx-note { font-size:.6rem; color:#64748b; margin-top:.5rem; padding-top:.4rem; border-top:1px solid #16202f; line-height:1.4; }
+    /* [995b] nota del "cuadre" (no es un movimiento, es reconciliación). */
+    .zt-hx-cuadre { font-size:.66rem; color:#94a3b8; margin-top:.55rem; padding:.5rem .6rem; line-height:1.5;
+      background:rgba(148,163,184,.06); border:1px dashed #334155; border-radius:.55rem; }
+    .zt-hx-cuadre b { color:#cbd5e1; }
     /* [902] Chips de código con stock (editables con autoguardado) */
     .zc-chips { display:flex; flex-wrap:wrap; gap:.32rem; margin-top:.42rem; }
     .zc-chip { display:inline-flex; align-items:center; gap:.28rem; font-size:.66rem; border:1px solid #29344a; background:rgba(15,23,42,.7); border-radius:1rem; padding:.12rem .5rem; transition:border-color .15s, box-shadow .15s; }
@@ -22159,7 +22163,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.996';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.997';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22438,7 +22442,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.996"></script>
+<script src="js/api.js?v=2.43.997"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22454,7 +22458,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.996"></script>
+<script src="js/app.js?v=2.43.997"></script>
 <script src="js/buzon.js?v=2.43.992"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
