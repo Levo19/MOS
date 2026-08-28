@@ -37,8 +37,9 @@
   function css(){ if(document.getElementById('bz-css'))return; var s=document.createElement('style'); s.id='bz-css';
     s.textContent = [
     ':root{--bzg:#e9a72c;--bzg2:#c98a12}',
-    '.bz-fab{position:fixed;right:18px;bottom:18px;z-index:2147483000;height:54px;border:0;border-radius:18px;padding:0 18px 0 15px;display:flex;align-items:center;gap:9px;color:#1a1206;font-weight:800;font-size:14.5px;font-family:inherit;cursor:pointer;background:linear-gradient(150deg,#f7c04a,#e9a72c);box-shadow:0 12px 30px -10px #e9a72c,0 0 0 5px #e9a72c22;transition:transform .18s}',
+    '.bz-fab{position:fixed;right:18px;bottom:18px;z-index:2147483000;height:54px;border:0;border-radius:18px;padding:0 18px 0 15px;display:flex;align-items:center;gap:9px;color:#1a1206;font-weight:800;font-size:14.5px;font-family:inherit;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;background:linear-gradient(150deg,#f7c04a,#e9a72c);box-shadow:0 12px 30px -10px #e9a72c,0 0 0 5px #e9a72c22;transition:transform .18s}',
     '.bz-fab:hover{transform:translateY(-3px)}.bz-fab .i{font-size:20px}',
+    '.bz-fab.bz-dragging{transition:none;cursor:grabbing;transform:scale(1.07);box-shadow:0 20px 44px -10px #e9a72c,0 0 0 5px #e9a72c33}',
     '.bz-fab .bdg{position:absolute;top:-7px;right:-7px;min-width:22px;height:22px;border-radius:11px;background:#e5484d;color:#fff;font-size:11.5px;font-weight:700;display:none;align-items:center;justify-content:center;padding:0 6px;box-shadow:0 0 0 3px #0003}',
     '.bz-fab .bdg.on{display:flex}',
     '.bz-ov{position:fixed;inset:0;z-index:2147483001;background:rgba(10,8,15,.55);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:none;align-items:flex-end;justify-content:center;font-family:inherit}',
@@ -91,10 +92,35 @@
 
   /* ── FAB + badge ── */
   var _badgeT=null;
+  /* ── Buzón flotante MOVIBLE: se arrastra (mouse+touch) y recuerda su lugar; un toque simple = abrir. ── */
+  function _bzClamp(x,y,el){ var w=el.offsetWidth||120,h=el.offsetHeight||54;
+    var mx=Math.max(4,(window.innerWidth||360)-w-4), my=Math.max(4,(window.innerHeight||640)-h-4);
+    return { x:Math.min(Math.max(4,x),mx), y:Math.min(Math.max(4,y),my) }; }
+  function _bzApplyPos(el){ var raw; try{ raw=JSON.parse(localStorage.getItem('bz-fab-pos')||'null'); }catch(_){}
+    if(!raw||typeof raw.x!=='number')return; var c=_bzClamp(raw.x,raw.y,el);
+    el.style.left=c.x+'px'; el.style.top=c.y+'px'; el.style.right='auto'; el.style.bottom='auto'; }
+  function _bzDraggable(el){
+    var TH=6, sx=0, sy=0, ox=0, oy=0, moved=false, drag=false, pid=null;
+    function mv(e){ if(!drag)return; var dx=e.clientX-sx, dy=e.clientY-sy;
+      if(!moved && Math.sqrt(dx*dx+dy*dy)>TH){ moved=true; el.classList.add('bz-dragging'); el.style.right='auto'; el.style.bottom='auto'; }
+      if(moved){ if(e.cancelable)e.preventDefault(); var c=_bzClamp(ox+dx,oy+dy,el); el.style.left=c.x+'px'; el.style.top=c.y+'px'; } }
+    function up(){ if(!drag)return; drag=false; el.classList.remove('bz-dragging');
+      window.removeEventListener('pointermove',mv); window.removeEventListener('pointerup',up); window.removeEventListener('pointercancel',up);
+      try{ el.releasePointerCapture(pid); }catch(_){}
+      if(moved){ var r=el.getBoundingClientRect(); try{ localStorage.setItem('bz-fab-pos',JSON.stringify({x:r.left,y:r.top})); }catch(_){} }
+      else { open(); }   // no se movió → fue un toque → abrir el buzón
+    }
+    el.addEventListener('pointerdown',function(e){ if(e.button!=null&&e.button!==0)return;
+      drag=true; moved=false; pid=e.pointerId; var r=el.getBoundingClientRect(); sx=e.clientX; sy=e.clientY; ox=r.left; oy=r.top;
+      try{ el.setPointerCapture(pid); }catch(_){}
+      window.addEventListener('pointermove',mv,{passive:false}); window.addEventListener('pointerup',up); window.addEventListener('pointercancel',up); });
+    window.addEventListener('resize',function(){ if(el.style.left){ var r=el.getBoundingClientRect(); var c=_bzClamp(r.left,r.top,el); el.style.left=c.x+'px'; el.style.top=c.y+'px'; } });
+  }
+
   function mount(){ if(document.getElementById('bz-fab'))return; css();
-    var f=document.createElement('button'); f.id='bz-fab'; f.className='bz-fab';
+    var f=document.createElement('button'); f.id='bz-fab'; f.className='bz-fab'; f.type='button';
     f.innerHTML='<span class="i">📮</span> '+(esMaster()?'Buzón':'Reportar')+'<span class="bdg" id="bz-bdg"></span>';
-    f.onclick=open; document.body.appendChild(f);
+    document.body.appendChild(f); _bzApplyPos(f); _bzDraggable(f);   // movible + toque = abrir
     poll(); if(_badgeT)clearInterval(_badgeT); _badgeT=setInterval(poll,45000);
     document.addEventListener('visibilitychange',function(){ if(!document.hidden)poll(); });
   }
