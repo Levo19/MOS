@@ -52065,7 +52065,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         // ZONA: set-absoluto en me.stock_zonas; el backend resuelve el canónico del skuBase.
         r = await API.zona.ajustarStock({ zona, skuBase: sku, nuevo, usuario, localId });
       }
-      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
       // Éxito: refresco SILENCIOSO del panel (sin skeleton) para que el producto aparezca ya en su cuadrante.
       try { _zonaAutoRefrescar(); } catch (_) {}
     } catch (e) {
@@ -52092,7 +52092,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toast('"' + (item.descripcion || sku) + '" marcado como "no aplica aquí".', 'info');
     try {
       const r = await API.zona.porActivarDescartar({ zona, skuBase: sku, usuario });
-      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
     } catch (e) {
       // ROLLBACK
       if (pa.verDescartados) { item.descartado = false; }
@@ -52116,7 +52116,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     toast('"' + (item.descripcion || sku) + '" restaurado a los huecos por activar.', 'ok');
     try {
       const r = await API.zona.porActivarDescartar({ zona, skuBase: sku, usuario, revertir: true });
-      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
     } catch (e) {
       item.descartado = true;   // ROLLBACK
       pa.nDescartados = _zonaNum(pa.nDescartados) + 1;
@@ -53018,7 +53018,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       let r;
       if (esGlobal) { const lid = p._ajLocalId || (p._ajLocalId = _zonaAjusteLocalId('GLOBAL')); r = await API.zona.ajustarStock({ zona: S.zonaActual, skuBase: sku, nuevo, localId: lid }); delete p._ajLocalId; }
       else { const lid = c._ajLocalId || (c._ajLocalId = _zonaAjusteLocalId(cb)); r = await _zonaAplicarAjusteCodigo(String(cb), nuevo, lid); delete c._ajLocalId; }
-      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
     } catch (e) {
       if (esGlobal) { if (p.stockZona != null) p.stockZona = antes; else p.stock = antes; } else { c.stock = antes; }
       _zonaRecalcGlobal(p); try { el.value = _zonaFmtCant(antes, p, true); } catch (_) {}
@@ -53528,7 +53528,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         // ZONA sin desglose: el backend resuelve el canónico del skuBase (comportamiento histórico).
         r = await API.zona.ajustarStock({ zona: S.zonaActual, skuBase: sku, nuevo, localId });
       }
-      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
       delete p._ajLocalId;   // gesto confirmado → liberar el id (un nuevo conteo usará otro)
       _zonaPintarKpis();
     } catch (e) {
@@ -53649,7 +53649,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try {
       // ZONA → SET-ABSOLUTO me.stock_zonas (por código) ; ALMACEN → DELTA wh.stock (por código). Idempotente.
       const r = await _zonaAplicarAjusteCodigo(String(cb), nuevo, localId);
-      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
       delete c._ajLocalId;   // gesto confirmado → liberar el id (un nuevo conteo del mismo código usará otro)
       _zonaPintarKpis();
     } catch (e) {
@@ -53814,6 +53814,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (/ENVASE/.test(s)) return ['🏭', 'out', 'Envasado · envase'];
       return ['🏭', 'out', 'Envasado'];
     }
+    if (/RECONCILIACION/.test(s)) return ['🔗', 'in', 'Ajuste por reconciliación'];
     if (/AUDITOR/.test(s)) return ['📋', 'aud', 'Auditoría'];
     if (/CUADRE/.test(s)) return ['⚖️', 'aud', 'Cuadre de stock'];
     if (/ANULAC|REVERSO|REABRIR|DUPLICAD/.test(s)) return ['↩️', 'aud', 'Anulación / reverso'];
@@ -53995,6 +53996,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       note = '🎬 Es el stock con el que este producto ARRANCÓ al migrar el sistema (de GAS a la base actual). No venía como movimiento, así que se registró —con firma— para que el historial cuadre con el stock real. No cambió el stock, solo completó el arranque.';
     } else if (/CORRECCION_INGRESO/.test(all)) { ico = '🔧'; titulo = 'Corrección de ingreso'; tone = 'g'; sub = 'Ingreso que se registró incompleto';
       note = '🔧 Un ingreso de proveedor se había registrado incompleto en el historial. El stock real SÍ tenía la cantidad correcta; esto solo completó el registro (con firma) para que el historial cuadre. No cambió el stock.';
+    } else if (/RECONCILIACION/.test(all)) { ico = '🔗'; titulo = 'Ajuste por reconciliación'; tone = 'g'; sub = 'Conteo + ventas del día';
+      note = '🔗 Se hizo un conteo (ajuste) de este producto mientras la caja seguía vendiendo. Las ventas que ocurrieron ANTES del conteo ya estaban reflejadas en lo que contaste, así que al cerrar caja se sumaron de vuelta para no descontarlas dos veces. El saldo final = tu conteo − solo las ventas posteriores al conteo.';
     } else if (/AUDITOR/.test(all)) { ico = '📋'; titulo = 'Conteo (auditoría)'; tone = 'a';
       note = '📋 Resultado de un conteo físico: el stock quedó en lo realmente contado.';
     } else if (/AJUSTE/.test(all)) { ico = '✏️'; titulo = 'Ajuste manual'; tone = 'v';
@@ -54430,7 +54433,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _zonaSfx('ok'); _zonaVibrar([80,60,80]);
     try {
       const r = await API.zona.pedirAlmacen({ zona: S.zonaActual, items, localId });
-      if (r == null || r.ok === false) throw new Error((r && r.error) || 'sin commit');
+      if (r == null || r.ok === false) throw new Error((r && (r.mensaje || r.error)) || 'sin commit');
       // ÉXITO: vaciar carrito de la zona + cerrar modal + refrescar panel (trae pedidoEstado persistido).
       skus.forEach(s => delete cart[s]);
       closeModal('modalZonaCart');
