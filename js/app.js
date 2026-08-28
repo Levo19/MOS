@@ -53868,17 +53868,19 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try { _finBeep?.('click'); } catch(_){}
     const fuente = String(m.fuente || '').toLowerCase();
     const tipoOp = String(m.tipoOperacion || '').toUpperCase();
-    const esAudit = fuente === 'ajuste' || fuente === 'auditoria' || !m.idGuia ||
-                    /AJUSTE|AUDITOR|CUADRE/.test(String(m.tipo || '').toUpperCase() + tipoOp);
+    const noDoc = /AJUSTE|AUDITOR|CUADRE/.test(String(m.tipo || '').toUpperCase() + tipoOp);
+    // Solo VENTA y GUÍA CON documento formal (cabecera) se abren como documento completo; el resto
+    // (ajuste, auditoría, cuadre, recepción por escaneo, envasado, o guía sin cabecera) se dibuja del
+    // PROPIO movimiento — que siempre trae quién/cuándo/cuánto. Así nunca sale "no encontrado".
+    const fetchable = !noDoc && !!m.idGuia && (fuente === 'venta' || fuente === 'guia');
     _zonaMovOverlay('load');
-    if (esAudit) { _zonaMovRenderAudit(m); return; }
+    if (!fetchable) { _zonaMovRenderMov(m); return; }
     try {
-      const fte = fuente || (tipoOp.indexOf('VENTA') >= 0 ? 'venta' : 'guia');
-      const r = await API.post('zonaMovDetalle', { id: m.idGuia, fuente: fte, codBarras: cache.codBarras || [] });
+      const r = await API.post('zonaMovDetalle', { id: m.idGuia, fuente: fuente, codBarras: cache.codBarras || [] });
       const d = (r && (r.data || r)) || {};
-      if (!r || r.ok === false || !d.header) throw new Error((r && r.error) || 'sin datos');
+      if (!r || r.ok === false || !d.header) { _zonaMovRenderMov(m); return; }   // sin documento → muestro el movimiento
       _zonaMovRenderDoc(d);
-    } catch (e) { _zonaMovRenderError(m, e); }
+    } catch (e) { _zonaMovRenderMov(m); }
   }
 
   function _zonaMovOverlay(state) {
@@ -53898,12 +53900,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '<button class="zmv-x" onclick="MOS.zonaMovCerrar()">✕</button></div>'; }
 
   // AJUSTE / AUDITORÍA / CUADRE → se dibuja del propio movimiento (quién · cuándo · hora · antes→después)
-  function _zonaMovRenderAudit(m) {
+  // Detalle desde el PROPIO movimiento — sirve para TODO lo que no es venta/guía con documento:
+  // ajuste, auditoría, cuadre, recepción por escaneo, envasado, movimientos de ALMACÉN (tabla propia), etc.
+  function _zonaMovRenderMov(m) {
     const tU = String(m.tipo || '').toUpperCase(), opU = String(m.tipoOperacion || '').toUpperCase();
-    const cuadre = /CUADRE/.test(tU) || String(m.usuario || '').toLowerCase().indexOf('cuadre') >= 0;
-    const esAud  = /AUDITOR/.test(tU + opU);
-    const ico = cuadre ? '⚖️' : esAud ? '📋' : '✏️';
-    const titulo = cuadre ? 'Cuadre con stock real' : esAud ? 'Conteo (auditoría)' : 'Ajuste manual';
+    const all = tU + ' ' + opU; const fte = String(m.fuente || '').toLowerCase();
+    let ico, titulo, tone, note = '';
+    if (/CUADRE/.test(all) || String(m.usuario || '').toLowerCase().indexOf('cuadre') >= 0) {
+      ico = '⚖️'; titulo = 'Cuadre con stock real'; tone = 'w';
+      note = '⚖️ Ajuste automático del sistema para calzar el saldo histórico con el stock real. No lo hizo una persona.';
+    } else if (/AUDITOR/.test(all)) { ico = '📋'; titulo = 'Conteo (auditoría)'; tone = 'a';
+      note = '📋 Resultado de un conteo físico: el stock quedó en lo realmente contado.';
+    } else if (/AJUSTE/.test(all)) { ico = '✏️'; titulo = 'Ajuste manual'; tone = 'v';
+    } else if (fte === 'recepcion' || /RECEP/.test(all)) { ico = '📥'; titulo = 'Recepción de almacén'; tone = 'g';
+      note = '📥 Llegó por escaneo desde almacén (no generó una guía con detalle abrible).';
+    } else if (/TRASLADO_IN|ENTRADA|INGRESO/.test(all)) { ico = '📥'; titulo = 'Ingreso a la zona'; tone = 'g';
+    } else if (/SALIDA|TRASLADO_OUT|DESPACHO/.test(all)) { ico = '🚚'; titulo = 'Salida / despacho'; tone = 'b';
+      note = '🚚 Este movimiento no tiene una guía con detalle abrible; se muestra el resumen.';
+    } else { ico = '📦'; titulo = (m.tipo || 'Movimiento de stock'); tone = 'b'; }
     const quien = (m.usuario && m.usuario !== '—') ? m.usuario : 'sistema';
     const fh = _zonaMovFechaHora(m.fecha);
     let antes = (m.stockAntes != null) ? _zonaNum(m.stockAntes) : null;
@@ -53913,7 +53927,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const dTxt = (delta > 0 ? '+' : delta < 0 ? '−' : '') + _esc(_zonaFmtNumRaw(Math.abs(delta), false));
     const ini = (String(quien).trim()[0] || '?').toUpperCase();
     _zonaMovSet(
-      _zonaMovHead(ico, titulo, 'Movimiento de stock', esAud ? 'a' : cuadre ? 'w' : 'v') +
+      _zonaMovHead(ico, titulo, 'Movimiento de stock', tone) +
       '<div class="zmv-body">' +
         '<div class="zmv-who"><span class="zmv-ini">' + _esc(ini) + '</span>' +
           '<div><b>' + _esc(quien) + '</b><i>' + _esc(fh.dia) + ' · 🕐 ' + _esc(fh.hora) + '</i></div></div>' +
@@ -53922,8 +53936,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           '<div class="zmv-arrow ' + dCls + '"><span class="zmv-chip ' + dCls + '">' + dTxt + '</span>→</div>' +
           '<div class="zmv-db"><span>Después</span><b>' + (desp != null ? _esc(_zonaFmtNumRaw(desp, false)) : '—') + '</b></div>' +
         '</div>' +
-        (cuadre ? '<div class="zmv-note">⚖️ Ajuste automático del sistema para calzar el saldo histórico con el stock real contado. No lo hizo una persona.</div>'
-                : esAud ? '<div class="zmv-note">📋 Resultado de un conteo físico: el stock quedó en lo realmente contado.</div>' : '') +
+        (note ? '<div class="zmv-note">' + note + '</div>' : '') +
+        (m.idGuia ? '<div class="zmv-ref">📎 ' + _esc(String(m.idGuia)) + '</div>' : '') +
       '</div>');
   }
 
@@ -54001,6 +54015,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.zmv-chip{font-size:13px;font-weight:900;padding:3px 10px;border-radius:999px}',
       '.zmv-chip.pos{background:rgba(52,211,153,.16);color:#34d399}.zmv-chip.neg{background:rgba(248,113,113,.16);color:#f87171}.zmv-chip.zero{background:rgba(148,163,184,.16);color:#94a3b8}',
       '.zmv-note{margin-top:13px;padding:10px 12px;border-radius:12px;border:1px dashed #2b3a54;background:rgba(148,163,184,.06);color:#8aa0c2;font-size:11.5px;line-height:1.55}',
+      '.zmv-ref{margin-top:9px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10.5px;color:#6b7d9c;background:#0c1626;border:1px solid #1a2740;border-radius:8px;padding:5px 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.zmv-meta{font-size:12px;color:#9fb2d0;margin-bottom:10px}',
       '.zmv-badge{display:inline-block;font-size:11px;font-weight:700;color:#fbbf24;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);border-radius:999px;padding:4px 11px;margin-bottom:10px}',
       '.zmv-lins{display:flex;flex-direction:column;border:1px solid #1a2740;border-radius:14px;overflow:hidden}',
