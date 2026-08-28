@@ -2837,6 +2837,10 @@ const API = (() => {
       const r = await _sbRpcMOS('buzon_badge', { p: { esMaster: !!p.esMaster, autorNombre: p.autorNombre || '' } }, 'mos');
       return r == null ? null : r;
     }
+    if (action === 'zonaMovDetalle') {   // [965] detalle de un movimiento del historial de zona (venta/guía)
+      const r = await _sbRpcMOS('zona_mov_detalle', { p: { id: p.id, fuente: p.fuente, codBarras: p.codBarras || [] } }, 'mos');
+      return r == null ? null : r;
+    }
     if (action === 'buzonRepSubir') {   // [964] sube 1 foto/video del Buzón de REPORTES (distinto del buzón IGV) → {ok, data:{url, path, tipo}}
       const b64 = String(p.base64 || '').trim();
       const mime = String(p.mimeType || 'image/jpeg');
@@ -3313,6 +3317,7 @@ const API = (() => {
     buzonTicket:                 () => true,
     buzonBadge:                  () => true,
     buzonRepSubir:               () => true,
+    zonaMovDetalle:              () => true,   // [965] detalle de movimiento de zona
     iaUsoResumen:                () => true,   // mos.ia_uso_resumen (852) · consumo de IA · PURA
     iaPendientes:                () => true,   // [937] cola de pendientes de IA · PURA lectura
     turnosDelDia:                () => true,   // mos.turnos_del_dia (848) · turnos abiertos del día · PURA
@@ -3381,7 +3386,7 @@ const API = (() => {
     recalcularStockMinMaxAuto: 1, wh_getRotacionSemanal: 1,
     // [catálogo v4 · directriz CERO fallback GAS] estas acciones no existen en el router GAS:
     // ante null (sin token) deben LANZAR, jamás caer a _fetch → "Acción no reconocida"
-    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, cabinaSemanal: 1, cabinaDrill: 1, cabinaReposicion: 1, cabinaDiaZonas: 1, cabinaPersonal: 1, cabinaHeatDias: 1, iaUsoResumen: 1, iaPendientes: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, guardCaptura: 1, guardEspiaSet: 1, guardAlarma: 1, guardMensaje: 1, guardBloquear: 1, buzonSubir: 1, buzonListar: 1, buzonBorrar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, yapeAtarGlobal: 1, buzonCrear: 1, buzonResponder: 1, buzonEstado: 1, buzonVisto: 1, buzonBandeja: 1, buzonMis: 1, buzonTicket: 1, buzonBadge: 1, buzonRepSubir: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
+    codigoBarraDisponible: 1, getAnaliticaGrupo: 1, aplicarCostosCompra: 1, quitarCostoCompra: 1, historialPrecioCosto: 1, curvaIngresos: 1, dispositivoFijar: 1, guiaRotarFoto: 1, finanzasDiaSku: 1, finanzasDiaSkuTramos: 1, finanzasDiaSkuTickets: 1, cabinaSemanal: 1, cabinaDrill: 1, cabinaReposicion: 1, cabinaDiaZonas: 1, cabinaPersonal: 1, cabinaHeatDias: 1, iaUsoResumen: 1, iaPendientes: 1, yapeCodigoGenerar: 1, yapeEquipos: 1, guardEstado: 1, guardMarcar: 1, guardFoto: 1, guardLive: 1, guardMediaUrl: 1, guardCaptura: 1, guardEspiaSet: 1, guardAlarma: 1, guardMensaje: 1, guardBloquear: 1, buzonSubir: 1, buzonListar: 1, buzonBorrar: 1, yapesDeCaja: 1, yapesDelDia: 1, yapeResolver: 1, yapeAtarGlobal: 1, buzonCrear: 1, buzonResponder: 1, buzonEstado: 1, buzonVisto: 1, buzonBandeja: 1, buzonMis: 1, buzonTicket: 1, buzonBadge: 1, buzonRepSubir: 1, zonaMovDetalle: 1, turnosDelDia: 1, creditoAsignar: 1, creditoDesasignar: 1, curvaGuiaDetalle: 1, cotejoCostosGuias: 1, costosRegistradosGuia: 1, guiaCambiarFoto: 1, rotacionZonasCatalogo: 1,
     // [dueño · CERO-GAS EN PRECIOS] las escrituras de DATOS del catálogo (producto/precio/margen/equivalencias/
     // tramos) leen otras apps directo de la sombra Supabase; un write a la Hoja por GAS NO propagaría → precio
     // fantasma. Si el directo no commitea (sin token) FALLAN (reintentar) en vez de caer a GAS.

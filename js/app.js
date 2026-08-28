@@ -53798,6 +53798,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     movs = movs.slice(0, 8);
     if (!movs.length) return '<div class="zt-mut">Sin movimientos registrados.</div>';
+    // [965] Token para que cada fila sea clickable: guardamos los movimientos + los códigos del producto
+    // analizado (para resaltar su línea en el overlay de detalle).
+    const _tok = 'hx' + (++_zonaHxSeq);
+    _zonaHxCache[_tok] = { movs: movs, codBarras: (data && data.codBarras) || [] };
     // [905] Traducción a lenguaje HUMANO (nada de "idem"/jerga). Tipo → etiqueta clara; usuario → persona o "sistema".
     const TIPO = {
       SALIDA_VENTA: ['🛒', 'out', 'Venta'], VENTA: ['🛒', 'out', 'Venta'],
@@ -53809,7 +53813,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const meses = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
     const fCorta = (f) => { const s = String(f || '').slice(0, 10); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? (parseInt(m[3], 10) + ' ' + (meses[parseInt(m[2], 10)] || m[2])) : s; };
     const quienDe = (u) => { const s = String(u || '').toLowerCase(); if (!u || u === '—') return 'sistema'; if (s.indexOf('cierre') >= 0 || s.indexOf('idem') >= 0) return 'cierre automático'; if (s.indexOf('sistema') >= 0) return 'sistema'; return u; };
-    let rows = movs.map(m => {
+    let rows = movs.map((m, i) => {
       const t = String(m.tipo || '').toUpperCase();
       let meta = TIPO[t]; if (!meta) { for (const k in TIPO) { if (t.indexOf(k) === 0) { meta = TIPO[k]; break; } } }
       meta = meta || ['•', 'aud', (t.replace(/_/g, ' ').toLowerCase() || 'movimiento')];
@@ -53832,16 +53836,191 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const dCls = delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero');
       const queda = (saldo != null && delta !== 0) ? ` <small>queda ${_esc(_zonaFmtNumRaw(saldo, p && p.esGranel))}</small>` : '';
       const cod = m.cod_barra ? ` <span class="zt-hx-cod">${_esc(String(m.cod_barra))}</span>` : '';
-      return `<div class="zt-hx-row${delta === 0 ? ' is-zero' : ''}">
+      // [965] fila clickable → overlay con el detalle (guía/venta completo o quién/cuándo del ajuste)
+      return `<div class="zt-hx-row zt-hx-click${delta === 0 ? ' is-zero' : ''}" role="button" tabindex="0"
+                   onclick="MOS.zonaMovDetalle('${_tok}',${i})"
+                   title="Ver el detalle de este movimiento">
         <span class="zt-hx-ic ${cls}">${ic}</span>
         <span class="zt-hx-lbl">${_esc(lbl)} <small>· ${_esc(quien)}</small>${cod}</span>
         <span class="zt-hx-delta ${dCls}">${dTxt}${queda}</span>
         <span class="zt-hx-date">${_esc(fCorta(m.fecha))}</span>
+        <span class="zt-hx-chev">›</span>
       </div>`;
     }).join('');
     const hayCierre = movs.some(m => String(m.usuario || '').toLowerCase().indexOf('cierre') >= 0 || String(m.usuario || '').toLowerCase().indexOf('idem') >= 0);
     return rows + (hayCierre ? '<div class="zt-hx-note">🌙 «Cierre del día» = corte automático de fin de jornada (no cambia el stock).</div>' : '');
   }
+
+  // ══ [965] Detalle de un movimiento del historial — overlay moderno ═══════════════════════════════
+  var _zonaHxCache = {}, _zonaHxSeq = 0;
+
+  function _zonaMovFechaHora(f) {
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','set','oct','nov','dic'];
+    let d = null; try { d = (f instanceof Date) ? f : new Date(String(f).replace(' ', 'T')); } catch(_){}
+    if (!d || isNaN(d.getTime())) { const s = String(f || ''); return { dia: s.slice(0,10), hora: s.slice(11,16) }; }
+    const hh = String(d.getHours()).padStart(2,'0'), mm = String(d.getMinutes()).padStart(2,'0');
+    return { dia: d.getDate() + ' ' + (meses[d.getMonth()] || '') + ' ' + d.getFullYear(), hora: hh + ':' + mm };
+  }
+
+  async function zonaMovDetalle(tok, idx) {
+    const cache = _zonaHxCache[tok]; if (!cache) return;
+    const m = (cache.movs || [])[idx]; if (!m) return;
+    try { _finBeep?.('click'); } catch(_){}
+    const fuente = String(m.fuente || '').toLowerCase();
+    const tipoOp = String(m.tipoOperacion || '').toUpperCase();
+    const esAudit = fuente === 'ajuste' || fuente === 'auditoria' || !m.idGuia ||
+                    /AJUSTE|AUDITOR|CUADRE/.test(String(m.tipo || '').toUpperCase() + tipoOp);
+    _zonaMovOverlay('load');
+    if (esAudit) { _zonaMovRenderAudit(m); return; }
+    try {
+      const fte = fuente || (tipoOp.indexOf('VENTA') >= 0 ? 'venta' : 'guia');
+      const r = await API.post('zonaMovDetalle', { id: m.idGuia, fuente: fte, codBarras: cache.codBarras || [] });
+      const d = (r && (r.data || r)) || {};
+      if (!r || r.ok === false || !d.header) throw new Error((r && r.error) || 'sin datos');
+      _zonaMovRenderDoc(d);
+    } catch (e) { _zonaMovRenderError(m, e); }
+  }
+
+  function _zonaMovOverlay(state) {
+    _zonaMovInjectCSS();
+    let ov = document.getElementById('zonaMovOvl');
+    if (!ov) { ov = document.createElement('div'); ov.id = 'zonaMovOvl'; ov.className = 'zmv-ov';
+      ov.onclick = e => { if (e.target === ov) zonaMovCerrar(); }; document.body.appendChild(ov); }
+    if (state === 'load') ov.innerHTML = '<div class="zmv-card"><div class="zmv-load">◍ cargando detalle…</div></div>';
+    requestAnimationFrame(() => ov.classList.add('on'));
+  }
+  function zonaMovCerrar() { const ov = document.getElementById('zonaMovOvl'); if (ov) { ov.classList.remove('on'); try { _finBeep?.('collapse'); } catch(_){} } }
+  function _zonaMovSet(html) { const ov = document.getElementById('zonaMovOvl'); if (!ov) return;
+    const card = ov.querySelector('.zmv-card'); if (card) card.innerHTML = html; else ov.innerHTML = '<div class="zmv-card">' + html + '</div>'; }
+  function _zonaMovHead(ico, tit, sub, tone) {
+    return '<div class="zmv-h zmv-' + (tone || 'g') + '"><span class="zmv-h-ic">' + ico + '</span>' +
+      '<div class="zmv-h-t"><b>' + _esc(tit) + '</b><i>' + _esc(sub || '') + '</i></div>' +
+      '<button class="zmv-x" onclick="MOS.zonaMovCerrar()">✕</button></div>'; }
+
+  // AJUSTE / AUDITORÍA / CUADRE → se dibuja del propio movimiento (quién · cuándo · hora · antes→después)
+  function _zonaMovRenderAudit(m) {
+    const tU = String(m.tipo || '').toUpperCase(), opU = String(m.tipoOperacion || '').toUpperCase();
+    const cuadre = /CUADRE/.test(tU) || String(m.usuario || '').toLowerCase().indexOf('cuadre') >= 0;
+    const esAud  = /AUDITOR/.test(tU + opU);
+    const ico = cuadre ? '⚖️' : esAud ? '📋' : '✏️';
+    const titulo = cuadre ? 'Cuadre con stock real' : esAud ? 'Conteo (auditoría)' : 'Ajuste manual';
+    const quien = (m.usuario && m.usuario !== '—') ? m.usuario : 'sistema';
+    const fh = _zonaMovFechaHora(m.fecha);
+    let antes = (m.stockAntes != null) ? _zonaNum(m.stockAntes) : null;
+    let desp  = (m.saldo != null) ? _zonaNum(m.saldo) : ((m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : null);
+    let delta = (m.delta != null) ? _zonaNum(m.delta) : (m.esIngreso === true ? _zonaNum(m.cantidad) : (m.esIngreso === false ? -_zonaNum(m.cantidad) : (antes != null && desp != null ? desp - antes : 0)));
+    const dCls = delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero');
+    const dTxt = (delta > 0 ? '+' : delta < 0 ? '−' : '') + _esc(_zonaFmtNumRaw(Math.abs(delta), false));
+    const ini = (String(quien).trim()[0] || '?').toUpperCase();
+    _zonaMovSet(
+      _zonaMovHead(ico, titulo, 'Movimiento de stock', esAud ? 'a' : cuadre ? 'w' : 'v') +
+      '<div class="zmv-body">' +
+        '<div class="zmv-who"><span class="zmv-ini">' + _esc(ini) + '</span>' +
+          '<div><b>' + _esc(quien) + '</b><i>' + _esc(fh.dia) + ' · 🕐 ' + _esc(fh.hora) + '</i></div></div>' +
+        '<div class="zmv-delta-box">' +
+          '<div class="zmv-db"><span>Antes</span><b>' + (antes != null ? _esc(_zonaFmtNumRaw(antes, false)) : '—') + '</b></div>' +
+          '<div class="zmv-arrow ' + dCls + '"><span class="zmv-chip ' + dCls + '">' + dTxt + '</span>→</div>' +
+          '<div class="zmv-db"><span>Después</span><b>' + (desp != null ? _esc(_zonaFmtNumRaw(desp, false)) : '—') + '</b></div>' +
+        '</div>' +
+        (cuadre ? '<div class="zmv-note">⚖️ Ajuste automático del sistema para calzar el saldo histórico con el stock real contado. No lo hizo una persona.</div>'
+                : esAud ? '<div class="zmv-note">📋 Resultado de un conteo físico: el stock quedó en lo realmente contado.</div>' : '') +
+      '</div>');
+  }
+
+  // VENTA / GUÍA → documento completo, con la línea del producto analizado RESALTADA
+  function _zonaMovRenderDoc(d) {
+    const h = d.header || {}, lineas = d.lineas || [];
+    const esVenta = d.tipo === 'venta';
+    const ico = esVenta ? '🛒' : '🚚';
+    const titulo = esVenta ? ('Ticket ' + (h.correlativo || h.id_venta || '')) : ('Guía ' + (h.id_guia || ''));
+    const sub = esVenta
+      ? [(h.cliente || 'Cliente varios'), (h.fecha || ''), ('S/ ' + Number(h.total || 0).toFixed(2))].filter(Boolean).join(' · ')
+      : [_zonaMovTipoGuia(h.tipo), (h.fecha || ''), (h.zona || '') + (h.destino ? ' → ' + h.destino : '')].filter(Boolean).join(' · ');
+    const meta = esVenta
+      ? '👤 ' + _esc(h.vendedor || '—') + (h.caja ? ' · 💼 ' + _esc(h.caja) : '') + (h.forma_pago ? ' · ' + _esc(h.forma_pago) : '')
+      : '👤 ' + _esc(h.vendedor || '—') + (h.estado ? ' · ' + _esc(h.estado) : '') + (h.obs ? ' · ' + _esc(String(h.obs).slice(0,40)) : '');
+    const nMatch = lineas.filter(l => l.match).length;
+    const filas = lineas.map(l => {
+      const cant = _esc(_zonaFmtNumRaw(_zonaNum(l.cantidad), false));
+      const der = esVenta ? ('S/ ' + Number(l.subtotal || 0).toFixed(2)) : (l.aplicada != null && Number(l.aplicada) !== Number(l.cantidad) ? _esc(_zonaFmtNumRaw(_zonaNum(l.aplicada), false)) + ' apl.' : '');
+      return '<div class="zmv-lin' + (l.match ? ' is-match' : '') + '"' + (l.match ? ' data-match="1"' : '') + '>' +
+        (l.match ? '<span class="zmv-star">◆</span>' : '<span class="zmv-dot">·</span>') +
+        '<span class="zmv-lin-n">' + _esc(l.nombre || l.cod || '') + '</span>' +
+        '<span class="zmv-lin-q">' + cant + '</span>' +
+        (der ? '<span class="zmv-lin-s">' + _esc(der) + '</span>' : '') + '</div>';
+    }).join('');
+    _zonaMovSet(
+      _zonaMovHead(ico, titulo, sub, esVenta ? 'g' : 'b') +
+      '<div class="zmv-body">' +
+        '<div class="zmv-meta">' + meta + '</div>' +
+        (nMatch ? '<div class="zmv-badge">◆ ' + nMatch + ' línea' + (nMatch !== 1 ? 's' : '') + ' de este producto — resaltada' + (nMatch !== 1 ? 's' : '') + '</div>' : '') +
+        '<div class="zmv-lins">' + (filas || '<div class="zmv-load">Sin líneas</div>') + '</div>' +
+      '</div>');
+    // scroll suave a la primera coincidencia + destello
+    setTimeout(() => { const ov = document.getElementById('zonaMovOvl'); if (!ov) return;
+      const first = ov.querySelector('.zmv-lin[data-match]'); if (first) { try { first.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(_){}
+        first.classList.add('flash'); setTimeout(() => first.classList.remove('flash'), 900); }
+      try { _finBeep?.('shimmer'); } catch(_){} }, 120);
+  }
+  function _zonaMovTipoGuia(t) { t = String(t || '').toUpperCase();
+    if (t.indexOf('SALIDA_VENTAS') >= 0) return 'Salida por ventas'; if (t.indexOf('ENTRADA') >= 0 || t.indexOf('TRASLADO_IN') >= 0) return 'Ingreso a zona';
+    if (t.indexOf('SALIDA') >= 0) return 'Despacho a zona'; return (t.replace(/_/g,' ').toLowerCase() || 'Guía'); }
+  function _zonaMovRenderError(m, e) {
+    _zonaMovSet(_zonaMovHead('⚠️', 'No pude abrir el detalle', String((e && e.message) || e || ''), 'w') +
+      '<div class="zmv-body"><div class="zmv-note">El documento puede haberse archivado o no estar disponible. ' +
+      'Referencia: ' + _esc(String(m.idGuia || '—')) + ' · ' + _esc(String(m.fuente || '')) + '</div></div>'); }
+
+  function _zonaMovInjectCSS() {
+    if (document.getElementById('zmvCSS')) return;
+    const s = document.createElement('style'); s.id = 'zmvCSS';
+    s.textContent = [
+      '.zmv-ov{position:fixed;inset:0;z-index:2147483200;display:flex;align-items:center;justify-content:center;padding:16px;',
+        'background:rgba(3,7,15,.66);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);opacity:0;transition:opacity .22s}',
+      '.zmv-ov.on{opacity:1}',
+      '.zmv-card{width:min(480px,100%);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;',
+        'background:linear-gradient(180deg,#131f36,#0b1120);border:1px solid #26344c;border-radius:20px;',
+        'box-shadow:0 30px 80px -24px #000c;transform:translateY(18px) scale(.97);opacity:0;transition:transform .3s cubic-bezier(.2,1,.32,1),opacity .22s}',
+      '.zmv-ov.on .zmv-card{transform:none;opacity:1}',
+      '.zmv-h{display:flex;align-items:center;gap:12px;padding:15px 16px;border-bottom:1px solid #1a2740;position:relative;overflow:hidden}',
+      '.zmv-h::before{content:"";position:absolute;inset:0;opacity:.16;background:radial-gradient(120% 140% at 12% 0,var(--zc,#38bdf8),transparent 60%)}',
+      '.zmv-g{--zc:#34d399}.zmv-b{--zc:#38bdf8}.zmv-a{--zc:#a78bfa}.zmv-v{--zc:#fbbf24}.zmv-w{--zc:#f87171}',
+      '.zmv-h-ic{font-size:26px;position:relative;z-index:1}',
+      '.zmv-h-t{flex:1;min-width:0;position:relative;z-index:1}.zmv-h-t b{display:block;font-size:15.5px;color:#eaf2ff;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.zmv-h-t i{font-style:normal;font-size:11.5px;color:#8aa0c2;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}',
+      '.zmv-x{position:relative;z-index:1;flex:none;width:34px;height:34px;border-radius:10px;border:1px solid #26344c;background:#0c1626;color:#8296b5;font-size:15px;cursor:pointer}',
+      '.zmv-body{padding:15px 16px;overflow:auto;-webkit-overflow-scrolling:touch}',
+      '.zmv-load{color:#7488a6;font-size:12px;text-align:center;padding:26px}',
+      '.zmv-who{display:flex;align-items:center;gap:12px;margin-bottom:14px}',
+      '.zmv-ini{width:44px;height:44px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:18px;color:#04121f;background:linear-gradient(135deg,#a78bfa,#7c3aed)}',
+      '.zmv-who b{color:#eaf2ff;font-size:15px;display:block}.zmv-who i{font-style:normal;color:#8aa0c2;font-size:12px}',
+      '.zmv-delta-box{display:flex;align-items:stretch;gap:10px;justify-content:center;margin:6px 0 4px}',
+      '.zmv-db{flex:1;text-align:center;background:#0c1626;border:1px solid #223049;border-radius:14px;padding:12px 8px}',
+      '.zmv-db span{display:block;font-size:10.5px;color:#7488a6;text-transform:uppercase;letter-spacing:.05em}',
+      '.zmv-db b{display:block;font-size:22px;color:#eaf2ff;font-weight:800;margin-top:3px}',
+      '.zmv-arrow{display:flex;flex-direction:column;align-items:center;justify-content:center;color:#5b6b86;font-size:18px;gap:4px;min-width:64px}',
+      '.zmv-chip{font-size:13px;font-weight:900;padding:3px 10px;border-radius:999px}',
+      '.zmv-chip.pos{background:rgba(52,211,153,.16);color:#34d399}.zmv-chip.neg{background:rgba(248,113,113,.16);color:#f87171}.zmv-chip.zero{background:rgba(148,163,184,.16);color:#94a3b8}',
+      '.zmv-note{margin-top:13px;padding:10px 12px;border-radius:12px;border:1px dashed #2b3a54;background:rgba(148,163,184,.06);color:#8aa0c2;font-size:11.5px;line-height:1.55}',
+      '.zmv-meta{font-size:12px;color:#9fb2d0;margin-bottom:10px}',
+      '.zmv-badge{display:inline-block;font-size:11px;font-weight:700;color:#fbbf24;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);border-radius:999px;padding:4px 11px;margin-bottom:10px}',
+      '.zmv-lins{display:flex;flex-direction:column;border:1px solid #1a2740;border-radius:14px;overflow:hidden}',
+      '.zmv-lin{display:flex;align-items:center;gap:9px;padding:9px 11px;border-top:1px solid #16233d;font-size:12.5px}',
+      '.zmv-lin:first-child{border-top:0}',
+      '.zmv-dot{color:#3b4a66;width:14px;text-align:center}.zmv-star{color:#fbbf24;width:14px;text-align:center;font-size:11px}',
+      '.zmv-lin-n{flex:1;min-width:0;color:#c9d6ea;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.zmv-lin-q{font-weight:800;color:#eaf2ff;white-space:nowrap}.zmv-lin-s{color:#8aa0c2;white-space:nowrap;min-width:56px;text-align:right}',
+      '.zmv-lin.is-match{background:linear-gradient(90deg,rgba(251,191,36,.16),rgba(251,191,36,.04));box-shadow:inset 3px 0 0 #fbbf24}',
+      '.zmv-lin.is-match .zmv-lin-n{color:#fde68a;font-weight:700}',
+      '@keyframes zmvFlash{0%,100%{background:linear-gradient(90deg,rgba(251,191,36,.16),rgba(251,191,36,.04))}50%{background:rgba(251,191,36,.42)}}',
+      '.zmv-lin.flash{animation:zmvFlash .9s ease}',
+      '.zt-hx-click{cursor:pointer;transition:background .12s}.zt-hx-click:hover{background:rgba(56,189,248,.07)}',
+      '.zt-hx-click:focus-visible{outline:2px solid #38bdf8;outline-offset:-2px}',
+      '.zt-hx-chev{color:#4a5b78;font-size:16px;font-weight:700;margin-left:2px}',
+      '@media(max-width:560px){.zmv-ov{align-items:flex-end;padding:0}.zmv-card{width:100%;max-height:90vh;border-radius:20px 20px 0 0}}'
+    ].join('');
+    document.head.appendChild(s);
+  }
+
   function zonaCerrarEsperado() { closeModal('modalZonaEsp'); }
 
   // ══ [RIZ CARRITO] Pedido a almacén por CARRITO (un paquete = un pickup con N líneas) ════════════════════
@@ -57896,7 +58075,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaPorActivarVerDescartados, zonaPaAjuste, zonaPaCancelarAjuste, zonaPaConfirmar, zonaPaDescartar, zonaPaRestaurar,
     zonaAjusteInline, zonaStep, zonaCero, zonaConfirmarAjuste,
     zonaToggleCodigos, zonaToggleCodigosAlmacen, zonaCodCero, zonaCodGuardar,
-    zonaVerEsperado, zonaCerrarEsperado, zonaToggleTools,
+    zonaVerEsperado, zonaCerrarEsperado, zonaToggleTools, zonaMovDetalle, zonaMovCerrar,
     zonaAjustarToggle, zonaChipSave, zonaChipUnidad, zonaSecToggle,
     zonaAbrirKardexGeneral, zonaCerrarKardexGeneral, zonaKgToggle, zonaKgBuscar, zonaKgVerCodigo, zonaKgExport, zonaKardexExport, zonaSoloNegToggle,
     zonaPedirAlmacen, zonaAgregarLista,
