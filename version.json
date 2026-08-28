@@ -1,1 +1,1 @@
-{"version": "2.43.986", "build": "Buzon Directo fix: el boton flotante no aparecia porque leia la sesion de window.S (inexistente); ahora la lee de localStorage['MOS_SESSION']."}
+{"version": "2.43.987", "build": "Mesa de creditos: los DOS botones (📤 A CAJA para cobrar + 👤 ASIGNAR a trabajador) ahora estan tanto en la carta de la mesa como en el detalle, para que se sepa que se puede usar cualquiera."}

@@ -30743,20 +30743,33 @@ const MOS = (() => {
 
   function _cjTkMesaHTML(t) {
     if (!t) return '';
-    const tr = t.trabajador;
-    if (tr && tr.nombre) return '';   // [851] ya lo dice el chip de arriba
-    // [880] Personal FIJO (documento en ficha): su consumo entra SOLO en su liquidación, sin
-    // asignar nada. El botón ASIGNAR acá confundía (es para trabajadores de zona sin ficha).
+    // saldado (cobrado en caja o descontado en planilla): sin acciones — la carta ya muestra el sello.
+    if (t.estadoCobro && t.estadoCobro !== 'VIVO') return '';
+    // ya enviado a una caja (en vuelo): la carta muestra Reasignar/Cancelar, no estos botones.
+    if (t.asignado) return '';
+    // ya asignado a un trabajador: lo dice el chip de arriba (se quita desde ahí).
+    if (t.trabajador && t.trabajador.nombre) return '';
+    // [880] Personal FIJO (documento en ficha): su consumo entra SOLO en su liquidación → chip informativo.
     if (t.planillaAuto) {
       return '<span class="cj-carta-tk-chip" title="Su documento está en su ficha: este crédito se descuenta solo al pagar su liquidación">' +
         '<span class="cj-carta-tk-ico">💼</span><b>' + _esc(String(t.planillaAuto).split(' ')[0]) + '</b><i>planilla automática</i></span>';
     }
-    if (t.estadoCobro && t.estadoCobro !== 'VIVO') return '';
-    // [850] En un día ya liquidado no queda turno al que cargarlo: el servidor lo rechazaría.
-    // Sin botón, así el admin no persigue una opción que no existe.
-    if (t.turnosAbiertos === false) return '';
-    return '<button type="button" class="cj-carta-tk-btn" title="Cargar este consumo a alguien que trabajó ese día"' +
+    // [957] LOS DOS botones también en la carta (igual que en el detalle): así el admin ve de una que
+    // puede usar cualquiera — enviar a caja para cobrar, o asignar el consumo a un trabajador.
+    const btnCaja = '<button type="button" class="cj-carta-caja-btn" title="Enviar este crédito a una caja para cobrarlo"' +
+      ' onclick="event.stopPropagation();MOS.cjEnviarACajaDesdeMesa(\'' + _esc(String(t.idVenta)) + '\')">📤 A CAJA</button>';
+    // ASIGNAR solo si ese día aún tiene turnos abiertos (si no, el servidor lo rechazaría).
+    const btnAsig = (t.turnosAbiertos === false) ? '' :
+      '<button type="button" class="cj-carta-tk-btn" title="Cargar este consumo a alguien que trabajó ese día"' +
       ' onclick="event.stopPropagation();MOS.cjTrabajadorAbrir(\'' + _esc(String(t.idVenta)) + '\')">👤 ASIGNAR</button>';
+    return '<div class="cj-carta-tk-acts">' + btnCaja + btnAsig + '</div>';
+  }
+
+  // [957] Enviar a caja desde la MESA: abre el detalle (donde vive el panel de asignar caja) y dispara
+  // el mismo flujo del FAB. Reutiliza cjAbrirAsignar sin duplicar lógica de dinero.
+  function cjEnviarACajaDesdeMesa(idVenta) {
+    try { cjAbrirDetalleCarta(idVenta); } catch(_){}
+    setTimeout(() => { try { cjAbrirAsignar(idVenta); } catch(_){} }, 70);
   }
 
   function _cjTrabajadorBloqueHTML(t) {
@@ -30792,7 +30805,8 @@ const MOS = (() => {
     document.querySelectorAll('.cj-mesa-carta[data-tk="' + String(idVenta).replace(/"/g, '') + '"]').forEach(el => {
       el.classList.toggle('cj-mesa-carta-tk', asignado);
       const chip = el.querySelector('.cj-carta-tk-chip'); if (chip) chip.remove();
-      const btn  = el.querySelector('.cj-carta-tk-btn');  if (btn)  btn.remove();
+      const acts = el.querySelector('.cj-carta-tk-acts'); if (acts) acts.remove();   // [957] contenedor de los 2 botones
+      const btn  = el.querySelector('.cj-carta-tk-btn');  if (btn)  btn.remove();     // legacy (por si quedó suelto)
       if (asignado) {
         el.insertAdjacentHTML('afterbegin', _cjTkChipHTML(t));
         const c = el.querySelector('.cj-carta-tk-chip');
@@ -30946,6 +30960,15 @@ const MOS = (() => {
         'transition:transform .12s,box-shadow .12s,filter .12s}' +
       '.cj-carta-tk-btn:hover{filter:brightness(1.1)}' +
       '.cj-carta-tk-btn:active{transform:translateY(2px);box-shadow:0 1px 0 #1e40af}' +
+      // [957] botón "A CAJA" (cobrar) VERDE + contenedor flex para los dos botones lado a lado
+      '.cj-carta-caja-btn{display:block;padding:9px 10px;border-radius:10px;border:0;' +
+        'background:linear-gradient(135deg,#10b981,#059669);color:#fff;font-size:11px;font-weight:900;' +
+        'letter-spacing:.08em;text-transform:uppercase;cursor:pointer;' +
+        'box-shadow:0 3px 0 #047857,0 7px 16px -5px rgba(4,120,87,.7);transition:transform .12s,box-shadow .12s,filter .12s}' +
+      '.cj-carta-caja-btn:hover{filter:brightness(1.1)}' +
+      '.cj-carta-caja-btn:active{transform:translateY(2px);box-shadow:0 1px 0 #047857}' +
+      '.cj-carta-tk-acts{display:flex;gap:7px;margin-top:9px}' +
+      '.cj-carta-tk-acts .cj-carta-tk-btn,.cj-carta-tk-acts .cj-carta-caja-btn{margin-top:0;flex:1;width:auto}' +
       // sello de asignado: arriba a la IZQUIERDA, con la ✕ encima del nombre
       '.cj-carta-tk-chip{position:absolute;top:7px;left:7px;z-index:7;display:inline-flex;align-items:center;' +
         'gap:4px;max-width:calc(100% - 74px);padding:3px 9px 3px 6px;border-radius:999px;' +
@@ -58094,7 +58117,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,
     // [v40.4] Cobro asignado de créditos — mano de cartas
     cjRepartirMano, cjCerrarMesa,
-    cjAbrirDetalleCarta, cjCerrarDetalleCarta, cjAbrirAsignarDesdeDetalle,
+    cjAbrirDetalleCarta, cjCerrarDetalleCarta, cjAbrirAsignarDesdeDetalle, cjEnviarACajaDesdeMesa,
     cjAbrirAsignar, cjCerrarAsignar,
     cjSetMetodoAsignar, cjSetCajaAsignar, cjSetTTLAsignar, cjConfirmarAsignar,
     _cjOnMensajeAsignar, _cjCargarEnVuelo, cjCancelarCobro, cjReasignarCobro,
