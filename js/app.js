@@ -53837,13 +53837,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const queda = (saldo != null && delta !== 0) ? ` <small>queda ${_esc(_zonaFmtNumRaw(saldo, p && p.esGranel))}</small>` : '';
       const cod = m.cod_barra ? ` <span class="zt-hx-cod">${_esc(String(m.cod_barra))}</span>` : '';
       // [965] fila clickable → overlay con el detalle (guía/venta completo o quién/cuándo del ajuste)
-      return `<div class="zt-hx-row zt-hx-click${delta === 0 ? ' is-zero' : ''}" role="button" tabindex="0"
+      // [991] fila = tarjeta clickable con acento por dirección (entrada/salida/auditoría)
+      return `<div class="zt-hx-row zt-hx-click zt-hx-${cls}${delta === 0 ? ' is-zero' : ''}" role="button" tabindex="0"
                    onclick="MOS.zonaMovDetalle('${_tok}',${i})"
+                   onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();MOS.zonaMovDetalle('${_tok}',${i});}"
                    title="Ver el detalle de este movimiento">
         <span class="zt-hx-ic ${cls}">${ic}</span>
-        <span class="zt-hx-lbl">${_esc(lbl)} <small>· ${_esc(quien)}</small>${cod}</span>
-        <span class="zt-hx-delta ${dCls}">${dTxt}${queda}</span>
-        <span class="zt-hx-date">${_esc(fCorta(m.fecha))}</span>
+        <span class="zt-hx-main"><b>${_esc(lbl)}</b><i>${_esc(quien)} · ${_esc(fCorta(m.fecha))}${cod}</i></span>
+        <span class="zt-hx-db"><span class="zt-hx-delta ${dCls}">${dTxt}</span>${queda}</span>
         <span class="zt-hx-chev">›</span>
       </div>`;
     }).join('');
@@ -53866,6 +53867,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const cache = _zonaHxCache[tok]; if (!cache) return;
     const m = (cache.movs || [])[idx]; if (!m) return;
     try { _finBeep?.('click'); } catch(_){}
+    try { navigator.vibrate && navigator.vibrate(12); } catch(_){}   // [991] háptico: tick al tocar
     const fuente = String(m.fuente || '').toLowerCase();
     const tipoOp = String(m.tipoOperacion || '').toUpperCase();
     const noDoc = /AJUSTE|AUDITOR|CUADRE/.test(String(m.tipo || '').toUpperCase() + tipoOp);
@@ -53975,7 +53977,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // scroll suave a la primera coincidencia + destello
     setTimeout(() => { const ov = document.getElementById('zonaMovOvl'); if (!ov) return;
       const first = ov.querySelector('.zmv-lin[data-match]'); if (first) { try { first.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(_){}
-        first.classList.add('flash'); setTimeout(() => first.classList.remove('flash'), 900); }
+        first.classList.add('flash'); setTimeout(() => first.classList.remove('flash'), 900);
+        try { navigator.vibrate && navigator.vibrate([8, 32, 16]); } catch(_){} }   // [991] háptico: "encontré tu producto"
       try { _finBeep?.('shimmer'); } catch(_){} }, 120);
   }
   function _zonaMovTipoGuia(t) { t = String(t || '').toUpperCase();
@@ -53991,8 +53994,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const s = document.createElement('style'); s.id = 'zmvCSS';
     s.textContent = [
       '.zmv-ov{position:fixed;inset:0;z-index:2147483200;display:flex;align-items:center;justify-content:center;padding:16px;',
-        'background:rgba(3,7,15,.66);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);opacity:0;transition:opacity .22s}',
-      '.zmv-ov.on{opacity:1}',
+        'background:rgba(3,7,15,.66);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);opacity:0;pointer-events:none;transition:opacity .22s}',
+      '.zmv-ov.on{opacity:1;pointer-events:auto}',
       '.zmv-card{width:min(480px,100%);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;',
         'background:linear-gradient(180deg,#131f36,#0b1120);border:1px solid #26344c;border-radius:20px;',
         'box-shadow:0 30px 80px -24px #000c;transform:translateY(18px) scale(.97);opacity:0;transition:transform .3s cubic-bezier(.2,1,.32,1),opacity .22s}',

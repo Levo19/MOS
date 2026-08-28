@@ -15291,19 +15291,36 @@
     .zt-tag small { margin-left:auto; font-weight:500; color:#64748b; font-size:.62rem; }
     .zt-tag .ztn { width:18px; height:18px; border-radius:5px; background:#38bdf8; color:#04222b; display:grid; place-items:center; font-size:.66rem; flex:none; }
     .zt-mut { color:#64748b; font-size:.72rem; padding:.3rem 0; }
-    .zt-hx-row { display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:.5rem; padding:.34rem 0; border-top:1px solid #16202f; font-size:.72rem; }
-    .zt-hx-row:first-child { border-top:0; }
-    .zt-hx-ic { width:20px; height:20px; border-radius:5px; display:grid; place-items:center; font-size:.72rem; }
-    .zt-hx-ic.out { background:rgba(239,68,68,.12); } .zt-hx-ic.in { background:rgba(34,197,94,.12); } .zt-hx-ic.aud { background:rgba(234,179,8,.12); }
-    .zt-hx-lbl { color:#cbd5e1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .zt-hx-cod { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.6rem; color:#64748b; background:#0f172a; border-radius:.3rem; padding:0 .25rem; }
-    .zt-hx-delta { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:800; white-space:nowrap; }
-    .zt-hx-delta.neg { color:#fca5a5; } .zt-hx-delta.pos { color:#86efac; }
-    .zt-hx-date { color:#475569; font-size:.62rem; white-space:nowrap; }
-    .zt-hx-row.is-zero { opacity:.58; }
-    .zt-hx-lbl small { color:#64748b; font-weight:400; }
-    .zt-hx-delta small { color:#64748b; font-weight:500; }
-    .zt-hx-delta.zero { color:#64748b; font-weight:600; }
+    /* [991] Historial rediseñado — tarjetas clickables con acento por dirección + hover/active + háptico */
+    .zt-hx-row { display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:.6rem;
+      padding:.5rem .6rem; margin:.34rem 0; border-radius:.75rem; border:1px solid #1a2740;
+      background:linear-gradient(180deg,#101a2e,#0d1524); position:relative; overflow:hidden;
+      transition:transform .14s cubic-bezier(.2,.8,.3,1), border-color .14s, box-shadow .14s, background .14s;
+      -webkit-tap-highlight-color:transparent; }
+    .zt-hx-row::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:#334155; }
+    .zt-hx-out::before { background:linear-gradient(#f87171,#ef4444); }
+    .zt-hx-in::before  { background:linear-gradient(#4ade80,#22c55e); }
+    .zt-hx-aud::before { background:linear-gradient(#fcd34d,#eab308); }
+    .zt-hx-click { cursor:pointer; }
+    .zt-hx-click:hover { transform:translateX(3px); border-color:rgba(56,189,248,.55);
+      background:linear-gradient(180deg,#13203a,#0f1930); box-shadow:0 7px 20px -12px rgba(56,189,248,.55); }
+    .zt-hx-click:active { transform:translateX(1px) scale(.99); }
+    .zt-hx-click:focus-visible { outline:2px solid #38bdf8; outline-offset:1px; }
+    .zt-hx-ic { width:32px; height:32px; border-radius:10px; display:grid; place-items:center; font-size:1rem;
+      flex:none; box-shadow:inset 0 0 0 1px rgba(255,255,255,.05); }
+    .zt-hx-ic.out { background:rgba(239,68,68,.15); } .zt-hx-ic.in { background:rgba(34,197,94,.15); } .zt-hx-ic.aud { background:rgba(234,179,8,.15); }
+    .zt-hx-main { min-width:0; display:flex; flex-direction:column; gap:1px; }
+    .zt-hx-main b { color:#e8eefc; font-size:.75rem; font-weight:700; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .zt-hx-main i { font-style:normal; color:#647089; font-size:.63rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .zt-hx-cod { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.55rem; color:#64748b; background:#0f172a; border-radius:.3rem; padding:0 .25rem; margin-left:.28rem; }
+    .zt-hx-db { display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
+    .zt-hx-delta { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:800; font-size:.86rem; line-height:1; white-space:nowrap; }
+    .zt-hx-delta.neg { color:#fca5a5; } .zt-hx-delta.pos { color:#86efac; } .zt-hx-delta.zero { color:#64748b; }
+    .zt-hx-db small { color:#5b6880; font-size:.56rem; font-weight:500; white-space:nowrap; }
+    .zt-hx-chev { color:#38507a; font-size:1.15rem; font-weight:700; transition:transform .14s, color .14s; }
+    .zt-hx-click:hover .zt-hx-chev { color:#38bdf8; transform:translateX(3px); }
+    .zt-hx-row.is-zero { opacity:.6; }
+    @media (prefers-reduced-motion:reduce){ .zt-hx-row,.zt-hx-chev{ transition:none; } }
     .zt-hx-note { font-size:.6rem; color:#64748b; margin-top:.5rem; padding-top:.4rem; border-top:1px solid #16202f; line-height:1.4; }
     /* [902] Chips de código con stock (editables con autoguardado) */
     .zc-chips { display:flex; flex-wrap:wrap; gap:.32rem; margin-top:.42rem; }
@@ -22135,7 +22152,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.991';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.992';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22414,7 +22431,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.991"></script>
+<script src="js/api.js?v=2.43.992"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22430,8 +22447,8 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.991"></script>
-<script src="js/buzon.js?v=2.43.991"></script>
+<script src="js/app.js?v=2.43.992"></script>
+<script src="js/buzon.js?v=2.43.992"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
      `const MOS = (() => {...})()` que es global script-level pero NO se
