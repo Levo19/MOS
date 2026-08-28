@@ -1,1 +1,1 @@
-{"version": "2.43.980", "build": "MosGuard: visor muestra contador 'despertando equipo Ns / ~180s' + barra mientras conecta (el equipo tarda hasta ~2,5 min por su latido). TURN Metered corregido a standard.relay.metered.ca."}
+{"version": "2.43.981", "build": "MosGuard fix: el contador de espera ya NO re-renderiza el overlay (causaba parpadeo y pantalla negra al recrear el <video>); ahora actualiza solo su texto por DOM. Restaura video+audio en vivo."}

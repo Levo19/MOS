@@ -35477,13 +35477,17 @@ const MOS = (() => {
     if (!_espiaV2) return;
     // Polling de respuesta + ICE del device
     _espiaV2.pollTimer = setInterval(_espiaV2Poll, 600);
-    // [957] repinta 1×/s mientras CONECTA (equipo guard) para que el contador "despertando equipo Ns"
-    // avance solo. Se corta al conectar o cerrar. No repinta en vivo (no molesta al video).
+    // [957] Avanza el contador "despertando equipo Ns" 1×/s tocando SOLO su texto/barra por DOM.
+    // OJO: NO re-renderizar el modal entero (recrea los <video> → parpadeo + pierde el stream = pantalla
+    // negra). Se corta al conectar/cerrar.
     if (_espiaV2.esGuard) {
       _espiaV2._espHintTimer = setInterval(() => {
         if (!_espiaV2) return;
         if (_espiaV2.estado === 'live' || (_espiaV2.pc && _espiaV2.pc.connectionState === 'connected')) return;
-        try { _espiaV2RenderModal(); } catch(_){}
+        const max = 180, seg = Math.min(max, Math.round((Date.now() - (_espiaV2.tsInicio || Date.now())) / 1000));
+        const s = document.getElementById('espiaV2WaitSeg'), b = document.getElementById('espiaV2WaitBar');
+        if (s) s.textContent = String(seg);
+        if (b) b.style.width = Math.round(seg / max * 100) + '%';
       }, 1000);
     }
     // [833] Repintado único al vencer la espera de streams: si a los 15s la pantalla no llegó,
@@ -35951,9 +35955,9 @@ const MOS = (() => {
     const _espMax = _espiaV2.esGuard ? 180 : 45;
     const _espSeg = Math.min(_espMax, Math.round((Date.now() - (_espiaV2.tsInicio || Date.now())) / 1000));
     const _espHint = (!live && _espiaV2.esGuard)
-      ? `<div style="display:flex;flex-direction:column;gap:3px;min-width:120px">
-           <span style="font-size:9.5px;font-weight:800;color:#fbbf24;white-space:nowrap;letter-spacing:.3px">⏳ despertando equipo · ${_espSeg}s <span style="opacity:.55;font-weight:600">/ ~${_espMax}s</span></span>
-           <span style="height:4px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;display:block"><span style="display:block;height:100%;width:${Math.round(_espSeg / _espMax * 100)}%;background:linear-gradient(90deg,#f59e0b,#fbbf24);border-radius:3px;transition:width .6s ease"></span></span>
+      ? `<div id="espiaV2WaitHint" style="display:flex;flex-direction:column;gap:3px;min-width:120px">
+           <span style="font-size:9.5px;font-weight:800;color:#fbbf24;white-space:nowrap;letter-spacing:.3px">⏳ despertando equipo · <span id="espiaV2WaitSeg">${_espSeg}</span>s <span style="opacity:.55;font-weight:600">/ ~${_espMax}s</span></span>
+           <span style="height:4px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden;display:block"><span id="espiaV2WaitBar" style="display:block;height:100%;width:${Math.round(_espSeg / _espMax * 100)}%;background:linear-gradient(90deg,#f59e0b,#fbbf24);border-radius:3px;transition:width .6s ease"></span></span>
            <span style="font-size:8.5px;color:#94a3b8;white-space:nowrap">el celular chequea cada ~2,5 min</span>
          </div>`
       : '';
