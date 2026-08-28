@@ -53842,9 +53842,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const desp = (m.saldo != null) ? _zonaNum(m.saldo) : (m.saldo_despues != null ? _zonaNum(m.saldo_despues) : null);
     const dif = (antes != null && desp != null) ? (desp - antes) : (m.delta != null ? _zonaNum(m.delta) : null);
     const f = (v) => _esc(_zonaFmtNumRaw(v, esGranel));
-    return '<div class="zt-hx-cuadre">⚖️ <b>Cuadre</b> — los movimientos de arriba suman <b>' + (antes != null ? f(antes) : '—') +
-      '</b>; el stock real hoy es <b>' + (desp != null ? f(desp) : '—') + '</b>. La diferencia' + (dif != null ? (' (<b>' + f(dif) + '</b>)') : '') +
-      ' es historial anterior no listado (aperturas y movimientos viejos), <b>no un movimiento</b>.' +
+    return '<div class="zt-hx-cuadre">⚖️ <b>Saldo de partida</b> — antes de los movimientos de arriba, la zona ya venía con un acumulado: un <b>stock inicial que nunca se registró</b> como movimiento. Lo de arriba suma <b>' + (antes != null ? f(antes) : '—') +
+      '</b>; con ese arrastre, el stock real hoy es <b>' + (desp != null ? f(desp) : '—') + '</b>' + (dif != null ? (' (diferencia <b>' + f(dif) + '</b>)') : '') +
+      '. Por eso NO es un movimiento ni lleva fecha — es solo el punto de partida.' +
       (desp != null && desp < 0 ? ' ⚠ En negativo: conviene contar y ajustar.' : '') + '</div>';
   }
 
@@ -53885,18 +53885,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (lbl === 'Cierre del día') huboCierre = true;
       const quien = quienDe(usr);
       const saldo = (m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : (m.saldo != null ? _zonaNum(m.saldo) : null);
-      const dTxt = delta === 0 ? 'sin cambio' : ((delta > 0 ? '+' : '−') + _esc(_zonaFmtNumRaw(Math.abs(delta), p && p.esGranel)));
-      const dCls = delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero');
-      const queda = (saldo != null && delta !== 0) ? ` <small>queda ${_esc(_zonaFmtNumRaw(saldo, p && p.esGranel))}</small>` : '';
+      // [996] SOMBRA: ticket de venta ya reconciliado por la guía de cierre (aplicado=false). NO descuenta stock
+      //   (la guía es la que resta) → lo mostramos MUDO ("ya en guía") para que no parezca doble conteo.
+      const shadow = (m.aplicado === false);
+      const dTxt = shadow ? 'ya en guía' : (delta === 0 ? 'sin cambio' : ((delta > 0 ? '+' : '−') + _esc(_zonaFmtNumRaw(Math.abs(delta), p && p.esGranel))));
+      const dCls = shadow ? 'zero' : (delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero'));
+      const queda = (!shadow && saldo != null && delta !== 0) ? ` <small>queda ${_esc(_zonaFmtNumRaw(saldo, p && p.esGranel))}</small>` : '';
       const cod = m.cod_barra ? ` <span class="zt-hx-cod">${_esc(String(m.cod_barra))}</span>` : '';
+      const shadowTag = shadow ? ' · <span class="zt-hx-shadow">ⓘ ya contado en la guía</span>' : '';
       // [965] fila clickable → overlay con el detalle (guía/venta completo o quién/cuándo del ajuste)
       // [991] fila = tarjeta clickable con acento por dirección (entrada/salida/auditoría)
-      return `<div class="zt-hx-row zt-hx-click zt-hx-${cls}${delta === 0 ? ' is-zero' : ''}" role="button" tabindex="0"
+      return `<div class="zt-hx-row zt-hx-click zt-hx-${cls}${delta === 0 ? ' is-zero' : ''}${shadow ? ' is-shadow' : ''}" role="button" tabindex="0"
                    onclick="MOS.zonaMovDetalle('${_tok}',${i})"
                    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();MOS.zonaMovDetalle('${_tok}',${i});}"
                    title="Ver el detalle de este movimiento">
         <span class="zt-hx-ic ${cls}">${ic}</span>
-        <span class="zt-hx-main"><b>${_esc(lbl)}</b><i>${_esc(quien)} · ${_esc(fCorta(m.fecha))}${cod}</i></span>
+        <span class="zt-hx-main"><b>${_esc(lbl)}</b><i>${_esc(quien)} · ${_esc(fCorta(m.fecha))}${cod}${shadowTag}</i></span>
         <span class="zt-hx-db"><span class="zt-hx-delta ${dCls}">${dTxt}</span>${queda}</span>
         <span class="zt-hx-chev">›</span>
       </div>`;
