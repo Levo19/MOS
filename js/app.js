@@ -35817,8 +35817,8 @@ const MOS = (() => {
     const orden = ['pantalla', 'camara', 'camara2'];
     const META = {
       pantalla: { icon: '🖥️', label: 'Pantalla', color: '16,185,129' },
-      camara:   { icon: '📷', label: 'Trasera',  color: '99,102,241' },
-      camara2:  { icon: '🤳', label: 'Frontal',  color: '244,114,182' }
+      camara:   { icon: '📷', label: 'Cámara',    color: '99,102,241' },
+      camara2:  { icon: '🤳', label: 'Cámara 2',  color: '244,114,182' }
     };
     const s = _espiaV2.streams;
     const caps = _espiaV2.capabilities;
@@ -35842,6 +35842,12 @@ const MOS = (() => {
       if ((caps.camsTotales || 0) >= 2 && (s.camara2 || _aunLlega)) esperados.push('camara2');
     }
     let visibles = orden.filter(k => activos.indexOf(k) >= 0 || esperados.indexOf(k) >= 0);
+    // [957] Celular de UNA cámara (transmite una y la ROTA, no dual): si ya llegó su stream, mostrar SOLO
+    // ese tile. Antes quedaba un segundo recuadro de cámara vacío ("Sin trasera / no entregó la cámara").
+    if (caps && caps.tienePantalla === false && (caps.camsTotales || 1) < 2) {
+      const camActiva = activos.find(k => k === 'camara' || k === 'camara2');
+      if (camActiva) visibles = visibles.filter(k => k === camActiva);
+    }
     if (!visibles.length) {
       visibles = [(caps && caps.tienePantalla === false) ? 'camara' : 'pantalla'];
     }
