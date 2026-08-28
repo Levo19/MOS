@@ -1,1 +1,1 @@
-{"version": "2.43.985", "build": "Buzon Directo: boton flotante para que los admins reporten (falla/operativa/consulta/capacitacion) con formulario adaptativo, fotos+video comprimidos y push dirigido. Panel del Master para gestionar y responder; chat bidireccional."}
+{"version": "2.43.986", "build": "Buzon Directo fix: el boton flotante no aparecia porque leia la sesion de window.S (inexistente); ahora la lee de localStorage['MOS_SESSION']."}

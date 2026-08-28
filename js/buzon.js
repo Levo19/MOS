@@ -1,5 +1,5 @@
 /* [964] Buzón Directo — reportes/dudas/capacitaciones de admins al Master, con push dirigido.
-   Módulo AUTÓNOMO: usa window.API (RPCs buzon*) y window.S (sesión). No depende del interior de app.js.
+   Módulo AUTÓNOMO: usa el global API (RPCs buzon*) y localStorage['MOS_SESSION'] (sesión). No toca app.js.
    Distinto del "buzón IGV" (facturas): este es de REPORTES (tickets mos.buzon_tickets). */
 (function () {
   'use strict';
@@ -9,12 +9,17 @@
 
   var CAT = { rep:{e:'🔧',n:'Falla / Regla',c:'#e5484d'}, ope:{e:'📊',n:'Operativa',c:'#e07a1a'},
               con:{e:'❓',n:'Consulta',c:'#0ea5e9'}, form:{e:'🎓',n:'Capacitación',c:'#12a877'} };
-  function ses(){ try { return (window.S && window.S.session) || {}; } catch(_) { return {}; } }
+  // La sesión vive en localStorage['MOS_SESSION'] ({idPersonal, nombre, rol}); window.S NO existe (es
+  // una variable interna de app.js). Leerla de acá es el camino confiable entre archivos.
+  function ses(){ try { return JSON.parse(localStorage.getItem('MOS_SESSION')) || {}; } catch(_) { return {}; } }
   function esMaster(){ return String(ses().rol||'').toUpperCase()==='MASTER'; }
   function nombre(){ return String(ses().nombre||'').trim(); }
   function zona(){ var s=ses(); return String(s.zona||s.estacion||'').trim(); }
   function esc(t){ return String(t==null?'':t).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
-  function api(a,p){ try { return window.API.post(a,p||{}); } catch(e){ return Promise.reject(e); } }
+  // API y MOS son `const` a nivel de script (globales léxicos), NO window.API. Un script posterior
+  // (este) los ve por nombre. Fallback a window.API por si acaso.
+  function apiRef(){ try { if (typeof API !== 'undefined' && API && API.post) return API; } catch(_){} return (window.API && window.API.post) ? window.API : null; }
+  function api(a,p){ var A=apiRef(); if(!A) return Promise.reject(new Error('API no disponible aún')); try { return A.post(a,p||{}); } catch(e){ return Promise.reject(e); } }
 
   /* ── sonido ── */
   var AC=null, muted=false;
