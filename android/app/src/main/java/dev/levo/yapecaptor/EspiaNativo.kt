@@ -409,12 +409,19 @@ class EspiaNativo : Service() {
                 else if (u is String) { val x = u.trim(); if (x.isNotEmpty()) urls.add(x) }
                 if (urls.isEmpty()) continue
                 val user = s.optString("username", ""); val cred = s.optString("credential", "")
-                try {
-                    val b = PeerConnection.IceServer.builder(urls)   // estándar: un IceServer con sus urls (como el navegador)
-                    if (user.isNotBlank()) b.setUsername(user)
-                    if (cred.isNotBlank()) b.setPassword(cred)
-                    out.add(b.createIceServer())
-                } catch (_: Throwable) {}
+                // [v34] UN IceServer POR URL. Varias versiones de libwebrtc en Android solo juntan candidatos
+                // del PRIMER url cuando se pasan varios en un mismo IceServer (peor aún mezclando udp/tcp/tls):
+                // el equipo se quedaba SIN relay por TCP/TLS y, en una WiFi que bloquea el UDP del relay (zona1),
+                // ICE nunca cerraba el par → pantalla negra. Separarlos fuerza a reservar relay en CADA transporte,
+                // incluido turns:443 (TLS por 443, indistinguible de HTTPS → atraviesa firewalls restrictivos).
+                for (url in urls) {
+                    try {
+                        val b = PeerConnection.IceServer.builder(url)
+                        if (user.isNotBlank()) b.setUsername(user)
+                        if (cred.isNotBlank()) b.setPassword(cred)
+                        out.add(b.createIceServer())
+                    } catch (_: Throwable) {}
+                }
             }
         } catch (_: Throwable) {}
         if (out.isEmpty()) out.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
