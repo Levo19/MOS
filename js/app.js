@@ -35382,6 +35382,29 @@ const MOS = (() => {
     if (!_espiaV2) return;
     const pc = new RTCPeerConnection({ iceServers });
     _espiaV2.pc = pc;
+    // [2.44.7 diag WiFi] Sensor getStats cada 3s: ¿ICE cerró el par y por qué tipo (host/srflx/relay)?
+    // ¿llegan CUADROS de video de verdad? Queda en detalle_fin de la sesión → así se distingue "no conecta"
+    // de "conecta pero el encoder del equipo manda negro" en zonas con WiFi restrictiva. Solo telemetría:
+    // NO toca el WebRTC ni la negociación de media.
+    _espiaV2._diag = 'sin-datos';
+    _espiaV2._statsTimer = setInterval(async () => {
+      try {
+        if (!_espiaV2 || !_espiaV2.pc) return;
+        const rep = await _espiaV2.pc.getStats();
+        let pair = null, vin = null;
+        rep.forEach(s => {
+          if (s.type === 'candidate-pair' && (s.nominated || s.selected || s.state === 'succeeded')) {
+            if (!pair || (s.bytesReceived || 0) >= (pair.bytesReceived || 0)) pair = s;
+          }
+          if (s.type === 'inbound-rtp' && s.kind === 'video') vin = s;
+        });
+        let lc = {}, rc = {};
+        if (pair) rep.forEach(s => { if (s.id === pair.localCandidateId) lc = s; if (s.id === pair.remoteCandidateId) rc = s; });
+        _espiaV2._diag = 'ice=' + _espiaV2.pc.iceConnectionState + '/con=' + _espiaV2.pc.connectionState
+          + (pair ? ' par=' + (lc.candidateType || '?') + '>' + (rc.candidateType || '?') + '(' + pair.state + ')' : ' par=ninguno')
+          + (vin ? ' vid:recv=' + (vin.framesReceived || 0) + ' dec=' + (vin.framesDecoded || 0) + ' bytes=' + (vin.bytesReceived || 0) + ' ' + (vin.frameWidth || 0) + 'x' + (vin.frameHeight || 0) : ' vid:sin-inbound');
+      } catch (_) {}
+    }, 3000);
     // [v2.43.90] Watchdog ICE failed → cierre graceful tras 30s
     _espiaV2._iceFailedDesde = 0;
     _espiaV2._iceWatchdogTimer = setInterval(() => {
@@ -35837,6 +35860,7 @@ const MOS = (() => {
     // [v2.43.90] Limpiar TODOS los timers nuevos
     try { clearInterval(_espiaV2._iceFlushTimer); } catch(_){}
     try { clearInterval(_espiaV2._iceWatchdogTimer); } catch(_){}
+    try { clearInterval(_espiaV2._statsTimer); } catch(_){}   // [2.44.7] sensor getStats
     try { clearTimeout(_espiaV2._timeoutConectando); } catch(_){}
     try { clearTimeout(_espiaV2._renderTimeout); } catch(_){}
     try { clearTimeout(_espiaV2._ctrlTimer); } catch(_){} // [v2.44] timer auto-hide de controles
@@ -35852,7 +35876,7 @@ const MOS = (() => {
       try { s?.getTracks().forEach(t => t.stop()); } catch(_){}
     });
     if (_espiaV2.sesionId) {
-      _espiaApiPost('espiaCerrarSesion', { sesionId: _espiaV2.sesionId, motivo: motivo || 'manual', lado: 'master' }).catch(()=>{});
+      _espiaApiPost('espiaCerrarSesion', { sesionId: _espiaV2.sesionId, motivo: ((motivo || 'manual') + ' | ' + (_espiaV2._diag || 'sin-diag')).slice(0, 300), lado: 'master' }).catch(()=>{});
     }
     const modal = document.getElementById('espiaV2Modal');
     if (modal) {
