@@ -53792,13 +53792,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // [992] Clasificador INTUITIVO del historial: icono + acento (out=rojo · in=verde · aud=ámbar) + etiqueta
   //   ESPECÍFICA por tipo real (Venta, Envasado, Despacho, Auditoría, Ajuste, Merma…), nunca un "Salida"
   //   genérico. Se apoya en tipoOperacion (crudo/fiable de ambos kardex) y cae al `tipo` + dirección del delta.
+  // tipo REAL de guía (WH almacén) → [icono, acento, etiqueta]. Un CIERRE_GUIA trae `tipoGuia` (SQL 969).
+  var _ZONA_HX_GT = {
+    INGRESO_PROVEEDOR: ['📥', 'in', 'Ingreso de proveedor'], SALIDA_ZONA: ['🚚', 'out', 'Despacho a zona'],
+    SALIDA_ENVASADO: ['🏭', 'out', 'Salida para envasado'], INGRESO_ENVASADO: ['🏭', 'in', 'Ingreso de envasado'],
+    INGRESO_DEVOLUCION_ZONA: ['↩️', 'in', 'Devolución desde zona'], SALIDA_JEFATURA: ['🚚', 'out', 'Despacho a jefatura'],
+    INGRESO_JEFATURA: ['📥', 'in', 'Ingreso de jefatura'], SALIDA_DEVOLUCION: ['↩️', 'out', 'Devolución'], SALIDA_MERMA: ['🗑️', 'out', 'Merma']
+  };
   function _zonaHxClasificar(m, delta) {
     const op = String(m.tipoOperacion || '').toUpperCase();
     const tp = String(m.tipo || '').toUpperCase();
+    const tg = String(m.tipoGuia || '').toUpperCase();
     const usr = String(m.usuario || '').toLowerCase();
     const s = op + ' ' + tp;
     const isIn = delta > 0, isOut = delta < 0;
-    if (usr.indexOf('cierre') >= 0 || usr.indexOf('idem') >= 0) return ['🌙', 'aud', 'Cierre del día'];
+    // 🌙 SOLO si es un snapshot que NO mueve stock (los CIERRE_GUIA de sistema-cierre-* SÍ mueven stock → son
+    //    aplicaciones de guía reales, se etiquetan por su tipoGuia más abajo, no como "cierre").
+    if ((usr.indexOf('cierre') >= 0 || usr.indexOf('idem') >= 0) && delta === 0) return ['🌙', 'aud', 'Cierre del día'];
     if (/ENVASAD/.test(s)) {
       if (/INGRESO|DERIVADO|PRODUC/.test(s) || (isIn && !/BASE|ENVASE|SALIDA/.test(s))) return ['🏭', 'in', 'Producido (envasado)'];
       if (/ENVASE/.test(s)) return ['🏭', 'out', 'Envasado · envase'];
@@ -53809,6 +53819,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (/ANULAC|REVERSO|REABRIR|DUPLICAD/.test(s)) return ['↩️', 'aud', 'Anulación / reverso'];
     if (/AJUSTE|CORRECCION|EDICION|REKEY/.test(s)) return ['✏️', 'aud', 'Ajuste manual'];
     if (/MERMA/.test(s)) return isIn ? ['♻️', 'in', 'Merma repuesta'] : ['🗑️', 'out', 'Merma'];
+    // tipo REAL de la guía (almacén): la etiqueta más específica e intuitiva.
+    if (tg && _ZONA_HX_GT[tg]) return _ZONA_HX_GT[tg];
     if (/VENTA/.test(s)) return ['🛒', 'out', 'Venta'];
     if (/DEVOLUC/.test(s)) return isIn ? ['↩️', 'in', 'Devolución (entra)'] : ['↩️', 'out', 'Devolución (sale)'];
     if (/PROVEEDOR/.test(s)) return ['📥', 'in', 'Ingreso de proveedor'];
@@ -53909,7 +53921,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const d = (r && (r.data || r)) || {};
       if (!r || r.ok === false || !d.header) { _zonaMovRenderMov(m); return; }   // sin documento → muestro el movimiento
       if (d.tipo === 'envasado') { _zonaMovRenderEnv(d); return; }
-      _zonaMovRenderDoc(d);
+      _zonaMovRenderDoc(d, m);
     } catch (e) { _zonaMovRenderMov(m); }
   }
 
@@ -53935,8 +53947,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaMovRenderMov(m) {
     const tU = String(m.tipo || '').toUpperCase(), opU = String(m.tipoOperacion || '').toUpperCase();
     const all = tU + ' ' + opU; const fte = String(m.fuente || '').toLowerCase();
+    const usrL = String(m.usuario || '').toLowerCase(); const absD = _zonaMovAbsDelta(m);
     let ico, titulo, tone, note = '';
-    if (/CUADRE/.test(all) || String(m.usuario || '').toLowerCase().indexOf('cuadre') >= 0) {
+    if ((usrL.indexOf('cierre') >= 0 || usrL.indexOf('idem') >= 0) && (absD === 0 || absD == null) && !m.tipoGuia) {
+      ico = '🌙'; titulo = 'Cierre del día'; tone = 'a';
+      note = '🌙 Corte automático de fin de jornada: el sistema "cierra el día" y deja el saldo fijado. NO es una guía ni una venta —no lo hizo una persona y no cambia el stock—, solo sirve para arrancar el día siguiente cuadrado.';
+    } else if (/CUADRE/.test(all) || String(m.usuario || '').toLowerCase().indexOf('cuadre') >= 0) {
       ico = '⚖️'; titulo = 'Cuadre con stock real'; tone = 'w';
       note = '⚖️ Ajuste automático del sistema para calzar el saldo histórico con el stock real. No lo hizo una persona.';
     } else if (/AUDITOR/.test(all)) { ico = '📋'; titulo = 'Conteo (auditoría)'; tone = 'a';
@@ -53971,19 +53987,45 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '</div>');
   }
 
-  // VENTA / GUÍA → documento completo, con la línea del producto analizado RESALTADA
-  function _zonaMovRenderDoc(d) {
+  // magnitud del cambio real de stock del movimiento (para reconciliar contra lo declarado en la guía)
+  function _zonaMovAbsDelta(m) {
+    if (!m) return null;
+    let dl = (m.delta != null) ? _zonaNum(m.delta) : null;
+    if (dl == null) { const c = _zonaNum(m.cantidad);
+      if (m.esIngreso === true) dl = c; else if (m.esIngreso === false) dl = -c;
+      else if (m.saldo != null && m.stockAntes != null) dl = _zonaNum(m.saldo) - _zonaNum(m.stockAntes); else dl = 0; }
+    return Math.abs(dl);
+  }
+  // icono de guía por dirección/tipo
+  function _zonaMovGuiaIco(tipo) { const k = String(tipo || '').toUpperCase();
+    if (k.indexOf('ENVASAD') >= 0) return '🏭';
+    if (k.indexOf('PROVEEDOR') >= 0 || k.indexOf('ENTRADA') >= 0 || k.indexOf('INGRESO') >= 0) return '📥';
+    if (k.indexOf('MERMA') >= 0) return '🗑️'; if (k.indexOf('DEVOLUC') >= 0) return '↩️';
+    return '🚚'; }
+
+  // VENTA / GUÍA → documento completo, con la línea del producto analizado RESALTADA. `m` (opcional) = el
+  //   movimiento del kardex desde el que se abrió: sirve para reconciliar el cambio REAL vs lo declarado.
+  function _zonaMovRenderDoc(d, m) {
     const h = d.header || {}, lineas = d.lineas || [];
     const esVenta = d.tipo === 'venta';
-    const ico = esVenta ? '🛒' : '🚚';
-    const titulo = esVenta ? ('Ticket ' + (h.correlativo || h.id_venta || '')) : ('Guía ' + (h.id_guia || ''));
+    const esAlm = d.origen === 'almacen';
+    const ico = esVenta ? '🛒' : _zonaMovGuiaIco(h.tipo);
+    const titulo = esVenta ? ('Ticket ' + (h.correlativo || h.id_venta || '')) : _zonaMovTipoGuia(h.tipo);
     const sub = esVenta
       ? [(h.cliente || 'Cliente varios'), (h.fecha || ''), ('S/ ' + Number(h.total || 0).toFixed(2))].filter(Boolean).join(' · ')
-      : [_zonaMovTipoGuia(h.tipo), (h.fecha || ''), (h.zona || '') + (h.destino ? ' → ' + h.destino : '')].filter(Boolean).join(' · ');
+      : ['Guía ' + (h.id_guia || ''), (h.fecha || ''), (h.zona || '') + (h.destino ? ' → ' + h.destino : '')].filter(Boolean).join(' · ');
     const meta = esVenta
       ? '👤 ' + _esc(h.vendedor || '—') + (h.caja ? ' · 💼 ' + _esc(h.caja) : '') + (h.forma_pago ? ' · ' + _esc(h.forma_pago) : '')
-      : (d.origen === 'almacen' ? '🏭 Guía de almacén · ' : '') + '👤 ' + _esc(h.vendedor || '—') + (h.estado ? ' · ' + _esc(h.estado) : '') + (h.obs ? ' · ' + _esc(String(h.obs).slice(0,50)) : '');
+      : (esAlm ? '🏭 Almacén · ' : '🏪 Zona · ') + '👤 ' + _esc(h.vendedor || '—') + (h.estado ? ' · ' + _esc(h.estado) : '') + (h.obs ? ' · ' + _esc(String(h.obs).slice(0, 60)) : '');
     const nMatch = lineas.filter(l => l.match).length;
+    // Reconciliación: si el kardex movió una cantidad distinta a la que la guía declara para ESTE producto,
+    //   dilo con claridad (evita el "¿por qué +1 y la guía dice 122.6?"). El saldo sigue el cambio real.
+    let reconc = '';
+    if (m && !esVenta) { const rd = _zonaMovAbsDelta(m); const ml = lineas.find(l => l.match);
+      if (ml && rd != null && rd > 0) { const lc = Math.abs(_zonaNum(ml.aplicada != null ? ml.aplicada : ml.cantidad));
+        if (lc > 0 && Math.abs(lc - rd) > Math.max(0.01, lc * 0.02))
+          reconc = '<div class="zmv-note zmv-reconc">⚖️ El kardex movió <b>' + _esc(_zonaFmtNumRaw(rd, false)) + '</b> de este producto, pero la guía declara <b>' + _esc(_zonaFmtNumRaw(lc, false)) + '</b>. El saldo del kardex sigue el <b>cambio real de stock</b>; la guía es solo el documento (posible recepción parcial o ajuste posterior).</div>';
+      } }
     const filas = lineas.map(l => {
       const cant = _esc(_zonaFmtNumRaw(_zonaNum(l.cantidad), false));
       const der = esVenta ? ('S/ ' + Number(l.subtotal || 0).toFixed(2)) : (l.aplicada != null && Number(l.aplicada) !== Number(l.cantidad) ? _esc(_zonaFmtNumRaw(_zonaNum(l.aplicada), false)) + ' apl.' : '');
@@ -53994,9 +54036,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         (der ? '<span class="zmv-lin-s">' + _esc(der) + '</span>' : '') + '</div>';
     }).join('');
     _zonaMovSet(
-      _zonaMovHead(ico, titulo, sub, esVenta ? 'g' : 'b') +
+      _zonaMovHead(ico, titulo, sub, esVenta ? 'g' : (esAlm ? 'b' : 'g')) +
       '<div class="zmv-body">' +
         '<div class="zmv-meta">' + meta + '</div>' +
+        reconc +
         (nMatch ? '<div class="zmv-badge">◆ ' + nMatch + ' línea' + (nMatch !== 1 ? 's' : '') + ' de este producto — resaltada' + (nMatch !== 1 ? 's' : '') + '</div>' : '') +
         '<div class="zmv-lins">' + (filas || '<div class="zmv-load">Sin líneas</div>') + '</div>' +
       '</div>');
@@ -54056,9 +54099,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       try { _finBeep?.('shimmer'); } catch(_){} }, 120);
   }
 
-  function _zonaMovTipoGuia(t) { t = String(t || '').toUpperCase();
-    if (t.indexOf('SALIDA_VENTAS') >= 0) return 'Salida por ventas'; if (t.indexOf('ENTRADA') >= 0 || t.indexOf('TRASLADO_IN') >= 0) return 'Ingreso a zona';
-    if (t.indexOf('SALIDA') >= 0) return 'Despacho a zona'; return (t.replace(/_/g,' ').toLowerCase() || 'Guía'); }
+  // [993] Nombre REAL de la guía según su tipo (WH almacén + ME zona). El dueño pidió no ver "Guía de almacén"
+  //   genérico sino el tipo concreto (Ingreso de proveedor, Despacho a zona, etc.).
+  var _ZONA_GUIA_TIPOS = {
+    // WH · almacén
+    SALIDA_ZONA: 'Despacho a zona', INGRESO_PROVEEDOR: 'Ingreso de proveedor',
+    SALIDA_ENVASADO: 'Salida para envasado', INGRESO_ENVASADO: 'Ingreso de envasado',
+    INGRESO_DEVOLUCION_ZONA: 'Devolución desde zona', SALIDA_JEFATURA: 'Despacho a jefatura',
+    INGRESO_JEFATURA: 'Ingreso de jefatura', SALIDA_DEVOLUCION: 'Devolución (salida)', SALIDA_MERMA: 'Merma',
+    // ME · zona
+    SALIDA_VENTAS: 'Salida por ventas', SALIDA_MOVIMIENTO: 'Despacho / movimiento',
+    ENTRADA_TRASLADO: 'Ingreso por traslado', ENTRADA_ALMACEN: 'Ingreso de almacén',
+    SALIDA_JEFA: 'Despacho a jefatura', SALIDA_DEVOLUCION_WH: 'Devolución a almacén', ENTRADA_LIBRE: 'Ingreso libre'
+  };
+  function _zonaMovTipoGuia(t) {
+    const k = String(t || '').toUpperCase().trim();
+    if (_ZONA_GUIA_TIPOS[k]) return _ZONA_GUIA_TIPOS[k];
+    if (k.indexOf('ENTRADA') >= 0 || k.indexOf('INGRESO') >= 0 || k.indexOf('TRASLADO_IN') >= 0) return 'Ingreso';
+    if (k.indexOf('SALIDA') >= 0 || k.indexOf('DESPACHO') >= 0) return 'Despacho';
+    return (k.replace(/_/g, ' ').toLowerCase() || 'Guía'); }
   function _zonaMovRenderError(m, e) {
     _zonaMovSet(_zonaMovHead('⚠️', 'No pude abrir el detalle', String((e && e.message) || e || ''), 'w') +
       '<div class="zmv-body"><div class="zmv-note">El documento puede haberse archivado o no estar disponible. ' +
@@ -55670,8 +55729,19 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const movs = Array.isArray(d.movimientos) ? d.movimientos : [];
     _zonaKardexPintarStock(esAlm, d, movs, tab);
     if (!movs.length) { body.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Sin movimientos registrados</div>'; return; }
-    body.innerHTML = movs.map((m, i) => _zonaKardexRowHtml(m, i, esAlm)).join('');
+    // [994] cada fila del kardex se vuelve clickable → mismo overlay de detalle del historial (guía/ticket con
+    //   el producto RESALTADO). Cacheamos los movimientos + los códigos del producto analizado por TOKEN.
+    const codBarras = (tab && !tab.esTotal && tab.id) ? [String(tab.id)]
+      : (((_zonaKardexEstado.data && _zonaKardexEstado.data.codBarras) || []).length
+          ? _zonaKardexEstado.data.codBarras : _zonaKardexCodesDeTabs());
+    const tok = 'kx' + (++_zonaHxSeq);
+    _zonaHxCache[tok] = { movs: movs, codBarras: codBarras };
+    body.innerHTML = movs.map((m, i) => _zonaKardexRowHtml(m, i, esAlm, tok)).join('');
     if (!primera) body.scrollTop = 0;
+  }
+  // Códigos del grupo (todas las pestañas que son código) — para resaltar en la vista "Total".
+  function _zonaKardexCodesDeTabs() {
+    return (_zonaKardexEstado.tabs || []).filter(t => !t.esTotal && t.id).map(t => String(t.id));
   }
   // [RIZ KARDEX] Encabezado con STOCK ACTUAL (chip) — permite verificar visualmente que el saldo corrido cuadra.
   //   `d` es la unidad mostrada (Total = raíz; pestaña = porCodigo[cod]). El cuadre es por unidad.
@@ -55711,22 +55781,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const cuadraHtml = cuadraTxt ? ` <span class="zona-kardex-stockok">${cuadraTxt}</span>` : '';
     sub.innerHTML = `${_esc(base)} · <span class="${chipCls}">📦 stock actual: <b>${stockTxt}</b>${cuadraHtml}</span>`;
   }
-  function _zonaKardexRowHtml(m, i, esAlm) {
+  function _zonaKardexRowHtml(m, i, esAlm, tok) {
     const esIng = !!m.esIngreso;
     const op    = String(m.tipoOperacion || '').toUpperCase();
     const fuente = String(m.fuente || '').toLowerCase();
     // [RIZ UX · REGLA DE COLORES] verde=ingreso/INC, rojo=salida/DEC, NARANJA=venta del día AÚN NO reconciliada
     //   con la guía de cierre (estado='ABIERTA' o pendiente=true → el día no se ha cerrado todavía).
-    //   El glifo distingue el tipo (🔍 auditoría, ✎ ajuste, ⏳ venta pendiente, ▲/▼ entrada/salida); el COLOR
-    //   sigue el signo del delta salvo el naranja de los pendientes (ver mos.zona_kardex_historial).
     const abierta = String(m.estado || '').toUpperCase() === 'ABIERTA' || m.pendiente === true;
     const sgnCls  = esIng ? 'ing' : 'sal';                 // color por signo (verde/rojo)
     const colorCls = abierta ? 'pend' : sgnCls;            // naranja si la venta no está reconciliada
-    let icoTxt = esIng ? '▲' : '▼';
-    if (op.indexOf('AUDITORIA') >= 0) { icoTxt = '🔍'; }
-    else if (fuente === 'ajuste' || op.indexOf('AJUSTE') >= 0) { icoTxt = '✎'; }
-    if (abierta) icoTxt = '⏳';                            // venta pendiente de reconciliar (día abierto)
     const delta = _zonaNum(m.cantidad);
+    // [994] icono + ETIQUETA intuitivos por tipo real (Venta, Envasado, Despacho, Ingreso de proveedor…) —
+    //   mismo clasificador que el historial moderno. El glifo del nodo usa ese icono (⏳ si el día no cerró).
+    const signed = esIng ? delta : -delta;
+    const cls3 = _zonaHxClasificar(m, signed);
+    let icoTxt = abierta ? '⏳' : cls3[0];
+    const tipoLbl = abierta ? (cls3[2] + ' · sin cerrar') : cls3[2];
     const saldo = (m.saldo == null ? null : _zonaNum(m.saldo));
     const saldoNeg = (esAlm && saldo != null && saldo < 0);   // almacén en rojo si negativo
     const fecha = _esc(_zonaKardexFecha(m.fecha));
@@ -55750,11 +55820,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       : '';
     // [RIZ #5] Estilo WH: timeline con rail + nodo (glifo por tipo), monto grande arriba-derecha, fecha+hora,
     //   chip de tipo, "por <usuario>", y el saldo como pill discreto a la derecha. Jerarquía visual clara.
-    return `<div class="zona-kardex-row is-${colorCls}" style="animation-delay:${i*30}ms">
+    const clickAttrs = tok
+      ? ` role="button" tabindex="0" onclick="MOS.zonaMovDetalle('${tok}',${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();MOS.zonaMovDetalle('${tok}',${i});}" title="Ver el detalle de este movimiento"`
+      : '';
+    return `<div class="zona-kardex-row is-${colorCls}${tok ? ' zona-kardex-click' : ''}" style="animation-delay:${i*30}ms"${clickAttrs}>
       <span class="zona-kardex-node ${colorCls}">${icoTxt}</span>
       <div class="zona-kardex-mid">
         <div class="zona-kardex-head">
-          <span class="zona-kardex-tipo ${colorCls}">${_esc(m.tipo || (esIng ? 'INGRESO' : 'SALIDA'))}</span>
+          <span class="zona-kardex-tipo ${colorCls}">${_esc(tipoLbl)}</span>
           <span class="zona-kardex-delta ${colorCls}">${esIng ? '+' : '−'}${_esc(String(delta))}</span>
         </div>
         <div class="zona-kardex-meta">${fecha}${(usr && usr !== '—') ? ' · por ' + usr : ''}${guia}${aplic}${pendTag}</div>
@@ -55762,6 +55835,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${loteChip ? `<div class="zona-kardex-lotewrap">${loteChip}</div>` : ''}
         ${saldo != null ? `<div class="zona-kardex-saldo${saldoNeg ? ' neg' : ''}">Saldo <b>${_esc(String(saldo))}</b></div>` : ''}
       </div>
+      ${tok ? '<span class="zona-kardex-chev">›</span>' : ''}
     </div>`;
   }
   // Fecha + hora en TZ Perú (el dueño pidió ver la hora). timeZone explícita → no depende de la config del equipo.
