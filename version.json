@@ -1,1 +1,1 @@
-{"version": "2.43.987", "build": "Mesa de creditos: los DOS botones (📤 A CAJA para cobrar + 👤 ASIGNAR a trabajador) ahora estan tanto en la carta de la mesa como en el detalle, para que se sepa que se puede usar cualquiera."}
+{"version": "2.43.988", "build": "Mesa de creditos: (1) fix — el panel de asignar caja ya no queda pegado al salir sin elegir (se limpia al abrir y cerrar el detalle). (2) el overlay ahora muestra los dos botones claros en una barra: 📤 A caja (verde) y 👤 Asignar (azul)."}

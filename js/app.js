@@ -30793,8 +30793,9 @@ const MOS = (() => {
       return `<div class="cj-det-tk-nota">👤 Ese día ya no tiene turnos abiertos —
         sus liquidaciones están pagadas o vetadas, así que no se le puede cargar a nadie.</div>`;
     }
-    return `<button type="button" class="cj-det-tk-btn" onclick="MOS.cjTrabajadorAbrir('${_esc(String(t.idVenta))}')">
-      👤 ASIGNAR a un trabajador de ese día</button>`;
+    // [957] estado FRESCO: el botón ASIGNAR ahora vive en la barra de acciones del detalle (junto a "A caja"),
+    // para que los dos se vean claros y parejos. Acá no se repite.
+    return '';
   }
 
   // [851] Repinta SOLO la carta tocada: color, chip y botón. Es lo que hace que la asignación
@@ -31045,6 +31046,10 @@ const MOS = (() => {
     }
     if (!t) return;
     _cjCreditosState.detalleTicket = t;
+    // [957] arrancar limpio: si quedó un panel de asignar de OTRO ticket, quitarlo y resetear su estado.
+    const _stale = $('cjAsignarInlinePanel'); if (_stale) { try { _stale.remove(); } catch(_){} }
+    _cjCreditosState.asignarCtx  = null;
+    _cjCreditosState.asignarCaja = null;
     try { _finBeep?.('click'); } catch(_){}
 
     const cont = $('cjDetalleContenido');
@@ -31099,17 +31104,40 @@ const MOS = (() => {
         ${_cjTrabajadorBloqueHTML(t)}
       `;
     }
-    // El botón FAB se oculta si ya está asignado — o si el ticket ya fue saldado [610]
-    const fab = $('cjDetalleFloating');
-    if (fab) fab.style.display = (t.asignado || (t.estadoCobro && t.estadoCobro !== 'VIVO')) ? 'none' : '';
+    // [957] La barra de acciones (A caja + Asignar) se ajusta al estado del ticket.
+    _cjDetalleFabRefresh(t);
     const modal = $('modalDetalleCarta');
     if (modal) modal.classList.remove('hidden');
+  }
+
+  // [957] Muestra/oculta cada botón de la barra del detalle según el estado del ticket (mismas reglas
+  // que la carta): "A caja" si está vivo y no enviado; "Asignar" si además hay turnos abiertos, no está
+  // ya con trabajador ni es planilla.
+  function _cjDetalleFabRefresh(t) {
+    if (!t) return;
+    const cobrado = !!(t.estadoCobro && t.estadoCobro !== 'VIVO');
+    const puedeCaja = !t.asignado && !cobrado;
+    const puedeAsig = puedeCaja && !(t.trabajador && t.trabajador.nombre) && !t.planillaAuto && t.turnosAbiertos !== false;
+    const fabCaja = $('cjDetalleFloating'); if (fabCaja) fabCaja.style.display = puedeCaja ? '' : 'none';
+    const fabAsig = $('cjDetalleFabAsig');  if (fabAsig) fabAsig.style.display = puedeAsig ? '' : 'none';
+    const bar = $('cjDetalleFabBar');        if (bar)    bar.style.display = (puedeCaja || puedeAsig) ? '' : 'none';
+  }
+
+  // [957] "Asignar" desde el detalle → mismo flujo que el botón de la carta.
+  function cjAsignarDesdeDetalle() {
+    const t = _cjCreditosState.detalleTicket; if (!t) return;
+    cjTrabajadorAbrir(t.idVenta);
   }
 
   function cjCerrarDetalleCarta(ev) {
     if (ev && ev.target && ev.target.id !== 'modalDetalleCarta') return;
     const modal = $('modalDetalleCarta');
     if (modal) modal.classList.add('hidden');
+    // [957] Limpiar el panel de asignar si quedó abierto: salir sin elegir NO debe dejar el estado
+    // pegado (antes contaminaba el próximo ticket con el botón "A caja" activo).
+    const panel = $('cjAsignarInlinePanel'); if (panel) { try { panel.remove(); } catch(_){} }
+    _cjCreditosState.asignarCtx  = null;
+    _cjCreditosState.asignarCaja = null;
     _cjCreditosState.detalleTicket = null;
   }
 
@@ -31145,9 +31173,8 @@ const MOS = (() => {
     // Sonido apertura panel
     try { _finBeep?.('expand') || _finBeep?.('click'); } catch(_){}
 
-    // Ocultar el FAB mientras el panel está abierto
-    const fab = $('cjDetalleFloating');
-    if (fab) fab.style.display = 'none';
+    // [957] Ocultar la barra de acciones mientras el panel de asignar está abierto
+    const _bar = $('cjDetalleFabBar'); if (_bar) _bar.style.display = 'none';
 
     // Insertar panel inline dentro del modal detalle si no existe
     let panel = $('cjAsignarInlinePanel');
@@ -31333,9 +31360,8 @@ const MOS = (() => {
       panel.classList.add('is-closing');
       setTimeout(() => { try { panel.remove(); } catch(_){} }, 320);
     }
-    const fab = $('cjDetalleFloating');
-    const t = _cjCreditosState.detalleTicket;
-    if (fab && t && !t.asignado) fab.style.display = '';
+    // [957] restaurar la barra de acciones según el estado del ticket
+    _cjDetalleFabRefresh(_cjCreditosState.detalleTicket);
     _cjCreditosState.asignarCtx = null;
     try { _finBeep?.('collapse') || _finBeep?.('tap'); } catch(_){}
   }
@@ -58117,7 +58143,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,
     // [v40.4] Cobro asignado de créditos — mano de cartas
     cjRepartirMano, cjCerrarMesa,
-    cjAbrirDetalleCarta, cjCerrarDetalleCarta, cjAbrirAsignarDesdeDetalle, cjEnviarACajaDesdeMesa,
+    cjAbrirDetalleCarta, cjCerrarDetalleCarta, cjAbrirAsignarDesdeDetalle, cjEnviarACajaDesdeMesa, cjAsignarDesdeDetalle,
     cjAbrirAsignar, cjCerrarAsignar,
     cjSetMetodoAsignar, cjSetCajaAsignar, cjSetTTLAsignar, cjConfirmarAsignar,
     _cjOnMensajeAsignar, _cjCargarEnVuelo, cjCancelarCobro, cjReasignarCobro,
