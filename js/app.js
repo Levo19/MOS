@@ -45629,10 +45629,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '<div class="mg-sec">🛡️ MosGuard · resguardo de tus equipos' +
         (_nEq ? '<button type="button" class="mg-vertodo" onclick="MOS.mgVerTodo()" title="Ver las cámaras de TODOS los equipos a la vez">👁 Ver TODO (' + _nEq + ')</button>' : '') +
       '</div>' +
+      // [banner descarga] un clic = baja el APK exacto más nuevo (el link real sale de la API de releases)
+      '<a id="mgDlBanner" href="' + YAPE_APK_URL + '" target="_blank" rel="noopener" ' +
+        'style="display:flex;align-items:center;gap:12px;margin:0 0 12px;padding:12px 14px;border-radius:14px;text-decoration:none;' +
+        'background:linear-gradient(135deg,#0E3A34,#14504733);border:1px solid rgba(16,185,129,.35);box-shadow:0 2px 10px rgba(0,0,0,.15)">' +
+        '<span style="font-size:26px;line-height:1">📥</span>' +
+        '<span style="flex:1;min-width:0">' +
+          '<b style="display:block;color:#d1fae5;font-size:14px;font-weight:900">Descargar MosGuard (APK)</b>' +
+          '<i id="mgDlVer" style="color:#6ee7b7;font-size:11.5px;font-style:normal">buscando la última versión…</i>' +
+        '</span>' +
+        '<span id="mgDlBtn" style="flex:none;background:#10b981;color:#04231d;font-weight:900;font-size:13px;padding:9px 16px;border-radius:10px;white-space:nowrap">⬇ Bajar</span>' +
+      '</a>' +
       '<div class="mg-eqs">' + filas + '</div>' +
       '<div class="yp-nota">📸 Pedir foto / 🎥 Ver en vivo (cuadros cada ~2 s, <b>sin audio</b>): la orden llega al equipo en su ' +
         'próximo latido, así que puede tardar hasta un par de minutos en empezar. Solo aplica a los equipos con la app ' +
         '<b>MosGuard</b> instalada y con permiso de cámara/ubicación concedido.</div>';
+    // [banner descarga] resolver el link directo al APK más nuevo (la API de GitHub da CORS público)
+    _mgCargarDescarga();
     // cargar las imágenes (URL firmada, temporal — el bucket es privado)
     equipos.forEach(e => { if (e.mediaPath) _mgCargarFoto(e.nombre); });
     // si algún equipo está EN VIVO, refrescar su cuadro cada 2,5 s
