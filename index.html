@@ -15815,6 +15815,9 @@
     .zona-kardex-click:hover { background:rgba(56,189,248,.07); }
     .zona-kardex-click:active { transform:scale(.99); }
     .zona-kardex-click:focus-visible { outline:2px solid #38bdf8; outline-offset:-2px; }
+    /* [997] guía de ventas (consolida los tickets del día) = tenue; los tickets se ven normales. */
+    .zona-kardex-row.is-consolidacion { opacity:.5; }
+    .zona-kardex-row.is-consolidacion .zona-kardex-delta { color:#64748b; }
     .zona-kardex-chev { align-self:center; margin-left:.15rem; color:#475569; font-size:1.1rem; font-weight:700; flex-shrink:0; transition:transform .14s, color .14s; }
     .zona-kardex-click:hover .zona-kardex-chev { color:#7dd3fc; transform:translateX(3px); }
     .zona-kardex-row::before { content:''; position:absolute; left:-7px; top:.85rem; width:12px; height:12px; border-radius:50%;
@@ -22167,7 +22170,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.43.998';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.43.999';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22446,7 +22449,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.43.998"></script>
+<script src="js/api.js?v=2.43.999"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22462,7 +22465,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.43.998"></script>
+<script src="js/app.js?v=2.43.999"></script>
 <script src="js/buzon.js?v=2.43.992"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara

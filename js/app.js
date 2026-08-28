@@ -53885,17 +53885,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (lbl === 'Cierre del día') huboCierre = true;
       const quien = quienDe(usr);
       const saldo = (m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : (m.saldo != null ? _zonaNum(m.saldo) : null);
-      // [996] SOMBRA: ticket de venta ya reconciliado por la guía de cierre (aplicado=false). NO descuenta stock
-      //   (la guía es la que resta) → lo mostramos MUDO ("ya en guía") para que no parezca doble conteo.
-      const shadow = (m.aplicado === false);
-      const dTxt = shadow ? 'ya en guía' : (delta === 0 ? 'sin cambio' : ((delta > 0 ? '+' : '−') + _esc(_zonaFmtNumRaw(Math.abs(delta), p && p.esGranel))));
-      const dCls = shadow ? 'zero' : (delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero'));
-      const queda = (!shadow && saldo != null && delta !== 0) ? ` <small>queda ${_esc(_zonaFmtNumRaw(saldo, p && p.esGranel))}</small>` : '';
+      // [997] Énfasis pedido por el dueño: el TICKET de venta se ve NORMAL con su cantidad (el admin quiere ver
+      //   cada venta); la GUÍA de ventas (que consolida los tickets del día) es la que va TENUE. El stock no
+      //   cambia: la guía sigue siendo la que descuenta (aplicado=true) y el ticket es sombra que no re-resta.
+      const esGuiaVta = /^G-?VENTAS/i.test(String(m.idGuia || ''));
+      const muted = esGuiaVta;
+      const dTxt = delta === 0 ? 'sin cambio' : ((delta > 0 ? '+' : '−') + _esc(_zonaFmtNumRaw(Math.abs(delta), p && p.esGranel)));
+      const dCls = muted ? 'zero' : (delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero'));
+      // "queda" (saldo corrido) solo donde el saldo realmente cambió (movimientos aplicados: la guía y ajustes).
+      const queda = (m.aplicado !== false && saldo != null && delta !== 0) ? ` <small>queda ${_esc(_zonaFmtNumRaw(saldo, p && p.esGranel))}</small>` : '';
       const cod = m.cod_barra ? ` <span class="zt-hx-cod">${_esc(String(m.cod_barra))}</span>` : '';
-      const shadowTag = shadow ? ' · <span class="zt-hx-shadow">ⓘ ya contado en la guía</span>' : '';
+      const shadowTag = muted ? ' · <span class="zt-hx-shadow">ⓘ consolida los tickets del día</span>' : '';
       // [965] fila clickable → overlay con el detalle (guía/venta completo o quién/cuándo del ajuste)
       // [991] fila = tarjeta clickable con acento por dirección (entrada/salida/auditoría)
-      return `<div class="zt-hx-row zt-hx-click zt-hx-${cls}${delta === 0 ? ' is-zero' : ''}${shadow ? ' is-shadow' : ''}" role="button" tabindex="0"
+      return `<div class="zt-hx-row zt-hx-click zt-hx-${cls}${delta === 0 ? ' is-zero' : ''}${muted ? ' is-shadow' : ''}" role="button" tabindex="0"
                    onclick="MOS.zonaMovDetalle('${_tok}',${i})"
                    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();MOS.zonaMovDetalle('${_tok}',${i});}"
                    title="Ver el detalle de este movimiento">
@@ -55847,8 +55850,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [RIZ #3] Las filas "no aplicadas" son el TICKET CRUDO de un día YA reconciliado por su guía de cierre
     //   (la guía es la que suma al saldo). Etiqueta clara para que el admin no crea que se descuadra ni
     //   que se cuenta dos veces — es el mismo movimiento mostrado para auditoría, NO resta del saldo.
-    const aplic = (m.aplicado === false)
-      ? ' <span class="zona-kardex-info" title="Ticket ya reconciliado por la guía de cierre del día — no resta del saldo (se muestra solo para auditoría).">ⓘ ya contado en la guía</span>'
+    // [997] Énfasis pedido por el dueño: el TICKET de venta se ve NORMAL (el admin quiere ver cada venta con su
+    //   cantidad); la GUÍA de ventas (que consolida los tickets del día) va TENUE. El stock no cambia.
+    const esGuiaVta = /^G-?VENTAS/i.test(String(m.idGuia || ''));
+    const aplic = esGuiaVta
+      ? ' <span class="zona-kardex-info" title="Esta guía agrupa los tickets de venta del día (es la que descuenta del stock). Los tickets de arriba ya están incluidos aquí — no se cuentan aparte.">ⓘ consolida los tickets del día</span>'
       : '';
     const pendTag = abierta ? ' <span class="zona-kardex-pend-tag">⏳ sin reconciliar</span>' : '';
     // [KARDEX ENRIQUECIDO] LOTE en INGRESOS (atable) + DESTINO (zona·quién) en SALIDAS.
@@ -55865,7 +55871,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const clickAttrs = tok
       ? ` role="button" tabindex="0" onclick="MOS.zonaMovDetalle('${tok}',${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();MOS.zonaMovDetalle('${tok}',${i});}" title="Ver el detalle de este movimiento"`
       : '';
-    return `<div class="zona-kardex-row is-${colorCls}${tok ? ' zona-kardex-click' : ''}" style="animation-delay:${i*30}ms"${clickAttrs}>
+    return `<div class="zona-kardex-row is-${colorCls}${esGuiaVta ? ' is-consolidacion' : ''}${tok ? ' zona-kardex-click' : ''}" style="animation-delay:${i*30}ms"${clickAttrs}>
       <span class="zona-kardex-node ${colorCls}">${icoTxt}</span>
       <div class="zona-kardex-mid">
         <div class="zona-kardex-head">
