@@ -53948,13 +53948,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const tU = String(m.tipo || '').toUpperCase(), opU = String(m.tipoOperacion || '').toUpperCase();
     const all = tU + ' ' + opU; const fte = String(m.fuente || '').toLowerCase();
     const usrL = String(m.usuario || '').toLowerCase(); const absD = _zonaMovAbsDelta(m);
-    let ico, titulo, tone, note = '';
+    let antes = (m.stockAntes != null) ? _zonaNum(m.stockAntes) : null;
+    let desp  = (m.saldo != null) ? _zonaNum(m.saldo) : ((m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : null);
+    let delta = (m.delta != null) ? _zonaNum(m.delta) : (m.esIngreso === true ? _zonaNum(m.cantidad) : (m.esIngreso === false ? -_zonaNum(m.cantidad) : (antes != null && desp != null ? desp - antes : 0)));
+    let ico, titulo, tone, sub = 'Movimiento de stock', note = '';
     if ((usrL.indexOf('cierre') >= 0 || usrL.indexOf('idem') >= 0) && (absD === 0 || absD == null) && !m.tipoGuia) {
-      ico = '🌙'; titulo = 'Cierre del día'; tone = 'a';
+      ico = '🌙'; titulo = 'Cierre del día'; tone = 'a'; sub = 'Corte automático · no cambia stock';
       note = '🌙 Corte automático de fin de jornada: el sistema "cierra el día" y deja el saldo fijado. NO es una guía ni una venta —no lo hizo una persona y no cambia el stock—, solo sirve para arrancar el día siguiente cuadrado.';
-    } else if (/CUADRE/.test(all) || String(m.usuario || '').toLowerCase().indexOf('cuadre') >= 0) {
-      ico = '⚖️'; titulo = 'Cuadre con stock real'; tone = 'w';
-      note = '⚖️ Ajuste automático del sistema para calzar el saldo histórico con el stock real. No lo hizo una persona.';
+    } else if (/CUADRE/.test(all) || usrL.indexOf('cuadre') >= 0) {
+      ico = '⚖️'; titulo = 'Cuadre con stock real'; tone = 'w'; sub = 'Reconciliación de la vista · NO cambia stock';
+      note = '⚖️ Esto NO es un ajuste que alguien hizo, ni un cambio de stock. Es una línea que el kardex <b>dibuja</b> para que los movimientos que ves cierren en el stock real. El sistema reconstruye las ventas, guías y ajustes recientes; todo lo <b>anterior</b> (aperturas y movimientos viejos que no se listan) se resume en esta sola línea. Por eso «Antes» es la suma de lo que ves' + (antes != null ? ' (' + _esc(_zonaFmtNumRaw(antes, false)) + ')' : '') + ' y «Después» es el stock real de hoy' + (desp != null ? ' (' + _esc(_zonaFmtNumRaw(desp, false)) + ')' : '') + '.';
+      if (desp != null && desp < 0) note += ' <b>⚠ El stock real está en negativo</b>: se vendió/despachó más de lo que figura ingresado. Eso sí conviene revisarlo —contar físico y ajustar—; el cuadre solo lo refleja, no lo causa.';
     } else if (/AUDITOR/.test(all)) { ico = '📋'; titulo = 'Conteo (auditoría)'; tone = 'a';
       note = '📋 Resultado de un conteo físico: el stock quedó en lo realmente contado.';
     } else if (/AJUSTE/.test(all)) { ico = '✏️'; titulo = 'Ajuste manual'; tone = 'v';
@@ -53966,14 +53970,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     } else { ico = '📦'; titulo = (m.tipo || 'Movimiento de stock'); tone = 'b'; }
     const quien = (m.usuario && m.usuario !== '—') ? m.usuario : 'sistema';
     const fh = _zonaMovFechaHora(m.fecha);
-    let antes = (m.stockAntes != null) ? _zonaNum(m.stockAntes) : null;
-    let desp  = (m.saldo != null) ? _zonaNum(m.saldo) : ((m.saldo_despues != null) ? _zonaNum(m.saldo_despues) : null);
-    let delta = (m.delta != null) ? _zonaNum(m.delta) : (m.esIngreso === true ? _zonaNum(m.cantidad) : (m.esIngreso === false ? -_zonaNum(m.cantidad) : (antes != null && desp != null ? desp - antes : 0)));
     const dCls = delta < 0 ? 'neg' : (delta > 0 ? 'pos' : 'zero');
     const dTxt = (delta > 0 ? '+' : delta < 0 ? '−' : '') + _esc(_zonaFmtNumRaw(Math.abs(delta), false));
     const ini = (String(quien).trim()[0] || '?').toUpperCase();
     _zonaMovSet(
-      _zonaMovHead(ico, titulo, 'Movimiento de stock', tone) +
+      _zonaMovHead(ico, titulo, sub, tone) +
       '<div class="zmv-body">' +
         '<div class="zmv-who"><span class="zmv-ini">' + _esc(ini) + '</span>' +
           '<div><b>' + _esc(quien) + '</b><i>' + _esc(fh.dia) + ' · 🕐 ' + _esc(fh.hora) + '</i></div></div>' +
