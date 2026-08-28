@@ -1,1 +1,1 @@
-{"version": "2.43.983", "build": "MosGuard: diagnostico de 'readiness' por equipo en Config>Yapes — analiza los permisos que reporta cada Android y dice si esta LISTO para anti-robo o que falta, con pista por fabricante (Xiaomi/Samsung/etc)."}
+{"version": "2.43.984", "build": "Yapes: sugerencia de Yape GLOBAL — cuando un Yape no cuadra con un ticket, sugiere la combinacion de 2-3 tickets cuya suma da el monto (por cercania de tiempo); confirmacion manual ata todos. El cierre de caja avisa Yapes/tickets sin verificar."}

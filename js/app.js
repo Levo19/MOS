@@ -33295,6 +33295,20 @@ const MOS = (() => {
     // Preview rápida: monto inicial + tickets + por cobrar
     const c = (S._todasCajas || []).find(x => String(x.idCaja) === String(idCaja));
     if (!c) { toast('Caja no encontrada', 'error'); return; }
+    // [959] antes de cerrar, avisar si quedan Yapes/tickets sin cuadrar (para verificar primero)
+    let ypWarn = '';
+    try {
+      const yr = await API.post('yapesDeCaja', { idCaja });
+      const R = ((yr && (yr.data || yr)) || {}).resumen || {};
+      const libres = (R.libres || 0) + (R.ambiguos || 0);
+      const tks = R.ticketsSinVerificar || 0;
+      if (libres > 0 || tks > 0) {
+        ypWarn = '\n⚠ YAPES SIN CUADRAR' +
+          '\n  Yapes libres/ambiguos:  ' + libres +
+          '\n  Tickets sin verificar:  ' + tks + '  (S/ ' + parseFloat(R.montoSinVerificar || 0).toFixed(2) + ')' +
+          '\n  → Conviene cuadrarlos en 💜 Yapes antes de cerrar.\n';
+      }
+    } catch (_) {}
     const preview = [
       `🔒 CERRAR CAJA FORZADAMENTE`,
       ``,
@@ -33306,7 +33320,7 @@ const MOS = (() => {
       `Tickets:       ${c.tickets || 0}`,
       `Efectivo:      S/ ${parseFloat(c.efectivo || 0).toFixed(2)}`,
       `Por cobrar:    ${c.sinCobrar || 0}  ← vuelven a mesa créditos`,
-      ``,
+      ypWarn,
       `Efectivo esperado: S/ ${parseFloat(c.efectivoEsperado || 0).toFixed(2)}`,
       ``,
       `Se cerrará en ME y el cajero recibirá un push.`
@@ -45213,6 +45227,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           '<i>' + _escapeHtml(String(c.hora)) + ' · ' + _S(c.virtual) +
           (String(c.formaPago || '').indexOf('MIXTO') === 0 ? ' de ' + _S(c.total) + ' (mixto)' : '') +
           (c.cliente ? ' · ' + _escapeHtml(String(c.cliente)) : '') + '</i></button>').join('');
+      // [959] combinaciones: 1 Yape = suma de varias compras del mismo cliente. Confirmación manual.
+      const combos = (y.combinaciones || []).map(cb => {
+        const ids = (cb.ventas || []).map(v => v.idVenta);
+        const arg = '[' + ids.map(i => "'" + _esc(i) + "'").join(',') + ']';
+        const piezas = (cb.ventas || []).map(v => '#' + _escapeHtml(String(v.correlativo || v.idVenta)) + ' ' + _S(v.virtual)).join(' + ');
+        const sp = cb.spreadMin == null ? '' : (cb.spreadMin <= 3 ? 'seguidos' : cb.spreadMin < 60 ? cb.spreadMin + ' min aparte' : (Math.round(cb.spreadMin / 6) / 10) + ' h aparte');
+        return '<button type="button" class="yp-cand yp-combo" style="border-color:rgba(167,139,250,.5);background:rgba(167,139,250,.08)" ' +
+          'onclick="MOS.yapeAtarGlobal(' + y.id + ',' + arg + ')">' +
+          '<b>' + piezas + ' = ' + _S(cb.suma) + '</b>' +
+          '<i>' + cb.n + ' tickets · ' + sp + '</i></button>';
+      }).join('');
+      // Yape global ya verificado: listar sus tickets
+      const glob = (y.esGlobal && (y.ventasGlobal || []).length)
+        ? (y.ventasGlobal || []).map(v => '#' + _escapeHtml(String(v.correlativo || v.idVenta))).join(' + ')
+        : '';
       return '<div class="yp-y ' + cls + '">' +
         '<div class="yp-y-top">' +
           '<span class="yp-y-m">' + (y.monto == null ? '—' : _S(y.monto)) + '</span>' +
@@ -45220,14 +45249,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           '<span class="yp-y-h">' + _escapeHtml(String(y.hora)) + '</span>' +
         '</div>' +
         (est === 'MATCHEADO'
-          ? '<div class="yp-y-ok">✅ verifica <b>' + _escapeHtml(String(y.correlativo || y.idVenta)) + '</b>' +
-            (y.manual ? ' <i>(atado a mano)</i>' : '') +
+          ? '<div class="yp-y-ok">✅ verifica <b>' + (glob || _escapeHtml(String(y.correlativo || y.idVenta))) + '</b>' +
+            (y.esGlobal ? ' <i>(global · ' + (y.ventasGlobal || []).length + ' tickets)</i>' : (y.manual ? ' <i>(atado a mano)</i>' : '')) +
             '<button type="button" class="yp-soltar" onclick="MOS.yapeSoltar(' + y.id + ')">desverificar</button></div>'
           : (y.monto == null
               ? '<div class="yp-y-raw">No pude leer el monto: <span>' + _escapeHtml(String(y.raw).slice(0, 120)) + '</span></div>'
-              : (cands
-                  ? '<div class="yp-y-cands"><i>' + (est === 'AMBIGUO' ? 'Dos o más tickets calzan — elegí cuál pagó:' : 'Ticket que podría ser:') + '</i>' + cands + '</div>'
-                  : '<div class="yp-y-solo">Libre — ningún ticket de esta caja calza con ese monto</div>'))) +
+              : ((cands || combos)
+                  ? '<div class="yp-y-cands">' +
+                      (cands ? '<i>' + (est === 'AMBIGUO' ? 'Dos o más tickets calzan — elegí cuál pagó:' : 'Ticket que podría ser:') + '</i>' + cands : '') +
+                      (combos ? '<i style="color:#a78bfa">💡 O un solo Yape por varias compras (tocá para verificar todos):</i>' + combos : '') +
+                    '</div>'
+                  : '<div class="yp-y-solo">Libre — ningún ticket ni combinación de esta caja da ese monto</div>'))) +
       '</div>';
     }).join('') || '<div class="yp-vacio">No entró ningún Yape en el horario de esta caja.</div>';
 
@@ -45259,6 +45291,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       toast('✅ Verificado', 'ok', 2200);
       await yapesCajaRefrescar();
     } catch (e) { toast('No se pudo atar: ' + (e.message || e), 'error', 5000); }
+  }
+
+  // [959] Verificar un Yape GLOBAL: un solo Yape que pagó varias compras. Pide confirmación porque
+  // ata VARIOS tickets de una (money-safe: nunca automático).
+  async function yapeAtarGlobal(id, idVentas) {
+    const ids = Array.isArray(idVentas) ? idVentas : [];
+    if (ids.length < 2) return;
+    if (!await _modalConfirm('Este Yape cubre ' + ids.length + ' compras a la vez.\n\n¿Verificar los ' + ids.length +
+        ' tickets con este único Yape?', { titulo: 'Yape por varias compras', okText: 'Verificar los ' + ids.length })) return;
+    try {
+      const r = await API.post('yapeAtarGlobal', { id, idVentas: ids, usuario: S.session?.nombre || '' });
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'no se pudo');
+      try { _finBeep?.('agregar'); } catch (_) {}
+      toast('✅ ' + ids.length + ' tickets verificados con un Yape', 'ok', 2600);
+      await yapesCajaRefrescar();
+    } catch (e) { toast('No se pudo verificar: ' + (e.message || e), 'error', 5000); }
   }
 
   async function yapeSoltar(id) {
@@ -57926,7 +57974,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     cjTrabajadorAbrir, cjTrabajadorElegir, cjTrabajadorQuitar, cjTrabajadorCerrar,
     renderIaPanel, iaSetRango, iaVerDia, iaCerrarDia,
     renderYapeCard, yapeGenerarCodigo, yapeRevocar,
-    yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeSoltar,
+    yapesCajaAbrir, yapesCajaRefrescar, yapesCajaCerrar, yapeAtar, yapeAtarGlobal, yapeSoltar,
     yapesZonaAbrir, yapesZonaRefrescar, yapesZonaDia,
     mgMarcar, mgFoto, mgLive, mgCaptura, mgEspia, mgVerTodo, mgWallEscuchar, mgCerrarWall, mgAlarma, mgMensaje, mgBloquear, mgEscuchar, tribBuzonBorrar,
     finProdCurva, finProdTickets, finTicketsCerrar, _curvaCardIngreso, _curvaCardAnulado, _curvaCardCerrar, _curvaVerFoto,
