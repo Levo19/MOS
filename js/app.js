@@ -32829,7 +32829,19 @@ const MOS = (() => {
   // ──────────────────────────────────────────────────────────
   // CONVERTIR NV → CPE (boleta/factura retroactivo)
   // ──────────────────────────────────────────────────────────
+  // [985] ¿el ticket es de un mes calendario ANTERIOR? (hora Perú, UTC-5). Bloqueo proactivo; el server re-valida.
+  function _esMesAnterior(f) {
+    try { const toYM = dt => { const l = new Date(dt.getTime() - 5 * 3600 * 1000); return l.getUTCFullYear() * 12 + l.getUTCMonth(); };
+      const d = new Date(f); if (isNaN(d)) return false; return toYM(d) < toYM(new Date()); } catch (_) { return false; }
+  }
   function _tkConvertirOpen(t) {
+    // Candado de mes (claro + háptico): un ticket de un mes anterior NO se convierte (no metemos IGV de otro mes).
+    const _f = t.fecha || t.ts || t.fechaVenta || t.hora || t.creado;
+    if (_f && _esMesAnterior(_f)) {
+      try { navigator.vibrate([70, 40, 70, 40, 70]); } catch (_) {}
+      toast('📅 Ticket de un mes anterior — no se convierte (para no declarar IGV de otro mes). El cliente debía pedir su comprobante al pagar.', 'warn', 7000);
+      return;
+    }
     _tkAcc.convCPE = { tipo: 'BOLETA', clienteOK: false };
     $('tkConvSub').textContent = (t.correlativo || t.idVenta) + ' · S/ ' + t.total.toFixed(2);
     $('tkConvDoc').value      = t.clienteDoc || '';
@@ -32948,19 +32960,29 @@ const MOS = (() => {
     if (!auth) return;
     const btn = $('tkConvBtnOK');
     if (btn) { btn.disabled = true; btn.textContent = 'Emitiendo...'; }
+    try { navigator.vibrate(15); } catch(_){}
     try {
       const r = await API.post('meConvertirNVaCPE', {
         idVenta: t.idVenta, tipoDocNuevo: tipo,
         clienteDoc: doc, clienteNom: nom, direccion: dir, claveAdmin: auth.clave
       });
       const dd = (r && r.data) || {};
+      try { navigator.vibrate([30, 50, 30]); } catch(_){}   // pulso de éxito
       // feedback honesto (paridad ME): con estado EMITIDO ya está firmado; PENDIENTE = en cola
       toast(`✓ ${tipo} ${dd.correlativo || ''} ` + (dd.nfEstado === 'EMITIDO' ? '· firmada por SUNAT' : '· en cola de SUNAT (se confirma sola)'), 'success', 5500);
       closeModal('modalTkConvertirCPE');
       await _cajasRefreshSilencioso?.();
       if (S.view === 'finanzas') finCargar?.();
     } catch(e) {
-      toast('Error: ' + e.message, 'error');
+      const esMes = (e && e.code === 'MES_ANTERIOR') || /mes anterior|MES_ANTERIOR/i.test((e && e.message) || '');
+      if (esMes) {
+        try { navigator.vibrate([70, 40, 70, 40, 70]); } catch(_){}
+        closeModal('modalTkConvertirCPE');
+        toast('📅 ' + ((e && e.message) || 'Ticket de un mes anterior') + ' — el cliente debía pedir su comprobante al pagar.', 'warn', 7000);
+      } else {
+        try { navigator.vibrate([120]); } catch(_){}
+        toast('Error: ' + e.message, 'error');
+      }
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '📤 Emitir CPE en SUNAT'; }
     }

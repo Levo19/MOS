@@ -1729,6 +1729,9 @@ const API = (() => {
         usuario: _mosUsuario(p), rol: p.rol || 'ADMIN',
         claveAdmin: p.claveAdmin || '', app: 'MOS'
       } });
+      // [985] La RPC puede rechazar con ok:false (ej. MES_ANTERIOR = ticket de otro mes) → propagarlo como
+      //  error con .code para que el front lo muestre bonito (antes un ok:false se colaba como "éxito").
+      if (out && out.ok === false) { const _e = new Error(out.mensaje || out.error || 'No se pudo convertir'); _e.code = out.error || ''; throw _e; }
       const d = _desempacarME(out);
       if (d == null) throw new Error('Sin conexión con Supabase — reintenta (si la NV quedó convertida, el reintento recupera el MISMO comprobante)');
       if (String(d.nfEstado || '') === 'EMITIDO') {
