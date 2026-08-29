@@ -30,7 +30,7 @@ begin
   if v_ped is null then return; end if;
   select * into v_ped_row from ruta.pedidos where id_pedido = v_ped;
   if not found then return; end if;
-  if v_ped_row.estado in ('DESPACHADO','ENTREGADO','COBRADO','RENDIDO','VERIFICADO') then return; end if;  -- idempotente
+  if v_ped_row.estado in ('DESPACHADO','ENTREGADO','PARCIAL','COBRADO','RENDIDO','VERIFICADO','ANULADO') then return; end if;  -- idempotente
 
   -- split por línea + total despachado (precio proporcional del pack).
   select

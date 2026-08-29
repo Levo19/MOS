@@ -207,6 +207,10 @@ Deno.serve(async (req: Request) => {
     //    barrera server-side que la BAJA, reverificar_clave_admin es stateless/bcrypt). Así la conversión
     //    NV→CPE desde MOS firma AL INSTANTE (con QR) en vez de quedar PENDIENTE. FAIL-CLOSED. ──
     if (appClaim !== 'mosExpress') {
+      // [fix A1 · revisión senior] FAIL-CLOSED de verdad: MOS emite SOLO con clave admin PRESENTE. Sin esto,
+      //  reverificar_clave_admin devuelve null (=permitido) ante clave vacía cuando MOS_STRICT_ADMIN_REVERIFY='0'
+      //  (default) → se podría emitir sin PIN. Aquí se exige la clave, y luego reverificar la valida (bcrypt).
+      if (!String(inp.claveAdmin || '').trim()) return json({ ok: false, autorizado: false, error: 'Clave admin requerida para emitir CPE desde MOS' }, 403);
       const _su = Deno.env.get('SUPABASE_URL'); const _sk = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
       const _rv = await fetch(`${_su}/rest/v1/rpc/reverificar_clave_admin`, {
         method: 'POST',
