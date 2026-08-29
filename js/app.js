@@ -32894,6 +32894,23 @@ const MOS = (() => {
     // La dirección SOLO se escribe para una FACTURA (RUC) cuando SUNAT no la trajo (raro). Nunca boleta/DNI.
     if (dr) dr.classList.toggle('hidden', !(ok && dirVacia && esFactura && doc.length === 11));
   }
+  // [imprimir CPE recién convertido] reusa el mismo picker de impresoras + Edge ticket-comprobante que la
+  //  reimpresión de tickets. Abre el modal de impresoras disponibles y manda el comprobante emitido.
+  async function _tkConvImprimirCPE(idVenta, correlativo) {
+    try {
+      const printerId = await abrirPrinterPicker({
+        titulo: 'Imprimir comprobante', subtitulo: correlativo || idVenta,
+        filtroTipo: 'TICKET', flowKey: 'venta_ticket'
+      });
+      if (!printerId) return;   // canceló el picker
+      toast('Enviando a impresora…', 'info', 1500);
+      await API.imprimirComprobante(idVenta, printerId, { reimpresion: false });
+      try { navigator.vibrate([30, 50, 30]); } catch (_) {}
+      toast('🖨 Comprobante enviado a impresión', 'success');
+    } catch (e) {
+      toast('No se pudo imprimir: ' + (e && (e.message || e)), 'error');
+    }
+  }
   // [✕] limpieza rápida del campo cliente
   function _tkConvLimpiar() {
     try { navigator.vibrate(8); } catch (_) {}
@@ -33046,12 +33063,15 @@ const MOS = (() => {
         clienteDoc: doc, clienteNom: nom, direccion: dir, claveAdmin: auth.clave
       });
       const dd = (r && r.data) || {};
+      const quiereImprimir = !!($('tkConvImprimir') && $('tkConvImprimir').checked);
       try { navigator.vibrate([30, 50, 30]); } catch(_){}   // pulso de éxito
       // feedback honesto (paridad ME): con estado EMITIDO ya está firmado; PENDIENTE = en cola
       toast(`✓ ${tipo} ${dd.correlativo || ''} ` + (dd.nfEstado === 'EMITIDO' ? '· firmada por SUNAT' : '· en cola de SUNAT (se confirma sola)'), 'success', 5500);
       closeModal('modalTkConvertirCPE');
       await _cajasRefreshSilencioso?.();
       if (S.view === 'finanzas') finCargar?.();
+      // [imprimir al emitir] si el toggle está activo, abre el picker de impresoras y manda el comprobante.
+      if (quiereImprimir && dd.idVenta) { try { await _tkConvImprimirCPE(dd.idVenta, dd.correlativo); } catch(_){} }
     } catch(e) {
       const esMes = (e && e.code === 'MES_ANTERIOR') || /mes anterior|MES_ANTERIOR/i.test((e && e.message) || '');
       if (esMes) {

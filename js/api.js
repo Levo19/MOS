@@ -1735,7 +1735,7 @@ const API = (() => {
       const d = _desempacarME(out);
       if (d == null) throw new Error('Sin conexión con Supabase — reintenta (si la NV quedó convertida, el reintento recupera el MISMO comprobante)');
       if (String(d.nfEstado || '') === 'EMITIDO') {
-        return { ok: true, data: { correlativo: d.correlativoNuevo, nfEstado: 'EMITIDO', dedup: true } };
+        return { ok: true, data: { idVenta: d.idVenta, correlativo: d.correlativoNuevo, nfEstado: 'EMITIDO', dedup: true } };
       }
       let nf = { nf_estado: 'PENDIENTE', nf_hash: '', nf_enlace: '', nf_qr: '' };
       try {
@@ -1759,7 +1759,7 @@ const API = (() => {
       if (nf.nf_estado === 'RECHAZADO') {
         throw new Error('⛔ SUNAT rechazó el comprobante: ' + (nf.sunat_desc || 'revisa los datos del cliente'));
       }
-      return { ok: true, data: { correlativo: d.correlativoNuevo, nfEstado: nf.nf_estado, enlace: nf.nf_enlace } };
+      return { ok: true, data: { idVenta: d.idVenta, correlativo: d.correlativoNuevo, nfEstado: nf.nf_estado, enlace: nf.nf_enlace } };
     }
 
     if (action === 'aprobarExtensionHorario' || action === 'rechazarExtensionHorario') {
