@@ -55244,6 +55244,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.pd-stat .mas{font-size:9px;color:var(--pd-acc);font-weight:800;margin-left:4px;letter-spacing:0}' +
       '.pd-paychip{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:2px}' +
       '.pd-paychip .bo{font-size:10px;color:var(--pd-ok);font-weight:700}.pd-paychip .de{font-size:10px;color:var(--pd-bad);font-weight:700}' +
+      '.pd-tiles{display:grid;grid-template-columns:1fr 1fr;gap:9px}' +
+      '.pd-tile{background:var(--pd-panel2);border:1px solid var(--pd-line);border-radius:13px;padding:10px 12px;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .1s}' +
+      '.pd-tile:hover{border-color:var(--pd-acc)}.pd-tile:active{transform:scale(.98)}' +
+      '.pd-tile .l{font-size:10px;color:var(--pd-ink3);text-transform:uppercase;letter-spacing:.05em;font-weight:600;display:flex;align-items:center;gap:5px}' +
+      '.pd-tile .n{font-weight:800;font-size:18px;margin-top:3px;letter-spacing:-.02em}.pd-tile .n small{font-size:11px;color:var(--pd-ink3);font-weight:600}' +
+      '.pd-tile.money .n{color:var(--pd-gold)}.pd-tile .d{font-size:10px;color:var(--pd-ink3);margin-top:1px}' +
+      '.pd-tile .mas{margin-left:auto;font-size:9px;color:var(--pd-acc);font-weight:800;letter-spacing:0}' +
+      '.pd-tile.t-pago{border-color:color-mix(in srgb,var(--pd-gold) 32%,var(--pd-line))}.pd-tile.t-pago:hover{border-color:var(--pd-gold)}' +
+      '.pd-panel{max-height:0;overflow:hidden;transition:max-height .35s cubic-bezier(.4,0,.2,1)}' +
+      '.pd-emp[data-sec="aud"] .p-aud,.pd-emp[data-sec="work"] .p-work,.pd-emp[data-sec="gui"] .p-gui{max-height:1600px}' +
+      '.pd-emp[data-sec="aud"] .t-aud,.pd-emp[data-sec="work"] .t-work,.pd-emp[data-sec="gui"] .t-gui{border-color:var(--pd-acc);box-shadow:0 0 0 1px color-mix(in srgb,var(--pd-acc) 35%,transparent)}' +
+      '.pd-login{color:var(--pd-ink3);margin-left:7px;font-weight:600;text-transform:none;letter-spacing:0;font-size:10.5px}' +
+      '.pd-row .gic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;flex:none;background:var(--pd-panel2)}' +
+      '.pd-row .gic.p{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pd-ok) 45%,transparent)}.pd-row .gic.n{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pd-warn) 45%,transparent)}' +
       '.pd-cta{display:flex;gap:9px;margin-top:12px}' +
       '.pd-btn{flex:1;height:40px;border-radius:12px;border:1px solid var(--pd-line);background:var(--pd-panel2);color:var(--pd-ink);'
         + 'font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.18s}' +
@@ -55367,6 +55381,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         envasado: Array.isArray(p.envasado) ? p.envasado : [],
         vendido: _pdNum(p.vendido), tickets: _pdNum(p.tickets), nclientes: _pdNum(p.nclientes),
         ventas: Array.isArray(p.ventas) ? p.ventas : [],
+        horaInicio: p.horaInicio || '', guiasN: _pdNum(p.guiasN), guias: Array.isArray(p.guias) ? p.guias : [],
         // Para "Auditar" se usa el id de FINANZAS (pg.idPersonal), que es el que conoce abrirAuditar.
         tienePago: !!pg, idPersonal: (pg && pg.idPersonal) || idRpc || '',
         jornal, env, bmeta, bono, desc, neto: _money(netoSrv || (jornal + env + bmeta + bono - desc))
@@ -55392,75 +55407,111 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       try { grid.querySelectorAll('.pd-ring circle[data-off]').forEach(c => { c.style.strokeDashoffset = c.dataset.off; }); } catch (_) {}
     });
   }
-  function _pdCardHtml(p, zm, i) {
-    const meta = p.meta || _PD_META_DEF;
-    const pct = Math.min(1, p.auditados / meta), done = p.auditados >= meta;
-    const col = done ? 'var(--pd-ok)' : (pct >= .5 ? zm.col : 'var(--pd-warn)');
-    const avBg = 'linear-gradient(135deg,' + zm.col + ',color-mix(in srgb,' + zm.col + ' 45%,#fff))';
-    // Stat 2 según rol — CLICABLE: abre el detalle (qué envasó / a quién vendió) abajo.
-    const stat2 = zm.alm
-      ? '<div class="pd-stat clk" onclick="MOS.zonaPersonalDiaExpand(' + i + ',this)"><div class="l">📦 Envasó <span class="mas">ver ▾</span></div><div class="n pd-mono">' + _pdNum(p.envasadoUnid) + '<small> un</small></div>'
-        + '<div class="d">' + _pdNum(p.eficiencia) + '% eficiencia · ' + p.envasado.length + ' prod.</div></div>'
-      : '<div class="pd-stat money clk" onclick="MOS.zonaPersonalDiaExpand(' + i + ',this)"><div class="l">💰 Vendió <span class="mas">ver ▾</span></div><div class="n pd-mono">' + _S(p.vendido) + '</div>'
-        + '<div class="d">' + _pdNum(p.tickets) + ' tickets · ' + _pdNum(p.nclientes) + ' clientes</div></div>';
-    // Pago del día (cruzado desde Finanzas por id). neto = totalDia; desglose: jornal · +envasado · +bono · −desc.
-    const bonoTot = _pdNum(p.bmeta) + _pdNum(p.bono);
-    const pagoStat = p.tienePago
-      ? '<div class="pd-stat money"><div class="l">💵 Pago del día</div><div class="n pd-mono">' + _S(p.neto) + '</div>'
-        + '<div class="pd-paychip"><span class="d">jornal ' + _S(p.jornal) + '</span>'
-        + (_pdNum(p.env) ? '<span class="bo">+env ' + _S(p.env) + '</span>' : '')
-        + (bonoTot ? '<span class="bo">+bono ' + _S(bonoTot) + '</span>' : '')
-        + (_pdNum(p.desc) ? '<span class="de">−' + _S(p.desc) + '</span>' : '') + '</div></div>'
-      : '<div class="pd-stat"><div class="l">💵 Pago del día</div><div class="n pd-mono" style="color:var(--pd-ink3);font-size:14px">—</div><div class="d">sin registro de pago</div></div>';
-    // Detalle de conteos.
-    const conteos = p.conteoDetalle.length
-      ? p.conteoDetalle.map(c => {
+  // Etiqueta legible de un tipo de guía: 'SALIDA_ZONA' → 'Salida · Zona'.
+  function _pdGuiaLbl(tipo) {
+    const raw = String(tipo || '').trim();
+    const dir = raw.indexOf('INGRESO') === 0 ? 'Ingreso' : (raw.indexOf('SALIDA') === 0 ? 'Salida' : '');
+    const resto = raw.replace(/^INGRESO_|^SALIDA_/, '').replace(/_/g, ' ').toLowerCase();
+    const rc = resto ? resto.charAt(0).toUpperCase() + resto.slice(1) : '';
+    return dir ? (dir + (rc ? ' · ' + rc : '')) : (rc || raw);
+  }
+  // Panel: productos auditados (con hora).
+  function _pdConteosHtml(p, meta) {
+    if (!p.conteoDetalle.length) return '<div class="h">🔎 Productos que auditó <span class="pill">0/' + meta + '</span></div><div class="pd-empty">Sin conteos aún</div>';
+    return '<div class="h">🔎 Productos que auditó <span class="pill">' + p.auditados + '/' + meta + '</span></div>'
+      + p.conteoDetalle.map(c => {
           const sis = _pdNum(c.sistema), re = _pdNum(c.real);
           const d = (c.diff != null) ? _pdNum(c.diff) : Math.round((re - sis) * 10) / 10;
           const cl = d === 0 ? 'z' : (d > 0 ? 'p' : 'n');
           const hr = c.hora ? ' · 🕒' + _esc(c.hora) : '';
           return '<div class="pd-row"><div class="nm">' + _esc(c.producto || '') + '<small>sistema ' + sis + ' → real ' + re + hr + '</small></div>'
             + '<div class="rt"><span class="pd-diff ' + cl + '">' + (d > 0 ? '+' : '') + d + '</span></div></div>';
-        }).join('')
-      : '<div class="pd-empty">Sin conteos aún</div>';
-    // Detalle envasado / ventas según rol.
-    const detExtra = zm.alm
-      ? '<div class="h">📦 Envasado del día <span class="pill">' + p.envasado.length + ' prod.</span></div>'
+        }).join('');
+  }
+  // Panel: envasado (almacén) o ventas a quién (zonas), con hora.
+  function _pdWorkHtml(p, zm) {
+    if (zm.alm) {
+      return '<div class="h">📦 Envasado del día <span class="pill">' + p.envasado.length + ' prod.</span></div>'
         + (p.envasado.length ? p.envasado.map(e => {
             const hr = e.hora ? ' · 🕒' + _esc(e.hora) : '';
-            const col = e.colaborador ? ' · 🤝 ' + _esc(e.colaborador) : '';
-            return '<div class="pd-row"><div class="nm">' + _esc(e.producto || '') + '<small>' + _pdNum(e.producidas) + ' de ' + _pdNum(e.esperadas) + ' esperadas · ' + _pdNum(e.eficiencia) + '% efic.' + hr + col + '</small></div>'
-            + '<div class="rt pd-mono">' + _pdNum(e.producidas) + '</div></div>'; }).join('') : '<div class="pd-empty">Sin envasado</div>')
-      : '<div class="h">🛒 Ventas · a quién <span class="pill">' + p.ventas.length + ' clientes</span></div>'
-        + (p.ventas.length ? p.ventas.map(v => {
-            const tk = _pdNum(v.tickets), doc = String(v.doc || '').trim();
-            return '<div class="pd-row"><div class="nm">' + _esc(v.cliente || '') + '<small>' + (doc && doc !== '—' ? _esc(doc) + ' · ' : '') + tk + ' ticket' + (tk === 1 ? '' : 's') + '</small></div>'
-              + '<div class="mt">' + _S(v.monto) + '</div></div>';
-          }).join('') : '<div class="pd-empty">Sin ventas</div>');
+            const co = e.colaborador ? ' · 🤝 ' + _esc(e.colaborador) : '';
+            return '<div class="pd-row"><div class="nm">' + _esc(e.producto || '') + '<small>' + _pdNum(e.producidas) + ' de ' + _pdNum(e.esperadas) + ' esperadas · ' + _pdNum(e.eficiencia) + '% efic.' + hr + co + '</small></div>'
+              + '<div class="rt pd-mono">' + _pdNum(e.producidas) + '</div></div>'; }).join('') : '<div class="pd-empty">Sin envasado</div>');
+    }
+    return '<div class="h">🛒 A quién vendió <span class="pill">' + p.ventas.length + ' clientes</span></div>'
+      + (p.ventas.length ? p.ventas.map(v => {
+          const tk = _pdNum(v.tickets), doc = String(v.doc || '').trim();
+          return '<div class="pd-row"><div class="nm">' + _esc(v.cliente || '') + '<small>' + (doc && doc !== '—' ? _esc(doc) + ' · ' : '') + tk + ' ticket' + (tk === 1 ? '' : 's') + '</small></div>'
+            + '<div class="mt">' + _S(v.monto) + '</div></div>';
+        }).join('') : '<div class="pd-empty">Sin ventas</div>');
+  }
+  // Panel: guías creadas por la persona (ingreso 📥 / salida 📤), con hora y estado.
+  function _pdGuiasHtml(p) {
+    const gs = Array.isArray(p.guias) ? p.guias : [];
+    if (!gs.length) return '<div class="h">📋 Guías del día <span class="pill">0</span></div><div class="pd-empty">Sin guías creadas</div>';
+    return '<div class="h">📋 Guías del día <span class="pill">' + _pdNum(p.guiasN) + '</span></div>'
+      + gs.slice(0, 40).map(g => {
+          const inn = g.dir === 'in';
+          const ic = inn ? '📥' : '📤', dcl = inn ? 'p' : 'n';
+          const doc = g.doc ? ' · ' + _esc(g.doc) : '';
+          const est = g.estado ? ' · ' + _esc(String(g.estado).toLowerCase()) : '';
+          const mt = _pdNum(g.monto) > 0 ? '<div class="mt">' + _S(g.monto) + '</div>' : '';
+          return '<div class="pd-row"><div class="gic ' + dcl + '">' + ic + '</div>'
+            + '<div class="nm">' + _esc(_pdGuiaLbl(g.tipo)) + '<small>' + (g.hora ? '🕒' + _esc(g.hora) : '') + doc + est + '</small></div>' + mt + '</div>';
+        }).join('');
+  }
+  function _pdCardHtml(p, zm, i) {
+    const meta = p.meta || _PD_META_DEF;
+    const pct = Math.min(1, p.auditados / meta), done = p.auditados >= meta;
+    const col = done ? 'var(--pd-ok)' : (pct >= .5 ? zm.col : 'var(--pd-warn)');
+    const avBg = 'linear-gradient(135deg,' + zm.col + ',color-mix(in srgb,' + zm.col + ' 45%,#fff))';
+    const bonoTot = _pdNum(p.bmeta) + _pdNum(p.bono);
+    // Tile PAGO = acción: abre el modal de Auditar personal (reemplaza el botón "Auditar" y el inútil "Ver pago").
+    const pagoInner = p.tienePago
+      ? '<div class="n pd-mono">' + _S(p.neto) + '</div>'
+        + '<div class="pd-paychip"><span class="d">jornal ' + _S(p.jornal) + '</span>'
+        + (_pdNum(p.env) ? '<span class="bo">+env ' + _S(p.env) + '</span>' : '')
+        + (bonoTot ? '<span class="bo">+bono ' + _S(bonoTot) + '</span>' : '')
+        + (_pdNum(p.desc) ? '<span class="de">−' + _S(p.desc) + '</span>' : '') + '</div>'
+      : '<div class="n pd-mono" style="color:var(--pd-ink3);font-size:14px">—</div><div class="d">sin registro de pago</div>';
+    const tilePago = '<div class="pd-tile money t-pago" onclick="MOS.zonaPersonalDiaAuditar(' + i + ')" title="Abrir auditoría de personal">'
+      + '<div class="l">💵 Pago del día <span class="mas">auditar ▸</span></div>' + pagoInner + '</div>';
+    const tileAud = '<div class="pd-tile t-aud" onclick="MOS.zonaPersonalDiaSec(' + i + ',&quot;aud&quot;,this)">'
+      + '<div class="l">🔎 Auditó <span class="mas">ver ▾</span></div>'
+      + '<div class="n pd-mono" style="color:' + col + '">' + p.auditados + '<small>/' + meta + '</small></div><div class="d">productos contados</div></div>';
+    const tileWork = zm.alm
+      ? '<div class="pd-tile t-work" onclick="MOS.zonaPersonalDiaSec(' + i + ',&quot;work&quot;,this)"><div class="l">📦 Envasó <span class="mas">ver ▾</span></div>'
+        + '<div class="n pd-mono">' + _pdNum(p.envasadoUnid) + '<small> un</small></div><div class="d">' + _pdNum(p.eficiencia) + '% efic · ' + p.envasado.length + ' prod.</div></div>'
+      : '<div class="pd-tile money t-work" onclick="MOS.zonaPersonalDiaSec(' + i + ',&quot;work&quot;,this)"><div class="l">💰 Vendió <span class="mas">ver ▾</span></div>'
+        + '<div class="n pd-mono">' + _S(p.vendido) + '</div><div class="d">' + _pdNum(p.tickets) + ' tk · ' + _pdNum(p.nclientes) + ' clientes</div></div>';
+    const showGui = _pdNum(p.guiasN) > 0 || zm.alm;
+    const tileGui = showGui
+      ? '<div class="pd-tile t-gui" onclick="MOS.zonaPersonalDiaSec(' + i + ',&quot;gui&quot;,this)"><div class="l">📋 Guías <span class="mas">ver ▾</span></div>'
+        + '<div class="n pd-mono">' + _pdNum(p.guiasN) + '</div><div class="d">ingreso / salida</div></div>'
+      : '';
+    const login = (zm.alm && p.horaInicio) ? '<span class="pd-login">🕒 ingresó ' + _esc(p.horaInicio) + '</span>' : '';
     const style = _zonaReduce() ? '' : ' style="animation:pdFadeUp .5s ' + (i * .06).toFixed(2) + 's both"';
-    return '<div class="pd-emp' + (done ? ' done' : '') + '"' + style + ' data-idx="' + i + '">'
-      + '<div class="pd-chead" onclick="MOS.zonaPersonalDiaExpand(' + i + ',this)">'
+    return '<div class="pd-emp' + (done ? ' done' : '') + '"' + style + ' data-idx="' + i + '" data-sec="">'
+      + '<div class="pd-chead" onclick="MOS.zonaPersonalDiaSec(' + i + ',&quot;aud&quot;,this)">'
       +   '<div class="pd-av" style="background:' + avBg + '">' + _pdIniciales(p.nombre) + (done ? '<span class="pulse"></span>' : '') + '</div>'
-      +   '<div class="pd-who"><b>' + _esc(p.nombre) + '</b><div class="role">' + _esc(p.rol) + ' · <span style="color:' + col + ';font-weight:800">🔎 ' + p.auditados + '/' + meta + '</span> auditados</div></div>'
+      +   '<div class="pd-who"><b>' + _esc(p.nombre) + '</b><div class="role">' + _esc(p.rol) + login + '</div></div>'
       +   '<div class="pd-ring">' + _pdRing(pct, col) + '<div class="txt"><b>' + p.auditados + '<span>/' + meta + '</span></b></div></div>'
-      +   '<div class="pd-chev">⌄</div>'
       + '</div>'
-      + '<div class="pd-cbody"><div class="pd-stats">' + pagoStat + stat2 + '</div>'
-      +   '<div class="pd-cta">'
-      +     '<button class="pd-btn" onclick="MOS.zonaPersonalDiaAuditar(' + i + ')">🔎 Auditar</button>'
-      +     '<button class="pd-btn prim" onclick="MOS.zonaPersonalDiaVerPago(' + i + ')">Ver pago</button>'
-      +   '</div></div>'
-      + '<div class="pd-detail"><div class="pd-dinner">'
-      +   '<div class="pd-dsec"><div class="h">🔎 Productos que auditó <span class="pill">' + p.auditados + '/' + meta + '</span></div>' + conteos + '</div>'
-      +   '<div class="pd-dsec">' + detExtra + '</div>'
-      + '</div></div>'
+      + '<div class="pd-cbody"><div class="pd-tiles">' + tilePago + tileAud + tileWork + tileGui + '</div></div>'
+      + '<div class="pd-panel p-aud"><div class="pd-dinner">' + _pdConteosHtml(p, meta) + '</div></div>'
+      + '<div class="pd-panel p-work"><div class="pd-dinner">' + _pdWorkHtml(p, zm) + '</div></div>'
+      + (showGui ? '<div class="pd-panel p-gui"><div class="pd-dinner">' + _pdGuiasHtml(p) + '</div></div>' : '')
       + '</div>';
   }
-  // Expandir/colapsar tarjeta.
-  function zonaPersonalDiaExpand(i, headEl) {
-    const card = headEl && headEl.closest('.pd-emp'); if (!card) return;
-    const op = card.classList.toggle('open');
-    try { _zonaSfx(op ? 'pop' : 'tick'); _zonaVibrar(op ? [10, 20] : 8); } catch (_) {}
+  // Acordeón por tarjeta: muestra SOLO la sección clickeada (aud / work / gui). Reclick colapsa.
+  function zonaPersonalDiaSec(i, sec, el) {
+    const card = (el && el.closest) ? el.closest('.pd-emp') : document.querySelector('.pd-emp[data-idx="' + i + '"]');
+    if (!card) return;
+    const cur = card.getAttribute('data-sec') || '';
+    const next = (cur === sec) ? '' : sec;
+    card.setAttribute('data-sec', next);
+    card.classList.toggle('open', !!next);
+    try { _zonaSfx(next ? 'pop' : 'tick'); _zonaVibrar(next ? [10, 18] : 8); } catch (_) {}
   }
   // Cambio de fecha (delta: +1 = un día atrás, −1 = un día adelante). Respeta el tope de 7 días.
   function zonaPersonalDiaDia(delta) {
@@ -58987,7 +59038,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirInsights, zonaCerrarInsights, zonaDbzTip,
     // [Personal del Día por Zona] tablero SOLO LECTURA del personal de la zona activa (auditados/pago/envasado/ventas)
     zonaAbrirPersonalDia, zonaCerrarPersonalDia, zonaPersonalDiaDia, zonaPersonalDiaSnd,
-    zonaPersonalDiaExpand, zonaPersonalDiaAuditar, zonaPersonalDiaVerPago,
+    zonaPersonalDiaExpand, zonaPersonalDiaSec, zonaPersonalDiaAuditar, zonaPersonalDiaVerPago,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
     zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos, consBuscar,
