@@ -55261,7 +55261,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.pd-scroll{max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -2px;padding:0 2px}' +
       '.pd-scroll::-webkit-scrollbar{width:7px}.pd-scroll::-webkit-scrollbar-thumb{background:var(--pd-line);border-radius:99px}' +
       '.pd-row.clk{cursor:pointer;transition:border-color .14s,transform .08s}.pd-row.clk:hover{border-color:var(--pd-acc)}.pd-row.clk:active{transform:scale(.985)}' +
-      '.pd-row .pd-go{color:var(--pd-ink3);font-weight:800;margin-left:6px}.pd-row .pd-go.solo{margin-left:auto}.pd-row .mt{display:flex;align-items:center;gap:2px}' +
+      '.pd-row .pd-go{color:var(--pd-ink3);font-weight:800;margin-left:6px}.pd-row .pd-go.solo{margin-left:auto}.pd-row .mt{display:flex;align-items:center;gap:5px}' +
+      '.pd-row.pd-fp{border-left-width:3px}' +
+      '.pd-row.fp-efe{border-left-color:var(--pd-ok)}.pd-row.fp-vir{border-left-color:var(--pd-sky)}.pd-row.fp-mix{border-left-color:var(--pd-brandA)}' +
+      '.pd-row.fp-cob{border-left-color:var(--pd-warn)}.pd-row.fp-cre{border-left-color:var(--pd-bad)}' +
+      '.pd-seal{font-weight:800;font-size:12px;letter-spacing:-1.5px;font-family:ui-monospace,monospace;line-height:1}' +
+      '.pd-seal.ok{color:var(--pd-ok)}.pd-seal.pend{color:var(--pd-ink3);opacity:.65}.pd-seal.cob{color:var(--pd-ok);letter-spacing:0}' +
+      '.pd-seal.warn{color:var(--pd-warn);letter-spacing:0}.pd-seal.cre{color:var(--pd-bad);letter-spacing:0}' +
       // ── Sheet (ticket / guía) ──
       '#pdSheet{position:fixed;inset:0;z-index:1300;display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s ease;background:rgba(4,7,14,.66);backdrop-filter:blur(6px)}' +
       '#pdSheet.pd-in{opacity:1}@media(min-width:640px){#pdSheet{align-items:center;padding:20px}}' +
@@ -55459,6 +55465,31 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const s = String(fp || '').trim(); if (!s) return '';
     return s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase());
   }
+  // Categoría de forma de pago → color/sello. efe=efectivo · vir=virtual(Yape) · mix=mixto · cob=por cobrar · cre=crédito.
+  function _pdFpCat(fp) {
+    const s = String(fp || '').toUpperCase();
+    if (s.indexOf('MIXTO') === 0) return 'mix';
+    if (s.indexOf('VIRTUAL') === 0 || s === 'YAPE' || s.indexOf('PLIN') === 0) return 'vir';
+    if (s.indexOf('POR_COBRAR') === 0 || s.indexOf('POR COBRAR') === 0) return 'cob';
+    if (s.indexOf('CREDITO') === 0 || s.indexOf('CRÉDITO') === 0) return 'cre';
+    if (s.indexOf('EFECTIVO') === 0) return 'efe';
+    return 'otr';
+  }
+  // Sello del ticket: ✓✓ verde = virtual verificado (Yape matcheado) · ✓✓ tenue = sin verificar aún ·
+  //   ✓ = efectivo cobrado · ⏳ = por cobrar · 🏷 = crédito. Ayuda al admin a leer el estado de un vistazo.
+  function _pdVentaSeal(cat, verif) {
+    if (cat === 'vir' || cat === 'mix') return verif
+      ? '<span class="pd-seal ok" title="Virtual verificado (Yape matcheado)">✓✓</span>'
+      : '<span class="pd-seal pend" title="Virtual sin verificar aún">✓✓</span>';
+    if (cat === 'efe') return '<span class="pd-seal cob" title="Efectivo cobrado">✓</span>';
+    if (cat === 'cob') return '<span class="pd-seal warn" title="Por cobrar">⏳</span>';
+    if (cat === 'cre') return '<span class="pd-seal cre" title="Crédito">🏷</span>';
+    return '';
+  }
+  // Color de acento por categoría (para el borde del ticket / overlay).
+  function _pdFpColor(cat) {
+    return ({ efe: '#34d399', vir: '#22d3ee', mix: '#a78bfa', cob: '#fbbf24', cre: '#fb7185' })[cat] || '#22d3ee';
+  }
   // Panel: envasado (almacén) o VENTAS INDIVIDUALES (zonas). Cada venta es clicable → comprobante completo.
   function _pdWorkHtml(p, zm, i) {
     if (zm.alm) {
@@ -55470,11 +55501,11 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       return '<div class="h">📦 Envasado del día <span class="pill">' + p.envasado.length + ' prod.</span></div><div class="pd-scroll">' + rows + '</div>';
     }
     const rows = p.ventas.length ? p.ventas.map((v, vi) => {
-      const doc = String(v.doc || '').trim(), fp = _pdFpLbl(v.forma);
+      const cat = _pdFpCat(v.forma), doc = String(v.doc || '').trim(), fp = _pdFpLbl(v.forma);
       const meta = [v.corr ? _esc(v.corr) : '', v.hora ? '🕒' + _esc(v.hora) : '', (doc && doc !== '66666') ? _esc(doc) : '', fp ? _esc(fp) : ''].filter(Boolean).join(' · ');
-      return '<div class="pd-row clk" onclick="MOS.zonaPersonalDiaVerTicket(' + i + ',' + vi + ')" title="Ver comprobante">'
+      return '<div class="pd-row clk pd-fp fp-' + cat + '" onclick="MOS.zonaPersonalDiaVerTicket(' + i + ',' + vi + ')" title="Ver comprobante">'
         + '<div class="nm">' + _esc(v.cliente || 'Cliente varios') + '<small>' + meta + '</small></div>'
-        + '<div class="mt">' + _S(v.monto) + '<span class="pd-go">›</span></div></div>'; }).join('') : '<div class="pd-empty">Sin ventas</div>';
+        + '<div class="mt">' + _pdVentaSeal(cat, v.verif) + _S(v.monto) + '<span class="pd-go">›</span></div></div>'; }).join('') : '<div class="pd-empty">Sin ventas</div>';
     return '<div class="h">🛒 Ventas del día <span class="pill">' + p.ventas.length + ' tickets</span></div><div class="pd-scroll">' + rows + '</div>';
   }
   // Panel: guías creadas por la persona (ingreso 📥 / salida 📤). Clicable → guía completa.
@@ -55626,7 +55657,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     try { const r = await API.get('meDetalleVenta', { idVenta: v.idVenta }); d = (r && r.data) || r || null; } catch (_) {}
     if (!document.getElementById('pdSheet')) return; // se cerró mientras cargaba
     if (!d) { _pdSheetErr('🧾', 'No se pudo cargar el comprobante.'); return; }
-    _pdSheet(_pdTicketHtml(d, v), '#22d3ee');
+    _pdSheet(_pdTicketHtml(d, v), _pdFpColor(_pdFpCat(d.formaPago || v.forma)));
     try { _zonaSfx('ok'); } catch (_) {}
   }
   function _pdTicketHtml(d, v) {
@@ -55650,7 +55681,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       +     '<div><i>Cliente</i>' + _esc(cli) + (doc && doc !== '66666' ? ' · ' + _esc(doc) : '') + '</div>'
       +     '<div><i>Vendedor</i>' + _esc(d.vendedor || v.vendedor || '—') + '</div>'
       +     '<div><i>Hora</i>' + _esc(v.hora || '—') + '</div>'
-      +     '<div><i>Pago</i>' + _esc(fp || '—') + nf + '</div>'
+      +     '<div><i>Pago</i>' + _esc(fp || '—') + ' ' + _pdVentaSeal(_pdFpCat(d.formaPago || v.forma), v.verif) + nf + '</div>'
       +   '</div>'
       +   '<div class="pd-tk-items pd-scroll">' + filas + '</div>'
       +   '<div class="pd-tk-total"><span>TOTAL</span><b class="pd-mono">' + _S(total) + '</b></div>'
