@@ -3903,6 +3903,13 @@ const API = (() => {
       if (action === 'getPersonalDiaFast') {
         return _conFallbackMOS(() => _getPersonalDiaFastDirecto(p));
       }
+      // [Personal del Día por Zona] getPersonalDiaZona → mos.personal_dia_zona (p {zona,fecha}). SOLO LECTURA
+      // (tablero de rastreo): devuelve el OBJETO COMPLETO {ok,zona,fecha,meta,personal:[...]} — el front necesita
+      // meta+fecha además de personal. Supabase-only: null (sin token / error) → el front cae a su UI vacía.
+      if (action === 'getPersonalDiaZona') {
+        return _sbRpcMOS('personal_dia_zona', { p: { zona: p.zona, fecha: p.fecha || null } }, 'mos')
+          .then(r => (r && r.ok !== false) ? r : null).catch(() => null);
+      }
       // [Optimización] catálogos base → lectura directa (RPCs 106). Maestro _mosLecturaDirecta · cero-GAS sin fallback.
       if (action === 'getEquivalencias') {
         return _conFallbackMOS(() => _getEquivalenciasDirecto(p));

@@ -55098,6 +55098,420 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const ov = document.getElementById('zonaInsightsOverlay');
     if (ov) { ov.classList.remove('zins-in'); setTimeout(()=>{ try{ov.remove();}catch(_){} }, 200); }
   }
+
+  // ════════════════════════════════════════════════════════════════════
+  // [Personal del Día por Zona] Tablero de SOLO LECTURA (display) — NO toca dinero ni stock.
+  //   Botón "🫡 Personal del día" en la vista de CADA zona (dock "🛡 Control"). Al abrir, el overlay
+  //   muestra SOLO el personal de ESA zona (la zona activa, S.zonaActual); NO hay tabs para cambiar de
+  //   zona (decisión del dueño). Sí conserva el navegador de fecha (◀ Hoy ▶, hasta 7 días atrás).
+  //   Datos: mos.personal_dia_zona (RPC nuevo, getPersonalDiaZona) para auditados/envasado/ventas +
+  //   merge por NOMBRE con getPersonalDiaFast (personal_dia_lista) para el PAGO del día (jornal+bono−desc).
+  //   Reusa los helpers de zona: _zonaSfx (sonidos), _zonaVibrar (háptica), _zonaCountUp (count-up).
+  //   El anillo/pago/envasado/ventas y el expandir-detalle replican el mockup aprobado.
+  // ════════════════════════════════════════════════════════════════════
+  const _PD_META_DEF = 30;
+  const _PD_DIAS_ATRAS = 7;   // tope del navegador de fecha
+  let _pdState = null;
+  let _pdStyleOn = false;
+
+  // Zona app → parámetro del RPC. idZona ya viene 'ALMACEN'/'ZONA-01'/'ZONA-02' (formato exacto);
+  // si llegara distinto (ej. 'Almacén'), se normaliza por nombre → almacén; el resto se manda tal cual en mayúsculas.
+  function _pdZonaRpcId(zonaActual) {
+    const z = { idZona: zonaActual, nombre: ((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === zonaActual) || {}).nombre };
+    if (_esZonaAlmacen(z)) return 'ALMACEN';
+    const id = String(zonaActual || '').toUpperCase().trim();
+    return id || 'ALMACEN';
+  }
+  // Presentación de la zona (nombre legible + ícono + color) para el encabezado del overlay.
+  function _pdZonaMeta(zonaRpc, zonaActual) {
+    const nombre = (((S.zonaList || []).find(x => (x.idZona || x.id || x.nombre) === zonaActual) || {}).nombre) || zonaActual || 'Zona';
+    if (zonaRpc === 'ALMACEN') return { nombre, ic: '🏭', col: '#f59e0b', glow: 'rgba(245,158,11,.35)', alm: true };
+    if (zonaRpc === 'ZONA-01') return { nombre, ic: '🏪', col: '#22d3ee', glow: 'rgba(34,211,238,.35)', alm: false };
+    if (zonaRpc === 'ZONA-02') return { nombre, ic: '🏬', col: '#a78bfa', glow: 'rgba(167,139,250,.35)', alm: false };
+    return { nombre, ic: '📍', col: '#7c5cff', glow: 'rgba(124,92,255,.35)', alm: false };
+  }
+  // Fecha YYYY-MM-DD desde un offset de días atrás (Lima = hora local del dispositivo).
+  function _pdFecha(off) {
+    const d = new Date(today() + 'T00:00:00');
+    d.setDate(d.getDate() - off);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function _pdLbl(off) { return off === 0 ? 'Hoy' : off === 1 ? 'Ayer' : ('Hace ' + off + ' días'); }
+  function _pdSub(off) {
+    const d = new Date(today() + 'T00:00:00'); d.setDate(d.getDate() - off);
+    try { return d.toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short' }); } catch (_) { return ''; }
+  }
+  // Normalizador para el merge por nombre (case-insensitive, colapsa espacios, sin acentos).
+  function _pdNorm(s) {
+    return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  function _pdIniciales(n) {
+    return String(n || '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+  }
+  function _pdNum(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+  // Count-up con prefijo/sufijo/decimales (money-aware). Respeta reduced-motion. Solo DISPLAY (no dinero-lógica).
+  function _pdCountUp(el, target, opts) {
+    if (!el) return;
+    const o = opts || {}, pre = o.pre || '', suf = o.suf || '', dec = !!o.money;
+    const end = _pdNum(target);
+    const pinta = (v) => { el.textContent = pre + (dec ? _money(v).toFixed(2) : String(Math.round(v))) + suf; };
+    if (_zonaReduce() || end === 0) { pinta(end); return; }
+    const dur = 900, t0 = (performance && performance.now) ? performance.now() : Date.now();
+    const ease = (x) => 1 - Math.pow(1 - x, 3);
+    (function frame(now) {
+      const p = Math.min(1, ((now || Date.now()) - t0) / dur);
+      pinta(end * ease(p));
+      if (p < 1) requestAnimationFrame(frame); else pinta(end);
+    })((performance && performance.now) ? performance.now() : Date.now());
+  }
+  // Anillo radial SVG (auditados/meta).
+  function _pdRing(pct, col) {
+    const R = 25, C = 2 * Math.PI * R, off = (C * (1 - Math.max(0, Math.min(1, pct)))).toFixed(2);
+    return '<svg width="60" height="60" viewBox="0 0 60 60">'
+      + '<circle cx="30" cy="30" r="' + R + '" fill="none" stroke="var(--pd-line)" stroke-width="6"/>'
+      + '<circle cx="30" cy="30" r="' + R + '" fill="none" stroke="' + col + '" stroke-width="6" stroke-linecap="round"'
+      + ' stroke-dasharray="' + C.toFixed(2) + '" stroke-dashoffset="' + C.toFixed(2) + '" style="transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)" data-off="' + off + '"/>'
+      + '</svg>';
+  }
+  // Inyecta el CSS del overlay una sola vez (scoped bajo #zonaPersonalDiaOverlay, clases pd-*).
+  function _pdEnsureStyle() {
+    if (_pdStyleOn) return; _pdStyleOn = true;
+    const st = document.createElement('style'); st.id = 'zonaPersonalDiaStyle';
+    st.textContent =
+      '#zonaPersonalDiaOverlay{position:fixed;inset:0;z-index:1200;overflow-y:auto;-webkit-overflow-scrolling:touch;'
+        + 'background:rgba(6,9,18,.72);backdrop-filter:blur(8px);opacity:0;transition:opacity .22s ease;'
+        + 'padding:max(14px,env(safe-area-inset-top)) 14px calc(48px + env(safe-area-inset-bottom))}' +
+      '#zonaPersonalDiaOverlay.pd-in{opacity:1}' +
+      '#zonaPersonalDiaOverlay *{box-sizing:border-box}' +
+      '.pd-wrap{--pd-bg:#0b0e1a;--pd-panel:#141a2e;--pd-panel2:#182142;--pd-line:#232c4a;--pd-ink:#eaeefb;'
+        + '--pd-ink2:#b9c1de;--pd-ink3:#7c86a8;--pd-ok:#34d399;--pd-warn:#fbbf24;--pd-gold:#ffd24a;--pd-sky:#22d3ee;'
+        + '--pd-bad:#fb7185;--pd-brandA:#7c5cff;--pd-brandB:#e93d82;--pd-acc:#f59e0b;--pd-accGlow:rgba(245,158,11,.35);'
+        + 'max-width:1160px;margin:0 auto;color:var(--pd-ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
+      '.pd-mono{font-family:ui-monospace,"SF Mono","JetBrains Mono",monospace;font-variant-numeric:tabular-nums}' +
+      '.pd-card2{background:var(--pd-bg);border:1px solid var(--pd-line);border-radius:22px;box-shadow:0 24px 70px rgba(0,0,0,.55);'
+        + 'padding:18px 16px 22px;background-image:radial-gradient(900px 480px at 10% -10%,rgba(124,92,255,.14),transparent 60%),'
+        + 'radial-gradient(760px 420px at 108% 6%,rgba(233,61,130,.1),transparent 55%)}' +
+      '.pd-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}' +
+      '.pd-logo{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;font-size:20px;flex:none;'
+        + 'background:linear-gradient(135deg,var(--pd-brandA),var(--pd-brandB));box-shadow:0 8px 24px rgba(124,92,255,.4)}' +
+      '.pd-htx b{font-weight:800;font-size:19px;letter-spacing:-.02em;line-height:1;display:block}' +
+      '.pd-htx p{font-size:11px;color:var(--pd-ink3);margin-top:3px;letter-spacing:.03em}' +
+      '.pd-zchip{display:inline-flex;align-items:center;gap:8px;margin-top:6px;padding:4px 11px 4px 8px;border-radius:99px;'
+        + 'background:var(--pd-panel);border:1px solid var(--pd-line)}' +
+      '.pd-zchip .zic{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:var(--pd-panel2)}' +
+      '.pd-zchip b{font-size:13px;font-weight:800;color:var(--pd-acc)}' +
+      '.pd-sp{flex:1}' +
+      '.pd-icobtn{width:40px;height:40px;border-radius:12px;border:1px solid var(--pd-line);background:var(--pd-panel);'
+        + 'color:var(--pd-ink2);font-size:17px;cursor:pointer;transition:.18s;flex:none}' +
+      '.pd-icobtn:hover{border-color:var(--pd-acc);color:var(--pd-acc)}.pd-icobtn.off{opacity:.5}' +
+      '.pd-datenav{display:flex;align-items:center;gap:2px;background:var(--pd-panel);border:1px solid var(--pd-line);border-radius:13px;padding:4px}' +
+      '.pd-datenav button{width:34px;height:34px;border-radius:9px;border:0;background:transparent;color:var(--pd-ink2);font-size:16px;cursor:pointer;transition:.15s}' +
+      '.pd-datenav button:hover:not(:disabled){background:var(--pd-panel2);color:var(--pd-ink)}' +
+      '.pd-datenav button:disabled{opacity:.3;cursor:not-allowed}' +
+      '.pd-datenav .lbl{padding:0 12px;text-align:center;min-width:104px}' +
+      '.pd-datenav .lbl b{font-weight:700;font-size:13px;display:block;line-height:1.1}' +
+      '.pd-datenav .lbl span{font-size:10px;color:var(--pd-ink3);text-transform:capitalize}' +
+      '.pd-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}' +
+      '.pd-kpi{background:var(--pd-panel);border:1px solid var(--pd-line);border-radius:16px;padding:13px 14px;position:relative;overflow:hidden}' +
+      '.pd-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--pd-acc);opacity:.85}' +
+      '.pd-kpi .k{font-size:10px;color:var(--pd-ink3);text-transform:uppercase;letter-spacing:.08em;font-weight:600}' +
+      '.pd-kpi .v{font-weight:800;font-size:25px;letter-spacing:-.03em;margin-top:5px}' +
+      '.pd-kpi .sub{font-size:11px;color:var(--pd-ink3);margin-top:2px}' +
+      '.pd-kpi.gold .v{color:var(--pd-gold)}' +
+      '.pd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}' +
+      '.pd-emp{background:linear-gradient(180deg,var(--pd-panel),var(--pd-bg));border:1px solid var(--pd-line);border-radius:20px;'
+        + 'overflow:hidden;transition:border-color .25s,box-shadow .25s;position:relative}' +
+      '.pd-emp.done{border-color:color-mix(in srgb,var(--pd-ok) 55%,var(--pd-line));box-shadow:0 0 0 1px color-mix(in srgb,var(--pd-ok) 40%,transparent),0 14px 40px -14px rgba(52,211,153,.4)}' +
+      '.pd-chead{display:flex;align-items:center;gap:12px;padding:15px 15px 11px;cursor:pointer;user-select:none}' +
+      '.pd-av{width:50px;height:50px;border-radius:15px;display:grid;place-items:center;flex:none;position:relative;font-weight:800;font-size:17px;color:#0b0e1a}' +
+      '.pd-av .pulse{position:absolute;right:-2px;bottom:-2px;width:13px;height:13px;border-radius:50%;background:var(--pd-ok);border:2.5px solid var(--pd-panel);animation:pdPulse 2s infinite}' +
+      '@keyframes pdPulse{0%,100%{box-shadow:0 0 0 0 rgba(52,211,153,.5)}50%{box-shadow:0 0 0 5px rgba(52,211,153,0)}}' +
+      '.pd-who{flex:1;min-width:0}' +
+      '.pd-who b{font-weight:700;font-size:15.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.pd-who .role{font-size:11px;color:var(--pd-ink3);text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-top:2px}' +
+      '.pd-ring{position:relative;width:60px;height:60px;flex:none}.pd-ring svg{transform:rotate(-90deg)}' +
+      '.pd-ring .txt{position:absolute;inset:0;display:grid;place-items:center;text-align:center;line-height:1}' +
+      '.pd-ring .txt b{font-weight:800;font-size:15px}.pd-ring .txt span{font-size:9px;color:var(--pd-ink3);display:block}' +
+      '.pd-chev{color:var(--pd-ink3);font-size:18px;transition:.25s;flex:none}.pd-emp.open .pd-chev{transform:rotate(180deg)}' +
+      '.pd-cbody{padding:0 15px 14px}' +
+      '.pd-stats{display:grid;grid-template-columns:1fr 1fr;gap:9px}' +
+      '.pd-stat{background:var(--pd-panel2);border:1px solid var(--pd-line);border-radius:13px;padding:10px 12px}' +
+      '.pd-stat .l{font-size:10px;color:var(--pd-ink3);text-transform:uppercase;letter-spacing:.05em;font-weight:600;display:flex;align-items:center;gap:5px}' +
+      '.pd-stat .n{font-weight:800;font-size:18px;margin-top:3px;letter-spacing:-.02em}' +
+      '.pd-stat.money .n{color:var(--pd-gold)}.pd-stat .n small{font-size:11px;color:var(--pd-ink3);font-weight:600}' +
+      '.pd-stat .d{font-size:10px;color:var(--pd-ink3);margin-top:1px}' +
+      '.pd-paychip{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:2px}' +
+      '.pd-paychip .bo{font-size:10px;color:var(--pd-ok);font-weight:700}.pd-paychip .de{font-size:10px;color:var(--pd-bad);font-weight:700}' +
+      '.pd-cta{display:flex;gap:9px;margin-top:12px}' +
+      '.pd-btn{flex:1;height:40px;border-radius:12px;border:1px solid var(--pd-line);background:var(--pd-panel2);color:var(--pd-ink);'
+        + 'font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.18s}' +
+      '.pd-btn:hover{border-color:var(--pd-acc)}.pd-btn:active{transform:scale(.97)}' +
+      '.pd-btn.prim{border:0;background:linear-gradient(135deg,var(--pd-brandA),var(--pd-brandB));color:#fff;box-shadow:0 8px 22px -8px var(--pd-brandA)}' +
+      '.pd-detail{max-height:0;overflow:hidden;transition:max-height .35s cubic-bezier(.4,0,.2,1)}.pd-emp.open .pd-detail{max-height:1100px}' +
+      '.pd-dinner{border-top:1px dashed var(--pd-line);margin:2px 15px 0;padding:13px 0 4px}' +
+      '.pd-dsec{margin-bottom:13px}.pd-dsec:last-child{margin-bottom:6px}' +
+      '.pd-dsec .h{font-size:11px;font-weight:700;color:var(--pd-ink2);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;align-items:center;gap:7px}' +
+      '.pd-dsec .h .pill{margin-left:auto;font-family:ui-monospace,monospace;font-size:10px;background:var(--pd-panel2);padding:2px 8px;border-radius:99px;color:var(--pd-ink3);text-transform:none;letter-spacing:0}' +
+      '.pd-row{display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:11px;background:var(--pd-panel);border:1px solid var(--pd-line);margin-bottom:6px}' +
+      '.pd-row .nm{flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.pd-row .nm small{display:block;font-size:10px;color:var(--pd-ink3);font-weight:500}' +
+      '.pd-row .rt{font-family:ui-monospace,monospace;font-size:12px;text-align:right;flex:none}' +
+      '.pd-diff{font-weight:700}.pd-diff.z{color:var(--pd-ok)}.pd-diff.p{color:var(--pd-sky)}.pd-diff.n{color:var(--pd-bad)}' +
+      '.pd-row .mt{font-family:ui-monospace,monospace;font-weight:700;font-size:13px;color:var(--pd-gold);flex:none}' +
+      '.pd-empty{font-size:12px;color:var(--pd-ink3);text-align:center;padding:14px}' +
+      '.pd-foot{text-align:center;margin-top:22px;font-size:11px;color:var(--pd-ink3)}.pd-foot b{color:var(--pd-ink2)}' +
+      '.pd-load{text-align:center;padding:48px 10px;color:var(--pd-ink3);font-size:13px}' +
+      '.pd-x{width:40px;height:40px;border-radius:12px;border:1px solid var(--pd-line);background:var(--pd-panel);color:var(--pd-ink2);font-size:18px;cursor:pointer;flex:none}' +
+      '.pd-x:hover{border-color:var(--pd-bad);color:var(--pd-bad)}' +
+      '@keyframes pdFadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}' +
+      '@media(max-width:640px){.pd-kpis{grid-template-columns:1fr 1fr}.pd-htx b{font-size:17px}.pd-datenav .lbl{min-width:88px}}' +
+      '@media(prefers-reduced-motion:reduce){#zonaPersonalDiaOverlay *{animation:none!important;transition:none!important}}';
+    document.head.appendChild(st);
+  }
+
+  // Abre el overlay para la ZONA ACTIVA (S.zonaActual). Sin tabs de zona (decisión del dueño).
+  function zonaAbrirPersonalDia() {
+    _pdEnsureStyle();
+    const zonaActual = S.zonaActual || (S.zonaList[0] && (S.zonaList[0].idZona || S.zonaList[0].id || S.zonaList[0].nombre));
+    if (!zonaActual) { try { toast('Elegí una zona primero', 'error'); } catch (_) {} return; }
+    const zonaRpc = _pdZonaRpcId(zonaActual);
+    _pdState = { zonaActual, zonaRpc, meta: _PD_META_DEF, dayOff: 0, sndOn: true, cargando: false, pers: [] };
+    let ov = document.getElementById('zonaPersonalDiaOverlay');
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'zonaPersonalDiaOverlay';
+      ov.onclick = (e) => { if (e.target === ov) zonaCerrarPersonalDia(); };
+      document.body.appendChild(ov);
+    }
+    _pdRenderShell();
+    requestAnimationFrame(() => ov.classList.add('pd-in'));
+    try { _zonaSfx('pop'); _zonaVibrar([14, 8]); } catch (_) {}
+    _pdCargar();
+  }
+  function zonaCerrarPersonalDia() {
+    const ov = document.getElementById('zonaPersonalDiaOverlay');
+    if (ov) { ov.classList.remove('pd-in'); setTimeout(() => { try { ov.remove(); } catch (_) {} }, 220); }
+    try { _zonaSfx('tick'); } catch (_) {}
+  }
+  // Pinta la cáscara (encabezado + navegador de fecha + contenedores). El cuerpo lo llena _pdRenderCuerpo.
+  function _pdRenderShell() {
+    const ov = document.getElementById('zonaPersonalDiaOverlay'); if (!ov) return;
+    const s = _pdState, zm = _pdZonaMeta(s.zonaRpc, s.zonaActual);
+    const sndIco = s.sndOn ? '🔊' : '🔇';
+    ov.innerHTML = ''
+      + '<div class="pd-wrap" style="--pd-acc:' + zm.col + ';--pd-accGlow:' + zm.glow + '">'
+      + '<div class="pd-card2" onclick="event.stopPropagation()">'
+      + '<div class="pd-head">'
+      +   '<div class="pd-logo">🫡</div>'
+      +   '<div class="pd-htx"><b>Personal del Día</b><p>INVERSIONES MOS · rastreo de la zona</p>'
+      +     '<span class="pd-zchip"><span class="zic">' + zm.ic + '</span><b>' + _esc(zm.nombre) + '</b></span></div>'
+      +   '<div class="pd-sp"></div>'
+      +   '<button class="pd-icobtn' + (s.sndOn ? '' : ' off') + '" id="pdSnd" onclick="MOS.zonaPersonalDiaSnd()" title="Sonido">' + sndIco + '</button>'
+      +   '<div class="pd-datenav">'
+      +     '<button id="pdPrev" onclick="MOS.zonaPersonalDiaDia(1)">‹</button>'
+      +     '<div class="lbl"><b id="pdLbl">' + _pdLbl(s.dayOff) + '</b><span id="pdSub">' + _esc(_pdSub(s.dayOff)) + '</span></div>'
+      +     '<button id="pdNext" onclick="MOS.zonaPersonalDiaDia(-1)"' + (s.dayOff <= 0 ? ' disabled' : '') + '>›</button>'
+      +   '</div>'
+      +   '<button class="pd-x" onclick="MOS.zonaCerrarPersonalDia()" aria-label="Cerrar">✕</button>'
+      + '</div>'
+      + '<div class="pd-kpis" id="pdKpis"></div>'
+      + '<div class="pd-grid" id="pdGrid"><div class="pd-load">Cargando personal…</div></div>'
+      + '<div class="pd-foot">Meta diaria: <b>' + s.meta + ' productos auditados</b> por persona · toca una tarjeta para ver QUÉ auditó y su rastreo completo</div>'
+      + '</div></div>';
+  }
+  // Carga datos de la zona + pagos (merge por nombre) y pinta KPIs + tarjetas.
+  async function _pdCargar() {
+    const s = _pdState; if (!s) return;
+    s.cargando = true;
+    const fecha = _pdFecha(s.dayOff);
+    const grid = document.getElementById('pdGrid');
+    if (grid) grid.innerHTML = '<div class="pd-load">Cargando personal…</div>';
+    let zonaResp = null, pagosArr = [];
+    try {
+      const [zr, pr] = await Promise.all([
+        API.get('getPersonalDiaZona', { zona: s.zonaRpc, fecha }).catch(() => null),
+        API.get('getPersonalDiaFast', { fecha }).catch(() => null)
+      ]);
+      zonaResp = zr;
+      pagosArr = Array.isArray(pr) ? pr : ((pr && pr.data) || []);
+    } catch (_) {}
+    // El overlay pudo cerrarse o cambiar de fecha mientras respondía la red.
+    if (!_pdState || _pdState !== s) return;
+    if (String(_pdFecha(s.dayOff)) !== fecha) return;
+    s.cargando = false;
+    if (zonaResp && _pdNum(zonaResp.meta) > 0) s.meta = _pdNum(zonaResp.meta);
+    const persZona = (zonaResp && Array.isArray(zonaResp.personal)) ? zonaResp.personal : [];
+    // Índice de pagos por nombre normalizado (jornal=montoBase, bono=bonificacion, desc=sancion).
+    const pagoIdx = {};
+    pagosArr.forEach(p => {
+      const k = _pdNorm(p.nombre);
+      if (k && !pagoIdx[k]) pagoIdx[k] = p;
+    });
+    s.pers = persZona.map(p => {
+      const pg = pagoIdx[_pdNorm(p.nombre)] || null;
+      const jornal = pg ? _pdNum(pg.montoBase) : 0;
+      const bono = pg ? _pdNum(pg.bonificacion) : 0;
+      const desc = pg ? _pdNum(pg.sancion) : 0;
+      return {
+        nombre: p.nombre, rol: p.rol || '', rolKind: p.rolKind || (s.zonaRpc === 'ALMACEN' ? 'alm' : 'zona'),
+        auditados: _pdNum(p.auditados), meta: _pdNum(p.meta) || s.meta,
+        conteoDetalle: Array.isArray(p.conteoDetalle) ? p.conteoDetalle : [],
+        envasadoUnid: _pdNum(p.envasadoUnid), eficiencia: _pdNum(p.eficiencia),
+        envasado: Array.isArray(p.envasado) ? p.envasado : [],
+        vendido: _pdNum(p.vendido), tickets: _pdNum(p.tickets), nclientes: _pdNum(p.nclientes),
+        ventas: Array.isArray(p.ventas) ? p.ventas : [],
+        tienePago: !!pg, idPersonal: pg ? (pg.idPersonal || '') : '',
+        jornal, bono, desc, neto: _money(jornal + bono - desc)
+      };
+    });
+    _pdRenderCuerpo();
+  }
+  function _pdRenderCuerpo() {
+    const s = _pdState; if (!s) return;
+    const zm = _pdZonaMeta(s.zonaRpc, s.zonaActual);
+    const pers = s.pers, meta = s.meta || _PD_META_DEF;
+    const kp = document.getElementById('pdKpis'), grid = document.getElementById('pdGrid');
+    if (!kp || !grid) return;
+    if (!pers.length) {
+      kp.innerHTML = '';
+      grid.innerHTML = '<div class="pd-load">Sin personal registrado en esta zona para la fecha elegida.</div>';
+      return;
+    }
+    const totCont = pers.reduce((a, p) => a + p.auditados, 0);
+    const avgPct = Math.round(pers.reduce((a, p) => a + Math.min(1, p.auditados / (p.meta || meta)), 0) / pers.length * 100);
+    const pagos = pers.reduce((a, p) => a + p.neto, 0);
+    const done = pers.filter(p => p.auditados >= (p.meta || meta)).length;
+    const extra = zm.alm
+      ? { k: 'Envasado', v: pers.reduce((a, p) => a + p.envasadoUnid, 0), sub: 'unidades producidas', money: false }
+      : { k: 'Vendido', v: pers.reduce((a, p) => a + p.vendido, 0), sub: 'del día', money: true };
+    kp.innerHTML = ''
+      + '<div class="pd-kpi"><div class="k">Productos auditados</div><div class="v pd-mono" id="pdK1">0</div><div class="sub">de ' + (pers.length * meta) + ' meta (' + pers.length + '×' + meta + ')</div></div>'
+      + '<div class="pd-kpi"><div class="k">Checklist prom.</div><div class="v pd-mono" id="pdK2">0</div><div class="sub">' + done + '/' + pers.length + ' completaron</div></div>'
+      + '<div class="pd-kpi gold"><div class="k">Pagos del día</div><div class="v pd-mono" id="pdK3">0</div><div class="sub">jornal + bonos − desc.</div></div>'
+      + '<div class="pd-kpi"><div class="k">' + extra.k + '</div><div class="v pd-mono" id="pdK4">0</div><div class="sub">' + extra.sub + '</div></div>';
+    grid.innerHTML = pers.map((p, i) => _pdCardHtml(p, zm, i)).join('');
+    // Animaciones: anillos + count-up (reusa _zonaCountUp para enteros; _pdCountUp para % y dinero).
+    requestAnimationFrame(() => {
+      try { grid.querySelectorAll('.pd-ring circle[data-off]').forEach(c => { c.style.strokeDashoffset = c.dataset.off; }); } catch (_) {}
+      _zonaCountUp(document.getElementById('pdK1'), totCont);
+      _pdCountUp(document.getElementById('pdK2'), avgPct, { suf: '%' });
+      _pdCountUp(document.getElementById('pdK3'), pagos, { pre: 'S/ ', money: true });
+      _pdCountUp(document.getElementById('pdK4'), extra.money ? extra.v : Math.round(extra.v), extra.money ? { pre: 'S/ ', money: true } : {});
+    });
+  }
+  function _pdCardHtml(p, zm, i) {
+    const meta = p.meta || _PD_META_DEF;
+    const pct = Math.min(1, p.auditados / meta), done = p.auditados >= meta;
+    const col = done ? 'var(--pd-ok)' : (pct >= .5 ? zm.col : 'var(--pd-warn)');
+    const avBg = 'linear-gradient(135deg,' + zm.col + ',color-mix(in srgb,' + zm.col + ' 45%,#fff))';
+    // Stat 2 según rol.
+    const stat2 = zm.alm
+      ? '<div class="pd-stat"><div class="l">📦 Envasó</div><div class="n pd-mono">' + _pdNum(p.envasadoUnid) + '<small> un</small></div>'
+        + '<div class="d">' + _pdNum(p.eficiencia) + '% eficiencia · ' + p.envasado.length + ' prod.</div></div>'
+      : '<div class="pd-stat money"><div class="l">💰 Vendió</div><div class="n pd-mono">' + _S(p.vendido) + '</div>'
+        + '<div class="d">' + _pdNum(p.tickets) + ' tickets · ' + _pdNum(p.nclientes) + ' clientes</div></div>';
+    // Pago del día (o aviso si no se pudo cruzar por nombre).
+    const pagoStat = p.tienePago
+      ? '<div class="pd-stat money"><div class="l">💵 Pago hoy</div><div class="n pd-mono">' + _S(p.neto) + '</div>'
+        + '<div class="pd-paychip"><span class="d">jornal ' + _S(p.jornal) + '</span>'
+        + (p.bono ? '<span class="bo">+' + _S(p.bono) + '</span>' : '')
+        + (p.desc ? '<span class="de">−' + _S(p.desc) + '</span>' : '') + '</div></div>'
+      : '<div class="pd-stat"><div class="l">💵 Pago hoy</div><div class="n pd-mono" style="color:var(--pd-ink3);font-size:14px">—</div><div class="d">sin registro de pago</div></div>';
+    // Detalle de conteos.
+    const conteos = p.conteoDetalle.length
+      ? p.conteoDetalle.map(c => {
+          const sis = _pdNum(c.sistema), re = _pdNum(c.real);
+          const d = (c.diff != null) ? _pdNum(c.diff) : Math.round((re - sis) * 10) / 10;
+          const cl = d === 0 ? 'z' : (d > 0 ? 'p' : 'n');
+          return '<div class="pd-row"><div class="nm">' + _esc(c.producto || '') + '<small>sistema ' + sis + ' → real ' + re + '</small></div>'
+            + '<div class="rt"><span class="pd-diff ' + cl + '">' + (d > 0 ? '+' : '') + d + '</span></div></div>';
+        }).join('')
+      : '<div class="pd-empty">Sin conteos aún</div>';
+    // Detalle envasado / ventas según rol.
+    const detExtra = zm.alm
+      ? '<div class="h">📦 Envasado del día <span class="pill">' + p.envasado.length + ' prod.</span></div>'
+        + (p.envasado.length ? p.envasado.map(e =>
+            '<div class="pd-row"><div class="nm">' + _esc(e.producto || '') + '<small>' + _pdNum(e.producidas) + ' de ' + _pdNum(e.esperadas) + ' esperadas · ' + _pdNum(e.eficiencia) + '% efic.</small></div>'
+            + '<div class="rt pd-mono">' + _pdNum(e.producidas) + '</div></div>').join('') : '<div class="pd-empty">Sin envasado</div>')
+      : '<div class="h">🛒 Ventas · a quién <span class="pill">' + p.ventas.length + ' clientes</span></div>'
+        + (p.ventas.length ? p.ventas.map(v => {
+            const tk = _pdNum(v.tickets), doc = String(v.doc || '').trim();
+            return '<div class="pd-row"><div class="nm">' + _esc(v.cliente || '') + '<small>' + (doc && doc !== '—' ? _esc(doc) + ' · ' : '') + tk + ' ticket' + (tk === 1 ? '' : 's') + '</small></div>'
+              + '<div class="mt">' + _S(v.monto) + '</div></div>';
+          }).join('') : '<div class="pd-empty">Sin ventas</div>');
+    const style = _zonaReduce() ? '' : ' style="animation:pdFadeUp .5s ' + (i * .06).toFixed(2) + 's both"';
+    return '<div class="pd-emp' + (done ? ' done' : '') + '"' + style + ' data-idx="' + i + '">'
+      + '<div class="pd-chead" onclick="MOS.zonaPersonalDiaExpand(' + i + ',this)">'
+      +   '<div class="pd-av" style="background:' + avBg + '">' + _pdIniciales(p.nombre) + (done ? '<span class="pulse"></span>' : '') + '</div>'
+      +   '<div class="pd-who"><b>' + _esc(p.nombre) + '</b><div class="role">' + _esc(p.rol) + ' · <span style="color:' + col + ';font-weight:800">🔎 ' + p.auditados + '/' + meta + '</span> auditados</div></div>'
+      +   '<div class="pd-ring">' + _pdRing(pct, col) + '<div class="txt"><b>' + p.auditados + '<span>/' + meta + '</span></b></div></div>'
+      +   '<div class="pd-chev">⌄</div>'
+      + '</div>'
+      + '<div class="pd-cbody"><div class="pd-stats">' + pagoStat + stat2 + '</div>'
+      +   '<div class="pd-cta">'
+      +     '<button class="pd-btn" onclick="MOS.zonaPersonalDiaAuditar(' + i + ')">🔎 Auditar</button>'
+      +     '<button class="pd-btn prim" onclick="MOS.zonaPersonalDiaVerPago(' + i + ')">Ver pago</button>'
+      +   '</div></div>'
+      + '<div class="pd-detail"><div class="pd-dinner">'
+      +   '<div class="pd-dsec"><div class="h">🔎 Productos que auditó <span class="pill">' + p.auditados + '/' + meta + '</span></div>' + conteos + '</div>'
+      +   '<div class="pd-dsec">' + detExtra + '</div>'
+      + '</div></div>'
+      + '</div>';
+  }
+  // Expandir/colapsar tarjeta.
+  function zonaPersonalDiaExpand(i, headEl) {
+    const card = headEl && headEl.closest('.pd-emp'); if (!card) return;
+    const op = card.classList.toggle('open');
+    try { _zonaSfx(op ? 'pop' : 'tick'); _zonaVibrar(op ? [10, 20] : 8); } catch (_) {}
+  }
+  // Cambio de fecha (delta: +1 = un día atrás, −1 = un día adelante). Respeta el tope de 7 días.
+  function zonaPersonalDiaDia(delta) {
+    const s = _pdState; if (!s || s.cargando) return;
+    const next = s.dayOff + delta;
+    if (next < 0 || next > _PD_DIAS_ATRAS) { try { _zonaSfx('tick'); _zonaVibrar(8); } catch (_) {} return; }
+    s.dayOff = next;
+    try { _zonaSfx('tick'); _zonaVibrar(delta < 0 ? [12, 8] : 14); } catch (_) {}
+    const lbl = document.getElementById('pdLbl'), sub = document.getElementById('pdSub');
+    const prev = document.getElementById('pdPrev'), nx = document.getElementById('pdNext');
+    if (lbl) lbl.textContent = _pdLbl(s.dayOff);
+    if (sub) sub.textContent = _pdSub(s.dayOff);
+    if (prev) prev.disabled = s.dayOff >= _PD_DIAS_ATRAS;
+    if (nx) nx.disabled = s.dayOff <= 0;
+    _pdCargar();
+  }
+  // Toggle de sonido.
+  function zonaPersonalDiaSnd() {
+    const s = _pdState; if (!s) return;
+    s.sndOn = !s.sndOn;
+    const b = document.getElementById('pdSnd');
+    if (b) { b.textContent = s.sndOn ? '🔊' : '🔇'; b.classList.toggle('off', !s.sndOn); }
+    if (s.sndOn) { try { _zonaSfx('tick'); } catch (_) {} }
+    try { _zonaVibrar(10); } catch (_) {}
+  }
+  // "Ver pago": feedback local (solo lectura; el neto ya está en la tarjeta).
+  function zonaPersonalDiaVerPago(i) {
+    const s = _pdState; if (!s) return; const p = s.pers[i]; if (!p) return;
+    try { _zonaSfx('ok'); _zonaVibrar(12); } catch (_) {}
+    const primer = String(p.nombre || '').split(' ')[0];
+    if (p.tienePago) toast('💵 ' + primer + ' · neto ' + _S(p.neto), 'ok');
+    else toast('Sin registro de pago para ' + primer + ' en esta fecha', 'info');
+  }
+  // "Auditar": engancha el modal de auditoría EXISTENTE (abrirAuditar) cuando cruzamos el idPersonal por
+  //   nombre. Es el mismo modal money-safe de Finanzas/Liquidaciones — no se inventa lógica de dinero aquí.
+  //   Sin idPersonal cruzado → toast (no se puede identificar). Fija la fecha del overlay en _evalState para
+  //   que el modal audite EL DÍA que se está viendo.
+  function zonaPersonalDiaAuditar(i) {
+    const s = _pdState; if (!s) return; const p = s.pers[i]; if (!p) return;
+    try { _zonaSfx('ok'); _zonaVibrar([15, 30, 15]); } catch (_) {}
+    const primer = String(p.nombre || '').split(' ')[0];
+    if (!p.idPersonal || typeof abrirAuditar !== 'function') {
+      toast('No se pudo identificar a ' + primer + ' para auditar (sin registro de pago cruzado)', 'error');
+      return;
+    }
+    // Alinea la fecha del flujo de auditoría con la fecha del overlay (misma semántica que elegir día en Finanzas).
+    try { _evalState.fecha = _pdFecha(s.dayOff); _evalState.resumenes = []; } catch (_) {}
+    try { abrirAuditar(p.idPersonal); } catch (_) { toast('No se pudo abrir la auditoría', 'error'); }
+  }
+
   function zonaPickupToggle(sku){
     try {
       const el = document.querySelector('#zonaPickupOverlay .zpk-item[data-sku="' + (window.CSS && CSS.escape ? CSS.escape(String(sku)) : String(sku)) + '"]');
@@ -58574,6 +58988,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaPlaceholder, zonaAccionPerro,
     zonaAbrirPickup, zonaCerrarPickup, zonaPickupToggle, zonaPickupFiltrar, zonaPickupTab,
     zonaAbrirInsights, zonaCerrarInsights, zonaDbzTip,
+    // [Personal del Día por Zona] tablero SOLO LECTURA del personal de la zona activa (auditados/pago/envasado/ventas)
+    zonaAbrirPersonalDia, zonaCerrarPersonalDia, zonaPersonalDiaDia, zonaPersonalDiaSnd,
+    zonaPersonalDiaExpand, zonaPersonalDiaAuditar, zonaPersonalDiaVerPago,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
     zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos, consBuscar,
