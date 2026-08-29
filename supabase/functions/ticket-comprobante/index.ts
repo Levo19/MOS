@@ -208,14 +208,16 @@ Deno.serve(async (req: Request) => {
     // ── Meta ──
     const fecha = d.fecha ? new Date(d.fecha) : null;
     const fStr = fecha ? new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(fecha) : '';
-    bLn(_pad('Fecha : ' + fStr, d.vendedor ? ('Cajero: ' + _norm(d.vendedor)).slice(0, 20) : ''));
-    // ── Cliente ──
+    bLn('Fecha : ' + fStr);
+    // ── Cliente ── (nombre en su propia línea, se parte si es largo — nunca se corta ni se encima)
     const cliNom = String(d.clienteNombre || '').trim();
     const cliDoc = String(d.clienteDoc || '').trim();
     if (cliNom || cliDoc) {
       if (cliNom) _wrap('Cliente: ' + cliNom, W).forEach((l) => bLn(l));
       if (cliDoc) bLn(_cliDocLabel(d.tipoDocCliente) + '    : ' + _norm(cliDoc));
     }
+    // ── Cajero/Vendedor ── su propia línea abajo (nombre largo NO se corta a 20)
+    if (d.vendedor) _wrap('Cajero : ' + _norm(d.vendedor), W).forEach((l) => bLn(l));
     bLn(SEP);
     // ── Items ── profesional: nombre (máx 2 renglones, ancho completo) + "cant inteligente x precio … subtotal".
     // Granel (peso) → cantidad en g/kg y precio /kg. Unidad → entero y precio unitario.
@@ -237,11 +239,10 @@ Deno.serve(async (req: Request) => {
     bLn(SEP);
     // ── Totales ── (label izq · S/ monto der). IGV solo sobre lo gravado; exonerado/inafecto aparte.
     if (esCPE && d.totalGravada != null) {
-      if (Number(d.totalGravada) > 0) {
-        bLn(_pad('OP. GRAVADA', 'S/ ' + _money(d.totalGravada)));
-        bLn(_pad('IGV (18%)',   'S/ ' + _money(d.totalIgv)));
-      }
+      if (Number(d.totalGravada) > 0)   bLn(_pad('OP. GRAVADA',     'S/ ' + _money(d.totalGravada)));
       if (Number(d.totalExonerada) > 0) bLn(_pad('OP. EXON./INAF.', 'S/ ' + _money(d.totalExonerada)));
+      // IGV SIEMPRE explícito: 0.00 cuando todo es exonerado/inafecto → queda claro "sin IGV".
+      bLn(_pad('IGV ' + (Number(d.totalGravada) > 0 ? '(18%)' : '(0%)'), 'S/ ' + _money(d.totalIgv || 0)));
     }
     SIZE(0x10); BOLD(true); bLn(_pad('TOTAL', 'S/ ' + _money(d.total))); BOLD(false); SIZE(0x00);
     if (d.formaPago) bLn('Forma de pago: ' + _norm(d.formaPago));
