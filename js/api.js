@@ -1743,7 +1743,7 @@ const API = (() => {
         const er = await _sbFetchTimeout(`${_SB_URL}/functions/v1/emitir-cpe`, {
           method: 'POST',
           headers: { 'apikey': _SB_ANON, 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: d.ventaBase, correlativo: d.correlativoNuevo })
+          body: JSON.stringify({ data: d.ventaBase, correlativo: d.correlativoNuevo, claveAdmin: p.claveAdmin || '' })
         }, 15000);
         const ed = await er.json().catch(() => null);
         if (ed && ed.ok) {

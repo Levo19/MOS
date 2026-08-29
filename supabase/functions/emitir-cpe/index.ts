@@ -203,8 +203,19 @@ Deno.serve(async (req: Request) => {
         nota: 'CPE aún no aceptado por SUNAT — la baja se comunicará automáticamente al aceptarse.' });
     }
 
-    // ── generar (emitir) — solo POS ──
-    if (appClaim !== 'mosExpress') return json({ ok: false, error: 'emitir CPE = solo mosExpress' }, 403);
+    // ── generar (emitir) — POS directo; el panel MOS puede emitir RE-VERIFICANDO la clave admin (misma
+    //    barrera server-side que la BAJA, reverificar_clave_admin es stateless/bcrypt). Así la conversión
+    //    NV→CPE desde MOS firma AL INSTANTE (con QR) en vez de quedar PENDIENTE. FAIL-CLOSED. ──
+    if (appClaim !== 'mosExpress') {
+      const _su = Deno.env.get('SUPABASE_URL'); const _sk = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      const _rv = await fetch(`${_su}/rest/v1/rpc/reverificar_clave_admin`, {
+        method: 'POST',
+        headers: { 'apikey': _sk!, 'Authorization': 'Bearer ' + _sk!, 'Content-Profile': 'mos', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_clave: String(inp.claveAdmin || ''), p_accion: 'CONVERTIR_NV_CPE', p_ref: String(correlativo || ''), p_app: String(appClaim || 'MOS') }),
+      });
+      const _rvj = _rv.ok ? await _rv.json().catch(() => ({ error: 'reverify parse' })) : { error: 'reverify HTTP ' + _rv.status };
+      if (_rvj !== null && _rvj) return json({ ok: false, autorizado: false, error: String(_rvj.error || 'Clave admin requerida para emitir CPE desde MOS') }, 403);
+    }
     if (!correlativo) return json({ ok: false, error: 'correlativo requerido' }, 400);
     // [Lote2-B · A4] Validar formato del correlativo. Antes `parseInt || 1` convertía
     // un correlativo malformado en el número 1 de la serie → duplicado en NubeFact →
