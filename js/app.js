@@ -59038,7 +59038,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirInsights, zonaCerrarInsights, zonaDbzTip,
     // [Personal del Día por Zona] tablero SOLO LECTURA del personal de la zona activa (auditados/pago/envasado/ventas)
     zonaAbrirPersonalDia, zonaCerrarPersonalDia, zonaPersonalDiaDia, zonaPersonalDiaSnd,
-    zonaPersonalDiaExpand, zonaPersonalDiaSec, zonaPersonalDiaAuditar, zonaPersonalDiaVerPago,
+    zonaPersonalDiaSec, zonaPersonalDiaAuditar, zonaPersonalDiaVerPago,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
     zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos, consBuscar,
