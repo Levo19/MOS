@@ -55240,6 +55240,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.pd-stat .n{font-weight:800;font-size:18px;margin-top:3px;letter-spacing:-.02em}' +
       '.pd-stat.money .n{color:var(--pd-gold)}.pd-stat .n small{font-size:11px;color:var(--pd-ink3);font-weight:600}' +
       '.pd-stat .d{font-size:10px;color:var(--pd-ink3);margin-top:1px}' +
+      '.pd-stat.clk{cursor:pointer;transition:border-color .15s,transform .1s}.pd-stat.clk:hover{border-color:var(--pd-acc)}.pd-stat.clk:active{transform:scale(.98)}' +
+      '.pd-stat .mas{font-size:9px;color:var(--pd-acc);font-weight:800;margin-left:4px;letter-spacing:0}' +
       '.pd-paychip{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:2px}' +
       '.pd-paychip .bo{font-size:10px;color:var(--pd-ok);font-weight:700}.pd-paychip .de{font-size:10px;color:var(--pd-bad);font-weight:700}' +
       '.pd-cta{display:flex;gap:9px;margin-top:12px}' +
@@ -55296,7 +55298,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _pdRenderShell() {
     const ov = document.getElementById('zonaPersonalDiaOverlay'); if (!ov) return;
     const s = _pdState, zm = _pdZonaMeta(s.zonaRpc, s.zonaActual);
-    const sndIco = s.sndOn ? '🔊' : '🔇';
     ov.innerHTML = ''
       + '<div class="pd-wrap" style="--pd-acc:' + zm.col + ';--pd-accGlow:' + zm.glow + '">'
       + '<div class="pd-card2" onclick="event.stopPropagation()">'
@@ -55305,7 +55306,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       +   '<div class="pd-htx"><b>Personal del Día</b><p>INVERSIONES MOS · rastreo de la zona</p>'
       +     '<span class="pd-zchip"><span class="zic">' + zm.ic + '</span><b>' + _esc(zm.nombre) + '</b></span></div>'
       +   '<div class="pd-sp"></div>'
-      +   '<button class="pd-icobtn' + (s.sndOn ? '' : ' off') + '" id="pdSnd" onclick="MOS.zonaPersonalDiaSnd()" title="Sonido">' + sndIco + '</button>'
+      +   '<button class="pd-icobtn" id="pdSnd" onclick="MOS.zonaPersonalDiaSnd()" title="Sonido">🔊</button>'
       +   '<div class="pd-datenav">'
       +     '<button id="pdPrev" onclick="MOS.zonaPersonalDiaDia(1)">‹</button>'
       +     '<div class="lbl"><b id="pdLbl">' + _pdLbl(s.dayOff) + '</b><span id="pdSub">' + _esc(_pdSub(s.dayOff)) + '</span></div>'
@@ -55313,7 +55314,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       +   '</div>'
       +   '<button class="pd-x" onclick="MOS.zonaCerrarPersonalDia()" aria-label="Cerrar">✕</button>'
       + '</div>'
-      + '<div class="pd-kpis" id="pdKpis"></div>'
       + '<div class="pd-grid" id="pdGrid"><div class="pd-load">Cargando personal…</div></div>'
       + '<div class="pd-foot">Meta diaria: <b>' + s.meta + ' productos auditados</b> por persona · toca una tarjeta para ver QUÉ auditó y su rastreo completo</div>'
       + '</div></div>';
@@ -55340,17 +55340,25 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     s.cargando = false;
     if (zonaResp && _pdNum(zonaResp.meta) > 0) s.meta = _pdNum(zonaResp.meta);
     const persZona = (zonaResp && Array.isArray(zonaResp.personal)) ? zonaResp.personal : [];
-    // Índice de pagos por nombre normalizado (jornal=montoBase, bono=bonificacion, desc=sancion).
-    const pagoIdx = {};
-    pagosArr.forEach(p => {
-      const k = _pdNorm(p.nombre);
-      if (k && !pagoIdx[k]) pagoIdx[k] = p;
+    // Índice de pagos DOBLE: por idPersonal (robusto — cruza almacén OP001=OP001) y por nombre normalizado
+    // (fallback para zonas, donde presencia da NOID:x y Finanzas da MEX:X|ZONA). neto = totalDia (ya trae
+    // jornal + pagoEnvasado + bonoMeta + bonificación − sanción; NO recalcular dinero a mano).
+    const pagoById = {}, pagoByName = {};
+    pagosArr.forEach(pg => {
+      const id = String(pg.idPersonal || '').trim();
+      if (id && !pagoById[id]) pagoById[id] = pg;
+      const k = _pdNorm(pg.nombre);
+      if (k && !pagoByName[k]) pagoByName[k] = pg;
     });
     s.pers = persZona.map(p => {
-      const pg = pagoIdx[_pdNorm(p.nombre)] || null;
+      const idRpc = String(p.idPersonal || '').trim();
+      const pg = (idRpc && pagoById[idRpc]) || pagoByName[_pdNorm(p.nombre)] || null;
       const jornal = pg ? _pdNum(pg.montoBase) : 0;
-      const bono = pg ? _pdNum(pg.bonificacion) : 0;
-      const desc = pg ? _pdNum(pg.sancion) : 0;
+      const env    = pg ? _pdNum(pg.pagoEnvasado) : 0;
+      const bmeta  = pg ? _pdNum(pg.bonoMeta) : 0;
+      const bono   = pg ? _pdNum(pg.bonificacion) : 0;
+      const desc   = pg ? _pdNum(pg.sancion) : 0;
+      const netoSrv = pg ? _pdNum(pg.totalDia) : 0;
       return {
         nombre: p.nombre, rol: p.rol || '', rolKind: p.rolKind || (s.zonaRpc === 'ALMACEN' ? 'alm' : 'zona'),
         auditados: _pdNum(p.auditados), meta: _pdNum(p.meta) || s.meta,
@@ -55359,8 +55367,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         envasado: Array.isArray(p.envasado) ? p.envasado : [],
         vendido: _pdNum(p.vendido), tickets: _pdNum(p.tickets), nclientes: _pdNum(p.nclientes),
         ventas: Array.isArray(p.ventas) ? p.ventas : [],
-        tienePago: !!pg, idPersonal: pg ? (pg.idPersonal || '') : '',
-        jornal, bono, desc, neto: _money(jornal + bono - desc)
+        // Para "Auditar" se usa el id de FINANZAS (pg.idPersonal), que es el que conoce abrirAuditar.
+        tienePago: !!pg, idPersonal: (pg && pg.idPersonal) || idRpc || '',
+        jornal, env, bmeta, bono, desc, neto: _money(netoSrv || (jornal + env + bmeta + bono - desc))
       };
     });
     _pdRenderCuerpo();
@@ -55368,34 +55377,19 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _pdRenderCuerpo() {
     const s = _pdState; if (!s) return;
     const zm = _pdZonaMeta(s.zonaRpc, s.zonaActual);
-    const pers = s.pers, meta = s.meta || _PD_META_DEF;
-    const kp = document.getElementById('pdKpis'), grid = document.getElementById('pdGrid');
-    if (!kp || !grid) return;
+    const pers = s.pers;
+    const grid = document.getElementById('pdGrid');
+    if (!grid) return;
     if (!pers.length) {
-      kp.innerHTML = '';
-      grid.innerHTML = '<div class="pd-load">Sin personal registrado en esta zona para la fecha elegida.</div>';
+      grid.innerHTML = '<div class="pd-load">' + (s.zonaRpc === 'ALMACEN'
+        ? 'Nadie con sesión de almacén abierta para la fecha elegida.'
+        : (_pdNum(s.dayOff) === 0 ? 'Nadie con sesión abierta en esta zona ahora mismo.' : 'Sin actividad registrada en esta zona para la fecha elegida.')) + '</div>';
       return;
     }
-    const totCont = pers.reduce((a, p) => a + p.auditados, 0);
-    const avgPct = Math.round(pers.reduce((a, p) => a + Math.min(1, p.auditados / (p.meta || meta)), 0) / pers.length * 100);
-    const pagos = pers.reduce((a, p) => a + p.neto, 0);
-    const done = pers.filter(p => p.auditados >= (p.meta || meta)).length;
-    const extra = zm.alm
-      ? { k: 'Envasado', v: pers.reduce((a, p) => a + p.envasadoUnid, 0), sub: 'unidades producidas', money: false }
-      : { k: 'Vendido', v: pers.reduce((a, p) => a + p.vendido, 0), sub: 'del día', money: true };
-    kp.innerHTML = ''
-      + '<div class="pd-kpi"><div class="k">Productos auditados</div><div class="v pd-mono" id="pdK1">0</div><div class="sub">de ' + (pers.length * meta) + ' meta (' + pers.length + '×' + meta + ')</div></div>'
-      + '<div class="pd-kpi"><div class="k">Checklist prom.</div><div class="v pd-mono" id="pdK2">0</div><div class="sub">' + done + '/' + pers.length + ' completaron</div></div>'
-      + '<div class="pd-kpi gold"><div class="k">Pagos del día</div><div class="v pd-mono" id="pdK3">0</div><div class="sub">jornal + bonos − desc.</div></div>'
-      + '<div class="pd-kpi"><div class="k">' + extra.k + '</div><div class="v pd-mono" id="pdK4">0</div><div class="sub">' + extra.sub + '</div></div>';
     grid.innerHTML = pers.map((p, i) => _pdCardHtml(p, zm, i)).join('');
-    // Animaciones: anillos + count-up (reusa _zonaCountUp para enteros; _pdCountUp para % y dinero).
+    // Anima los anillos radiales (auditados/meta) al pintar.
     requestAnimationFrame(() => {
       try { grid.querySelectorAll('.pd-ring circle[data-off]').forEach(c => { c.style.strokeDashoffset = c.dataset.off; }); } catch (_) {}
-      _zonaCountUp(document.getElementById('pdK1'), totCont);
-      _pdCountUp(document.getElementById('pdK2'), avgPct, { suf: '%' });
-      _pdCountUp(document.getElementById('pdK3'), pagos, { pre: 'S/ ', money: true });
-      _pdCountUp(document.getElementById('pdK4'), extra.money ? extra.v : Math.round(extra.v), extra.money ? { pre: 'S/ ', money: true } : {});
     });
   }
   function _pdCardHtml(p, zm, i) {
@@ -55403,35 +55397,40 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const pct = Math.min(1, p.auditados / meta), done = p.auditados >= meta;
     const col = done ? 'var(--pd-ok)' : (pct >= .5 ? zm.col : 'var(--pd-warn)');
     const avBg = 'linear-gradient(135deg,' + zm.col + ',color-mix(in srgb,' + zm.col + ' 45%,#fff))';
-    // Stat 2 según rol.
+    // Stat 2 según rol — CLICABLE: abre el detalle (qué envasó / a quién vendió) abajo.
     const stat2 = zm.alm
-      ? '<div class="pd-stat"><div class="l">📦 Envasó</div><div class="n pd-mono">' + _pdNum(p.envasadoUnid) + '<small> un</small></div>'
+      ? '<div class="pd-stat clk" onclick="MOS.zonaPersonalDiaExpand(' + i + ',this)"><div class="l">📦 Envasó <span class="mas">ver ▾</span></div><div class="n pd-mono">' + _pdNum(p.envasadoUnid) + '<small> un</small></div>'
         + '<div class="d">' + _pdNum(p.eficiencia) + '% eficiencia · ' + p.envasado.length + ' prod.</div></div>'
-      : '<div class="pd-stat money"><div class="l">💰 Vendió</div><div class="n pd-mono">' + _S(p.vendido) + '</div>'
+      : '<div class="pd-stat money clk" onclick="MOS.zonaPersonalDiaExpand(' + i + ',this)"><div class="l">💰 Vendió <span class="mas">ver ▾</span></div><div class="n pd-mono">' + _S(p.vendido) + '</div>'
         + '<div class="d">' + _pdNum(p.tickets) + ' tickets · ' + _pdNum(p.nclientes) + ' clientes</div></div>';
-    // Pago del día (o aviso si no se pudo cruzar por nombre).
+    // Pago del día (cruzado desde Finanzas por id). neto = totalDia; desglose: jornal · +envasado · +bono · −desc.
+    const bonoTot = _pdNum(p.bmeta) + _pdNum(p.bono);
     const pagoStat = p.tienePago
-      ? '<div class="pd-stat money"><div class="l">💵 Pago hoy</div><div class="n pd-mono">' + _S(p.neto) + '</div>'
+      ? '<div class="pd-stat money"><div class="l">💵 Pago del día</div><div class="n pd-mono">' + _S(p.neto) + '</div>'
         + '<div class="pd-paychip"><span class="d">jornal ' + _S(p.jornal) + '</span>'
-        + (p.bono ? '<span class="bo">+' + _S(p.bono) + '</span>' : '')
-        + (p.desc ? '<span class="de">−' + _S(p.desc) + '</span>' : '') + '</div></div>'
-      : '<div class="pd-stat"><div class="l">💵 Pago hoy</div><div class="n pd-mono" style="color:var(--pd-ink3);font-size:14px">—</div><div class="d">sin registro de pago</div></div>';
+        + (_pdNum(p.env) ? '<span class="bo">+env ' + _S(p.env) + '</span>' : '')
+        + (bonoTot ? '<span class="bo">+bono ' + _S(bonoTot) + '</span>' : '')
+        + (_pdNum(p.desc) ? '<span class="de">−' + _S(p.desc) + '</span>' : '') + '</div></div>'
+      : '<div class="pd-stat"><div class="l">💵 Pago del día</div><div class="n pd-mono" style="color:var(--pd-ink3);font-size:14px">—</div><div class="d">sin registro de pago</div></div>';
     // Detalle de conteos.
     const conteos = p.conteoDetalle.length
       ? p.conteoDetalle.map(c => {
           const sis = _pdNum(c.sistema), re = _pdNum(c.real);
           const d = (c.diff != null) ? _pdNum(c.diff) : Math.round((re - sis) * 10) / 10;
           const cl = d === 0 ? 'z' : (d > 0 ? 'p' : 'n');
-          return '<div class="pd-row"><div class="nm">' + _esc(c.producto || '') + '<small>sistema ' + sis + ' → real ' + re + '</small></div>'
+          const hr = c.hora ? ' · 🕒' + _esc(c.hora) : '';
+          return '<div class="pd-row"><div class="nm">' + _esc(c.producto || '') + '<small>sistema ' + sis + ' → real ' + re + hr + '</small></div>'
             + '<div class="rt"><span class="pd-diff ' + cl + '">' + (d > 0 ? '+' : '') + d + '</span></div></div>';
         }).join('')
       : '<div class="pd-empty">Sin conteos aún</div>';
     // Detalle envasado / ventas según rol.
     const detExtra = zm.alm
       ? '<div class="h">📦 Envasado del día <span class="pill">' + p.envasado.length + ' prod.</span></div>'
-        + (p.envasado.length ? p.envasado.map(e =>
-            '<div class="pd-row"><div class="nm">' + _esc(e.producto || '') + '<small>' + _pdNum(e.producidas) + ' de ' + _pdNum(e.esperadas) + ' esperadas · ' + _pdNum(e.eficiencia) + '% efic.</small></div>'
-            + '<div class="rt pd-mono">' + _pdNum(e.producidas) + '</div></div>').join('') : '<div class="pd-empty">Sin envasado</div>')
+        + (p.envasado.length ? p.envasado.map(e => {
+            const hr = e.hora ? ' · 🕒' + _esc(e.hora) : '';
+            const col = e.colaborador ? ' · 🤝 ' + _esc(e.colaborador) : '';
+            return '<div class="pd-row"><div class="nm">' + _esc(e.producto || '') + '<small>' + _pdNum(e.producidas) + ' de ' + _pdNum(e.esperadas) + ' esperadas · ' + _pdNum(e.eficiencia) + '% efic.' + hr + col + '</small></div>'
+            + '<div class="rt pd-mono">' + _pdNum(e.producidas) + '</div></div>'; }).join('') : '<div class="pd-empty">Sin envasado</div>')
       : '<div class="h">🛒 Ventas · a quién <span class="pill">' + p.ventas.length + ' clientes</span></div>'
         + (p.ventas.length ? p.ventas.map(v => {
             const tk = _pdNum(v.tickets), doc = String(v.doc || '').trim();
@@ -55478,14 +55477,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (nx) nx.disabled = s.dayOff <= 0;
     _pdCargar();
   }
-  // Toggle de sonido.
+  // Botón de sonido: reproduce un sonido (sin toggle de mute) — "ponle sonido y punto".
   function zonaPersonalDiaSnd() {
-    const s = _pdState; if (!s) return;
-    s.sndOn = !s.sndOn;
+    try { _zonaSfx('ok'); } catch (_) {}
+    try { _zonaVibrar([12, 8, 12]); } catch (_) {}
     const b = document.getElementById('pdSnd');
-    if (b) { b.textContent = s.sndOn ? '🔊' : '🔇'; b.classList.toggle('off', !s.sndOn); }
-    if (s.sndOn) { try { _zonaSfx('tick'); } catch (_) {} }
-    try { _zonaVibrar(10); } catch (_) {}
+    if (b && !_zonaReduce()) { b.style.transform = 'scale(1.18)'; setTimeout(() => { try { b.style.transform = ''; } catch (_) {} }, 160); }
   }
   // "Ver pago": feedback local (solo lectura; el neto ya está en la tarjeta).
   function zonaPersonalDiaVerPago(i) {
