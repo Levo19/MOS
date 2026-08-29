@@ -32872,6 +32872,9 @@ const MOS = (() => {
     const seriePh = tipo === 'BOLETA' ? 'B001' : 'F001';
     $('tkConvSerie').placeholder = 'ej: ' + seriePh;
     _tkConvReglasRefresh();
+    // re-evaluar según el nuevo tipo: dirección (solo factura+RUC) y re-filtrar sugerencias (factura = solo RUC)
+    _tkConvMostrarCampos(!!(_tkAcc.convCPE && _tkAcc.convCPE.clienteOK), !(($('tkConvDireccion') || {}).value || '').trim());
+    _tkConvAutobuscar();
   }
 
   function _tkConvDocChange() {
@@ -32885,8 +32888,23 @@ const MOS = (() => {
   //  (editable) para poder emitir la factura. Nada de casilleros redundantes cuando ya se jaló todo.
   function _tkConvMostrarCampos(ok, dirVacia) {
     const nr = $('tkConvNombreRow'), dr = $('tkConvDireccionRow');
-    if (nr) nr.classList.add('hidden');
-    if (dr) dr.classList.toggle('hidden', !(ok && dirVacia));
+    if (nr) nr.classList.add('hidden');   // el nombre siempre va en la tarjeta ✓
+    const doc = (($('tkConvDoc') || {}).value || '').replace(/\D/g, '');
+    const esFactura = (_tkAcc.convCPE && _tkAcc.convCPE.tipo) === 'FACTURA';
+    // La dirección SOLO se escribe para una FACTURA (RUC) cuando SUNAT no la trajo (raro). Nunca boleta/DNI.
+    if (dr) dr.classList.toggle('hidden', !(ok && dirVacia && esFactura && doc.length === 11));
+  }
+  // [✕] limpieza rápida del campo cliente
+  function _tkConvLimpiar() {
+    try { navigator.vibrate(8); } catch (_) {}
+    const el = $('tkConvDoc'); if (el) { el.value = ''; try { el.focus(); } catch (_) {} }
+    if ($('tkConvNombre')) $('tkConvNombre').value = '';
+    if ($('tkConvDireccion')) $('tkConvDireccion').value = '';
+    const info = $('tkConvClienteInfo'); if (info) info.classList.add('hidden');
+    const sug = $('tkConvSug'); if (sug) { sug.classList.add('hidden'); sug.innerHTML = ''; }
+    _tkAcc.convCPE.clienteOK = false;
+    _tkConvMostrarCampos(false, false);
+    _tkConvReglasRefresh();
   }
 
   // [autobúsqueda] Filtra clientes frecuentes EN LA TABLA (letras o números) mientras escribes — rápido y sin
@@ -32902,7 +32920,9 @@ const MOS = (() => {
         const r = await API.buscarClientesFrecuentes(q);
         let arr = (r && (r.data || r)) || [];
         if (!Array.isArray(arr)) arr = (arr && arr.data) || [];
-        _tkConvSugData = (arr || []).slice(0, 8);
+        let list = arr || [];
+        if ((_tkAcc.convCPE && _tkAcc.convCPE.tipo) === 'FACTURA') list = list.filter(c => String(c.documento || '').replace(/\D/g, '').length === 11);
+        _tkConvSugData = list.slice(0, 8);
         if (!_tkConvSugData.length) { sug.classList.add('hidden'); sug.innerHTML = ''; return; }
         const _e = s => (_escapeHtml ? _escapeHtml(s || '') : (s || ''));
         sug.innerHTML = _tkConvSugData.map((c, i) =>
@@ -58798,7 +58818,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
     _tkCambiarFPSel, _tkCambiarFPConfirmar, _tkCambiarFPValidar,
     _tkAprobarCredConfirmar,
-    _tkConvSetTipo, _tkConvDocChange, _tkConvBuscarCliente, _tkConvAutobuscar, _tkConvPick, _tkConvertirConfirmar, _tkConvReglasRefresh,
+    _tkConvSetTipo, _tkConvDocChange, _tkConvBuscarCliente, _tkConvAutobuscar, _tkConvPick, _tkConvLimpiar, _tkConvertirConfirmar, _tkConvReglasRefresh,
     _tkBajaSetMotivo, _tkBajaActualizarBoton, _tkBajaConfirmar,
     // F4 — Historiales adicionales (cliente / extra / personal)
     cjHistorialExtra, cfgHistorialPersonal,

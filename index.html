@@ -18345,6 +18345,7 @@
               <label class="text-[10px] text-slate-400 uppercase block mb-1">Cliente — escribe nombre, DNI o RUC</label>
               <div class="flex gap-2">
                 <input type="text" id="tkConvDoc" class="inp text-sm flex-1" placeholder="Nombre, DNI (8) o RUC (11)" autocomplete="off" oninput="MOS._tkConvDocChange();MOS._tkConvAutobuscar()">
+                <button onclick="MOS._tkConvLimpiar()" title="Limpiar" class="btn-ghost text-xs px-3">✕</button>
                 <button onclick="MOS._tkConvBuscarCliente()" id="tkConvBtnBuscar" class="btn-ghost text-xs px-4">🔎 Buscar</button>
               </div>
               <div id="tkConvSug" class="hidden mt-1 rounded" style="background:#0a1424;border:1px solid #22314a;max-height:190px;overflow-y:auto"></div>
@@ -22180,7 +22181,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.44.11';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.44.12';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22475,7 +22476,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.44.11"></script>
+<script src="js/app.js?v=2.44.12"></script>
 <script src="js/buzon.js?v=2.44.6"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
