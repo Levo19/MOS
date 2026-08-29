@@ -55666,10 +55666,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _pdSheetLoading('Guía', g.dir === 'in' ? '📥' : '📤');
     let lineas = [];
     try {
-      const r = await API.zona.trasladoGuia({ idGuia: g.id });
-      const data = (r && r.data) || r || {};
-      lineas = (Array.isArray(data.lineas) ? data.lineas : []).map(l => ({ codBarra: l.codBarra, descripcion: l.descripcion, enviado: _pdNum(l.enviado), lote: l.lote || null }));
-      try { await _trasResolverNombres(lineas); } catch (_) {}
+      const r = await API.get('getGuiaLineas', { idGuia: g.id });
+      lineas = (r && Array.isArray(r.lineas)) ? r.lineas : [];
     } catch (_) {}
     if (!document.getElementById('pdSheet')) return;
     _pdSheet(_pdGuiaHtml(g, lineas), g.dir === 'in' ? '#34d399' : '#f59e0b');
@@ -55678,10 +55676,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _pdGuiaHtml(g, lineas) {
     const inn = g.dir === 'in';
     const filas = lineas.length ? lineas.map(l => {
-      const q = _pdNum(l.enviado), nom = String(l.descripcion || l.codBarra || '—');
-      const sub = l.lote ? ('lote ' + _esc(l.lote)) : (l.codBarra ? _esc(String(l.codBarra)) : '');
-      return '<div class="pd-row"><div class="nm">' + _esc(nom) + (sub ? '<small>' + sub + '</small>' : '') + '</div><div class="rt pd-mono">' + q + '</div></div>';
-    }).join('') : '<div class="pd-empty">Sin líneas detalladas para esta guía</div>';
+      // cantidad movida: recibida (fallback aplicada → esperada); resalta si difiere de lo esperado.
+      const esp = _pdNum(l.esperada);
+      const rec = _pdNum((l.recibida != null && l.recibida !== 0) ? l.recibida : (l.aplicada != null && l.aplicada !== 0 ? l.aplicada : l.esperada));
+      const nom = String(l.descripcion || l.cod || '—');
+      const bits = [];
+      if (l.cod) bits.push(_esc(String(l.cod)));
+      if (l.lote) bits.push('lote ' + _esc(String(l.lote)));
+      if (esp && esp !== rec) bits.push('esperado ' + esp);
+      if (_pdNum(l.precio) > 0) bits.push(_S(l.precio) + ' c/u');
+      return '<div class="pd-row"><div class="nm">' + _esc(nom) + (bits.length ? '<small>' + bits.join(' · ') + '</small>' : '') + '</div><div class="rt pd-mono">' + rec + '</div></div>';
+    }).join('') : '<div class="pd-empty">Sin líneas para esta guía</div>';
     const est = g.estado ? ' <span class="pd-tk-chip">' + _esc(String(g.estado)) + '</span>' : '';
     return _pdSheetHead(inn ? '📥' : '📤', _pdGuiaLbl(g.tipo), g.id || '')
       + '<div class="pd-tk">'

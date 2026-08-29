@@ -3910,6 +3910,11 @@ const API = (() => {
         return _sbRpcMOS('personal_dia_zona', { p: { zona: p.zona, fecha: p.fecha || null } }, 'mos')
           .then(r => (r && r.ok !== false) ? r : null).catch(() => null);
       }
+      // [Personal del Día] getGuiaLineas → mos.guia_lineas (líneas de una guía de almacén desde wh.guia_detalle).
+      if (action === 'getGuiaLineas') {
+        return _sbRpcMOS('guia_lineas', { p: { idGuia: p.idGuia } }, 'mos')
+          .then(r => (r && r.ok !== false) ? r : null).catch(() => null);
+      }
       // [Optimización] catálogos base → lectura directa (RPCs 106). Maestro _mosLecturaDirecta · cero-GAS sin fallback.
       if (action === 'getEquivalencias') {
         return _conFallbackMOS(() => _getEquivalenciasDirecto(p));
