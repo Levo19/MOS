@@ -32853,6 +32853,7 @@ const MOS = (() => {
     if (_ser) { _ser.value = 'automática · según la zona de la venta'; _ser.disabled = true; }
     $('tkConvClienteInfo').classList.add('hidden');
     _tkConvSetTipo('BOLETA');
+    _tkConvMostrarCampos(false, false);
     openModal('modalTkConvertirCPE');
     // [929] Auto-identificar al abrir: trae nombre + dirección del RUC/DNI (sombra o SUNAT/RENIEC) sin que el
     //   admin tenga que tocar "Buscar", y deja la dirección lista (no editable). Silencioso si no hay doc.
@@ -32876,7 +32877,16 @@ const MOS = (() => {
   function _tkConvDocChange() {
     _tkAcc.convCPE.clienteOK = false;
     $('tkConvClienteInfo').classList.add('hidden');
+    _tkConvMostrarCampos(false, false);
     _tkConvReglasRefresh();
+  }
+  // [menos es más] Los casilleros de nombre/dirección se muestran SOLO cuando hacen falta: identificado → el
+  //  nombre ya se ve en la tarjeta ✓ (input oculto); si SUNAT no trae dirección, se muestra solo ese campo
+  //  (editable) para poder emitir la factura. Nada de casilleros redundantes cuando ya se jaló todo.
+  function _tkConvMostrarCampos(ok, dirVacia) {
+    const nr = $('tkConvNombreRow'), dr = $('tkConvDireccionRow');
+    if (nr) nr.classList.add('hidden');
+    if (dr) dr.classList.toggle('hidden', !(ok && dirVacia));
   }
 
   // [autobúsqueda] Filtra clientes frecuentes EN LA TABLA (letras o números) mientras escribes — rápido y sin
@@ -32921,6 +32931,7 @@ const MOS = (() => {
         (c.direccion ? `<div class="text-slate-400">${_e(c.direccion)}</div>`
                      : '<div class="text-amber-400 text-[11px]">Sin dirección — escríbela abajo si emites factura.</div>');
     }
+    _tkConvMostrarCampos(true, !c.direccion);
     _tkConvReglasRefresh();
   }
   // [reglas SUNAT en vivo · conversión NV→CPE en MOS] mismo checklist que ME + el panel VIP.
@@ -32957,6 +32968,7 @@ const MOS = (() => {
         // sin identificar no se puede completar. Mantiene lo que traía el ticket (nombre) por si sirve.
         if (info) info.innerHTML = '<span class="text-amber-400">⚠ No se pudo identificar el documento en SUNAT/RENIEC. Revisa el número o reintenta.</span>';
         _tkAcc.convCPE.clienteOK = false;
+        _tkConvMostrarCampos(false, false);
         _tkConvReglasRefresh();
         return;
       }
@@ -32973,6 +32985,7 @@ const MOS = (() => {
       if (info) info.innerHTML = `<div class="text-emerald-400 font-bold">✓ ${_escapeHtml ? _escapeHtml(nombre) : nombre}</div>` +
                        (direccion ? `<div class="text-slate-400">${_escapeHtml ? _escapeHtml(direccion) : direccion}</div>` : '<div class="text-amber-400 text-[11px]">Sin dirección en SUNAT — escríbela abajo para emitir la factura.</div>');
       _tkAcc.convCPE.clienteOK = true;
+      _tkConvMostrarCampos(true, !direccion);
       _tkConvReglasRefresh();
     } catch(e) {
       if (info) info.innerHTML = '<span class="text-rose-400">Error: ' + (e && e.message || e) + '</span>';
