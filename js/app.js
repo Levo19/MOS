@@ -55258,6 +55258,32 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       '.pd-login{color:var(--pd-ink3);margin-left:7px;font-weight:600;text-transform:none;letter-spacing:0;font-size:10.5px}' +
       '.pd-row .gic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:13px;flex:none;background:var(--pd-panel2)}' +
       '.pd-row .gic.p{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pd-ok) 45%,transparent)}.pd-row .gic.n{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pd-warn) 45%,transparent)}' +
+      '.pd-scroll{max-height:320px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -2px;padding:0 2px}' +
+      '.pd-scroll::-webkit-scrollbar{width:7px}.pd-scroll::-webkit-scrollbar-thumb{background:var(--pd-line);border-radius:99px}' +
+      '.pd-row.clk{cursor:pointer;transition:border-color .14s,transform .08s}.pd-row.clk:hover{border-color:var(--pd-acc)}.pd-row.clk:active{transform:scale(.985)}' +
+      '.pd-row .pd-go{color:var(--pd-ink3);font-weight:800;margin-left:6px}.pd-row .pd-go.solo{margin-left:auto}.pd-row .mt{display:flex;align-items:center;gap:2px}' +
+      // ── Sheet (ticket / guía) ──
+      '#pdSheet{position:fixed;inset:0;z-index:1300;display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s ease;background:rgba(4,7,14,.66);backdrop-filter:blur(6px)}' +
+      '#pdSheet.pd-in{opacity:1}@media(min-width:640px){#pdSheet{align-items:center;padding:20px}}' +
+      '.pd-sheet-card{width:100%;max-width:440px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;background:var(--pd-bg,#0b0e1a);border:1px solid var(--pd-line,#232c4a);border-radius:22px 22px 0 0;box-shadow:0 -20px 60px rgba(0,0,0,.6);transform:translateY(18px);transition:transform .24s cubic-bezier(.4,0,.2,1);color:var(--pd-ink,#eaeefb);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:env(safe-area-inset-bottom)}' +
+      '#pdSheet.pd-in .pd-sheet-card{transform:none}@media(min-width:640px){.pd-sheet-card{border-radius:22px}}' +
+      '.pd-sheet-head{display:flex;align-items:center;gap:11px;padding:15px 15px 13px;border-bottom:1px solid var(--pd-line,#232c4a);flex:none}' +
+      '.pd-sheet-ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:19px;flex:none;background:color-mix(in srgb,var(--pd-acc) 22%,#141a2e)}' +
+      '.pd-sheet-tt{flex:1;min-width:0}.pd-sheet-tt b{font-weight:800;font-size:15.5px;display:block;line-height:1.15}.pd-sheet-tt span{font-size:11px;color:var(--pd-ink3,#7c86a8);font-family:ui-monospace,monospace}' +
+      '.pd-tk{padding:14px 15px calc(16px + env(safe-area-inset-bottom));overflow-y:auto}' +
+      '.pd-tk-biz{text-align:center;margin-bottom:12px}.pd-tk-biz b{font-weight:800;font-size:15px;letter-spacing:.04em}.pd-tk-biz span{display:block;font-size:10px;color:var(--pd-ink3,#7c86a8);margin-top:2px}' +
+      '.pd-tk-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}' +
+      '.pd-tk-meta>div{background:var(--pd-panel2,#182142);border:1px solid var(--pd-line,#232c4a);border-radius:11px;padding:8px 10px;font-size:12.5px;font-weight:600;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}' +
+      '.pd-tk-meta i{display:block;font-style:normal;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--pd-ink3,#7c86a8);font-weight:700;margin-bottom:2px}' +
+      '.pd-tk-chip{display:inline-block;font-size:9px;font-weight:800;padding:1px 7px;border-radius:99px;background:color-mix(in srgb,var(--pd-acc) 24%,transparent);color:var(--pd-acc);vertical-align:middle}' +
+      '.pd-tk-items{border-top:1px dashed var(--pd-line,#232c4a);padding-top:10px}' +
+      '.pd-tk-row{display:flex;align-items:baseline;gap:9px;padding:6px 2px;border-bottom:1px dotted color-mix(in srgb,var(--pd-line,#232c4a) 70%,transparent)}' +
+      '.pd-tk-row .q{font-family:ui-monospace,monospace;font-weight:800;font-size:12px;color:var(--pd-acc);flex:none;min-width:30px}' +
+      '.pd-tk-row .n{flex:1;min-width:0;font-size:12.5px;font-weight:600}.pd-tk-row .n em{display:block;font-style:normal;font-size:10px;color:var(--pd-ink3,#7c86a8);font-weight:500}' +
+      '.pd-tk-row .s{font-weight:700;font-size:12.5px;flex:none}' +
+      '.pd-tk-total{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding:12px;border-radius:13px;background:linear-gradient(135deg,color-mix(in srgb,var(--pd-acc) 18%,#141a2e),#141a2e);border:1px solid color-mix(in srgb,var(--pd-acc) 30%,var(--pd-line,#232c4a))}' +
+      '.pd-tk-total span{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--pd-ink2,#b9c1de)}.pd-tk-total b{font-size:21px;font-weight:800;color:var(--pd-gold,#ffd24a)}' +
+      '.pd-tk-obs{margin-top:10px;font-size:11px;color:var(--pd-ink3,#7c86a8);background:var(--pd-panel,#141a2e);border-radius:10px;padding:8px 10px}' +
       '.pd-cta{display:flex;gap:9px;margin-top:12px}' +
       '.pd-btn{flex:1;height:40px;border-radius:12px;border:1px solid var(--pd-line);background:var(--pd-panel2);color:var(--pd-ink);'
         + 'font-weight:700;font-size:12.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.18s}' +
@@ -55320,7 +55346,6 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       +   '<div class="pd-htx"><b>Personal del Día</b><p>INVERSIONES MOS · rastreo de la zona</p>'
       +     '<span class="pd-zchip"><span class="zic">' + zm.ic + '</span><b>' + _esc(zm.nombre) + '</b></span></div>'
       +   '<div class="pd-sp"></div>'
-      +   '<button class="pd-icobtn" id="pdSnd" onclick="MOS.zonaPersonalDiaSnd()" title="Sonido">🔊</button>'
       +   '<div class="pd-datenav">'
       +     '<button id="pdPrev" onclick="MOS.zonaPersonalDiaDia(1)">‹</button>'
       +     '<div class="lbl"><b id="pdLbl">' + _pdLbl(s.dayOff) + '</b><span id="pdSub">' + _esc(_pdSub(s.dayOff)) + '</span></div>'
@@ -55418,8 +55443,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // Panel: productos auditados (con hora).
   function _pdConteosHtml(p, meta) {
     if (!p.conteoDetalle.length) return '<div class="h">🔎 Productos que auditó <span class="pill">0/' + meta + '</span></div><div class="pd-empty">Sin conteos aún</div>';
-    return '<div class="h">🔎 Productos que auditó <span class="pill">' + p.auditados + '/' + meta + '</span></div>'
-      + p.conteoDetalle.map(c => {
+    const rows = p.conteoDetalle.map(c => {
           const sis = _pdNum(c.sistema), re = _pdNum(c.real);
           const d = (c.diff != null) ? _pdNum(c.diff) : Math.round((re - sis) * 10) / 10;
           const cl = d === 0 ? 'z' : (d > 0 ? 'p' : 'n');
@@ -55427,38 +55451,45 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           return '<div class="pd-row"><div class="nm">' + _esc(c.producto || '') + '<small>sistema ' + sis + ' → real ' + re + hr + '</small></div>'
             + '<div class="rt"><span class="pd-diff ' + cl + '">' + (d > 0 ? '+' : '') + d + '</span></div></div>';
         }).join('');
+    return '<div class="h">🔎 Productos que auditó <span class="pill">' + p.auditados + '/' + meta + '</span></div><div class="pd-scroll">' + rows + '</div>';
   }
   // Panel: envasado (almacén) o ventas a quién (zonas), con hora.
-  function _pdWorkHtml(p, zm) {
-    if (zm.alm) {
-      return '<div class="h">📦 Envasado del día <span class="pill">' + p.envasado.length + ' prod.</span></div>'
-        + (p.envasado.length ? p.envasado.map(e => {
-            const hr = e.hora ? ' · 🕒' + _esc(e.hora) : '';
-            const co = e.colaborador ? ' · 🤝 ' + _esc(e.colaborador) : '';
-            return '<div class="pd-row"><div class="nm">' + _esc(e.producto || '') + '<small>' + _pdNum(e.producidas) + ' de ' + _pdNum(e.esperadas) + ' esperadas · ' + _pdNum(e.eficiencia) + '% efic.' + hr + co + '</small></div>'
-              + '<div class="rt pd-mono">' + _pdNum(e.producidas) + '</div></div>'; }).join('') : '<div class="pd-empty">Sin envasado</div>');
-    }
-    return '<div class="h">🛒 A quién vendió <span class="pill">' + p.ventas.length + ' clientes</span></div>'
-      + (p.ventas.length ? p.ventas.map(v => {
-          const tk = _pdNum(v.tickets), doc = String(v.doc || '').trim();
-          return '<div class="pd-row"><div class="nm">' + _esc(v.cliente || '') + '<small>' + (doc && doc !== '—' ? _esc(doc) + ' · ' : '') + tk + ' ticket' + (tk === 1 ? '' : 's') + '</small></div>'
-            + '<div class="mt">' + _S(v.monto) + '</div></div>';
-        }).join('') : '<div class="pd-empty">Sin ventas</div>');
+  // Etiqueta corta de forma de pago (EFECTIVO → Efectivo · YAPE → Yape · POR_COBRAR → Por cobrar).
+  function _pdFpLbl(fp) {
+    const s = String(fp || '').trim(); if (!s) return '';
+    return s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase());
   }
-  // Panel: guías creadas por la persona (ingreso 📥 / salida 📤), con hora y estado.
-  function _pdGuiasHtml(p) {
+  // Panel: envasado (almacén) o VENTAS INDIVIDUALES (zonas). Cada venta es clicable → comprobante completo.
+  function _pdWorkHtml(p, zm, i) {
+    if (zm.alm) {
+      const rows = p.envasado.length ? p.envasado.map(e => {
+        const hr = e.hora ? ' · 🕒' + _esc(e.hora) : '';
+        const co = e.colaborador ? ' · 🤝 ' + _esc(e.colaborador) : '';
+        return '<div class="pd-row"><div class="nm">' + _esc(e.producto || '') + '<small>' + _pdNum(e.producidas) + ' de ' + _pdNum(e.esperadas) + ' esperadas · ' + _pdNum(e.eficiencia) + '% efic.' + hr + co + '</small></div>'
+          + '<div class="rt pd-mono">' + _pdNum(e.producidas) + '</div></div>'; }).join('') : '<div class="pd-empty">Sin envasado</div>';
+      return '<div class="h">📦 Envasado del día <span class="pill">' + p.envasado.length + ' prod.</span></div><div class="pd-scroll">' + rows + '</div>';
+    }
+    const rows = p.ventas.length ? p.ventas.map((v, vi) => {
+      const doc = String(v.doc || '').trim(), fp = _pdFpLbl(v.forma);
+      const meta = [v.corr ? _esc(v.corr) : '', v.hora ? '🕒' + _esc(v.hora) : '', (doc && doc !== '66666') ? _esc(doc) : '', fp ? _esc(fp) : ''].filter(Boolean).join(' · ');
+      return '<div class="pd-row clk" onclick="MOS.zonaPersonalDiaVerTicket(' + i + ',' + vi + ')" title="Ver comprobante">'
+        + '<div class="nm">' + _esc(v.cliente || 'Cliente varios') + '<small>' + meta + '</small></div>'
+        + '<div class="mt">' + _S(v.monto) + '<span class="pd-go">›</span></div></div>'; }).join('') : '<div class="pd-empty">Sin ventas</div>';
+    return '<div class="h">🛒 Ventas del día <span class="pill">' + p.ventas.length + ' tickets</span></div><div class="pd-scroll">' + rows + '</div>';
+  }
+  // Panel: guías creadas por la persona (ingreso 📥 / salida 📤). Clicable → guía completa.
+  function _pdGuiasHtml(p, i) {
     const gs = Array.isArray(p.guias) ? p.guias : [];
     if (!gs.length) return '<div class="h">📋 Guías del día <span class="pill">0</span></div><div class="pd-empty">Sin guías creadas</div>';
-    return '<div class="h">📋 Guías del día <span class="pill">' + _pdNum(p.guiasN) + '</span></div>'
-      + gs.slice(0, 40).map(g => {
-          const inn = g.dir === 'in';
-          const ic = inn ? '📥' : '📤', dcl = inn ? 'p' : 'n';
-          const doc = g.doc ? ' · ' + _esc(g.doc) : '';
-          const est = g.estado ? ' · ' + _esc(String(g.estado).toLowerCase()) : '';
-          const mt = _pdNum(g.monto) > 0 ? '<div class="mt">' + _S(g.monto) + '</div>' : '';
-          return '<div class="pd-row"><div class="gic ' + dcl + '">' + ic + '</div>'
-            + '<div class="nm">' + _esc(_pdGuiaLbl(g.tipo)) + '<small>' + (g.hora ? '🕒' + _esc(g.hora) : '') + doc + est + '</small></div>' + mt + '</div>';
-        }).join('');
+    const rows = gs.slice(0, 80).map((g, gi) => {
+      const inn = g.dir === 'in';
+      const ic = inn ? '📥' : '📤', dcl = inn ? 'p' : 'n';
+      const doc = g.doc ? ' · ' + _esc(g.doc) : '';
+      const est = g.estado ? ' · ' + _esc(String(g.estado).toLowerCase()) : '';
+      const right = _pdNum(g.monto) > 0 ? '<div class="mt">' + _S(g.monto) + '<span class="pd-go">›</span></div>' : '<span class="pd-go solo">›</span>';
+      return '<div class="pd-row clk" onclick="MOS.zonaPersonalDiaVerGuia(' + i + ',' + gi + ')" title="Ver guía completa"><div class="gic ' + dcl + '">' + ic + '</div>'
+        + '<div class="nm">' + _esc(_pdGuiaLbl(g.tipo)) + '<small>' + (g.hora ? '🕒' + _esc(g.hora) : '') + doc + est + '</small></div>' + right + '</div>'; }).join('');
+    return '<div class="h">📋 Guías del día <span class="pill">' + _pdNum(p.guiasN) + '</span></div><div class="pd-scroll">' + rows + '</div>';
   }
   function _pdCardHtml(p, zm, i) {
     const meta = p.meta || _PD_META_DEF;
@@ -55499,8 +55530,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       + '</div>'
       + '<div class="pd-cbody"><div class="pd-tiles">' + tilePago + tileAud + tileWork + tileGui + '</div></div>'
       + '<div class="pd-panel p-aud"><div class="pd-dinner">' + _pdConteosHtml(p, meta) + '</div></div>'
-      + '<div class="pd-panel p-work"><div class="pd-dinner">' + _pdWorkHtml(p, zm) + '</div></div>'
-      + (showGui ? '<div class="pd-panel p-gui"><div class="pd-dinner">' + _pdGuiasHtml(p) + '</div></div>' : '')
+      + '<div class="pd-panel p-work"><div class="pd-dinner">' + _pdWorkHtml(p, zm, i) + '</div></div>'
+      + (showGui ? '<div class="pd-panel p-gui"><div class="pd-dinner">' + _pdGuiasHtml(p, i) + '</div></div>' : '')
       + '</div>';
   }
   // Acordeón por tarjeta: muestra SOLO la sección clickeada (aud / work / gui). Reclick colapsa.
@@ -55558,6 +55589,110 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // Alinea la fecha del flujo de auditoría con la fecha del overlay (misma semántica que elegir día en Finanzas).
     try { _evalState.fecha = _pdFecha(s.dayOff); _evalState.resumenes = []; } catch (_) {}
     try { abrirAuditar(p.idPersonal); } catch (_) { toast('No se pudo abrir la auditoría', 'error'); }
+  }
+
+  // ─────────── Sheet secundario: TICKET o GUÍA completos, por encima del tablero (solo lectura) ───────────
+  function _pdSheet(html, accent) {
+    let sh = document.getElementById('pdSheet');
+    if (!sh) {
+      sh = document.createElement('div'); sh.id = 'pdSheet';
+      sh.onclick = (e) => { if (e.target === sh) zonaPersonalDiaCerrarSheet(); };
+      document.body.appendChild(sh);
+    }
+    sh.style.setProperty('--pd-acc', accent || '#7c5cff');
+    sh.innerHTML = '<div class="pd-sheet-card" onclick="event.stopPropagation()">' + html + '</div>';
+    requestAnimationFrame(() => sh.classList.add('pd-in'));
+  }
+  function zonaPersonalDiaCerrarSheet() {
+    const sh = document.getElementById('pdSheet');
+    if (sh) { sh.classList.remove('pd-in'); setTimeout(() => { try { sh.remove(); } catch (_) {} }, 200); }
+    try { _zonaSfx('tick'); _zonaVibrar(10); } catch (_) {}
+  }
+  function _pdSheetHead(icon, titulo, sub) {
+    return '<div class="pd-sheet-head"><div class="pd-sheet-ic">' + (icon || '📄') + '</div>'
+      + '<div class="pd-sheet-tt"><b>' + _esc(titulo || '') + '</b>' + (sub ? '<span>' + _esc(sub) + '</span>' : '') + '</div>'
+      + '<button class="pd-x" onclick="MOS.zonaPersonalDiaCerrarSheet()" aria-label="Cerrar">✕</button></div>';
+  }
+  function _pdSheetLoading(titulo, icon) { _pdSheet(_pdSheetHead(icon, titulo, '') + '<div class="pd-load">Cargando…</div>'); }
+  function _pdSheetErr(icon, msg) { _pdSheet(_pdSheetHead(icon, 'Sin datos', '') + '<div class="pd-empty" style="padding:34px 12px">' + _esc(msg || '') + '</div>'); }
+
+  // Comprobante (ticket) completo de una venta — datos de mos.me_detalle_venta.
+  async function zonaPersonalDiaVerTicket(pi, vi) {
+    const s = _pdState; if (!s) return; const p = s.pers[pi]; if (!p) return;
+    const v = (p.ventas || [])[vi]; if (!v || !v.idVenta) { toast('Venta no encontrada', 'error'); return; }
+    try { _zonaSfx('pop'); _zonaVibrar([12, 8, 20]); } catch (_) {}
+    _pdSheetLoading('Comprobante', '🧾');
+    let d = null;
+    try { const r = await API.get('meDetalleVenta', { idVenta: v.idVenta }); d = (r && r.data) || r || null; } catch (_) {}
+    if (!document.getElementById('pdSheet')) return; // se cerró mientras cargaba
+    if (!d) { _pdSheetErr('🧾', 'No se pudo cargar el comprobante.'); return; }
+    _pdSheet(_pdTicketHtml(d, v), '#22d3ee');
+    try { _zonaSfx('ok'); } catch (_) {}
+  }
+  function _pdTicketHtml(d, v) {
+    const items = Array.isArray(d.items) ? d.items : [];
+    const tipoDoc = d.tipoDoc || v.tipoDoc || '', corr = d.correlativo || v.corr || d.idVenta || '';
+    const cli = String(d.clienteNombre || v.cliente || '').trim() || 'Cliente varios';
+    const doc = String(d.clienteDoc || v.doc || '').trim();
+    const fp = _pdFpLbl(d.formaPago || v.forma);
+    const total = _pdNum(d.total != null ? d.total : v.monto);
+    const tdLbl = ({ NOTA_DE_VENTA: 'Nota de venta', NV: 'Nota de venta', BOLETA: 'Boleta', FACTURA: 'Factura' })[tipoDoc] || (tipoDoc || 'Comprobante');
+    const nf = (d.nfEstado && (tipoDoc === 'BOLETA' || tipoDoc === 'FACTURA')) ? ' <span class="pd-tk-chip">' + _esc(d.nfEstado) + '</span>' : '';
+    const filas = items.length ? items.map(it => {
+      const c = _pdNum(it.cantidad), sub = _pdNum(it.subtotal), pu = _pdNum(it.precio);
+      const nom = String(it.nombre || it.sku || '—').replace(/\s*\(.*\)\s*$/, '');
+      return '<div class="pd-tk-row"><span class="q">' + c + '×</span><span class="n">' + _esc(nom) + '<em>' + _S(pu) + ' c/u</em></span><span class="s pd-mono">' + _S(sub) + '</span></div>';
+    }).join('') : '<div class="pd-empty">Sin líneas</div>';
+    return _pdSheetHead('🧾', tdLbl, corr)
+      + '<div class="pd-tk">'
+      +   '<div class="pd-tk-biz"><b>INVERSIONES MOS</b><span>Comprobante interno · solo lectura</span></div>'
+      +   '<div class="pd-tk-meta">'
+      +     '<div><i>Cliente</i>' + _esc(cli) + (doc && doc !== '66666' ? ' · ' + _esc(doc) : '') + '</div>'
+      +     '<div><i>Vendedor</i>' + _esc(d.vendedor || v.vendedor || '—') + '</div>'
+      +     '<div><i>Hora</i>' + _esc(v.hora || '—') + '</div>'
+      +     '<div><i>Pago</i>' + _esc(fp || '—') + nf + '</div>'
+      +   '</div>'
+      +   '<div class="pd-tk-items pd-scroll">' + filas + '</div>'
+      +   '<div class="pd-tk-total"><span>TOTAL</span><b class="pd-mono">' + _S(total) + '</b></div>'
+      + (d.obs ? '<div class="pd-tk-obs">📝 ' + _esc(d.obs) + '</div>' : '')
+      + '</div>';
+  }
+
+  // Guía completa (líneas) — datos de mos.zona_traslado_guia; encabezado de la fila del tablero.
+  async function zonaPersonalDiaVerGuia(pi, gi) {
+    const s = _pdState; if (!s) return; const p = s.pers[pi]; if (!p) return;
+    const g = (p.guias || [])[gi]; if (!g || !g.id) { toast('Guía no encontrada', 'error'); return; }
+    try { _zonaSfx('pop'); _zonaVibrar([12, 8, 20]); } catch (_) {}
+    _pdSheetLoading('Guía', g.dir === 'in' ? '📥' : '📤');
+    let lineas = [];
+    try {
+      const r = await API.zona.trasladoGuia({ idGuia: g.id });
+      const data = (r && r.data) || r || {};
+      lineas = (Array.isArray(data.lineas) ? data.lineas : []).map(l => ({ codBarra: l.codBarra, descripcion: l.descripcion, enviado: _pdNum(l.enviado), lote: l.lote || null }));
+      try { await _trasResolverNombres(lineas); } catch (_) {}
+    } catch (_) {}
+    if (!document.getElementById('pdSheet')) return;
+    _pdSheet(_pdGuiaHtml(g, lineas), g.dir === 'in' ? '#34d399' : '#f59e0b');
+    try { _zonaSfx('ok'); } catch (_) {}
+  }
+  function _pdGuiaHtml(g, lineas) {
+    const inn = g.dir === 'in';
+    const filas = lineas.length ? lineas.map(l => {
+      const q = _pdNum(l.enviado), nom = String(l.descripcion || l.codBarra || '—');
+      const sub = l.lote ? ('lote ' + _esc(l.lote)) : (l.codBarra ? _esc(String(l.codBarra)) : '');
+      return '<div class="pd-row"><div class="nm">' + _esc(nom) + (sub ? '<small>' + sub + '</small>' : '') + '</div><div class="rt pd-mono">' + q + '</div></div>';
+    }).join('') : '<div class="pd-empty">Sin líneas detalladas para esta guía</div>';
+    const est = g.estado ? ' <span class="pd-tk-chip">' + _esc(String(g.estado)) + '</span>' : '';
+    return _pdSheetHead(inn ? '📥' : '📤', _pdGuiaLbl(g.tipo), g.id || '')
+      + '<div class="pd-tk">'
+      +   '<div class="pd-tk-meta">'
+      +     '<div><i>Movimiento</i>' + (inn ? 'Ingreso' : 'Salida') + est + '</div>'
+      +     '<div><i>Hora</i>' + _esc(g.hora || '—') + '</div>'
+      + (g.doc ? '<div><i>Documento</i>' + _esc(g.doc) + '</div>' : '')
+      + (_pdNum(g.monto) > 0 ? '<div><i>Monto</i>' + _S(g.monto) + '</div>' : '')
+      +   '</div>'
+      +   '<div class="pd-tk-items pd-scroll"><div class="h">Productos <span class="pill">' + lineas.length + '</span></div>' + filas + '</div>'
+      + '</div>';
   }
 
   function zonaPickupToggle(sku){
@@ -59039,6 +59174,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [Personal del Día por Zona] tablero SOLO LECTURA del personal de la zona activa (auditados/pago/envasado/ventas)
     zonaAbrirPersonalDia, zonaCerrarPersonalDia, zonaPersonalDiaDia, zonaPersonalDiaSnd,
     zonaPersonalDiaSec, zonaPersonalDiaAuditar, zonaPersonalDiaVerPago,
+    zonaPersonalDiaVerTicket, zonaPersonalDiaVerGuia, zonaPersonalDiaCerrarSheet,
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
     zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos, consBuscar,
