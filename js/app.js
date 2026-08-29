@@ -32860,6 +32860,7 @@ const MOS = (() => {
   }
 
   function _tkConvSetTipo(tipo) {
+    try { navigator.vibrate(10); } catch(_){}
     _tkAcc.convCPE.tipo = tipo;
     ['Bol','Fac'].forEach(k => {
       const b = $('tkConvBtn' + k);
@@ -32875,6 +32876,51 @@ const MOS = (() => {
   function _tkConvDocChange() {
     _tkAcc.convCPE.clienteOK = false;
     $('tkConvClienteInfo').classList.add('hidden');
+    _tkConvReglasRefresh();
+  }
+
+  // [autobúsqueda] Filtra clientes frecuentes EN LA TABLA (letras o números) mientras escribes — rápido y sin
+  //  token. Si no hay coincidencia, escribes el DNI/RUC completo y usas 🔎 Buscar (SUNAT) para uno nuevo.
+  let _tkConvSugT = null, _tkConvSugData = [];
+  function _tkConvAutobuscar() {
+    clearTimeout(_tkConvSugT);
+    const q = (($('tkConvDoc') || {}).value || '').trim();
+    const sug = $('tkConvSug'); if (!sug) return;
+    if (q.length < 2) { sug.classList.add('hidden'); sug.innerHTML = ''; return; }
+    _tkConvSugT = setTimeout(async () => {
+      try {
+        const r = await API.buscarClientesFrecuentes(q);
+        let arr = (r && (r.data || r)) || [];
+        if (!Array.isArray(arr)) arr = (arr && arr.data) || [];
+        _tkConvSugData = (arr || []).slice(0, 8);
+        if (!_tkConvSugData.length) { sug.classList.add('hidden'); sug.innerHTML = ''; return; }
+        const _e = s => (_escapeHtml ? _escapeHtml(s || '') : (s || ''));
+        sug.innerHTML = _tkConvSugData.map((c, i) =>
+          `<div onclick="MOS._tkConvPick(${i})" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #16233a" onmouseover="this.style.background='#12203a'" onmouseout="this.style.background='transparent'">` +
+          `<div style="color:#e2e8f0;font-weight:700;font-size:12px">${_e(c.nombre) || '(sin nombre)'}</div>` +
+          `<div style="color:#64748b;font-size:11px">${_e(c.documento)}${c.direccion ? ' · ' + _e(c.direccion) : ''}</div></div>`
+        ).join('');
+        sug.classList.remove('hidden');
+      } catch (_) { sug.classList.add('hidden'); }
+    }, 220);
+  }
+  function _tkConvPick(i) {
+    const c = (_tkConvSugData || [])[i]; if (!c) return;
+    try { navigator.vibrate(12); } catch (_) {}
+    $('tkConvDoc').value = c.documento || '';
+    $('tkConvNombre').value = c.nombre || '';
+    const dEl = $('tkConvDireccion');
+    if (dEl) { if (c.direccion) { dEl.value = c.direccion; dEl.readOnly = true; } else { dEl.value = ''; dEl.readOnly = false; } }
+    const sug = $('tkConvSug'); if (sug) { sug.classList.add('hidden'); sug.innerHTML = ''; }
+    _tkAcc.convCPE.clienteOK = true;
+    const info = $('tkConvClienteInfo');
+    if (info) {
+      info.classList.remove('hidden');
+      const _e = s => (_escapeHtml ? _escapeHtml(s || '') : (s || ''));
+      info.innerHTML = `<div class="text-emerald-400 font-bold">✓ ${_e(c.nombre)}</div>` +
+        (c.direccion ? `<div class="text-slate-400">${_e(c.direccion)}</div>`
+                     : '<div class="text-amber-400 text-[11px]">Sin dirección — escríbela abajo si emites factura.</div>');
+    }
     _tkConvReglasRefresh();
   }
   // [reglas SUNAT en vivo · conversión NV→CPE en MOS] mismo checklist que ME + el panel VIP.
@@ -58739,7 +58785,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
     _tkCambiarFPSel, _tkCambiarFPConfirmar, _tkCambiarFPValidar,
     _tkAprobarCredConfirmar,
-    _tkConvSetTipo, _tkConvDocChange, _tkConvBuscarCliente, _tkConvertirConfirmar, _tkConvReglasRefresh,
+    _tkConvSetTipo, _tkConvDocChange, _tkConvBuscarCliente, _tkConvAutobuscar, _tkConvPick, _tkConvertirConfirmar, _tkConvReglasRefresh,
     _tkBajaSetMotivo, _tkBajaActualizarBoton, _tkBajaConfirmar,
     // F4 — Historiales adicionales (cliente / extra / personal)
     cjHistorialExtra, cfgHistorialPersonal,
