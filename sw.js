@@ -45,8 +45,11 @@ try {
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.44.21';
+const VERSION = '2.44.22';
 const CACHE   = 'mos-v' + VERSION;
+// [egress · piloto] Cache dedicado de imágenes de Supabase Storage. Nombre ESTABLE (no cuelga de VERSION)
+//   para que las fotos sobrevivan a los updates de la app y NO se re-descarguen en cada deploy/sesión.
+const IMG_CACHE = 'mos-img-v1';
 // ⚠️ Los assets propios versionados (app.js/api.js) DEBEN cachearse con EL MISMO
 // `?v=` que index.html usa en su <script src>, o el match offline falla por
 // query-string distinto (cache-first/fallback compara la URL completa, query
@@ -105,7 +108,7 @@ self.addEventListener('install', e => {
 //   mos_device_id que device-auth.js guarda (localStorage → IndexedDB → Cache) para
 //   sobrevivir a un "borrar datos del sitio". Este activate la venía borrando en CADA
 //   bump de versión, dejando la identidad del equipo colgando de dos patas.
-const CACHES_INTOCABLES = ['da-device-cache'];
+const CACHES_INTOCABLES = ['da-device-cache', IMG_CACHE];
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
@@ -161,6 +164,27 @@ self.addEventListener('fetch', e => {
 
   let url;
   try { url = new URL(e.request.url); } catch (_) { return; }
+
+  // [egress · piloto] Imágenes de Supabase Storage → CACHE-FIRST en IMG_CACHE (dedicado, sobrevive updates).
+  //   Las URLs llevan ?v=<ts> versionado en la BD → una foto reemplazada = URL nueva = cache-miss = baja la
+  //   nueva → NUNCA foto vieja. Corta el re-download por sesión (baja el Cached Egress). SOLO /storage/v1/;
+  //   rest/functions/auth de Supabase caen al passthrough de abajo (datos SIEMPRE en vivo, jamás cacheados).
+  if (url.hostname.endsWith('.supabase.co') && url.pathname.startsWith('/storage/v1/')) {
+    e.respondWith((async () => {
+      try {
+        const cache = await caches.open(IMG_CACHE);
+        const hit = await cache.match(e.request);
+        if (hit) return hit;
+        const res = await fetch(e.request);
+        try { if (res && (res.status === 200 || res.status === 0)) cache.put(e.request, res.clone()).catch(() => {}); } catch (_) {}
+        return res;
+      } catch (_) {
+        try { const c = await caches.open(IMG_CACHE); const h = await c.match(e.request); if (h) return h; } catch (_) {}
+        return _respFallback('imagen no disponible sin conexión');
+      }
+    })());
+    return;
+  }
 
   // Cross-origin (firebase CDN, supabase, gstatic, etc.) → passthrough nativo.
   if (url.origin !== self.location.origin) return;
