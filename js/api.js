@@ -1530,9 +1530,14 @@ const API = (() => {
     const ext = (mime || '').includes('png') ? 'png' : (mime || '').includes('webp') ? 'webp' : 'jpg';
     // limpiar prefijo data-URI (FileReader.readAsDataURL lo agrega) — sin esto atob() lanza.
     const b64 = String(base64 || '').replace(/^data:[^;]+;base64,/, '');
-    // nombre estable: el skuBase comparte foto entre canónico/presentaciones → un mismo skuBase sobreescribe.
+    // [egress · piloto] nombre ÚNICO por subida (timestamp) → cada foto es un ARCHIVO NUEVO = URL inmutable.
+    //   Antes era estable + x-upsert (misma ruta sobreescrita), lo que rompía el cache-first del SW: distintas
+    //   ?v apuntaban a la MISMA ruta reemplazada, y el SW servía la imagen vieja bajo el ?v viejo (parpadeo a
+    //   la foto anterior). Con nombre único, una URL = un archivo para siempre → cache-first coherente. El
+    //   archivo viejo queda huérfano (Storage barato; limpieza aparte). set_foto_producto sigue actualizando
+    //   TODAS las filas del skuBase al nuevo foto_url, así que la propagación (trigger catalogo_version) intacta.
     const seed = (nombreSeed != null && String(nombreSeed) !== '') ? String(nombreSeed) : String(skuBase || 'foto');
-    const nombre = seed.replace(/[^a-zA-Z0-9_\-\.]/g, '_') + '.' + ext;
+    const nombre = seed.replace(/[^a-zA-Z0-9_\-\.]/g, '_') + '_' + Date.now() + '.' + ext;
     const path = `productos/${encodeURIComponent(String(skuBase || 'sin-sku'))}/${nombre}`;
     const bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
     // upsert vía x-upsert (la foto del skuBase se REEMPLAZA al cambiarla). El bucket tiene policy UPDATE para
@@ -1970,7 +1975,10 @@ const API = (() => {
       }
       const d = (out.data && typeof out.data === 'object') ? out.data : {};
       // shape paritario con GAS: {skuBase, fotoUrl, fileId, actualizados}. fileId = path en Storage (para borrar).
-      return { ok: true, skuBase: sku, fotoUrl: up.url, fileId: up.path, actualizados: d.actualizados || 0 };
+      // [fix parpadeo] devolver la URL VERSIONADA que guardó el RPC (d.fotoUrl, con ?v) — no la limpia (up.url) —
+      //   para que el front adopte EXACTAMENTE la URL del catálogo (misma key de caché del SW) y no re-renderice
+      //   con una URL distinta un instante.
+      return { ok: true, skuBase: sku, fotoUrl: (d.fotoUrl || up.url), fileId: up.path, actualizados: d.actualizados || 0 };
     }
 
     if (action === 'subirImagenConfig') {
