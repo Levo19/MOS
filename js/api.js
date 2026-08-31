@@ -1385,6 +1385,7 @@ const API = (() => {
   //    · almacenKardex()     → mos.almacen_kardex_historial(p {codBarra|skuBase}) → historial del kardex de ALMACÉN.
   //   Devuelven la respuesta cruda {ok,data,...} (o null si no hay token). El caller (app.js) lee r.data.
   async function _zonaDiferencias(params)       { const r = await _sbRpcMOS('stock_diferencias_listar', { p: _zonaParams(params || {}) }, 'mos'); return r; }
+  async function _zonaDiferenciasResumen()      { const r = await _sbRpcMOS('stock_diferencias_resumen', { p: {} }, 'mos'); return r; }
   async function _zonaKardexHistorial(params)   { const r = await _sbRpcMOS('zona_kardex_historial',     { p: _zonaParams(params || {}) }, 'mos'); return r; }
   // [RIZ · ALMACEN] proveedores REALES por canónico (lazy-load por card). mos.zona_proveedores(p {sku|skus})
   //   → {ok,data:{proveedores:{"<sku>":[{nombre,idProveedor,precioRef,diasEntrega}]}},_fresh}. SOLO LECTURA.
@@ -4576,7 +4577,8 @@ const API = (() => {
       imprimir:        _zonaImprimir,           // Edge riz-print {tipo,zona,fecha|semana,printerId} → {ok,printJobId}
       ia:              _zonaIA,                 // Edge /functions/ia {messages,system?,model?} → JSON Claude (.content[0].text)
       // [ASEGURAR DATA] diagnóstico de stock — SOLO LECTURA (no muta stock). Botón master + historial en el card.
-      diferencias:     _zonaDiferencias,        // mos.stock_diferencias_listar(p {ambito?,zona?}) → {ok,data:{total,items:[...]},_fresh}
+      diferencias:     _zonaDiferencias,
+      diferenciasResumen: _zonaDiferenciasResumen, // mos.stock_diferencias_resumen → {ok,data:{sis,ope,cfg,total}} (badge avisador)        // mos.stock_diferencias_listar(p {ambito?,zona?}) → {ok,data:{total,items:[...]},_fresh}
       kardexHistorial: _zonaKardexHistorial,    // mos.zona_kardex_historial(p {zona,codBarra|skuBase}) → {ok,data:{movimientos:[...]},_fresh}
       proveedores:     _zonaProveedores,        // mos.zona_proveedores(p {sku|skus}) → {ok,data:{proveedores:{"<sku>":[...]}},_fresh} (ALMACEN, lazy por card)
       almacenKardex:   _almacenKardexHistorial, // mos.almacen_kardex_historial(p {codBarra|skuBase}) → {ok,data:{movimientos:[...]},_fresh}

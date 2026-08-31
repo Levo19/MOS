@@ -14853,6 +14853,7 @@ const MOS = (() => {
   function abrirMesaCompras(filtro) {
     _opsInyectarKeyframes();
     _mesaComprasInyectarCSS();
+    try { _zonaSfx('pop'); _zonaVibrar([20, 12, 20]); } catch (_) {}
     if (filtro) S._mesaFiltro = filtro;
     let modal = document.getElementById('mesaComprasModal');
     if (!modal) {
@@ -15429,7 +15430,7 @@ const MOS = (() => {
   function _mesaComprasSyncBadge() {
     try {
       const n = _comprasFlat().reduce((a, op) => a + (_comprasEstado(op).fase !== 'finalizado' ? 1 : 0), 0);
-      document.querySelectorAll('.btn-mesa-compras .bmc-n').forEach(el => {
+      document.querySelectorAll('.btn-mesa-compras .bmc-n, #zonaBtnCompras .bmc-n').forEach(el => {
         el.textContent = n; el.style.display = n > 0 ? 'grid' : 'none';
       });
     } catch(_){}
@@ -51314,6 +51315,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         if (t && !t.disabled) _zonaRipple(ev, t);
       } catch (_) {}
     }, { passive: true });
+    // [1005-UX] Dock háptico: pop + vibración corta al presionar cualquier botón del dock (delegado único).
+    const dock = document.querySelector('.zhb-groups');
+    if (dock && !dock._hapticOn) {
+      dock._hapticOn = true;
+      dock.addEventListener('pointerdown', (ev) => {
+        try {
+          const t = ev.target && ev.target.closest('.zona-btn-sec');
+          if (t && !t.disabled) { _zonaSfx('pop'); _zonaVibrar([14]); }
+        } catch (_) {}
+      }, { passive: true });
+    }
   }
 
   function _zonaPoblarSelector() {
@@ -51612,8 +51624,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // [Fase 2 FEFO] 📅 Por vencer en TODAS las zonas: almacén = lotes WH; zonas = libro me.zona_lotes
     if (bv) bv.classList.remove('hidden');
     if (bs) bs.classList.toggle('hidden', !esAlm || !_esAdminSesion());
+    // [1005-UX] 🧾 Compras (mesa de compras del catálogo) también en el dock del puesto Almacén — solo admins.
+    const bco = $('zonaBtnCompras');
+    if (bco) bco.classList.toggle('hidden', !esAlm || !_esAdminSesion());
+    if (bco && esAlm) { try { _mesaComprasSyncBadge(); } catch (_) {} }
     if (esAlm) _mermasBadgeRefrescar();
     _vencBadgeRefrescar(esAlm ? null : S.zonaActual);
+    _logBadgeRefrescar();
   }
   // Badge rojo = lotes VENCIDOS + CRÍTICOS (≤7d) del alcance activo (almacén o zona)
   async function _vencBadgeRefrescar(zona) {
@@ -51633,6 +51650,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const n = rows.filter(m => m.vencida).length;
       const b = $('zonaMermasBadge');
       if (b) { b.textContent = String(n); b.style.display = n > 0 ? '' : 'none'; }
+    } catch (_) {}
+  }
+
+  // [1005-UX · AVISADOR] Badge rojo del "⚠ Log de errores" = diferencias SISTÉMICAS abiertas (tipos 1/2/3:
+  //   stock congelado / kardex inconsistente / salida sin descuento). Son las que persigue el master y no deben
+  //   reincidir → si el número sube, algo volvió a fallar en el código. RPC barata (solo cuenta, SQL 1005-B).
+  async function _logBadgeRefrescar() {
+    try {
+      const esMaster = (S.session && (S.session.rol || '').toLowerCase() === 'master');
+      const b = $('zonaLogBadge');
+      if (!b || !esMaster) { if (b) b.style.display = 'none'; return; }
+      const r = await API.zona.diferenciasResumen();
+      const n = (r && r.ok && r.data && (r.data.sis | 0)) || 0;
+      b.textContent = String(n); b.style.display = n > 0 ? '' : 'none';
     } catch (_) {}
   }
 
