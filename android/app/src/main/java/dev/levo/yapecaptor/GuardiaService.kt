@@ -115,6 +115,9 @@ class GuardiaService : Service() {
             if (!Prefs.leer(this).completa()) break
             pingRed()
             YapeListener.reatar(this)
+            // [FIX Redmi/MIUI 2] Barrido periódico: si el listener quedó conectado pero un Yape se quedó en
+            //   la barra sin leerse (MIUI desató/re-ató sin ciclo visible), esta ronda lo rescata. Idempotente.
+            YapeListener.barrerActivas()
             if (Cola.tamano(this) > 0) ColaService.despertar(this)
             vueltas++
             // [957] Latido REAL cada ronda (2,5 min), no cada 10: los comandos de MosGuard (espía/foto/

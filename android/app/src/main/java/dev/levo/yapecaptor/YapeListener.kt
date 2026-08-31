@@ -61,6 +61,22 @@ class YapeListener : NotificationListenerService() {
             } catch (_: Throwable) {}
         }
 
+        /**
+         * Instancia del listener actualmente CONECTADA (o null si está desatado). La usa la guardia para
+         * barrer la barra sin depender de una reconexión.
+         */
+        @Volatile private var conectado: YapeListener? = null
+
+        /**
+         * [FIX Redmi/MIUI 2] Barrido PERIÓDICO desde la guardia (cada ronda, ~2,5 min). El barrido de
+         * onListenerConnected solo dispara al RE-conectar; si MIUI dejó el listener conectado pero un Yape
+         * quedó en la barra sin leerse, este barrido lo rescata sin esperar un ciclo de desconexión.
+         * Idempotente (dedup por notifKey en el server). No-op si no hay listener conectado.
+         */
+        fun barrerActivas() {
+            try { conectado?.barrer() } catch (_: Throwable) {}
+        }
+
         /** ¿Este texto es un cobro que entró? */
         fun esCobroEntrante(texto: String): Boolean {
             if (texto.isBlank()) return false
@@ -136,8 +152,14 @@ class YapeListener : NotificationListenerService() {
         }
     }
 
+    /** Relee las notificaciones que YA están en la barra y las pasa por procesar(). Idempotente. */
+    fun barrer() {
+        try { activeNotifications?.forEach { procesar(it) } } catch (e: Throwable) { Log.w(TAG, "barrido falló", e) }
+    }
+
     override fun onListenerConnected() {
         Log.i(TAG, "listener conectado")
+        conectado = this
         Prefs.marcarListenerVivo(applicationContext, true)
         GuardiaService.arrancar(applicationContext)
         ColaService.despertar(applicationContext)
@@ -151,11 +173,12 @@ class YapeListener : NotificationListenerService() {
         //   matcheado, y recupera el correcto con su hora real (`when`). La guardia pide rebind cada ~2,5 min,
         //   así que este barrido rescata el Yape mientras su notificación siga mostrándose. (Moto/near-stock no
         //   lo necesita porque su listener nunca se desata, pero el barrido no le hace daño.)
-        try { activeNotifications?.forEach { procesar(it) } } catch (e: Throwable) { Log.w(TAG, "barrido de reconexión falló", e) }
+        barrer()
     }
 
     override fun onListenerDisconnected() {
         Log.w(TAG, "listener DESCONECTADO")
+        conectado = null
         Prefs.marcarListenerVivo(applicationContext, false)
         // pedirle a Android que lo vuelva a atar (pasa tras actualizar la app o al reiniciar)
         try { requestRebind(android.content.ComponentName(this, YapeListener::class.java)) } catch (_: Throwable) {}
