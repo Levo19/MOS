@@ -71,6 +71,15 @@ class YapeListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        procesar(sbn)
+    }
+
+    /**
+     * Procesa UNA notificación, venga en vivo (onNotificationPosted) o del barrido de reconexión
+     * (onListenerConnected). Idempotente: el server deduplica por notifKey, así que re-pasar una
+     * notificación ya capturada es inofensivo (nunca duplica ni re-abre un Yape matcheado).
+     */
+    private fun procesar(sbn: StatusBarNotification?) {
         val n = sbn ?: return
         try {
             if (n.packageName !in PAQUETES_YAPE) return
@@ -134,6 +143,15 @@ class YapeListener : NotificationListenerService() {
         ColaService.despertar(applicationContext)
         LatidoReceiver.programar(applicationContext)   // el equipo empieza a avisar que está vivo
         LatidoReceiver.latir(applicationContext)
+        // [FIX Redmi/MIUI] Barrido de reconexión. MIUI mata y re-ata el listener SIN matar la app (la
+        //   guardia/latido siguen vivos → el equipo se ve "en línea"), pero un Yape que llegó mientras el
+        //   listener estuvo desconectado quedó VISIBLE en la barra y onNotificationPosted NUNCA disparó → se
+        //   perdía para siempre. Aquí, al reconectar, releemos lo que YA está en la barra y lo pasamos por el
+        //   mismo camino. Idempotente (el server deduplica por notifKey) → jamás duplica ni re-abre un Yape ya
+        //   matcheado, y recupera el correcto con su hora real (`when`). La guardia pide rebind cada ~2,5 min,
+        //   así que este barrido rescata el Yape mientras su notificación siga mostrándose. (Moto/near-stock no
+        //   lo necesita porque su listener nunca se desata, pero el barrido no le hace daño.)
+        try { activeNotifications?.forEach { procesar(it) } } catch (e: Throwable) { Log.w(TAG, "barrido de reconexión falló", e) }
     }
 
     override fun onListenerDisconnected() {
