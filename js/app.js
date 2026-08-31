@@ -7680,6 +7680,13 @@ const MOS = (() => {
                     onmouseout="this.style.borderColor='${accent}55';this.style.boxShadow='none'">
               <span style="font-size:18px">📷</span> Tomar foto (cámara)
             </button>
+            ${fotoActualUrl ? `<button onclick="MOS._catFotoDescargar()"
+                    title="Descarga la foto actual a tu dispositivo para editarla y volver a subirla"
+                    style="background:linear-gradient(135deg,#0f2a1e,#0a1a14);border:1px solid #10b98188;color:#6ee7b7;border-radius:10px;padding:14px 12px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .25s"
+                    onmouseover="this.style.borderColor='#10b981';this.style.boxShadow='0 6px 18px -3px rgba(16,185,129,.4)'"
+                    onmouseout="this.style.borderColor='#10b98188';this.style.boxShadow='none'">
+              <span style="font-size:18px">⬇️</span> Descargar foto actual
+            </button>` : ''}
             <div style="border-top:1px solid #1e293b;padding-top:12px;margin-top:auto">
               <div style="font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
                 Se aplica a (${totalCompartidos})
@@ -7722,7 +7729,40 @@ const MOS = (() => {
     const old = document.getElementById('catFotoModal');
     if (old) old.remove();
     document.body.insertAdjacentHTML('beforeend', html);
-    window._catFotoState = { skuBase: sku, fotoBase64: '', mimeType: '' };
+    window._catFotoState = { skuBase: sku, fotoBase64: '', mimeType: '', fotoActualUrl: fotoActualUrl };
+  }
+
+  // [descarga] Baja la foto ACTUAL del producto al dispositivo (para editarla y re-subirla).
+  //   Descarga real vía blob (fuerza el guardado con nombre sku.ext). Si CORS/red falla, cae a abrir
+  //   la imagen en otra pestaña para guardarla a mano. No toca el catálogo ni el stock.
+  async function _catFotoDescargar() {
+    const st = window._catFotoState;
+    const url = st && String(st.fotoActualUrl || '').trim();
+    if (!url) { toast('No hay foto para descargar', 'warn'); return; }
+    const sku = (st && st.skuBase) || 'producto';
+    try { _opsBeep && _opsBeep('tac'); } catch (_) {}
+    try {
+      const resp = await fetch(url, { mode: 'cors', cache: 'no-store' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const blob = await resp.blob();
+      let ext = (blob.type && blob.type.split('/')[1]) || (url.split('?')[0].split('.').pop()) || 'jpg';
+      if (!ext || ext.length > 5) ext = 'jpg';
+      if (ext === 'jpeg') ext = 'jpg';
+      const obj = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = obj; a.download = sku + '.' + ext;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(obj); } catch (_) {} }, 4000);
+      toast('⬇️ Foto descargada como ' + sku + '.' + ext, 'success', 2800);
+    } catch (e) {
+      // Fallback (CORS/red): abrir en pestaña nueva para guardar manual
+      try {
+        window.open(url, '_blank', 'noopener');
+        toast('Abrí la foto en otra pestaña — mantén presionado o clic derecho → "Guardar imagen"', 'info', 6000);
+      } catch (_) {
+        toast('No se pudo descargar la foto', 'error', 4000);
+      }
+    }
   }
   function cerrarModalFotoProducto() {
     const m = document.getElementById('catFotoModal');
@@ -59459,7 +59499,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _purgaConfirmar, _cerrarConfirmPurga, _purgaValidarClave, _purgaEjecutar,
     // [v2.43.38] Foto del producto: subir/cambiar (skuBase como key)
     abrirModalFotoProducto, cerrarModalFotoProducto,
-    _catFotoOnFileSelect, _catFotoTomar, _catFotoGuardar,
+    _catFotoOnFileSelect, _catFotoTomar, _catFotoGuardar, _catFotoDescargar,
     // Cajas
     loadCajas, toggleCajaDetail, confirmarAnularTicket, abrirModalMetodo, cerrarModalMetodo, aplicarCambioMetodo,
     _selMetodo, _onMixtoInput, _renderModalMetodo,
