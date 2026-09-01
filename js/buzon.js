@@ -289,10 +289,10 @@
       var C=CAT[t.categoria]||CAT.rep; var soyMaster=esMaster();
       var facts=factsOf(t);
       var body='<div class="bz-facts">'+facts+'</div><div class="bz-thread" id="bz-thread">'+ms.map(function(m){return msgHtml(m,soyMaster);}).join('')+'</div>';
-      var acts = soyMaster? '<div class="bz-acts"><button onclick="BUZON.estado(\'PROCESO\')">▶ En proceso</button><button onclick="BUZON.estado(\'RESUELTO\')">✓ Resolver</button></div>' : '';
+      var acts = soyMaster? '<div class="bz-acts"><button id="bz-sug" onclick="BUZON.sugerir()" style="border-color:#7c5cff88">🤖 Sugerir respuesta</button><button onclick="BUZON.estado(\'PROCESO\')">▶ En proceso</button><button onclick="BUZON.estado(\'RESUELTO\')">✓ Resolver</button></div>' : '';
       rMedia=[];   // [2.44.28] adjuntos por-respuesta: limpio al abrir el hilo
       var reply='<div style="padding:0 14px"><div class="bz-media" id="bz-rmedia" style="display:none;margin:6px 0"></div>'+
-        '<div class="bz-addb" style="margin:4px 0 6px"><button onclick="BUZON.pickR(\'img\',false)">🖼️ Galería</button><button onclick="BUZON.pickR(\'img\',true)">📷 Cámara</button><button onclick="BUZON.pickR(\'vid\',false)">🎥 Video</button></div></div>'+
+        '<div class="bz-addb" style="margin:4px 0 6px"><button onclick="BUZON.pickR(\'img\',false)">🖼️ Galería</button><button onclick="BUZON.pickR(\'img\',true)">📷 Cámara</button><button onclick="BUZON.pickR(\'vid\',false)">🎥 Video</button><button onclick="BUZON.recorte()">✂️ Recorte</button></div></div>'+
         '<div class="bz-reply"><textarea class="bz-ta" id="bz-rta" placeholder="'+(soyMaster?'Responde… (solo esa persona recibe el aviso)':'Escribe un mensaje…')+'"></textarea><button class="snd" onclick="BUZON.responder()">➤</button></div>';
       panel('<div class="bz-h"><div class="mbx" style="background:'+C.c+'">'+C.e+'</div><div style="min-width:0"><b>'+esc(t.titulo)+'</b><div class="sub">'+esc(t.autor)+(t.zona?' · '+esc(t.zona):'')+' · '+esc(t.codigo)+'</div></div><span class="bz-est" style="margin-left:auto">'+estLabel(t.estado)+'</span><button class="bz-x" onclick="BUZON.volver()" style="margin-left:8px">✕</button></div>'+
         '<div class="bz-body">'+body+'</div>'+acts+reply);
@@ -327,10 +327,72 @@
     var med=rMedia.map(function(m){return {tipo:m.tipo,url:m.url,path:m.path,cap:m.cap||''};});
     ta.value=''; ta.disabled=true;
     api('buzonResponder',{idTicket:_cur,autorTipo:esMaster()?'master':'admin',autorNombre:nombre(),texto:v,media:med})
-    .then(function(r){ var d=r&&(r.data||r); if(!d||d.ok===false)throw new Error((d&&d.error)||'no'); rMedia=[]; sfx.send(); abrir(_cur); })
+    .then(function(r){ var d=r&&(r.data||r); if(!d||d.ok===false)throw new Error((d&&d.error)||'no'); rMedia=[]; sfx.send();
+      // [2.44.29 · SQL 1009] cada respuesta del Master ENSEÑA a la IA (fire-and-forget; lee también las capturas)
+      if(esMaster()){ try{ edgeIA({op:'indexar_qa',idTicket:_cur}).catch(function(){}); }catch(_){} }
+      abrir(_cur); })
     .catch(function(e){ if(ta){ta.disabled=false;ta.value=v;} toast('No se envió: '+(e.message||e)); });
   };
   B.estado=function(e){ api('buzonEstado',{idTicket:_cur,estado:e}).then(function(r){ var d=r&&(r.data||r); if(!d||d.ok===false)throw new Error((d&&d.error)||'no'); sfx.pick(); toast('Estado: '+estLabel(e)); abrir(_cur); poll(); }).catch(function(err){ toast('No se pudo: '+(err.message||err)); }); };
+
+  /* ══ IA del buzón + Recorte de pantalla [2.44.29 · SQL 1009 · Edge buzon-ia] ══ */
+  var ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
+  function edgeIA(body){ var A=apiRef(); if(!A||!A._sb||!A._sb.mintToken) return Promise.reject(new Error('API sin mintToken'));
+    return A._sb.mintToken().then(function(tk){ if(!tk) throw new Error('sin token MOS');
+      return fetch('https://rzbzdeipbtqkzjqdchqk.supabase.co/functions/v1/buzon-ia',{ method:'POST',
+        headers:{ 'apikey':ANON, 'Authorization':'Bearer '+tk, 'Content-Type':'application/json' },
+        body: JSON.stringify(body) }).then(function(r){ return r.json(); }); }); }
+  B.sugerir=function(){ var b=document.getElementById('bz-sug'); if(b&&b.disabled)return; if(b){b.disabled=true;b.textContent='🤖 pensando…';}
+    function fin(){ var b2=document.getElementById('bz-sug'); if(b2){b2.disabled=false;b2.textContent='🤖 Sugerir respuesta';} }
+    edgeIA({op:'sugerir',idTicket:_cur}).then(function(d){ fin();
+      if(!d||d.ok!==true){ toast('IA: '+((d&&d.error)||'sin respuesta')); return; }
+      var ta=document.getElementById('bz-rta'); if(ta){ ta.value=d.borrador||''; ta.focus(); }
+      var f=(d.fuentes||[]).map(function(x){return x.seccion;}).slice(0,2).join(' · ');
+      toast('🤖 Borrador listo — EDÍTALO antes de enviar'+(d.qaUsadas?' · usé '+d.qaUsadas+' respuesta(s) tuyas':'')+(f?' · Manual: '+f:''));
+      sfx.pick();
+    }).catch(function(e){ fin(); toast('IA: '+(e.message||e)); }); };
+  /* Recorte: esconde el buzón, marcas un área del panel MOS y se adjunta como captura a la respuesta */
+  var _h2cP=null;
+  function h2c(){ if(window.html2canvas)return Promise.resolve(window.html2canvas); if(_h2cP)return _h2cP;
+    _h2cP=new Promise(function(res,rej){ var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload=function(){res(window.html2canvas);}; s.onerror=function(){_h2cP=null;rej(new Error('no cargó html2canvas (¿sin internet?)'));};
+      document.head.appendChild(s); }); return _h2cP; }
+  B.recorte=function(){
+    h2c().then(function(){ if(ov)ov.classList.remove('on');
+      var sel=document.createElement('div');
+      sel.style.cssText='position:fixed;inset:0;z-index:2147483005;cursor:crosshair;background:rgba(10,8,15,.12);touch-action:none';
+      sel.innerHTML='<div style="position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#0f172aee;color:#fff;padding:8px 16px;border-radius:999px;font-size:13px;font-weight:700;pointer-events:none;white-space:nowrap">✂️ Arrastra para marcar el área · Esc cancela</div>';
+      var box=document.createElement('div'); box.style.cssText='position:fixed;border:2px dashed #e9a72c;background:#e9a72c22;display:none;pointer-events:none'; sel.appendChild(box);
+      var sx=0,sy=0,drag=false;
+      function fin(){ try{document.removeEventListener('keydown',onEsc);}catch(_){} if(sel.parentNode)sel.parentNode.removeChild(sel); }
+      function onEsc(e){ if(e.key==='Escape'){ fin(); if(ov)ov.classList.add('on'); } }
+      document.addEventListener('keydown',onEsc);
+      sel.addEventListener('pointerdown',function(e){ drag=true; sx=e.clientX; sy=e.clientY; try{sel.setPointerCapture(e.pointerId);}catch(_){}
+        box.style.display='block'; box.style.left=sx+'px'; box.style.top=sy+'px'; box.style.width='0'; box.style.height='0'; });
+      sel.addEventListener('pointermove',function(e){ if(!drag)return; box.style.left=Math.min(sx,e.clientX)+'px'; box.style.top=Math.min(sy,e.clientY)+'px'; box.style.width=Math.abs(e.clientX-sx)+'px'; box.style.height=Math.abs(e.clientY-sy)+'px'; });
+      sel.addEventListener('pointerup',function(e){ if(!drag)return; drag=false;
+        var x=Math.min(sx,e.clientX),y=Math.min(sy,e.clientY),w=Math.abs(e.clientX-sx),h=Math.abs(e.clientY-sy);
+        fin();
+        if(w<12||h<12){ if(ov)ov.classList.add('on'); return; }
+        setTimeout(function(){
+          window.html2canvas(document.body,{ x:x+window.scrollX, y:y+window.scrollY, width:w, height:h,
+            scale:Math.min(2,window.devicePixelRatio||1), useCORS:true, logging:false,
+            ignoreElements:function(el){ return /bz-fab|bz-ov|bz-toast|tfanChip|tfanPanel/.test(String(el.className||'')+' '+String(el.id||'')); } })
+          .then(function(cv){
+            var b64=cv.toDataURL('image/jpeg',.85);
+            if(ov)ov.classList.add('on');
+            var slot={tipo:'foto',cap:'recorte del panel',up:true,url:''}; rMedia.push(slot); renderRMedia(); sfx.tick();
+            api('buzonRepSubir',{base64:b64,mimeType:'image/jpeg'}).then(function(r){ var d=r&&(r.data||r);
+              if(!d||d.ok===false||!d.url) throw new Error((d&&d.error)||'no se pudo subir');
+              slot.up=false; slot.url=d.url; slot.path=d.path; renderRMedia(); toast('✂️ Recorte adjuntado');
+            }).catch(function(e2){ var i=rMedia.indexOf(slot); if(i>=0)rMedia.splice(i,1); renderRMedia(); toast('Recorte: '+(e2.message||e2)); });
+          }).catch(function(e3){ if(ov)ov.classList.add('on'); toast('Recorte: '+(e3.message||e3)); });
+        },60);
+      });
+      document.body.appendChild(sel);
+    }).catch(function(e){ toast('Recorte: '+(e.message||e)); });
+  };
 
   /* ── lightbox ── */
   var lit=null;

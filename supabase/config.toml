@@ -83,3 +83,9 @@ verify_jwt = false
 
 [functions.buzon-igv]
 verify_jwt = false
+
+# Edge Function `buzon-ia`: cerebro del Buzón Directo (SQL 1009) — sugerir respuesta al Master (RAG del
+# manual operativo + respuestas previas), indexar QA e indexar el corpus. Firma JWT + claim app='MOS'
+# (o service_role para el indexador local). Embeddings/generación: Gemini (GEMINI_API_KEY).
+[functions.buzon-ia]
+verify_jwt = true
