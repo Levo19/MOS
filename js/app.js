@@ -33530,7 +33530,10 @@ const MOS = (() => {
       ``,
       `Tickets:       ${c.tickets || 0}`,
       `Efectivo:      S/ ${parseFloat(c.efectivo || 0).toFixed(2)}`,
-      `Por cobrar:    ${c.sinCobrar || 0}  ← vuelven a mesa créditos`,
+      // [2.44.26 · incidente 01-sep] me.cerrar_caja_forzado pone forma_pago='ANULADO' a los POR_COBRAR de la
+      // caja: NO vuelven a la mesa de créditos (29 tickets de vendedores se anularon el 01-sep). Decirlo claro.
+      `Por cobrar:    ${c.sinCobrar || 0}  ← ⚠ se ANULAN (ticket vendido sin cobrar en caja)`,
+      ...((parseInt(c.sinCobrar, 10) || 0) > 0 ? [`⚠ ${c.sinCobrar} ticket(s) POR_COBRAR quedarán ANULADOS. Si los clientes ya pagaron o van a pagar, cóbralos antes (o pide a un cajero que retome la caja).`] : []),
       ypWarn,
       `Efectivo esperado: S/ ${parseFloat(c.efectivoEsperado || 0).toFixed(2)}`,
       ``,
