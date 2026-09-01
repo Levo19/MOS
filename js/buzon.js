@@ -233,21 +233,33 @@
   }
   B.rmMedia=function(i){ media.splice(i,1); renderMedia(); };
   B.cap=function(i,v){ if(media[i])media[i].cap=v; };
-  B.pick=function(kind,cam){ if(media.length>=8){toast('Máximo 8 archivos');return;}
+  B.pick=function(kind,cam){ if(media.length>=8){toast('Máximo 8 archivos');return;} pickTo(kind,cam,media,renderMedia); };
+  /* [2.44.28] adjuntos TAMBIÉN en las respuestas del hilo (master y admin): mismo pipeline
+     de compresión/subida que el compose, con su propio arreglo por-respuesta. */
+  var rMedia=[];
+  B.pickR=function(kind,cam){ if(rMedia.length>=8){toast('Máximo 8 archivos');return;} pickTo(kind,cam,rMedia,renderRMedia); };
+  function pickTo(kind,cam,arr,rerender){
     var inp=document.createElement('input'); inp.type='file'; inp.accept=kind==='vid'?'video/*':'image/*'; if(cam)inp.capture='environment';
-    inp.onchange=function(){ var file=inp.files&&inp.files[0]; if(file)subir(file,kind==='vid'?'video':'foto'); };
+    inp.onchange=function(){ var file=inp.files&&inp.files[0]; if(file)subirTo(arr,rerender,file,kind==='vid'?'video':'foto'); };
     inp.click();
-  };
-  function subir(file,tipo){
+  }
+  function subirTo(arr,rerender,file,tipo){
     if(tipo==='video' && file.size>25*1024*1024){ toast('El video es muy pesado (máx 25MB). Grábalo más corto.'); return; }
-    var slot={tipo:tipo,cap:'',up:true,url:''}; media.push(slot); renderMedia(); sfx.tick();
+    var slot={tipo:tipo,cap:'',up:true,url:''}; arr.push(slot); rerender(); sfx.tick();
     prep(file,tipo).then(function(o){
       return api('buzonRepSubir',{base64:o.b64,mimeType:o.mime}).then(function(r){ var d=r&&(r.data||r);
         if(!d||d.ok===false||!d.url){ throw new Error((d&&d.error)||'no se pudo subir'); }
-        slot.up=false; slot.url=d.url; slot.path=d.path; renderMedia();
+        slot.up=false; slot.url=d.url; slot.path=d.path; rerender();
       });
-    }).catch(function(e){ var i=media.indexOf(slot); if(i>=0)media.splice(i,1); renderMedia(); toast('No se pudo subir: '+(e.message||e)); });
+    }).catch(function(e){ var i=arr.indexOf(slot); if(i>=0)arr.splice(i,1); rerender(); toast('No se pudo subir: '+(e.message||e)); });
   }
+  function renderRMedia(){ var g=document.getElementById('bz-rmedia'); if(!g)return;
+    g.style.display=rMedia.length?'grid':'none';
+    g.innerHTML=rMedia.map(function(m,i){ var inner = m.up?'<div class="up">subiendo…</div>' : (m.tipo==='video'?'<video src="'+esc(m.url)+'" muted></video><div class="pl">▶</div>':'<img src="'+esc(m.url)+'">');
+      return '<div class="bz-ph">'+inner+'<button class="rm" onclick="BUZON.rmMediaR('+i+')">✕</button><input class="ci" value="'+esc(m.cap||'')+'" oninput="BUZON.capR('+i+',this.value)" placeholder="explicar…"></div>'; }).join('');
+  }
+  B.rmMediaR=function(i){ rMedia.splice(i,1); renderRMedia(); };
+  B.capR=function(i,v){ if(rMedia[i])rMedia[i].cap=v; };
   function prep(file,tipo){ return new Promise(function(res,rej){
     if(tipo!=='foto'){ var fr=new FileReader(); fr.onload=function(){ res({b64:fr.result,mime:file.type||'video/mp4'}); }; fr.onerror=rej; fr.readAsDataURL(file); return; }
     var img=new Image(); var url=URL.createObjectURL(file);
@@ -278,7 +290,10 @@
       var facts=factsOf(t);
       var body='<div class="bz-facts">'+facts+'</div><div class="bz-thread" id="bz-thread">'+ms.map(function(m){return msgHtml(m,soyMaster);}).join('')+'</div>';
       var acts = soyMaster? '<div class="bz-acts"><button onclick="BUZON.estado(\'PROCESO\')">▶ En proceso</button><button onclick="BUZON.estado(\'RESUELTO\')">✓ Resolver</button></div>' : '';
-      var reply='<div class="bz-reply"><textarea class="bz-ta" id="bz-rta" placeholder="'+(soyMaster?'Responde… (solo esa persona recibe el aviso)':'Escribe un mensaje…')+'"></textarea><button class="snd" onclick="BUZON.responder()">➤</button></div>';
+      rMedia=[];   // [2.44.28] adjuntos por-respuesta: limpio al abrir el hilo
+      var reply='<div style="padding:0 14px"><div class="bz-media" id="bz-rmedia" style="display:none;margin:6px 0"></div>'+
+        '<div class="bz-addb" style="margin:4px 0 6px"><button onclick="BUZON.pickR(\'img\',false)">🖼️ Galería</button><button onclick="BUZON.pickR(\'img\',true)">📷 Cámara</button><button onclick="BUZON.pickR(\'vid\',false)">🎥 Video</button></div></div>'+
+        '<div class="bz-reply"><textarea class="bz-ta" id="bz-rta" placeholder="'+(soyMaster?'Responde… (solo esa persona recibe el aviso)':'Escribe un mensaje…')+'"></textarea><button class="snd" onclick="BUZON.responder()">➤</button></div>';
       panel('<div class="bz-h"><div class="mbx" style="background:'+C.c+'">'+C.e+'</div><div style="min-width:0"><b>'+esc(t.titulo)+'</b><div class="sub">'+esc(t.autor)+(t.zona?' · '+esc(t.zona):'')+' · '+esc(t.codigo)+'</div></div><span class="bz-est" style="margin-left:auto">'+estLabel(t.estado)+'</span><button class="bz-x" onclick="BUZON.volver()" style="margin-left:8px">✕</button></div>'+
         '<div class="bz-body">'+body+'</div>'+acts+reply);
       var th=document.getElementById('bz-thread'); if(th)th.scrollTop=th.scrollHeight;
@@ -305,10 +320,14 @@
     var quien = m.tipo==='master'?'Master':(esc(m.nombre)||'—');
     return '<div class="bz-msg '+(mine?'me':'them')+'">'+bub+'<div class="mt">'+quien+' · '+esc(m.hora)+'</div></div>';
   }
-  B.responder=function(){ var ta=document.getElementById('bz-rta'); var v=ta?ta.value.trim():''; if(!v)return;
+  B.responder=function(){ var ta=document.getElementById('bz-rta'); var v=ta?ta.value.trim():'';
+    // [2.44.28] se puede responder solo con adjuntos (el backend ya lo acepta: push "📎 archivo")
+    if(!v && !rMedia.length)return;
+    if(rMedia.some(function(m){return m.up;})){ toast('Espera a que terminen de subir los archivos'); return; }
+    var med=rMedia.map(function(m){return {tipo:m.tipo,url:m.url,path:m.path,cap:m.cap||''};});
     ta.value=''; ta.disabled=true;
-    api('buzonResponder',{idTicket:_cur,autorTipo:esMaster()?'master':'admin',autorNombre:nombre(),texto:v})
-    .then(function(r){ var d=r&&(r.data||r); if(!d||d.ok===false)throw new Error((d&&d.error)||'no'); sfx.send(); abrir(_cur); })
+    api('buzonResponder',{idTicket:_cur,autorTipo:esMaster()?'master':'admin',autorNombre:nombre(),texto:v,media:med})
+    .then(function(r){ var d=r&&(r.data||r); if(!d||d.ok===false)throw new Error((d&&d.error)||'no'); rMedia=[]; sfx.send(); abrir(_cur); })
     .catch(function(e){ if(ta){ta.disabled=false;ta.value=v;} toast('No se envió: '+(e.message||e)); });
   };
   B.estado=function(e){ api('buzonEstado',{idTicket:_cur,estado:e}).then(function(r){ var d=r&&(r.data||r); if(!d||d.ok===false)throw new Error((d&&d.error)||'no'); sfx.pick(); toast('Estado: '+estLabel(e)); abrir(_cur); poll(); }).catch(function(err){ toast('No se pudo: '+(err.message||err)); }); };
