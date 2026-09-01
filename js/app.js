@@ -59628,3 +59628,81 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     activarPush: () => _pushInit(S.session?.nombre || '', S.session?.rol || '', true)
   };
 })();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// [2.44.27 · SQL 1008] FLOTANTE "TICKETS FANTASMA" — solo MASTER, solo cuando hay.
+// ME reporta cada fantasma/rescate a mos.tickets_fantasma (con push a MASTER);
+// este widget lo lista para saber QUÉ pasó y A QUÉ caja se asignó (o si quedó
+// sin registrar), con ✓ Revisado. Autocontenido: si algo falta, no molesta.
+// ═══════════════════════════════════════════════════════════════════════════
+(function () {
+  var _rows = [], _open = false;
+  function _ses() { try { return JSON.parse(localStorage.getItem('MOS_SESSION') || 'null'); } catch (e) { return null; } }
+  function _esMaster() { var s = _ses(); return !!s && String(s.rol || '').toUpperCase() === 'MASTER'; }
+  function _esc(t) { return String(t == null ? '' : t).replace(/[<>&"]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]; }); }
+  function _chip() {
+    var b = document.getElementById('tfanChip');
+    if (!_rows.length || !_esMaster()) { if (b) b.remove(); return; }
+    if (!b) {
+      b = document.createElement('button');
+      b.id = 'tfanChip';
+      b.style.cssText = 'position:fixed;left:14px;bottom:92px;z-index:9990;background:#be123c;color:#fff;border:2px solid #fecdd3;border-radius:999px;padding:10px 16px;font-weight:900;font-size:13px;box-shadow:0 8px 24px rgba(190,18,60,.45);cursor:pointer;display:flex;gap:8px;align-items:center';
+      b.onclick = function () { _open = true; _panel(); };
+      document.body.appendChild(b);
+    }
+    var pend = _rows.filter(function (r) { return r.estado !== 'RESCATADO'; }).length;
+    b.innerHTML = '⛔ Tickets fantasma <span style="background:#fff;color:#be123c;border-radius:999px;padding:1px 8px">' + _rows.length + (pend ? '' : ' 🛟') + '</span>';
+  }
+  function _panel() {
+    var w = document.getElementById('tfanPanel');
+    if (w) w.remove();
+    if (!_open) return;
+    w = document.createElement('div');
+    w.id = 'tfanPanel';
+    w.style.cssText = 'position:fixed;inset:0;z-index:9991;background:rgba(2,6,23,.82);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:16px';
+    var rows = _rows.map(function (r) {
+      return '<div style="background:#1e293b;border:1px solid ' + (r.estado === 'RESCATADO' ? '#059669' : '#be123c') + '55;border-radius:12px;padding:10px 12px;margin-bottom:8px">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">' +
+          '<b style="font-size:15px">S/ ' + Number(r.total || 0).toFixed(2) + '</b>' +
+          '<span style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;background:' + (r.estado === 'RESCATADO' ? '#065f46' : '#881337') + ';color:#fff">' + (r.estado === 'RESCATADO' ? '🛟 RESCATADO' : _esc(r.motivo || 'PENDIENTE')) + '</span>' +
+          '<button data-tfid="' + r.id + '" style="background:#334155;color:#e2e8f0;border:0;border-radius:8px;padding:6px 10px;font-weight:800;cursor:pointer">✓ Revisado</button>' +
+        '</div>' +
+        '<div style="font-size:11px;color:#94a3b8;margin-top:4px">' + _esc(r.hora) + ' · ' + _esc(r.vendedor) + ' · ' + _esc(r.zona) + ' · ' + _esc(r.metodo) +
+          (r.correlativo ? ' · → <b style="color:#6ee7b7">' + _esc(r.correlativo) + ' (POR_COBRAR)</b>' : ' · <b style="color:#fda4af">sin registrar aún</b>') +
+          (r.impreso ? ' · 🖨 ticket impreso' : '') + '</div>' +
+        (r.mensaje ? '<div style="font-size:10px;color:#fca5a5;margin-top:3px;font-family:monospace">Servidor: ' + _esc(r.mensaje) + '</div>' : '') +
+      '</div>';
+    }).join('');
+    w.innerHTML = '<div style="background:#0f172a;color:#e2e8f0;border:2px solid #be123c88;border-radius:16px;max-width:560px;width:100%;max-height:80vh;overflow:auto;padding:16px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+        '<b style="font-size:16px;color:#fda4af">⛔ Tickets fantasma / rescatados · ' + _rows.length + '</b>' +
+        '<button id="tfanClose" style="background:#334155;color:#fff;border:0;border-radius:999px;width:32px;height:32px;font-weight:900;cursor:pointer">✕</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#94a3b8;margin-bottom:10px">🛟 RESCATADO = ya entró POR_COBRAR a la caja indicada (el cajero lo marca al cobrar). Los demás = cobrados SIN registro: re-registrar a mano.</div>' +
+      rows + '</div>';
+    w.addEventListener('click', function (ev) {
+      if (ev.target === w || ev.target.id === 'tfanClose') { _open = false; w.remove(); return; }
+      var id = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-tfid');
+      if (id) {
+        ev.target.disabled = true; ev.target.textContent = '⌛';
+        var s = _ses();
+        API._sb.rpc('fantasma_resolver', { p: { id: String(id), usuario: (s && s.nombre) || '' } }, 'mos')
+          .then(function () { _rows = _rows.filter(function (r) { return String(r.id) !== String(id); }); _chip(); _panel(); })
+          .catch(function () { ev.target.disabled = false; ev.target.textContent = '✓ Revisado'; });
+      }
+    });
+    document.body.appendChild(w);
+  }
+  function _poll() {
+    try {
+      if (!_esMaster() || typeof API === 'undefined' || !API._sb || !API._sb.rpc || document.hidden) return;
+      API._sb.rpc('fantasmas_listar', { p: {} }, 'mos').then(function (r) {
+        if (!r || r.ok !== true || !Array.isArray(r.data)) return;
+        _rows = r.data; _chip(); if (_open) _panel();
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  setTimeout(_poll, 9000);            // tras el boot/login
+  setInterval(_poll, 90000);          // cada 90s
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) _poll(); });
+})();
