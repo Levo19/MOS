@@ -56473,7 +56473,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       .reg-zbtn{flex:1;padding:8px 4px;border-radius:12px;border:1px solid rgba(148,163,184,.2);background:rgba(148,163,184,.06);color:#cbd5e1;font-weight:800;font-size:.78rem;cursor:pointer;transition:transform .12s}
       .reg-zbtn:active{transform:scale(.96)}
       .reg-zbtn.on{border-color:var(--zc);color:var(--zc);background:color-mix(in srgb,var(--zc) 12%,transparent);box-shadow:0 0 14px color-mix(in srgb,var(--zc) 30%,transparent)}
-      .reg-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:4px 14px 12px;display:flex;flex-direction:column;gap:10px}
+      .reg-body{flex:1;min-height:0;max-height:calc(92vh - 200px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:4px 14px 12px;display:flex;flex-direction:column;gap:10px}
+      .reg-sec{flex-shrink:0}
       .reg-sec{border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(148,163,184,.05);overflow:hidden}
       .reg-sec.rojo{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.06)}
       .reg-sec.ambar{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.05)}
@@ -56561,11 +56562,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const d = _regZDat() || {}; const esAlm = _regZona === 'ALMACEN'; const S_ = [];
       // P1 negativos
       const ng = d.negativos || { n: 0, items: [] };
-      S_.push(_regSec('neg', ng.n > 0 ? 'rojo' : 'verde', '➖', 'Stock en negativo', ng.n > 0 ? ng.n + ' productos' : '✓ limpio',
-        ng.n > 0 ? `<div style="color:#fca5a5;font-weight:700;margin-bottom:4px">No deben existir negativos: recontar y ajustar.</div>` +
-          ((ng.ocultos > 0) ? `<div style="color:#fbbf24;font-size:.7rem;margin-bottom:4px">⚠ ${ng.activos || 0} salen en la vista de la zona (el banner) + <b>${ng.ocultos} de productos INACTIVOS/fuera de catálogo</b> — esos nadie los ve en la vista y también hay que corregirlos.</div>` : '') +
-          ng.items.map(i => `<div class="reg-row"><span class="reg-nm">${_esc(i.nombre)}</span>${i.activo === false ? '<span class="reg-chip warn">fuera de catálogo</span>' : ''}<span class="reg-neg">${_zpkNum(i.cant)}</span></div>`).join('') +
-          (ng.n > ng.items.length ? `<div style="color:#94a3b8;padding-top:4px">…y ${ng.n - ng.items.length} más (vista de la zona → Recontar)</div>` : '')
+      // [1014] el KPI usa el número VISIBLE (= exactamente el banner de la vista) y los códigos
+      // huérfanos (stock bajo un código que NO existe en el catálogo — invisibles) van aparte.
+      const ngVis = ng.activos != null ? ng.activos : ng.n;
+      S_.push(_regSec('neg', ng.n > 0 ? 'rojo' : 'verde', '➖', 'Stock en negativo',
+        ng.n > 0 ? `${ngVis} productos${ng.ocultos ? ' +' + ng.ocultos + ' 👻' : ''}` : '✓ limpio',
+        ng.n > 0 ? `<div style="color:#fca5a5;font-weight:700;margin-bottom:4px">No deben existir negativos: recontar y ajustar. <span style="color:#94a3b8;font-weight:400">(${ngVis} = el mismo número del banner de la vista)</span></div>` +
+          ng.items.map(i => `<div class="reg-row"><span class="reg-nm">${_esc(i.nombre)}</span><span class="reg-neg">${_zpkNum(i.cant)}</span></div>`).join('') +
+          (ngVis > ng.items.length ? `<div style="color:#94a3b8;padding-top:4px">…y ${ngVis - ng.items.length} más (vista de la zona → Recontar)</div>` : '') +
+          (((ng.huerfanos || []).length) ? `<div style="margin-top:7px;color:#fbbf24;font-weight:800">👻 ${ng.ocultos} códigos HUÉRFANOS con stock negativo</div>
+             <div style="color:#94a3b8;font-size:.68rem;margin-bottom:3px">Stock bajo códigos que NO existen en el catálogo (mal tipeados o dados de baja) — la vista no puede mostrarlos. Corregir el código o migrar su stock:</div>` +
+            ng.huerfanos.map(h => `<div class="reg-row"><span class="reg-nm" style="font-family:monospace">${_esc(h.cod)}</span>${h.sug ? `<span class="reg-chip warn">¿es ${_esc(h.sug)}?</span>` : ''}<span class="reg-neg">${_zpkNum(h.cant)}</span></div>`).join('') : '')
         : 'Ningún producto con stock negativo. 👌'));
       // P2 considerados con stock (almacén)
       if (esAlm) {
@@ -56679,9 +56686,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const zm = _REG_ZM[_regZona]; const L = [];
     L.push(`🧿 *REGULADOR · ${zm[1].toUpperCase()}* · ${new Date().toLocaleDateString('es-PE', { day: 'numeric', month: 'short' })} ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false })}`);
     const ng = d.negativos || { n: 0 };
-    if (ng.n > 0) { L.push('', `⛔ *${ng.n} productos con STOCK NEGATIVO* (no deben existir — recontar hoy):`);
+    const ngVisT = ng.activos != null ? ng.activos : ng.n;
+    if (ng.n > 0) { L.push('', `⛔ *${ngVisT} productos con STOCK NEGATIVO* (no deben existir — recontar hoy):`);
       (ng.items || []).slice(0, 3).forEach(i => L.push(`  • ${i.nombre}: *${i.cant}*`));
-      if (ng.n > 3) L.push(`  …y ${ng.n - 3} más`); }
+      if (ngVisT > 3) L.push(`  …y ${ngVisT - 3} más`);
+      if (ng.ocultos > 0) { L.push(`  👻 Además *${ng.ocultos} códigos huérfanos* con stock negativo (códigos que NO existen en el catálogo — no salen en tu vista, corregirlos con el Master):`);
+        (ng.huerfanos || []).slice(0, 3).forEach(h => L.push(`  • ${h.cod}: ${h.cant}${h.sug ? ' (¿es ' + h.sug + '?)' : ''}`)); } }
     if (_regZona === 'ALMACEN') {
       const co = d.considerados || { n: 0 };
       if (co.n > 0) { L.push('', `⛔ *${co.n} productos DEBIDOS con stock y SIN despachar:*`);
