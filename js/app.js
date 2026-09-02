@@ -51689,6 +51689,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (bg) bg.classList.toggle('hidden', esAlm);
     // [978] 🎯 Considerados: SOLO en la zona de almacén (a zona1/zona2 no les sirve — es despacho desde almacén).
     const bc = $('zonaBtnConsiderados'); if (bc) bc.classList.toggle('hidden', !esAlm);
+    // [1012] 🧿 Regulador: SOLO MASTER (en todas las zonas — checkpoints del puesto activo).
+    const brg = $('zonaBtnRegulador'); if (brg) brg.classList.toggle('hidden', !_esMasterSession());
     // [978] 🚚 Guías por zona (fusión zona1/zona2 en pestañas): SOLO en almacén.
     const bgz = $('zonaBtnGuiasAlm'); if (bgz) bgz.classList.toggle('hidden', !esAlm);
     if (bm) bm.classList.toggle('hidden', !esAlm);
@@ -56436,6 +56438,267 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (_sFoco) { try { const si = ov.querySelector('#consSearch'); if (si) { si.focus(); si.setSelectionRange(_sSel, _sSel); } } catch (_) {} }
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // [1012] 🧿 REGULADOR — checkpoints del Master por zona (SOLO MASTER).
+  //   Automatiza lo que el Master revisaba a mano: negativos, considerados con stock,
+  //   mermas vencidas (SLA 3d), devoluciones→merma (match por día), auditorías del admin
+  //   y cuadrantes (💰). Detalle completo para el Master + reporte WhatsApp para el admin
+  //   con los errores resaltados. Datos: mos.regulador_reporte (1 llamada, 3 zonas).
+  //   P6 cuadrantes: reusa el caché del MISMO clasificador de la vista Zona (_zonaVitCuadGet).
+  // ════════════════════════════════════════════════════════════════════
+  let _regData = null, _regZona = 'ALMACEN', _regCargando = false, _regTs = 0, _regTimer = null;
+  const _regOpen = {};   // card → expandida (sobrevive re-render)
+  const _REG_ZM = { 'ALMACEN': ['🏭','Almacén','#f59e0b'], 'ZONA-01': ['🏪','Zona 1','#22d3ee'], 'ZONA-02': ['🏬','Zona 2','#a78bfa'] };
+  function _regCss(){
+    if (document.getElementById('regCss')) return;
+    const s = document.createElement('style'); s.id = 'regCss';
+    s.textContent = `
+      #regOverlay{position:fixed;inset:0;z-index:9980;background:rgba(2,6,23,.86);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:14px;opacity:0;transition:opacity .22s}
+      #regOverlay.in{opacity:1}
+      .reg-card{width:100%;max-width:680px;max-height:92vh;display:flex;flex-direction:column;background:linear-gradient(165deg,#0f1728,#0b1220);border:1px solid rgba(124,92,255,.35);border-radius:20px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+      .reg-top{display:flex;align-items:center;gap:10px;padding:14px 16px 10px}
+      .reg-tit{font-weight:900;font-size:1.05rem;color:#e2e8f0}
+      .reg-sub{font-size:.68rem;color:#94a3b8}
+      .reg-x{margin-left:auto;width:34px;height:34px;border-radius:999px;border:0;background:#1e293b;color:#cbd5e1;font-weight:900;cursor:pointer}
+      .reg-zonas{display:flex;gap:8px;padding:0 16px 10px}
+      .reg-zbtn{flex:1;padding:8px 4px;border-radius:12px;border:1px solid rgba(148,163,184,.2);background:rgba(148,163,184,.06);color:#cbd5e1;font-weight:800;font-size:.78rem;cursor:pointer;transition:transform .12s}
+      .reg-zbtn:active{transform:scale(.96)}
+      .reg-zbtn.on{border-color:var(--zc);color:var(--zc);background:color-mix(in srgb,var(--zc) 12%,transparent);box-shadow:0 0 14px color-mix(in srgb,var(--zc) 30%,transparent)}
+      .reg-body{flex:1;overflow:auto;padding:4px 14px 12px;display:flex;flex-direction:column;gap:10px}
+      .reg-sec{border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(148,163,184,.05);overflow:hidden}
+      .reg-sec.rojo{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.06)}
+      .reg-sec.ambar{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.05)}
+      .reg-sh{display:flex;align-items:center;gap:9px;padding:10px 12px;cursor:pointer;user-select:none}
+      .reg-dot{width:10px;height:10px;border-radius:999px;flex:0 0 auto}
+      .reg-sec.rojo .reg-dot{background:#ef4444;box-shadow:0 0 0 0 rgba(239,68,68,.6);animation:regPulse 1.6s infinite}
+      .reg-sec.ambar .reg-dot{background:#fbbf24}.reg-sec.verde .reg-dot{background:#34d399}.reg-sec.gris .reg-dot{background:#64748b}
+      @keyframes regPulse{0%{box-shadow:0 0 0 0 rgba(239,68,68,.55)}70%{box-shadow:0 0 0 9px rgba(239,68,68,0)}100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}}
+      .reg-st{font-weight:800;font-size:.84rem;color:#e2e8f0}.reg-sk{margin-left:auto;font-weight:900;font-size:.95rem}
+      .reg-sec.rojo .reg-sk{color:#f87171}.reg-sec.ambar .reg-sk{color:#fbbf24}.reg-sec.verde .reg-sk{color:#34d399}.reg-sec.gris .reg-sk{color:#94a3b8}
+      .reg-caret{color:#64748b;font-size:.7rem}
+      .reg-sb{padding:2px 12px 10px;font-size:.74rem;color:#cbd5e1;border-top:1px dashed rgba(148,163,184,.15)}
+      .reg-row{display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid rgba(148,163,184,.08)}
+      .reg-row:last-child{border-bottom:0}
+      .reg-nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .reg-neg{color:#f87171;font-weight:800;white-space:nowrap}
+      .reg-chip{font-size:.64rem;font-weight:800;padding:1px 7px;border-radius:999px;white-space:nowrap}
+      .reg-chip.ok{color:#4ade80;background:rgba(34,197,94,.12)}.reg-chip.bad{color:#f87171;background:rgba(239,68,68,.14)}.reg-chip.warn{color:#fbbf24;background:rgba(251,191,36,.12)}.reg-chip.mut{color:#94a3b8;background:rgba(148,163,184,.12)}
+      .reg-foot{display:flex;gap:8px;padding:10px 14px;border-top:1px solid rgba(148,163,184,.15)}
+      .reg-btn{flex:1;padding:11px;border-radius:12px;border:0;font-weight:900;font-size:.82rem;cursor:pointer;transition:transform .12s}
+      .reg-btn:active{transform:scale(.97)}
+      .reg-btn.wa{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff}
+      .reg-btn.cp{background:#1e293b;color:#cbd5e1}
+      .reg-upd{font-size:.64rem;color:#64748b;text-align:center;padding:0 0 6px;cursor:pointer}
+      .reg-cuad{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-top:6px}
+      .reg-cq{border-radius:10px;padding:8px 4px;text-align:center;font-size:.66rem;font-weight:800}
+      .reg-cq b{display:block;font-size:1.05rem}`;
+    document.head.appendChild(s);
+  }
+  function _regHace(ts){ const s = Math.round((Date.now() - ts) / 1000); return s < 5 ? 'recién' : s < 60 ? 'hace ' + s + 's' : 'hace ' + Math.round(s / 60) + ' min'; }
+  function abrirRegulador(){
+    if (!_esMasterSession()) { toast('🧿 El Regulador es solo del Master', 'error'); return; }
+    try { _regZona = _pdZonaRpcId(S.zonaActual) || 'ALMACEN'; } catch (_) { _regZona = 'ALMACEN'; }
+    if (!_REG_ZM[_regZona]) _regZona = 'ALMACEN';
+    _regCss(); _regRender(true); _regCargar();
+    try { _zonaSfx('pop'); _zonaVibrar(18); } catch (_) {}
+    if (_regTimer) clearInterval(_regTimer);
+    _regTimer = setInterval(() => { if (document.getElementById('regOverlay') && !document.hidden) _regCargar(); }, 90000);
+  }
+  function regCerrar(){
+    if (_regTimer) { clearInterval(_regTimer); _regTimer = null; }
+    const ov = document.getElementById('regOverlay');
+    if (ov) { ov.classList.remove('in'); setTimeout(() => { try { ov.remove(); } catch (_) {} }, 220); }
+  }
+  function regZonaSel(z){ if (!_REG_ZM[z]) return; _regZona = z; try { _zonaSfx('tick'); _zonaVibrar(10); } catch (_) {} _regRender(false); }
+  function regToggleSec(id){ _regOpen[id] = !_regOpen[id]; try { _zonaSfx('tick'); } catch (_) {} _regRender(false); }
+  function regRefrescar(){ _regTs = 0; _regRender(true); _regCargar(); }
+  async function _regCargar(){
+    if (_regCargando) return; _regCargando = true;
+    try {
+      const r = await API.zona.reguladorReporte();
+      if (r && r.ok !== false) { _regData = r; _regTs = Date.now(); }
+      else if (!_regData) _regData = { _err: (r && r.error) || 'sin respuesta' };
+    } catch (e) { if (!_regData) _regData = { _err: (e && e.message) || 'red' }; }
+    _regCargando = false;
+    if (document.getElementById('regOverlay')) _regRender(false);
+  }
+  function _regSec(id, sev, icono, titulo, kpi, bodyHtml){
+    const abierta = !!_regOpen[id];
+    return `<div class="reg-sec ${sev}">
+        <div class="reg-sh" onclick="MOS.regToggleSec('${id}')">
+          <span class="reg-dot"></span><span>${icono}</span><span class="reg-st">${titulo}</span>
+          <span class="reg-sk">${kpi}</span><span class="reg-caret">${abierta ? '▴' : '▾'}</span>
+        </div>${abierta ? `<div class="reg-sb">${bodyHtml}</div>` : ''}</div>`;
+  }
+  function _regZDat(){ return (_regData && _regData.zonas && _regData.zonas[_regZona]) || null; }
+  function _regRender(loading){
+    let ov = document.getElementById('regOverlay');
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'regOverlay';
+      ov.onclick = (e) => { if (e.target === ov) regCerrar(); };
+      document.body.appendChild(ov);
+      requestAnimationFrame(() => ov.classList.add('in'));
+    }
+    let scrollPrev = 0; try { const b = ov.querySelector('.reg-body'); if (b) scrollPrev = b.scrollTop; } catch (_) {}
+    const zm = _REG_ZM[_regZona];
+    const chips = Object.keys(_REG_ZM).map(z => {
+      const m = _REG_ZM[z];
+      return `<button class="reg-zbtn${z === _regZona ? ' on' : ''}" style="--zc:${m[2]}" onclick="MOS.regZonaSel('${z}')">${m[0]} ${m[1]}</button>`;
+    }).join('');
+    let cuerpo;
+    if (loading || (!_regData)) cuerpo = '<div class="zpk-skel"></div><div class="zpk-skel"></div><div class="zpk-skel"></div>';
+    else if (_regData._err) cuerpo = `<div class="zpk-empty">No se pudo cargar · ${_esc(_regData._err)}<br><small>toca ↻ para reintentar</small></div>`;
+    else {
+      const d = _regZDat() || {}; const esAlm = _regZona === 'ALMACEN'; const S_ = [];
+      // P1 negativos
+      const ng = d.negativos || { n: 0, items: [] };
+      S_.push(_regSec('neg', ng.n > 0 ? 'rojo' : 'verde', '➖', 'Stock en negativo', ng.n > 0 ? ng.n + ' productos' : '✓ limpio',
+        ng.n > 0 ? `<div style="color:#fca5a5;font-weight:700;margin-bottom:4px">No deben existir negativos: recontar y ajustar.</div>` +
+          ng.items.map(i => `<div class="reg-row"><span class="reg-nm">${_esc(i.nombre)}</span><span class="reg-neg">${_zpkNum(i.cant)}</span></div>`).join('') +
+          (ng.n > ng.items.length ? `<div style="color:#94a3b8;padding-top:4px">…y ${ng.n - ng.items.length} más (vista de la zona → Recontar)</div>` : '')
+        : 'Ningún producto con stock negativo. 👌'));
+      // P2 considerados con stock (almacén)
+      if (esAlm) {
+        const co = d.considerados || { n: 0, items: [] };
+        S_.push(_regSec('cons', co.n > 0 ? 'rojo' : 'verde', '🎯', 'Considerados con stock SIN despachar', co.n > 0 ? co.n + ' productos' : '✓ al día',
+          co.n > 0 ? co.items.map(i => `<div class="reg-row"><span class="reg-nm">${_esc(i.nombre)}</span>
+              <span class="reg-chip mut">📦 ${_zpkNum(i.stock)}</span>
+              ${(Array.isArray(i.zonas) ? i.zonas : []).map(z => `<span class="reg-chip bad">${_esc(z.zona)} debe ${_zpkNum(z.pend)}</span>`).join('')}
+              <span class="reg-chip warn">${Math.round(i.dias)}d</span></div>`).join('')
+            : 'Todo lo debido con stock ya se despachó. 🚚'));
+      }
+      // P3 mermas vencidas (almacén)
+      if (esAlm) {
+        const me_ = d.mermas || { n: 0, items: [] };
+        S_.push(_regSec('mer', me_.n > 0 ? 'rojo' : 'verde', '♻️', 'Mermas pasadas del límite (3 días)', me_.n > 0 ? me_.n + ' pendientes' : '✓ al día',
+          me_.n > 0 ? me_.items.map(i => `<div class="reg-row"><span class="reg-nm">${_esc(i.nombre)}</span>
+              <span class="reg-chip warn">${_zpkNum(i.pend)} pend</span><span class="reg-chip bad">${i.dias}d</span>
+              <span class="reg-chip mut">${_esc(i.estado)}</span></div>`).join('')
+            : 'Ninguna merma fuera del SLA. 🧺'));
+      }
+      // P4 devoluciones (zonas)
+      if (!esAlm && d.devoluciones) {
+        const dv = d.devoluciones; const malos = (dv.sinRecepcion || 0) + (dv.difieren || 0) + (dv.sinMerma || 0);
+        S_.push(_regSec('dev', dv.total === 0 ? 'gris' : malos > 0 ? 'rojo' : 'verde', '🔄', 'Devoluciones → almacén → merma (14d)',
+          dv.total === 0 ? 'sin devoluciones' : malos > 0 ? malos + ' con problema' : '✓ ' + dv.total + ' ok',
+          dv.total === 0 ? 'La zona no registró devoluciones en 14 días.' :
+          `<div style="margin-bottom:5px"><span class="reg-chip mut">${dv.total} días con devolución</span>
+             ${dv.sinRecepcion ? `<span class="reg-chip bad">🚫 ${dv.sinRecepcion} sin recepción WH</span>` : ''}
+             ${dv.difieren ? `<span class="reg-chip warn">⚖ ${dv.difieren} difieren</span>` : ''}
+             ${dv.sinMerma ? `<span class="reg-chip warn">🧺 ${dv.sinMerma} sin merma</span>` : ''}</div>` +
+          (dv.dias || []).map(x => `<div class="reg-row"><span class="reg-nm"><b>${_esc(x.dia.slice(5))}</b> · ${x.guias} guía(s) · zona ${_zpkNum(x.piezasZona)} vs WH ${_zpkNum(x.piezasWh)}</span>
+              <span class="reg-chip ${x.estado === 'OK' ? 'ok' : 'bad'}">${x.estado === 'SIN_RECEPCION' ? '🚫 sin recepción' : x.estado === 'DIFIERE' ? '⚖ difiere' : '✓ match'}</span>
+              <span class="reg-chip ${x.merma === 'PROCESADA' ? 'ok' : x.merma === 'OK' ? 'warn' : x.merma === 'FALTA' ? 'bad' : 'mut'}">${x.merma === 'PROCESADA' ? '🧺 procesada' : x.merma === 'OK' ? '🧺 en cesta' : x.merma === 'FALTA' ? '🧺 SIN merma' : '—'}</span>
+            </div>${(x.difs && x.difs.length) ? x.difs.slice(0, 5).map(f => `<div class="reg-row" style="padding-left:12px"><span class="reg-nm" style="color:#94a3b8">${_esc(f.nombre)}</span><span class="reg-chip warn">zona ${_zpkNum(f.zona)} ≠ wh ${_zpkNum(f.wh)}</span></div>`).join('') : ''}`).join('')));
+      }
+      // P5 auditorías
+      const au = d.auditorias || {};
+      if (au.alm) {
+        const pend = au.pendientes || 0;
+        S_.push(_regSec('aud', (au.asignadas7d || 0) === 0 ? 'ambar' : pend > 0 ? 'ambar' : 'verde', '🕵️', 'Auditorías del almacén (7d)',
+          (au.asignadas7d || 0) === 0 ? 'sin auditar' : `${au.ejecutadas}/${au.asignadas7d}${pend ? ' · ' + pend + ' pend' : ''}`,
+          `<div style="margin-bottom:5px"><span class="reg-chip mut">${au.asignadas7d || 0} asignadas</span>
+             <span class="reg-chip ok">${au.ejecutadas || 0} ejecutadas</span>
+             ${au.conDif ? `<span class="reg-chip warn">⚖ ${au.conDif} con diferencia</span>` : ''}
+             ${pend ? `<span class="reg-chip bad">${pend} pendientes</span>` : ''}</div>` +
+          (au.operadores || []).map(o => `<div class="reg-row"><span class="reg-nm">${_esc(o.op)}</span><span class="reg-chip mut">${o.n} conteos</span>${o.conDif ? `<span class="reg-chip warn">${o.conDif} con dif</span>` : '<span class="reg-chip ok">sin dif</span>'}</div>`).join('')));
+      } else if (au.dias) {
+        const hoy0 = (au.hoyConteos || 0) === 0; const nada = !(au.dias || []).length;
+        S_.push(_regSec('aud', nada ? 'rojo' : hoy0 ? 'ambar' : 'verde', '🕵️', 'Auditoría del admin a su personal',
+          nada ? '0 en 7 días' : hoy0 ? 'hoy aún 0' : 'hoy ' + au.hoyConteos + ' conteos',
+          (nada ? '<div style="color:#fca5a5;font-weight:700">Nadie auditó esta zona en 7 días.</div>' : '') +
+          (au.dias || []).map(x => `<div class="reg-row"><span class="reg-nm"><b>${_esc(x.dia.slice(5))}</b></span>
+              <span class="reg-chip mut">${x.conteos} conteos</span><span class="reg-chip mut">${x.operadores} oper.</span>
+              ${x.conDif ? `<span class="reg-chip warn">⚖ ${x.conDif} con dif</span>` : '<span class="reg-chip ok">sin dif</span>'}</div>`).join('') +
+          ((au.operadores || []).length ? `<div style="margin-top:6px;color:#94a3b8">Por operador (7d):</div>` +
+            au.operadores.map(o => `<div class="reg-row"><span class="reg-nm">${_esc(o.op)}</span><span class="reg-chip mut">${o.n} conteos</span>${o.conDif ? `<span class="reg-chip warn">${o.conDif} con dif</span>` : '<span class="reg-chip ok">sin dif</span>'}</div>`).join('') : '') +
+          ((au.evalHoy || []).length ? `<div style="margin-top:6px;color:#94a3b8">Evaluación de hoy (limpieza/checks):</div>` +
+            au.evalHoy.map(e => `<div class="reg-row"><span class="reg-nm">${_esc(e.rol)} · por ${_esc(e.quien || '—')}</span>
+              <span class="reg-chip ${e.limpieza >= 80 ? 'ok' : 'warn'}">🧽 ${e.limpieza || 0}%</span>
+              <span class="reg-chip mut">☑ ${e.checks}/8</span></div>`).join('')
+            : '<div style="margin-top:6px;color:#fbbf24">Sin evaluación de limpieza/checks hoy.</div>')));
+      }
+      // P6 cuadrantes (💰) — caché del clasificador real de la vista Zona
+      const vit = _zonaVitCuadGet(_regZona);
+      S_.push(_regSec('cuad', !vit ? 'gris' : (vit.pedir + vit.muerto + vit.sobra) > 0 ? 'ambar' : 'verde', '💰', 'Cuadrantes (dinero parado / faltante)',
+        vit ? `🔴${vit.pedir} ⚫${vit.muerto} 🟡${vit.sobra}` : 'sin calcular',
+        !vit ? 'Abre la vista de esta zona una vez para calcular los cuadrantes (usa el clasificador real).'
+          : `<div class="reg-cuad">
+              <div class="reg-cq" style="background:rgba(239,68,68,.12);color:#f87171"><b>${vit.pedir}</b>🔴 Pedir ya</div>
+              <div class="reg-cq" style="background:rgba(148,163,184,.12);color:#cbd5e1"><b>${vit.muerto}</b>⚫ Muertos</div>
+              <div class="reg-cq" style="background:rgba(251,191,36,.12);color:#fbbf24"><b>${vit.sobra}</b>🟡 Te sobra</div>
+              <div class="reg-cq" style="background:rgba(52,211,153,.10);color:#34d399"><b>${vit.orden}</b>🟢 En orden</div>
+            </div><div style="color:#94a3b8;margin-top:5px">Pedir ya = venta que se pierde · Muertos/Te sobra = dinero parado. Calculado ${_esc(_regHace(vit.ts || Date.now()))} con el clasificador de la vista Zona.</div>`));
+      cuerpo = S_.join('');
+    }
+    ov.innerHTML = `<div class="reg-card">
+        <div class="reg-top"><span style="font-size:1.5rem">🧿</span>
+          <div><div class="reg-tit">Regulador <span style="color:${zm[2]}">· ${zm[0]} ${zm[1]}</span></div>
+          <div class="reg-sub">checkpoints en vivo · solo Master · toca una tarjeta para el detalle</div></div>
+          <button class="reg-x" onclick="MOS.regCerrar()">✕</button></div>
+        <div class="reg-zonas">${chips}</div>
+        <div class="reg-upd" onclick="MOS.regRefrescar()">${_regTs ? '⟳ actualizado ' + _regHace(_regTs) + ' · toca para refrescar' : '⟳ cargando…'}</div>
+        <div class="reg-body">${cuerpo}</div>
+        <div class="reg-foot">
+          <button class="reg-btn wa" onclick="MOS.regCompartir('wa')">📤 WhatsApp al admin</button>
+          <button class="reg-btn cp" onclick="MOS.regCompartir('cp')">📋 Copiar reporte</button>
+        </div></div>`;
+    try { if (scrollPrev) { const b = ov.querySelector('.reg-body'); if (b) b.scrollTop = scrollPrev; } } catch (_) {}
+  }
+  // Reporte WhatsApp: resumen ENTENDIBLE para el admin — solo lo que está mal, con ejemplos.
+  function _regTextoAdmin(){
+    const d = _regZDat(); if (!d) return '';
+    const zm = _REG_ZM[_regZona]; const L = [];
+    L.push(`🧿 *REGULADOR · ${zm[1].toUpperCase()}* · ${new Date().toLocaleDateString('es-PE', { day: 'numeric', month: 'short' })} ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false })}`);
+    const ng = d.negativos || { n: 0 };
+    if (ng.n > 0) { L.push('', `⛔ *${ng.n} productos con STOCK NEGATIVO* (no deben existir — recontar hoy):`);
+      (ng.items || []).slice(0, 3).forEach(i => L.push(`  • ${i.nombre}: *${i.cant}*`));
+      if (ng.n > 3) L.push(`  …y ${ng.n - 3} más`); }
+    if (_regZona === 'ALMACEN') {
+      const co = d.considerados || { n: 0 };
+      if (co.n > 0) { L.push('', `⛔ *${co.n} productos DEBIDOS con stock y SIN despachar:*`);
+        (co.items || []).slice(0, 3).forEach(i => L.push(`  • ${i.nombre} (📦${i.stock}) → ${(i.zonas || []).map(z => z.zona + ' debe ' + z.pend).join(', ')} · ${Math.round(i.dias)}d esperando`));
+        if (co.n > 3) L.push(`  …y ${co.n - 3} más`); }
+      const me_ = d.mermas || { n: 0 };
+      if (me_.n > 0) { L.push('', `⛔ *${me_.n} mermas pasadas del límite de 3 días:*`);
+        (me_.items || []).slice(0, 3).forEach(i => L.push(`  • ${i.nombre}: ${i.pend} pend · *${i.dias} días*`)); }
+    } else {
+      const dv = d.devoluciones;
+      if (dv && ((dv.sinRecepcion || 0) + (dv.difieren || 0) + (dv.sinMerma || 0)) > 0) {
+        L.push('', '⛔ *Devoluciones con problema (14d):*');
+        if (dv.sinRecepcion) L.push(`  • ${dv.sinRecepcion} día(s) devueltos y *almacén NO registró recepción*`);
+        if (dv.difieren) L.push(`  • ${dv.difieren} día(s) donde lo devuelto *no coincide* con lo recibido`);
+        if (dv.sinMerma) L.push(`  • ${dv.sinMerma} día(s) recibidos pero *sin pasar por mermas*`);
+        (dv.dias || []).filter(x => x.estado !== 'OK' || x.merma === 'FALTA').slice(0, 3)
+          .forEach(x => L.push(`  → ${x.dia.slice(5)}: zona ${x.piezasZona} vs WH ${x.piezasWh} (${x.estado}${x.merma === 'FALTA' ? ' · sin merma' : ''})`));
+        L.push('  _Regla: TODA devolución pasa por guía → match en WH → merma → procesada._');
+      }
+      const au = d.auditorias || {};
+      if (!au.alm) {
+        if ((au.hoyConteos || 0) === 0) L.push('', '⚠ *Hoy aún no se audita a nadie* (conteos = 0). La meta diaria de auditorías no espera.');
+        if (!(au.evalHoy || []).length) L.push('⚠ *Sin evaluación de limpieza/checks hoy.*');
+      }
+    }
+    const vit = _zonaVitCuadGet(_regZona);
+    if (vit && (vit.pedir + vit.muerto + vit.sobra) > 0) {
+      L.push('', `💰 *Cuadrantes (plata en juego):* 🔴 Pedir ya: *${vit.pedir}* · ⚫ Muertos: *${vit.muerto}* · 🟡 Te sobra: *${vit.sobra}*`,
+        '  _Revisa el 🔴 primero: es venta que se está perdiendo._');
+    }
+    if (L.length <= 1) L.push('', '✅ Todo en orden en los checkpoints. ¡Buen trabajo!');
+    L.push('', '— enviado desde MOS · Regulador');
+    return L.join('\n');
+  }
+  function regCompartir(modo){
+    const txt = _regTextoAdmin();
+    if (!txt) { toast('Aún no hay datos para compartir', 'info'); return; }
+    try { _zonaVibrar(20); } catch (_) {}
+    if (modo === 'cp') {
+      try { navigator.clipboard.writeText(txt).then(() => toast('📋 Reporte copiado — pégalo donde quieras', 'ok')); } catch (_) { toast('No se pudo copiar', 'error'); }
+      return;
+    }
+    window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
+  }
+
   // [RIZ #2] Imprime el ticket desde el ÍCONO del grupo ROTADO. Respeta el filtro "del día":
   //   · modo 'dia'   → imprime el ticket del día activo (fecha = día seleccionado).
   //   · modo 'todos' → imprime HOY (default), no el universo entero.
@@ -59394,6 +59657,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
     zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos, consBuscar,
+    abrirRegulador, regCerrar, regZonaSel, regToggleSec, regRefrescar, regCompartir,   // [1012] 🧿 Regulador (solo MASTER)
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
     // [RIZ #4] proveedores reales por canónico (lazy-load por card en ALMACEN)
