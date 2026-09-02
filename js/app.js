@@ -21719,7 +21719,7 @@ const MOS = (() => {
       // [dueño 2026-07-14] B: pre-llenar el nombre con la FAMILIA del padre (sin "GRANEL"), cursor al final,
       // para que el usuario solo agregue el gramaje (250GR / 5KG). C+A (peso→porción→precio) se auto-sugieren
       // vía _satDerivadoPreview a medida que escribe. Flags manuales en false: aún no tocó porción/precio.
-      _satPorcionManual = false; _satPrecioManual = false;
+      _satPorcionManual = false; _satPrecioManual = false; _satNomSufAuto = '';   // [2.44.30] modal nuevo = sin sufijo previo
       { const _fam = String(padre.descripcion || '').replace(/\bGRANEL\b/ig, '').replace(/\s+/g, ' ').trim();
         const _n = $('satNombre');
         if (_n) { _n.value = _fam ? _fam + ' ' : '';
@@ -21876,7 +21876,37 @@ const MOS = (() => {
 
   // [dueño 2026-07-14] Flags: el usuario tocó la porción/precio a mano → dejar de auto-sugerir encima.
   let _satPorcionManual = false, _satPrecioManual = false;
-  function _satPorcionInput() { _satPorcionManual = true; _satDerivadoPreview(); }
+  let _satNomSufAuto = '';   // [2.44.30] sufijo de gramaje que ESTE automatismo escribió en el nombre (se reemplaza, no se apila)
+  function _satSufijoPeso(kg) {
+    if (!(kg > 0)) return '';
+    if (kg >= 1) return String(Math.round(kg * 100) / 100) + 'KG';   // 5 → 5KG · 1.5 → 1.5KG
+    return String(Math.round(kg * 1000)) + 'GR';                     // 0.250 → 250GR
+  }
+  function _satPorcionInput() {
+    _satPorcionManual = true;
+    // [2.44.30 · pedido del dueño 01-sep] Dirección INVERSA del autonombre: hasta hoy solo el gramaje
+    // escrito EN EL NOMBRE sugería la porción ([dueño 2026-07-14] C). Ahora también al revés: si escribes
+    // la PORCIÓN y el nombre aún no dice el gramaje, se le agrega solo (0.250 → "… 250GR"). Solo al CREAR
+    // (en edición la porción no toca el nombre) y reemplazando el sufijo que este mismo automatismo puso
+    // antes (cambiar 0.250→0.500 corrige a 500GR, no apila "250GR 500GR"). Si TÚ ya escribiste un peso en
+    // el nombre, no se toca (el hint de "peso ≠ nombre" sigue avisando).
+    try {
+      if (!(_satState && _satState.editar)) {
+        const n = $('satNombre'); const kg = parseFloat($('satPorcion')?.value) || 0;
+        if (n && kg > 0) {
+          let base = String(n.value || '').trim();
+          if (_satNomSufAuto && base.toUpperCase().endsWith(_satNomSufAuto)) {
+            base = base.slice(0, base.length - _satNomSufAuto.length).trim();
+          }
+          if (_pesoDesdeNombre(base) == null) {
+            const suf = _satSufijoPeso(kg);
+            if (suf) { n.value = (base ? base + ' ' : '') + suf; _satNomSufAuto = suf; }
+          }
+        }
+      }
+    } catch (_) { /* el autonombre jamás bloquea el tipeo */ }
+    _satDerivadoPreview();
+  }
   function _satPrecioInput()  { _satPrecioManual  = true; _satDerivadoPreview(); }
   function _satFmtPorcion(kg) { const v = Math.round(kg * 1000) / 1000; return String(v); }
 
