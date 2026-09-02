@@ -56499,6 +56499,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       .reg-btn.wa{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff}
       .reg-btn.cp{background:#1e293b;color:#cbd5e1}
       .reg-upd{font-size:.64rem;color:#64748b;text-align:center;padding:0 0 6px;cursor:pointer}
+      .reg-ssub{font-size:.62rem;color:#94a3b8;font-weight:500;line-height:1.25;margin-top:1px}
+      .reg-resumen{border:1px solid rgba(148,163,184,.18);border-radius:14px;background:rgba(148,163,184,.05);padding:9px 11px;flex-shrink:0}
+      .reg-resumen-t{font-size:.7rem;font-weight:800;color:#e2e8f0;margin-bottom:6px}
+      .reg-jrow{display:flex;flex-wrap:wrap;gap:6px}
+      .reg-jchip{border-radius:999px;padding:5px 11px;font-size:.68rem;font-weight:800;cursor:pointer;transition:transform .12s}
+      .reg-jchip:active{transform:scale(.95)}
+      .reg-jchip.rojo{background:rgba(239,68,68,.16);color:#f87171;border:1px solid rgba(239,68,68,.4)}
+      .reg-jchip.ambar{background:rgba(251,191,36,.13);color:#fbbf24;border:1px solid rgba(251,191,36,.35)}
+      .reg-okbar{border:1px solid rgba(52,211,153,.35);border-radius:14px;background:rgba(52,211,153,.07);color:#6ee7b7;font-weight:800;font-size:.76rem;padding:10px 12px;text-align:center;flex-shrink:0}
       .reg-cuad{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding-top:6px}
       .reg-cq{border-radius:10px;padding:8px 4px;text-align:center;font-size:.66rem;font-weight:800}
       .reg-cq b{display:block;font-size:1.05rem}`;
@@ -56532,11 +56541,23 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _regCargando = false;
     if (document.getElementById('regOverlay')) _regRender(false);
   }
+  // [v3 UX] cada tarjeta explica QUÉ es en una línea (el dueño: "hay cosas que no entiendo").
+  const _REG_SUB = {
+    neg:  'Se vendió más de lo que el sistema tenía registrado — recontar y ajustar',
+    cons: 'Las zonas lo esperan, HAY stock en almacén, y sigue sin despacharse',
+    mer:  'Mermas sin procesar que pasaron el límite de 3 días',
+    dev:  'Lo devuelto debe recibirse en almacén (cantidades iguales) y pasar por mermas',
+    aud:  '¿Se está auditando al personal? Conteos diarios por persona y limpieza',
+    cuad: 'Dónde se pierde o duerme la plata: faltantes, muertos y sobre-stock',
+  };
+  let _regSevs = [];
   function _regSec(id, sev, icono, titulo, kpi, bodyHtml){
+    _regSevs.push({ id, sev, icono, titulo });
     const abierta = !!_regOpen[id];
-    return `<div class="reg-sec ${sev}">
+    return `<div class="reg-sec ${sev}" id="regsec-${id}">
         <div class="reg-sh" onclick="MOS.regToggleSec('${id}')">
-          <span class="reg-dot"></span><span>${icono}</span><span class="reg-st">${titulo}</span>
+          <span class="reg-dot"></span><span>${icono}</span>
+          <div style="min-width:0;flex:1"><div class="reg-st">${titulo}</div><div class="reg-ssub">${_REG_SUB[id] || ''}</div></div>
           <span class="reg-sk">${kpi}</span><span class="reg-caret">${abierta ? '▴' : '▾'}</span>
         </div>${abierta ? `<div class="reg-sb">${bodyHtml}</div>` : ''}</div>`;
   }
@@ -56560,6 +56581,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     else if (_regData._err) cuerpo = `<div class="zpk-empty">No se pudo cargar · ${_esc(_regData._err)}<br><small>toca ↻ para reintentar</small></div>`;
     else {
       const d = _regZDat() || {}; const esAlm = _regZona === 'ALMACEN'; const S_ = [];
+      _regSevs = [];   // [v3 UX] se rellena en cada _regSec → alimenta el resumen ejecutivo de arriba
       // P1 negativos
       const ng = d.negativos || { n: 0, items: [] };
       // [1014] el KPI usa el número VISIBLE (= exactamente el banner de la vista) y los códigos
@@ -56603,10 +56625,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
              ${dv.sinRecepcion ? `<span class="reg-chip bad">🚫 ${dv.sinRecepcion} sin recepción WH</span>` : ''}
              ${dv.difieren ? `<span class="reg-chip warn">⚖ ${dv.difieren} difieren</span>` : ''}
              ${dv.sinMerma ? `<span class="reg-chip warn">🧺 ${dv.sinMerma} sin merma</span>` : ''}</div>` +
-          (dv.dias || []).map(x => `<div class="reg-row"><span class="reg-nm"><b>${_esc(x.dia.slice(5))}</b> · ${x.guias} guía(s) · zona ${_zpkNum(x.piezasZona)} vs WH ${_zpkNum(x.piezasWh)}</span>
-              <span class="reg-chip ${x.estado === 'OK' ? 'ok' : 'bad'}">${x.estado === 'SIN_RECEPCION' ? '🚫 sin recepción' : x.estado === 'DIFIERE' ? '⚖ difiere' : '✓ match'}</span>
-              <span class="reg-chip ${x.merma === 'PROCESADA' ? 'ok' : x.merma === 'OK' ? 'warn' : x.merma === 'FALTA' ? 'bad' : 'mut'}">${x.merma === 'PROCESADA' ? '🧺 procesada' : x.merma === 'OK' ? '🧺 en cesta' : x.merma === 'FALTA' ? '🧺 SIN merma' : '—'}</span>
-            </div>${(x.difs && x.difs.length) ? x.difs.slice(0, 5).map(f => `<div class="reg-row" style="padding-left:12px"><span class="reg-nm" style="color:#94a3b8">${_esc(f.nombre)}</span><span class="reg-chip warn">zona ${_zpkNum(f.zona)} ≠ wh ${_zpkNum(f.wh)}</span></div>`).join('') : ''}`).join('')));
+          (dv.dias || []).map(x => {
+            // [v3 UX] frase legible por día en vez de "zona X vs WH Y" pelado.
+            const fecha = _consSegDiaLbl(x.dia);
+            const frase = x.estado === 'SIN_RECEPCION'
+              ? `la zona devolvió <b>${_zpkNum(x.piezasZona)}</b> y almacén registró <b style="color:#f87171">0</b>`
+              : x.estado === 'DIFIERE'
+              ? `devuelto <b>${_zpkNum(x.piezasZona)}</b> vs recibido <b style="color:#fbbf24">${_zpkNum(x.piezasWh)}</b>`
+              : `devuelto y recibido cuadran: <b>${_zpkNum(x.piezasZona)}</b>`;
+            return `<div class="reg-row"><span class="reg-nm"><b>${_esc(fecha)}</b> · ${frase}</span>
+              <span class="reg-chip ${x.estado === 'OK' ? 'ok' : 'bad'}">${x.estado === 'SIN_RECEPCION' ? '🚫 sin recepción' : x.estado === 'DIFIERE' ? '⚖ no cuadra' : '✓ cuadra'}</span>
+              <span class="reg-chip ${x.merma === 'PROCESADA' ? 'ok' : x.merma === 'OK' ? 'warn' : x.merma === 'FALTA' ? 'bad' : 'mut'}">${x.merma === 'PROCESADA' ? '🧺 merma procesada' : x.merma === 'OK' ? '🧺 merma en cesta' : x.merma === 'FALTA' ? '🧺 SIN merma' : '—'}</span>
+            </div>${(x.difs && x.difs.length) ? x.difs.slice(0, 5).map(f => `<div class="reg-row" style="padding-left:12px"><span class="reg-nm" style="color:#94a3b8">${_esc(f.nombre)}</span><span class="reg-chip warn">devuelto ${_zpkNum(f.zona)} · recibido ${_zpkNum(f.wh)}</span></div>`).join('') : ''}`; }).join('')));
       }
       // P5 auditorías
       const au = d.auditorias || {};
@@ -56659,12 +56689,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               <div class="reg-cq" style="background:rgba(251,191,36,.12);color:#fbbf24"><b>${vit.sobra}</b>🟡 Te sobra</div>
               <div class="reg-cq" style="background:rgba(52,211,153,.10);color:#34d399"><b>${vit.orden}</b>🟢 En orden</div>
             </div>` +
-            // [1013] EJEMPLOS por cuadrante (top por prioridad real) — "hacerle entender cuáles están mal".
-            [['pedir','🔴 Pedir ya','#f87171'],['muerto','⚫ Muertos','#cbd5e1'],['sobra','🟡 Te sobra','#fbbf24']]
+            // [v3 UX] EJEMPLOS como LISTA real (un producto por fila), con qué significa cada cuadrante.
+            [['pedir','🔴 Pedir ya — venta que se está perdiendo','#f87171'],['muerto','⚫ Muertos — no rotan, plata dormida','#cbd5e1'],['sobra','🟡 Te sobra — sobre-stock','#fbbf24']]
               .map(([k, lbl, col]) => (vit.ej && vit.ej[k] && vit.ej[k].length)
-                ? `<div style="margin-top:5px"><b style="color:${col}">${lbl}:</b> <span style="color:#94a3b8">${vit.ej[k].slice(0, 4).map(_esc).join(' · ')}${(vit[k] || 0) > 4 ? ' · …' : ''}</span></div>` : '').join('') +
+                ? `<div style="margin-top:7px;font-weight:800;color:${col};font-size:.72rem">${lbl} · ${vit[k] || 0}</div>` +
+                  vit.ej[k].slice(0, 4).map(n => `<div class="reg-row"><span class="reg-nm">${_esc(n)}</span></div>`).join('') +
+                  ((vit[k] || 0) > 4 ? `<div style="color:#64748b;font-size:.66rem;padding:2px 0 0">…y ${(vit[k] || 0) - 4} más (pestaña ${lbl.slice(0, 2)} de la vista)</div>` : '')
+                : '').join('') +
             `<div style="color:#94a3b8;margin-top:5px">Pedir ya = venta que se pierde · Muertos/Te sobra = dinero parado. Calculado ${_esc(_regHace(vit.ts || Date.now()))} con el clasificador de la vista Zona.</div>`));
-      cuerpo = S_.join('');
+      cuerpo = _regResumenHtml() + S_.join('');
     }
     ov.innerHTML = `<div class="reg-card">
         <div class="reg-top"><span style="font-size:1.5rem">🧿</span>
@@ -56734,8 +56767,109 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     L.push('', '— enviado desde MOS · Regulador');
     return L.join('\n');
   }
+  // [v3 UX] Resumen ejecutivo: de un vistazo qué está mal; cada chip salta a su tarjeta.
+  function _regResumenHtml(){
+    const rojos = _regSevs.filter(s => s.sev === 'rojo'), ambars = _regSevs.filter(s => s.sev === 'ambar');
+    if (!rojos.length && !ambars.length) return '<div class="reg-okbar">✅ Todo en orden en esta zona — sin alertas ahora mismo</div>';
+    const chip = (s) => `<button class="reg-jchip ${s.sev}" onclick="MOS.regJump('${s.id}')">${s.icono} ${_esc(s.titulo)}</button>`;
+    return `<div class="reg-resumen"><div class="reg-resumen-t">${rojos.length ? '🔴 ' + rojos.length + ' urgente' + (rojos.length > 1 ? 's' : '') : ''}${rojos.length && ambars.length ? ' · ' : ''}${ambars.length ? '🟡 ' + ambars.length + ' por vigilar' : ''} — toca para ir directo:</div><div class="reg-jrow">${rojos.map(chip).join('')}${ambars.map(chip).join('')}</div></div>`;
+  }
+  function regJump(id){
+    _regOpen[id] = true; _regRender(false);
+    try { const el = document.getElementById('regsec-' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
+    try { _zonaSfx('tick'); _zonaVibrar(10); } catch (_) {}
+  }
+  // [v3 UX] Reporte WhatsApp PROFESIONAL: numerado, cada punto explica qué significa, lista
+  // real de productos (uno por línea) y la acción esperada. Solo entra lo que está mal.
+  function _regTextoAdmin2(){
+    const d = _regZDat(); if (!d) return '';
+    const zm = _REG_ZM[_regZona];
+    const F = new Date();
+    const fecha = F.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' });
+    const hora = F.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const sec = [];
+    const ng = d.negativos || { n: 0 };
+    const ngVis = ng.activos != null ? ng.activos : ng.n;
+    if (ngVis > 0 || (ng.ocultos || 0) > 0) {
+      const L = ['_Un negativo = se vendió más de lo que el sistema tenía registrado. Recontar y ajustar hoy (vista Zona → Recontar)._', 'Los más urgentes:'];
+      (ng.items || []).slice(0, 5).forEach(i => L.push(`   • ${i.nombre} → *${i.cant}*`));
+      if (ngVis > 5) L.push(`   • …y ${ngVis - 5} más en la vista`);
+      if ((ng.ocultos || 0) > 0) {
+        L.push('👻 Además, códigos huérfanos (no existen en catálogo — avisar al Master):');
+        (ng.huerfanos || []).slice(0, 3).forEach(h => L.push(`   • ${h.cod} → ${h.cant}${h.sug ? '  (¿es ' + h.sug + '?)' : ''}`));
+      }
+      sec.push({ t: `STOCK EN NEGATIVO — *${ngVis} productos*`, L });
+    }
+    if (_regZona === 'ALMACEN') {
+      const co = d.considerados || { n: 0 };
+      if (co.n > 0) {
+        const L = ['_Las zonas los esperan, HAY stock en almacén, y siguen sin despacharse:_'];
+        (co.items || []).slice(0, 5).forEach(i => L.push(`   • ${i.nombre} — stock ${i.stock} · ${(i.zonas || []).map(z => z.zona.replace('ZONA-0', 'Z') + ' espera ' + z.pend).join(', ')} · ${Math.round(i.dias)} día(s) esperando`));
+        if (co.n > 5) L.push(`   • …y ${co.n - 5} más`);
+        L.push('👉 Despacharlos hoy.');
+        sec.push({ t: `DEBIDO CON STOCK, SIN DESPACHAR — *${co.n} productos*`, L });
+      }
+      const me_ = d.mermas || { n: 0 };
+      if (me_.n > 0) {
+        const L = ['_El plazo para procesar una merma es 3 días:_'];
+        (me_.items || []).slice(0, 5).forEach(i => L.push(`   • ${i.nombre} — ${i.pend} pendiente(s) · lleva *${i.dias} días*`));
+        L.push('👉 Resolverlas hoy (reparar o desechar).');
+        sec.push({ t: `MERMAS FUERA DE PLAZO — *${me_.n}*`, L });
+      }
+    } else {
+      const dv = d.devoluciones;
+      const malos = dv ? (dv.sinRecepcion || 0) + (dv.difieren || 0) + (dv.sinMerma || 0) : 0;
+      if (malos > 0) {
+        const L = ['_Regla: lo devuelto se recibe en almacén con guía (las cantidades deben cuadrar) y pasa por mermas._'];
+        (dv.dias || []).filter(x => x.estado !== 'OK' || x.merma === 'FALTA').slice(0, 4).forEach(x => {
+          const f = _consSegDiaLbl(x.dia);
+          if (x.estado === 'SIN_RECEPCION') L.push(`   • ${f}: devolviste ${x.piezasZona} y almacén registró 0 → 🚫 *sin recepción*`);
+          else if (x.estado === 'DIFIERE') L.push(`   • ${f}: devuelto ${x.piezasZona} vs recibido ${x.piezasWh} → ⚖ *no cuadra*`);
+          else if (x.merma === 'FALTA') L.push(`   • ${f}: recibido pero 🧺 *sin pasar por mermas*`);
+        });
+        L.push('👉 Coordinar con almacén y regularizar.');
+        sec.push({ t: `DEVOLUCIONES INCOMPLETAS (14 días) — *${malos} día(s) con problema*`, L });
+      }
+      const au = d.auditorias || {};
+      const meta = au.meta || 30;
+      const deudores = (au.operadores || []).filter(o => o.hoy != null && ((parseFloat(o.deuda) || 0) > 0 || o.hoy < meta));
+      const sinEval = !(au.evalHoy || []).length;
+      if (deudores.length || (au.hoyConteos || 0) === 0 || sinEval) {
+        const L = [`_Cada persona debe auditar ${meta} productos al día:_`];
+        (au.operadores || []).forEach(o => { if (o.hoy == null) return;
+          L.push(`   • ${o.op}: hoy *${o.hoy}/${meta}*${(parseFloat(o.deuda) || 0) > 0 ? ' · arrastra *' + o.deuda + '* de días anteriores' : ' · al día'}`); });
+        if (sinEval) L.push('   • 🧽 Hoy no se registró la evaluación de limpieza/checks');
+        L.push('👉 Completar las auditorías y la evaluación de hoy.');
+        sec.push({ t: 'AUDITORÍAS DEL PERSONAL', L });
+      }
+    }
+    const vit = _zonaVitCuadGet(_regZona);
+    if (vit && (vit.pedir + vit.muerto + vit.sobra) > 0) {
+      const L = ['_Los tres cuadrantes que cuestan plata:_'];
+      [['pedir', `🔴 Pedir ya — venta que se pierde: *${vit.pedir}*`],
+       ['muerto', `⚫ Muertos — no rotan: *${vit.muerto}*`],
+       ['sobra', `🟡 Te sobra — sobre-stock: *${vit.sobra}*`]].forEach(([k, tt]) => {
+        if (!(vit[k] > 0)) return;
+        L.push(tt);
+        ((vit.ej && vit.ej[k]) || []).slice(0, 3).forEach(n => L.push(`   • ${n}`));
+      });
+      L.push('👉 Atacar el 🔴 primero.');
+      sec.push({ t: 'DINERO EN JUEGO (cuadrantes)', L });
+    }
+    const out = [];
+    out.push(`🧿 *REGULADOR MOS — ${zm[1].toUpperCase()}*`);
+    out.push(`📅 ${fecha}, ${hora} h`);
+    out.push('');
+    if (!sec.length) out.push('✅ *Todo en orden.* Sin alertas en los checkpoints de hoy. ¡Buen trabajo!');
+    else {
+      out.push(`⚠ *${sec.length} punto${sec.length > 1 ? 's' : ''} para atender hoy:*`);
+      sec.forEach((s, i) => { out.push('', `*${i + 1}) ${s.t}*`); s.L.forEach(l => out.push(l)); });
+    }
+    out.push('', '— Reporte del Master · MOS Regulador');
+    return out.join('\n');
+  }
   function regCompartir(modo){
-    const txt = _regTextoAdmin();
+    const txt = _regTextoAdmin2();
     if (!txt) { toast('Aún no hay datos para compartir', 'info'); return; }
     try { _zonaVibrar(20); } catch (_) {}
     if (modo === 'cp') {
@@ -59703,7 +59837,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
     zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos, consBuscar,
-    abrirRegulador, regCerrar, regZonaSel, regToggleSec, regRefrescar, regCompartir,   // [1012] 🧿 Regulador (solo MASTER)
+    abrirRegulador, regCerrar, regZonaSel, regToggleSec, regRefrescar, regCompartir, regJump,   // [1012] 🧿 Regulador (solo MASTER)
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
     // [RIZ #4] proveedores reales por canónico (lazy-load por card en ALMACEN)
