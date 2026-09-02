@@ -52712,8 +52712,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _zonaCacheVitales() {
     const arr = S.zonaProductos || []; if (!arr.length) return;
     let pedir = 0, muerto = 0, sobra = 0, orden = 0;
-    for (const p of arr) { const c = _zonaCuadDe(p); if (c === 'pedir') pedir++; else if (c === 'muerto') muerto++; else if (c === 'sobra') sobra++; else orden++; }
-    const v = { pedir, muerto, sobra, orden, ts: Date.now() };
+    // [1013 · Regulador] además de contar, guardar EJEMPLOS por cuadrante (top por prioridad real)
+    // para que el reporte al admin diga QUÉ productos están mal, no solo cuántos.
+    const top = { pedir: [], muerto: [], sobra: [] };
+    for (const p of arr) {
+      const c = _zonaCuadDe(p);
+      if (c === 'pedir') pedir++; else if (c === 'muerto') muerto++; else if (c === 'sobra') sobra++; else orden++;
+      if (top[c]) { try { top[c].push({ n: String(p.descripcion || p.nombre || p.skuBase || '').slice(0, 44), s: _zonaPrioridad(p, c) }); } catch (_) {} }
+    }
+    const ej = {};
+    for (const k of ['pedir', 'muerto', 'sobra']) ej[k] = top[k].sort((a, b) => (b.s - a.s)).slice(0, 5).map(x => x.n);
+    const v = { pedir, muerto, sobra, orden, ej, ts: Date.now() };
     try { localStorage.setItem('mos_zona_vit_' + S.zonaActual, JSON.stringify(v)); } catch (_) {}
     S._zonaVitCuad = S._zonaVitCuad || {}; S._zonaVitCuad[S.zonaActual] = v;
   }
@@ -56464,7 +56473,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       .reg-zbtn{flex:1;padding:8px 4px;border-radius:12px;border:1px solid rgba(148,163,184,.2);background:rgba(148,163,184,.06);color:#cbd5e1;font-weight:800;font-size:.78rem;cursor:pointer;transition:transform .12s}
       .reg-zbtn:active{transform:scale(.96)}
       .reg-zbtn.on{border-color:var(--zc);color:var(--zc);background:color-mix(in srgb,var(--zc) 12%,transparent);box-shadow:0 0 14px color-mix(in srgb,var(--zc) 30%,transparent)}
-      .reg-body{flex:1;overflow:auto;padding:4px 14px 12px;display:flex;flex-direction:column;gap:10px}
+      .reg-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:4px 14px 12px;display:flex;flex-direction:column;gap:10px}
       .reg-sec{border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(148,163,184,.05);overflow:hidden}
       .reg-sec.rojo{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.06)}
       .reg-sec.ambar{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.05)}
@@ -56554,7 +56563,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const ng = d.negativos || { n: 0, items: [] };
       S_.push(_regSec('neg', ng.n > 0 ? 'rojo' : 'verde', '➖', 'Stock en negativo', ng.n > 0 ? ng.n + ' productos' : '✓ limpio',
         ng.n > 0 ? `<div style="color:#fca5a5;font-weight:700;margin-bottom:4px">No deben existir negativos: recontar y ajustar.</div>` +
-          ng.items.map(i => `<div class="reg-row"><span class="reg-nm">${_esc(i.nombre)}</span><span class="reg-neg">${_zpkNum(i.cant)}</span></div>`).join('') +
+          ((ng.ocultos > 0) ? `<div style="color:#fbbf24;font-size:.7rem;margin-bottom:4px">⚠ ${ng.activos || 0} salen en la vista de la zona (el banner) + <b>${ng.ocultos} de productos INACTIVOS/fuera de catálogo</b> — esos nadie los ve en la vista y también hay que corregirlos.</div>` : '') +
+          ng.items.map(i => `<div class="reg-row"><span class="reg-nm">${_esc(i.nombre)}</span>${i.activo === false ? '<span class="reg-chip warn">fuera de catálogo</span>' : ''}<span class="reg-neg">${_zpkNum(i.cant)}</span></div>`).join('') +
           (ng.n > ng.items.length ? `<div style="color:#94a3b8;padding-top:4px">…y ${ng.n - ng.items.length} más (vista de la zona → Recontar)</div>` : '')
         : 'Ningún producto con stock negativo. 👌'));
       // P2 considerados con stock (almacén)
@@ -56593,25 +56603,38 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       }
       // P5 auditorías
       const au = d.auditorias || {};
+      const _opRow = (o, meta) => o.hoy != null
+        ? `<div class="reg-row"><span class="reg-nm">${_esc(o.op)}</span>
+             <span class="reg-chip ${o.hoy >= meta ? 'ok' : o.hoy > 0 ? 'warn' : 'bad'}">hoy ${o.hoy}/${meta}</span>
+             <span class="reg-chip mut">ayer ${o.ayer}</span>
+             ${(parseFloat(o.deuda) || 0) > 0 ? `<span class="reg-chip bad">debe ${o.deuda} de días previos</span>` : '<span class="reg-chip ok">al día</span>'}
+             ${o.conDif ? `<span class="reg-chip warn">⚖ ${o.conDif} con dif</span>` : ''}</div>`
+        : `<div class="reg-row"><span class="reg-nm">${_esc(o.op)}</span><span class="reg-chip mut">${o.n} conteos</span>${o.conDif ? `<span class="reg-chip warn">${o.conDif} con dif</span>` : '<span class="reg-chip ok">sin dif</span>'}</div>`;
       if (au.alm) {
+        const meta = au.meta || 30;
         const pend = au.pendientes || 0;
-        S_.push(_regSec('aud', (au.asignadas7d || 0) === 0 ? 'ambar' : pend > 0 ? 'ambar' : 'verde', '🕵️', 'Auditorías del almacén (7d)',
-          (au.asignadas7d || 0) === 0 ? 'sin auditar' : `${au.ejecutadas}/${au.asignadas7d}${pend ? ' · ' + pend + ' pend' : ''}`,
-          `<div style="margin-bottom:5px"><span class="reg-chip mut">${au.asignadas7d || 0} asignadas</span>
+        const deudaTot = (au.operadores || []).reduce((a, o) => a + (parseFloat(o.deuda) || 0), 0);
+        S_.push(_regSec('aud', (au.asignadas7d || 0) === 0 ? 'ambar' : (pend > 0 || deudaTot > 0) ? 'ambar' : 'verde', '🕵️', `Auditorías del almacén (meta ${meta}/día)`,
+          (au.asignadas7d || 0) === 0 ? 'sin auditar' : `${au.ejecutadas}/${au.asignadas7d}${deudaTot ? ' · deben ' + deudaTot : ''}`,
+          `<div style="margin-bottom:5px"><span class="reg-chip mut">${au.asignadas7d || 0} asignadas 7d</span>
              <span class="reg-chip ok">${au.ejecutadas || 0} ejecutadas</span>
              ${au.conDif ? `<span class="reg-chip warn">⚖ ${au.conDif} con diferencia</span>` : ''}
              ${pend ? `<span class="reg-chip bad">${pend} pendientes</span>` : ''}</div>` +
-          (au.operadores || []).map(o => `<div class="reg-row"><span class="reg-nm">${_esc(o.op)}</span><span class="reg-chip mut">${o.n} conteos</span>${o.conDif ? `<span class="reg-chip warn">${o.conDif} con dif</span>` : '<span class="reg-chip ok">sin dif</span>'}</div>`).join('')));
+          (au.operadores || []).map(o => _opRow(o, meta)).join('')));
       } else if (au.dias) {
+        const meta = au.meta || 30;
+        const ops = au.operadores || [];
+        const deudaTot = ops.reduce((a, o) => a + (parseFloat(o.deuda) || 0), 0);
         const hoy0 = (au.hoyConteos || 0) === 0; const nada = !(au.dias || []).length;
-        S_.push(_regSec('aud', nada ? 'rojo' : hoy0 ? 'ambar' : 'verde', '🕵️', 'Auditoría del admin a su personal',
-          nada ? '0 en 7 días' : hoy0 ? 'hoy aún 0' : 'hoy ' + au.hoyConteos + ' conteos',
+        S_.push(_regSec('aud', nada ? 'rojo' : (hoy0 || deudaTot > 0) ? 'ambar' : 'verde', '🕵️', `Auditorías del personal (meta ${meta}/día c/u)`,
+          nada ? '0 en 7 días' : `hoy ${au.hoyConteos}${deudaTot ? ' · deben ' + deudaTot : ''}`,
           (nada ? '<div style="color:#fca5a5;font-weight:700">Nadie auditó esta zona en 7 días.</div>' : '') +
-          (au.dias || []).map(x => `<div class="reg-row"><span class="reg-nm"><b>${_esc(x.dia.slice(5))}</b></span>
-              <span class="reg-chip mut">${x.conteos} conteos</span><span class="reg-chip mut">${x.operadores} oper.</span>
-              ${x.conDif ? `<span class="reg-chip warn">⚖ ${x.conDif} con dif</span>` : '<span class="reg-chip ok">sin dif</span>'}</div>`).join('') +
-          ((au.operadores || []).length ? `<div style="margin-top:6px;color:#94a3b8">Por operador (7d):</div>` +
-            au.operadores.map(o => `<div class="reg-row"><span class="reg-nm">${_esc(o.op)}</span><span class="reg-chip mut">${o.n} conteos</span>${o.conDif ? `<span class="reg-chip warn">${o.conDif} con dif</span>` : '<span class="reg-chip ok">sin dif</span>'}</div>`).join('') : '') +
+          (ops.length ? `<div style="margin-bottom:4px;color:#94a3b8">Por operador (hoy / meta ${meta} · deuda de días previos en que asistió):</div>` +
+            ops.map(o => _opRow(o, meta)).join('') : '') +
+          ((au.dias || []).length ? `<div style="margin-top:6px;color:#94a3b8">Por día (toda la zona):</div>` +
+            au.dias.map(x => `<div class="reg-row"><span class="reg-nm"><b>${_esc(x.dia.slice(5))}</b></span>
+                <span class="reg-chip mut">${x.conteos} conteos</span><span class="reg-chip mut">${x.operadores} oper.</span>
+                ${x.conDif ? `<span class="reg-chip warn">⚖ ${x.conDif} con dif</span>` : '<span class="reg-chip ok">sin dif</span>'}</div>`).join('') : '') +
           ((au.evalHoy || []).length ? `<div style="margin-top:6px;color:#94a3b8">Evaluación de hoy (limpieza/checks):</div>` +
             au.evalHoy.map(e => `<div class="reg-row"><span class="reg-nm">${_esc(e.rol)} · por ${_esc(e.quien || '—')}</span>
               <span class="reg-chip ${e.limpieza >= 80 ? 'ok' : 'warn'}">🧽 ${e.limpieza || 0}%</span>
@@ -56628,7 +56651,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
               <div class="reg-cq" style="background:rgba(148,163,184,.12);color:#cbd5e1"><b>${vit.muerto}</b>⚫ Muertos</div>
               <div class="reg-cq" style="background:rgba(251,191,36,.12);color:#fbbf24"><b>${vit.sobra}</b>🟡 Te sobra</div>
               <div class="reg-cq" style="background:rgba(52,211,153,.10);color:#34d399"><b>${vit.orden}</b>🟢 En orden</div>
-            </div><div style="color:#94a3b8;margin-top:5px">Pedir ya = venta que se pierde · Muertos/Te sobra = dinero parado. Calculado ${_esc(_regHace(vit.ts || Date.now()))} con el clasificador de la vista Zona.</div>`));
+            </div>` +
+            // [1013] EJEMPLOS por cuadrante (top por prioridad real) — "hacerle entender cuáles están mal".
+            [['pedir','🔴 Pedir ya','#f87171'],['muerto','⚫ Muertos','#cbd5e1'],['sobra','🟡 Te sobra','#fbbf24']]
+              .map(([k, lbl, col]) => (vit.ej && vit.ej[k] && vit.ej[k].length)
+                ? `<div style="margin-top:5px"><b style="color:${col}">${lbl}:</b> <span style="color:#94a3b8">${vit.ej[k].slice(0, 4).map(_esc).join(' · ')}${(vit[k] || 0) > 4 ? ' · …' : ''}</span></div>` : '').join('') +
+            `<div style="color:#94a3b8;margin-top:5px">Pedir ya = venta que se pierde · Muertos/Te sobra = dinero parado. Calculado ${_esc(_regHace(vit.ts || Date.now()))} con el clasificador de la vista Zona.</div>`));
       cuerpo = S_.join('');
     }
     ov.innerHTML = `<div class="reg-card">
@@ -56679,10 +56707,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         if (!(au.evalHoy || []).length) L.push('⚠ *Sin evaluación de limpieza/checks hoy.*');
       }
     }
+    if (!_regZDat().auditorias || !_regZDat().auditorias.alm) {
+      const ops = (_regZDat().auditorias || {}).operadores || [];
+      const deudores = ops.filter(o => (parseFloat(o.deuda) || 0) > 0);
+      if (deudores.length) { L.push('', '⚠ *Auditorías atrasadas (meta ' + ((_regZDat().auditorias || {}).meta || 30) + '/día):*');
+        deudores.slice(0, 4).forEach(o => L.push(`  • ${o.op}: hoy ${o.hoy} · *debe ${o.deuda}* de días previos`)); }
+    }
     const vit = _zonaVitCuadGet(_regZona);
     if (vit && (vit.pedir + vit.muerto + vit.sobra) > 0) {
-      L.push('', `💰 *Cuadrantes (plata en juego):* 🔴 Pedir ya: *${vit.pedir}* · ⚫ Muertos: *${vit.muerto}* · 🟡 Te sobra: *${vit.sobra}*`,
-        '  _Revisa el 🔴 primero: es venta que se está perdiendo._');
+      L.push('', `💰 *Cuadrantes (plata en juego):* 🔴 Pedir ya: *${vit.pedir}* · ⚫ Muertos: *${vit.muerto}* · 🟡 Te sobra: *${vit.sobra}*`);
+      const EJ = [['pedir','🔴'],['muerto','⚫'],['sobra','🟡']];
+      EJ.forEach(([k, e]) => { if (vit.ej && vit.ej[k] && vit.ej[k].length) L.push(`  ${e} ej: ${vit.ej[k].slice(0, 3).join(' · ')}`); });
+      L.push('  _Revisa el 🔴 primero: es venta que se está perdiendo._');
     }
     if (L.length <= 1) L.push('', '✅ Todo en orden en los checkpoints. ¡Buen trabajo!');
     L.push('', '— enviado desde MOS · Regulador');
