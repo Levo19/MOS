@@ -4566,6 +4566,10 @@ const API = (() => {
       //   consideradoResolver() → {ok, quitados, total}   (estado: 'ATENDIDO' | 'DESCARTADO')
       // Mismo patrón que pickupDetalle: RPC del esquema 'wh' vía _sbRpcMOS (perfil explícito).
       consideradosListar:  async ()  => _sbRpcMOS('considerados_listar', { p: {} }, 'wh'),
+      // [1011] Drill-down de seguimiento: semanas → días → eventos (pedido/despacho con hora y fuente).
+      consideradoSeguimiento: async (p) => _sbRpcMOS('considerado_seguimiento', { p: {
+        skuBase: String((p && p.skuBase) || ''), zona: String((p && p.zona) || ''),
+        semanas: (p && p.semanas) || 10 } }, 'wh'),
       consideradoResolver: async (p) => _sbRpcMOS('considerado_resolver', { p: {
         id:      String((p && p.id) || ''),
         estado:  String((p && p.estado) || ''),

@@ -56146,6 +56146,70 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   let _consPollTimer = null;
   let _consCargando = false;
   let _consResolviendo = 0;   // resoluciones optimistas en vuelo: el poll no debe resucitar la fila
+  // ── [1011] Drill-down de seguimiento por (sku, zona): clic en la fila de zona → SEMANAS
+  //    (pedido/despachado/pendiente) → clic en una semana → DÍAS con hora, fuente y monto.
+  //    Estado fuera del render (sobrevive el poll de 60s); caché por clave 'sku|zona'.
+  let _consSegCache = {};
+  const _consSegOpen = {};
+  const _consSegSemOpen = {};
+  function _consSegFuenteLbl(ev){
+    if (ev.tipo === 'despacho') return '🏭 despachó';
+    const f = String(ev.fuente || '');
+    return f === 'LISTA_IA' ? '👻 pidió (sombra)' : f === 'RIZ' ? '📊 pidió (RIZ)'
+         : f === 'ME_CIERRE_CAJA' ? '🛒 pidió (cierre)' : '🛒 pidió';
+  }
+  function _consSegDiaLbl(d){
+    try { return new Date(String(d) + 'T12:00:00').toLocaleDateString('es-PE', { weekday: 'short', day: 'numeric', month: 'short' }).replace(/\./g, ''); }
+    catch (_) { return String(d); }
+  }
+  function _consSegSemLbl(lun){
+    try {
+      const t = new Date(String(lun) + 'T12:00:00');
+      const f = (x) => x.toLocaleDateString('es-PE', { day: 'numeric', month: 'short' }).replace(/\./g, '');
+      const dif = Math.floor((Date.now() - t.getTime()) / (7 * 86400000));
+      const rel = dif <= 0 ? 'esta semana' : dif === 1 ? 'hace 1 sem' : 'hace ' + dif + ' sem';
+      return `Sem ${f(t)} – ${f(new Date(t.getTime() + 6 * 86400000))} · ${rel}`;
+    } catch (_) { return String(lun); }
+  }
+  function _consSegToggle(key){
+    key = String(key || ''); if (!key) return;
+    _consSegOpen[key] = !_consSegOpen[key];
+    if (_consSegOpen[key] && !_consSegCache[key]) {
+      _consSegCache[key] = 'cargando';
+      const ix = key.indexOf('|');
+      API.zona.consideradoSeguimiento({ skuBase: key.slice(0, ix), zona: key.slice(ix + 1) })
+        .then(r => { _consSegCache[key] = (r && r.ok !== false) ? r : { _err: (r && r.error) || 'sin respuesta' }; })
+        .catch(e => { _consSegCache[key] = { _err: (e && e.message) || 'red' }; })
+        .then(() => { if (document.getElementById('zonaConsidOverlay')) _consRender(false); });
+    }
+    if (document.getElementById('zonaConsidOverlay')) _consRender(false);
+  }
+  function _consSegSemToggle(k){ if (!k) return; _consSegSemOpen[k] = !_consSegSemOpen[k]; if (document.getElementById('zonaConsidOverlay')) _consRender(false); }
+  function _consSegHtml(key){
+    const d = _consSegCache[key];
+    if (!d || d === 'cargando') return '<div class="cons-seg-cargando">⏳ cargando seguimiento…</div>';
+    if (d._err) return '<div class="cons-seg-cargando">No se pudo cargar · ' + _esc(d._err) + '</div>';
+    const sems = Array.isArray(d.semanas) ? d.semanas : [];
+    if (!sems.length) return '<div class="cons-seg-cargando">Sin pedidos ni despachos en las últimas 10 semanas — la deuda viene de más atrás.</div>';
+    return sems.map(s => {
+      const sk = key + '|' + s.lun;
+      const abierto = !!_consSegSemOpen[sk];
+      const pend = parseFloat(s.pendiente) || 0;
+      const dias = abierto ? (s.dias || []).map(di => `
+        <div class="cons-segdia"><div class="cons-segdia-t">${_esc(_consSegDiaLbl(di.dia))}</div>
+          ${(di.evs || []).map(ev => `<div class="zpk-hrow ${ev.tipo === 'despacho' ? 'is-desp' : 'is-ped'}">
+              <span class="zpk-hdate">${_esc(ev.hm)}</span>
+              <span class="zpk-hsrc">${_consSegFuenteLbl(ev)}</span>
+              <span class="zpk-hped">${ev.tipo === 'despacho' ? '−' : '+'}${_zpkNum(ev.cant)}</span>
+            </div>`).join('')}
+        </div>`).join('') : '';
+      return `<div class="cons-segsem${abierto ? ' abierta' : ''}" data-segsem="${_esc(sk)}">
+          <span class="cons-segsem-t">${_esc(_consSegSemLbl(s.lun))}</span>
+          <span class="cons-segsem-n">🛒 +${_zpkNum(s.pedido)} · 🏭 −${_zpkNum(s.despachado)}${pend > 0 ? ` · <b>debe ${_zpkNum(pend)}</b>` : ' · ✓ cubierta'}</span>
+          <span class="cons-zcaret">${abierto ? '▴' : '▾'}</span>
+        </div>${dias}`;
+    }).join('');
+  }
   // "hoy / ayer / hace Nd" — espeja el rótulo de WH para que las dos apps hablen igual.
   function _consHaceLbl(ts){
     try {
@@ -56263,7 +56327,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       ov.onclick = (e) => { if (e.target === ov) zonaCerrarConsiderados(); };
       // Delegación única: sobrevive a cada repintado del innerHTML (sin listeners duplicados).
       ov.addEventListener('click', (e) => {
-        const b = (e.target && e.target.closest) ? e.target.closest('.zpk-cbtn') : null;
+        const t = e.target || null;
+        // [1011] drill-down: fila de zona (semanas) y fila de semana (días) — delegado, sobrevive repintados.
+        const zr = (t && t.closest) ? t.closest('.cons-zrow-click') : null;
+        if (zr) { e.stopPropagation(); _consSegToggle(zr.getAttribute('data-seg')); return; }
+        const ws = (t && t.closest) ? t.closest('.cons-segsem') : null;
+        if (ws) { e.stopPropagation(); _consSegSemToggle(ws.getAttribute('data-segsem')); return; }
+        const b = (t && t.closest) ? t.closest('.zpk-cbtn') : null;
         if (!b) return;
         e.stopPropagation();
         _consResolver(b.getAttribute('data-cid'), b.getAttribute('data-estado'));
@@ -56315,7 +56385,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
           const sello = g.desp
             ? `<span class="cons-sello ok">✓ despachado ${_esc(_consHaceLbl(g.desp))}</span>`
             : `<span class="cons-sello no">⏳ aún sin despachar</span>`;
-          return `<div class="cons-zrow"><span class="cons-zn">${_esc(g.zona)}</span><span class="cons-zd">debía ${_zpkNum(g.pend)}${sem ? ' · ' + _esc(sem) : ''}</span>${sello}</div>`;
+          // [1011] la fila de zona es clicable: 1er clic → semanas; clic en una semana → días con hora.
+          const segKey = String(it.skuBase || '') + '|' + g.zona;
+          const abierta = !!_consSegOpen[segKey];
+          return `<div class="cons-zrow cons-zrow-click${abierta ? ' abierta' : ''}" data-seg="${_esc(segKey)}" title="Ver seguimiento: qué semana y qué día se pidió/despachó">
+              <span class="cons-zn">${_esc(g.zona)}</span><span class="cons-zd">debía ${_zpkNum(g.pend)}${sem ? ' · ' + _esc(sem) : ''}</span>${sello}
+              <span class="cons-zcaret">${abierta ? '▴' : '▾'}</span>
+            </div>${abierta ? `<div class="cons-seg">${_consSegHtml(segKey)}</div>` : ''}`;
         }).join('') || '<div class="cons-zrow"><span class="cons-zd">fue solicitado en semanas pasadas</span></div>';
         const chips = [
           idx < 3 ? `<span class="zpk-chip" style="background:rgba(248,113,113,.15);color:#f87171">🔥 prioridad</span>` : '',
