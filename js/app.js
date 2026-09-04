@@ -59309,7 +59309,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const q = parseFloat(it.qty) || 0, pr = parseFloat(it.precio) || 0;
       const sub = _money(q * pr); total = _money(total + sub); qty += q;
       const blt = parseFloat(it._bultos) || 0, upb = parseFloat(it._upb) || 1;
-      return { desc: it.desc || it.skuBase || '', q, pr, sub, blt, upb, uni: it._uni || 'und' };
+      // [617 BUGFIX] la UNIDAD se resuelve del producto VIVO del catálogo (por skuBase), no del
+      // carrito: un item guardado antes de traer `_uni` caía a 'und' aunque fuera KGM (el maní).
+      let uni = it._uni || '';
+      try {
+        const pp = (S.pv2.items || []).find(x => String(x.skuBase || '') === String(it.skuBase || '') || String(x.codigoBarra || '') === String(it.codigoBarra || ''));
+        if (pp) uni = _pv2Uni(pp);
+      } catch (_) {}
+      if (!uni) uni = 'und';
+      return { desc: it.desc || it.skuBase || '', q, pr, sub, blt, upb, uni };
     });
     return { prov: p, fecha: today(), lineas, total, qty };
   }
@@ -59460,35 +59468,39 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   function _pv2EscposResumen(d) {
     const W = _PV2W;
     const rep = (c, n) => c.repeat(Math.max(0, n));
-    const SEP = rep('=', W) + '\n';
+    const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
     const B_ON = '\x1b\x45\x01', B_OFF = '\x1b\x45\x00';
-    const BIG_ON = '\x1b\x21\x18', BIG_OFF = '\x1b\x21\x00';   // doble alto + bold  /  normal
+    const row = (izq, der) => { izq = String(izq); der = String(der); return izq + rep(' ', Math.max(1, W - izq.length - der.length)) + der + '\n'; };
     let t = '\x1b\x40\x1b\x61\x01\x1b\x21\x30' + 'PEDIDO\n' + '\x1b\x21\x00';
     t += B_ON + _pv2Norm(d.prov.nombre || '') + B_OFF + '\n';
     const sub = [d.prov.ruc ? 'RUC ' + d.prov.ruc : '', d.prov.telefono || ''].filter(Boolean).join(' · ');
     if (sub) t += _pv2Norm(sub) + '\n';
     t += d.fecha + '\n' + '\x1b\x61\x00' + SEP + '\n';
     d.lineas.forEach((it, i) => {
-      // nombre grande, envuelto a la mitad del ancho (el doble-ancho no aplica aquí, pero damos aire)
-      _pv2WrapTxt(_pv2Norm(it.desc), W).forEach(l => { t += BIG_ON + l + BIG_OFF + '\n'; });
-      // cantidad clara y en negrita
+      // [617] nombre en NEGRITA (no doble-alto — quedaba demasiado grande), wrap normal
+      _pv2WrapTxt(_pv2Norm(it.desc), W).forEach(l => { t += B_ON + l + B_OFF + '\n'; });
+      // cantidad clara (bulto x peso/unidad) — la unidad ya viene del producto vivo (KGM→kg)
       const blt = it.blt > 0 ? it.blt : Math.max(1, Math.round((it.q || 0) / Math.max(it.upb || 1, 1)));
       const upb = Math.max(it.upb || 1, 1);
       const esKg = String(it.uni || '').toLowerCase() === 'kg';
       let cant;
       if (esKg) {
         cant = blt + (blt === 1 ? ' bulto' : ' bultos') + ' x ' + _pv2NumTicket(upb) + ' kg';
-        if (blt > 1) cant += '  (' + _pv2NumTicket(blt * upb) + ' kg)';
+        if (blt > 1) cant += ' (' + _pv2NumTicket(blt * upb) + ' kg)';
       } else if (upb > 1) {
         cant = blt + (blt === 1 ? ' bulto' : ' bultos') + ' x ' + _pv2NumTicket(upb) + ' = ' + _pv2NumTicket(blt * upb) + ' un';
       } else {
         cant = _pv2NumTicket(it.q || blt) + (Math.round(it.q || blt) === 1 ? ' unidad' : ' unidades');
       }
-      t += B_ON + '>> ' + cant + B_OFF + '\n';
-      t += (i < d.lineas.length - 1) ? '\n' : '';   // aire entre productos
+      // [617] cantidad a la izquierda + MONTO del producto a la derecha (negrita). SIN costo unitario.
+      const mon = it.sub > 0 ? 'S/ ' + (+it.sub).toFixed(2) : '';
+      t += B_ON + row('>> ' + cant, mon) + B_OFF;
+      t += (i < d.lineas.length - 1) ? SEPd : '';
     });
     t += SEP;
-    t += B_ON + '\x1b\x21\x10' + 'TOTAL: ' + d.lineas.length + (d.lineas.length === 1 ? ' producto' : ' productos') + '\x1b\x21\x00' + B_OFF + '\n';
+    // TOTAL = suma de montos + cantidad de PRODUCTOS (no unidades)
+    t += B_ON + '\x1b\x21\x10' + row('TOTAL', 'S/ ' + (+d.total).toFixed(2)) + '\x1b\x21\x00' + B_OFF;
+    t += d.lineas.length + (d.lineas.length === 1 ? ' producto' : ' productos') + '\n';
     t += '\x1b\x61\x01Generado desde MOS · ' + new Date().toLocaleString('es-PE') + '\n';
     t += '\n\n\n\n\x1d\x56\x00';
     return t;
