@@ -8421,6 +8421,9 @@
     .pv2-ubi small{font-size:9.5px;color:var(--pv2-ink3);font-weight:600;font-variant-numeric:tabular-nums;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .pv2-ubi small.falta{color:#f87171;font-weight:800}
+    /* [617] stock partido: "64.35 granel + 54.25 envasado" */
+    .pv2-ubi small.pv2-part{font-size:9px;color:#22d3ee;font-weight:800;letter-spacing:.01em}
+    .pv2-ubi small.pv2-part span{color:var(--pv2-ink3);font-weight:600;padding:0 1px}
     .pv2-ubi .ver{position:absolute;top:6px;right:8px;font-size:8.5px;font-weight:800;color:var(--pv2-ink3);
       background:rgba(148,163,184,.10);border-radius:99px;padding:1.5px 6px;letter-spacing:.03em}
     .pv2-ubi:hover .ver{color:var(--pv2-acc2);background:var(--pv2-accbg)}
@@ -22214,7 +22217,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.44.35';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.44.36';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22509,7 +22512,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.44.35"></script>
+<script src="js/app.js?v=2.44.36"></script>
 <script src="js/buzon.js?v=2.44.29"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara

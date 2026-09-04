@@ -45,7 +45,7 @@ try {
   console.warn('[SW MOS] FCM no se pudo inicializar (push background off):', err);
 }
 
-const VERSION = '2.44.35';
+const VERSION = '2.44.36';
 const CACHE   = 'mos-v' + VERSION;
 // [egress · piloto] Cache dedicado de imágenes de Supabase Storage. Nombre ESTABLE (no cuelga de VERSION)
 //   para que las fotos sobrevivan a los updates de la app y NO se re-descarguen en cada deploy/sesión.

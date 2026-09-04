@@ -58632,6 +58632,68 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     S.pv2.cargando = false;
     pv2Render();
     try { _pv2StockAutoIniciar(); } catch (_) {}   // [660] stock en vivo mientras esté abierto
+    try { _pv2DemZonaAsegurar(); } catch (_) {}     // [617] misma META que el módulo Zona (criterio unificado)
+  }
+
+  // [617 · criterio unificado con Zona] El "faltante/necesidad de compra" del módulo Proveedor
+  // usa AHORA la MISMA meta demand-flow del módulo Zona (S._zonaAlmDem + _zonaMetaSmart). Así el
+  // número apunta al mismo lugar y, si el dueño cambia un criterio en Zona, Proveedor se actualiza
+  // solo (comparten función y fuente). Carga la demanda del almacén una vez (cache 2 min compartido).
+  async function _pv2DemZonaAsegurar() {
+    try {
+      const fresh = S._zonaAlmDemTs && (Date.now() - S._zonaAlmDemTs) < 120000;
+      if (S._zonaAlmDem && fresh) return;
+      if (S._zonaAlmDemLoading) return;
+      S._zonaAlmDemLoading = true;
+      try {
+        const r = await API.zona.demandaBulk({});
+        const items = (r && (r.data || r) && (r.data || r).items) || [];
+        const m = {}; items.forEach(it => { m[String(it.sku).toUpperCase()] = it; });
+        S._zonaAlmDem = m; S._zonaAlmDemTs = Date.now();
+        if (S.view === 'proveedores' && S.pv2.view === 'pedido') pv2Render();   // repinta con la meta ya cargada
+      } catch (_) { if (!S._zonaAlmDem) S._zonaAlmDem = {}; }
+      finally { S._zonaAlmDemLoading = false; }
+    } catch (_) {}
+  }
+
+  // [617] Necesidad de COMPRA de un producto según el criterio de ZONA (meta 1 sem +20% que
+  // ya contempla el envasado de derivados) − stock del GRANEL PURO en almacén (los potes ya
+  // envasados no reponen granel). Devuelve null si el producto no está en la demanda de almacén
+  // (→ la card cae al cálculo por-familia de la RPC 614 como antes).
+  // [617] Sugerencia de bultos coherente con el criterio de Zona (o la de 542 si no aplica).
+  function _pv2SugBultos(pp, upb) {
+    upb = Math.max(parseFloat(upb) || 1, 1);
+    const nz = _pv2NecZona(pp);
+    if (nz) {
+      const bultos = nz.comprar > 0 ? Math.max(1, Math.ceil(nz.comprar / upb)) : 0;
+      const razon = nz.comprar > 0
+        ? `Criterio Zona: meta ${nz.meta} − granel ${nz.stockGranel} = comprar ${nz.comprar} ${nz.uni} (1 semana +20%, con derivados)`
+        : `El granel cubre la semana (meta ${nz.meta} ${nz.uni} ≤ ${nz.stockGranel} en stock)`;
+      return { bultos, razon };
+    }
+    return {
+      bultos: (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0,
+      razon: (pp.sugerenciaV2 && pp.sugerenciaV2.razon) || (pp.razonSugerencia || '')
+    };
+  }
+  function _pv2NecZona(pp) {
+    try {
+      const sku = String((pp && pp.skuBase) || '').toUpperCase();
+      const d = sku && (S._zonaAlmDem || {})[sku];
+      if (!d || !Array.isArray(d.sem)) return null;
+      const meta = _zonaMetaSmart(d.sem, 0.20);
+      // stock del granel puro en almacén = línea "padre" de la ubicación ALMACÉN (RPC 614);
+      // fallback al stock que trae la propia demanda (d.stock) si no hay ubicaciones cargadas.
+      let stockGranel = null;
+      const alm = _pv2UbiAlm(pp);
+      if (alm && Array.isArray(alm.lineas)) {
+        const padre = alm.lineas.find(l => l.esPadre);
+        if (padre) stockGranel = parseFloat(padre.stock) || 0;
+      }
+      if (stockGranel == null) stockGranel = parseFloat(d.stock) || 0;
+      const comprar = Math.max(0, +(meta - stockGranel).toFixed(3));
+      return { meta: +(+meta).toFixed(3), stockGranel: +(+stockGranel).toFixed(3), comprar, uni: _pv2Uni(pp) };
+    } catch (_) { return null; }
   }
 
   // [660] STOCK EN VIVO EN PROVEEDORES ────────────────────────────────────────
@@ -58841,9 +58903,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       // caía a lineas.length y mostraba "3 presentaciones" en un lugar vacío.
       const nP = u.nPresentaciones == null ? (u.lineas || []).length : (parseFloat(u.nPresentaciones) || 0);
       const uni = _pv2Uni(pp);
-      return `<button type="button" class="pv2-ubi ${_pv2EsAlm(u) ? 'alm' : 'zona'}${neg ? ' neg' : ''}" onclick="MOS.pv2.ubi('${_pv2EscJs(key)}','${_pv2EscJs(u.id)}')" title="Ver ${_esc(nom)} presentación por presentación">
+      // [617] STOCK PARTIDO (pedido del dueño): "64.35 granel + 54.25 envasado" — el total sale de
+      // sumar cada presentación en su equivalente al padre; que se vea que el stock está repartido.
+      const _lin = Array.isArray(u.lineas) ? u.lineas : [];
+      const granel = _lin.filter(l => l.esPadre).reduce((a, l) => a + (parseFloat(l.stockEq != null ? l.stockEq : l.stock) || 0), 0);
+      const envas  = +(teq - granel).toFixed(3);
+      const partido = (_lin.length > 1 && Math.abs(envas) > 0.001)
+        ? `<small class="pv2-part">${_fmtQty(granel)} granel <span>+</span> ${_fmtQty(envas)} envasado</small>` : '';
+      return `<button type="button" class="pv2-ubi ${_pv2EsAlm(u) ? 'alm' : 'zona'}${neg ? ' neg' : ''}" onclick="MOS.pv2.ubi('${_pv2EscJs(key)}','${_pv2EscJs(u.id)}')" title="Ver ${_esc(nom)} presentación por presentación${partido ? ' (stock repartido: granel + envasados)' : ''}">
         <span class="t">${_pv2UbiIco(u)} ${_esc(nom)}</span>
         <b>${_fmtQty(teq)}</b>
+        ${partido}
         ${_pv2CovMini(u.cubreSem)}
         <small class="${falta > 0 ? 'falta' : ''}">${falta > 0 ? `falta ${_fmtQty(falta)} ${uni}` : `${nP} presentaci${nP === 1 ? 'ón' : 'ones'}`}</small>
         <span class="ver">ver ▾</span></button>`;
@@ -58861,21 +58931,27 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const uni = _pv2Uni(pp);
     // [615·H2] El faltante se parte en dos: lo que sale del GRANEL propio se ENVASA,
     // solo el resto se COMPRA. Antes se mandaba a comprar algo que ya estaba en casa.
-    const comprar = parseFloat(alm.faltaComprarEq) || 0;
     const envasar = parseFloat(alm.faltaEnvasarEq) || 0;
+    // [617] La NECESIDAD DE COMPRA usa el criterio de ZONA (misma meta demand-flow) cuando el
+    // producto está en la demanda del almacén; si no, cae al faltaComprarEq por-familia de la 614.
+    const nz = _pv2NecZona(pp);
+    const comprar = nz ? nz.comprar : (parseFloat(alm.faltaComprarEq) || 0);
     const top = (alm.lineas || []).filter(l => (parseFloat(l.faltaUnd) || 0) > 0)
       .sort((a, b) => (parseFloat(b.faltaEq) || 0) - (parseFloat(a.faltaEq) || 0)).slice(0, 3);
     const brk = top.length ? `<span class="brk">${top.map(l => `${_esc(_pv2LinCorta(l.nombre))} ${_fmtQty(l.faltaUnd)}`).join(' · ')}</span>` : '';
     const onclick = `onclick="MOS.pv2.ubi('${_pv2EscJs(key)}','${_pv2EscJs(alm.id)}')"`;
+    // [617] Línea META = la de Zona (misma que verías en el módulo Zona), para que hablen igual.
+    const metaLine = nz ? `<span class="lbl dim" title="Igual que el módulo Zona: lo que necesitas para 1 semana +20% (ya contempla el envasado de derivados). Se compara contra el GRANEL puro — los potes ya envasados no reponen granel.">🎯 meta ${_fmtQty(nz.meta)} ${uni}/sem · granel ${_fmtQty(nz.stockGranel)}</span>` : '';
     return `<div class="pv2-cover">
         <span class="lbl">⏳ el almacén cubre <b style="color:${_pv2CovColor(cob)}">${_pv2CovTxt(cob)}</b></span>
         <div class="bar"><i style="width:${_pv2CovPct(cob)}%;background:${_pv2CovColor(cob)}"></i></div>
         <span class="lbl dim" title="Promedio semanal de las últimas 4 semanas completas: lo despachado a zonas por guía (menos devoluciones), sin contar el envasado.">🚚 sale ${_fmtQty(dem)} ${uni}/sem</span>
+        ${metaLine}
       </div>${comprar > 0 ? `
       <button type="button" class="pv2-ubifalta" ${onclick} title="Ver el detalle del almacén presentación por presentación">
         <span class="ttl">🛒 COMPRAR PARA LA SEMANA — <b>${_fmtQty(comprar)} ${uni}</b></span>
         ${brk}<span class="ver">ver ▾</span></button>` : ''}${envasar > 0 ? `
-      <button type="button" class="pv2-ubifalta envasar" ${onclick} title="El granel ya está en el almacén: hay que envasarlo, no comprarlo">
+      <button type="button" class="pv2-ubifalta envasar" ${onclick} title="El granel ya está en el almacén: hay que envasarlo (mover a presentaciones), no comprarlo">
         <span class="ttl">🔄 ENVASAR — <b>${_fmtQty(envasar)} ${uni}</b> <small>ya tienes el granel</small></span>
         ${comprar > 0 ? '' : brk}<span class="ver">ver ▾</span></button>` : ''}`;
   }
@@ -58994,9 +59070,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const qb = _pv2QtyB(pp);
     const upb = Math.max(parseFloat(pp.unidadesPorBulto) || 1, 1);
     const fam = pp.familia || null;
-    const sug = (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0;
+    // [617] La sugerencia sigue el MISMO criterio de Zona (si el producto está en la demanda del
+    // almacén): bultos = ceil(comprar_zona / upb). Si no, la sugerenciaV2 por-familia de la 542.
+    const _sg = _pv2SugBultos(pp, upb);
+    const sug = _sg.bultos;
     const sugTxt = sug > 0 ? `${sug} bulto${sug>1?'s':''} (${sug*upb} un)` : 'No pedir';
-    const razon = (pp.sugerenciaV2 && pp.sugerenciaV2.razon) || (pp.razonSugerencia || '');
+    const razon = _sg.razon;
     const costo = _pv2CostoDe(pp);
     const costoF = pp.ultimosCostos && pp.ultimosCostos[0] ? pp.ultimosCostos[0].fecha : null;
     // Con ubicaciones el panel 🌳/📊 ya no aporta (y su botón desaparece del foot):
@@ -59399,8 +59478,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     ubiX()   { _pv2UbiCerrar(); },
     chg(k,d) { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, _pv2QtyB(pp) + d); _pv2RepaintCard(k); _pv2RepaintCart(); },
     setq(k,v){ const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, parseInt(v)||0); _pv2RepaintCard(k); _pv2RepaintCart(); },
-    sug(k)   { const pp = _pv2Item(k); if (!pp) return; _pv2CartSet(pp, (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0); _pv2RepaintCard(k); _pv2RepaintCart(); },
-    sugTodo(){ (S.pv2.items||[]).forEach(pp => { if (pp.activa !== false) _pv2CartSet(pp, (pp.sugerenciaV2 && pp.sugerenciaV2.bultos) || 0); }); pv2Render(); toast('⚡ Sugerencia cargada — es una base editable, no un pedido fijo', 'ok'); },
+    sug(k)   { const pp = _pv2Item(k); if (!pp) return; const upb = Math.max(parseFloat(pp.unidadesPorBulto)||1,1); _pv2CartSet(pp, _pv2SugBultos(pp, upb).bultos); _pv2RepaintCard(k); _pv2RepaintCart(); },
+    sugTodo(){ (S.pv2.items||[]).forEach(pp => { if (pp.activa !== false) { const upb = Math.max(parseFloat(pp.unidadesPorBulto)||1,1); _pv2CartSet(pp, _pv2SugBultos(pp, upb).bultos); } }); pv2Render(); toast('⚡ Sugerencia cargada — es una base editable, no un pedido fijo', 'ok'); },
     vaciar() { const id = S.pv2.prov.idProveedor; S.provCarritos[id] = { items: {}, ts: Date.now() }; _provCarritosSave(); _provFabRender(); pv2Render(); },
     async activo(k, val) {
       const pp = _pv2Item(k); if (!pp || !pp.idPP) { toast('Producto sin idPP', 'error'); return; }
@@ -59714,7 +59793,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // (jefa) · texto clásico. Imprimir = selector: ticket 80mm · listado completo.
     wa() {
       const p = S.pv2.prov;
-      if (!_provCarritoResumen(p.idProveedor)) { toast('El pedido está vacío', 'error'); return; }
+      // [617] PRE-PEDIDO: se puede enviar/imprimir aunque no se pida nada (bultos=0). El admin
+      // manda la lista a la jefa para que apruebe; recién ahí ajusta cantidades. No se condiciona.
       _pv2Modal('💬 Enviar por WhatsApp', `
         <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waImg('resumen')"><span class="ic">🖼</span><span><b>Resumen del pedido → proveedor</b><small>imagen profesional con productos, cantidades y total</small></span></button>
         <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waImg('stock')"><span class="ic">📊</span><span><b>Stock / Pedido completo → jefa</b><small>imagen con almacén, zonas y lo pedido — para revisar cómo se pide</small></span></button>
@@ -59731,7 +59811,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     },
     imprimir() {
       const p = S.pv2.prov;
-      if (!_provCarritoResumen(p.idProveedor)) { toast('El pedido está vacío', 'error'); return; }
+      // [617] PRE-PEDIDO: imprimir la lista aunque no se pida nada (para la jefa).
       _pv2Modal('🖨 Imprimir', `
         <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.printGo('ticket')"><span class="ic">🎫</span><span><b>Ticket 80mm — resumen del pedido</b><small>formato térmico profesional, nombres completos a todo el ancho</small></span></button>
         <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.printGo('listado')"><span class="ic">📋</span><span><b>Listado completo — stock / pedido</b><small>hoja con almacén, zonas, cobertura y lo pedido — para la jefa</small></span></button>`,
