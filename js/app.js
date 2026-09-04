@@ -19073,6 +19073,14 @@ const MOS = (() => {
     try { document.querySelectorAll('[data-view="proveedores"]').forEach(b => b.click()); } catch (_) {}
     setTimeout(() => { try { pv2._abrirRef(idProveedor); } catch (_) {} }, 120);
   }
+  // [617] Badge del botón 🏷 Proveedores en el dock de Zona: cuántos proveedores TOCAN PEDIR HOY
+  // (con faltante en almacén). Rojo pulsante si hay. Se alimenta de las mismas alertas (prov_alertas).
+  function _zonaProvBadgePintar() {
+    const b = $('zonaProvBadge'); if (!b) return;
+    const n = S._pv2AlertasTocanHoy || 0;
+    if (n > 0) { b.textContent = n > 99 ? '99+' : String(n); b.style.display = ''; b.style.background = '#dc2626'; b.style.animation = 'pulse 1.6s infinite'; }
+    else { b.style.display = 'none'; }
+  }
   // [617] 🏷 Proveedores desde la vista Zona: el módulo ya usa TODOS los stocks (almacén + zonas),
   // así que basta con abrirlo. Entra directo al HOME semanal (no arrastra fromView: es navegación normal).
   function zonaAbrirProveedores() {
@@ -51701,6 +51709,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const bc = $('zonaBtnConsiderados'); if (bc) bc.classList.toggle('hidden', !esAlm);
     // [1012] 🧿 Regulador: SOLO MASTER (en todas las zonas — checkpoints del puesto activo).
     const brg = $('zonaBtnRegulador'); if (brg) brg.classList.toggle('hidden', !_esMasterSession());
+    // [617] 🏷 Proveedores: badge de "tocan pedir hoy" — cargar alertas y pintar (cache 3 min).
+    try { _pv2AlertasAsegurar(); _zonaProvBadgePintar(); } catch (_) {}
     // [978] 🚚 Guías por zona (fusión zona1/zona2 en pestañas): SOLO en almacén.
     const bgz = $('zonaBtnGuiasAlm'); if (bgz) bgz.classList.toggle('hidden', !esAlm);
     if (bm) bm.classList.toggle('hidden', !esAlm);
@@ -58541,7 +58551,29 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
         ${lista.map(_pv2CardProv).join('') || '<p class="pv2-empty">Ningún proveedor aquí' + (S.pv2.q ? ' con ese filtro' : '') + '.</p>'}
       </div>`;
   }
+  // [617] ALERTAS DE PEDIDO (punto de pedido = almacén, criterio de Zona) — mapa idProveedor → {porPedir,tocaHoy,items}.
+  // Se comparte con el badge del botón 🏷 Proveedores del dock de Zona. Cache 3 min.
+  function _pv2AlertasAsegurar(force) {
+    try {
+      const fresh = S._pv2AlertasTs && (Date.now() - S._pv2AlertasTs) < 180000;
+      if (S._pv2Alertas && fresh && !force) return;
+      if (S._pv2AlertasLoading) return;
+      S._pv2AlertasLoading = true;
+      API.zona.provAlertas().then(r => {
+        const provs = (r && r.ok !== false && r.proveedores) || [];
+        const m = {}; provs.forEach(p => { m[String(p.idProveedor)] = p; });
+        S._pv2Alertas = m; S._pv2AlertasTs = Date.now();
+        S._pv2AlertasTocanHoy = (r && r.tocanHoy) || 0;
+        S._pv2AlertasTotal = provs.length;
+        try { _zonaProvBadgePintar(); } catch (_) {}
+        if (S.view === 'proveedores' && S.pv2.view === 'home') { const b = $('pv2HomeBody'); if (b) b.innerHTML = _pv2HomeListaHtml(); }
+      }).catch(() => {}).then(() => { S._pv2AlertasLoading = false; });
+    } catch (_) { S._pv2AlertasLoading = false; }
+  }
+  function _pv2AlertaDe(id) { return (S._pv2Alertas || {})[String(id)] || null; }
+
   function _pv2RenderHome(root) {
+    try { _pv2AlertasAsegurar(); } catch (_) {}
     // [v2.43.593] Los CARGADORES (flete/carga, prefijo 'CARGADOR') NO son proveedores de
     // pedido: viven en su propio modal 🚚 (convención existente _filtrarCargadores).
     const provs = _filtrarReales(Array.isArray(S.proveedores) ? S.proveedores : []);
@@ -58588,9 +58620,17 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const fp = String(p.formaPago||'').toUpperCase();
     const bancos = Array.isArray(p.bancos) ? p.bancos : [];
     const tel = String(p.telefono||'').replace(/\D/g,'');
-    return `<div class="pv2-prov pv2-bc" onclick="MOS.pv2.abrir('${id}')">
+    // [617] Alerta de pedido: si al almacén le falta stock de algún producto de este proveedor.
+    const al = _pv2AlertaDe(id);
+    const alertaHtml = (al && al.porPedir > 0)
+      ? `<div class="pv2-alerta${al.tocaHoy ? ' hoy' : ''}" onclick="event.stopPropagation();MOS.pv2.abrir('${id}')" title="${_esc((al.items||[]).map(x=>x.nombre+' '+x.falta+x.uni).join(' · '))}">
+           ${al.tocaHoy ? '📣 PEDIR HOY' : '⚠ por pedir'} · ${al.porPedir} producto${al.porPedir>1?'s':''}
+           <small>${_esc((al.items||[]).slice(0,2).map(x=>_pv2LinCorta(x.nombre)+' '+x.falta+x.uni).join(' · '))}${al.porPedir>2?' · …':''}</small>
+         </div>` : '';
+    return `<div class="pv2-prov pv2-bc${al && al.porPedir>0 ? (al.tocaHoy?' al-hoy':' al-pend') : ''}" onclick="MOS.pv2.abrir('${id}')">
       ${cs ? `<span class="pv2-cartn">🛒 ${cs.count}</span>` : (p.estado==='enviado'?'<span class="pv2-cartn" style="color:#34d399">✓</span>':'')}
       <div class="nm">${p.nombre||id}</div>
+      ${alertaHtml}
       ${p.ruc ? `<div class="pv2-ruc" title="RUC"><span class="bars"></span><span class="dig tnum">${p.ruc}</span></div>` : (p.categoriaProducto?`<div class="cat">${p.categoriaProducto}</div>`:'<div class="cat" style="opacity:.5">— sin RUC —</div>')}
       <div class="pv2-chips" onclick="event.stopPropagation()">
         <button class="pv2-chip ${diaI!==null?'on':''}" onclick="MOS.pv2.cycleDia('${id}', this)" title="Día de pedido — toca varias veces hasta el día que quieres; a los segundos la tarjeta vuela a su día">📅 ${diaI!==null?PV2_DIAS_S[diaI]:'+ día'}</button>

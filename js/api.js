@@ -4566,6 +4566,8 @@ const API = (() => {
       //   consideradoResolver() → {ok, quitados, total}   (estado: 'ATENDIDO' | 'DESCARTADO')
       // Mismo patrón que pickupDetalle: RPC del esquema 'wh' vía _sbRpcMOS (perfil explícito).
       consideradosListar:  async ()  => _sbRpcMOS('considerados_listar', { p: {} }, 'wh'),
+      // [617] Alertas de pedido por proveedor (punto de pedido = almacén, criterio de Zona).
+      provAlertas: async () => _sbRpcMOS('prov_alertas', { p: {} }, 'mos'),
       // [1012] 🧿 Regulador (solo MASTER): checkpoints en vivo de las 3 zonas en una sola llamada.
       reguladorReporte: async () => _sbRpcMOS('regulador_reporte', { p: {} }, 'mos'),
       // [1011] Drill-down de seguimiento: semanas → días → eventos (pedido/despacho con hora y fuente).
