@@ -59231,14 +59231,20 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   // carrito repintan solo esto + la card tocada — el panel entero ya NO parpadea.
   function _pv2CartbarHtml() {
     const p = S.pv2.prov; if (!p) return '';
+    // [617] La barra SIEMPRE está visible: es un PRE-PEDIDO — se puede enviar/imprimir aunque las
+    // cantidades estén en 0 (para que la jefa apruebe). Antes se ocultaba con el carrito vacío.
     const cs = _provCarritoResumen(p.idProveedor);
-    return cs ? `<div class="pv2-cartbar"><div class="in">
-          <div class="tot"><b>${cs.count}</b> productos · <b>${cs.qty}</b> und · est. <b>${fmtMoney(cs.monto)}</b> <small>(a últ. costo)</small></div>
+    const count = cs ? cs.count : 0;
+    const info = count > 0
+      ? `<b>${cs.count}</b> productos · <b>${cs.qty}</b> und · est. <b>${fmtMoney(cs.monto)}</b> <small>(a últ. costo)</small>`
+      : `<b>Pre-pedido</b> <small>· envía/imprime la lista para la jefa (aún sin cantidades)</small>`;
+    return `<div class="pv2-cartbar"><div class="in">
+          <div class="tot">${info}</div>
           <div class="sp"></div>
           <button class="pv2-bt wa" onclick="MOS.pv2.wa()">💬 WhatsApp</button>
           <button class="pv2-bt gh" onclick="MOS.pv2.imprimir()">🖨 Imprimir</button>
-          <button class="pv2-bt pri" onclick="MOS.pv2.enviado()">✓ Enviado</button>
-        </div></div>` : '';
+          ${count > 0 ? '<button class="pv2-bt pri" onclick="MOS.pv2.enviado()">✓ Enviado</button>' : ''}
+        </div></div>`;
   }
   function _pv2RepaintCard(key) {
     const el = document.getElementById('pv2p-' + key);
@@ -59453,17 +59459,31 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const file = new File([blob], nombre, { type: 'image/png' });
     const tel = String(p.telefono || '').replace(/\D/g, '');
     const texto = conTexto ? _pv2TextoProveedor() : '';
-    // 1) hoja nativa (celular): imagen + texto (si aplica) juntos
+    const copiarODescargar = async () => {
+      let copiado = false;
+      try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); copiado = true; } } catch (_) {}
+      if (!copiado) {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      }
+      return copiado;
+    };
+    // [618] Si va al PROVEEDOR y hay teléfono → abrir DIRECTO su chat (wa.me/51<tel>), con el texto
+    //       ya escrito. La imagen se copia (PC: Ctrl+V) o se descarga (móvil: adjuntar). NO usamos la
+    //       hoja "elige app" porque esa no dirige al número — pedido explícito del dueño.
+    if (!esJefa && tel) {
+      const copiado = await copiarODescargar();
+      window.open('https://wa.me/51' + tel + (texto ? '?text=' + encodeURIComponent(texto) : ''), '_blank');
+      const quien = p.nombre ? (' de ' + p.nombre) : '';
+      toast(copiado ? ('🖼 Imagen copiada — pégala (Ctrl+V) en el chat' + quien) : ('🖼 Imagen descargada — adjúntala en el chat' + quien), 'ok');
+      _carritoOfrecerLimpiar();
+      return;
+    }
+    // Sin teléfono, o es la JEFA (no hay número fijo): hoja nativa (celular) → clipboard/descarga (PC)
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try { await navigator.share(Object.assign({ files: [file], title: (esJefa ? 'Pre-pedido ' : 'Pedido ') + (p.nombre || '') }, texto ? { text: texto } : {})); if (!esJefa) _carritoOfrecerLimpiar(); return; } catch (e) { if (e && e.name === 'AbortError') return; }
     }
-    // 2) PC: copiar la imagen al portapapeles (el texto va escrito en el chat por la URL) → 3) descarga
-    let copiado = false;
-    try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); copiado = true; } } catch (_) {}
-    if (!copiado) {
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    }
+    const copiado = await copiarODescargar();
     toast(copiado ? ('🖼 Imagen COPIADA — pégala con Ctrl+V' + (conTexto ? ' (el texto ya va en el chat)' : '')) : '🖼 Imagen descargada — adjúntala en el chat', 'ok');
     const q = texto ? ('?text=' + encodeURIComponent(texto)) : '';
     window.open((tel ? 'https://wa.me/51' + tel : 'https://wa.me/') + q, '_blank');
