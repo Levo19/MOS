@@ -59305,21 +59305,29 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const id = p.idProveedor;
     const items = Object.values((S.provCarritos[id] && S.provCarritos[id].items) || {});
     let total = 0, qty = 0;
+    let costoFechaMax = null;
     const lineas = items.map(it => {
-      const q = parseFloat(it.qty) || 0, pr = parseFloat(it.precio) || 0;
-      const sub = _money(q * pr); total = _money(total + sub); qty += q;
+      const q = parseFloat(it.qty) || 0;
       const blt = parseFloat(it._bultos) || 0, upb = parseFloat(it._upb) || 1;
-      // [617 BUGFIX] la UNIDAD se resuelve del producto VIVO del catálogo (por skuBase), no del
-      // carrito: un item guardado antes de traer `_uni` caía a 'und' aunque fuera KGM (el maní).
-      let uni = it._uni || '';
+      // [617] resolver el producto VIVO del catálogo (por skuBase) para tomar la unidad correcta
+      // (KGM→kg) y el ÚLTIMO COSTO registrado en guías — no el precio congelado en el carrito, así
+      // el monto del ticket es fiel al aviso "basado en el último costo registrado".
+      let uni = it._uni || '', pr = parseFloat(it.precio) || 0, costoFecha = null;
       try {
         const pp = (S.pv2.items || []).find(x => String(x.skuBase || '') === String(it.skuBase || '') || String(x.codigoBarra || '') === String(it.codigoBarra || ''));
-        if (pp) uni = _pv2Uni(pp);
+        if (pp) {
+          uni = _pv2Uni(pp);
+          const c = _pv2CostoDe(pp); if (c > 0) pr = c;
+          costoFecha = (pp.ultimosCostos && pp.ultimosCostos[0] && pp.ultimosCostos[0].fecha) || null;
+          if (costoFecha && (!costoFechaMax || String(costoFecha) > String(costoFechaMax))) costoFechaMax = costoFecha;
+        }
       } catch (_) {}
       if (!uni) uni = 'und';
-      return { desc: it.desc || it.skuBase || '', q, pr, sub, blt, upb, uni };
+      const sub = _money(q * pr); total = _money(total + sub); qty += q;
+      return { desc: it.desc || it.skuBase || '', q, pr, sub, blt, upb, uni, costoFecha };
     });
-    return { prov: p, fecha: today(), lineas, total, qty };
+    return { prov: p, fecha: today(), lineas, total, qty,
+             emisor: (S.session && S.session.nombre) || '', costoFechaMax };
   }
   function _pv2Wrap(ctx, txt, maxW) {
     const words = String(txt || '').split(/\s+/); const out = []; let ln = '';
@@ -59501,9 +59509,27 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // TOTAL = suma de montos + cantidad de PRODUCTOS (no unidades)
     t += B_ON + '\x1b\x21\x10' + row('TOTAL', 'S/ ' + (+d.total).toFixed(2)) + '\x1b\x21\x00' + B_OFF;
     t += d.lineas.length + (d.lineas.length === 1 ? ' producto' : ' productos') + '\n';
-    t += '\x1b\x61\x01Generado desde MOS · ' + new Date().toLocaleString('es-PE') + '\n';
+    // [617] aviso: los montos son referenciales (último costo registrado en guías de compra)
+    t += SEPd;
+    t += _pv2Norm('* Montos referenciales, en base al ULTIMO costo registrado en guias de compra'
+                  + (d.costoFechaMax ? ' (al ' + _pv2FechaCorta(d.costoFechaMax) + ')' : '') + '. El precio final lo confirma el proveedor.') + '\n';
+    // [617] pie profesional: quién imprimió + fecha y hora
+    const _now = new Date();
+    const _f = _now.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const _h = _now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false });
+    t += '\n' + '\x1b\x61\x01';
+    t += B_ON + _pv2Norm('Emitido por: ' + (d.emisor || 'MOS')) + B_OFF + '\n';
+    t += _pv2Norm(_f + '  ' + _h + '  ·  MOS') + '\n';
     t += '\n\n\n\n\x1d\x56\x00';
     return t;
+  }
+  // Fecha corta DD/MM/AA desde un ISO o 'DD MMM' del último costo (tolerante al formato).
+  function _pv2FechaCorta(s) {
+    try {
+      const d = new Date(s);
+      if (!isNaN(d)) return d.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    } catch (_) {}
+    return String(s || '');
   }
   // Número limpio para el ticket (sin decimales inútiles: 25 no "25.00", 0.5 sí).
   function _pv2NumTicket(n) { n = parseFloat(n) || 0; return (Math.round(n * 1000) / 1000).toString(); }
