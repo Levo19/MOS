@@ -59340,121 +59340,134 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   // Imagen PROFESIONAL (canvas nativo, sin librerías): 'resumen' → al proveedor ·
   // 'stock' → stock/pedido completo para la jefa.
+  // [617] Imagen del pedido: DOS variantes, espejo de los tickets, respetando la unidad (kg/und):
+  //   'pedido'    → para el PROVEEDOR: nombre + cantidad, SIN costos ni montos.
+  //   'prepedido' → para la JEFA: nombre + STOCK partido (granel/envasado) + ROTACION + PEDIR.
   function _pv2ImgCanvas(tipo) {
+    const esPre = tipo === 'prepedido' || tipo === 'stock';
     const d = _pv2PedData();
-    const W = 780, PAD = 34, IW = W - PAD * 2;
+    const W = 820, PAD = 40, IW = W - PAD * 2;
     const cv = document.createElement('canvas'); const ctx = cv.getContext('2d');
-    const items = tipo === 'stock'
-      ? (S.pv2.items || []).filter(pp => pp.activa !== false)
+    const fNom = '800 25px system-ui';
+    const items = esPre
+      ? (S.pv2.items || []).filter(pp => pp.activa !== false).sort((a, b) => String(a.descripcion || '').localeCompare(String(b.descripcion || ''), 'es'))
       : d.lineas;
-    // ── pasada 1: medir alto ──
-    const fName = '700 21px system-ui', fSub = '500 15px system-ui', fBig = '900 30px system-ui';
-    let h = 150;                                     // header
-    ctx.font = fName;
-    const nameW = tipo === 'stock' ? IW - 310 : IW - 170;   // stock: columnas a la derecha
-    const medidas = items.map(it => {
-      const nom = tipo === 'stock' ? (it.descripcion || '') : it.desc;
-      const nl = _pv2Wrap(ctx, nom, nameW).length;
-      const rh = nl * 27 + 26 + 18;
-      h += rh; return { nl, rh };
+    // datos por fila (una vez) para medir y dibujar igual
+    const rows = items.map(it => {
+      if (esPre) {
+        const uni = _pv2Uni(it), upb = Math.max(parseFloat(it.unidadesPorBulto) || 1, 1), qb = _pv2QtyB(it);
+        const alm = _pv2UbiAlm(it);
+        const granel = alm && Array.isArray(alm.lineas) ? alm.lineas.filter(l => l.esPadre).reduce((a, l) => a + (parseFloat(l.stockEq != null ? l.stockEq : l.stock) || 0), 0) : (parseFloat(it.stockWh) || 0);
+        const envas = +(((alm ? parseFloat(alm.totalEq) || 0 : granel)) - granel).toFixed(3);
+        const nDer = ((it.familia && it.familia.derivados) || []).length;
+        const rot = alm && alm.demandaEqSem != null ? (parseFloat(alm.demandaEqSem) || 0) : null;
+        return { nom: it.descripcion || it.codigoBarra || '', uni, granel, envas, nDer, rot, qb, upb };
+      }
+      return { nom: it.desc || '', cant: _pv2CantTxt(it) };
     });
-    h += tipo === 'stock' ? 96 : 130;                // total + footer
+    // ── pasada 1: medir alto ──
+    ctx.font = fNom;
+    let h = 172;   // header
+    const med = rows.map(r => {
+      const nl = _pv2Wrap(ctx, r.nom, IW).length;
+      const extra = esPre ? (72 + (r.nDer > 0 || r.envas > 0.001 ? 26 : 0)) : 40;
+      return { nl, rh: nl * 32 + extra + 20 };
+    });
+    med.forEach(m => h += m.rh);
+    h += 150;   // total + footer
     cv.width = W; cv.height = h;
     // ── fondo ──
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, h);
-    ctx.fillStyle = '#f59e0b'; ctx.fillRect(0, 0, W, 8);
+    ctx.fillStyle = esPre ? '#3b82f6' : '#f59e0b'; ctx.fillRect(0, 0, W, 10);
     // ── header ──
-    let y = 50;
-    ctx.fillStyle = '#94a3b8'; ctx.font = '800 13px system-ui';
-    ctx.fillText(tipo === 'stock' ? 'STOCK / PEDIDO — REVISIÓN' : 'PEDIDO', PAD, y);
+    let y = 54;
+    ctx.textAlign = 'left'; ctx.fillStyle = '#94a3b8'; ctx.font = '800 14px system-ui';
+    ctx.fillText(esPre ? 'PRE-PEDIDO · REVISION DE JEFATURA' : 'PEDIDO', PAD, y);
     ctx.textAlign = 'right'; ctx.fillText(d.fecha, W - PAD, y); ctx.textAlign = 'left';
-    y += 34;
-    ctx.fillStyle = '#0f172a'; ctx.font = fBig;
+    y += 40;
+    ctx.fillStyle = '#0f172a'; ctx.font = '900 34px system-ui';
     ctx.fillText(_pv2Wrap(ctx, d.prov.nombre || '', IW)[0], PAD, y);
-    y += 26;
-    ctx.fillStyle = '#64748b'; ctx.font = '500 14px system-ui';
-    ctx.fillText([d.prov.ruc ? 'RUC ' + d.prov.ruc : '', d.prov.telefono || ''].filter(Boolean).join('  ·  '), PAD, y);
-    y += 18;
+    y += 28;
+    ctx.fillStyle = '#64748b'; ctx.font = '500 15px system-ui';
+    ctx.fillText([d.prov.ruc ? 'RUC ' + d.prov.ruc : '', d.prov.telefono || ''].filter(Boolean).join('   ·   '), PAD, y);
+    y += 20;
     ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
-    y += 8;
-    if (tipo === 'stock') {
-      ctx.fillStyle = '#94a3b8'; ctx.font = '800 12px system-ui'; ctx.textAlign = 'right';
-      ctx.fillText('ALM', W - PAD - 200, y + 18); ctx.fillText('ZONAS', W - PAD - 120, y + 18);
-      ctx.fillText('PEDIDO', W - PAD, y + 18); ctx.textAlign = 'left'; y += 26;
-    }
+    y += 6;
     // ── filas ──
-    items.forEach((it, i) => {
-      const esStock = tipo === 'stock';
-      const nom = esStock ? (it.descripcion || '') : it.desc;
-      const qb = esStock ? _pv2QtyB(it) : 0;
-      y += 10;
-      if (esStock && qb > 0) { ctx.fillStyle = '#fffbeb'; ctx.fillRect(PAD - 10, y - 4, IW + 20, medidas[i].rh - 10); ctx.fillStyle = '#f59e0b'; ctx.fillRect(PAD - 10, y - 4, 4, medidas[i].rh - 10); }
-      ctx.font = fName; ctx.fillStyle = '#0f172a';
-      const nls = _pv2Wrap(ctx, nom, nameW);
-      nls.forEach(l => { y += 27; ctx.fillText(l, PAD, y); });
-      if (esStock) {
-        const upb = Math.max(parseFloat(it.unidadesPorBulto) || 1, 1);
-        const zS = _money((it.zonas || []).reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
-        ctx.font = '700 17px system-ui'; ctx.textAlign = 'right'; ctx.fillStyle = '#334155';
-        const yv = y - ((nls.length - 1) * 27) / 2;
-        ctx.fillText(String(_money(it.stockWh)), W - PAD - 200, yv);
-        ctx.fillText(String(zS), W - PAD - 120, yv);
-        ctx.fillStyle = qb > 0 ? '#b45309' : '#cbd5e1'; ctx.font = '900 17px system-ui';
-        ctx.fillText(qb > 0 ? qb + ' blt (' + (qb * upb) + ' un)' : '—', W - PAD, yv);
-        ctx.textAlign = 'left';
-        y += 26;
+    let nPide = 0;
+    rows.forEach((r, i) => {
+      y += 16;
+      if (esPre && r.qb > 0) { nPide++; ctx.fillStyle = '#eff6ff'; ctx.fillRect(PAD - 12, y - 6, IW + 24, med[i].rh - 12); ctx.fillStyle = '#3b82f6'; ctx.fillRect(PAD - 12, y - 6, 5, med[i].rh - 12); }
+      // nombre (bold)
+      ctx.font = fNom; ctx.fillStyle = '#0f172a';
+      _pv2Wrap(ctx, r.nom, IW).forEach(l => { y += 32; ctx.fillText(l, PAD, y); });
+      if (esPre) {
+        // stock granel + rotación al extremo
+        y += 30; ctx.font = '600 17px system-ui'; ctx.fillStyle = '#334155';
+        ctx.fillText('STOCK  ' + _pv2NumTicket(r.granel) + ' ' + r.uni + (r.nDer > 0 ? ' granel' : ''), PAD, y);
+        if (r.rot != null) { ctx.textAlign = 'right'; ctx.fillStyle = '#0891b2'; ctx.font = '700 17px system-ui'; ctx.fillText('ROT ' + _pv2NumTicket(r.rot) + '/sem', W - PAD, y); ctx.textAlign = 'left'; }
+        // envasados
+        if (r.nDer > 0 || r.envas > 0.001) { y += 24; ctx.font = '500 15px system-ui'; ctx.fillStyle = '#64748b'; ctx.fillText('+ envasado ' + _pv2NumTicket(r.envas) + ' ' + r.uni + (r.nDer > 0 ? '   [' + r.nDer + ' pres]' : ''), PAD, y); }
+        // pedir (bold, con línea para lápiz)
+        y += 28; ctx.font = '800 19px system-ui'; ctx.fillStyle = r.qb > 0 ? '#1d4ed8' : '#94a3b8';
+        const pedTxt = r.qb > 0 ? 'PEDIR:  ' + _pv2CantTxt({ blt: r.qb, upb: r.upb, uni: r.uni, q: r.qb * r.upb }) : 'PEDIR:  __________________';
+        ctx.fillText(pedTxt, PAD, y);
+        if (r.qb > 0) { ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1; const lx = PAD + ctx.measureText(pedTxt).width + 16; ctx.beginPath(); ctx.moveTo(lx, y + 2); ctx.lineTo(Math.min(W - PAD, lx + 120), y + 2); ctx.stroke(); }
       } else {
-        y += 26;
-        ctx.font = fSub; ctx.fillStyle = '#64748b';
-        ctx.fillText((it.blt > 0 ? it.blt + ' bulto' + (it.blt > 1 ? 's' : '') + ' ×' + it.upb + ' = ' : '') + it.q + ' und' + (it.pr > 0 ? '  ·  a ' + fmtMoney(it.pr) : ''), PAD, y);
-        if (it.sub > 0) { ctx.textAlign = 'right'; ctx.fillStyle = '#0f172a'; ctx.font = '800 18px system-ui'; ctx.fillText(fmtMoney(it.sub), W - PAD, y); ctx.textAlign = 'left'; }
+        // cantidad clara, SIN monto
+        y += 34; ctx.font = '800 21px system-ui'; ctx.fillStyle = '#b45309';
+        ctx.fillText('>  ' + r.cant, PAD, y);
       }
-      y += 8;
+      y += 14;
       ctx.strokeStyle = '#f1f5f9'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(PAD, y); ctx.lineTo(W - PAD, y); ctx.stroke();
     });
-    // ── total + footer ──
+    // ── resumen + footer (SIN montos) ──
+    y += 40;
+    ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(PAD, y - 24); ctx.lineTo(W - PAD, y - 24); ctx.stroke();
+    ctx.font = '900 22px system-ui'; ctx.fillStyle = '#0f172a';
+    if (esPre) ctx.fillText('A PEDIR:  ' + nPide + ' de ' + items.length + ' productos', PAD, y + 4);
+    else ctx.fillText(d.lineas.length + (d.lineas.length === 1 ? ' producto' : ' productos'), PAD, y + 4);
     y += 34;
-    if (tipo !== 'stock') {
-      ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(PAD, y - 22); ctx.lineTo(W - PAD, y - 22); ctx.stroke();
-      ctx.font = '900 22px system-ui'; ctx.fillStyle = '#0f172a';
-      ctx.fillText('TOTAL  ·  ' + d.lineas.length + ' prod  ·  ' + d.qty + ' und', PAD, y + 6);
-      ctx.textAlign = 'right'; ctx.fillStyle = '#b45309'; ctx.font = '900 26px system-ui';
-      ctx.fillText(fmtMoney(d.total), W - PAD, y + 6); ctx.textAlign = 'left';
-      y += 26;
-    } else {
-      ctx.font = '800 16px system-ui'; ctx.fillStyle = '#0f172a';
-      ctx.fillText('Pedido: ' + d.lineas.length + ' productos · ' + d.qty + ' und · est. ' + fmtMoney(d.total), PAD, y);
-      y += 8;
-    }
-    y += 26;
-    ctx.font = '500 12px system-ui'; ctx.fillStyle = '#94a3b8';
-    ctx.fillText('Generado desde MOS · ' + new Date().toLocaleString('es-PE'), PAD, y);
+    if (esPre) { ctx.font = '500 13px system-ui'; ctx.fillStyle = '#94a3b8'; _pv2Wrap(ctx, 'Es lo que el sistema calcula que se necesita (stock vs rotacion). Modificable: corrige la cantidad en la linea PEDIR.', IW).forEach(l => { y += 18; ctx.fillText(l, PAD, y); }); y += 6; }
+    y += 24;
+    const _now = new Date();
+    ctx.font = '700 15px system-ui'; ctx.fillStyle = '#334155';
+    ctx.fillText('Emitido por: ' + (d.emisor || 'MOS'), PAD, y);
+    y += 20; ctx.font = '500 13px system-ui'; ctx.fillStyle = '#94a3b8';
+    ctx.fillText(_now.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }) + '  ' + _now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false }) + '   ·   Inversiones MOS', PAD, y);
     return cv;
   }
-  async function _pv2ShareImg(tipo) {
+  // [617] Enviar por WhatsApp. modo: 'proveedor' (imagen pedido) · 'jefa' (imagen pre-pedido) ·
+  // 'texto' (imagen pedido + texto de presentación de Inversiones MOS). Nunca costos/montos.
+  async function _pv2ShareImg(modo) {
     const p = S.pv2.prov || {};
-    const cv = _pv2ImgCanvas(tipo);
+    const esJefa = modo === 'jefa';
+    const conTexto = modo === 'texto';
+    const cv = _pv2ImgCanvas(esJefa ? 'prepedido' : 'pedido');
     const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
     if (!blob) { toast('No se pudo generar la imagen', 'error'); return; }
-    const nombre = (tipo === 'stock' ? 'stock-pedido-' : 'pedido-') + (p.nombre || 'prov').replace(/\W+/g, '_') + '.png';
+    const nombre = (esJefa ? 'prepedido-' : 'pedido-') + (p.nombre || 'prov').replace(/\W+/g, '_') + '.png';
     const file = new File([blob], nombre, { type: 'image/png' });
     const tel = String(p.telefono || '').replace(/\D/g, '');
-    // 1) hoja nativa (celular) → 2) portapapeles (PC: Ctrl+V en el chat) → 3) descarga
+    const texto = conTexto ? _pv2TextoProveedor() : '';
+    // 1) hoja nativa (celular): imagen + texto (si aplica) juntos
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: 'Pedido ' + (p.nombre || '') }); if (tipo !== 'stock') _carritoOfrecerLimpiar(); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+      try { await navigator.share(Object.assign({ files: [file], title: (esJefa ? 'Pre-pedido ' : 'Pedido ') + (p.nombre || '') }, texto ? { text: texto } : {})); if (!esJefa) _carritoOfrecerLimpiar(); return; } catch (e) { if (e && e.name === 'AbortError') return; }
     }
+    // 2) PC: copiar la imagen al portapapeles (el texto va escrito en el chat por la URL) → 3) descarga
     let copiado = false;
     try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); copiado = true; } } catch (_) {}
     if (!copiado) {
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }
-    toast(copiado ? '🖼 Imagen COPIADA — pégala en el chat con Ctrl+V' : '🖼 Imagen descargada — adjúntala en el chat', 'ok');
-    if (tipo !== 'stock' && tel) window.open('https://wa.me/51' + tel, '_blank');
-    if (tipo !== 'stock') _carritoOfrecerLimpiar();
+    toast(copiado ? ('🖼 Imagen COPIADA — pégala con Ctrl+V' + (conTexto ? ' (el texto ya va en el chat)' : '')) : '🖼 Imagen descargada — adjúntala en el chat', 'ok');
+    const q = texto ? ('?text=' + encodeURIComponent(texto)) : '';
+    window.open((tel ? 'https://wa.me/51' + tel : 'https://wa.me/') + q, '_blank');
+    if (!esJefa) _carritoOfrecerLimpiar();
   }
   // [v2.43.599] Impresión = flujo REAL de MOS: abrirPrinterPicker → ESC/POS →
   // Edge imprimir → PrintNode DIRECTO (nada de window.print/PDF — reclamo del dueño).
@@ -59533,6 +59546,28 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   // Número limpio para el ticket (sin decimales inútiles: 25 no "25.00", 0.5 sí).
   function _pv2NumTicket(n) { n = parseFloat(n) || 0; return (Math.round(n * 1000) / 1000).toString(); }
+  // [617] Cantidad legible RESPETANDO la unidad (kg / und), reutilizada por tickets E imágenes:
+  //   granel → "1 bulto x 25 kg" · pack → "3 bultos x 12 = 36 un" · suelto → "6 unidades".
+  function _pv2CantTxt(it) {
+    const blt = it.blt > 0 ? it.blt : Math.max(1, Math.round((it.q || 0) / Math.max(it.upb || 1, 1)));
+    const upb = Math.max(it.upb || 1, 1);
+    const esKg = String(it.uni || '').toLowerCase() === 'kg';
+    if (esKg) { let c = blt + (blt === 1 ? ' bulto' : ' bultos') + ' x ' + _pv2NumTicket(upb) + ' kg'; if (blt > 1) c += ' (' + _pv2NumTicket(blt * upb) + ' kg)'; return c; }
+    if (upb > 1) return blt + (blt === 1 ? ' bulto' : ' bultos') + ' x ' + _pv2NumTicket(upb) + ' = ' + _pv2NumTicket(blt * upb) + ' un';
+    return _pv2NumTicket(it.q || blt) + (Math.round(it.q || blt) === 1 ? ' unidad' : ' unidades');
+  }
+  // [617] Texto profesional para el PROVEEDOR (presentación de Inversiones MOS) — SIN costos ni montos.
+  function _pv2TextoProveedor() {
+    const d = _pv2PedData();
+    const L = [];
+    L.push('Buenas, le escribimos de parte de *INVERSIONES MOS*.');
+    L.push('Quisieramos realizar el siguiente pedido:');
+    L.push('');
+    d.lineas.forEach(it => L.push('• ' + (it.desc || '') + ' — *' + _pv2CantTxt(it) + '*'));
+    L.push('');
+    L.push('Quedamos atentos a su confirmacion. Muchas gracias!');
+    return L.join('\n');
+  }
   // [617 rediseño · feedback del dueño] Ticket 80mm de PRE-PEDIDO para la JEFA (revisar con lápiz).
   //   Digerible: por producto → nombre GRANDE + STOCK partido (granel / envasado [Nderiv]) + ROTACIÓN
   //   semanal (la misma del módulo Zona) + PEDIR con espacio para tachar/escribir. SIN costo ni monto
@@ -59963,19 +59998,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       // [617] PRE-PEDIDO: se puede enviar/imprimir aunque no se pida nada (bultos=0). El admin
       // manda la lista a la jefa para que apruebe; recién ahí ajusta cantidades. No se condiciona.
       _pv2Modal('💬 Enviar por WhatsApp', `
-        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waImg('resumen')"><span class="ic">🖼</span><span><b>Resumen del pedido → proveedor</b><small>imagen profesional con productos, cantidades y total</small></span></button>
-        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waImg('stock')"><span class="ic">📊</span><span><b>Stock / Pedido completo → jefa</b><small>imagen con almacén, zonas y lo pedido — para revisar cómo se pide</small></span></button>
-        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waTexto()"><span class="ic">✏️</span><span><b>Solo texto</b><small>el resumen clásico como mensaje simple</small></span></button>`,
+        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waSend('texto')"><span class="ic">💬</span><span><b>Texto + imagen → proveedor</b><small>presentación de Inversiones MOS + la imagen del pedido (sin precios)</small></span></button>
+        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waSend('proveedor')"><span class="ic">📦</span><span><b>Solo imagen del pedido → proveedor</b><small>qué y cuánto pedimos, sin costos ni montos</small></span></button>
+        <button class="pv2-share" onclick="MOS.pv2._mx();MOS.pv2.waSend('jefa')"><span class="ic">📋</span><span><b>Pre-pedido → jefa</b><small>stock (granel/envasado), rotación y lo pedido — para revisar</small></span></button>`,
         '<button class="btn-ghost text-sm flex-1" onclick="MOS.pv2._mx()">Cancelar</button>');
     },
-    waImg(tipo) { _pv2ShareImg(tipo); },
-    waTexto() {
-      const p = S.pv2.prov;
-      const tel = String(p.telefono || '').replace(/\D/g, '');
-      const texto = encodeURIComponent(_pedidoTextoWhatsApp());
-      window.open(tel ? `https://wa.me/51${tel}?text=${texto}` : `https://wa.me/?text=${texto}`, '_blank');
-      _carritoOfrecerLimpiar();
-    },
+    waSend(modo) { _pv2ShareImg(modo); },
+    waImg(tipo) { _pv2ShareImg(tipo === 'stock' ? 'jefa' : (tipo === 'proveedor' ? 'proveedor' : 'texto')); },   // compat
     imprimir() {
       const p = S.pv2.prov;
       // [617] PRE-PEDIDO: imprimir la lista aunque no se pida nada (para la jefa).
