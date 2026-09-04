@@ -59564,10 +59564,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const totEq = alm ? (parseFloat(alm.totalEq) || 0) : granel;
       const envas = +(totEq - granel).toFixed(3);
       const nDer = ((pp.familia && pp.familia.derivados) || []).length;
-      const rot = _pv2SalidasSemFam(pp);
-      const rotTxt = rot != null ? 'ROT ' + rot + '/sem' : 'ROT --';
-      // nombre grande (doble alto), wrap a la mitad del ancho para que respire
-      _pv2WrapTxt(pp.descripcion || pp.codigoBarra || '', Math.floor(W / 2)).forEach(l => { t += BIG_ON + l + BIG_OFF + '\n'; });
+      // [617 FIX ROT] la rotación es la MISMA de la card del almacén ("sale X/sem" = demandaEqSem de
+      // la RPC de ubicaciones, promedio de las 4 semanas completas) — antes usaba _pv2SalidasSemFam
+      // que dependía del cache de rotación y salía vacío. Ahora está conectado como en el módulo Zona.
+      const rot = alm && alm.demandaEqSem != null ? (parseFloat(alm.demandaEqSem) || 0) : null;
+      const rotTxt = rot != null ? 'ROT ' + _pv2NumTicket(rot) + '/sem' : 'ROT --';
+      // [617] nombre en NEGRITA normal (el doble-alto deformaba la letra), igual que el ticket de pedido
+      _pv2WrapTxt(pp.descripcion || pp.codigoBarra || '', W).forEach(l => { t += B_ON + l + B_OFF + '\n'; });
       // línea de stock (granel) + rotación al otro extremo
       t += row('  STOCK  ' + _pv2NumTicket(granel) + ' ' + uni + (nDer > 0 ? ' granel' : ''), rotTxt);
       // línea de envasados (solo si hay derivados)
@@ -59583,8 +59586,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       }
       t += SEPd + '\n';
     });
-    t += B_ON + '\x1b\x21\x10' + items.length + ' productos  ·  ' + nPide + ' a pedir' + '\x1b\x21\x00' + B_OFF + '\n';
-    t += '\x1b\x61\x01Para revision de jefatura · ' + new Date().toLocaleString('es-PE') + '\n';
+    t += SEP;
+    // [617] resumen claro (no redundante) + aviso de que es lo que el sistema calcula, editable
+    t += B_ON + '\x1b\x21\x10' + row('A PEDIR', nPide + ' de ' + items.length) + '\x1b\x21\x00' + B_OFF;
+    t += SEPd;
+    t += _pv2Norm('* Es lo que el SISTEMA calcula que se necesita esta semana (stock vs rotacion). Modificable: corrige la cantidad en la linea PEDIR.') + '\n';
+    // [617] pie profesional idéntico al ticket de pedido: emisor + fecha y hora
+    const _now = new Date();
+    const _f = _now.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const _h = _now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false });
+    t += '\n' + '\x1b\x61\x01';
+    t += B_ON + _pv2Norm('Emitido por: ' + (d.emisor || 'MOS')) + B_OFF + '\n';
+    t += _pv2Norm(_f + '  ' + _h + '  ·  MOS') + '\n';
     t += '\n\n\n\n\x1d\x56\x00';
     return t;
   }
