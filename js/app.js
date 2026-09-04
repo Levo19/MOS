@@ -59493,37 +59493,58 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
   }
   // Número limpio para el ticket (sin decimales inútiles: 25 no "25.00", 0.5 sí).
   function _pv2NumTicket(n) { n = parseFloat(n) || 0; return (Math.round(n * 1000) / 1000).toString(); }
+  // [617 rediseño · feedback del dueño] Ticket 80mm de PRE-PEDIDO para la JEFA (revisar con lápiz).
+  //   Digerible: por producto → nombre GRANDE + STOCK partido (granel / envasado [Nderiv]) + ROTACIÓN
+  //   semanal (la misma del módulo Zona) + PEDIR con espacio para tachar/escribir. SIN costo ni monto
+  //   (eso vive en el overlay del pedido). Sin la leyenda de arriba. Aire entre productos.
+  //   Nota: la impresora térmica NO imprime emojis → se usan etiquetas de texto (STOCK/ROT/PEDIR).
   function _pv2EscposListado(d) {
     const W = _PV2W;
     const rep = (c, n) => c.repeat(Math.max(0, n));
-    const pSt = (s, w) => { s = String(s); while (s.length < w) s = ' ' + s; return s; };
     const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
+    const B_ON = '\x1b\x45\x01', B_OFF = '\x1b\x45\x00';
+    const BIG_ON = '\x1b\x21\x18', BIG_OFF = '\x1b\x21\x00';   // doble alto + bold  /  normal
+    const row = (izq, der) => { izq = String(izq); der = String(der); return izq + rep(' ', Math.max(1, W - izq.length - der.length)) + der + '\n'; };
     const items = (S.pv2.items || []).filter(pp => pp.activa !== false)
       .sort((a, b) => String(a.descripcion || '').localeCompare(String(b.descripcion || ''), 'es'));
-    let t = '\x1b\x40\x1b\x61\x01\x1b\x21\x30' + 'STOCK / PEDIDO\n' + '\x1b\x21\x00';
-    t += '\x1b\x45\x01' + _pv2Norm(d.prov.nombre || '') + '\x1b\x45\x00\n';
-    t += d.fecha + ' · revision para jefatura\n' + '\x1b\x61\x00' + SEP;
-    t += 'STOCK=total familia (con derivados)\n';
-    t += 'ROT/SEM=sale del almacen x guias, x semana\n' + SEPd;
+    let t = '\x1b\x40\x1b\x61\x01\x1b\x21\x30' + 'PRE-PEDIDO\n' + '\x1b\x21\x00';
+    t += B_ON + _pv2Norm(d.prov.nombre || '') + B_OFF + '\n';
+    t += d.fecha + ' · revision de jefatura\n' + '\x1b\x61\x00' + SEP + '\n';
+    let nPide = 0;
     items.forEach(pp => {
-      const qb = _pv2QtyB(pp);
+      const uni = _pv2Uni(pp);
       const upb = Math.max(parseFloat(pp.unidadesPorBulto) || 1, 1);
-      const zS = _money((pp.zonas || []).reduce((a, z) => a + (parseFloat(z.cantidad) || 0), 0));
-      const fam = pp.familia || null;
-      const nDer = ((fam && fam.derivados) || []).length;
-      const famT = _money(fam ? fam.stockPos : (parseFloat(pp.stockWh) || 0) + zS);
-      const nom = (pp.descripcion || pp.codigoBarra || '') + (nDer ? ' [+' + nDer + ' deriv]' : '');
-      _pv2WrapTxt(nom, W - (qb > 0 ? 3 : 0)).forEach((l, j) => {
-        t += (qb > 0 ? (j === 0 ? '>> ' : '   ') : '') + (j === 0 ? '\x1b\x45\x01' : '') + l + (j === 0 ? '\x1b\x45\x00' : '') + '\n';
-      });
+      const qb = _pv2QtyB(pp);
+      if (qb > 0) nPide++;
+      // stock partido: granel puro (línea padre del almacén) + envasados en equivalente
+      const alm = _pv2UbiAlm(pp);
+      const granel = alm && Array.isArray(alm.lineas)
+        ? alm.lineas.filter(l => l.esPadre).reduce((a, l) => a + (parseFloat(l.stockEq != null ? l.stockEq : l.stock) || 0), 0)
+        : (parseFloat(pp.stockWh) || 0);
+      const totEq = alm ? (parseFloat(alm.totalEq) || 0) : granel;
+      const envas = +(totEq - granel).toFixed(3);
+      const nDer = ((pp.familia && pp.familia.derivados) || []).length;
       const rot = _pv2SalidasSemFam(pp);
-      const rotTxt = rot != null ? rot + '/sem' : (fam && fam.rotFamiliaDia ? _money(fam.rotFamiliaDia * 7) + '/sem vta' : 'sin mov.');
-      const linea = 'STOCK ' + famT + '   ROT/SEM ' + rotTxt;
-      const ped = qb > 0 ? 'PIDE ' + qb + 'blt(' + (qb * upb) + 'u)' : '';
-      t += linea.slice(0, W - ped.length - 1) + pSt(ped, W - Math.min(linea.length, W - ped.length - 1)) + '\n' + SEPd;
+      const rotTxt = rot != null ? 'ROT ' + rot + '/sem' : 'ROT --';
+      // nombre grande (doble alto), wrap a la mitad del ancho para que respire
+      _pv2WrapTxt(pp.descripcion || pp.codigoBarra || '', Math.floor(W / 2)).forEach(l => { t += BIG_ON + l + BIG_OFF + '\n'; });
+      // línea de stock (granel) + rotación al otro extremo
+      t += row('  STOCK  ' + _pv2NumTicket(granel) + ' ' + uni + (nDer > 0 ? ' granel' : ''), rotTxt);
+      // línea de envasados (solo si hay derivados)
+      if (nDer > 0 || envas > 0.001) t += '  +env.  ' + _pv2NumTicket(envas) + ' ' + uni + (nDer > 0 ? '  [' + nDer + ' pres]' : '') + '\n';
+      // pedido, en negrita y con espacio para el lápiz de la jefa
+      if (qb > 0) {
+        const cant = uni === 'kg'
+          ? qb + (qb === 1 ? ' bulto' : ' bultos') + ' x ' + _pv2NumTicket(upb) + ' kg'
+          : (upb > 1 ? qb + (qb === 1 ? ' bulto' : ' bultos') + ' x ' + _pv2NumTicket(upb) + ' un' : _pv2NumTicket(qb * upb) + ' un');
+        t += B_ON + '  PEDIR: ' + cant + B_OFF + '  ______\n';
+      } else {
+        t += '  PEDIR: ______________________\n';
+      }
+      t += SEPd + '\n';
     });
-    t += '\x1b\x45\x01' + _pv2Norm('PEDIDO: ' + d.lineas.length + ' productos · ' + d.qty + ' und · est. S/' + (+d.total).toFixed(2)) + '\x1b\x45\x00\n';
-    t += '\x1b\x61\x01Generado desde MOS · ' + new Date().toLocaleString('es-PE') + '\n';
+    t += B_ON + '\x1b\x21\x10' + items.length + ' productos  ·  ' + nPide + ' a pedir' + '\x1b\x21\x00' + B_OFF + '\n';
+    t += '\x1b\x61\x01Para revision de jefatura · ' + new Date().toLocaleString('es-PE') + '\n';
     t += '\n\n\n\n\x1d\x56\x00';
     return t;
   }
