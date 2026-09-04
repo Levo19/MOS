@@ -58827,10 +58827,24 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const uc = (pp.ultimosCostos && pp.ultimosCostos[0] && parseFloat(pp.ultimosCostos[0].costo)) || 0;
     return uc || parseFloat(pp.precioReferencia) || 0;
   }
-  function _pv2Key(pp) { return String(pp.idPP || pp.skuBase || pp.codigoBarra); }
+  // [617 BUGFIX] La key del carrito DEBE ser estable: `idPP` aparece recién tras el refetch del
+  // catálogo → si fuera lo primero, la key cambiaba a mitad de sesión y el item guardado quedaba
+  // huérfano (aparecía en 0 aunque el dato seguía en localStorage). skuBase/codigoBarra SIEMPRE
+  // están desde el inicio → key estable. (idPP queda solo como último recurso.)
+  function _pv2Key(pp) { return String(pp.skuBase || pp.codigoBarra || pp.idPP || ''); }
+  // Encuentra el item del carrito probando TODAS las keys posibles del pp (compat con guardados
+  // previos bajo idPP/codigoBarra) — y migra a la key estable si lo halló bajo otra.
+  function _pv2CartFind(pp) {
+    const id = S.pv2.prov && S.pv2.prov.idProveedor;
+    const items = (id && S.provCarritos[id] && S.provCarritos[id].items) || null;
+    if (!items) return null;
+    const kEst = _pv2Key(pp);
+    const cands = [kEst, pp.idPP, pp.codigoBarra, pp.skuBase].filter(k => k != null && String(k) !== '');
+    for (const k of cands) { const it = items[String(k)]; if (it) return { key: String(k), it, kEst, items }; }
+    return null;
+  }
   function _pv2QtyB(pp) {
-    const id = S.pv2.prov.idProveedor;
-    const it = S.provCarritos[id] && S.provCarritos[id].items && S.provCarritos[id].items[_pv2Key(pp)];
+    const f = _pv2CartFind(pp); const it = f && f.it;
     return it ? (parseFloat(it._bultos) || Math.ceil((parseFloat(it.qty)||0) / Math.max(parseFloat(pp.unidadesPorBulto)||1,1))) : 0;
   }
   function _pv2CartSet(pp, bultos) {
@@ -58839,7 +58853,10 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const key = _pv2Key(pp);
     const upb = Math.max(parseFloat(pp.unidadesPorBulto) || 1, 1);
     bultos = Math.max(0, Math.round(bultos) || 0);
-    if (bultos > 0) c.items[key] = { qty: bultos * upb, precio: _pv2CostoDe(pp), desc: pp.descripcion, skuBase: pp.skuBase, codigoBarra: pp.codigoBarra, _bultos: bultos, _upb: upb };
+    // [617 BUGFIX] limpiar cualquier copia previa del MISMO producto bajo una key vieja
+    // (idPP/codigoBarra) para no dejar duplicados fantasma tras el cambio de key estable.
+    [pp.idPP, pp.codigoBarra, pp.skuBase].forEach(k => { if (k != null && String(k) !== key && c.items[String(k)]) delete c.items[String(k)]; });
+    if (bultos > 0) c.items[key] = { qty: bultos * upb, precio: _pv2CostoDe(pp), desc: pp.descripcion, skuBase: pp.skuBase, codigoBarra: pp.codigoBarra, _bultos: bultos, _upb: upb, _uni: _pv2Uni(pp) };
     else delete c.items[key];
     c.ts = Date.now(); S.provCarritoActivoId = id;
     _provCarritosSave(); _provFabRender();
@@ -59290,7 +59307,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const q = parseFloat(it.qty) || 0, pr = parseFloat(it.precio) || 0;
       const sub = _money(q * pr); total = _money(total + sub); qty += q;
       const blt = parseFloat(it._bultos) || 0, upb = parseFloat(it._upb) || 1;
-      return { desc: it.desc || it.skuBase || '', q, pr, sub, blt, upb };
+      return { desc: it.desc || it.skuBase || '', q, pr, sub, blt, upb, uni: it._uni || 'und' };
     });
     return { prov: p, fecha: today(), lineas, total, qty };
   }
@@ -59432,32 +59449,50 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     if (ln) out.push(ln);
     return out.length ? out : [''];
   }
+  // [617 rediseño · feedback del dueño] Ticket 80mm de PEDIDO para el PROVEEDOR:
+  //   · SIN numeración (se confundía con la cantidad).
+  //   · Nombre GRANDE (doble alto + bold), 2-3 renglones si hace falta.
+  //   · Debajo, en negrita: la cantidad clara — granel "1 bulto x 25 kg" · unidad "3 bultos x 12 = 36 un".
+  //   · SIN costo, SIN subtotal, SIN total en soles (el proveedor no ve nuestros precios).
+  //   · Pie: "TOTAL: N productos" (no "und"). Más aire entre producto y producto.
   function _pv2EscposResumen(d) {
     const W = _PV2W;
     const rep = (c, n) => c.repeat(Math.max(0, n));
-    const pSt = (s, w) => { s = String(s); while (s.length < w) s = ' ' + s; return s; };
-    const SEP = rep('=', W) + '\n', SEPd = rep('-', W) + '\n';
+    const SEP = rep('=', W) + '\n';
+    const B_ON = '\x1b\x45\x01', B_OFF = '\x1b\x45\x00';
+    const BIG_ON = '\x1b\x21\x18', BIG_OFF = '\x1b\x21\x00';   // doble alto + bold  /  normal
     let t = '\x1b\x40\x1b\x61\x01\x1b\x21\x30' + 'PEDIDO\n' + '\x1b\x21\x00';
-    t += '\x1b\x45\x01' + _pv2Norm(d.prov.nombre || '') + '\x1b\x45\x00\n';
+    t += B_ON + _pv2Norm(d.prov.nombre || '') + B_OFF + '\n';
     const sub = [d.prov.ruc ? 'RUC ' + d.prov.ruc : '', d.prov.telefono || ''].filter(Boolean).join(' · ');
     if (sub) t += _pv2Norm(sub) + '\n';
-    t += d.fecha + '\n' + '\x1b\x61\x00' + SEP;
+    t += d.fecha + '\n' + '\x1b\x61\x00' + SEP + '\n';
     d.lineas.forEach((it, i) => {
-      _pv2WrapTxt((i + 1) + '. ' + it.desc, W).forEach((l, j) => { t += (j === 0 ? '\x1b\x45\x01' : '') + l + (j === 0 ? '\x1b\x45\x00' : '') + '\n'; });
-      const det = (it.blt > 0 ? it.blt + ' blt x' + it.upb + ' = ' : '') + it.q + ' und' + (it.pr > 0 ? ' x S/' + (+it.pr).toFixed(2) : '');
-      const mon = it.sub > 0 ? 'S/' + (+it.sub).toFixed(2) : '';
-      t += det.slice(0, W - mon.length - 1) + pSt(mon, W - Math.min(det.length, W - mon.length - 1)) + '\n';
-      if (i < d.lineas.length - 1) t += SEPd;
+      // nombre grande, envuelto a la mitad del ancho (el doble-ancho no aplica aquí, pero damos aire)
+      _pv2WrapTxt(_pv2Norm(it.desc), W).forEach(l => { t += BIG_ON + l + BIG_OFF + '\n'; });
+      // cantidad clara y en negrita
+      const blt = it.blt > 0 ? it.blt : Math.max(1, Math.round((it.q || 0) / Math.max(it.upb || 1, 1)));
+      const upb = Math.max(it.upb || 1, 1);
+      const esKg = String(it.uni || '').toLowerCase() === 'kg';
+      let cant;
+      if (esKg) {
+        cant = blt + (blt === 1 ? ' bulto' : ' bultos') + ' x ' + _pv2NumTicket(upb) + ' kg';
+        if (blt > 1) cant += '  (' + _pv2NumTicket(blt * upb) + ' kg)';
+      } else if (upb > 1) {
+        cant = blt + (blt === 1 ? ' bulto' : ' bultos') + ' x ' + _pv2NumTicket(upb) + ' = ' + _pv2NumTicket(blt * upb) + ' un';
+      } else {
+        cant = _pv2NumTicket(it.q || blt) + (Math.round(it.q || blt) === 1 ? ' unidad' : ' unidades');
+      }
+      t += B_ON + '>> ' + cant + B_OFF + '\n';
+      t += (i < d.lineas.length - 1) ? '\n' : '';   // aire entre productos
     });
-    t += SEP + '\x1b\x45\x01\x1b\x21\x20';
-    const totS = 'S/' + (+d.total).toFixed(2);
-    t += 'TOTAL' + pSt(totS, Math.floor(W / 2) - 5) + '\n';
-    t += '\x1b\x21\x00\x1b\x45\x00';
-    t += d.lineas.length + ' productos · ' + d.qty + ' und\n' + SEPd;
+    t += SEP;
+    t += B_ON + '\x1b\x21\x10' + 'TOTAL: ' + d.lineas.length + (d.lineas.length === 1 ? ' producto' : ' productos') + '\x1b\x21\x00' + B_OFF + '\n';
     t += '\x1b\x61\x01Generado desde MOS · ' + new Date().toLocaleString('es-PE') + '\n';
     t += '\n\n\n\n\x1d\x56\x00';
     return t;
   }
+  // Número limpio para el ticket (sin decimales inútiles: 25 no "25.00", 0.5 sí).
+  function _pv2NumTicket(n) { n = parseFloat(n) || 0; return (Math.round(n * 1000) / 1000).toString(); }
   function _pv2EscposListado(d) {
     const W = _PV2W;
     const rep = (c, n) => c.repeat(Math.max(0, n));
