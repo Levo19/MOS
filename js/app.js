@@ -19066,9 +19066,19 @@ const MOS = (() => {
   // Con idProveedor → fuerza el carrito de ese proveedor (para FAB cross-vista).
   function provAbrirCarrito(idProveedor) {
     // [v2.43.592] El FAB abre el PEDIDO v2 (el modal carrito v1 fue eliminado).
+    // [617] Si abres el pedido desde OTRA vista (ej. Zona, tocando el FAB flotante), se recuerda
+    // esa vista: al cerrar el pedido vuelves ahí (a seguir investigando), NO a Proveedores-home.
+    try { if (S.view && S.view !== 'proveedores') S._pv2FromView = S.view; } catch (_) {}
     try { if (typeof switchView === 'function') switchView('proveedores'); } catch (_) {}
     try { document.querySelectorAll('[data-view="proveedores"]').forEach(b => b.click()); } catch (_) {}
     setTimeout(() => { try { pv2._abrirRef(idProveedor); } catch (_) {} }, 120);
+  }
+  // [617] 🏷 Proveedores desde la vista Zona: el módulo ya usa TODOS los stocks (almacén + zonas),
+  // así que basta con abrirlo. Entra directo al HOME semanal (no arrastra fromView: es navegación normal).
+  function zonaAbrirProveedores() {
+    try { S._pv2FromView = null; } catch (_) {}
+    try { if (typeof switchView === 'function') switchView('proveedores'); } catch (_) {}
+    try { document.querySelectorAll('[data-view="proveedores"]').forEach(b => b.click()); } catch (_) {}
   }
 
   // [v2.43.592 · pv2] provCerrarCarrito ELIMINADA (modal carrito v1 fuera)
@@ -59467,7 +59477,15 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     buscar(v){ S.pv2.q = String(v||'').trim().toLowerCase();
       const b = $('pv2HomeBody'); if (b) b.innerHTML = _pv2HomeListaHtml(); else pv2Render(); },
     abrir(id){ _pv2Abrir(id); },
-    volver() { _pv2UbiCerrar(); try { _pv2StockAutoDetener(); } catch (_) {} S.pv2.view = 'home'; S.pv2.prov = null; pv2Render(); },
+    volver() {
+      _pv2UbiCerrar(); try { _pv2StockAutoDetener(); } catch (_) {}
+      S.pv2.view = 'home'; S.pv2.prov = null;
+      // [617] Si el pedido se abrió desde otra vista (FAB flotante en Zona, etc.), volver ahí —
+      // no quedarse en Proveedores-home. Así puedes seguir investigando la zona donde estabas.
+      const _from = S._pv2FromView; S._pv2FromView = null;
+      if (_from && _from !== 'proveedores') { try { switchView(_from); return; } catch (_) {} }
+      pv2Render();
+    },
     tab(t)   { S.pv2.tab = t; pv2Render(); },
     solo()   { S.pv2.solo = !S.pv2.solo; pv2Render(); },
     showOff(){ S.pv2.off = !S.pv2.off; pv2Render(); },
@@ -59823,10 +59841,14 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       const cs = _provCarritoResumen(id);
       if (!cs) { toast('El pedido está vacío', 'error'); return; }
       if (!await _modalConfirm('¿Marcar el pedido como ENVIADO y limpiar el carrito de este proveedor?', { titulo: 'Pedido enviado' })) return;
+      const nom = S.pv2.prov?.nombre || '';
       S.provCarritos[id] = { items: {}, ts: Date.now() };
       _provCarritosSave(); _provFabRender();
-      S.pv2.view = 'home'; pv2Render();
-      toast('✅ Pedido de ' + (S.pv2.prov?.nombre || '') + ' marcado como enviado', 'ok');
+      S.pv2.view = 'home';
+      const _from = S._pv2FromView; S._pv2FromView = null;
+      if (_from && _from !== 'proveedores') { try { switchView(_from); } catch (_) { pv2Render(); } }
+      else pv2Render();
+      toast('✅ Pedido de ' + nom + ' marcado como enviado', 'ok');
     },
     _abrirRef(id) { _pv2Abrir(id); },
     async setDia(i) {
@@ -59917,6 +59939,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     zonaAbrirRezagado, zonaImprimirRezagado,
     // [808] 🎯 Considerados en MOS (al costado de Pickup) — backend wh.* ya vivo
     zonaAbrirConsiderados, zonaCerrarConsiderados, consToggleAtendidos, consBuscar,
+    zonaAbrirProveedores,   // [617] 🏷 Proveedores desde el dock de Zona
     abrirRegulador, regCerrar, regZonaSel, regToggleSec, regRefrescar, regCompartir, regJump,   // [1012] 🧿 Regulador (solo MASTER)
     // [RIZ #1+#2] filtro "del día" del grupo ROTADO + impresión por grupo (respeta el día)
     zonaDiaModo, zonaDiaNav, zonaImprimirTicketGrupo,
