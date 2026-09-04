@@ -19069,8 +19069,10 @@ const MOS = (() => {
     // [617] Si abres el pedido desde OTRA vista (ej. Zona, tocando el FAB flotante), se recuerda
     // esa vista: al cerrar el pedido vuelves ahí (a seguir investigando), NO a Proveedores-home.
     try { if (S.view && S.view !== 'proveedores') S._pv2FromView = S.view; } catch (_) {}
-    try { if (typeof switchView === 'function') switchView('proveedores'); } catch (_) {}
-    try { document.querySelectorAll('[data-view="proveedores"]').forEach(b => b.click()); } catch (_) {}
+    // [617 BUGFIX] la función de navegación es `nav()` (no existe `switchView`). Antes esto
+    // dependía del .click() sobre el botón del nav; al sacar Proveedores del nav, ese fallback
+    // desapareció y no navegaba. Ahora llama a nav() directo.
+    try { nav('proveedores'); } catch (_) {}
     setTimeout(() => { try { pv2._abrirRef(idProveedor); } catch (_) {} }, 120);
   }
   // [617] Badge del botón 🏷 Proveedores en el dock de Zona: cuántos proveedores TOCAN PEDIR HOY
@@ -19085,8 +19087,8 @@ const MOS = (() => {
   // así que basta con abrirlo. Entra directo al HOME semanal (no arrastra fromView: es navegación normal).
   function zonaAbrirProveedores() {
     try { S._pv2FromView = null; } catch (_) {}
-    try { if (typeof switchView === 'function') switchView('proveedores'); } catch (_) {}
-    try { document.querySelectorAll('[data-view="proveedores"]').forEach(b => b.click()); } catch (_) {}
+    // [617 BUGFIX] navegar con nav() (switchView no existe); antes dependía del botón del nav ya retirado.
+    try { nav('proveedores'); } catch (e) { try { toast('No se pudo abrir Proveedores', 'error'); } catch (_) {} }
   }
 
   // [v2.43.592 · pv2] provCerrarCarrito ELIMINADA (modal carrito v1 fuera)
@@ -59579,7 +59581,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       // [617] Si el pedido se abrió desde otra vista (FAB flotante en Zona, etc.), volver ahí —
       // no quedarse en Proveedores-home. Así puedes seguir investigando la zona donde estabas.
       const _from = S._pv2FromView; S._pv2FromView = null;
-      if (_from && _from !== 'proveedores') { try { switchView(_from); return; } catch (_) {} }
+      if (_from && _from !== 'proveedores') { try { nav(_from); return; } catch (_) {} }
       pv2Render();
     },
     tab(t)   { S.pv2.tab = t; pv2Render(); },
@@ -59942,7 +59944,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       _provCarritosSave(); _provFabRender();
       S.pv2.view = 'home';
       const _from = S._pv2FromView; S._pv2FromView = null;
-      if (_from && _from !== 'proveedores') { try { switchView(_from); } catch (_) { pv2Render(); } }
+      if (_from && _from !== 'proveedores') { try { nav(_from); } catch (_) { pv2Render(); } }
       else pv2Render();
       toast('✅ Pedido de ' + nom + ' marcado como enviado', 'ok');
     },
