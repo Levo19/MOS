@@ -30785,6 +30785,147 @@ const MOS = (() => {
     if (modal) modal.classList.remove('hidden');
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // [reporte créditos] Ticket 80mm para la jefa: SEMANA ACTUAL (lun→dom) con TODOS los
+  //   créditos y su estado (sin cobrar / cobrado caja o liquidación) + ANTERIORES SIN COBRAR
+  //   (registro constante). Agrupado por NOMBRE de cliente, con fecha, correlativo, vendedor/cajero
+  //   y monto. Word-wrap exacto (nunca corta una palabra a la mitad). Impresión online (PrintNode).
+  // ─────────────────────────────────────────────────────────────────────────
+  function _cjReporteData() {
+    const grupos = _cjCreditosState.todosLosGrupos || [];
+    const hoyStr = today();
+    const d = new Date(hoyStr + 'T12:00:00');
+    const dow = (d.getDay() + 6) % 7;                 // 0 = lunes
+    const lunes = new Date(d); lunes.setDate(d.getDate() - dow);
+    const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6);
+    const lunesStr = lunes.toISOString().slice(0, 10);
+    const domStr   = domingo.toISOString().slice(0, 10);
+
+    const semana = {}, antig = {};
+    let semPend = 0, semPendN = 0, semCobr = 0, semCobrN = 0, antPend = 0, antPendN = 0;
+    grupos.forEach(g => {
+      const fecha = g.fecha;
+      (g.tickets || []).forEach(t => {
+        const vivo  = !(t.estadoCobro && t.estadoCobro !== 'VIVO');
+        const monto = parseFloat(t.total) || 0;
+        const key   = String(t.cliente || 'VARIOS').trim().toUpperCase() + '|' + String(t.clienteDoc || '');
+        const row = {
+          fecha, correlativo: t.correlativo || t.idVenta || '', monto, vivo,
+          vendedor: t.vendedor || '', via: t.estadoCobro || '', cobradoDetalle: t.cobradoDetalle || ''
+        };
+        if (fecha >= lunesStr && fecha <= domStr) {
+          (semana[key] = semana[key] || { nombre: (t.cliente || 'VARIOS'), doc: (t.clienteDoc || ''), tickets: [] }).tickets.push(row);
+          if (vivo) { semPend += monto; semPendN++; } else { semCobr += monto; semCobrN++; }
+        } else if (fecha < lunesStr && vivo) {
+          (antig[key] = antig[key] || { nombre: (t.cliente || 'VARIOS'), doc: (t.clienteDoc || ''), tickets: [] }).tickets.push(row);
+          antPend += monto; antPendN++;
+        }
+      });
+    });
+    const toArr = (obj) => Object.keys(obj).map(k => obj[k]).map(c => {
+      c.tickets.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+      c.total = c.tickets.reduce((s, x) => s + x.monto, 0);
+      return c;
+    }).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+    return {
+      lunesStr, domStr, hoyStr, semana: toArr(semana), antig: toArr(antig),
+      semPend, semPendN, semCobr, semCobrN, antPend, antPendN
+    };
+  }
+
+  function _cjReporteEscPos(rep) {
+    const W = 48;
+    const rp = (c, n) => c.repeat(Math.max(0, n));
+    const B_ON = '\x1b\x45\x01', B_OFF = '\x1b\x45\x00';
+    const norm = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim();
+    // Word-wrap EXACTO: corta solo en espacios; una palabra más larga que W se parte (inevitable) pero
+    // jamás se corta una palabra que sí cabe.
+    const wrap = (s, w) => {
+      const words = norm(s).split(' '); const out = []; let ln = '';
+      words.forEach(wd => {
+        if (wd.length > w) { if (ln) { out.push(ln); ln = ''; } for (let i = 0; i < wd.length; i += w) out.push(wd.slice(i, i + w)); return; }
+        const cand = ln ? ln + ' ' + wd : wd;
+        if (cand.length > w && ln) { out.push(ln); ln = wd; } else ln = cand;
+      });
+      if (ln) out.push(ln);
+      return out.length ? out : [''];
+    };
+    const row = (izq, der) => { izq = String(izq); der = String(der); return izq + rp(' ', Math.max(1, W - izq.length - der.length)) + der + '\n'; };
+    const money = (n) => 'S/ ' + (Math.round((parseFloat(n) || 0) * 100) / 100).toFixed(2);
+    const fdmy = (ymd) => { const p = String(ymd || '').split('-'); return p.length === 3 ? (p[2] + '/' + p[1]) : String(ymd || ''); };
+    const dias = (ymd) => { try { const dd = Math.floor((Date.now() - new Date(ymd + 'T12:00:00').getTime()) / 86400000); return isFinite(dd) ? dd : 0; } catch (_) { return 0; } };
+    const fechaHora = (() => { try { return new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()); } catch (_) { return today(); } })();
+    const SEP = rp('=', W) + '\n', sep = rp('-', W) + '\n';
+
+    let t = '\x1b\x40';                                   // init
+    t += '\x1b\x61\x01';                                  // center
+    t += '\x1b\x21\x30' + 'REPORTE DE\nCREDITOS\n' + '\x1b\x21\x00';
+    t += B_ON + 'INVERSIONES MOS' + B_OFF + '\n';
+    t += norm('Emitido: ' + fechaHora) + '\n';
+    t += norm('Cajero/admin: ' + (rep.emisor || '-')) + '\n';
+    t += '\x1b\x61\x00' + SEP;
+
+    const bloque = (c, esAntiguo) => {
+      let s = '';
+      wrap('CLIENTE: ' + c.nombre, W).forEach(l => { s += B_ON + l + B_OFF + '\n'; });
+      if (c.doc && c.doc !== '66666') s += norm('Doc: ' + c.doc) + '\n';
+      c.tickets.forEach(tk => {
+        s += B_ON + row(norm(fdmy(tk.fecha) + ' ' + tk.correlativo), money(tk.monto)) + B_OFF;
+        let est = tk.vivo ? 'SIN COBRAR' : ('COBRADO' + (tk.via === 'PLANILLA' ? ' (liquidacion)' : ' (caja)'));
+        if (esAntiguo && tk.vivo) { const dd = dias(tk.fecha); est += ' · hace ' + dd + 'd'; }
+        const quien = tk.vivo ? ('vend: ' + norm(tk.vendedor)) : norm(tk.cobradoDetalle || '');
+        wrap('  ' + est + (quien ? ' · ' + quien : ''), W).forEach(l => { s += l + '\n'; });
+      });
+      s += B_ON + row('Subtotal (' + c.tickets.length + ' tk)', money(c.total)) + B_OFF;
+      s += sep;
+      return s;
+    };
+
+    t += '\x1b\x61\x01' + B_ON + 'SEMANA ACTUAL' + B_OFF + '\n';
+    t += norm('Lun ' + fdmy(rep.lunesStr) + '  al  Dom ' + fdmy(rep.domStr)) + '\n' + '\x1b\x61\x00' + sep;
+    if (rep.semana.length) rep.semana.forEach(c => { t += bloque(c, false); });
+    else t += norm('  (sin creditos esta semana)') + '\n' + sep;
+    t += B_ON + row('Sin cobrar semana (' + rep.semPendN + ')', money(rep.semPend)) + B_OFF;
+    t += B_ON + row('Cobrado semana (' + rep.semCobrN + ')', money(rep.semCobr)) + B_OFF;
+    t += SEP;
+
+    t += '\x1b\x61\x01' + B_ON + 'ANTERIORES SIN COBRAR' + B_OFF + '\n';
+    t += norm('(semanas pasadas - registro)') + '\n' + '\x1b\x61\x00' + sep;
+    if (rep.antig.length) rep.antig.forEach(c => { t += bloque(c, true); });
+    else t += norm('  (nada pendiente de antes)') + '\n' + sep;
+    t += B_ON + row('Sin cobrar anterior (' + rep.antPendN + ')', money(rep.antPend)) + B_OFF;
+    t += SEP;
+
+    t += '\x1b\x21\x10' + row('TOTAL SIN COBRAR', money(rep.semPend + rep.antPend)) + '\x1b\x21\x00';
+    t += norm('Tickets sin cobrar: ' + (rep.semPendN + rep.antPendN)) + '\n';
+    t += SEP;
+    t += '\x1b\x61\x01' + norm('Inversiones MOS') + '\n' + '\x1b\x61\x00';
+    t += '\n\n\n' + '\x1d\x56\x00';                       // feed + cut
+    return t;
+  }
+
+  async function cjReporteCreditos() {
+    try {
+      const grupos = _cjCreditosState.todosLosGrupos || [];
+      if (!grupos.length) { toast('Abre la mesa de créditos primero (aún sin datos)', 'warn', 3000); return; }
+      const printerId = await abrirPrinterPicker({
+        titulo: '📄 Reporte de créditos', subtitulo: 'Elige la impresora',
+        filtroTipo: 'TICKET', flowKey: 'reporte_creditos'
+      });
+      if (!printerId) return;
+      const rep = _cjReporteData();
+      rep.emisor = (S.session && S.session.nombre) || '';
+      const escpos = _cjReporteEscPos(rep);
+      toast('Enviando reporte a impresión…', 'info', 1500);
+      await API.imprimirTicketEdge(parseInt(printerId, 10), 'Reporte de creditos', escpos);
+      try { _opsBeep && _opsBeep('ok'); } catch (_) {}
+      toast('🖨 Reporte de créditos enviado', 'success');
+    } catch (e) {
+      try { _opsBeep && _opsBeep('error'); } catch (_) {}
+      toast('No se pudo imprimir el reporte: ' + (e && (e.message || e)), 'error', 5000);
+    }
+  }
+
   // Días enteros entre la fecha dada (yyyy-MM-dd) y hoy. >0 si es pasada.
   function _cjDiasDesde(yyyyMmDd) {
     if (!yyyyMmDd) return 0;
@@ -60369,7 +60510,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     cjModoTV,
     _cjTkRender, _cjTkSetFiltro, _cjTkSetVendedor,
     // [v40.4] Cobro asignado de créditos — mano de cartas
-    cjRepartirMano, cjCerrarMesa,
+    cjRepartirMano, cjCerrarMesa, cjReporteCreditos,
     cjAbrirDetalleCarta, cjCerrarDetalleCarta, cjAbrirAsignarDesdeDetalle, cjEnviarACajaDesdeMesa, cjAsignarDesdeDetalle,
     cjAbrirAsignar, cjCerrarAsignar,
     cjSetMetodoAsignar, cjSetCajaAsignar, cjSetTTLAsignar, cjConfirmarAsignar,
