@@ -19489,18 +19489,30 @@ const MOS = (() => {
     ov.classList.remove('hidden');
     _cfHaptic(10);
     if (!_catFull.cargado) {
-      try {
-        const r = await API.catalogoExport();
-        const d = (r && r.data) ? r.data : r;   // tolera envoltura
-        _catFull.data = (d && d.items) || [];
-        _catFull.resumen = (d && d.resumen) || null;
-        _catFull.cargado = true;
-      } catch (e) {
+      try { await _catFullCargar(); }
+      catch (e) {
         const l = document.getElementById('cfList'); if (l) l.innerHTML = `<div class="cf-empty">No se pudo cargar el catálogo.<br><small>${_esc(String(e && (e.message || e)))}</small></div>`;
         return;
       }
     }
     _catFullRender();
+  }
+  // Carga (una sola vez por sesión → no re-consulta ni satura egress) el catálogo estructurado.
+  let _catFullCargando = null;
+  function _catFullCargar() {
+    if (_catFull.cargado) return Promise.resolve(true);
+    if (_catFullCargando) return _catFullCargando;   // dedup: llamadas concurrentes (abrir + Excel) comparten 1 fetch
+    _catFullCargando = (async () => {
+      const r = await API.zona.catalogoExport();
+      const d = (r && r.data) ? r.data : r;   // tolera envoltura
+      _catFull.data = (d && d.items) || [];
+      _catFull.resumen = (d && d.resumen) || null;
+      _catFull.cargado = true;
+      _catFullCargando = null;
+      return true;
+    })();
+    _catFullCargando.catch(() => { _catFullCargando = null; });
+    return _catFullCargando;
   }
   function cerrarCatalogoFull() { const ov = document.getElementById('catFullOverlay'); if (ov) ov.classList.add('hidden'); }
   function catFullFiltrar(v) { _catFull.q = String(v || '').trim().toLowerCase(); _catFullRender(); }
@@ -19520,7 +19532,7 @@ const MOS = (() => {
     const list = document.getElementById('cfList'); if (!list) return;
     const items = _catFullFiltrados();
     if (!items.length) { list.innerHTML = '<div class="cf-empty">Sin resultados.</div>'; return; }
-    const cap = items.slice(0, 400);   // render acotado (búsqueda afina); el Excel lleva TODO
+    const cap = items.slice(0, 150);   // render acotado (búsqueda afina; el Excel lleva TODO) → no satura el DOM
     list.innerHTML = cap.map((it) => {
       const abierto = _catFull.exp === it.sku;
       const badges = [
@@ -19571,8 +19583,13 @@ const MOS = (() => {
   }
   async function catFullExcel() {
     if (typeof XLSX === 'undefined' || !XLSX.utils) { toast('La librería de Excel aún carga — reintenta en 1s', 'warn', 2500); return; }
-    if (!_catFull.data.length) { toast('Abre el catálogo primero', 'warn'); return; }
     _cfHaptic(20);
+    if (!_catFull.data.length) {
+      // [fix] el Excel es independiente: si no se cargó aún, lo trae solo (una vez, cacheado).
+      toast('Preparando catálogo…', 'info', 1800);
+      try { await _catFullCargar(); } catch (e) { toast('No se pudo cargar el catálogo: ' + (e && (e.message || e)), 'error', 4000); return; }
+      if (!_catFull.data.length) { toast('Catálogo vacío', 'warn'); return; }
+    }
     toast('Generando Excel…', 'info', 1500);
     try {
       const num = (n) => { const v = parseFloat(n); return isFinite(v) ? v : ''; };   // número real para Excel
