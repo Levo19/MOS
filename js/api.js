@@ -4450,7 +4450,19 @@ const API = (() => {
     },
     // Crea un PN manualmente desde MOS (admin/master) 100% Supabase (mos.crear_pn_manual → wh.registrar_producto_nuevo).
     crearPNManual:        async (p = {}) => {
-      const r = await _sbRpcMOS('crear_pn_manual', { p: { idGuia: '', ...(p || {}) } }, 'mos');
+      const q = { idGuia: '', ...(p || {}) };
+      // [fix foto PN] SQL no puede subir a Storage: si viene base64, lo subimos AQUÍ (cliente) al bucket
+      //   producto-fotos y pasamos SOLO la URL en `foto`. Antes el base64 se enviaba al RPC y se perdía
+      //   → el PN quedaba SIN foto (se veía en el form pero no en la lista).
+      const b64 = String(q.fotoBase64 || '').trim();
+      if (b64) {
+        try {
+          const up = await _subirFotoStorageMOS('PN', b64, q.mimeType || 'image/jpeg', 'PN_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+          if (up && up.url) q.foto = up.url;
+        } catch (_) { /* si falla la subida, el PN se crea igual (sin foto) — no bloquea el registro */ }
+        delete q.fotoBase64; delete q.mimeType;
+      }
+      const r = await _sbRpcMOS('crear_pn_manual', { p: q }, 'mos');
       if (r == null) throw new Error('Sin conexión con el servidor');
       if (r.ok === false) throw new Error(r.error || 'Error del servidor');
       return r.data !== undefined ? r.data : r;
