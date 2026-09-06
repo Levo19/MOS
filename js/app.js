@@ -19464,7 +19464,22 @@ const MOS = (() => {
       .cf-tag{font-size:.52rem;font-weight:800;border-radius:5px;padding:0 5px}
       .cf-tag.on{color:#34d399;background:rgba(16,185,129,.14)} .cf-tag.off{color:#94a3b8;background:rgba(100,116,139,.18)}
       .cf-descia{font-size:.68rem;color:#a5b4fc;font-style:italic;margin-top:8px;line-height:1.4}
-      .cf-empty{text-align:center;color:#64748b;padding:40px 12px;font-size:.85rem}`;
+      .cf-empty{text-align:center;color:#64748b;padding:40px 12px;font-size:.85rem}
+      .cf-curva-btn{margin-top:9px;width:100%;background:linear-gradient(135deg,rgba(59,130,246,.2),rgba(37,99,235,.12));color:#93c5fd;border:1px solid rgba(59,130,246,.45);border-radius:11px;font-weight:800;font-size:.78rem;padding:9px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+      .cf-curva-btn:active{transform:scale(.98)}
+      .cfc-overlay{position:fixed;inset:0;z-index:95;background:rgba(2,6,23,.85);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:14px}
+      .cfc-overlay.hidden{display:none}
+      .cfc-card{width:100%;max-width:940px;background:#0b1220;border:1px solid #1e293b;border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+      .cfc-head{display:flex;align-items:center;gap:10px;padding:12px 14px;background:linear-gradient(135deg,#0c4a6e,#0f172a);border-bottom:1px solid #1e3a5f}
+      .cfc-head h4{font-size:.95rem;font-weight:900;color:#e0f2fe;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .cfc-head .sp{margin-left:auto;display:flex;gap:8px}
+      .cfc-share{background:linear-gradient(135deg,rgba(16,185,129,.22),rgba(5,150,105,.14));color:#6ee7b7;border:1px solid rgba(16,185,129,.5);border-radius:10px;font-weight:800;font-size:.78rem;padding:8px 12px;cursor:pointer;white-space:nowrap}
+      .cfc-close{width:34px;height:34px;border-radius:999px;background:rgba(0,0,0,.4);color:#fca5a5;border:1px solid rgba(248,113,113,.4);font-weight:900;cursor:pointer}
+      .cfc-body{padding:12px 14px}
+      .cfc-legend{display:flex;gap:16px;justify-content:center;font-size:.72rem;color:#cbd5e1;margin-bottom:8px}
+      .cfc-legend b{color:#fde68a}
+      .cfc-cv{width:100%;height:auto;background:#0f172a;border:1px solid #1e293b;border-radius:12px;touch-action:none}
+      .cfc-empty{text-align:center;color:#64748b;padding:30px;font-size:.85rem}`;
     document.head.appendChild(s);
   }
   async function abrirCatalogoFull() {
@@ -19564,15 +19579,14 @@ const MOS = (() => {
     const der = (it.derivados || []).map(d => `<div class="cf-line"><span>${_esc(d.nombre || d.sku)}</span><span class="cod">${_esc(d.codigo || '')}</span><b>${_cfMoney(d.precio)}</b><span class="gr">costo ${_cfMoney(d.costo)}</span>${est(d.activo)}</div>`);
     const eq = (it.equivalencias || []).map(e => `<div class="cf-line"><span class="cod">${_esc(e.codigo)}</span><span class="gr">${_esc(e.descripcion || '')}</span></div>`);
     const tramos = (it.tramos || []).map(t => `<div class="cf-line"><span>${_esc(String(t.min ?? 0))} – ${_esc(String(t.max ?? '∞'))}</span><b>${t.ajustePct != null ? (t.ajustePct > 0 ? '+' : '') + t.ajustePct + '%' : ''}</b><span class="gr">${_esc(t.nombre || '')}</span></div>`);
-    const hist = (it.historial || []).map(h => `<div class="cf-line"><b>${_esc(h.fecha)}</b><span>${_esc(h.tipo)}</span><span class="gr">${h.antes != null ? _cfMoney(h.antes) : '—'} → ${_cfMoney(h.despues)}</span><span class="cod">${_esc(h.usuario || '')}</span></div>`);
     return `<div class="cf-detail">
       ${it.descIa ? `<div class="cf-descia">🧠 ${_esc(it.descIa)}</div>` : ''}
       <div class="cf-line" style="border:0"><span>Precio</span><b>${_cfMoney(it.precio)}</b><span class="gr">· costo ${_cfMoney(it.costo)}${it.margen != null ? ' · margen ' + it.margen + '%' : ''} · ${_esc(it.unidad || '')}</span></div>
+      ${it.idProducto ? `<button class="cf-curva-btn" onclick="event.stopPropagation();MOS.catFullCurva('${_escAttr(it.idProducto)}')">📈 Ver curva precio / costo</button>` : ''}
       ${sec('Presentaciones', pres)}
       ${sec('Derivados', der)}
       ${sec('Códigos equivalentes', eq)}
       ${sec('Tramos (granel)', tramos)}
-      ${sec('Historial precio/costo', hist)}
     </div>`;
   }
   function catFullToggle(sku) {
@@ -19603,7 +19617,6 @@ const MOS = (() => {
         (it.derivados || []).forEach(d => rows.push({ c: ['  Derivado', d.sku || '', d.codigo || '', d.nombre || '', '', '', d.activo ? 'Activo' : 'Inactivo', num(d.precio), num(d.costo), d.factor != null ? String(d.factor) : '', ''], t: 'der', activo: d.activo }));
         (it.equivalencias || []).forEach(e => rows.push({ c: ['  Cód. equivalente', '', e.codigo || '', e.descripcion || '', '', '', e.activo ? 'Activo' : '', '', '', '', ''], t: 'eq', activo: e.activo }));
         (it.tramos || []).forEach(t => rows.push({ c: ['  Tramo granel', '', '', (t.min != null ? t.min : 0) + ' – ' + (t.max != null ? t.max : '∞'), '', '', '', '', '', '', (t.ajustePct != null ? (t.ajustePct > 0 ? '+' : '') + t.ajustePct + '%' : '') + (t.nombre ? ' ' + t.nombre : '')], t: 'tramo' }));
-        (it.historial || []).forEach(h => rows.push({ c: ['  Historial ' + (h.fecha || ''), '', '', h.tipo || '', '', '', '', num(h.despues), num(h.antes), '', (h.usuario || '') + (h.origen ? ' · ' + h.origen : '')], t: 'hist' }));
         rows.push({ c: ['', '', '', '', '', '', '', '', '', '', ''], t: 'blank' });
       });
       const aoa = rows.map(r => r.c);
@@ -19646,6 +19659,79 @@ const MOS = (() => {
     } catch (e) {
       toast('No se pudo generar el Excel: ' + (e && (e.message || e)), 'error', 5000);
     }
+  }
+
+  // [1022] Curva precio/costo del producto (reusa _p2ChartInit + RPC historialPrecioCosto) + imagen compartible.
+  let _cfCurva = { hist: null, now: null };
+  async function catFullCurva(idProducto) {
+    const it = _catFull.data.find(x => String(x.idProducto) === String(idProducto));
+    if (!it) return;
+    _cfHaptic(12);
+    let ov = document.getElementById('cfCurvaOverlay');
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'cfCurvaOverlay'; ov.className = 'cfc-overlay hidden';
+      ov.innerHTML = `<div class="cfc-card">
+        <div class="cfc-head">
+          <h4 id="cfcTitle">—</h4>
+          <div class="sp">
+            <button class="cfc-share" onclick="MOS.cfCurvaCompartir()">📲 Imagen</button>
+            <button class="cfc-close" onclick="document.getElementById('cfCurvaOverlay').classList.add('hidden')">✕</button>
+          </div>
+        </div>
+        <div class="cfc-body">
+          <div class="cfc-legend"><span>── <b>Precio</b></span><span>╌╌ <b>Costo</b></span><span style="color:#94a3b8">arrastra para ver fechas</span></div>
+          <canvas id="cfcCanvas" class="cfc-cv" width="900" height="420"></canvas>
+          <div id="cfcEmpty" class="cfc-empty" hidden>Sin historial de precio/costo para este producto.</div>
+        </div>
+      </div>`;
+      ov.addEventListener('click', (e) => { if (e.target === ov) ov.classList.add('hidden'); });
+      document.body.appendChild(ov);
+    }
+    document.getElementById('cfcTitle').textContent = it.nombre || it.sku;
+    ov.classList.remove('hidden');
+    const cv = document.getElementById('cfcCanvas'), empty = document.getElementById('cfcEmpty');
+    const w = Math.min(900, (ov.querySelector('.cfc-card').clientWidth || 900) - 28);
+    cv.width = Math.max(320, w); cv.height = Math.round(cv.width * 0.46);
+    const ctx = cv.getContext('2d');
+    if (ctx) { ctx.clearRect(0, 0, cv.width, cv.height); ctx.fillStyle = '#64748b'; ctx.font = '13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('Cargando curva…', cv.width / 2, cv.height / 2); }
+    let hist = { P: [], C: [] };
+    try {
+      const r = await API.post('historialPrecioCosto', { idProducto });
+      const d = r && (r.data || r);
+      hist.P = (d && d.precios || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario })).filter(x => x.v > 0 && !isNaN(x.t));
+      hist.C = (d && d.costos || []).map(x => ({ t: Date.parse(x.ts), v: parseFloat(x.valor), u: x.usuario })).filter(x => x.v > 0 && !isNaN(x.t));
+    } catch (_) {}
+    const nowP = parseFloat(it.precio) || 0, nowC = parseFloat(it.costo) || 0;
+    _cfCurva = { hist, now: { p: nowP, c: nowC, nombre: it.nombre || it.sku } };
+    const vacio = !hist.P.length && !hist.C.length && !(nowP > 0 || nowC > 0);
+    if (empty) empty.hidden = !vacio;
+    if (!vacio) { try { _p2ChartInit(cv, hist, nowP, nowC, { big: true }); } catch (e) { if (ctx) { ctx.clearRect(0, 0, cv.width, cv.height); ctx.fillStyle = '#f87171'; ctx.fillText('No se pudo dibujar la curva', cv.width / 2, cv.height / 2); } } }
+    else if (ctx) ctx.clearRect(0, 0, cv.width, cv.height);
+  }
+  async function cfCurvaCompartir() {
+    const src = document.getElementById('cfcCanvas'); if (!src) return;
+    _cfHaptic(15);
+    try {
+      const HH = 64, out = document.createElement('canvas');
+      out.width = src.width; out.height = src.height + HH;
+      const x = out.getContext('2d');
+      x.fillStyle = '#0b1220'; x.fillRect(0, 0, out.width, out.height);
+      x.fillStyle = '#e0f2fe'; x.font = 'bold 20px system-ui'; x.textAlign = 'left';
+      x.fillText(String((_cfCurva.now && _cfCurva.now.nombre) || 'Curva precio/costo').slice(0, 46), 14, 28);
+      x.fillStyle = '#94a3b8'; x.font = '13px system-ui';
+      x.fillText('Precio (linea) y costo (punteado) - ' + (new Date()).toLocaleDateString('es-PE') + ' - Inversiones MOS', 14, 50);
+      x.drawImage(src, 0, HH);
+      const blob = await new Promise(r => out.toBlob(r, 'image/png'));
+      if (!blob) { toast('No se pudo generar la imagen', 'error'); return; }
+      const nombre = 'curva-' + String((_cfCurva.now && _cfCurva.now.nombre) || 'producto').replace(/\W+/g, '_').slice(0, 40) + '.png';
+      const file = new File([blob], nombre, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: (_cfCurva.now && _cfCurva.now.nombre) || 'Curva' }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+      }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast('🖼 Imagen de la curva descargada', 'success');
+    } catch (e) { toast('No se pudo compartir: ' + (e && (e.message || e)), 'error'); }
   }
 
   function openModal(id)  { const el = $(id); if (el) { el.classList.remove('hidden'); el.classList.add('open'); } }
@@ -60529,7 +60615,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirProyeccion, _proyToggle, _proyResetEstado, _proyExportar,
     closeModal, openEcoModal,   // [BLOCK 9] saveConfig/testConnection retiradas con el modal #modalConfig
     filterCatalogo, catMostrarMas, _catCardClick, _catSfx, _catRipple,
-    abrirCatalogoFull, cerrarCatalogoFull, catFullFiltrar, catFullToggle, catFullExcel,
+    abrirCatalogoFull, cerrarCatalogoFull, catFullFiltrar, catFullToggle, catFullExcel, catFullCurva, cfCurvaCompartir,
     verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnDescartar, pnVerOcultos, pnRestaurar,
