@@ -30,3 +30,6 @@ begin
   get diagnostics v_n = row_count;
   raise notice '1020: creditos desde 21-ago saneados a PLANILLA (cobrados) = %', v_n;
 end $$;
+
+-- ⚠ REVERTIDO (06-sep-2026): este parche marcó desde 21-ago hacia ADELANTE por error.
+-- Se revirtió (source MOS_SANEAMIENTO_COBRADO_21AGO_REVERT) y se reemplazó por 1021 (hacia ATRÁS).
