@@ -19412,6 +19412,225 @@ const MOS = (() => {
   }
 
   // ── MODALS ──────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  // [1022] CATÁLOGO COMPLETO — vista háptica interactiva (una tabla, se expande al tocar)
+  //   + exportador a Excel (una sola hoja jerárquica). Data: API.catalogoExport (RPC mos.catalogo_export).
+  // ═══════════════════════════════════════════════════════════════════════════
+  const _catFull = { data: [], q: '', resumen: null, exp: null, cargado: false };
+  function _cfHaptic(ms) { try { if (navigator && navigator.vibrate) navigator.vibrate(ms || 10); } catch (_) {} }
+  function _cfMoney(n) { const v = parseFloat(n); return isFinite(v) ? 'S/ ' + v.toFixed(2) : '—'; }
+  function _cfInjectCSS() {
+    if (document.getElementById('cfCSS')) return;
+    const s = document.createElement('style'); s.id = 'cfCSS';
+    s.textContent = `
+      .cf-overlay{position:fixed;inset:0;z-index:80;background:rgba(2,6,23,.72);backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center}
+      .cf-overlay.hidden{display:none}
+      .cf-panel{width:100%;max-width:920px;height:92vh;background:#0b1220;border:1px solid #1e293b;border-radius:20px 20px 0 0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -12px 40px rgba(0,0,0,.5)}
+      .cf-head{display:flex;align-items:center;gap:10px;padding:12px 14px;background:linear-gradient(135deg,#1e1b4b,#0f172a);border-bottom:1px solid #312e81}
+      .cf-head h3{font-size:1.05rem;font-weight:900;color:#e9e4ff;margin:0}
+      .cf-head p{font-size:.68rem;color:#a5b4fc;margin:2px 0 0}
+      .cf-head-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+      .cf-xls{background:linear-gradient(135deg,rgba(16,185,129,.22),rgba(5,150,105,.14));color:#6ee7b7;border:1px solid rgba(16,185,129,.5);border-radius:10px;font-weight:800;font-size:.8rem;padding:8px 12px;cursor:pointer;white-space:nowrap}
+      .cf-xls:active{transform:scale(.96)}
+      .cf-close{width:36px;height:36px;border-radius:999px;background:rgba(0,0,0,.4);color:#fca5a5;border:1px solid rgba(248,113,113,.4);font-weight:900;font-size:16px;cursor:pointer}
+      .cf-searchwrap{padding:10px 14px;border-bottom:1px solid #1e293b}
+      .cf-searchwrap input{width:100%;background:#0f172a;border:1px solid #334155;border-radius:12px;color:#e2e8f0;font-size:.9rem;padding:10px 12px;outline:none}
+      .cf-searchwrap input:focus{border-color:#818cf8}
+      .cf-list{flex:1;overflow-y:auto;padding:8px 10px;-webkit-overflow-scrolling:touch}
+      .cf-row{border:1px solid rgba(129,140,248,.22);border-radius:13px;margin-bottom:7px;overflow:hidden;background:linear-gradient(135deg,rgba(30,27,75,.35),rgba(15,23,42,.6))}
+      .cf-rhead{display:flex;align-items:center;gap:9px;padding:9px 11px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+      .cf-rhead:active{background:rgba(129,140,248,.12)}
+      .cf-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+      .cf-dot.on{background:#34d399;box-shadow:0 0 6px rgba(52,211,153,.7)} .cf-dot.off{background:#64748b}
+      .cf-rmain{min-width:0;flex:1}
+      .cf-rname{font-size:.82rem;font-weight:800;color:#f1eeff;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .cf-rmeta{font-size:.62rem;color:#94a3b8;font-family:ui-monospace,monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .cf-rcat{font-size:.56rem;font-weight:800;color:#c4b5fd;background:rgba(139,92,246,.16);border:1px solid rgba(167,139,250,.4);border-radius:999px;padding:1px 7px;white-space:nowrap;flex-shrink:0}
+      .cf-rprice{font-size:.86rem;font-weight:900;color:#fde68a;white-space:nowrap;flex-shrink:0}
+      .cf-badges{display:flex;gap:4px;flex-shrink:0}
+      .cf-badge{font-size:.55rem;font-weight:800;border-radius:6px;padding:1px 5px;white-space:nowrap}
+      .cf-badge.p{color:#93c5fd;background:rgba(59,130,246,.16)} .cf-badge.d{color:#6ee7b7;background:rgba(16,185,129,.16)}
+      .cf-badge.t{color:#c4b5fd;background:rgba(139,92,246,.18)} .cf-badge.e{color:#cbd5e1;background:rgba(148,163,184,.16)}
+      .cf-chev{color:#818cf8;font-size:.8rem;transition:transform .2s;flex-shrink:0}
+      .cf-row.exp .cf-chev{transform:rotate(90deg)}
+      .cf-detail{padding:2px 11px 11px;border-top:1px dashed rgba(129,140,248,.2);animation:cfIn .25s ease both}
+      @keyframes cfIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+      .cf-sec{margin-top:9px}
+      .cf-sech{font-size:.6rem;font-weight:900;letter-spacing:.05em;text-transform:uppercase;color:#818cf8;margin-bottom:4px}
+      .cf-line{display:flex;align-items:center;gap:6px;font-size:.7rem;padding:3px 0;border-top:1px solid rgba(148,163,184,.08);color:#cbd5e1}
+      .cf-line b{color:#fde68a;font-weight:800;white-space:nowrap}
+      .cf-line .cod{font-family:ui-monospace,monospace;color:#94a3b8;font-size:.64rem}
+      .cf-line .gr{color:#64748b}
+      .cf-tag{font-size:.52rem;font-weight:800;border-radius:5px;padding:0 5px}
+      .cf-tag.on{color:#34d399;background:rgba(16,185,129,.14)} .cf-tag.off{color:#94a3b8;background:rgba(100,116,139,.18)}
+      .cf-descia{font-size:.68rem;color:#a5b4fc;font-style:italic;margin-top:8px;line-height:1.4}
+      .cf-empty{text-align:center;color:#64748b;padding:40px 12px;font-size:.85rem}`;
+    document.head.appendChild(s);
+  }
+  async function abrirCatalogoFull() {
+    _cfInjectCSS();
+    let ov = document.getElementById('catFullOverlay');
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'catFullOverlay'; ov.className = 'cf-overlay hidden';
+      ov.innerHTML = `<div class="cf-panel">
+        <div class="cf-head">
+          <div style="min-width:0"><h3>📖 Catálogo completo</h3><p id="cfResumen">Cargando…</p></div>
+          <div class="cf-head-actions">
+            <button class="cf-xls" onclick="MOS.catFullExcel()">⬇ Excel</button>
+            <button class="cf-close" onclick="MOS.cerrarCatalogoFull()">✕</button>
+          </div>
+        </div>
+        <div class="cf-searchwrap"><input id="cfSearch" type="search" autocomplete="off" placeholder="Buscar nombre, SKU o código…" oninput="MOS.catFullFiltrar(this.value)"></div>
+        <div id="cfList" class="cf-list"><div class="cf-empty">Cargando catálogo…</div></div>
+      </div>`;
+      ov.addEventListener('click', (e) => { if (e.target === ov) cerrarCatalogoFull(); });
+      document.body.appendChild(ov);
+    }
+    ov.classList.remove('hidden');
+    _cfHaptic(10);
+    if (!_catFull.cargado) {
+      try {
+        const r = await API.catalogoExport();
+        const d = (r && r.data) ? r.data : r;   // tolera envoltura
+        _catFull.data = (d && d.items) || [];
+        _catFull.resumen = (d && d.resumen) || null;
+        _catFull.cargado = true;
+      } catch (e) {
+        const l = document.getElementById('cfList'); if (l) l.innerHTML = `<div class="cf-empty">No se pudo cargar el catálogo.<br><small>${_esc(String(e && (e.message || e)))}</small></div>`;
+        return;
+      }
+    }
+    _catFullRender();
+  }
+  function cerrarCatalogoFull() { const ov = document.getElementById('catFullOverlay'); if (ov) ov.classList.add('hidden'); }
+  function catFullFiltrar(v) { _catFull.q = String(v || '').trim().toLowerCase(); _catFullRender(); }
+  function _catFullFiltrados() {
+    const q = _catFull.q; if (!q) return _catFull.data;
+    return _catFull.data.filter(it => {
+      if (String(it.nombre || '').toLowerCase().includes(q)) return true;
+      if (String(it.sku || '').toLowerCase().includes(q)) return true;
+      if (String(it.codigo || '').toLowerCase().includes(q)) return true;
+      if ((it.equivalencias || []).some(e => String(e.codigo || '').toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }
+  function _catFullRender() {
+    const res = document.getElementById('cfResumen');
+    if (res && _catFull.resumen) res.textContent = `${_catFull.resumen.productos} productos · ${_catFull.resumen.activos} activos · valor S/ ${Number(_catFull.resumen.valor || 0).toFixed(2)}`;
+    const list = document.getElementById('cfList'); if (!list) return;
+    const items = _catFullFiltrados();
+    if (!items.length) { list.innerHTML = '<div class="cf-empty">Sin resultados.</div>'; return; }
+    const cap = items.slice(0, 400);   // render acotado (búsqueda afina); el Excel lleva TODO
+    list.innerHTML = cap.map((it) => {
+      const abierto = _catFull.exp === it.sku;
+      const badges = [
+        it.presentaciones.length ? `<span class="cf-badge p">${it.presentaciones.length} pres</span>` : '',
+        it.derivados.length ? `<span class="cf-badge d">${it.derivados.length} der</span>` : '',
+        it.tramos.length ? `<span class="cf-badge t">tramos</span>` : '',
+        it.equivalencias.length ? `<span class="cf-badge e">${it.equivalencias.length} cod</span>` : ''
+      ].join('');
+      return `<div class="cf-row${abierto ? ' exp' : ''}" data-sku="${_escAttr(it.sku)}">
+        <div class="cf-rhead" onclick="MOS.catFullToggle('${_escAttr(it.sku)}')">
+          <span class="cf-dot ${it.activo ? 'on' : 'off'}"></span>
+          <div class="cf-rmain">
+            <div class="cf-rname">${_esc(it.nombre || it.sku)}</div>
+            <div class="cf-rmeta">${_esc(it.sku)}${it.codigo ? ' · ' + _esc(it.codigo) : ''}${it.granel ? ' · granel' : ''}</div>
+          </div>
+          <div class="cf-badges">${badges}</div>
+          <span class="cf-rcat">${_esc(it.categoria || '—')}</span>
+          <span class="cf-rprice">${_cfMoney(it.precio)}</span>
+          <span class="cf-chev">▶</span>
+        </div>
+        ${abierto ? _catFullDetalle(it) : ''}
+      </div>`;
+    }).join('') + (items.length > cap.length ? `<div class="cf-empty">…y ${items.length - cap.length} más — usa el buscador o descarga el Excel para verlos todos.</div>` : '');
+  }
+  function _catFullDetalle(it) {
+    const sec = (titulo, filas) => filas.length ? `<div class="cf-sec"><div class="cf-sech">${titulo}</div>${filas.join('')}</div>` : '';
+    const est = (a) => a ? '<span class="cf-tag on">activo</span>' : '<span class="cf-tag off">inactivo</span>';
+    const pres = (it.presentaciones || []).map(p => `<div class="cf-line"><span>${_esc(p.empaque)}</span><span class="cod">${_esc(p.codigo || '')}</span><span class="gr">×${_esc(String(p.factor))}</span><b>${_cfMoney(p.precio)}</b>${est(p.activo)}</div>`);
+    const der = (it.derivados || []).map(d => `<div class="cf-line"><span>${_esc(d.nombre || d.sku)}</span><span class="cod">${_esc(d.codigo || '')}</span><b>${_cfMoney(d.precio)}</b><span class="gr">costo ${_cfMoney(d.costo)}</span>${est(d.activo)}</div>`);
+    const eq = (it.equivalencias || []).map(e => `<div class="cf-line"><span class="cod">${_esc(e.codigo)}</span><span class="gr">${_esc(e.descripcion || '')}</span></div>`);
+    const tramos = (it.tramos || []).map(t => `<div class="cf-line"><span>${_esc(String(t.min ?? 0))} – ${_esc(String(t.max ?? '∞'))}</span><b>${t.ajustePct != null ? (t.ajustePct > 0 ? '+' : '') + t.ajustePct + '%' : ''}</b><span class="gr">${_esc(t.nombre || '')}</span></div>`);
+    const hist = (it.historial || []).map(h => `<div class="cf-line"><b>${_esc(h.fecha)}</b><span>${_esc(h.tipo)}</span><span class="gr">${h.antes != null ? _cfMoney(h.antes) : '—'} → ${_cfMoney(h.despues)}</span><span class="cod">${_esc(h.usuario || '')}</span></div>`);
+    return `<div class="cf-detail">
+      ${it.descIa ? `<div class="cf-descia">🧠 ${_esc(it.descIa)}</div>` : ''}
+      <div class="cf-line" style="border:0"><span>Precio</span><b>${_cfMoney(it.precio)}</b><span class="gr">· costo ${_cfMoney(it.costo)}${it.margen != null ? ' · margen ' + it.margen + '%' : ''} · ${_esc(it.unidad || '')}</span></div>
+      ${sec('Presentaciones', pres)}
+      ${sec('Derivados', der)}
+      ${sec('Códigos equivalentes', eq)}
+      ${sec('Tramos (granel)', tramos)}
+      ${sec('Historial precio/costo', hist)}
+    </div>`;
+  }
+  function catFullToggle(sku) {
+    _catFull.exp = (_catFull.exp === sku) ? null : sku;
+    _cfHaptic(_catFull.exp === sku ? 14 : 8);
+    _catFullRender();
+    if (_catFull.exp === sku) { setTimeout(() => { try { const el = document.querySelector(`.cf-row[data-sku="${(window.CSS && CSS.escape) ? CSS.escape(sku) : sku}"]`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {} }, 60); }
+  }
+  async function catFullExcel() {
+    if (typeof XLSX === 'undefined' || !XLSX.utils) { toast('La librería de Excel aún carga — reintenta en 1s', 'warn', 2500); return; }
+    if (!_catFull.data.length) { toast('Abre el catálogo primero', 'warn'); return; }
+    _cfHaptic(20);
+    toast('Generando Excel…', 'info', 1500);
+    try {
+      const num = (n) => { const v = parseFloat(n); return isFinite(v) ? v : ''; };   // número real para Excel
+      // Una sola hoja jerárquica: fila base + sus hijos indentados. Estilos por tipo.
+      const rows = [];   // {c:[celdas], t:'header|base|pres|der|eq|tramo|hist|blank'}
+      const H = ['Tipo', 'SKU', 'Código', 'Nombre / Detalle', 'Categoría', 'Unidad', 'Estado', 'Precio', 'Costo', 'Factor', 'Extra'];
+      rows.push({ c: H, t: 'header' });
+      _catFull.data.forEach(it => {
+        rows.push({ c: ['PRODUCTO', it.sku, it.codigo || '', it.nombre || '', it.categoria || '', it.unidad || '', it.activo ? 'Activo' : 'Inactivo', num(it.precio), num(it.costo), '', it.descIa || ''], t: 'base', activo: it.activo });
+        (it.presentaciones || []).forEach(p => rows.push({ c: ['  Presentación', '', p.codigo || '', p.empaque || '', '', '', p.activo ? 'Activo' : 'Inactivo', num(p.precio), '', p.factor != null ? String(p.factor) : '', ''], t: 'pres', activo: p.activo }));
+        (it.derivados || []).forEach(d => rows.push({ c: ['  Derivado', d.sku || '', d.codigo || '', d.nombre || '', '', '', d.activo ? 'Activo' : 'Inactivo', num(d.precio), num(d.costo), d.factor != null ? String(d.factor) : '', ''], t: 'der', activo: d.activo }));
+        (it.equivalencias || []).forEach(e => rows.push({ c: ['  Cód. equivalente', '', e.codigo || '', e.descripcion || '', '', '', e.activo ? 'Activo' : '', '', '', '', ''], t: 'eq', activo: e.activo }));
+        (it.tramos || []).forEach(t => rows.push({ c: ['  Tramo granel', '', '', (t.min != null ? t.min : 0) + ' – ' + (t.max != null ? t.max : '∞'), '', '', '', '', '', '', (t.ajustePct != null ? (t.ajustePct > 0 ? '+' : '') + t.ajustePct + '%' : '') + (t.nombre ? ' ' + t.nombre : '')], t: 'tramo' }));
+        (it.historial || []).forEach(h => rows.push({ c: ['  Historial ' + (h.fecha || ''), '', '', h.tipo || '', '', '', '', num(h.despues), num(h.antes), '', (h.usuario || '') + (h.origen ? ' · ' + h.origen : '')], t: 'hist' }));
+        rows.push({ c: ['', '', '', '', '', '', '', '', '', '', ''], t: 'blank' });
+      });
+      const aoa = rows.map(r => r.c);
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const ncol = H.length;
+      const fill = (hex) => ({ patternType: 'solid', fgColor: { rgb: hex } });
+      const styleFor = (r) => {
+        const base = { alignment: { vertical: 'center', wrapText: false } };
+        if (r.t === 'header') return { font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 }, fill: fill('312E81'), alignment: { horizontal: 'center', vertical: 'center' } };
+        if (r.t === 'base') return { font: { bold: true, color: { rgb: '1E1B4B' }, sz: 11 }, fill: fill('E9E4FF') };
+        if (r.t === 'pres') return { fill: fill('E6F0FF'), alignment: { indent: 1 } };
+        if (r.t === 'der') return { fill: fill('E6FBF1'), alignment: { indent: 1 } };
+        if (r.t === 'eq') return { fill: fill('F1F5F9'), alignment: { indent: 1 }, font: { color: { rgb: '475569' } } };
+        if (r.t === 'tramo') return { fill: fill('F3E8FF'), alignment: { indent: 1 } };
+        if (r.t === 'hist') return { fill: fill('FBFBFD'), font: { italic: true, color: { rgb: '64748B' }, sz: 10 }, alignment: { indent: 1 } };
+        return base;
+      };
+      rows.forEach((r, ri) => {
+        const st = styleFor(r);
+        for (let ci = 0; ci < ncol; ci++) {
+          const ref = XLSX.utils.encode_cell({ r: ri, c: ci });
+          const cell = ws[ref]; if (!cell) continue;
+          cell.s = JSON.parse(JSON.stringify(st));
+          if ((ci === 7 || ci === 8) && typeof cell.v === 'number') cell.z = '"S/ "#,##0.00';   // Precio/Costo
+          if (ci === 6 && r.t !== 'header') {   // Estado coloreado
+            if (String(cell.v) === 'Activo') cell.s.font = Object.assign({}, cell.s.font, { color: { rgb: '047857' }, bold: true });
+            else if (String(cell.v) === 'Inactivo') cell.s.font = Object.assign({}, cell.s.font, { color: { rgb: '94A3B8' } });
+          }
+        }
+      });
+      ws['!cols'] = [{ wch: 18 }, { wch: 12 }, { wch: 16 }, { wch: 42 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 30 }];
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 0, c: ncol - 1 } }) };
+      ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Catálogo');
+      const fecha = (new Date()).toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Catalogo_MOS_${fecha}.xlsx`);
+      _cfHaptic([10, 40, 10]);
+      toast('🗂 Excel descargado', 'success');
+    } catch (e) {
+      toast('No se pudo generar el Excel: ' + (e && (e.message || e)), 'error', 5000);
+    }
+  }
+
   function openModal(id)  { const el = $(id); if (el) { el.classList.remove('hidden'); el.classList.add('open'); } }
   function closeModal(id) { const el = $(id); if (el) { el.classList.remove('open'); el.classList.add('hidden'); } }
 
@@ -60293,6 +60512,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     abrirProyeccion, _proyToggle, _proyResetEstado, _proyExportar,
     closeModal, openEcoModal,   // [BLOCK 9] saveConfig/testConnection retiradas con el modal #modalConfig
     filterCatalogo, catMostrarMas, _catCardClick, _catSfx, _catRipple,
+    abrirCatalogoFull, cerrarCatalogoFull, catFullFiltrar, catFullToggle, catFullExcel,
     verCodigoBarra, cerrarCodigoBarra,
     abrirModalPN, cerrarModalPN, lanzarAProduccion, refreshPNManual,
     pnDescartar, pnVerOcultos, pnRestaurar,
