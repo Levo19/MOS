@@ -1,1 +1,1 @@
-{"version":"2.44.52","build":"Fix foto de Producto Nuevo (PN) desde MOS: se veia en el form pero quedaba VACIA en la lista. Ahora api.js sube la foto a Storage (producto-fotos) y pasa la URL; el RPC crear_pn_manual (SQL 1024) la reenvia a wh.registrar_producto_nuevo. Los PN nuevos salen con su foto."}
+{"version":"2.44.53"}

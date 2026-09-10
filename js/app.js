@@ -34315,14 +34315,14 @@ const MOS = (() => {
   // [fix cascada] coalescing: al asignar/confirmar/vender se disparaban varios refrescos pesados a la vez
   // (optimista + en-vuelo + créditos + realtime ventas) → el _cjRender() reconstruía todo repetido =
   // "rallado" (animación reiniciada) + parpadeo de adeudados + postit destruido bajo el cursor. Ahora
-  // como máximo 1 refresco en vuelo + 1 en cola, y throttle 2.5s. El poll de 20s y el realtime se coalescen.
+  // como máximo 1 refresco en vuelo + 1 en cola, y throttle 8s. El poll de 60s y el realtime se coalescen.
   let _cjRefBusy = false, _cjRefPend = false, _cjRefTs = 0;
   async function _cajasRefreshSilencioso() {
     if (!API.isConfigured()) return;
     if (_cjRefBusy) { _cjRefPend = true; return; }          // ya hay uno corriendo → encolar UNO
     const since = Date.now() - _cjRefTs;
-    if (since < 2500) {                                       // muy seguido → programar trailing coalescido
-      if (!_cjRefPend) { _cjRefPend = true; setTimeout(() => { _cjRefPend = false; _cajasRefreshSilencioso(); }, 2500 - since); }
+    if (since < 8000) {                                       // [perf] coalescing 8s (era 2.5s): cierres_caja recalcula 30 días (1-3s) y se disparaba en CADA venta por realtime → 32% de la CPU-DB. Realtime sigue actualizando, solo batcheado.
+      if (!_cjRefPend) { _cjRefPend = true; setTimeout(() => { _cjRefPend = false; _cajasRefreshSilencioso(); }, 8000 - since); }
       return;
     }
     _cjRefBusy = true;
@@ -34364,7 +34364,7 @@ const MOS = (() => {
   function _startCajasRefresh() {
     _stopCajasRefresh();
     _cajasRefreshSilencioso(); // fetch inmediato
-    _cajasRefreshTimer = setInterval(_cajasRefreshSilencioso, 20000);
+    _cajasRefreshTimer = setInterval(_cajasRefreshSilencioso, 60000); // [perf] 60s (era 20s): solo respaldo; el realtime cubre lo inmediato
   }
   function _stopCajasRefresh() {
     if (_cajasRefreshTimer) { clearInterval(_cajasRefreshTimer); _cajasRefreshTimer = null; }
