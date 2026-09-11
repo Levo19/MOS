@@ -4451,21 +4451,30 @@ const API = (() => {
     // Crea un PN manualmente desde MOS (admin/master) 100% Supabase (mos.crear_pn_manual → wh.registrar_producto_nuevo).
     crearPNManual:        async (p = {}) => {
       const q = { idGuia: '', ...(p || {}) };
-      // [fix foto PN] SQL no puede subir a Storage: si viene base64, lo subimos AQUÍ (cliente) al bucket
-      //   producto-fotos y pasamos SOLO la URL en `foto`. Antes el base64 se enviaba al RPC y se perdía
-      //   → el PN quedaba SIN foto (se veía en el form pero no en la lista).
-      const b64 = String(q.fotoBase64 || '').trim();
-      if (b64) {
-        try {
-          const up = await _subirFotoStorageMOS('PN', b64, q.mimeType || 'image/jpeg', 'PN_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
-          if (up && up.url) q.foto = up.url;
-        } catch (_) { /* si falla la subida, el PN se crea igual (sin foto) — no bloquea el registro */ }
-        delete q.fotoBase64; delete q.mimeType;
-      }
+      // [fix foto PN · desacople 11-sep] Antes se subía la foto ANTES de registrar (await, timeout 30s): el
+      //   botón "se atoraba" hasta 30s y, si la subida fallaba, el catch la tragaba y el PN quedaba SIN foto.
+      //   Ahora: REGISTRAR primero (instantáneo) → subir la foto en 2º PLANO → adjuntarla por id con
+      //   mos.pn_set_foto (SQL 1025). El botón nunca se atora; una foto que falla NO tumba el registro.
+      //   (No se puede reusar crear_pn_manual para adjuntar: su dedup solo aplica CON guía; el PN de MOS va
+      //   sin guía → re-llamar INSERTARÍA un duplicado.)
+      const b64  = String(q.fotoBase64 || '').trim();
+      const mime = q.mimeType;
+      delete q.fotoBase64; delete q.mimeType;
       const r = await _sbRpcMOS('crear_pn_manual', { p: q }, 'mos');
       if (r == null) throw new Error('Sin conexión con el servidor');
       if (r.ok === false) throw new Error(r.error || 'Error del servidor');
-      return r.data !== undefined ? r.data : r;
+      const data = r.data !== undefined ? r.data : r;
+      // Foto en 2º plano — NO bloquea el retorno. Best-effort: si la subida o el adjunto fallan, el PN ya
+      //   quedó registrado (se puede reintentar la foto después).
+      if (b64 && data && data.idProductoNuevo) {
+        (async () => {
+          try {
+            const up = await _subirFotoStorageMOS('PN', b64, mime || 'image/jpeg', 'PN_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+            if (up && up.url) await _sbRpcMOS('pn_set_foto', { p: { idProductoNuevo: data.idProductoNuevo, foto: up.url } }, 'mos');
+          } catch (_) { /* foto best-effort; el PN ya está registrado */ }
+        })();
+      }
+      return data;
     },
 
     // ── [FASE 0B] Infraestructura de lectura directa Supabase — INERTE (flags OFF por
