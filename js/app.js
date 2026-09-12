@@ -25198,6 +25198,69 @@ const MOS = (() => {
     </details>`;
   }
 
+  // ── [Mensajes de voz 1026] admin/master escribe → el equipo del trabajador LO LEE en voz alta (TTS). ──
+  function _cfgVoz() {
+    return `<div style="margin:10px 0;padding:14px;border-radius:14px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div><div style="font-weight:800;font-size:15px">🔊 Mensaje de voz</div>
+          <div style="font-size:12px;opacity:.9">Escribe un texto y el equipo del trabajador lo lee en voz alta.</div></div>
+        <button onclick="MOS.vozAbrir()" style="background:#fff;color:#4f46e5;border:0;border-radius:10px;padding:10px 16px;font-weight:800;cursor:pointer">Enviar mensaje hablado</button>
+      </div></div>`;
+  }
+  function vozCerrar() { const o = document.getElementById('vozOvl'); if (o) o.remove(); }
+  function vozAbrir() {
+    try { vozCerrar(); } catch(_){}
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+    const disp = (cfgData.dispositivos || []).filter(d => {
+      const app = String(d.App || d.app || '');
+      const est = String(d.Estado || d.estado || '').toUpperCase();
+      return (app === 'mosExpress' || app === 'warehouseMos') && est !== 'CANCELADO' && est !== 'RECHAZADO' && est !== 'PENDIENTE_APROBACION';
+    });
+    const opts = disp.map(d => {
+      const id  = d.ID_Dispositivo || d.idDispositivo || d.deviceId || '';
+      const nom = d.Nombre_Manual || d.Nombre_Equipo || (id ? id.slice(0, 10) : '?');
+      const app = (d.App === 'warehouseMos') ? 'WH' : 'ME';
+      const zona = d.Ultima_Zona || d.zona || '';
+      return `<option value="${esc(id)}">${esc(nom)} · ${app}${zona ? ' · ' + esc(zona) : ''}</option>`;
+    }).join('');
+    const ov = document.createElement('div');
+    ov.id = 'vozOvl';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:440px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+        <div style="font-weight:800;font-size:17px;margin-bottom:4px">🔊 Mensaje de voz</div>
+        <div style="font-size:12px;color:#666;margin-bottom:14px">El equipo elegido leerá el texto en voz alta (si está abierto y en uso).</div>
+        <label style="font-size:12px;font-weight:700;color:#444">Equipo destino</label>
+        <select id="vozDev" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:6px 0 12px;font-size:14px">${opts || '<option value="">(no hay equipos)</option>'}</select>
+        <label style="font-size:12px;font-weight:700;color:#444">Mensaje</label>
+        <textarea id="vozTxt" rows="3" maxlength="600" placeholder="Ej: Jorgenis, ven a caja por favor" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:6px 0 14px;font-size:14px;resize:vertical"></textarea>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button onclick="MOS.vozCerrar()" style="background:#eee;border:0;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer">Cancelar</button>
+          <button id="vozSend" onclick="MOS.vozEnviarMsg()" style="background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:10px 18px;font-weight:800;cursor:pointer">🔊 Enviar y leer</button>
+        </div></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { if (e.target === ov) vozCerrar(); });
+    setTimeout(() => { try { document.getElementById('vozTxt').focus(); } catch(_){} }, 60);
+  }
+  async function vozEnviarMsg() {
+    const sel = document.getElementById('vozDev');
+    const dev = (sel || {}).value || '';
+    const txt = ((document.getElementById('vozTxt') || {}).value || '').trim();
+    if (!dev) { try { toast('Elige un equipo', 'warning'); } catch(_){} return; }
+    if (!txt) { try { toast('Escribe el mensaje', 'warning'); } catch(_){} return; }
+    const btn = document.getElementById('vozSend');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+    try {
+      const label  = (sel && sel.options[sel.selectedIndex]) ? sel.options[sel.selectedIndex].textContent : '';
+      const emisor = (S.session && S.session.nombre) || 'admin-mos';
+      await API.vozEnviar({ deviceId: dev, texto: txt, emisor, nombreDest: label });
+      try { toast('🔊 Mensaje enviado — se leerá en el equipo', 'success'); } catch(_){}
+      vozCerrar();
+    } catch (e) {
+      try { toast('No se pudo enviar: ' + (e && e.message || e), 'error'); } catch(_){}
+      if (btn) { btn.disabled = false; btn.textContent = '🔊 Enviar y leer'; }
+    }
+  }
+
   function renderInfra() {
     const cont = $('infraContenedor');
     if (!cont) return;
@@ -25213,6 +25276,7 @@ const MOS = (() => {
       : '';
     cont.innerHTML =
       _cfgCmdBar() +
+      _cfgVoz() +
       _cfgPend() +
       _cfgZonaVip() +
       _cfgZonaGo() +
@@ -60623,6 +60687,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     togglePNBanner, abrirPNDesdeToolbar, fpAbrir, abrirPromoCentro, openImagePreview, closeImagePreview,
     // PN manual (admin/master)
     abrirCrearPNManual, cerrarCrearPNManual, crearPNManualSubmit,
+    vozAbrir, vozCerrar, vozEnviarMsg,
     _cpnToggleAutogen, _cpnFotoSeleccionada, _cpnRemoverFoto, _cpnStep,
     _cpnValidarCodigo,
     cpnAbrirScanner, cpnCerrarScanner, cpnToggleTorch,

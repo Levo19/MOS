@@ -4449,6 +4449,13 @@ const API = (() => {
       return r;
     },
     // Crea un PN manualmente desde MOS (admin/master) 100% Supabase (mos.crear_pn_manual → wh.registrar_producto_nuevo).
+    // [mensajes de voz 1026] admin/master → el dispositivo elegido LO LEE en voz alta (TTS).
+    vozEnviar: async (p = {}) => {
+      const r = await _sbRpcMOSWrite('voz_enviar', { p });
+      if (r == null) throw new Error('Sin conexión con el servidor');
+      if (r.ok === false) throw new Error(r.error || 'No se pudo enviar');
+      return r.data !== undefined ? r.data : r;
+    },
     crearPNManual:        async (p = {}) => {
       const q = { idGuia: '', ...(p || {}) };
       // [fix foto PN · desacople 11-sep] Antes se subía la foto ANTES de registrar (await, timeout 30s): el
