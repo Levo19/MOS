@@ -25207,53 +25207,75 @@ const MOS = (() => {
         <button onclick="MOS.vozAbrir()" style="background:#fff;color:#4f46e5;border:0;border-radius:10px;padding:10px 16px;font-weight:800;cursor:pointer">Enviar mensaje hablado</button>
       </div></div>`;
   }
-  function vozCerrar() { const o = document.getElementById('vozOvl'); if (o) o.remove(); }
-  function vozAbrir() {
-    try { vozCerrar(); } catch(_){}
-    const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
-    const disp = (cfgData.dispositivos || []).filter(d => {
-      const app = String(d.App || d.app || '');
-      const est = String(d.Estado || d.estado || '').toUpperCase();
-      return (app === 'mosExpress' || app === 'warehouseMos') && est !== 'CANCELADO' && est !== 'RECHAZADO' && est !== 'PENDIENTE_APROBACION';
-    });
-    const opts = disp.map(d => {
-      const id  = d.ID_Dispositivo || d.idDispositivo || d.deviceId || '';
-      const nom = d.Nombre_Manual || d.Nombre_Equipo || (id ? id.slice(0, 10) : '?');
-      const app = (d.App === 'warehouseMos') ? 'WH' : 'ME';
-      const zona = d.Ultima_Zona || d.zona || '';
-      return `<option value="${esc(id)}">${esc(nom)} · ${app}${zona ? ' · ' + esc(zona) : ''}</option>`;
+  let _vozDispCache = [];
+  let _vozSel = '';
+  function vozCerrar() { const o = document.getElementById('vozOvl'); if (o) o.remove(); _vozSel = ''; }
+  function _vozEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
+  function _vozMins(m) { if (m == null) return ''; if (m < 60) return 'hace ' + m + ' min'; return 'hace ' + Math.floor(m / 60) + ' h'; }
+  function _vozRenderLista() {
+    const cont = document.getElementById('vozList'); if (!cont) return;
+    if (!_vozDispCache.length) { cont.innerHTML = '<div style="color:#9aa0ab;font-size:13px;padding:12px 2px">No hay equipos activos en las últimas 48 h.</div>'; return; }
+    cont.innerHTML = _vozDispCache.map(d => {
+      const online = (d.mins != null && d.mins <= 5);
+      const nombre = d.usuario || d.equipo || 'Equipo';
+      const sub = [d.app, d.zona].filter(Boolean).join(' · ') + (d.mins != null ? ' · ' + (online ? 'en línea' : _vozMins(d.mins)) : '');
+      const sel = (_vozSel === d.deviceId);
+      const bc = d.app === 'WH' ? '#f59e0b' : '#38bdf8';
+      const bb = d.app === 'WH' ? 'rgba(245,158,11,.15)' : 'rgba(56,189,248,.15)';
+      return `<div onclick="MOS.vozPick('${_vozEsc(d.deviceId)}')" style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:12px;cursor:pointer;border:1.5px solid ${sel ? '#6366f1' : '#262a33'};background:${sel ? 'rgba(99,102,241,.18)' : '#0f1116'}">
+          <span style="width:9px;height:9px;border-radius:50%;flex:none;background:${online ? '#22c55e' : '#6b7280'};box-shadow:${online ? '0 0 8px #22c55e' : 'none'}"></span>
+          <div style="min-width:0;flex:1">
+            <div style="font-weight:700;font-size:14px;color:#f4f4f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_vozEsc(nombre)}</div>
+            <div style="font-size:11.5px;color:#9aa0ab;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_vozEsc(sub)}</div>
+          </div>
+          <span style="font-size:10px;font-weight:800;color:${bc};background:${bb};padding:3px 8px;border-radius:6px;flex:none">${_vozEsc(d.app)}</span>
+        </div>`;
     }).join('');
+  }
+  function vozPick(deviceId) { _vozSel = deviceId; _vozRenderLista(); }
+  async function vozAbrir() {
+    try { vozCerrar(); } catch(_){}
+    _vozSel = ''; _vozDispCache = [];
     const ov = document.createElement('div');
     ov.id = 'vozOvl';
-    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
-    ov.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:440px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-        <div style="font-weight:800;font-size:17px;margin-bottom:4px">🔊 Mensaje de voz</div>
-        <div style="font-size:12px;color:#666;margin-bottom:14px">El equipo elegido leerá el texto en voz alta (si está abierto y en uso).</div>
-        <label style="font-size:12px;font-weight:700;color:#444">Equipo destino</label>
-        <select id="vozDev" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:6px 0 12px;font-size:14px">${opts || '<option value="">(no hay equipos)</option>'}</select>
-        <label style="font-size:12px;font-weight:700;color:#444">Mensaje</label>
-        <textarea id="vozTxt" rows="3" maxlength="600" placeholder="Ej: Jorgenis, ven a caja por favor" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:6px 0 14px;font-size:14px;resize:vertical"></textarea>
-        <div style="display:flex;gap:10px;justify-content:flex-end">
-          <button onclick="MOS.vozCerrar()" style="background:#eee;border:0;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer">Cancelar</button>
-          <button id="vozSend" onclick="MOS.vozEnviarMsg()" style="background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:10px 18px;font-weight:800;cursor:pointer">🔊 Enviar y leer</button>
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,10,15,.72);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML = `<div style="background:#16181d;color:#f4f4f5;border:1px solid #2a2d36;border-radius:18px;max-width:460px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.55);overflow:hidden">
+        <div style="padding:18px 20px 12px;border-bottom:1px solid #24272f">
+          <div style="font-weight:800;font-size:18px;color:#fff">🔊 Mensaje de voz</div>
+          <div style="font-size:12.5px;color:#9aa0ab;margin-top:3px">Elige a quién le hablas y escribe el mensaje. El equipo lo leerá en voz alta.</div>
+        </div>
+        <div style="padding:14px 20px 2px">
+          <div style="font-size:11px;font-weight:700;color:#9aa0ab;text-transform:uppercase;letter-spacing:.5px;margin-bottom:9px">Equipo destino</div>
+          <div id="vozList" style="max-height:236px;overflow-y:auto;display:flex;flex-direction:column;gap:7px">Cargando equipos…</div>
+        </div>
+        <div style="padding:14px 20px 2px">
+          <div style="font-size:11px;font-weight:700;color:#9aa0ab;text-transform:uppercase;letter-spacing:.5px;margin-bottom:9px">Mensaje</div>
+          <textarea id="vozTxt" rows="3" maxlength="600" placeholder="Ej: Jorgenis, ven a caja por favor" style="width:100%;box-sizing:border-box;padding:11px;background:#0f1116;border:1px solid #2a2d36;border-radius:11px;color:#f4f4f5;font-size:14px;resize:vertical;outline:none"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;padding:12px 20px 18px">
+          <button onclick="MOS.vozCerrar()" style="background:#24272f;color:#cbd0d8;border:0;border-radius:11px;padding:11px 18px;font-weight:700;cursor:pointer">Cancelar</button>
+          <button id="vozSend" onclick="MOS.vozEnviarMsg()" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:0;border-radius:11px;padding:11px 22px;font-weight:800;cursor:pointer;box-shadow:0 6px 18px rgba(99,102,241,.4)">🔊 Enviar y leer</button>
         </div></div>`;
     document.body.appendChild(ov);
     ov.addEventListener('click', e => { if (e.target === ov) vozCerrar(); });
-    setTimeout(() => { try { document.getElementById('vozTxt').focus(); } catch(_){} }, 60);
+    try { const arr = await API.vozDispositivos(); _vozDispCache = Array.isArray(arr) ? arr : []; }
+    catch (_) { _vozDispCache = []; }
+    _vozRenderLista();
+    setTimeout(() => { try { document.getElementById('vozTxt').focus(); } catch(_){} }, 80);
   }
   async function vozEnviarMsg() {
-    const sel = document.getElementById('vozDev');
-    const dev = (sel || {}).value || '';
+    const dev = _vozSel;
     const txt = ((document.getElementById('vozTxt') || {}).value || '').trim();
-    if (!dev) { try { toast('Elige un equipo', 'warning'); } catch(_){} return; }
+    if (!dev) { try { toast('Elige un equipo de la lista', 'warning'); } catch(_){} return; }
     if (!txt) { try { toast('Escribe el mensaje', 'warning'); } catch(_){} return; }
     const btn = document.getElementById('vozSend');
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
     try {
-      const label  = (sel && sel.options[sel.selectedIndex]) ? sel.options[sel.selectedIndex].textContent : '';
+      const d = _vozDispCache.find(x => x.deviceId === dev) || {};
+      const label = d.usuario || d.equipo || '';
       const emisor = (S.session && S.session.nombre) || 'admin-mos';
       await API.vozEnviar({ deviceId: dev, texto: txt, emisor, nombreDest: label });
-      try { toast('🔊 Mensaje enviado — se leerá en el equipo', 'success'); } catch(_){}
+      try { toast('🔊 Enviado a ' + (label || 'equipo') + ' — lo leerá en voz alta', 'success'); } catch(_){}
       vozCerrar();
     } catch (e) {
       try { toast('No se pudo enviar: ' + (e && e.message || e), 'error'); } catch(_){}
@@ -60687,7 +60709,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     togglePNBanner, abrirPNDesdeToolbar, fpAbrir, abrirPromoCentro, openImagePreview, closeImagePreview,
     // PN manual (admin/master)
     abrirCrearPNManual, cerrarCrearPNManual, crearPNManualSubmit,
-    vozAbrir, vozCerrar, vozEnviarMsg,
+    vozAbrir, vozCerrar, vozEnviarMsg, vozPick,
     _cpnToggleAutogen, _cpnFotoSeleccionada, _cpnRemoverFoto, _cpnStep,
     _cpnValidarCodigo,
     cpnAbrirScanner, cpnCerrarScanner, cpnToggleTorch,

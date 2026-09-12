@@ -4449,6 +4449,13 @@ const API = (() => {
       return r;
     },
     // Crea un PN manualmente desde MOS (admin/master) 100% Supabase (mos.crear_pn_manual → wh.registrar_producto_nuevo).
+    // [mensajes de voz 1027] equipos ACTIVOS (ME+WH) con nombre de persona/equipo para el selector.
+    vozDispositivos: async () => {
+      const r = await _sbRpcMOSWrite('voz_dispositivos', { p: {} });
+      if (r == null) throw new Error('Sin conexión con el servidor');
+      if (r.ok === false) throw new Error(r.error || 'No se pudo listar');
+      return r.data !== undefined ? r.data : r;
+    },
     // [mensajes de voz 1026] admin/master → el dispositivo elegido LO LEE en voz alta (TTS).
     vozEnviar: async (p = {}) => {
       const r = await _sbRpcMOSWrite('voz_enviar', { p });
