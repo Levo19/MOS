@@ -32970,6 +32970,7 @@ const MOS = (() => {
     if (esAnulado) {
       btn('', '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/><circle cx="18" cy="11.5" r="1" fill="currentColor"/></svg>', 'Imprimir ticket', 'Reimprime el comprobante en la impresora que elijas', 'imprimir');
       if (esCPE) btn('', '📄', 'Ver / compartir PDF', 'Comprobante fiscal (aunque esté de baja)', 'pdf');
+      btn('', '📷', 'Enviar imagen del ticket', 'Imagen del ticket para WhatsApp', 'imagen');
       btn('', '📜', 'Ver historial', 'Ver todos los cambios del ticket', 'historial');
       body.innerHTML = `<p class="text-[11px] text-slate-500 italic px-2 py-2">Ticket anulado · solo lectura.</p>${btns.join('')}${_tkDetalleContainerHtml()}`;
       return;
@@ -33029,6 +33030,10 @@ const MOS = (() => {
     btn('tk-acc-btn-ok', '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/><circle cx="18" cy="11.5" r="1" fill="currentColor"/></svg>', 'Imprimir ticket',
         'Reimprime el comprobante en la impresora que elijas', 'imprimir');
 
+    // 📷 Enviar imagen del ticket — siempre (NV o CPE): imagen elegante para WhatsApp
+    btn('', '📷', 'Enviar imagen del ticket',
+        'Imagen profesional del ticket para mandar por WhatsApp', 'imagen');
+
     // 📜 Historial — siempre
     btn('', '📜', 'Ver historial',
         'Ver todos los cambios de este ticket', 'historial');
@@ -33068,6 +33073,7 @@ const MOS = (() => {
       return;
     }
     if (accion === 'anular')          return _tkAnularSimple(t);
+    if (accion === 'imagen')          return _tkImgOpen(t);
     if (accion === 'pdf')             return _tkPdfOpen(t);
     if (accion === 'historial')       return _tkHistorialOpen(t);
     if (accion === 'historialCli')    return _tkHistorialClienteOpen(t);
@@ -33103,6 +33109,140 @@ const MOS = (() => {
     } catch (e) {
       if (body) body.innerHTML = `<div class="text-[11px] text-rose-400 px-1 py-2">No se pudo cargar el detalle.</div>`;
     }
+  }
+
+  // ── [ticket imagen] Imagen elegante del ticket (NV o CPE) para compartir por WhatsApp ──────────
+  let _tkImg = null;       // { dataUrl, filename, label }
+  let _tkEmpresa = null;   // cache datos fiscales del negocio (me.empresa_fiscal)
+  function _tkImgCardHtml(t, det, emp) {
+    const razon = (emp && emp.razonSocial) || 'INVERSIONES MOS EIRL';
+    const ruc   = (emp && emp.ruc) || '';
+    const dir   = (emp && emp.direccion) || '';
+    const tel   = (emp && emp.telefono) || '';
+    const tipo  = (t.tipoDoc === 'BOLETA') ? 'BOLETA DE VENTA' : (t.tipoDoc === 'FACTURA') ? 'FACTURA' : 'NOTA DE VENTA';
+    const corr  = t.correlativo || t.idVenta || '';
+    const esCPE = (t.tipoDoc === 'BOLETA' || t.tipoDoc === 'FACTURA');
+    const f = String(t.fecha || '');
+    const fFmt = /^\d{4}-\d{2}-\d{2}/.test(f) ? f.slice(0, 10).split('-').reverse().join('/') : f;
+    const hora = t.hora || '';
+    const cli  = t.cliente || t.clienteNom || '';
+    const cliDoc = t.clienteDoc || '';
+    const fp = t.formaPago || '';
+    let estLbl = 'COBRADO', estBg = '#dcfce7', estFg = '#166534';
+    if (fp === 'ANULADO')         { estLbl = 'ANULADO';    estBg = '#fee2e2'; estFg = '#991b1b'; }
+    else if (fp === 'POR_COBRAR') { estLbl = 'POR COBRAR'; estBg = '#fef3c7'; estFg = '#92400e'; }
+    else if (fp === 'CREDITO')    { estLbl = 'CRÉDITO';    estBg = '#dbeafe'; estFg = '#1e40af'; }
+    const items = Array.isArray(det.items) ? det.items : [];
+    const filas = items.map(it => {
+      const cant = _tkNum(it.cantidad), sub = _tkNum(it.subtotal);
+      const nom = _esc(String(it.nombre || it.sku || '—').replace(/\s*\(.*\)\s*$/, ''));
+      return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9">
+          <div style="flex:1;min-width:0">
+            <span style="display:inline-block;background:#eef2ff;color:#4338ca;font-weight:800;font-size:11px;border-radius:5px;padding:1px 6px;margin-right:6px">${cant}×</span>
+            <span style="font-size:12.5px;color:#334155;font-weight:600;line-height:1.35">${nom}</span>
+          </div>
+          <div style="font-size:12.5px;font-weight:700;color:#1e293b;white-space:nowrap">S/ ${sub.toFixed(2)}</div>
+        </div>`;
+    }).join('');
+    const total = _tkNum(det.total) || items.reduce((s, it) => s + _tkNum(it.subtotal), 0) || _tkNum(t.total);
+    let cpeHtml = '';
+    if (esCPE) {
+      const hash = det.nfHash || '';
+      const est  = det.nfEstado || t.nfEstado || '';
+      cpeHtml = `<div style="padding:12px 22px;border-top:1px dashed #cbd5e1;text-align:center">
+          <div style="font-size:10px;color:#64748b;line-height:1.5">Representación impresa del comprobante electrónico${est ? (' · ' + _esc(est)) : ''}.</div>
+          ${hash ? `<div style="font-size:9px;color:#94a3b8;margin-top:3px;word-break:break-all">Hash: ${_esc(hash)}</div>` : ''}
+          <div style="font-size:10px;color:#94a3b8;margin-top:3px">Emitido mediante SUNAT</div>
+        </div>`;
+    }
+    return `<div style="width:400px;background:#fff;font-family:'Segoe UI',Roboto,system-ui,-apple-system,sans-serif;color:#1a1a2e;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden">
+        <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;padding:22px 22px 18px;text-align:center">
+          <div style="font-size:20px;font-weight:800;letter-spacing:.3px">${_esc(razon)}</div>
+          ${ruc ? `<div style="font-size:11px;opacity:.92;margin-top:4px">RUC ${_esc(ruc)}</div>` : ''}
+          ${dir ? `<div style="font-size:10px;opacity:.8;margin-top:6px;line-height:1.45">${_esc(dir)}</div>` : ''}
+          ${tel ? `<div style="font-size:11px;opacity:.92;margin-top:5px">📞 ${_esc(tel)}</div>` : ''}
+        </div>
+        <div style="background:#f8fafc;padding:13px 22px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px dashed #cbd5e1">
+          <div><div style="font-size:10.5px;color:#64748b;font-weight:700;letter-spacing:.4px">${tipo}</div>
+            <div style="font-size:18px;font-weight:800;color:#1e293b;margin-top:1px">${_esc(corr)}</div></div>
+          <div style="text-align:right"><div style="font-size:11.5px;color:#64748b">${_esc(fFmt)}</div>
+            <div style="font-size:14px;font-weight:700;color:#334155">${_esc(hora)}</div></div>
+        </div>
+        <div style="padding:12px 22px 4px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <div style="min-width:0">
+            <div style="font-size:10px;color:#94a3b8;font-weight:600">CLIENTE</div>
+            <div style="font-size:13px;font-weight:700;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(cli || 'Público general')}</div>
+            ${cliDoc ? `<div style="font-size:11px;color:#64748b">${_esc(cliDoc)}</div>` : ''}
+          </div>
+          <span style="background:${estBg};color:${estFg};font-size:11px;font-weight:800;padding:5px 11px;border-radius:20px;white-space:nowrap">${estLbl}</span>
+        </div>
+        <div style="padding:6px 22px 4px">${filas || '<div style="color:#94a3b8;font-size:12px;padding:8px 0">Sin líneas.</div>'}</div>
+        <div style="background:#1e293b;color:#fff;padding:15px 22px;display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+          <div style="font-size:11px;opacity:.7">TOTAL (${items.length} ít.)</div>
+          <div style="font-size:24px;font-weight:800">S/ ${total.toFixed(2)}</div>
+        </div>
+        ${cpeHtml}
+        <div style="padding:15px 22px 18px;text-align:center">
+          <div style="font-size:13px;font-weight:700;color:#4f46e5">¡Gracias por su compra! 🙌</div>
+          <div style="font-size:9.5px;color:#cbd5e1;margin-top:6px">Comprobante generado por MOS</div>
+        </div>
+      </div>`;
+  }
+  async function _tkImgOpen(t) {
+    if (typeof html2canvas !== 'function') { try { toast('Cargando componente de imagen… reintenta en 2 s', 'info', 2500); } catch(_){} return; }
+    try { toast('🎨 Generando imagen…', 'info', 1400); } catch(_){}
+    let det = _tkAcc.detalle;
+    const mismo = det && _tkAcc.ticket && _tkAcc.ticket.idVenta === t.idVenta && Array.isArray(det.items);
+    if (!mismo) {
+      try { const r = await API.get('meDetalleVenta', { idVenta: t.idVenta }); det = (r && r.data) || r || {}; }
+      catch(_) { det = det || {}; }
+    }
+    if (!_tkEmpresa) { try { _tkEmpresa = await API.empresaFiscal(); } catch(_){} }
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-10000px;top:0;z-index:-1';
+    holder.innerHTML = _tkImgCardHtml(t, det || {}, _tkEmpresa || {});
+    document.body.appendChild(holder);
+    try {
+      const canvas = await html2canvas(holder.firstElementChild, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+      _tkImg = { dataUrl: canvas.toDataURL('image/png'), filename: (t.correlativo || t.idVenta || 'ticket') + '.png', label: (t.correlativo || t.idVenta || 'ticket') };
+      _tkImgPreview();
+    } catch (e) {
+      try { toast('No se pudo generar la imagen: ' + (e && e.message || e), 'error'); } catch(_){}
+    } finally { holder.remove(); }
+  }
+  function _tkImgCerrar() { const o = document.getElementById('tkImgOvl'); if (o) o.remove(); }
+  function _tkImgPreview() {
+    _tkImgCerrar();
+    if (!_tkImg || !_tkImg.dataUrl) return;
+    const ov = document.createElement('div'); ov.id = 'tkImgOvl';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,10,15,.82);z-index:100000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:15px;overflow:auto';
+    ov.innerHTML = `<img src="${_tkImg.dataUrl}" alt="ticket" style="max-width:min(400px,92vw);width:100%;border-radius:14px;box-shadow:0 22px 60px rgba(0,0,0,.55)"/>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+          <button onclick="MOS._tkImgCompartir()" style="background:#25D366;color:#fff;border:0;border-radius:12px;padding:13px 22px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 6px 18px rgba(37,211,102,.4)">📲 Enviar por WhatsApp</button>
+          <button onclick="MOS._tkImgDescargar()" style="background:#334155;color:#fff;border:0;border-radius:12px;padding:13px 20px;font-weight:700;cursor:pointer">⬇ Descargar</button>
+          <button onclick="MOS._tkImgCerrar()" style="background:#1f2430;color:#cbd5e1;border:0;border-radius:12px;padding:13px 20px;font-weight:700;cursor:pointer">Cerrar</button>
+        </div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', e => { if (e.target === ov) _tkImgCerrar(); });
+  }
+  function _tkImgDescargar() {
+    if (!_tkImg || !_tkImg.dataUrl) return;
+    const a = document.createElement('a'); a.href = _tkImg.dataUrl; a.download = _tkImg.filename;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  async function _tkImgCompartir() {
+    if (!_tkImg || !_tkImg.dataUrl) return;
+    try {
+      const blob = await (await fetch(_tkImg.dataUrl)).blob();
+      const file = new File([blob], _tkImg.filename, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Ticket ' + _tkImg.label });
+        return;
+      }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    _tkImgDescargar();
+    try { toast('Imagen descargada — adjúntala en el chat de WhatsApp', 'info', 4500); } catch(_){}
+    try { window.open('https://wa.me/', '_blank'); } catch(_){}
   }
 
   // [Reparación #4 · Etapa 1] Imprime (reimprime) el ticket: elige impresora + arma ESC/POS client-side +
@@ -60948,6 +61088,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     
     // F2 — Acciones editables sobre tickets
     cjAbrirAccionesTicket, _tkAccion, _tkPdfCompartir, _tkPdfImprimir, _tkPdfDescargar,
+    _tkImgCompartir, _tkImgDescargar, _tkImgCerrar,
     _tkCobrarSetMetodo, _tkCobrarSetCaja, _tkCobrarValidarMixto, _tkCobrarConfirmar,
     _tkCambiarFPSel, _tkCambiarFPConfirmar, _tkCambiarFPValidar,
     _tkAprobarCredConfirmar,

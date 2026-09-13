@@ -4449,6 +4449,13 @@ const API = (() => {
       return r;
     },
     // Crea un PN manualmente desde MOS (admin/master) 100% Supabase (mos.crear_pn_manual → wh.registrar_producto_nuevo).
+    // [ticket imagen] datos fiscales del negocio para el encabezado del ticket (me.empresa_fiscal).
+    empresaFiscal: async () => {
+      try {
+        const r = await _sbRpcMOS('empresa_fiscal', { p: {} }, 'me');
+        return (r && r.data) ? r.data : (r && r.ok !== false ? r : null);
+      } catch (_) { return null; }
+    },
     // [mensajes de voz 1027] equipos ACTIVOS (ME+WH) con nombre de persona/equipo para el selector.
     vozDispositivos: async () => {
       const r = await _sbRpcMOSWrite('voz_dispositivos', { p: {} });
