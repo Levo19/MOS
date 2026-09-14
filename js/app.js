@@ -53377,6 +53377,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     const sku = String(p && p.skuBase || '').trim().toUpperCase(); if (!sku) return false;
     if (_zonaCanonSkuSet().has(sku)) return false;            // tiene canónico → item legítimo
     const ps = Array.isArray(S.productos) ? S.productos : [];
+    // [fix nakamito 1kg] Si el sku tiene una UNIDAD BASE real (factor=1) —canónico O DERIVADO (envasado del
+    //   granel, factor=1 con base)— es un ÍTEM LEGÍTIMO y NO se filtra. Antes solo contaba como legítimo el
+    //   canónico (factor=1 SIN base); un derivado que ADEMÁS tenía una presentación/pack (factor≠1) con el
+    //   mismo sku (p.ej. NAKAMITO 1KG + su Tripack x3) se daba por "presentación huérfana de granel" y se
+    //   borraba de TODOS los cuadrantes. Solo se filtra si el sku es SOLO presentaciones (factor≠1) sin unidad.
+    const tieneUnidad = ps.some(x => String(x.skuBase || '').trim().toUpperCase() === sku && (parseFloat(x.factorConversion) || 1) === 1);
+    if (tieneUnidad) return false;
     return ps.some(x => String(x.skuBase || '').trim().toUpperCase() === sku && (parseFloat(x.factorConversion) || 1) !== 1);
   }
   function _zonaCuadDe(p) {
