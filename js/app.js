@@ -52792,12 +52792,18 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
     // Filtros
     if (f.q) {
-      const q = f.q.toLowerCase();
-      // [978] Busca por nombre, sku Y por CÓDIGO DE BARRA (cualquiera de sus códigos) — el dueño escanea/teclea el código.
-      arr = arr.filter(p => (String(p.descripcion||p.nombre||'').toLowerCase().indexOf(q) >= 0)
-        || (String(p.skuBase||'').toLowerCase().indexOf(q) >= 0)
-        || (String(p.codigoBarra||p.codBarra||'').toLowerCase().indexOf(q) >= 0)
-        || (Array.isArray(p.codigos) && p.codigos.some(cc => String((cc && (cc.codBarra != null ? cc.codBarra : cc.codigoBarra)) != null ? (cc.codBarra != null ? cc.codBarra : cc.codigoBarra) : cc || '').toLowerCase().indexOf(q) >= 0)));
+      // [978+ búsqueda por PALABRAS] cada palabra debe aparecer en algún campo (nombre / sku / cualquiera de
+      //   los códigos de barra), en CUALQUIER orden. Así "nakamito 1kg" encuentra "NAKAMITO GLUTAMATO 1KG"
+      //   aunque "1kg" no esté pegado a "nakamito". El dueño también puede escanear/teclear el código completo.
+      const tokens = f.q.toLowerCase().split(/\s+/).filter(Boolean);
+      arr = arr.filter(p => {
+        const codigos = Array.isArray(p.codigos)
+          ? p.codigos.map(cc => String((cc && (cc.codBarra != null ? cc.codBarra : cc.codigoBarra)) || '')).join(' ')
+          : '';
+        const hay = (String(p.descripcion || p.nombre || '') + ' ' + String(p.skuBase || '') + ' ' +
+                     String(p.codigoBarra || p.codBarra || '') + ' ' + codigos).toLowerCase();
+        return tokens.every(t => hay.indexOf(t) >= 0);
+      });
     }
     if (f.brecha) arr = arr.filter(p => _zonaNum(p.brecha) > 0);
     const tendActivas = Object.keys(f.tend).filter(k => f.tend[k]);
