@@ -25212,20 +25212,36 @@ const MOS = (() => {
   function vozCerrar() { const o = document.getElementById('vozOvl'); if (o) o.remove(); _vozSel = ''; }
   function _vozEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c])); }
   function _vozMins(m) { if (m == null) return ''; if (m < 60) return 'hace ' + m + ' min'; return 'hace ' + Math.floor(m / 60) + ' h'; }
+  // Nombre para mostrar: la PERSONA si tiene sesión; si no, el tipo de equipo LIMPIO (sin el fragmento
+  //   hexadecimal del id, que se veía como "id raro"). Ej: "Móvil 2b44c9" → "Móvil"; hex puro → "Equipo".
+  function _vozNombre(d) {
+    if (d && d.usuario && String(d.usuario).trim()) return String(d.usuario).trim();
+    let eq = String(d && d.equipo || '').trim().replace(/\s+[0-9a-f]{5,10}$/i, '');
+    if (!eq || /^[0-9a-f]{4,}$/i.test(eq)) eq = 'Equipo';
+    return eq;
+  }
   function _vozRenderLista() {
     const cont = document.getElementById('vozList'); if (!cont) return;
     if (!_vozDispCache.length) { cont.innerHTML = '<div style="color:#9aa0ab;font-size:13px;padding:12px 2px">No hay equipos activos en las últimas 48 h.</div>'; return; }
-    cont.innerHTML = _vozDispCache.map(d => {
+    // Primero los que tienen PERSONA con sesión (a esos sí les llega la voz), luego por más reciente.
+    const list = _vozDispCache.slice().sort((a, b) =>
+      (((b.usuario && String(b.usuario).trim()) ? 1 : 0) - ((a.usuario && String(a.usuario).trim()) ? 1 : 0))
+      || ((a.mins == null ? 9e9 : a.mins) - (b.mins == null ? 9e9 : b.mins)));
+    cont.innerHTML = list.map(d => {
       const online = (d.mins != null && d.mins <= 5);
-      const nombre = d.usuario || d.equipo || 'Equipo';
-      const sub = [d.app, d.zona].filter(Boolean).join(' · ') + (d.mins != null ? ' · ' + (online ? 'en línea' : _vozMins(d.mins)) : '');
+      const conSesion = !!(d.usuario && String(d.usuario).trim());
+      const nombre = _vozNombre(d);
+      const partes = [d.app, d.zona].filter(Boolean);
+      if (d.mins != null) partes.push(online ? 'en línea' : _vozMins(d.mins));
+      const sub = partes.join(' · ');
       const sel = (_vozSel === d.deviceId);
       const bc = d.app === 'WH' ? '#f59e0b' : '#38bdf8';
       const bb = d.app === 'WH' ? 'rgba(245,158,11,.15)' : 'rgba(56,189,248,.15)';
+      const nomColor = conSesion ? '#f4f4f5' : '#9aa0ab';
       return `<div onclick="MOS.vozPick('${_vozEsc(d.deviceId)}')" style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:12px;cursor:pointer;border:1.5px solid ${sel ? '#6366f1' : '#262a33'};background:${sel ? 'rgba(99,102,241,.18)' : '#0f1116'}">
           <span style="width:9px;height:9px;border-radius:50%;flex:none;background:${online ? '#22c55e' : '#6b7280'};box-shadow:${online ? '0 0 8px #22c55e' : 'none'}"></span>
           <div style="min-width:0;flex:1">
-            <div style="font-weight:700;font-size:14px;color:#f4f4f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_vozEsc(nombre)}</div>
+            <div style="font-weight:700;font-size:14px;color:${nomColor};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_vozEsc(nombre)}</div>
             <div style="font-size:11.5px;color:#9aa0ab;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_vozEsc(sub)}</div>
           </div>
           <span style="font-size:10px;font-weight:800;color:${bc};background:${bb};padding:3px 8px;border-radius:6px;flex:none">${_vozEsc(d.app)}</span>
@@ -25263,24 +25279,20 @@ const MOS = (() => {
     _vozRenderLista();
     setTimeout(() => { try { document.getElementById('vozTxt').focus(); } catch(_){} }, 80);
   }
-  async function vozEnviarMsg() {
+  function vozEnviarMsg() {
     const dev = _vozSel;
     const txt = ((document.getElementById('vozTxt') || {}).value || '').trim();
     if (!dev) { try { toast('Elige un equipo de la lista', 'warning'); } catch(_){} return; }
     if (!txt) { try { toast('Escribe el mensaje', 'warning'); } catch(_){} return; }
-    const btn = document.getElementById('vozSend');
-    if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
-    try {
-      const d = _vozDispCache.find(x => x.deviceId === dev) || {};
-      const label = d.usuario || d.equipo || '';
-      const emisor = (S.session && S.session.nombre) || 'admin-mos';
-      await API.vozEnviar({ deviceId: dev, texto: txt, emisor, nombreDest: label });
-      try { toast('🔊 Enviado a ' + (label || 'equipo') + ' — lo leerá en voz alta', 'success'); } catch(_){}
-      vozCerrar();
-    } catch (e) {
-      try { toast('No se pudo enviar: ' + (e && e.message || e), 'error'); } catch(_){}
-      if (btn) { btn.disabled = false; btn.textContent = '🔊 Enviar y leer'; }
-    }
+    const d = _vozDispCache.find(x => x.deviceId === dev) || {};
+    const label = d.usuario || _vozNombre(d) || 'equipo';
+    const emisor = (S.session && S.session.nombre) || 'admin-mos';
+    // [optimista] cerrar + confirmar YA — el envío corre en 2º plano; así NO se siente el lag del ida-y-vuelta.
+    //   Si el POST falla (raro), avisa con un toast de error. No es dinero → optimista es seguro.
+    vozCerrar();
+    try { toast('🔊 Enviado a ' + label + ' — lo leerá en voz alta', 'success'); } catch(_){}
+    Promise.resolve(API.vozEnviar({ deviceId: dev, texto: txt, emisor, nombreDest: label }))
+      .catch(e => { try { toast('⚠ No se pudo enviar a ' + label + ': ' + (e && e.message || e), 'error', 6000); } catch(_){} });
   }
 
   function renderInfra() {
