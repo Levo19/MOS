@@ -1027,8 +1027,17 @@ const API = (() => {
       if (dia.tarifaEnvasado > 0) tarifaUsada = dia.tarifaEnvasado;
     });
     txt += SEPd;
+    // [1029 R5] consumos descontados en este pago → la reimpresión dice lo mismo que se pagó
+    const _cons = Array.isArray(d.consumos) ? d.consumos : [];
+    if (_cons.length) {
+      txt += _pEnd('BRUTO', W - 12) + _amtP(d.total, 12) + '\n';
+      txt += _sHdr('CONSUMOS DESCONTADOS (' + _cons.length + ')');
+      _cons.forEach((c) => { txt += _pEnd('  ' + _norm(c.correlativo) + ' ' + String(c.fecha || '').slice(8, 10) + '/' + String(c.fecha || '').slice(5, 7), W - 12) + _pSt('-S/' + (parseFloat(c.monto) || 0).toFixed(2), 12) + '\n'; });
+      txt += SEPd;
+    }
+    const _netoR = (_cons.length && typeof d.neto === 'number') ? d.neto : d.total;
     txt += '\x1b\x21\x30';
-    txt += _pEnd('TOTAL', W / 2 - 6) + _amtP(d.total, W / 2 - 4) + '\n';
+    txt += _pEnd(_cons.length ? 'NETO' : 'TOTAL', W / 2 - 6) + _amtP(_netoR, W / 2 - 4) + '\n';
     txt += '\x1b\x21\x00' + SEPd;
     txt += _sHdr('RESUMEN DEL PERIODO');
     txt += _pEnd('  Dias liquidados', W - 6) + _pSt(String(d.dias.length), 6) + '\n';
@@ -1460,7 +1469,11 @@ const API = (() => {
       body: JSON.stringify(args || {})
     }, 15000);
     if (!res.ok) {
-      const e = new Error('rpc directo HTTP ' + res.status);
+      // [1029] un `raise exception` de negocio (p.ej. NETO_NO_CUADRA) viene en el body de PostgREST → mostrarlo
+      // legible en vez de "rpc directo HTTP 400".
+      let _msg = '';
+      try { const _b = await res.json(); _msg = (_b && (_b.message || _b.hint || _b.details)) || ''; } catch (_) {}
+      const e = new Error(_msg ? String(_msg) : ('rpc directo HTTP ' + res.status));
       e.status = res.status;
       e.permanente = (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429);
       throw e;
@@ -2358,7 +2371,10 @@ const API = (() => {
         creditos: Array.isArray(p.creditos) && p.creditos.length ? p.creditos : undefined,
         // [572] 🤖 CONSUMOS AUTOMÁTICOS: el servidor descuenta TODOS los créditos vivos de los
         // días que se pagan (server-truth). Con esto la lista `creditos` es opcional (extras).
-        autoConsumos: p.autoConsumos === true ? true : undefined
+        autoConsumos: p.autoConsumos === true ? true : undefined,
+        // [1029 R4] neto que dice el comprobante impreso. Si el servidor calcula otro, NO paga (rollback) y
+        // devuelve NETO_NO_CUADRA → nunca más "papel S/430.60 / sistema S/345.20".
+        netoEsperado: (typeof p.netoEsperado === 'number' && isFinite(p.netoEsperado)) ? p.netoEsperado : undefined
       } });
       if (out == null) {
         // [419 · review MED7] Si hay créditos que descontar, NO caer a GAS: el GAS no

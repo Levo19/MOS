@@ -40969,6 +40969,9 @@ const MOS = (() => {
   // AbortController activo por petición (B1)
   let _liqAbortCtrl = null;
 
+  // [1029 R4] neto del comprobante generado por persona (lo que dice el papel). marcarPagos lo manda como
+  // netoEsperado: si el servidor descuenta otra cosa, rechaza el pago (antes: papel S/430.60, sistema S/345.20).
+  const _liqNetoTicket = {};
   const _liqState = {
     tab: 'pendientes',
     desde: null,
@@ -41168,6 +41171,10 @@ const MOS = (() => {
         _liqStopPolling();
         return;
       }
+      // [1029] con la confirmación de pago abierta NO refrescar: el comprobante debe ser exactamente lo que el
+      // admin está viendo. Si el servidor cambió algo, marcar_pagos lo detecta (NETO_NO_CUADRA) y no paga.
+      const _conf = document.getElementById('modalLiqConfirmar');
+      if (_conf && !_conf.classList.contains('hidden')) return;
       // Silent refresh: re-fetch tab actual sin animación
       liqLoadCurrent();
       // También refresh vetadas si está cargado
@@ -42339,7 +42346,7 @@ const MOS = (() => {
     // [dueño 2026-07-14] Snapshot POR PERSONA del ticket (pendientes AÚN intactos = montos correctos): se GUARDA
     // tras el pago (guardarTicketPago) para que Reimprimir sea IDÉNTICO, y se imprime en 2 copias (jefa+empleado).
     const _liqPerTicket = {};
-    try { personas.forEach(p => { _liqPerTicket[p.idPersonal] = _liqGenerarTicketAscii([p], comentario, pagadoPor); }); } catch (_) {}
+    try { personas.forEach(p => { delete _liqNetoTicket[p.idPersonal]; _liqPerTicket[p.idPersonal] = _liqGenerarTicketAscii([p], comentario, pagadoPor); }); } catch (_) {}
 
     // [v2.41.71] OPTIMISTA INMEDIATO — antes del loop:
     //   1. Quitar días pagados del state local + repaint
@@ -42381,6 +42388,7 @@ const MOS = (() => {
         appOrigen: persona.appOrigen,
         creditos: persona.creditos,   // [419] extras opcionales (deuda de otras fechas) que el admin marcó
         autoConsumos: true,           // [572] 🤖 el servidor descuenta AUTO todos los consumos de los días pagados
+        netoEsperado: (typeof _liqNetoTicket[persona.idPersonal] === 'number') ? _liqNetoTicket[persona.idPersonal] : undefined,  // [1029 R4]
         pagadoPor,
         comentario,
         // [v2.43.377] El front imprime por la Edge `imprimir` (cero-GAS, preview==print).
@@ -42572,6 +42580,7 @@ const MOS = (() => {
       // [dueño 2.43.628] NETO FINAL bien RESALTADO: etiqueta centrada + el monto solo, en
       // DOBLE tamaño, en su propia línea. El consumo ya va restado en el subneto de cada día.
       const netoFinal = Math.round((subtotal - descTotal) * 100) / 100;
+      _liqNetoTicket[per.idPersonal] = netoFinal;   // [1029 R4] el neto del PAPEL viaja al servidor
       out += centrar(descTotal > 0 ? '>>> NETO A PAGAR (liquido) <<<' : '>>> TOTAL A PAGAR <<<') + '\n';
       const _amt = (netoFinal < 0 ? '-' : '') + fmtMon(Math.abs(netoFinal));
       const _half = Math.floor(W / 2);
@@ -42895,9 +42904,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
             </div>
             ${partes.length ? `<div class="text-[10px] text-slate-500 mt-0.5">${partes.join(' · ')}</div>` : ''}
           </div>`;
-        }).join('') + `<div class="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between">
-          <span class="text-sm font-bold text-slate-300">TOTAL</span>
-          <span class="text-lg font-bold" style="color:#fbbf24">${_liqMoney(d.total)}</span>
+        }).join('') + ((Array.isArray(d.consumos) && d.consumos.length) ? `<div class="mt-2 pt-2 border-t border-slate-800">
+          <div class="text-[11px] font-semibold text-rose-300 mb-1">Consumos descontados (${d.consumos.length})</div>
+          ${d.consumos.map(c => `<div class="flex items-center justify-between text-[11px] text-slate-400"><span>${_escapeHtml(String(c.correlativo || ''))} · ${_escapeHtml(String(c.fecha || '').slice(5).split('-').reverse().join('/'))}</span><span class="text-rose-300">−${_liqMoney(c.monto)}</span></div>`).join('')}
+          <div class="flex items-center justify-between text-xs text-slate-400 mt-1"><span>Bruto</span><span>${_liqMoney(d.total)}</span></div>
+        </div>` : '') + `<div class="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between">
+          <span class="text-sm font-bold text-slate-300">${(Array.isArray(d.consumos) && d.consumos.length) ? 'NETO PAGADO' : 'TOTAL'}</span>
+          <span class="text-lg font-bold" style="color:#fbbf24">${_liqMoney((typeof d.neto === 'number') ? d.neto : d.total)}</span>
         </div>`;
       }
     } catch(e) {
