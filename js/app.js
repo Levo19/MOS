@@ -42408,8 +42408,16 @@ const MOS = (() => {
       // [dueño 2026-07-14] Por cada pago OK: (1) GUARDAR el ticket snapshot con su idPago → Reimprimir será
       // IDÉNTICO (cero-GAS, RPC guardar_ticket_pago); (2) imprimir 2 COPIAS (jefa/tesorería + empleado) por la Edge.
       for (const { persona, res } of okList) {
-        const asciiP = _liqPerTicket[persona.idPersonal];
+        let asciiP = _liqPerTicket[persona.idPersonal];
         const idPago = res && (res.idPago || (res.data && res.data.idPago));
+        // [1030] el papel se arma con lo que el servidor REGISTRÓ → impreso = "Pagadas" = reimpresión
+        if (idPago) {
+          try {
+            const rDet = await API.get('getPagoDetalle', { idPago });
+            const dDet = rDet && rDet.data ? rDet.data : rDet;
+            if (dDet && Array.isArray(dDet.dias) && dDet.dias.length) asciiP = _liqHojaEscPos(dDet);
+          } catch (_) { /* sin detalle: se imprime el comprobante previo (ya validado por netoEsperado) */ }
+        }
         if (asciiP && idPago) {
           try { await API.post('guardarTicketPago', { idPago, ticketEscPos: asciiP }); } catch (_) {}
         }
@@ -42845,6 +42853,103 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       </div>`;
   }
 
+  // ════════════════════════════════════════════════════════════
+  // [1030] HOJA ÚNICA de liquidación (pedido dueño 21-sep-2026). Se arma con lo que el SERVIDOR registró
+  // (mos.pago_detalle) y la usan: el comprobante impreso al pagar, la vista en "Pagadas" y la reimpresión →
+  // las tres son idénticas. Día por día, cada concepto con su signo (+ ingreso / − descuento o consumo),
+  // "Total del día" al pie (puede ser negativo) y un RESUMEN que suma todo. Montos en céntimos (sin floats).
+  // ════════════════════════════════════════════════════════════
+  function _liqHojaLineas(d) {
+    const W = 48, L = [];
+    const cts = (n) => Math.round((parseFloat(n) || 0) * 100);
+    const mon = (c, conSigno) => (c < 0 ? '-' : (conSigno ? '+' : '')) + 'S/' + (Math.abs(c) / 100).toFixed(2);
+    const dos = (izq, der) => { izq = String(izq || ''); der = String(der || ''); const max = W - der.length - 1; if (izq.length > max) izq = izq.slice(0, max); return izq + ' '.repeat(Math.max(1, W - izq.length - der.length)) + der; };
+    const centrar = (t) => { t = String(t || ''); return t.length >= W ? t.slice(0, W) : ' '.repeat(Math.floor((W - t.length) / 2)) + t; };
+    const txt = (t) => L.push({ t });
+    const motivo = (m) => { const w = String(m || '').trim().split(/\s+/).filter(Boolean); let buf = ''; w.forEach(x => { if (buf && (buf + ' ' + x).length > W - 6) { txt('      ' + buf); buf = x; } else buf += (buf ? ' ' : '') + x; }); if (buf) txt('      ' + buf); };
+    const dm = (f) => String(f || '').slice(8, 10) + '/' + String(f || '').slice(5, 7);
+    const DSEM = ['DOM', 'LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB'];
+    const diaTxt = (f) => { try { return DSEM[new Date(f + 'T12:00:00').getDay()] + ' ' + dm(f); } catch (_) { return dm(f); } };
+    const num0 = (n) => { n = parseFloat(n) || 0; return Number.isInteger(n) ? String(n) : n.toFixed(2); };
+    const dias = Array.isArray(d.dias) ? d.dias.slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))) : [];
+    const consumos = Array.isArray(d.consumos) ? d.consumos : [];
+    const consPorDia = {}; consumos.forEach(c => { const k = String(c.fecha || '').slice(0, 10); (consPorDia[k] = consPorDia[k] || []).push(c); });
+    const fechasDias = new Set(dias.map(x => String(x.fecha).slice(0, 10)));
+    let pagado = String(d.pagadoTs || '');
+    try { if (pagado) pagado = dm(pagado.slice(0, 10)) + '/' + pagado.slice(2, 4) + ' ' + pagado.slice(11, 16); } catch (_) {}
+
+    txt(centrar('INVERSIONES MOS'));
+    txt(centrar('Comprobante de liquidacion'));
+    txt('='.repeat(W));
+    txt(dos('Persona:', d.nombre || ''));
+    txt(dos('Rol:', d.rol || ''));
+    if (dias.length) txt(dos('Periodo:', dm(dias[0].fecha) + ' al ' + dm(dias[dias.length - 1].fecha) + ' (' + dias.length + ' dia' + (dias.length === 1 ? '' : 's') + ')'));
+    txt(dos('Pagado por:', d.pagadoPor || '-'));
+    if (pagado) txt(dos('Fecha de pago:', pagado));
+    if (d.idPago) txt(dos('Pago:', String(d.idPago).replace(/^LIQ-LIQ_/, '').slice(0, 8)));
+    txt('-'.repeat(W));
+
+    let sIng = 0, sDesc = 0, sCons = 0, sAjuste = 0;
+    dias.forEach(x => {
+      const f = String(x.fecha).slice(0, 10);
+      txt('');
+      txt(diaTxt(f));
+      let dia = 0;
+      const lin = (label, c, conMotivo) => { if (!c) return; txt(dos('  ' + label, mon(c, true))); dia += c; if (conMotivo) motivo(conMotivo); };
+      const base = cts(x.montoBase), env = cts(x.pagoEnvasado), colab = cts(x.pagoEnvasadoColab), com = cts(x.bonoMeta), bon = cts(x.bonificacion), san = cts(x.sancion);
+      const envPropio = env - colab;
+      lin('Base diaria', base);
+      lin('Envasado propio' + ((parseFloat(x.productosEnvasados) || 0) > 0 ? ' (' + num0(x.productosEnvasados) + ' uds)' : ''), envPropio);
+      lin('Envasado colab 50%' + ((parseFloat(x.envasadosColab) || 0) > 0 ? ' (' + num0(x.envasadosColab) + ' uds)' : ''), colab);
+      lin('Comision por ventas', com);
+      lin('Bonificacion', bon, x.bonificacionMotivo);
+      lin('Descuento', -san, x.sancionMotivo);
+      sIng += base + env + com + bon; sDesc += san;
+      // si el total registrado del día no coincide con sus partes, se muestra la diferencia (el día SIEMPRE cuadra)
+      const ajuste = cts(x.totalDia) - (base + env + com + bon - san);
+      if (ajuste) { lin('Otros ajustes', ajuste); sAjuste += ajuste; }
+      (consPorDia[f] || []).forEach(c => { const m = cts(c.monto); txt(dos('  Consumo ' + (c.correlativo || ''), mon(-m, true))); dia -= m; sCons += m; });
+      const audM = parseInt(x.metaAuditorias) || 0;
+      if (audM > 0) txt(dos('  Auditorias ' + (parseInt(x.auditoriasHechas) || 0) + '/' + audM, x.cumplioAuditorias ? 'META OK' : 'NO cumplio'));
+      txt(dos('', '-'.repeat(12)));
+      txt(dos('                Total del dia', mon(dia, false)));
+      if (dia < 0) txt('  (consumio mas de lo ganado ese dia)');
+    });
+    const otros = consumos.filter(c => !fechasDias.has(String(c.fecha || '').slice(0, 10)));
+    if (otros.length) {
+      txt(''); txt('CONSUMOS DE OTROS DIAS');
+      otros.forEach(c => { const m = cts(c.monto); txt(dos('  ' + dm(c.fecha) + ' ' + (c.correlativo || ''), mon(-m, true))); sCons += m; });
+    }
+    const neto = sIng - sDesc + sAjuste - sCons;
+    txt(''); txt('='.repeat(W));
+    txt('RESUMEN');
+    txt(dos('  Ganado (' + dias.length + ' dia' + (dias.length === 1 ? '' : 's') + ')', mon(sIng, true)));
+    if (sDesc) txt(dos('  Descuentos', mon(-sDesc, true)));
+    if (sAjuste) txt(dos('  Otros ajustes', mon(sAjuste, true)));
+    if (sCons) txt(dos('  Consumos (' + consumos.length + ' ticket' + (consumos.length === 1 ? '' : 's') + ')', mon(-sCons, true)));
+    txt('='.repeat(W));
+    txt(centrar('NETO A PAGAR'));
+    L.push({ big: mon(neto, false) });
+    if (d.comentario && !/ANULADO/i.test(d.comentario)) { txt('-'.repeat(W)); txt('Comentario:'); motivo(d.comentario); }
+    txt('='.repeat(W));
+    return { lineas: L, netoCts: neto, W };
+  }
+  // Para la impresora (ESC/POS): el neto va en doble tamaño
+  function _liqHojaEscPos(d) {
+    const h = _liqHojaLineas(d), half = Math.floor(h.W / 2);
+    return h.lineas.map(l => l.big != null
+      ? '\x1b\x21\x30' + ' '.repeat(Math.max(0, Math.floor((half - l.big.length) / 2))) + l.big.slice(0, half) + '\x1b\x21\x00'
+      : l.t).join('\n') + '\n' + ' '.repeat(Math.floor((h.W - 7) / 2)) + 'Gracias\n';
+  }
+  // Para la pantalla ("Pagadas"): la MISMA hoja, como papel
+  function _liqHojaHtml(d) {
+    const h = _liqHojaLineas(d);
+    const cuerpo = h.lineas.map(l => l.big != null
+      ? '<div style="text-align:center;font-size:22px;font-weight:800;letter-spacing:.02em;margin:2px 0">' + _escapeHtml(l.big) + '</div>'
+      : '<div style="white-space:pre">' + (_escapeHtml(l.t) || '&nbsp;') + '</div>').join('');
+    return '<div style="overflow-x:auto"><div style="background:#fbfaf6;color:#1b1b1b;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;padding:14px 12px;border-radius:6px;width:max-content;min-width:100%;box-shadow:0 1px 0 rgba(0,0,0,.25)">' + cuerpo + '<div style="text-align:center;margin-top:4px">Gracias</div></div></div>';
+  }
+
   // [v2.41.55] OPTIMISTA: abrir modal al instante con datos del listado local,
   // pintar skeleton para días, y completar al llegar el fetch. Antes el await
   // bloqueaba el openModal → percibido como lentitud.
@@ -42890,28 +42995,8 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       if (titleEl) titleEl.textContent = `${_liqRolIco(d.rol)} ${d.nombre} · ${d.idPago}`;
       if (subEl)   subEl.textContent = `${d.cantidadDias} día(s) · pagó ${d.pagadoPor} · ${new Date(d.pagadoTs).toLocaleString('es-PE')}`;
       if (bodyEl) {
-        bodyEl.innerHTML = d.dias.map(dia => {
-          const partes = [];
-          if (dia.montoBase    > 0) partes.push(`base ${dia.montoBase.toFixed(2)}`);
-          if (dia.pagoEnvasado > 0) partes.push(`env ${dia.pagoEnvasado.toFixed(2)}`);
-          if (dia.bonoMeta     > 0) partes.push(`+meta ${dia.bonoMeta.toFixed(2)}`);
-          if (dia.bonificacion > 0) partes.push(`+bono ${dia.bonificacion.toFixed(2)}`);
-          if (dia.sancion      > 0) partes.push(`−san ${dia.sancion.toFixed(2)}`);
-          return `<div class="rounded-lg p-2" style="background:rgba(15,23,42,.4);border:1px solid #1e293b">
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-slate-200">${_liqFmtFechaLarga(dia.fecha)}</span>
-              <span class="text-sm font-bold text-amber-400">${_liqMoney(dia.totalDia)}</span>
-            </div>
-            ${partes.length ? `<div class="text-[10px] text-slate-500 mt-0.5">${partes.join(' · ')}</div>` : ''}
-          </div>`;
-        }).join('') + ((Array.isArray(d.consumos) && d.consumos.length) ? `<div class="mt-2 pt-2 border-t border-slate-800">
-          <div class="text-[11px] font-semibold text-rose-300 mb-1">Consumos descontados (${d.consumos.length})</div>
-          ${d.consumos.map(c => `<div class="flex items-center justify-between text-[11px] text-slate-400"><span>${_escapeHtml(String(c.correlativo || ''))} · ${_escapeHtml(String(c.fecha || '').slice(5).split('-').reverse().join('/'))}</span><span class="text-rose-300">−${_liqMoney(c.monto)}</span></div>`).join('')}
-          <div class="flex items-center justify-between text-xs text-slate-400 mt-1"><span>Bruto</span><span>${_liqMoney(d.total)}</span></div>
-        </div>` : '') + `<div class="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between">
-          <span class="text-sm font-bold text-slate-300">${(Array.isArray(d.consumos) && d.consumos.length) ? 'NETO PAGADO' : 'TOTAL'}</span>
-          <span class="text-lg font-bold" style="color:#fbbf24">${_liqMoney((typeof d.neto === 'number') ? d.neto : d.total)}</span>
-        </div>`;
+        // [1030] la MISMA hoja que se imprime (y se reimprime)
+        bodyEl.innerHTML = _liqHojaHtml(d);
       }
     } catch(e) {
       if (bodyEl) bodyEl.innerHTML = `<div class="text-rose-400 text-sm py-4">Error cargando detalle: ${e.message}</div>`;
@@ -42932,7 +43017,12 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       // [dueño 2026-07-14] Reimpresión FIEL: usa el ticket SNAPSHOT guardado al pagar (idéntico al original) e
       // imprime 2 copias (jefa/tesorería + empleado). Si no hay snapshot (pagos viejos, antes de esta versión),
       // cae al builder server `imprimirTicketPago` (que puede diferir — solo para históricos sin snapshot).
-      if (d.ticketEscPos) {
+      if (Array.isArray(d.dias)) {
+        // [1030] hoja única: idéntica a la que se ve en "Pagadas" y a la impresa al pagar
+        await _liqPrint2Copias(printerId, _liqHojaEscPos(d), 'Comprobante de pago (reimpresion)');
+        _liqSfx('success');
+        toast('✓ Reimpresión enviada (2 copias)', 'ok');
+      } else if (d.ticketEscPos) {
         await _liqPrint2Copias(printerId, d.ticketEscPos, 'Comprobante de pago (reimpresion)');
         _liqSfx('success');
         toast('✓ Reimpresión fiel enviada (2 copias)', 'ok');
