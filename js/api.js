@@ -3247,7 +3247,9 @@ const API = (() => {
     //     motivos + soloTipo), réplica EXACTA de _liqDiaRecomputar/_liqDiaSetBonSan (validado al centavo).
     //   · registrarJornada → mos.registrar_jornada (84) idempotente por localId+PK (DINERO jornal).
     // Sin Sheet, GAS no podría correr los hooks → por eso el cutover MUEVE la escritura al server (delete-safe).
-    crearEvaluacion:            _mosEvalDirecto,
+    // [2.44.63] SIEMPRE directo: si get_flags aún no cargó, el gate daba false → "escritura no cableada" y la
+    // auditoría NO se enviaba (la UI ya había dicho ✓). GAS está enterrado; el server tiene su propio kill-switch.
+    crearEvaluacion:            () => true,
     registrarJornada:           _mosJornadasDirecto,
     eliminarJornada:            _mosJornadasDirecto,
     rehabilitarJornada:         _mosJornadasDirecto,

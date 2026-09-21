@@ -41116,6 +41116,9 @@ const MOS = (() => {
 
   async function liqOpen() {
     _liqState.tab = 'pendientes';
+    // [2.44.63] la pantalla también vuelve a "Pendientes" (antes quedaba pintada la última pestaña)
+    _liqSyncTabUI('pendientes');
+    { const _b = $('liqBody'); if (_b) { _b.dataset._hasCache = ''; _b.innerHTML = '<div class="text-xs text-slate-500 italic text-center py-6">Cargando...</div>'; } }
     // [dueño 2.43.632] SIEMPRE entra LIMPIO: no restaurar la selección persistida (evita
     // que al reabrir/refrescar quede marcado lo último y se cruce con datos viejos). La
     // selección vive solo en memoria durante la sesión (sobrevive el polling, no el reopen).
@@ -41247,16 +41250,25 @@ const MOS = (() => {
     closeModal('modalLiquidaciones');
   }
 
-  function liqSetTab(tab) {
-    if (_liqState.tab === tab) return;
-    _liqState.tab = tab;
-    _liqState.seleccion = {};
+  // [2.44.63] La UI de pestañas SIEMPRE se sincroniza con _liqState.tab. Antes liqOpen reseteaba el estado a
+  // 'pendientes' pero dejaba pintada la pestaña/lista de "Pagadas" → al tocar "Pendientes" el guard
+  // (tab === estado) lo ignoraba y quedaba trabado en Pagadas.
+  function _liqSyncTabUI(tab) {
     document.querySelectorAll('#modalLiquidaciones .liq-tab').forEach(el => {
       el.classList.toggle('active', el.dataset.liqtab === tab);
     });
     // [v2.41.38] Mostrar/ocultar barra de filtro por persona según tab
     const filtroBar = document.getElementById('liqFiltroBar');
     if (filtroBar) filtroBar.style.display = (tab === 'pendientes') ? 'block' : 'none';
+  }
+
+  function liqSetTab(tab) {
+    // [2.44.63] el guard mira también la PANTALLA: si el estado dice X pero se ve Y, se re-pinta
+    const _activa = document.querySelector('#modalLiquidaciones .liq-tab.active');
+    if (_liqState.tab === tab && _activa && _activa.dataset.liqtab === tab) return;
+    _liqState.tab = tab;
+    _liqState.seleccion = {};
+    _liqSyncTabUI(tab);
     _liqUpdatePayBar();
     _liqSfx('switch');
 
@@ -41271,21 +41283,19 @@ const MOS = (() => {
       const datos = (_liqState.pendientes && _liqState.pendientes.length)
         ? _liqState.pendientes
         : _liqCacheLoad('pendientes');
-      if (datos) {
+      if (Array.isArray(datos)) {
         _liqState.pendientes = datos;
-        _liqRenderPendientes();
-        if (body) body.dataset._hasCache = '1';
-        pintadoInstantaneo = true;
+        try { _liqRenderPendientes(); if (body) body.dataset._hasCache = '1'; pintadoInstantaneo = true; }
+        catch (eR) { console.warn('[liq] render pendientes', eR); }
       }
     } else if (tab === 'pagadas') {
       const datos = (_liqState.pagadas && _liqState.pagadas.length)
         ? _liqState.pagadas
         : _liqCacheLoad('pagadas');
-      if (datos) {
+      if (Array.isArray(datos)) {
         _liqState.pagadas = datos;
-        _liqRenderPagadas();
-        if (body) body.dataset._hasCache = '1';
-        pintadoInstantaneo = true;
+        try { _liqRenderPagadas(); if (body) body.dataset._hasCache = '1'; pintadoInstantaneo = true; }
+        catch (eR) { console.warn('[liq] render pagadas', eR); }
       }
     }
 
@@ -41589,7 +41599,7 @@ const MOS = (() => {
                    onclick="MOS._liqToggleFiltroPersona('${idEsc}')"
                    title="${_escapeHtml(p.nombre)} · ${p.cantidadDias} día(s) · ${_liqMoney(p.total)}">
                 <span class="liq-chip-avatar">${_escapeHtml(iniciales(p.nombre))}</span>
-                <span class="liq-chip-nombre">${_escapeHtml(p.nombre.split(' ')[0] || p.nombre)}</span>
+                <span class="liq-chip-nombre">${_escapeHtml(String(p.nombre || '').split(' ')[0] || String(p.nombre || ''))}</span>
                 <span class="liq-chip-badge">${p.cantidadDias}</span>
               </div>`;
     }).join('');
@@ -42004,8 +42014,10 @@ const MOS = (() => {
     }
   }
 
+  let _liqEditSeq = 0;   // [2.44.63] token por apertura del lápiz (ver guard tras el fetch)
   async function _liqEditarDia(idPersonal, fecha) {
     _liqSfx('tap');
+    const _tok = ++_liqEditSeq;
     _evalState.fecha = fecha;
 
     // 1. Construir resumen sintético desde _liqState.pendientes (instantáneo)
@@ -42056,7 +42068,12 @@ const MOS = (() => {
     // 3. Fetch real en background → reemplazar datos sintéticos
     try {
       const res = await API.get('getResumenTodosDia', { fecha });
-      if (Array.isArray(res)) {
+      // [2.44.63 · BUG DINERO] si mientras llegaba esto se abrió OTRO día/persona, esta respuesta es vieja:
+      // antes pisaba auditFechaModal y la auditoría del día B se guardaba en el día A (bono/sanción cruzados).
+      const _modalA = $('modalAuditar'), _idA = $('auditIdPersonal');
+      const _vigente = _tok === _liqEditSeq && _modalA && !_modalA.classList.contains('hidden')
+                       && _idA && String(_idA.value) === String(idPersonal);
+      if (Array.isArray(res) && _vigente) {
         _evalState.resumenes = res;
         const r = res.find(x => x.idPersonal === idPersonal);
         if (r) {
@@ -42332,7 +42349,7 @@ const MOS = (() => {
       })
       .filter(Boolean);
 
-    if (!personas.length) { toast('Selección vacía', 'error'); if (btn) { btn.disabled = false; btn.textContent = '💸 Confirmar y pagar'; } return; }
+    if (!personas.length) { toast('Selección vacía', 'error'); if (btn) { btn.disabled = false; btn.textContent = '💸 Confirmar y pagar'; } _liqPayLock = 0; return; }
 
     // Si va a imprimir → primero PREVIEW del ticket, luego pedir impresora
     let printerId = null;
@@ -49006,9 +49023,13 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
 
   function abrirAuditar(idPersonal, btnEl) {
     const btn = _auditBtnDe(idPersonal, btnEl);
+    // [2.44.63] el día que se abre, fijado AHORA (el refresco de fondo lo compara antes de repintar)
+    const _fAbre = String(_evalState.fecha || '').slice(0, 10);
+    const _keyAbre = idPersonal + '|' + _fAbre;
     // (1) GUARD DE RE-ENTRADA — el 2º y 3er clic solo re-confirman el feedback.
-    if (_auditAbriendo === idPersonal) { _auditBtnBusy(btn, true); return; }
-    _auditAbriendo = idPersonal;
+    //     [2.44.63] por persona+DÍA: otro día de la misma persona SÍ abre (antes quedaba el día anterior → guardaba mal)
+    if (_auditAbriendo === _keyAbre) { _auditBtnBusy(btn, true); return; }
+    _auditAbriendo = _keyAbre;
     // (2) FEEDBACK INMEDIATO — síncrono, no hay ningún await por delante.
     _auditBtnBusy(btn, true);
 
@@ -49028,20 +49049,22 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     }
     // (4) Pintar YA (mismo frame del clic).
     if (r) _auditPintarModal(r, idPersonal, false);
-    else   _auditPintarCargando(idPersonal);
+    else   { _evalState.auditFechaModal = _fAbre; _auditPintarCargando(idPersonal); }   // [2.44.63] el día queda fijado aun cargando
     openModal('modalAuditar');
 
     // (5) Refresco DETRÁS — mismo dato que el lápiz de Liquidaciones.
     (async () => {
       let fresh = null;
       try { if (navigator.onLine) fresh = await _auditRefrescarResumenes(_evalState.fecha); } catch (_) {}
-      if (_auditAbriendo === idPersonal) _auditAbriendo = null;
+      if (_auditAbriendo === _keyAbre) _auditAbriendo = null;
       _auditBtnBusy(btn, false);
       const modal = $('modalAuditar');
       const idEl  = $('auditIdPersonal');
       // El modal pudo cerrarse o saltar a otra persona mientras la red respondía.
       if (!modal || modal.classList.contains('hidden')) return;
       if (!idEl || String(idEl.value) !== String(idPersonal)) return;
+      // [2.44.63 · DINERO] ...o a OTRO DÍA de la misma persona: no repintar (pisaría auditFechaModal con el día viejo)
+      if (String(_evalState.auditFechaModal || '').slice(0, 10) !== _fAbre) return;
       const rf = fresh ? fresh.find(x => x.idPersonal === idPersonal) : null;
       if (rf) { _auditPintarModal(rf, idPersonal, !!r); return; }
       if (!r) { toast('Personal no encontrado', 'error'); closeModal('modalAuditar'); }
@@ -50272,8 +50295,21 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     // 30s lo detecta y un toast warn aparece. Sin esto la pantalla "guardando..."
     // tardaba 2-5s incluso con optimismo aplicado.
     const f = fechaAudit;
-    API.post('crearEvaluacion', params)
-      .then(() => {
+    // [2.44.63] el localId se fija UNA vez → los reintentos son idempotentes (el server no duplica)
+    if (!params.localId) params.localId = 'EVAL-' + ((self.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)));
+    const _nomAud = (r && r.nombre) || idPersonal;
+    const _enviar = (intento) => API.post('crearEvaluacion', params).catch(e => {
+      const perm = (e && e.permanente) || /_OFF|NO_AUTORIZADA|requerido|no cableada/i.test(String((e && e.message) || ''));   // negocio: reintentar no lo arregla
+      if (intento < 3 && !perm) return new Promise(res => setTimeout(res, 1500 * intento)).then(() => _enviar(intento + 1));
+      throw e;
+    });
+    _enviar(1)
+      .then((resEv) => {
+        // [1031] el server avisa si el bono/descuento o el "auditado" no se aplicaron (antes: silencio)
+        try { const _dE = resEv && (resEv.data || resEv); if (_dE && _dE.hooksOk === false) toast('⚠ Auditoría guardada, pero NO se aplicó al día de ' + _nomAud + ': ' + (_dE.hookError || 'error') + ' · revisa el día en Liquidaciones', 'error', 20000); } catch(_){}
+        // [2.44.63] Liquidaciones abierta → reflejar YA (sin esperar el polling de 30 s)
+        try { _liqCacheClear(); } catch(_){}
+        try { const _mL = $('modalLiquidaciones'); if (_mL && !_mL.classList.contains('hidden')) liqLoadCurrent(); } catch(_){}
         // Background: refresh con datos frescos del backend
         try { localStorage.removeItem('mos_fin_resum_' + f); } catch {}
         try { localStorage.removeItem('mos_evals_' + f); } catch {}
@@ -50296,7 +50332,9 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
       })
       .catch(e => {
         // Falla del backend tras optimismo: aviso al usuario + refresh full
-        toast('⚠ Backend rechazó el audit: ' + (e.message || 'error') + ' · refrescando', 'warn', 6000);
+        // [2.44.63] aviso que NO se pierde: la auditoría NO quedó guardada (antes: warn de 6 s tras un "✓")
+        toast('⛔ NO se guardó la auditoría de ' + _nomAud + ' (' + String(f).slice(8, 10) + '/' + String(f).slice(5, 7) + '): ' + (e.message || 'error') + ' · vuelve a registrarla', 'error', 20000);
+        try { _finBeep && _finBeep('error'); } catch(_){}
         refreshEvaluacion().catch(() => {});
         try {
           if (typeof _finPL !== 'undefined' && _finPL && S.view === 'finanzas') {
