@@ -296,6 +296,8 @@ const API = (() => {
     ['envase_sku','envaseSku','text'], ['es_insumo','esInsumo','bool10'],
     // [628/629] canal MosGo (toggle 🛵 solo-MASTER) + precio de etiqueta del saco
     ['canal_mayoreo','canalMayoreo','bool10'], ['precio_fijo','precioFijo','bool10'],
+    // [1032] canales por producto: ME (se vende en el POS) y WH (se ve/mueve en almacén)
+    ['canal_me','canalMe','bool10'], ['canal_wh','canalWh','bool10'],
     // [640] taxonomía IA {categoria, subcategoria} (id_categoria es su espejo)
     ['categoria_ia','categoriaIa','json']
   ];
@@ -1788,6 +1790,16 @@ const API = (() => {
       const out = await _sbRpcMOSWrite(fn, { p: { idAlerta: String(p.idAlerta || ''), aprobadoPor: _mosUsuario(p), rechazadoPor: _mosUsuario(p) } });
       if (out == null) throw new Error('Sin conexión con Supabase');
       if (out.ok === false) throw new Error(out.error || 'no se pudo');
+      return out;
+    }
+
+    if (action === 'toggleCanal') {
+      // [1032] canal ME / WH de un producto (solo MASTER — guard real en mos.catalogo_toggle_canal)
+      const out = await _sbRpcMOSWrite('catalogo_toggle_canal', { p: {
+        idProducto: String(p.idProducto || ''), canal: String(p.canal || ''), on: !!p.on, usuario: _mosUsuario(p)
+      } });
+      if (out == null) throw new Error('Sin conexión con Supabase');
+      if (out.ok === false) throw new Error(out.error || 'no se pudo cambiar el canal');
       return out;
     }
 

@@ -21711,7 +21711,45 @@ const MOS = (() => {
   // y canal GO (MosGo) — son EXCLUSIVOS del MASTER: los demás admins no los ven siquiera.
   // [2.43.674 · feedback dueño] Nada de moto ni fondo multicolor: pill sobria "GO" —
   // encendida: violeta sólido MosGo con texto blanco; apagada: borde punteado gris.
+  // [1032] Tira de canales ME · WH · GO (decisión dueño 21-sep): cada letra es un interruptor independiente.
+  //   ME = se vende en el POS · WH = se ve/mueve en almacén · GO = MosGo. El interruptor redondo sigue siendo
+  //   el maestro (el producto existe o no). Solo MASTER la ve (igual que la pill GO de antes).
+  function _canalOn(prod, canal) {
+    const v = canal === 'ME' ? prod.canalMe : prod.canalWh;
+    return !(v === '0' || v === 0 || v === false || String(v).toLowerCase() === 'false');   // default: encendido
+  }
   function _togglesMosgoHtml(prod, sm) {
+    if (!_esMasterSession() || !prod) return '';
+    const id = prod.idProducto, go = String(prod.canalMayoreo) === '1';
+    const me = _canalOn(prod, 'ME'), wh = _canalOn(prod, 'WH');
+    const seg = (canal, on, onclick, titulo, extra) => `<button type="button" class="canal-seg${on ? ' on' : ''}" data-canal="${canal}" ${extra}
+        onclick="event.stopPropagation();${onclick}" title="${titulo}">${canal}</button>`;
+    return `<span class="canal-strip${sm ? ' sm' : ''}">`
+      + seg('ME', me, `MOS.toggleCanal('${id}','ME')`, me ? 'Se vende en ME (POS) — tocar para quitarlo del POS' : 'No se vende en ME — tocar para venderlo', `data-canal-id="${id}"`)
+      + seg('WH', wh, `MOS.toggleCanal('${id}','WH')`, wh ? 'Visible en almacén WH — tocar para ocultarlo en WH' : 'Oculto en WH — tocar para mostrarlo', `data-canal-id="${id}"`)
+      + seg('GO', go, `MOS.toggleMosgo('${id}')`, go ? 'Se vende en MosGo — tocar para quitarlo' : 'Vender en MosGo', `data-go="${id}"`)
+      + '</span>';
+  }
+  async function toggleCanal(idProducto, canal) {
+    if (!_esMasterSession()) { toast('Solo Master', 'error'); return; }
+    const p = S.productos.find(x => x.idProducto === idProducto);
+    if (!p || (canal !== 'ME' && canal !== 'WH')) return;
+    const campo = canal === 'ME' ? 'canalMe' : 'canalWh';
+    const antes = p[campo], on = !_canalOn(p, canal);
+    p[campo] = on ? '1' : '0';
+    _togglesEnVuelo.add(idProducto);
+    const pintar = (v) => document.querySelectorAll('[data-canal-id="' + idProducto + '"][data-canal="' + canal + '"]').forEach(b => b.classList.toggle('on', !!v));
+    pintar(on);
+    toast(canal === 'ME' ? (on ? '🛒 Se vende en ME' : '🚫 Fuera del POS (ME)') : (on ? '🏭 Visible en WH' : '🚫 Oculto en WH'), 'ok', 1800);
+    try {
+      await API.post('toggleCanal', { idProducto, canal, on });
+      _marcarToggleReciente(idProducto);
+    } catch (e) {
+      p[campo] = antes; pintar(_canalOn(p, canal));
+      toast('⚠ No se pudo guardar: ' + (e.message || e), 'error');
+    } finally { _togglesEnVuelo.delete(idProducto); }
+  }
+  function _togglesMosgoHtml_legacy(prod, sm) {
     if (!_esMasterSession() || !prod) return '';
     const go = String(prod.canalMayoreo) === '1';
     // [2.43.679] por CLASES (.go-pill/.on) para poder actualizar el botón EN SITIO
@@ -21799,6 +21837,13 @@ const MOS = (() => {
     $('apagarBasePresList').innerHTML = presentaciones.length > 0
       ? presentaciones.map(pp => `<li>— ${pp.descripcion || pp.idProducto}</li>`).join('')
       : '<li class="italic">— sin presentaciones —</li>';
+    // [1032] derivados del grupo (salen del granel por codigo_producto_base) + sus propias presentaciones
+    const _derivs = S.productos.filter(dd => String(dd.codigoProductoBase || '').trim().toUpperCase() === String(skuBase).toUpperCase());
+    $('apagarBaseDerCount').textContent = _derivs.length;
+    $('apagarBaseDerList').innerHTML = _derivs.length > 0
+      ? _derivs.map(dd => `<li>— ${_escapeHtml(dd.descripcion || dd.idProducto)}</li>`).join('')
+      : '<li class="italic">— sin derivados —</li>';
+    try { $('apagarBaseModoSolo').checked = true; _apagarBaseModo(); } catch(_){}
     $('apagarBaseEqCount').textContent = '…';
     $('apagarBaseEqList').innerHTML = '<li class="italic">— cargando —</li>';
     const modal = $('modalApagarBase');
@@ -21821,15 +21866,27 @@ const MOS = (() => {
     });
   }
 
+  // [1032] el aviso muestra la lista "lo de abajo" apagada/encendida según el modo elegido
+  function _apagarBaseModo() {
+    const todo = !!($('apagarBaseModoTodo') && $('apagarBaseModoTodo').checked);
+    const det = $('apagarBaseDetalle'); if (det) det.style.opacity = todo ? '1' : '.45';
+    const btn = $('btnConfirmarApagar'); if (btn) btn.textContent = todo ? 'Apagar todo el grupo' : 'Apagar solo este';
+  }
   async function confirmarApagarBase() {
     const idProducto = $('apagarBaseId').value;
     const skuBase    = $('apagarBaseSku').value;
-    const equivIds   = JSON.parse($('modalApagarBase').dataset.equivs || '[]');
+    const todo       = !!($('apagarBaseModoTodo') && $('apagarBaseModoTodo').checked);   // [1032]
+    const equivIds   = todo ? JSON.parse($('modalApagarBase').dataset.equivs || '[]') : [];
     if (!idProducto) return;
-
-    const productos = S.productos.filter(pp =>
-      (pp.skuBase || pp.idProducto) === skuBase || pp.idProducto === idProducto
-    );
+    // [1032] "Solo este": únicamente el producto. "Todo el grupo": granel + presentaciones + DERIVADOS
+    //        (+ presentaciones de los derivados) + equivalencias. Antes: siempre grupo y SIN derivados.
+    const _skuDer = new Set(S.productos.filter(dd => String(dd.codigoProductoBase || '').trim().toUpperCase() === String(skuBase).toUpperCase())
+                                       .map(dd => dd.skuBase || dd.idProducto));
+    const productos = !todo
+      ? S.productos.filter(pp => pp.idProducto === idProducto)
+      : S.productos.filter(pp =>
+          (pp.skuBase || pp.idProducto) === skuBase || pp.idProducto === idProducto || _skuDer.has(pp.skuBase || pp.idProducto)
+        );
 
     // OPTIMISTIC: marcar todos como apagados visualmente y cerrar modal de inmediato
     productos.forEach(pp => {
@@ -61058,7 +61115,7 @@ var _pPickState = { filtroZona: null, filtroTipo: null, mostrarTodas: false };
     _p2AbrirUno, _p2VolverLista, _p2GuardarUno, costosPrecioUno, _p2CerrarUno, _p2GuardarUnoDirecto,                                                // [catálogo v4] pestañas + chips de alcance fusionada
     prodCalcMargen, prodOnRange, prodToggleSunat, prodOnTipoIGVChange,
     // [RONDA 5 · purga] exports equiv embebidas eliminados
-    toggleProductoActivo, toggleMosgo, confirmarApagarBase, cerrarApagarBaseRevertir,
+    toggleProductoActivo, toggleMosgo, toggleCanal, _apagarBaseModo, confirmarApagarBase, cerrarApagarBaseRevertir,
     // Evaluación de personal
     refreshEvaluacion, abrirAuditar, cerrarAuditar, guardarAuditoria,
     auditToggleCheck, auditCheckAll, auditToggle, imprimirLiquidacionDia,

@@ -13797,15 +13797,16 @@
       100% { opacity: 1; transform: translateY(0); }
     }
     /* Inactivo: enmallado diagonal + opacidad reducida */
-    .cat-card.cat-inactive {
+    /* [1032] Inactivo: SOLO la cabecera del producto apagado se ve en malla/gris. Sus presentaciones y
+       derivados (dibujados dentro de la tarjeta) muestran SU PROPIO estado — nada se oscurece por herencia. */
+    .cat-card.cat-inactive { border-color: #334155; }
+    .cat-card.cat-inactive > div:first-child {
       opacity: .72;
       background-image:
         repeating-linear-gradient(45deg,
           transparent 0, transparent 8px,
-          rgba(100,116,139,.09) 8px, rgba(100,116,139,.09) 9px),
-        linear-gradient(135deg, #0f172a, #0f172a);
+          rgba(100,116,139,.09) 8px, rgba(100,116,139,.09) 9px);
       filter: grayscale(.45);
-      border-color: #334155;
     }
     .cat-card.cat-inactive:hover { transform: none; box-shadow: none; }
     .pres-chip.pres-inactive {
@@ -13832,6 +13833,19 @@
       box-shadow: 0 1px 6px rgba(110,86,207,.45);
     }
     .go-pill:active { transform: scale(.94); }
+    /* [1032] tira de canales ME · WH · GO (encendido = color, apagado = gris punteado) */
+    .canal-strip { display: inline-flex; flex-shrink: 0; border-radius: 7px; overflow: hidden; border: 1px solid #334155; }
+    .canal-seg {
+      font-weight: 800; letter-spacing: .5px; line-height: 1; font-family: inherit; cursor: pointer;
+      font-size: 10px; padding: 6px 7px; background: transparent; color: #64748b; border: 0;
+      border-right: 1px solid #334155; transition: background .15s, color .15s;
+    }
+    .canal-seg:last-child { border-right: 0; }
+    .canal-strip.sm .canal-seg { font-size: 8.5px; padding: 4px 5px; }
+    .canal-seg.on[data-canal="ME"] { background: #0e7490; color: #fff; }
+    .canal-seg.on[data-canal="WH"] { background: #b45309; color: #fff; }
+    .canal-seg.on[data-canal="GO"] { background: #6e56cf; color: #fff; }
+    .canal-seg:active { transform: scale(.94); }
 
     /* Toggle switch (estado activo/inactivo) */
     .toggle-sw {
@@ -22195,16 +22209,28 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     <p class="text-sm text-slate-300 mb-3">
       Vas a apagar <span id="apagarBaseTitle" class="font-semibold text-amber-300">—</span>.
     </p>
-    <div class="text-xs text-slate-400 mb-1">Esto también apagará:</div>
-    <div class="border border-slate-800 rounded-lg p-3 mb-4 max-h-64 overflow-y-auto" style="background:#060d1f">
+    <!-- [1032] el dueño elige: solo este producto o todo el grupo (incluye derivados) -->
+    <div class="flex flex-col gap-2 mb-3">
+      <label class="flex items-start gap-2 p-2 rounded-lg border border-slate-800 cursor-pointer" style="background:#060d1f">
+        <input type="radio" name="apagarBaseModo" value="solo" id="apagarBaseModoSolo" checked onchange="MOS._apagarBaseModo()" style="margin-top:2px">
+        <span class="text-xs text-slate-300"><b>Solo este producto</b><br><span class="text-slate-500">Sus presentaciones, derivados y equivalencias siguen como están.</span></span>
+      </label>
+      <label class="flex items-start gap-2 p-2 rounded-lg border border-slate-800 cursor-pointer" style="background:#060d1f">
+        <input type="radio" name="apagarBaseModo" value="todo" id="apagarBaseModoTodo" onchange="MOS._apagarBaseModo()" style="margin-top:2px">
+        <span class="text-xs text-slate-300"><b>Todo el grupo</b><br><span class="text-slate-500">También apaga lo de abajo.</span></span>
+      </label>
+    </div>
+    <div id="apagarBaseDetalle" class="border border-slate-800 rounded-lg p-3 mb-4 max-h-64 overflow-y-auto" style="background:#060d1f;opacity:.45">
       <div class="text-xs font-bold text-slate-300 mb-1">📦 <span id="apagarBasePresCount">0</span> presentaciones</div>
       <ul id="apagarBasePresList" class="text-xs text-slate-500 mb-3 space-y-0.5"></ul>
+      <div class="text-xs font-bold text-slate-300 mb-1">🥄 <span id="apagarBaseDerCount">0</span> derivados</div>
+      <ul id="apagarBaseDerList" class="text-xs text-slate-500 mb-3 space-y-0.5"></ul>
       <div class="text-xs font-bold text-slate-300 mb-1">▌ <span id="apagarBaseEqCount">0</span> equivalencias</div>
       <ul id="apagarBaseEqList" class="text-xs text-slate-500 space-y-0.5"></ul>
     </div>
     <div class="flex gap-2">
       <button onclick="MOS.cerrarApagarBaseRevertir()" class="btn-ghost flex-1">Cancelar</button>
-      <button onclick="MOS.confirmarApagarBase()" id="btnConfirmarApagar" class="btn-primary flex-1" style="background:linear-gradient(135deg,#ef4444,#dc2626);border-color:#ef4444;color:#fff">Apagar todo</button>
+      <button onclick="MOS.confirmarApagarBase()" id="btnConfirmarApagar" class="btn-primary flex-1" style="background:linear-gradient(135deg,#ef4444,#dc2626);border-color:#ef4444;color:#fff">Apagar solo este</button>
     </div>
   </div>
 </div>
@@ -22238,7 +22264,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
   // Imprime la versión cargada (la de ESTE index.html) y la compara con el server
   // (version.json, sin caché). Si hay una más nueva → avisa GRANDE para refrescar.
   (function () {
-    var V = '2.44.63';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
+    var V = '2.44.64';   // ⚠ bumpear junto con sw.js + version.json + ?v= de app.js/api.js
     try { window.__MOS_V = V; } catch (_) {}   // [658 · PURGANTE] versión ANTES de purgar (telemetría). NO es un bump extra.
     var s = 'font-size:14px;font-weight:900;padding:3px 10px;border-radius:6px;';
     console.log('%c MOS cargado · v' + V + ' ', 'background:#6366f1;color:#fff;' + s);
@@ -22517,7 +22543,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
     }
   })();
 </script>
-<script src="js/api.js?v=2.44.63"></script>
+<script src="js/api.js?v=2.44.64"></script>
 <!-- [v2.43.149] Sistema centralizado — con cache-buster agresivo para forzar
      reload del navegador cuando bumpamos el módulo. SIN ESTO el navegador
      puede usar la versión cacheada de HTTP indefinidamente, ignorando los
@@ -22533,7 +22559,7 @@ html.da-pre-block #da-fatal-fallback { visibility: visible !important; }
 <script src="js/qrcode-generator.js?v=2.43.648"></script>
 <script src="./assets/editor-adhesivos/converter.js?v=1.0.5"></script>
 <script src="./assets/editor-adhesivos/editor.js?v=2.3.0"></script>
-<script src="js/app.js?v=2.44.63"></script>
+<script src="js/app.js?v=2.44.64"></script>
 <script src="js/buzon.js?v=2.44.29"></script>
 <!-- [v2.43.196 FIX] Bootstrap del Editor de Avisos
      BUG ANTERIOR: usabamos `if (!window.MOS) return;` pero app.js declara
