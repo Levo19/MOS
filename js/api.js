@@ -3221,6 +3221,8 @@ const API = (() => {
     // server-side). GAS no lo conoce → gate always-true; sin token, el branch LANZA (no cae
     // a GAS, que respondería "Acción no reconocida" — el bug que reportó el dueño).
     toggleMosgo:                () => true,
+    // [1032] canales ME / WH por producto (RPC mos.catalogo_toggle_canal, SOLO_MASTER server-side)
+    toggleCanal:                () => true,
     // [635] extensión de horario desde Infraestructura — 100% Supabase, GAS no las conoce
     aprobarExtensionHorario:    () => true,
     rechazarExtensionHorario:   () => true,
