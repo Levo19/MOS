@@ -32615,7 +32615,7 @@ const MOS = (() => {
         ? `✓ Extra agregado · ${tipo} ${_cjExS(monto)}`
         : (r && r.noop ? 'Sin cambios que guardar' : `✓ Movimiento actualizado · ${_cjExS(monto)}`), 'success');
       await _cjExCargar();                 // la verdad viene del servidor (ts, editado, totales)
-      _cajasRefreshSilencioso();           // el badge 💸 y el arqueo de la card se re-pintan
+      _cajasRefreshFull();           // el badge 💸 y el arqueo de la card se re-pintan
     } catch (e) {
       _cjExState.data = Object.assign({}, _cjExState.data || {}, { items: snapshot });
       _cjExRender();
@@ -32667,7 +32667,7 @@ const MOS = (() => {
       _finBeep('eliminar');
       toast(`✓ Movimiento eliminado · ${_cjExS(ex.monto)}`, 'success');
       await _cjExCargar();
-      _cajasRefreshSilencioso();
+      _cajasRefreshFull();
     } catch (e) {
       _cjExState.data = Object.assign({}, _cjExState.data || {}, { items: snapshot });
       _cjExRender();
@@ -33570,7 +33570,7 @@ const MOS = (() => {
       });
       toast('✓ Cobrado · ingreso registrado', 'success');
       closeModal('modalTkCobrar');
-      await _cajasRefreshSilencioso?.();
+      await _cajasRefreshFull?.();
       if (S.view === 'finanzas') finCargar?.();
     } catch(e) {
       toast('Error: ' + e.message, 'error');
@@ -33641,7 +33641,7 @@ const MOS = (() => {
       });
       toast('✓ Forma de pago actualizada', 'success');
       closeModal('modalTkCambiarFP');
-      await _cajasRefreshSilencioso?.();
+      await _cajasRefreshFull?.();
       if (S.view === 'finanzas') finCargar?.();
     } catch(e) {
       toast('Error: ' + e.message, 'error');
@@ -33668,7 +33668,7 @@ const MOS = (() => {
       await API.post('meAprobarComoCredito', { idVenta: t.idVenta, motivo: obs, claveAdmin: auth.clave });
       toast('✓ Aprobado como crédito', 'success');
       closeModal('modalTkAprobarCred');
-      await _cajasRefreshSilencioso?.();
+      await _cajasRefreshFull?.();
       if (S.view === 'finanzas') finCargar?.();
     } catch(e) {
       toast('Error: ' + e.message, 'error');
@@ -33917,7 +33917,7 @@ const MOS = (() => {
       // feedback honesto (paridad ME): con estado EMITIDO ya está firmado; PENDIENTE = en cola
       toast(`✓ ${tipo} ${dd.correlativo || ''} ` + (dd.nfEstado === 'EMITIDO' ? '· firmada por SUNAT' : '· en cola de SUNAT (se confirma sola)'), 'success', 5500);
       closeModal('modalTkConvertirCPE');
-      await _cajasRefreshSilencioso?.();
+      await _cajasRefreshFull?.();
       if (S.view === 'finanzas') finCargar?.();
       // [imprimir al emitir] si el toggle está activo, abre el picker de impresoras y manda el comprobante.
       if (quiereImprimir && dd.idVenta) { try { await _tkConvImprimirCPE(dd.idVenta, dd.correlativo); } catch(_){} }
@@ -33977,7 +33977,7 @@ const MOS = (() => {
       const r = await API.post('meBajaCPE', { idVenta: t.idVenta, motivo, claveAdmin: auth.clave });
       toast('✓ Baja enviada · ' + (r?.nuevoEstado || 'aceptada'), 'success');
       closeModal('modalTkBajaCPE');
-      await _cajasRefreshSilencioso?.();
+      await _cajasRefreshFull?.();
       if (S.view === 'finanzas') finCargar?.();
     } catch(e) {
       toast('Error: ' + e.message, 'error');
@@ -34162,7 +34162,7 @@ const MOS = (() => {
         claveAdmin: auth.clave
       });
       toast('✓ Cliente actualizado', 'success');
-      await _cajasRefreshSilencioso?.();
+      await _cajasRefreshFull?.();
       if (S.view === 'finanzas') finCargar?.();
     } catch(e) {
       toast('Error: ' + e.message, 'error');
@@ -34180,7 +34180,7 @@ const MOS = (() => {
     try {
       await API.post('anularTicketME', { idVenta: t.idVenta, claveAdmin: auth.clave });
       toast('✓ Ticket anulado', 'success');
-      await _cajasRefreshSilencioso?.();
+      await _cajasRefreshFull?.();
       if (S.view === 'finanzas') finCargar?.();
     } catch(e) {
       toast('Error: ' + e.message, 'error');
@@ -34484,7 +34484,9 @@ const MOS = (() => {
       loading?.classList.add('hidden');
       content?.classList.remove('hidden');
       _cjRender();
-      if (force) _cajasRefreshSilencioso();
+      // [1043] entrar a la vista (primera carga) o el refrescar manual (MOS.refresh → loadCajas(true)) piden
+      // el histórico COMPLETO de 30d; el resto de refrescos automáticos van en ventana 'hoy'.
+      if (force) _cajasRefreshFull();
       return;
     }
 
@@ -34510,6 +34512,7 @@ const MOS = (() => {
       _cjMergeHist();   // [fix bug] preservar días históricos jalados (no vaciar al recargar)
       S._cajasGenTs = generadoEn || '';
       S._cajasLoaded = true;
+      if (res) _cjFullTs = Date.now();   // [1043] carga completa 30d → reinicia el reloj de 10 min
 
       _cjRender();
       _cjPulsoPoll();
@@ -34526,6 +34529,64 @@ const MOS = (() => {
 
   // ── Auto-refresh silencioso de cajas cada 60s ───────────────
   let _cajasRefreshTimer = null;
+
+  // [1043] Ventana 'hoy' de cierres_caja. El refresco automático (realtime, poll 60s, post-acciones) era el mayor
+  // consumo de CPU de la BD: recalculaba 30 días (~10k tickets, ~7,7 MB, ~1 s) en cada venta. Ahora pide solo
+  // lo de HOY (cajas abiertas aunque vengan de ayer + cerradas con apertura/cierre hoy, con sus tickets
+  // completos, + tickets de hoy: ~250 KB, ~50 ms) y lo FUSIONA con el histórico 30d ya cargado.
+  // El histórico completo se pide: carga inicial, entrar a la vista / refrescar manual (loadCajas(true)) y cada
+  // 10 min con la vista Cajas abierta. El realtime solo avisa el DOMINIO (no la fecha de la fila) → los cambios
+  // a ventas/cajas de días anteriores se recogen en ese completo de 10 min.
+  // Si la respuesta NO trae data.ventana==='hoy' (SQL 1043 aún no aplicado → el parámetro se ignora y llegan
+  // los 30d), se trata como completa: mismo camino de siempre.
+  const _CJ_FULL_MS = 10 * 60 * 1000;
+  let _cjFullTs = 0;            // último completo 30d recibido (ms)
+  let _cjForzarFull = false;    // próximo refresco = completo (sobrevive al coalescing de 8s)
+  let _cjOcultoPend = false;    // hubo refresco saltado con la pestaña oculta
+
+  function _cjNecesitaFull() {
+    if (_cjForzarFull || !S._cajasLoaded || !S._todasCajas || !S._todosTickets) return true;
+    return S.view === 'cajas' && (Date.now() - _cjFullTs) > _CJ_FULL_MS;
+  }
+  // Refresco completo 30d (manual / entrar a la vista). Pasa por el mismo coalescing que el resto.
+  function _cajasRefreshFull() {
+    _cjForzarFull = true;
+    return _cajasRefreshSilencioso();
+  }
+  // [1043] Fusiona una respuesta 'hoy' con los caches 30d. La respuesta es AUTORITATIVA para:
+  //   · cajas: todas las ABIERTA + las del set del día (idCaja devuelto) → se reemplazan; del cache se descartan
+  //     las ABIERTA y las con apertura/cierre hoy que ya no vinieron (cerradas/borradas); el resto se conserva.
+  //   · tickets: los fechados hoy (o después) + los de las cajas devueltas → se reemplazan; el resto se conserva.
+  // Los idVenta se conservan → la detección de "nuevos" (beep) compara igual que con el completo.
+  function _cjFusionarHoy(abiertas, cerradas, tkHoy) {
+    const todayStr = today();
+    const selCajas = new Set([...abiertas, ...cerradas].map(c => String(c.idCaja)));
+    const idsTk    = new Set(tkHoy.map(t => String(t.idVenta)));
+    const esDeHoy  = c => (c.fechaApertura || '').startsWith(todayStr) || (c.fechaCierre || '').startsWith(todayStr);
+    const cerrViejas = (S._todasCajas || []).filter(c =>
+      !selCajas.has(String(c.idCaja)) && c.estado !== 'ABIERTA' && !esDeHoy(c));
+    // [1043 · QA M2] Una ABIERTA del cache que ya no vino (cerró antes de medianoche sin que refrescáramos) no está
+    // en la ventana 'hoy' → se conserva hasta el completo, que se fuerza ya (sale en ≤8 s por el coalescing).
+    const abiertasHuerfanas = (S._todasCajas || []).filter(c => c.estado === 'ABIERTA' && !selCajas.has(String(c.idCaja)) && !esDeHoy(c));
+    if (abiertasHuerfanas.length) { _cjForzarFull = true; setTimeout(_cajasRefreshSilencioso, 200); }
+    // mismo orden que la RPC: cerradas por apertura desc, idCaja desc ('' al final = nulls last)
+    const cerrTodas = [...cerradas, ...cerrViejas].sort((a, b) => {
+      const fa = a.fechaApertura || '', fb = b.fechaApertura || '';
+      if (fa !== fb) { if (!fa) return 1; if (!fb) return -1; return fa < fb ? 1 : -1; }
+      const ia = String(a.idCaja || ''), ib = String(b.idCaja || '');
+      return ia === ib ? 0 : (ia < ib ? 1 : -1);
+    });
+    S._todasCajas = [...abiertas, ...abiertasHuerfanas, ...cerrTodas];
+    const tkViejos = (S._todosTickets || []).filter(t =>
+      !(String(t.fecha || '') >= todayStr) && !selCajas.has(String(t.idCaja)) && !idsTk.has(String(t.idVenta)));
+    // mismo orden que la RPC (todosTickets): fecha+hora desc, idVenta desc
+    S._todosTickets = [...tkHoy, ...tkViejos].sort((a, b) => {
+      const ka = String(a.fecha || '') + String(a.hora || ''), kb = String(b.fecha || '') + String(b.hora || '');
+      if (ka !== kb) return ka < kb ? 1 : -1;
+      const ia = String(a.idVenta || ''), ib = String(b.idVenta || '');
+      return ia === ib ? 0 : (ia < ib ? 1 : -1);
+    });
+  }
 
   // ── Construye el HTML de una card de caja abierta (LEGACY) ──
   // Reemplazado por _cjBuildCajaCard. Si algo aún llama a _buildCajaCard
@@ -34614,6 +34675,8 @@ const MOS = (() => {
   let _cjRefBusy = false, _cjRefPend = false, _cjRefTs = 0;
   async function _cajasRefreshSilencioso() {
     if (!API.isConfigured()) return;
+    // [1043] pestaña oculta → no se llama a la BD; al volver a visible (_cjVisHandler) se refresca de inmediato.
+    if (document.hidden) { _cjOcultoPend = true; return; }
     if (_cjRefBusy) { _cjRefPend = true; return; }          // ya hay uno corriendo → encolar UNO
     const since = Date.now() - _cjRefTs;
     if (since < 8000) {                                       // [perf] coalescing 8s (era 2.5s): cierres_caja recalcula 30 días (1-3s) y se disparaba en CADA venta por realtime → 32% de la CPU-DB. Realtime sigue actualizando, solo batcheado.
@@ -34623,16 +34686,28 @@ const MOS = (() => {
     _cjRefBusy = true;
     iconBusy('cajas', true);
     try {
-      const res = await API.get('getCierresCaja', {});
-      const { abiertas = [], cerradas = [], todosTickets: tkAll = [], generadoEn } = res || {};
+      // [1043] completo 30d solo si toca (inicial / manual / 10 min con la vista abierta); si no, ventana 'hoy'.
+      const pedirFull = _cjNecesitaFull();
+      const res = await API.get('getCierresCaja', pedirFull ? {} : { ventana: 'hoy' });
+      // [1043] sin respuesta (RPC caída tras reintentos) → se CONSERVA el cache (antes se vaciaba la vista con
+      // listas vacías hasta el siguiente poll; con la fusión eso además borraría el histórico 30d).
+      if (!res) throw new Error('getCierresCaja sin respuesta');
+      const { abiertas = [], cerradas = [], todosTickets: tkAll = [], generadoEn } = res;
+      const esHoy = res.ventana === 'hoy';      // sin la marca = completa (SQL 1043 no aplicado o pedido full)
       const todayStr = today();
-      // Detectar tickets nuevos comparando con cache previo
+      // Detectar tickets nuevos comparando con cache previo (en modo hoy tkAll ⊂ 30d con los mismos idVenta →
+      // solo los realmente nuevos suenan; nada "parece nuevo" por la fusión)
       const prevIds = new Set((S._todosTickets || []).map(t => t.idVenta));
       const nuevos = (tkAll || []).filter(t => !prevIds.has(t.idVenta));
-      S._todosTickets = tkAll;
+      if (esHoy) {
+        _cjFusionarHoy(abiertas, cerradas, tkAll || []);
+      } else {
+        S._todosTickets = tkAll;
+        S._todasCajas  = [...abiertas, ...cerradas];
+        _cjFullTs = Date.now(); _cjForzarFull = false;
+      }
       S._cajasHoy = [...abiertas, ...(cerradas || []).filter(c =>
         (c.fechaApertura || '').startsWith(todayStr) || (c.fechaCierre || '').startsWith(todayStr))];
-      S._todasCajas  = [...abiertas, ...cerradas];
       _cjMergeHist();   // [fix bug] re-inyectar histórico tras la recarga
       S._cajasLoaded = true;
       S._cajasGenTs  = generadoEn || '';
@@ -34656,10 +34731,19 @@ const MOS = (() => {
     }
   }
 
+  // [1043] al volver a visible: refresco inmediato (hoy, o completo si toca por los 10 min). Solo con el
+  // auto-refresh vivo (sesión iniciada); _stopCajasRefresh (logout) deja el timer en null → no hace nada.
+  function _cjVisHandler() {
+    if (document.hidden || !_cajasRefreshTimer || !S.session) return;
+    _cjOcultoPend = false;
+    _cajasRefreshSilencioso();
+  }
   function _startCajasRefresh() {
     _stopCajasRefresh();
     _cajasRefreshSilencioso(); // fetch inmediato
-    _cajasRefreshTimer = setInterval(_cajasRefreshSilencioso, 60000); // [perf] 60s (era 20s): solo respaldo; el realtime cubre lo inmediato
+    _cajasRefreshTimer = setInterval(() => _cajasRefreshSilencioso(), 60000); // [perf] 60s (era 20s): solo respaldo; el realtime cubre lo inmediato
+    // misma referencia de función → addEventListener no duplica aunque se llame en cada login
+    document.addEventListener('visibilitychange', _cjVisHandler);
   }
   function _stopCajasRefresh() {
     if (_cajasRefreshTimer) { clearInterval(_cajasRefreshTimer); _cajasRefreshTimer = null; }
@@ -34907,7 +34991,7 @@ const MOS = (() => {
         });
       }
       _renderTicketList();
-      setTimeout(() => _cajasRefreshSilencioso(), 1000);
+      setTimeout(() => _cajasRefreshFull(), 1000);
     } catch(e) { toast(e.message, 'error'); }
   }
 
@@ -35060,7 +35144,7 @@ const MOS = (() => {
         });
       }
       _renderTicketList();
-      setTimeout(() => _cajasRefreshSilencioso(), 1200);
+      setTimeout(() => _cajasRefreshFull(), 1200);
     } catch(e) { toast(e.message, 'error'); }
   }
 

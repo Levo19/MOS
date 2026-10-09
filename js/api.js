@@ -4007,6 +4007,8 @@ const API = (() => {
         return _conFallbackMOS(() => _getHistoricoProveedorDirecto(p));
       }
       // [Optimización · vistas cross-app cajas/warehouse] — maestro + fallback GAS + gate _fresh.
+      // [1043] p.ventana='hoy' → la RPC devuelve solo lo del día (+ data.ventana='hoy') y app.js lo FUSIONA con el
+      // 30d en cache. Sin p.ventana (o SQL 1043 sin aplicar → parámetro ignorado) = respuesta completa de siempre.
       if (action === 'getCierresCaja')         { return _conFallbackMOS(() => _getCierresCajaDirecto(p)); }
       // [historial + calendario] Supabase-only (RPCs 311). Sin GAS: si no hay token, devuelve null.
       if (action === 'getTicketsDia')          { return _sbRpcMOS('tickets_dia',      { p }, 'mos').catch(() => null); }
