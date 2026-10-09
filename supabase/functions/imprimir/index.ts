@@ -8,6 +8,11 @@
 //
 // SECRET requerido (set por el usuario, NO entra al repo):
 //   supabase secrets set PRINTNODE_API_KEY=<key> --project-ref rzbzdeipbtqkzjqdchqk
+//
+// [1039] EXPIRACIÓN: el job vive máx. 1 hora y nunca pasa de las 23:59:59 Lima (expireAfter) → un corte de luz
+// no deja la cola llena para imprimirse al volver. Body opcional `expira`: 'fin_dia' (default, = 1h acotada) | 'nunca' | <segundos>.
+
+import { resolverExpira, campoExpira } from '../_shared/printnode_expira.ts';   // [1039]
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -85,6 +90,11 @@ Deno.serve(async (req: Request) => {
     const title = String(body.title || 'MOSexpress');
     if (!printerId || printerId <= 0) return json({ status: 'error', mensaje: 'printerId inválido' }, 400);
     if (!content) return json({ status: 'error', mensaje: 'falta content (raw_base64)' }, 400);
+    // [1039] Default por app: los tickets de caja (mosExpress) vencen; WH (etiquetas/membretes) y MOS (reimpresión
+    // manual) conservan la retención de PrintNode salvo que pidan `expira` explícito.
+    const expPedido = body.expira ?? (String(claims.app) === 'mosExpress' ? undefined : 'nunca');
+    const exp = resolverExpira(expPedido);                                         // [1039]
+    if (!exp.ok) return json({ status: 'error', mensaje: exp.error }, 400);        // [1039]
 
     const key = Deno.env.get('PRINTNODE_API_KEY');
     if (!key) return json({ status: 'error', mensaje: 'PRINTNODE_API_KEY no configurada (secret)' }, 500);
@@ -101,6 +111,7 @@ Deno.serve(async (req: Request) => {
         contentType: 'raw_base64',
         content,
         source: String(claims.app || 'mos') + '-Edge',
+        ...campoExpira(exp),   // [1039] expireAfter (s) = min(1h, fin del día Lima); omitido si expira='nunca'
       }),
     });
     const text = await pn.text();

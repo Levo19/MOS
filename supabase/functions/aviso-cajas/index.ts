@@ -6,6 +6,10 @@
 //
 // AUTORIZACIÓN: plataforma verifica firma JWT (verify_jwt); exigimos claim app ∈ {warehouseMos,MOS}.
 // SECRET: PRINTNODE_API_KEY (ya configurado para las demás Edge de impresión).
+// [1039] Body opcional `expira`: 'fin_dia' (default) | 'nunca' | <segundos> → expireAfter en PrintNode
+//        Default = min(1 hora, fin del día Lima): un aviso viejo no sale tarde a cajas que ya siguieron.
+
+import { resolverExpira, campoExpira } from '../_shared/printnode_expira.ts';   // [1039]
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -226,6 +230,9 @@ Deno.serve(async (req: Request) => {
     const idemKey = String(body.idemKey || '').trim();
     const reporteUrl = String(body.reporteUrl || '').trim();
     if (!idPreingreso) return json({ ok: false, error: 'idPreingreso requerido' }, 400);
+    // [1039] Validar ANTES de la reserva idempotente (RPC): un `expira` inválido no debe quemar la idemKey.
+    const exp = resolverExpira(body.expira);
+    if (!exp.ok) return json({ ok: false, error: exp.error }, 400);
 
     const SB_URL = Deno.env.get('SUPABASE_URL');
     const SRV = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -262,7 +269,7 @@ Deno.serve(async (req: Request) => {
         const pn = await fetch('https://api.printnode.com/printjobs', {
           method: 'POST',
           headers: { 'Authorization': 'Basic ' + btoa(key + ':'), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ printerId: pid, title: 'Aviso ingreso ' + idPreingreso, contentType: 'raw_base64', content: b64, source: 'warehouseMos-Edge' }),
+          body: JSON.stringify({ printerId: pid, title: 'Aviso ingreso ' + idPreingreso, contentType: 'raw_base64', content: b64, source: 'warehouseMos-Edge', ...campoExpira(exp) }),   // [1039]
         });
         if (pn.status === 201) okSet.add(pidStr);
         else errores.push('P' + pid + ':' + pn.status);

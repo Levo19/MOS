@@ -9,7 +9,11 @@
 // claim app ∈ {MOS, mosExpress, warehouseMos}. Secrets: SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 // · PRINTNODE_API_KEY.
 // Body: { idVenta, printerId, soloBase64?:true }  → soloBase64 devuelve el b64 sin imprimir (test).
+// [1039] Body opcional `expira`: 'fin_dia' (default) | 'nunca' | <segundos> → expireAfter en PrintNode.
+//        Default = min(1 hora, fin del día Lima): un ticket viejo no sale; la reimpresión de MOS crea un job nuevo.
 // ════════════════════════════════════════════════════════════════════════════
+
+import { resolverExpira, campoExpira } from '../_shared/printnode_expira.ts';   // [1039]
 
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -307,12 +311,15 @@ Deno.serve(async (req: Request) => {
 
     const printerId = parseInt(String(body.printerId), 10);
     if (!printerId || printerId <= 0) return json({ ok: false, error: 'printerId inválido' }, 400);
+    const exp = resolverExpira(body.expira);                                       // [1039]
+    if (!exp.ok) return json({ ok: false, error: exp.error }, 400);                // [1039]
     const key = Deno.env.get('PRINTNODE_API_KEY');
     if (!key) return json({ ok: false, error: 'PRINTNODE_API_KEY no configurada (secret)' }, 500);
     const pn = await fetch('https://api.printnode.com/printjobs', {
       method: 'POST',
       headers: { 'Authorization': 'Basic ' + btoa(key + ':'), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ printerId, title: _docLabel(tipo) + ' ' + (d.correlativo || ''), contentType: 'raw_base64', content: b64, source: String(claims.app || 'mos') + '-ticket' }),
+      // [1039] ...campoExpira → expireAfter = min(1h, fin del día Lima) (omitido si expira='nunca')
+      body: JSON.stringify({ printerId, title: _docLabel(tipo) + ' ' + (d.correlativo || ''), contentType: 'raw_base64', content: b64, source: String(claims.app || 'mos') + '-ticket', ...campoExpira(exp) }),
     });
     const text = await pn.text();
     if (pn.status !== 201) return json({ ok: false, error: 'PrintNode ' + pn.status + ': ' + text }, 502);

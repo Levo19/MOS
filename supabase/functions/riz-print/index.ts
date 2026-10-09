@@ -19,6 +19,11 @@
 //
 // INERTE: el frontend SOLO llama esta Edge desde la vista 'zona', y esa vista solo se abre con el flag
 // mos_zona_modulo ON (default OFF). Con el flag OFF nadie la invoca → la app es idéntica a hoy.
+//
+// [1039] EXPIRACIÓN: ticket diario / lista de compras son reportes "del momento"; impresos horas después
+// confunden. Body opcional `expira`: 'fin_dia' (default = min(1h, fin del día Lima)) | 'nunca' | <segundos>.
+
+import { resolverExpira, campoExpira } from '../_shared/printnode_expira.ts';   // [1039]
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -242,6 +247,8 @@ Deno.serve(async (req: Request) => {
     if (tipo !== 'ticket_diario' && tipo !== 'lista_compras') return json({ ok: false, error: 'tipo invalido (ticket_diario|lista_compras)' }, 400);
     if (!zona) return json({ ok: false, error: 'falta zona' }, 400);
     if (!printerId || printerId <= 0) return json({ ok: false, error: 'printerId invalido' }, 400);
+    const exp = resolverExpira(body.expira);                                       // [1039]
+    if (!exp.ok) return json({ ok: false, error: exp.error }, 400);                // [1039]
 
     // 1) Traer los datos con la RPC determinística (service_role → sin RLS).
     let data: any, raw: string, title: string;
@@ -274,6 +281,7 @@ Deno.serve(async (req: Request) => {
         contentType: 'raw_base64',
         content: toBase64(raw),
         source: 'MOS-riz-print',
+        ...campoExpira(exp),   // [1039] expireAfter = min(1h, fin del día Lima); omitido si expira='nunca'
       }),
     });
     const txt = await pn.text();
