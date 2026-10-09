@@ -9,8 +9,8 @@
 // SECRET requerido (set por el usuario, NO entra al repo):
 //   supabase secrets set PRINTNODE_API_KEY=<key> --project-ref rzbzdeipbtqkzjqdchqk
 //
-// [1039] EXPIRACIÓN: el job vive máx. 1 hora y nunca pasa de las 23:59:59 Lima (expireAfter) → un corte de luz
-// no deja la cola llena para imprimirse al volver. Body opcional `expira`: 'fin_dia' (default, = 1h acotada) | 'nunca' | <segundos>.
+// [1039] EXPIRACIÓN: el job vive máx. 15 min y nunca pasa de las 23:59:59 Lima (expireAfter) → un corte de luz
+// no deja la cola llena para imprimirse al volver. Body opcional `expira`: 'fin_dia' (default, = 15 min acotados) | 'nunca' | <segundos>.
 
 import { resolverExpira, campoExpira } from '../_shared/printnode_expira.ts';   // [1039]
 
@@ -111,7 +111,7 @@ Deno.serve(async (req: Request) => {
         contentType: 'raw_base64',
         content,
         source: String(claims.app || 'mos') + '-Edge',
-        ...campoExpira(exp),   // [1039] expireAfter (s) = min(1h, fin del día Lima); omitido si expira='nunca'
+        ...campoExpira(exp),   // [1039] expireAfter (s) = min(15 min, fin del día Lima); omitido si expira='nunca'
       }),
     });
     const text = await pn.text();

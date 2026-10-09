@@ -21,7 +21,7 @@
 // mos_zona_modulo ON (default OFF). Con el flag OFF nadie la invoca → la app es idéntica a hoy.
 //
 // [1039] EXPIRACIÓN: ticket diario / lista de compras son reportes "del momento"; impresos horas después
-// confunden. Body opcional `expira`: 'fin_dia' (default = min(1h, fin del día Lima)) | 'nunca' | <segundos>.
+// confunden. Body opcional `expira`: 'fin_dia' (default = min(15 min, fin del día Lima)) | 'nunca' | <segundos>.
 
 import { resolverExpira, campoExpira } from '../_shared/printnode_expira.ts';   // [1039]
 
@@ -281,7 +281,7 @@ Deno.serve(async (req: Request) => {
         contentType: 'raw_base64',
         content: toBase64(raw),
         source: 'MOS-riz-print',
-        ...campoExpira(exp),   // [1039] expireAfter = min(1h, fin del día Lima); omitido si expira='nunca'
+        ...campoExpira(exp),   // [1039] expireAfter = min(15 min, fin del día Lima); omitido si expira='nunca'
       }),
     });
     const txt = await pn.text();

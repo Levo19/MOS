@@ -10,7 +10,7 @@
 // · PRINTNODE_API_KEY.
 // Body: { idVenta, printerId, soloBase64?:true }  → soloBase64 devuelve el b64 sin imprimir (test).
 // [1039] Body opcional `expira`: 'fin_dia' (default) | 'nunca' | <segundos> → expireAfter en PrintNode.
-//        Default = min(1 hora, fin del día Lima): un ticket viejo no sale; la reimpresión de MOS crea un job nuevo.
+//        Default = min(15 min, fin del día Lima): un ticket viejo no sale; la reimpresión de MOS crea un job nuevo.
 // ════════════════════════════════════════════════════════════════════════════
 
 import { resolverExpira, campoExpira } from '../_shared/printnode_expira.ts';   // [1039]
@@ -318,7 +318,7 @@ Deno.serve(async (req: Request) => {
     const pn = await fetch('https://api.printnode.com/printjobs', {
       method: 'POST',
       headers: { 'Authorization': 'Basic ' + btoa(key + ':'), 'Content-Type': 'application/json' },
-      // [1039] ...campoExpira → expireAfter = min(1h, fin del día Lima) (omitido si expira='nunca')
+      // [1039] ...campoExpira → expireAfter = min(15 min, fin del día Lima) (omitido si expira='nunca')
       body: JSON.stringify({ printerId, title: _docLabel(tipo) + ' ' + (d.correlativo || ''), contentType: 'raw_base64', content: b64, source: String(claims.app || 'mos') + '-ticket', ...campoExpira(exp) }),
     });
     const text = await pn.text();

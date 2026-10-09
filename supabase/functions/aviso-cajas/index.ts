@@ -7,7 +7,7 @@
 // AUTORIZACIÓN: plataforma verifica firma JWT (verify_jwt); exigimos claim app ∈ {warehouseMos,MOS}.
 // SECRET: PRINTNODE_API_KEY (ya configurado para las demás Edge de impresión).
 // [1039] Body opcional `expira`: 'fin_dia' (default) | 'nunca' | <segundos> → expireAfter en PrintNode
-//        Default = min(1 hora, fin del día Lima): un aviso viejo no sale tarde a cajas que ya siguieron.
+//        Default = min(15 min, fin del día Lima): un aviso viejo no sale tarde a cajas que ya siguieron.
 
 import { resolverExpira, campoExpira } from '../_shared/printnode_expira.ts';   // [1039]
 
