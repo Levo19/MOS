@@ -1,5 +1,7 @@
 // ════════════════════════════════════════════════════════════════════
 // AdhesivoPreview — módulo compartido de preview visual del adhesivo
+// v1.4.0 — 2026-10-09 — [etq-simple] renderEtiquetaSimpleHtml (ETIQUETA_SIMPLE: solo nombre +
+//          código de barras, espejo de buildTSPLEtiquetaSimple del Edge print-adhesivo).
 // v1.1.0 — 2026-06-05 — Preview MEMBRETE_ME + MEMBRETE_WH (góndola/almacén)
 //          pixel-perfect con TSPL backend. MOS catálogo muestra ambos.
 // v1.0.2 — 2026-06-05 — UX: animación draw-in del barcode SVG.
@@ -347,7 +349,12 @@
       // Header chip dentro del preview (ME / WH)
       '.mb-prev-chip{position:absolute;top:-12px;left:14px;padding:3px 10px;border-radius:9999px;font-size:11px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;box-shadow:0 4px 12px -2px rgba(0,0,0,.25)}',
       '.mb-prev-chip-me{background:#10b981;color:#fff}',
-      '.mb-prev-chip-wh{background:#6366f1;color:#fff}'
+      '.mb-prev-chip-wh{background:#6366f1;color:#fff}',
+      // [etq-simple v1.4.0] Etiqueta simple (nombre + barcode): glow pizarra neutro + chip propio.
+      '.mb-prev-simple{box-shadow:0 10px 32px -8px rgba(148,163,184,.45),0 0 0 2px rgba(148,163,184,.6),inset 0 0 0 1px rgba(0,0,0,.05);animation:none}',
+      '.mb-prev-chip-simple{background:#475569;color:#fff}',
+      // Texto monoespaciado: cada carácter ocupa el ancho de celda de la fuente TSPL (ajustado inline).
+      '.mb-simple-ln{position:absolute;left:0;width:100%;text-align:center;white-space:nowrap;font-family:"Consolas","Courier New",monospace;font-weight:900;color:#000;line-height:1}'
     ].join('\n');
     document.head.appendChild(s);
   }
@@ -504,6 +511,102 @@
       + '</div>';
   }
 
+  // ── [etq-simple v1.4.0] Render ETIQUETA_SIMPLE (solo nombre + código de barras) ──
+  // SYNC con buildTSPLEtiquetaSimple (Edge print-adhesivo):
+  //   Y=8..100   NOMBRE ancho completo X12..388, auto-fit Font 3 (≤3 líneas, lh 26) →
+  //              Font 2 (≤4, lh 22) → Font 1 (≤5, lh 14). Una fuente vale solo si entra en líneas Y en
+  //              ancho (línea más larga ≤ 376 dots); palabras de >47 chars se parten en duro; >5 líneas
+  //              en Font 1 → 5 y la última con "..". Centrado V+H.
+  //   Y=106..162 BARCODE Code128 centrado (alto 56), narrow 3→2→1; si no cabe ni con 1 → sin barcode
+  //   Y=166      código en texto Font 1 centrado (≤47 chars, si no ".."); sin barcode → Y=136
+  // Sin logo, sin precio, sin marcas CAB / i-de-n.
+  // ⚠ MANTENER SINCRONIZADO con el builder del Edge (ajustarNombreEtqSimple / barcodeEtqSimple).
+  var ETQS_ANCHO = 376, ETQS_MAXCH_F1 = Math.floor(376 / 8);   // 47 caracteres en Font 1
+  function _wrapEnAncho(text, maxW, charW) {
+    var words = String(text || '').split(/\s+/).filter(Boolean);
+    var lines = [], cur = '';
+    for (var i = 0; i < words.length; i++) {
+      var test = cur ? cur + ' ' + words[i] : words[i];
+      if (!cur || test.length * charW <= maxW) cur = test;
+      else { lines.push(cur); cur = words[i]; }
+    }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [''];
+  }
+  // = limpiarEtqSimple del Edge: saltos de línea / tabs fuera, comillas dobles → simples.
+  function _limpiarEtqSimple(s) {
+    return String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ').replace(/"/g, "'").replace(/\s+/g, ' ').trim();
+  }
+  // = ajustarNombreEtqSimple del Edge. fs = tamaño CSS aproximado del glifo TSPL (×1.5).
+  function _ajustarNombreEtqSimple(nombre) {
+    var palabras = [];
+    nombre.split(/\s+/).filter(Boolean).forEach(function(w) {
+      for (var i = 0; i < w.length; i += ETQS_MAXCH_F1) palabras.push(w.substring(i, i + ETQS_MAXCH_F1));
+    });
+    var texto = palabras.join(' ');
+    var fonts = [{ cw: 16, lh: 26, max: 3, fs: 34 }, { cw: 12, lh: 22, max: 4, fs: 27 }, { cw: 8, lh: 14, max: 5, fs: 17 }];
+    for (var f = 0; f < fonts.length; f++) {
+      var ls = _wrapEnAncho(texto, ETQS_ANCHO, fonts[f].cw);
+      var anchoMax = ls.reduce(function(a, l) { return Math.max(a, l.length * fonts[f].cw); }, 0);
+      if (ls.length <= fonts[f].max && anchoMax <= ETQS_ANCHO) return { ft: fonts[f], lines: ls };
+    }
+    var l1 = _wrapEnAncho(texto, ETQS_ANCHO, 8);
+    if (l1.length > 5) {
+      l1 = l1.slice(0, 5);
+      var ult = l1[4];
+      l1[4] = (ult.length + 2 > ETQS_MAXCH_F1 ? ult.substring(0, ETQS_MAXCH_F1 - 2) : ult) + '..';
+    }
+    return { ft: fonts[2], lines: l1 };
+  }
+  // = barcodeEtqSimple del Edge: { narrow, x, w } en dots, o null si no cabe ni con narrow 1.
+  function _barcodeEtqSimple(codigo) {
+    var esNum = /^\d+$/.test(codigo);
+    var dataSym = esNum ? (Math.ceil(codigo.length / 2) + (codigo.length % 2)) : codigo.length;
+    var modules = 11 * dataSym + 35;
+    var narrow = 0;
+    if (modules * 3 <= 340) narrow = 3;
+    else if (modules * 2 <= ETQS_ANCHO) narrow = 2;
+    else if (modules <= ETQS_ANCHO) narrow = 1;
+    if (!narrow) return null;
+    return { narrow: narrow, w: modules * narrow, x: Math.max(12, Math.floor((400 - modules * narrow) / 2)) };
+  }
+  function _renderEtiquetaSimpleHtml(datos, opts) {
+    if (!datos) return '';
+    opts = opts || {};
+    var svgId = opts.svgId || ('mbSimpleBcSVG_' + Date.now() + '_' + (++_svgSeq));
+    var codigo = _limpiarEtqSimple(datos.codigoBarra || datos.codigo || '').replace(/'/g, '');   // SIEMPRE texto
+    if (!codigo) codigo = 'SIN-CODIGO';
+    // Mismo normalizado que el Edge (normalizeEtq: sin tildes). El TSPL respeta mayúsculas/minúsculas.
+    var nm = _ajustarNombreEtqSimple(_limpiarEtqSimple(_normalize(datos.descripcion || datos.nombre || '')));
+    var chosen = nm.ft, lines = nm.lines;
+    var TOP = 8, ZONA_H = 92;
+    var nameY = TOP + Math.max(0, Math.floor((ZONA_H - lines.length * chosen.lh) / 2));
+    // Consolas ≈ 0.55em de ancho por carácter → letter-spacing completa la celda TSPL (cw × 1.5 px)
+    var espaciado = Math.max(0, chosen.cw * 1.5 - chosen.fs * 0.55).toFixed(1);
+    var linesHtml = lines.map(function(ln, i) {
+      return '<div class="mb-simple-ln" style="top:' + _dotsToPx(nameY + i * chosen.lh) + 'px;font-size:' + chosen.fs + 'px;letter-spacing:' + espaciado + 'px">' + _esc(ln) + '</div>';
+    }).join('');
+    var bcY = 106, bcH = 56;
+    var bc = _barcodeEtqSimple(codigo);
+    var txt = codigo.length > ETQS_MAXCH_F1 ? codigo.substring(0, ETQS_MAXCH_F1 - 2) + '..' : codigo;
+    // Sin barcode (no cabe ni con narrow 1) no se emite el <svg> → dibujarBarcode no lo encuentra y no pinta.
+    var bcHtml = bc
+      ? '<div class="mb-bc-wrap" style="top:' + _dotsToPx(bcY) + 'px;left:' + _dotsToPx(bc.x) + 'px;width:' + _dotsToPx(bc.w) + 'px;height:' + _dotsToPx(bcH) + 'px">'
+        +   '<svg id="' + svgId + '" style="width:100%"></svg>'
+        + '</div>'
+      : '';
+    var txtY = bc ? (bcY + bcH + 4) : (bcY + 30);
+    return ''
+      + '<div class="mb-prev mb-prev-simple">'
+      +   '<div class="mb-prev-chip mb-prev-chip-simple">🏷 Etiqueta simple</div>'
+      +   linesHtml
+      +   bcHtml
+      +   '<div class="mb-abs mb-f1" style="top:' + _dotsToPx(txtY) + 'px;left:0;width:100%;text-align:center">'
+      +     _esc(txt)
+      +   '</div>'
+      + '</div>';
+  }
+
   // ── API pública ──────────────────────────────────────────────────────
   window.AdhesivoPreview = {
     LOGO_DATAURI:         LOGO_DATAURI,
@@ -515,7 +618,8 @@
     renderHtml:           _renderHtml,
     renderMembreteMeHtml: _renderMembreteMeHtml,
     renderMembreteWhHtml: _renderMembreteWhHtml,
-    dibujarBarcode:       _dibujarBarcode,
+    renderEtiquetaSimpleHtml: _renderEtiquetaSimpleHtml,   // [etq-simple v1.4.0]
+    dibujarBarcode:      _dibujarBarcode,
     esc:                  _esc
   };
 })();

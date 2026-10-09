@@ -409,6 +409,7 @@
     };
     var tipoLabel = meta.tipo === 'MEMBRETE_ME' ? '🏪 MEMBRETE TIENDA'
                   : meta.tipo === 'MEMBRETE_WH' ? '📦 MEMBRETE ALMACÉN'
+                  : meta.tipo === 'ETIQUETA_SIMPLE' ? '🏷 ETIQUETA SIMPLE'   // [etq-simple]
                   : meta.tipo === 'CALIBRADOR'  ? '🔧 CALIBRADORES'
                   :                                '🏷 LOTE DE IMPRESIÓN';
 
@@ -558,7 +559,8 @@
         if (status === 'COMPLETADO') {
           sonidos.completado();
           // [v1.2 FIX] Texto correcto: MEMBRETE_ME = para góndola tienda, MEMBRETE_WH = para andamio almacén
-          _toast('✅ ' + (d.total || _state.total) + ' adhesivos impresos · ' + (_state.tipo === 'MEMBRETE_ME' ? 'recoger en almacén' : 'listos en andamio'));
+          // [etq-simple] ETIQUETA_SIMPLE no es de góndola ni de andamio → texto propio.
+          _toast('✅ ' + (d.total || _state.total) + ' adhesivos impresos · ' + (_state.tipo === 'MEMBRETE_ME' ? 'recoger en almacén' : _state.tipo === 'ETIQUETA_SIMPLE' ? 'etiqueta simple' : 'listos en andamio'));
           // [v2.43.142] Refrescar banner del rollo — el contador subió N etiquetas.
           // El operador ve el nuevo "restantes" en cualquier modal abierto.
           _rolloRefrescarBanners();
@@ -662,12 +664,14 @@
   // no tiene que esperar — solo se reemplaza el state del frontend con el
   // lote nuevo (el anterior sigue procesándose en background).
   function imprimirMembrete(opts) {
-    var tipo = opts.tipo;  // 'MEMBRETE_ME' | 'MEMBRETE_WH'
+    var tipo = opts.tipo;  // 'MEMBRETE_ME' | 'MEMBRETE_WH' | 'ETIQUETA_SIMPLE' [etq-simple]
     var items = opts.items || [];
     var idempotencyKey = 'mem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     sonidos.click();
     var desc = tipo === 'MEMBRETE_ME'
       ? items.length + ' productos · góndola'
+      : tipo === 'ETIQUETA_SIMPLE'
+      ? items.length + ' productos · etiqueta simple'
       : items.length + ' productos · andamio';
     // [v1.6] Si ya hay un lote en curso, detener polling del anterior y guardarlo
     // como "lote en background". El badge mostrará la cantidad acumulada.
@@ -698,7 +702,7 @@
           var st = String(d.status || '');
           if (st === 'COMPLETADO') {
             _state.completadas = _state.total; _state.status = 'COMPLETADO'; _state.polling = false; _render();
-            _toast('✅ ' + _state.total + ' adhesivos impresos · ' + (tipo === 'MEMBRETE_ME' ? 'góndola tienda' : 'andamio almacén'));
+            _toast('✅ ' + _state.total + ' adhesivos impresos · ' + (tipo === 'MEMBRETE_ME' ? 'góndola tienda' : tipo === 'ETIQUETA_SIMPLE' ? 'etiqueta simple' : 'andamio almacén'));
             setTimeout(function() { if (_state && _state.status === 'COMPLETADO') cerrarModal(); }, 2500);
           } else if (st.indexOf('PAUSADO') === 0) {
             _state.status = st; _state.ultimoError = d.error || 'Pausado'; _state.polling = false; _render(); sonidos.error();
@@ -1681,6 +1685,7 @@
 
     var meSvgId = 'msPrevMeBc_' + Date.now();
     var whSvgId = 'msPrevWhBc_' + Date.now() + '_w';
+    var simpleSvgId = 'msPrevSimpleBc_' + Date.now() + '_s';   // [etq-simple]
 
     // Render HTML de cada preview (escalado al 55% para caber en modal ~720px)
     var previewMeHtml = '';
@@ -1704,6 +1709,15 @@
     } else {
       previewMeHtml = '<div style="padding:24px;text-align:center;color:#94a3b8;font-size:12px">Preview no disponible<br><small>Falta cargar AdhesivoPreview</small></div>';
       previewWhHtml = previewMeHtml;
+    }
+    // [etq-simple] Preview de la etiqueta simple (nombre + barcode del codigoBarra propio). Si el preview.js
+    // cacheado es anterior a 1.4.0 (sin renderEtiquetaSimpleHtml), la opción se muestra igual pero sin preview.
+    var previewSimpleHtml = '';
+    if (previewDisponible && typeof AdhesivoPreview.renderEtiquetaSimpleHtml === 'function') {
+      previewSimpleHtml = AdhesivoPreview.renderEtiquetaSimpleHtml({
+        codigoBarra: item.codigoBarra,
+        descripcion: item.descripcion
+      }, { svgId: simpleSvgId });
     }
 
     // ═══ [RONDA 7 · dibujo §08] REDISEÑO: lista vertical, 3 íconos FAMILIA (góndola
@@ -1768,6 +1782,14 @@
       preview: previewWhHtml,
       accion: _menuStepperHtml('msWhQty') + '<button class="ms-btn ms-btn-info" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimir(\'MEMBRETE_WH\')">🖨 Imprimir</button>'
     });
+    // ─── [etq-simple] Etiqueta simple ─── solo nombre + código de barras (sin logo, precio ni marcas).
+    // Disponible también para presentaciones (el nombre usa el ancho completo con auto-fit, no se trunca).
+    var optSimple = _opcionHtml({
+      icon: '<span style="font-size:22px;line-height:1">🏷</span>', titulo: 'Etiqueta simple',
+      sub: 'Solo nombre + código de barras',
+      preview: previewSimpleHtml,
+      accion: _menuStepperHtml('msSimpleQty') + '<button class="ms-btn ms-btn-info" style="margin:0;flex:none;width:auto;padding:10px 16px;white-space:nowrap" onclick="MembreteSystem._menuImprimir(\'ETIQUETA_SIMPLE\')">🖨 Imprimir</button>'
+    });
     // ─── Adhesivo envasado (hero · solo derivados) ───
     var qtyIni = (function(){ try { return parseInt(localStorage.getItem('mos_adh_qty_' + (producto.codigoBarra || '')), 10) || Math.max(1, Math.round(parseFloat(producto.adhSugerido) || 0)) || 12; } catch(_) { return 12; } })();
     var stepperHtml = ''
@@ -1799,6 +1821,7 @@
       +     '<div class="ms-body">'
       +       optMe
       +       optWh
+      +       optSimple
       +       optEnv
       +       '<button class="ms-btn ms-btn-warn" style="margin-top:6px" onclick="MembreteSystem._menuCerrar()">Cancelar</button>'
       +     '</div>'
@@ -1813,10 +1836,13 @@
           var svgMe = document.getElementById(meSvgId);
           var svgWh = document.getElementById(whSvgId);
           var svgEnv = document.getElementById(envSvgId);
+          var svgSimple = document.getElementById(simpleSvgId);
           var codigo = item.esSkuBase ? item.skuBase : item.codigoBarra;
           if (svgMe)  AdhesivoPreview.dibujarBarcode(svgMe, codigo);
           if (svgWh)  AdhesivoPreview.dibujarBarcode(svgWh, codigo);
           if (svgEnv) AdhesivoPreview.dibujarBarcode(svgEnv, item.codigoBarra);
+          // [etq-simple] la etiqueta simple imprime el codigoBarra propio (= Edge expandirMembrete)
+          if (svgSimple) AdhesivoPreview.dibujarBarcode(svgSimple, item.codigoBarra);
         } catch(e) {
           console.warn('[membrete-modal] error dibujando preview barcode:', e.message);
         }
@@ -1892,7 +1918,9 @@
     // (Edge expandirMembrete hace forEach), así que replicar N veces imprime N.
     var copias = 1;
     if (!productoDirecto) {
-      var qtyEl = document.getElementById(tipo === 'MEMBRETE_ME' ? 'msMeQty' : 'msWhQty');
+      // [etq-simple] id del stepper por tipo (antes binario ME/WH: un tipo nuevo caía al stepper WH)
+      var qtyId = tipo === 'MEMBRETE_ME' ? 'msMeQty' : tipo === 'ETIQUETA_SIMPLE' ? 'msSimpleQty' : 'msWhQty';
+      var qtyEl = document.getElementById(qtyId);
       if (qtyEl) copias = Math.max(1, Math.min(99, parseInt(qtyEl.value, 10) || 1));
     }
     _menuCerrar();

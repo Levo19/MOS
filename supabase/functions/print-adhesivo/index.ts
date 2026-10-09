@@ -590,11 +590,112 @@ function buildTSPLMembreteWh(producto: any, esCabecera: boolean, indice: number,
   return bytes;
 }
 
+// [etq-simple] ETIQUETA SIMPLE (MOS catálogo): adhesivo limpio 50×25mm con SOLO el nombre + código de barras
+// (+ código en texto, como el andamio). Sin logo, sin precio, sin marcas CAB / i-de-n, sin ⧉/ME.
+//   · NOMBRE arriba (Y 8..100), ANCHO COMPLETO (X12..388), auto-fit Font 3→2→1 por LÍNEAS y por ANCHO
+//     (ninguna línea puede pasar de 376 dots), centrado V+H en su zona.
+//   · BARCODE Code128 centrado en Y106..162 + código centrado Font 1 (Y166..178). Con el drift máximo
+//     (offsetY=16) el texto termina en Y194 → nunca se sale de los 200 dots.
+// Helpers PROPIOS (no se toca calcBarcodeCentrado/wrapEnAncho): el andamio y la góndola siguen idénticos.
+// ⚠ MANTENER SINCRONIZADO con _renderEtiquetaSimpleHtml de assets/adhesivo/preview.js.
+const ETQS_ANCHO = 376;                              // ancho útil X12..388
+const ETQS_MAXCH_F1 = Math.floor(ETQS_ANCHO / 8);    // 47 caracteres en Font 1
+
+// [etq-simple] Limpia saltos de línea / tabs (romperían el comando TSPL) y comillas dobles.
+function limpiarEtqSimple(s: unknown): string {
+  return String(s == null ? '' : s).replace(/[\r\n\t]+/g, ' ').replace(/"/g, "'").replace(/\s+/g, ' ').trim();
+}
+
+// [etq-simple · M2] Auto-fit del nombre: una fuente sirve solo si entra en su tope de líneas Y si la línea más
+// ancha cabe en 376 dots (antes solo se contaban líneas → una palabra de >23 chars en Font 3 se cortaba por la
+// derecha). Las palabras más largas que el ancho de Font 1 (47 chars) se parten en duro. Si aun en Font 1 son
+// más de 5 líneas, se recorta a 5 y la última termina en ".." (sin pasarse del ancho).
+function ajustarNombreEtqSimple(nombre: string): { f: string; cw: number; lh: number; lines: string[] } {
+  const palabras: string[] = [];
+  for (const w of nombre.split(/\s+/).filter(Boolean)) {
+    for (let i = 0; i < w.length; i += ETQS_MAXCH_F1) palabras.push(w.substring(i, i + ETQS_MAXCH_F1));
+  }
+  const texto = palabras.join(' ');
+  const fonts = [{ f: '3', cw: 16, lh: 26, max: 3 }, { f: '2', cw: 12, lh: 22, max: 4 }, { f: '1', cw: 8, lh: 14, max: 5 }];
+  for (const ft of fonts) {
+    const ls = wrapEnAncho(texto, ETQS_ANCHO, ft.cw);
+    const anchoMax = ls.reduce((a, l) => Math.max(a, l.length * ft.cw), 0);
+    if (ls.length <= ft.max && anchoMax <= ETQS_ANCHO) return { f: ft.f, cw: ft.cw, lh: ft.lh, lines: ls };
+  }
+  // Font 1 siempre cumple el ancho (palabras ya partidas a 47) → solo puede sobrar en líneas.
+  let ls = wrapEnAncho(texto, ETQS_ANCHO, 8);
+  if (ls.length > 5) {
+    ls = ls.slice(0, 5);
+    const ult = ls[4];
+    ls[4] = (ult.length + 2 > ETQS_MAXCH_F1 ? ult.substring(0, ETQS_MAXCH_F1 - 2) : ult) + '..';
+  }
+  return { f: '1', cw: 8, lh: 14, lines: ls };
+}
+
+// [etq-simple · M1] Barcode adaptativo PROPIO: narrow 3 → 2 → 1 según quepa en 376 dots (calcBarcodeCentrado
+// nunca baja de 2 → un alfanumérico de 15+ chars desbordaba los 400 dots). null = no cabe ni con narrow 1 →
+// se imprime solo el código en texto.
+function barcodeEtqSimple(codigo: string): { narrow: number; x: number } | null {
+  const esNum = /^\d+$/.test(codigo);
+  const dataSym = esNum ? (Math.ceil(codigo.length / 2) + (codigo.length % 2)) : codigo.length;   // Code C: pares
+  const modules = 11 * dataSym + 35;                                                              // start+data+check+stop
+  let narrow = 0;
+  if (modules * 3 <= 340) narrow = 3;
+  else if (modules * 2 <= ETQS_ANCHO) narrow = 2;
+  else if (modules <= ETQS_ANCHO) narrow = 1;
+  if (!narrow) return null;
+  return { narrow, x: Math.max(12, Math.floor((400 - modules * narrow) / 2)) };
+}
+
+// item = { codigo|codigoBarra, descripcion }
+function buildTSPLEtiquetaSimple(item: any, cfg: DriftCfg, offsetY: number): number[] {
+  const header = ['SIZE 50 mm,25 mm', 'GAP ' + cfg.gapMm + ' mm,0 mm', 'DIRECTION 1', 'DENSITY ' + cfg.density, 'SPEED ' + cfg.speed, 'CLS'].join('\r\n') + '\r\n';
+  let bytes = strToBytes(header);
+  const TOP = 8 + offsetY, NAME_ZONE_H = 92;     // zona del nombre: Y 8..100 (sin drift)
+
+  // ── NOMBRE (ancho completo X12..388) ── 3 líneas Font 3 (78 dots) · 4 Font 2 (88) · 5 Font 1 (70):
+  // todos caben en los 92 dots de la zona → el nombre nunca pisa el barcode.
+  const NAME_X0 = 12;
+  const nm = ajustarNombreEtqSimple(limpiarEtqSimple(normalizeEtq(item.descripcion || item.nombre || '')));
+  let nameY = TOP + Math.max(0, Math.floor((NAME_ZONE_H - nm.lines.length * nm.lh) / 2));   // centrado V
+  for (const ln of nm.lines) {
+    const x = NAME_X0 + Math.max(0, Math.floor((ETQS_ANCHO - ln.length * nm.cw) / 2));        // centrado H
+    bytes = bytes.concat(strToBytes('TEXT ' + x + ',' + nameY + ',"' + nm.f + '",0,1,1,"' + ln + '"\r\n'));
+    nameY += nm.lh;
+  }
+
+  // ── BARCODE centrado + código en texto centrado (bloque del andamio, sin marco) ──
+  // El código SIEMPRE como texto (String), nunca Number. Sin comillas de ningún tipo (rompen el TSPL).
+  let codigo = limpiarEtqSimple(item.codigo || item.codigoBarra || '').replace(/'/g, '');
+  if (!codigo) codigo = 'SIN-CODIGO';
+  const bc = barcodeEtqSimple(codigo);
+  const bcH = 56;                                  // ~7mm de alto = escanea bien
+  const barcodeY = 106 + offsetY;                  // 6 dots bajo la zona del nombre
+  // Texto: nunca más ancho que 376 dots (47 chars Font 1) → se recorta con "..".
+  const txt = codigo.length > ETQS_MAXCH_F1 ? codigo.substring(0, ETQS_MAXCH_F1 - 2) + '..' : codigo;
+  const codigoX = Math.max(12, Math.floor((400 - txt.length * 8) / 2));
+  if (bc) {
+    bytes = bytes.concat(strToBytes('BARCODE ' + bc.x + ',' + barcodeY + ',"128",' + bcH + ',0,0,' + bc.narrow + ',' + bc.narrow + ',"' + codigo + '"\r\n'));
+    bytes = bytes.concat(strToBytes('TEXT ' + codigoX + ',' + (barcodeY + bcH + 4) + ',"1",0,1,1,"' + txt + '"\r\n'));
+  } else {
+    // No cabe ni con narrow 1 → solo el código en texto, centrado en la franja del barcode (Y106..178).
+    bytes = bytes.concat(strToBytes('TEXT ' + codigoX + ',' + (barcodeY + 30) + ',"1",0,1,1,"' + txt + '"\r\n'));
+  }
+  bytes = bytes.concat(strToBytes('PRINT 1,1\r\n'));
+  return bytes;
+}
+
 // Expande items crudos a la lista de etiquetas (port de crearLoteMembrete). ME: 1/producto. WH: cabecera + códigos.
+// [etq-simple] ETIQUETA_SIMPLE: 1/producto como ME, con codigo = codigoBarra (el código propio del producto,
+// no el skuBase). Sin codigoBarra no hay nada que imprimir → se omite (cae en 'sin items validos').
 function expandirMembrete(tipo: string, items: any[]): any[] {
   const out: any[] = [];
   (items || []).forEach((item) => {
-    if (tipo === 'MEMBRETE_ME') {
+    if (tipo === 'ETIQUETA_SIMPLE') {
+      const cb = String(item.codigoBarra || '').trim();
+      if (!cb) return;
+      out.push({ codigo: cb, codigoBarra: cb, descripcion: String(item.descripcion || ''), esCabecera: false });
+    } else if (tipo === 'MEMBRETE_ME') {
       out.push({ codigo: String(item.codigoBarra || ''), codigoBarra: String(item.codigoBarra || ''), descripcion: String(item.descripcion || ''),
         precio: parseFloat(item.precio) || 0, unidad: String(item.unidad || item.unidadMedida || ''),
         skuBase: String(item.skuBase || ''), esSkuBase: !!item.esSkuBase, esCabecera: false });
@@ -794,7 +895,9 @@ async function procesarLote(idLote: string, deadline: number, envTokens: string[
           const idx = d.desde + k; const it = items[idx];
           if (!it) continue;
           const off = driftOffset(cfg, idx);
-          bytes = (tipo === 'MEMBRETE_ME')
+          // [etq-simple] rama explícita ANTES del default WH (un tipo desconocido seguía yendo al andamio).
+          if (tipo === 'ETIQUETA_SIMPLE') bytes = bytes.concat(buildTSPLEtiquetaSimple(it, cfg, off));
+          else bytes = (tipo === 'MEMBRETE_ME')
             ? bytes.concat(buildTSPLMembreteMe(it, envTokens, cfg, off))
             : bytes.concat(buildTSPLMembreteWh(it, !!it.esCabecera, idx + 1, items.length, envTokens, cfg, off));
         }
@@ -1057,9 +1160,10 @@ Deno.serve(async (req: Request) => {
 
     // mode 'crear-membrete' — góndola ME / andamio WH. Expande items (1/producto ME; cabecera+códigos WH),
     // crea el lote atómico (codigoBarra placeholder = tipo; items reales en items_json) e imprime server-side.
+    // [etq-simple] ETIQUETA_SIMPLE (MOS catálogo): nombre + barcode, 1/producto, mismo camino de lote/cron.
     if (mode === 'crear-membrete') {
       const tipo = String(body.tipo || '').toUpperCase();
-      if (tipo !== 'MEMBRETE_ME' && tipo !== 'MEMBRETE_WH') return json({ ok: false, error: 'tipo invalido (MEMBRETE_ME|MEMBRETE_WH)' }, 400);
+      if (tipo !== 'MEMBRETE_ME' && tipo !== 'MEMBRETE_WH' && tipo !== 'ETIQUETA_SIMPLE') return json({ ok: false, error: 'tipo invalido (MEMBRETE_ME|MEMBRETE_WH|ETIQUETA_SIMPLE)' }, 400);
       const itemsRaw = Array.isArray(body.items) ? body.items : [];
       if (!itemsRaw.length) return json({ ok: false, error: 'items vacio' }, 400);
       const expandidos = expandirMembrete(tipo, itemsRaw);
@@ -1072,7 +1176,7 @@ Deno.serve(async (req: Request) => {
       if (!printerId) return json({ ok: false, error: 'sin impresora ADHESIVO configurada' }, 400);
       const cr = await rpcWh('lote_adhesivo_crear', {
         codigoBarra: tipo,
-        descripcion: (tipo === 'MEMBRETE_ME' ? 'ME: ' : 'WH: ') + itemsRaw.length + ' productos',
+        descripcion: (tipo === 'MEMBRETE_ME' ? 'ME: ' : tipo === 'ETIQUETA_SIMPLE' ? 'SIMPLE: ' : 'WH: ') + itemsRaw.length + ' productos',
         total: expandidos.length, tipoEtiqueta: tipo, itemsJson: expandidos,
         usuario: body.usuario || '', origen: body.origen || 'MOS', printerId,
         idempotencyKey: String(body.idempotencyKey || '')
