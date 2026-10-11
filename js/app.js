@@ -9272,7 +9272,13 @@ const MOS = (() => {
   // Se escribe al canónico de cada sku en PRODUCTOS_MASTER.
   const AUTO_MINMAX_KEY = 'mos_last_auto_minmax';
   const AUTO_MINMAX_TTL = 12 * 60 * 60 * 1000;  // 12h
+  // [1044] DESACTIVADO en el cliente: el 10-oct 12:54 un panel recién reactivado lo disparó en horario de venta
+  // (~220 productos en 1 transacción de 4-7 s → bump de catálogo a todos los equipos) y precedió al congelamiento
+  // de las 13:05. Ahora lo corre el cron nocturno `mos-minmax-nocturno` (04:00 Lima, SQL 1044) y la RPC ya no
+  // tiene grant para authenticated. Se conserva el cuerpo por referencia; no hay botón manual que lo use.
+  const AUTO_MINMAX_CLIENTE_ON = false;
   function _maybeRecalcularMinMaxAuto() {
+    if (!AUTO_MINMAX_CLIENTE_ON) return;
     try {
       const last = parseInt(localStorage.getItem(AUTO_MINMAX_KEY) || '0');
       if (Date.now() - last < AUTO_MINMAX_TTL) return;
@@ -9301,8 +9307,8 @@ const MOS = (() => {
     setTimeout(() => {
       if (!S.session) return;
       iconBusy('almacen', true);
-      // Auto-actualizar mín/máx semanales (dispara máx 1 vez cada 12h)
-      _maybeRecalcularMinMaxAuto();
+      // [1044] Auto mín/máx ya NO se dispara desde el navegador (cron nocturno mos-minmax-nocturno).
+      _maybeRecalcularMinMaxAuto();   // no-op mientras AUTO_MINMAX_CLIENTE_ON = false
       const tasks = [
         // Resumen — KPIs
         API.get('getDashboardAlmacen', {}).then(r => {
