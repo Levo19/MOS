@@ -257,7 +257,8 @@ begin
   insert into me.ventas (id_venta, fecha, vendedor, estacion, cliente_doc, cliente_nombre, total,
                          tipo_doc, forma_pago, correlativo, id_caja, dispositivo_id, estado_envio,
                          ref_local, obs, tipo_doc_cliente, nf_estado, zona_id, historial_cambios)
-  values (v_id, now(), coalesce(nullif(btrim(coalesce(v_nv.vendedor,'')),''), v_user), v_nv.estacion,   -- [1048] la venta es de quien EMITIÓ la NV; quien convierte queda en historial_cambios.usuario v_doc, v_nom, v_nv.total,
+  -- [1048] la venta es de quien EMITIÓ la NV; quien convierte queda en historial_cambios.usuario
+  values (v_id, now(), coalesce(nullif(btrim(coalesce(v_nv.vendedor,'')),''), v_user), v_nv.estacion, v_doc, v_nom, v_nv.total,
           v_tipo, v_fp_cpe, v_corr, v_nv.id_caja, v_nv.dispositivo_id, 'COMPLETADO',
           v_local, 'Convertida de '||coalesce(v_nv.correlativo,v_idnv), v_tdc, 'PENDIENTE', v_nv.zona_id,
           me._venta_hist_append(null, jsonb_build_object(
