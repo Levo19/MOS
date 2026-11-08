@@ -1,4 +1,4 @@
-// [1049] Webcheck reporte-zonas.html: datos reales, 0 pageerrors, filtros, expandir padre. 390 y 1280.
+// [1049/1050] Webcheck reporte-zonas.html: datos reales, 0 pageerrors, cascada, días, margen, simulador, tabla. 390 y 1280.
 import { chromium } from 'playwright';
 import http from 'http'; import fs from 'fs'; import path from 'path';
 const ROOT = path.resolve(process.cwd(), '..'); const DEV = process.env.DEV;
@@ -7,19 +7,28 @@ const br = await chromium.launch(); let fallas = 0;
 for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
   const pg = await br.newPage({ viewport: vp }); const errs = [];
   pg.on('pageerror', e => errs.push(e.message));
-  await pg.addInitScript(d => { localStorage.setItem('mos_device_id', d); localStorage.removeItem('mos_reporte_zonas_filtros'); }, DEV);
+  await pg.addInitScript(d => { if (!sessionStorage.getItem('x')) { localStorage.clear(); sessionStorage.setItem('x', 1); } localStorage.setItem('mos_device_id', d); }, DEV);
   await pg.goto('http://localhost:8791/reporte-zonas.html');
-  await pg.waitForSelector('.kpi', { timeout: 30000 });
-  const k1 = await pg.$$eval('.kpi .v', a => a.map(x => x.textContent));
-  await pg.click('#fDias button[data-v="28"]'); await pg.waitForSelector('#chartDias rect', { timeout: 40000 });
-  await pg.click('#fZona button[data-v="ZONA-02"]'); await pg.waitForSelector('#chartDias rect', { timeout: 40000 });
-  await pg.fill('#busca', 'pimienta negra molida'); await pg.click('tr.padre');
-  const hijos = await pg.$$eval('tr.hijo td:first-child', a => a.map(x => x.textContent));
+  await pg.waitForSelector('#cCasc rect', { timeout: 40000 });
+  const k = await pg.$$eval('.kpi .v', a => a.map(x => x.textContent));
+  await pg.click('#cCasc .cb[data-i="3"]'); const casc = await pg.textContent('#cascTxt');
+  await pg.click('#fDiaMet button[data-v="queda"]'); await pg.click('#cDias .db[data-i="3"]'); const dia = await pg.textContent('#diaTxt');
+  await pg.click('#fMg button[data-v="poco"]'); const mg = await pg.$$eval('#hbMg .n', a => a.length);
+  await pg.click('#simPre button[data-i="0"]'); const r0 = await pg.textContent('#simRes');
+  await pg.click('#simPre button[data-i="3"]'); const r3 = await pg.textContent('#simRes');
+  await pg.locator('#cSim').scrollIntoViewIfNeeded(); const box = await pg.locator('#cSim').boundingBox(); await pg.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2);
+  const pv = await pg.textContent('#simPctV');
+  await pg.click('#simBase button[data-v="venta"]'); await pg.click('#simModo button[data-v="comision"]');
+  await pg.locator('#simPct').fill('4'); const r4 = await pg.textContent('#simRes'); const pv4 = await pg.textContent('#simPctV');
+  if (!/4%/.test(pv4)) errs.push('slider no cambia: ' + pv4);
+  if (pv === '10%') errs.push('click en gráfico no cambia el %'); const cl = await pg.textContent('#simClaves');
+  const filas = await pg.$$eval('#simTb tr', a => a.length); const cmp = await pg.$$eval('#simCmp tr', a => a.length);
   const sw = await pg.evaluate(() => document.documentElement.scrollWidth - innerWidth);
-  await pg.screenshot({ path: `_1049_${vp.width}.png`, fullPage: false });
-  await pg.fill('#busca', ''); await pg.screenshot({ path: `_1049_${vp.width}_full.png`, fullPage: true });
-  console.log(vp.width, 'kpis hoy', k1.join(' | '), '| hijos pimienta', hijos.length, hijos.slice(0, 4).join(' / '), '| overflow-x', sw, '| errores', errs.length, errs.join(';'));
-  if (errs.length || sw > 2 || !hijos.length) fallas++;
+  await pg.screenshot({ path: `_1050_${vp.width}_full.png`, fullPage: true });
+  await pg.click('#btnTema'); await pg.waitForTimeout(200); await pg.screenshot({ path: `_1050_${vp.width}_dark.png` });
+  console.log(vp.width, '| kpis', k.join(' | '), '\n  casc:', casc.slice(0, 90), '\n  dia:', dia.slice(0, 80), '| margen filas', mg,
+    '\n  sim preset0:', r0.slice(0, 110), '\n  sim preset3:', r3.slice(0, 110), '\n  click 50% →', pv, '|', cl.slice(0, 160), '\n  personas', filas, 'comparar', cmp, '| overflow-x', sw, '| errores', errs.length, errs.join(';'));
+  if (errs.length || sw > 2 || !filas || cmp < 6 || !mg) fallas++;
   await pg.close();
 }
 await br.close(); srv.close(); console.log(fallas ? 'FALLA' : 'PASS');

@@ -1,86 +1,141 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#020817">
+<meta name="theme-color" content="#f4f6fb">
 <title>Reporte de zonas · MOS</title>
 <style>
-:root{
-  --bg:#020817; --panel:#0b1324; --panel2:#0f1a30; --line:#1e293b; --txt:#e2e8f0; --mut:#94a3b8; --dim:#64748b;
-  --gold:#fbbf24; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --blue:#60a5fa;
-  --c-costo:#64748b; --c-pers:#a78bfa; --c-queda:#22c55e;
+:root,[data-theme=light]{
+  --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef2f8; --line:#d9e0ea; --txt:#0b1220; --mut:#475569; --dim:#64748b;
+  --acc:#1d4ed8; --acc-t:#ffffff; --sombra:0 1px 2px rgba(15,23,42,.06),0 6px 18px -8px rgba(15,23,42,.18);
+  --c-venta:#2563eb; --c-costo:#94a3b8; --c-margen:#0d9488; --c-pers:#7c3aed; --c-queda:#16a34a; --c-bad:#dc2626; --c-warn:#b45309;
+  --ok-bg:#dcfce7; --ok-tx:#166534; --bad-bg:#fee2e2; --bad-tx:#991b1b; --warn-bg:#fef3c7; --warn-tx:#92400e; --info-bg:#dbeafe; --info-tx:#1e3a8a;
+  --hijo:#f8fafc;
+}
+[data-theme=dark]{
+  --bg:#020817; --panel:#0b1324; --panel2:#132036; --line:#24324a; --txt:#f1f5f9; --mut:#a3b1c6; --dim:#7c8ba1;
+  --acc:#fbbf24; --acc-t:#1a1200; --sombra:none;
+  --c-venta:#60a5fa; --c-costo:#64748b; --c-margen:#2dd4bf; --c-pers:#a78bfa; --c-queda:#22c55e; --c-bad:#f87171; --c-warn:#fbbf24;
+  --ok-bg:rgba(34,197,94,.16); --ok-tx:#86efac; --bad-bg:rgba(239,68,68,.16); --bad-tx:#fca5a5; --warn-bg:rgba(245,158,11,.14); --warn-tx:#fcd34d; --info-bg:rgba(96,165,250,.12); --info-tx:#bfdbfe;
+  --hijo:#0f1a30;
 }
 *,*::before,*::after{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.45}
-body{padding:max(14px,env(safe-area-inset-top)) 16px 40px}
-.wrap{max-width:1080px;margin:0 auto}
+html,body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.45}
+body{padding:max(12px,env(safe-area-inset-top)) 16px 48px}
+.wrap{max-width:1120px;margin:0 auto}
 button{font:inherit;color:inherit;cursor:pointer}
-.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-.top h1{margin:0;font-size:20px;color:var(--gold);letter-spacing:.02em;flex:1;min-width:180px}
-.top .gen{font-size:12px;color:var(--mut)}
-.btn{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:700;min-height:40px}
+.top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.top h1{margin:0;font-size:22px;flex:1;min-width:190px;letter-spacing:-.01em}
+.top .gen{font-size:12.5px;color:var(--mut);width:100%;order:3}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:700;min-height:42px;box-shadow:var(--sombra)}
 .btn:active{transform:scale(.97)}
-.filtros{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0}
-.seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px;flex-wrap:wrap}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px;flex-wrap:wrap;box-shadow:var(--sombra)}
 .seg button{border:0;background:transparent;padding:9px 14px;border-radius:9px;font-weight:700;color:var(--mut);min-height:40px}
-.seg button.on{background:var(--gold);color:#1a1200}
+.seg button.on{background:var(--acc);color:var(--acc-t)}
+.seg.sm button{padding:7px 11px;min-height:36px;font-size:13.5px}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
-.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
-.kpi .l{font-size:12px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-.kpi .v{font-size:24px;font-weight:800;margin-top:4px;white-space:nowrap}
-.kpi .s{font-size:12px;color:var(--mut);margin-top:2px}
-.kpi.queda{border-color:rgba(34,197,94,.45);background:linear-gradient(160deg,rgba(34,197,94,.12),var(--panel))}
-.kpi.queda.neg{border-color:rgba(239,68,68,.5);background:linear-gradient(160deg,rgba(239,68,68,.14),var(--panel))}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
-.card h2{margin:0 0 4px;font-size:15px}
-.card .sub{font-size:12px;color:var(--mut);margin-bottom:10px}
-.frase{font-size:16px;margin:2px 0 12px}
-.frase b{font-size:18px}
-.split{display:flex;height:34px;border-radius:9px;overflow:hidden;background:#111827}
-.split div{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;min-width:0}
-.leyenda{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--mut)}
-.leyenda i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--sombra);border-top:5px solid var(--k)}
+.kpi .l{font-size:12.5px;color:var(--mut);font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.kpi .v{font-size:28px;font-weight:900;margin-top:2px;white-space:nowrap;letter-spacing:-.02em}
+.kpi .s{font-size:13px;color:var(--mut);margin-top:2px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:var(--sombra)}
+.card h2{margin:0 0 2px;font-size:18px;letter-spacing:-.01em}
+.card .sub{font-size:13px;color:var(--mut);margin-bottom:12px}
+.num{font-variant-numeric:tabular-nums}
 .avisos{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
-.aviso{font-size:12.5px;padding:8px 12px;border-radius:10px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.25);color:#cbd5e1}
-.aviso.amb{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.3)}
-#chartDias{width:100%;display:block}
-.tbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.tbar input{flex:1 1 100%;min-width:160px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--txt);font:inherit;min-height:40px}
+.aviso{font-size:13.5px;padding:9px 12px;border-radius:10px;background:var(--info-bg);color:var(--info-tx)}
+.aviso.amb{background:var(--warn-bg);color:var(--warn-tx)}
+.aviso a{color:inherit;font-weight:800}
+svg text{font-family:inherit}
+.chart{width:100%;display:block;touch-action:manipulation}
+.explica{margin-top:10px;padding:12px 14px;border-radius:12px;background:var(--panel2);font-size:15px;min-height:48px}
+.explica b{font-size:16.5px}
+.leyenda{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--mut)}
+.leyenda i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.fila{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.tbar input{flex:1 1 220px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--txt);font:inherit;min-height:42px}
 table{width:100%;border-collapse:collapse}
 th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
-th{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:700;position:sticky;top:0;background:var(--panel)}
+th{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:800;background:var(--panel)}
 th:first-child,td:first-child{text-align:left;white-space:normal}
 tr.padre{cursor:pointer}
-tr.padre:hover td{background:rgba(255,255,255,.03)}
-tr.padre td:first-child{font-weight:700}
+tr.padre:hover td{background:var(--panel2)}
+tr.padre td:first-child{font-weight:800}
 .tg{display:inline-block;width:16px;color:var(--mut);transition:transform .15s}
 tr.padre.ab .tg{transform:rotate(90deg)}
-tr.hijo td{font-size:13px;background:rgba(15,26,48,.55);color:#cbd5e1}
+tr.hijo td{font-size:14px;background:var(--hijo);color:var(--txt)}
 tr.hijo td:first-child{padding-left:30px}
-.chip{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:1px;white-space:nowrap}
-.c-real{background:rgba(34,197,94,.14);color:#4ade80}
-.c-padre{background:rgba(96,165,250,.14);color:#93c5fd}
-.c-bad{background:rgba(239,68,68,.16);color:#fca5a5}
-.c-est{background:rgba(245,158,11,.14);color:#fbbf24}
-.m-ok{color:#4ade80;font-weight:800}.m-mid{color:#fbbf24;font-weight:800}.m-bad{color:#f87171;font-weight:800}
+.chip{display:inline-block;font-size:11px;font-weight:800;padding:1px 8px;border-radius:999px;margin-left:6px;vertical-align:1px;white-space:nowrap}
+.c-real{background:var(--ok-bg);color:var(--ok-tx)}
+.c-padre{background:var(--info-bg);color:var(--info-tx)}
+.c-est{background:var(--warn-bg);color:var(--warn-tx)}
+.c-bad{background:var(--bad-bg);color:var(--bad-tx)}
+.m-ok{color:var(--c-queda);font-weight:900}.m-mid{color:var(--c-warn);font-weight:900}.m-bad{color:var(--c-bad);font-weight:900}
 .mut{color:var(--mut)}
 .mas{width:100%;margin-top:10px}
-.tot td{font-weight:800;border-top:2px solid rgba(251,191,36,.35);border-bottom:0;color:#fef3c7}
-.pill{font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:999px}
-.p-pag{background:rgba(34,197,94,.14);color:#4ade80}.p-pen{background:rgba(245,158,11,.14);color:#fbbf24}
-.estado{padding:40px 10px;text-align:center;color:var(--mut)}
-.spin{width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--gold);border-radius:50%;margin:0 auto 10px;animation:g 0.8s linear infinite}
+.tot td{font-weight:900;border-top:2px solid var(--txt);border-bottom:0}
+.estado{padding:48px 10px;text-align:center;color:var(--mut)}
+.spin{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%;margin:0 auto 10px;animation:g .8s linear infinite}
 @keyframes g{to{transform:rotate(360deg)}}
 .scroll{overflow-x:auto}
+/* margen */
+.hb{display:grid;grid-template-columns:minmax(120px,38%) 1fr;gap:6px 10px;align-items:center}
+.hb .n{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hb .b{position:relative;height:26px;background:var(--panel2);border-radius:7px;overflow:hidden}
+.hb .b i{position:absolute;left:0;top:0;bottom:0;border-radius:7px;transition:width .5s ease}
+.hb .b > span{position:absolute;left:8px;top:3px;font-size:13px;font-weight:800;white-space:nowrap}
+.pareto{font-size:15.5px;margin:0 0 12px;padding:12px 14px;border-radius:12px;background:var(--panel2)}
+/* simulador */
+.sim-grid{display:grid;grid-template-columns:330px 1fr;gap:16px}
+.ctl{display:flex;flex-direction:column;gap:14px}
+.ctl label.t{display:block;font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin-bottom:6px}
+.ctl .seg{width:100%}
+.ctl .seg button{flex:1}
+.rng{display:flex;align-items:center;gap:10px}
+.rng input[type=range]{flex:1;accent-color:var(--acc);height:30px}
+.rng .val{min-width:84px;text-align:center;font-weight:900;font-size:20px;background:var(--panel2);border-radius:10px;padding:5px 8px}
+.rng .pm{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--panel);font-weight:900;font-size:18px}
+.presets{display:flex;gap:6px;flex-wrap:wrap}
+.presets button{border:1px dashed var(--line);background:var(--panel);border-radius:999px;padding:6px 11px;font-size:13px;font-weight:700}
+.presets button:hover{border-color:var(--acc)}
+.res{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.res .r{border-radius:14px;padding:12px 14px;background:var(--panel2)}
+.res .r .l{font-size:12px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.res .r .v{font-size:25px;font-weight:900;letter-spacing:-.02em}
+.res .r .s{font-size:13px;color:var(--mut)}
+.res .r.good{background:var(--ok-bg)} .res .r.good .v{color:var(--ok-tx)}
+.res .r.badr{background:var(--bad-bg)} .res .r.badr .v{color:var(--bad-tx)}
+.claves{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.claves div{border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14.5px}
+.claves .cv{font-size:20px;font-weight:900;display:block;margin-top:4px}
+.solo-m{display:none}
+.dcol{min-width:110px}
+.dbar{display:inline-block;height:10px;border-radius:3px;vertical-align:middle;margin-right:6px}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.vs > div{border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.vs h3{margin:0 0 6px;font-size:16px}
+.vs ul{margin:0;padding-left:18px;font-size:14px}
+.vs li{margin:3px 0}
+.reco{margin-top:12px;padding:14px;border-radius:14px;border:2px solid var(--acc);font-size:15px}
+.cmp td,.cmp th{font-size:14px}
+.cmp tr.sel td{background:var(--panel2);font-weight:800}
+.cmp tr{cursor:pointer}
+@media (max-width:860px){ .sim-grid{grid-template-columns:1fr} }
 @media (max-width:760px){
+  body{font-size:14px}
   .kpis{grid-template-columns:repeat(2,1fr)}
-  .kpi .v{font-size:20px}
+  .kpi .v{font-size:22px}
+  .res{grid-template-columns:1fr 1fr} .res .r:last-child{grid-column:span 2}
+  .res .r .v{font-size:21px}
+  .claves,.vs{grid-template-columns:1fr}
   .hide-m{display:none}
-  th,td{padding:8px 5px}
-  table{font-size:12.5px} tr.hijo td{font-size:12px}
+  .solo-m{display:inline}
+  .dcol{min-width:0} .dcol .dbar{display:none}
+  table{font-size:13px} tr.hijo td{font-size:12.5px}
+  th,td{padding:8px 5px} th{font-size:10px}
   tr.padre td:first-child,tr.hijo td:first-child{min-width:118px}
-  th{font-size:10px}
   tr.hijo td:first-child{padding-left:16px}
   .chip{margin-left:0;margin-top:2px}
 }
@@ -91,8 +146,10 @@ tr.hijo td:first-child{padding-left:30px}
 <div class="wrap">
   <div class="top">
     <h1>📋 Reporte de zonas</h1>
+    <button class="btn" id="btnTema" title="Cambiar entre fondo claro y oscuro">🌙</button>
+    <button class="btn" id="btnFull" title="Pantalla completa para exponer">⛶</button>
+    <button class="btn" id="btnAct" title="Volver a consultar la base">↻</button>
     <span class="gen" id="gen"></span>
-    <button class="btn" id="btnAct" title="Volver a consultar la base">↻ Actualizar</button>
   </div>
 
   <div class="filtros">
@@ -116,18 +173,27 @@ tr.hijo td:first-child{padding-left:30px}
 const SB_URL  = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
 
-const st = { zona: 'TODAS', dias: 1, data: null, abiertos: new Set(), q: '', orden: 'venta', verTodos: false };
+const st = { zona: 'TODAS', dias: 28, data: null, abiertos: new Set(), q: '', orden: 'venta', verTodos: false,
+  diaMet: 'venta', diaSel: null, cascSel: 4, mgModo: 'gana',
+  sim: { modo: 'mixto', base: 'venta', fijo: 20, pct: { venta: 2, utilidad: 10 }, roles: ['VENDEDOR'] } };
 const cache = {};
 let tok = null;
-try { const g = JSON.parse(localStorage.getItem('mos_reporte_zonas_filtros') || 'null'); if (g) { st.zona = g.zona || st.zona; st.dias = g.dias || st.dias; } } catch (_) {}
+const LS = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (_) { return null; } };
+(() => { const g = LS('mos_reporte_zonas_filtros'); if (g) { st.zona = g.zona || st.zona; st.dias = g.dias || st.dias; }
+  const s = LS('mos_reporte_zonas_sim'); if (s && s.pct) Object.assign(st.sim, s);
+  const t = LS('mos_reporte_zonas_tema'); if (t) document.documentElement.dataset.theme = t; })();
 
 // ── utilidades ─────────────────────────────────────────────
 const nf2 = new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const nf0 = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 0 });
 const S  = n => 'S/ ' + nf2.format(Number(n) || 0);
-const S0 = n => 'S/ ' + nf0.format(Number(n) || 0);
+const S0 = n => (n < 0 ? '−' : '') + 'S/ ' + nf0.format(Math.abs(Number(n) || 0));
 const pct = (a, b) => b ? (a / b * 100) : 0;
+const P1 = n => (Math.round(n * 10) / 10).toLocaleString('es-PE') + '%';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = id => document.getElementById(id);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function kS(v) { const a = Math.abs(v); return (v < 0 ? '−' : '') + (a >= 1000 ? (a / 1000).toFixed(a >= 10000 ? 0 : 1).replace('.', ',') + 'k' : Math.round(a)); }
 function qty(n, peso, um) {
   n = Number(n) || 0;
   if (peso || /^(KGM|KG)$/i.test(um || '')) return (n < 1 && n > 0 ? nf0.format(n * 1000) + ' g' : (Math.round(n * 1000) / 1000).toLocaleString('es-PE') + ' kg');
@@ -138,18 +204,19 @@ function mClase(m) { return m < 0 ? 'm-bad' : (m < 15 ? 'm-mid' : 'm-ok'); }
 function chipOrigen(o) {
   if (o === 'REAL') return '<span class="chip c-real" title="Costo registrado en el catálogo">costo real</span>';
   if (o === 'PADRE') return '<span class="chip c-padre" title="Costo del padre × su fracción (ej. ½ kg = mitad del costo del kilo)">del padre</span>';
-  if (o === 'DUDOSO') return '<span class="chip c-bad" title="El costo del catálogo es igual o mayor que el precio de venta: parece mal cargado. Se usó el 15%. Corrígelo en el catálogo.">costo dudoso</span>';
+  if (o === 'DUDOSO') return '<span class="chip c-bad" title="El costo del catálogo es igual o mayor que el precio de venta: parece mal cargado. Se usó el 15%.">costo dudoso</span>';
   if (o === 'MIXTO') return '<span class="chip c-est" title="Una parte con costo y otra estimada al 15%">parcial</span>';
   return '<span class="chip c-est" title="Sin costo registrado: se asume margen de 15%">est. 15%</span>';
 }
 function fmtDia(d, corto) {
-  const f = new Date(d + 'T12:00:00');
-  return f.toLocaleDateString('es-PE', corto ? { day: 'numeric' } : { weekday: 'short', day: 'numeric', month: 'short' });
+  const f = new Date(String(d).slice(0, 10) + 'T12:00:00');
+  return f.toLocaleDateString('es-PE', corto ? { day: 'numeric' } : { weekday: 'long', day: 'numeric', month: 'short' });
 }
 function fetchTO(url, opts, ms) {
   const c = new AbortController(); const t = setTimeout(() => c.abort(), ms || 20000);
   return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t));
 }
+function niceMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p; return 10 * p; }
 
 // ── datos ──────────────────────────────────────────────────
 async function token() {
@@ -169,7 +236,7 @@ async function token() {
 async function cargar(force) {
   const k = st.zona + '|' + st.dias;
   if (!force && cache[k] && Date.now() - cache[k].ts < 5 * 60 * 1000) { st.data = cache[k].d; pintar(); return; }
-  document.getElementById('cuerpo').innerHTML = '<div class="estado"><div class="spin"></div>Calculando ' + (st.dias === 1 ? 'hoy' : 'los últimos ' + st.dias + ' días') + '…</div>';
+  $('cuerpo').innerHTML = '<div class="estado"><div class="spin"></div>Calculando ' + (st.dias === 1 ? 'hoy' : 'los últimos ' + st.dias + ' días') + '…</div>';
   try {
     let d = null;
     for (let i = 0; i < 2 && !d; i++) {
@@ -188,108 +255,401 @@ async function cargar(force) {
     }
     cache[k] = { d, ts: Date.now() };
     if (k !== st.zona + '|' + st.dias) return;
-    st.data = d; pintar();
+    st.data = d; st.diaSel = null; pintar();
   } catch (e) {
     const msg = e.message === 'SIN_DISPOSITIVO'
-      ? 'Abre este reporte desde MOS (Finanzas → Reporte de zonas) en un equipo autorizado.'
+      ? 'Abre este reporte desde MOS (Finanzas → Reporte zonas) en un equipo autorizado.'
       : e.message === 'SIN_PERMISO' ? 'Este equipo no está autorizado en MOS.'
       : 'No se pudo cargar el reporte. Revisa la conexión y vuelve a intentar.';
-    document.getElementById('cuerpo').innerHTML = '<div class="estado">⚠ ' + esc(msg) + '<br><br><button class="btn" onclick="cargar(true)">Reintentar</button></div>';
+    $('cuerpo').innerHTML = '<div class="estado">⚠ ' + esc(msg) + '<br><br><button class="btn" onclick="cargar(true)">Reintentar</button></div>';
   }
 }
 
-// ── pintar ─────────────────────────────────────────────────
+// ── pintar todo ────────────────────────────────────────────
+function tot() {
+  const r = st.data.resumen || {};
+  const venta = +r.venta || 0, costo = +r.costo || 0, uti = +r.utilidad || 0, pers = +r.personal || 0;
+  return { r, venta, costo, uti, pers, queda: uti - pers };
+}
 function pintar() {
   const d = st.data; if (!d) return;
-  const r = d.resumen || {};
-  const venta = +r.venta || 0, costo = +r.costo || 0, uti = +r.utilidad || 0, pers = +r.personal || 0;
-  const queda = uti - pers;
+  const { r, venta, uti, pers, queda } = tot();
   const mPct = pct(uti, venta);
-  const periodo = st.dias === 1 ? 'hoy' : (st.dias === 7 ? 'en los últimos 7 días' : 'en las últimas 4 semanas');
-  const zonaTxt = st.zona === 'TODAS' ? 'las dos zonas' : st.zona.replace('ZONA-', 'Zona ');
-  document.getElementById('gen').textContent = 'Actualizado ' + (d.generado || '').slice(11) + ' · ' + fmtDia(d.desde) + (d.desde !== d.hasta ? ' → ' + fmtDia(d.hasta) : '');
+  $('gen').textContent = 'Actualizado ' + (d.generado || '').slice(11) + ' · ' + fmtDia(d.desde) + (d.desde !== d.hasta ? ' → ' + fmtDia(d.hasta) : '');
 
-  let h = '';
-  // KPIs
-  h += '<div class="kpis">'
-    + kpi('Vendimos', S0(venta), (r.tickets || 0).toLocaleString('es-PE') + ' tickets')
-    + kpi('Margen', S0(uti), '<span class="' + mClase(mPct) + '">' + mPct.toFixed(1) + '%</span> de lo vendido')
-    + kpi('Personal', S0(pers), pct(pers, venta).toFixed(1) + '% de lo vendido')
-    + '<div class="kpi queda' + (queda < 0 ? ' neg' : '') + '"><div class="l">' + (queda < 0 ? 'Falta' : 'Queda') + '</div><div class="v">' + S0(Math.abs(queda)) + '</div><div class="s">margen − personal</div></div>'
+  let h = '<div class="kpis">'
+    + kpi('Vendimos', S0(venta), (r.tickets || 0).toLocaleString('es-PE') + ' tickets', '--c-venta')
+    + kpi('Margen', S0(uti), '<b class="' + mClase(mPct) + '">' + P1(mPct) + '</b> de lo vendido', '--c-margen')
+    + kpi('Personal', S0(pers), P1(pct(pers, venta)) + ' de lo vendido', '--c-pers')
+    + kpi(queda < 0 ? 'Falta' : 'Queda', '<span style="color:var(' + (queda < 0 ? '--c-bad' : '--c-queda') + ')">' + S0(Math.abs(queda)) + '</span>', 'margen − personal', queda < 0 ? '--c-bad' : '--c-queda')
     + '</div>';
 
-  // Avisos
   const conCosto = pct(+r.ventaConCosto || 0, venta);
   h += '<div class="avisos">';
   if (d.cajas && d.cajas.abiertas > 0 && st.dias === 1) h += '<div class="aviso">🟢 Hoy hay ' + d.cajas.abiertas + ' caja(s) abierta(s): los números de hoy se están llenando en vivo.</div>';
   if (venta > 0 && conCosto < 99.5) h += '<div class="aviso amb">ℹ ' + conCosto.toFixed(0) + '% de lo vendido tiene costo registrado. El otro ' + (100 - conCosto).toFixed(0) + '% se calcula con el margen por defecto de 15%.</div>';
-  if (+r.ventaDudosa > 0) h += '<div class="aviso amb">⚠ Hay productos con <b>costo dudoso</b> (el costo del catálogo es igual o mayor que el precio de venta, ' + S0(r.ventaDudosa) + ' vendidos). Se calcularon al 15%. <a href="#" style="color:#fbbf24" onclick="verDudosos();return false">Ver cuáles</a></div>';
+  if (+r.ventaDudosa > 0) h += '<div class="aviso amb">⚠ Hay productos con <b>costo dudoso</b> (costo del catálogo ≥ precio de venta, ' + S0(r.ventaDudosa) + ' vendidos). Se calcularon al 15%. <a href="#" onclick="verDudosos();return false">Ver cuáles</a></div>';
   if (st.zona === 'TODAS' && d.almacen && +d.almacen.total > 0) h += '<div class="aviso">🏭 Aparte, el personal de almacén costó ' + S0(d.almacen.total) + ' (' + d.almacen.personas + ' persona(s)). No se carga a ninguna zona porque abastece a las dos.</div>';
   h += '</div>';
 
-  // ¿A dónde va cada sol?
-  if (venta > 0) {
-    const pc = pct(costo, venta), pp = pct(pers, venta), pq = Math.max(0, 100 - pc - pp);
-    const c100 = pc, p100 = pp, q100 = 100 - pc - pp;
-    h += '<div class="card"><h2>¿A dónde va lo que vendemos?</h2><div class="sub">' + esc(zonaTxt) + ' · ' + periodo + '</div>'
-      + '<div class="frase">De cada <b>S/ 100</b> vendidos: <b style="color:#cbd5e1">S/ ' + c100.toFixed(0) + '</b> es costo de la mercadería, <b style="color:#c4b5fd">S/ ' + p100.toFixed(0) + '</b> es personal y '
-      + (q100 >= 0 ? 'nos <b style="color:#4ade80">quedan S/ ' + q100.toFixed(0) + '</b>.' : '<b style="color:#f87171">faltan S/ ' + Math.abs(q100).toFixed(0) + '</b>.') + '</div>'
-      + '<div class="split">'
-      + seg(pc, 'var(--c-costo)', 'Costo ' + pc.toFixed(0) + '%')
-      + seg(pp, 'var(--c-pers)', 'Personal ' + pp.toFixed(0) + '%')
-      + seg(pq, 'var(--c-queda)', 'Queda ' + pq.toFixed(0) + '%')
-      + '</div><div class="leyenda"><span><i style="background:var(--c-costo)"></i>Costo de productos ' + S0(costo) + '</span><span><i style="background:var(--c-pers)"></i>Personal ' + S0(pers) + '</span><span><i style="background:var(--c-queda)"></i>Queda ' + S0(queda) + '</span></div></div>';
-  }
+  // 1. cascada
+  h += '<div class="card"><h2>Del dinero que entra, ¿cuánto nos queda?</h2><div class="sub">Toca cada barra para ver qué significa.</div>'
+    + '<svg id="cCasc" class="chart" role="img" aria-label="Cascada de venta a lo que queda"></svg><div class="explica" id="cascTxt"></div></div>';
 
-  // Día a día
+  // 2. día a día
   if (st.dias > 1) {
-    h += '<div class="card"><h2>Día a día</h2><div class="sub">Cada barra es lo vendido en el día, partida en costo, personal y lo que queda. Toca una barra para ver el detalle.</div>'
-      + '<svg id="chartDias" role="img" aria-label="Venta diaria"></svg><div id="diaDet" class="sub" style="margin-top:8px;min-height:18px"></div>'
-      + '<div class="leyenda"><span><i style="background:var(--c-costo)"></i>Costo</span><span><i style="background:var(--c-pers)"></i>Personal</span><span><i style="background:var(--c-queda)"></i>Queda</span><span><i style="background:var(--bad)"></i>No alcanzó para el personal</span></div></div>';
+    h += '<div class="card"><h2>Día a día</h2><div class="sub">Elige qué quieres ver. La línea punteada es el promedio. Toca un día para ver su detalle.</div>'
+      + '<div class="fila"><div class="seg sm" id="fDiaMet"><button data-v="venta">Vendido</button><button data-v="utilidad">Margen</button><button data-v="queda">Queda</button></div></div>'
+      + '<svg id="cDias" class="chart" role="img" aria-label="Gráfico diario"></svg><div class="explica" id="diaTxt"></div></div>';
   }
 
-  // Productos
-  h += '<div class="card"><h2>¿Qué vendemos?</h2><div class="sub">Agrupado por producto padre. Toca un padre para ver sus presentaciones (1 kg, ½ kg, 50 g…).</div>'
-    + '<div class="tbar"><input id="busca" type="search" placeholder="Buscar producto…" value="' + esc(st.q) + '">'
-    + '<div class="seg" id="fOrden"><button data-v="venta">Más vendido</button><button data-v="utilidad">Más margen</button><button data-v="margen">Peor margen</button></div></div>'
+  // 3. margen
+  h += '<div class="card"><h2>¿Dónde está el margen?</h2><div class="sub">Qué productos (agrupados por padre) dejan la ganancia.</div>'
+    + '<div class="pareto" id="pareto"></div>'
+    + '<div class="fila"><div class="seg sm" id="fMg"><button data-v="gana">Dejan más ganancia</button><button data-v="poco">Venden mucho, dejan poco</button><button data-v="pct">Mejor margen %</button></div></div>'
+    + '<div class="hb" id="hbMg"></div></div>';
+
+  // 4. simulador
+  h += simHTML();
+
+  // 5. productos
+  h += '<div class="card" id="cardProd"><h2>¿Qué vendemos?</h2><div class="sub">Agrupado por producto padre. Toca un padre para ver sus presentaciones (1 kg, ½ kg, 50 g…).</div>'
+    + '<div class="fila tbar"><input id="busca" type="search" placeholder="Buscar producto…" value="' + esc(st.q) + '">'
+    + '<div class="seg sm" id="fOrden"><button data-v="venta">Más vendido</button><button data-v="utilidad">Más margen</button><button data-v="margen">Peor margen</button></div></div>'
     + '<div class="scroll"><table><thead><tr><th>Producto</th><th>Cantidad</th><th class="hide-m">Precio</th><th class="hide-m">Costo</th><th>Vendido</th><th class="hide-m">Margen</th><th title="Margen sobre lo vendido">%</th></tr></thead><tbody id="tbProd"></tbody></table></div>'
     + '<div id="masProd"></div></div>';
 
-  // Personal
-  const P = d.personal || [];
-  h += '<div class="card"><h2>¿Cuánto cuesta el personal?</h2><div class="sub">Lo que se le paga a cada persona asignada a la zona en el periodo (sueldo + bonos − sanciones). No incluye almacén.</div>';
-  if (!P.length) h += '<div class="mut">Sin personal registrado en este periodo.</div>';
+  // 6. personal
+  const Pp = d.personal || [];
+  h += '<div class="card"><h2>¿Cuánto cuesta el personal hoy?</h2><div class="sub">Lo que se le paga a cada persona asignada a la zona en el periodo (sueldo + bonos − sanciones). No incluye almacén.</div>';
+  if (!Pp.length) h += '<div class="mut">Sin personal registrado en este periodo.</div>';
   else {
     h += '<div class="scroll"><table><thead><tr><th>Persona</th><th>Rol</th>' + (st.zona === 'TODAS' ? '<th>Zona</th>' : '') + '<th>Días</th><th class="hide-m">Base</th><th class="hide-m">Bonos</th><th>Total</th></tr></thead><tbody>';
-    for (const x of P) {
-      h += '<tr><td>' + esc(x.nombre) + ' <span class="pill ' + (x.pendiente ? 'p-pen">por pagar' : 'p-pag">pagado') + '</span></td><td class="mut">' + esc((x.rol || '').toLowerCase()) + '</td>'
+    for (const x of Pp) {
+      h += '<tr><td>' + esc(x.nombre) + ' <span class="chip ' + (x.pendiente ? 'c-est">por pagar' : 'c-real">pagado') + '</span></td><td class="mut">' + esc((x.rol || '').toLowerCase()) + '</td>'
         + (st.zona === 'TODAS' ? '<td class="mut">' + esc((x.zona || '').replace('ZONA-', 'Z')) + '</td>' : '')
-        + '<td>' + x.dias + '</td><td class="hide-m">' + S(x.base) + '</td><td class="hide-m">' + S(x.extras) + '</td><td><b>' + S(x.total) + '</b></td></tr>';
+        + '<td>' + x.dias + '</td><td class="hide-m num">' + S(x.base) + '</td><td class="hide-m num">' + S(x.extras) + '</td><td class="num"><b>' + S(x.total) + '</b></td></tr>';
     }
-    h += '<tr class="tot"><td>Total</td><td></td>' + (st.zona === 'TODAS' ? '<td></td>' : '') + '<td></td><td class="hide-m"></td><td class="hide-m"></td><td>' + S(pers) + '</td></tr></tbody></table></div>';
+    h += '<tr class="tot"><td>Total</td><td></td>' + (st.zona === 'TODAS' ? '<td></td>' : '') + '<td></td><td class="hide-m"></td><td class="hide-m"></td><td class="num">' + S(pers) + '</td></tr></tbody></table></div>';
   }
   h += '</div>';
 
-  document.getElementById('cuerpo').innerHTML = h;
-  marcar('fOrden', st.orden);
-  document.getElementById('busca').addEventListener('input', e => { st.q = e.target.value; st.verTodos = false; pintarProductos(); });
-  document.getElementById('fOrden').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.orden = b.dataset.v; marcar('fOrden', st.orden); pintarProductos(); });
+  $('cuerpo').innerHTML = h;
+  marcar('fOrden', st.orden); marcar('fDiaMet', st.diaMet); marcar('fMg', st.mgModo);
+  $('busca').addEventListener('input', e => { st.q = e.target.value; st.verTodos = false; pintarProductos(); });
+  $('fOrden').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.orden = b.dataset.v; marcar('fOrden', st.orden); pintarProductos(); });
+  $('fMg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.mgModo = b.dataset.v; marcar('fMg', st.mgModo); pintarMargen(); });
+  if ($('fDiaMet')) $('fDiaMet').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.diaMet = b.dataset.v; marcar('fDiaMet', st.diaMet); pintarDias(); });
+  simBind();
+  pintarGraficos();
+  pintarMargen();
   pintarProductos();
-  if (st.dias > 1) pintarDias();
+  simCalc();
 }
+function pintarGraficos() { pintarCascada(); if (st.dias > 1) pintarDias(); simChart(); }
+function kpi(l, v, s, col) { return '<div class="kpi" style="--k:var(' + col + ')"><div class="l">' + l + '</div><div class="v num">' + v + '</div><div class="s">' + s + '</div></div>'; }
+
+// ── 1. CASCADA ─────────────────────────────────────────────
+function pintarCascada() {
+  const svg = $('cCasc'); if (!svg) return;
+  const { venta, costo, uti, pers, queda } = tot();
+  const pasos = [
+    { k: 'Vendimos', v: venta, from: 0, to: venta, col: '--c-venta', tx: 'Todo lo que cobramos en caja: <b>' + S0(venta) + '</b>.' },
+    { k: 'Mercadería', v: -costo, from: venta, to: venta - costo, col: '--c-costo', tx: 'Lo que nos costó la mercadería que vendimos: <b>' + S0(costo) + '</b> (' + P1(pct(costo, venta)) + ' de la venta).' },
+    { k: 'Margen', v: uti, from: 0, to: uti, col: '--c-margen', tx: 'Lo que ganamos con los productos antes de pagar al personal: <b>' + S0(uti) + '</b>. De cada S/ 100 vendidos, <b>S/ ' + pct(uti, venta).toFixed(0) + '</b> son margen.' },
+    { k: 'Personal', v: -pers, from: uti, to: uti - pers, col: '--c-pers', tx: 'Lo que pagamos al personal de la zona: <b>' + S0(pers) + '</b>. Se come el <b>' + pct(pers, uti || 1).toFixed(0) + '%</b> del margen.' },
+    { k: queda < 0 ? 'Falta' : 'Queda', v: queda, from: 0, to: queda, col: queda < 0 ? '--c-bad' : '--c-queda', tx: queda >= 0
+      ? 'Después de pagar mercadería y personal, nos <b>quedan ' + S0(queda) + '</b>: S/ ' + pct(queda, venta).toFixed(1) + ' por cada S/ 100 vendidos.' + (st.zona === 'TODAS' && st.data.almacen && +st.data.almacen.total ? ' (Antes de descontar almacén: ' + S0(st.data.almacen.total) + '.)' : '')
+      : 'El margen <b>no alcanzó</b> para pagar al personal: faltan <b>' + S0(-queda) + '</b>.' }
+  ];
+  const W = Math.max(320, svg.clientWidth || 700), H = W < 560 ? 250 : 300, pl = 8, pr = 8, pt = 34, pb = 34;
+  const lo = Math.min(0, queda), hi = Math.max(venta, 1);
+  const y = v => pt + (H - pt - pb) * (hi - v) / (hi - lo || 1);
+  const n = pasos.length, bw = (W - pl - pr) / n, g = Math.min(28, bw * 0.24);
+  let s = '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="' + css('--line') + '" stroke-width="2"/>';
+  pasos.forEach((p, i) => {
+    const x0 = pl + i * bw + g / 2, w = bw - g;
+    const top = y(Math.max(p.from, p.to)), bot = y(Math.min(p.from, p.to));
+    const sel = st.cascSel === i;
+    s += '<g class="cb" data-i="' + i + '" style="cursor:pointer">'
+      + '<rect x="' + (pl + i * bw) + '" y="0" width="' + bw + '" height="' + H + '" fill="transparent"/>'
+      + '<rect x="' + x0 + '" y="' + top + '" width="' + w + '" height="' + Math.max(2, bot - top) + '" rx="8" fill="' + css(p.col) + '" opacity="' + (st.cascSel == null || sel ? 1 : .45) + '" ' + (sel ? 'stroke="' + css('--txt') + '" stroke-width="2.5"' : '') + '>'
+      + '<animate attributeName="height" from="0" to="' + Math.max(2, bot - top) + '" dur=".5s" fill="freeze"/></rect>'
+      + '<text x="' + (x0 + w / 2) + '" y="' + (top - 9) + '" text-anchor="middle" font-size="' + (W < 560 ? 13 : 16) + '" font-weight="900" fill="' + css(p.v < 0 ? '--mut' : p.col === '--c-bad' ? '--c-bad' : '--txt') + '">' + (p.v < 0 ? '−' : '') + kS(Math.abs(p.v)) + '</text>'
+      + '<text x="' + (x0 + w / 2) + '" y="' + (H - 11) + '" text-anchor="middle" font-size="' + (W < 560 ? 12 : 14) + '" font-weight="800" fill="' + css('--mut') + '">' + p.k + '</text></g>';
+    if (i < n - 1) { const nx = pasos[i + 1]; const yy = y(p.to); s += '<line x1="' + (x0 + w) + '" x2="' + (pl + (i + 1) * bw + g / 2) + '" y1="' + yy + '" y2="' + yy + '" stroke="' + css('--dim') + '" stroke-dasharray="4 4"/>'; }
+  });
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('height', H); svg.innerHTML = s;
+  $('cascTxt').innerHTML = pasos[st.cascSel == null ? 4 : st.cascSel].tx;
+  svg.querySelectorAll('.cb').forEach(b => b.addEventListener('click', () => { st.cascSel = +b.dataset.i; pintarCascada(); }));
+}
+
+// ── 2. DÍA A DÍA ───────────────────────────────────────────
+function pintarDias() {
+  const svg = $('cDias'); if (!svg) return;
+  const D = (st.data.diario || []).map(x => ({ dia: x.dia, venta: +x.venta, utilidad: +x.utilidad, personal: +x.personal, queda: +x.utilidad - +x.personal }));
+  const met = st.diaMet;
+  const col = { venta: '--c-venta', utilidad: '--c-margen', queda: '--c-queda' }[met];
+  const vals = D.map(x => x[met]);
+  const W = Math.max(320, svg.clientWidth || 700), H = W < 560 ? 220 : 270, pl = 44, pr = 8, pt = 26, pb = 26;
+  const hi = niceMax(Math.max(1, ...vals)), lo = Math.min(0, ...vals) < 0 ? -niceMax(-Math.min(...vals)) : 0;
+  const y = v => pt + (H - pt - pb) * (hi - v) / (hi - lo);
+  const bw = (W - pl - pr) / D.length, gap = Math.max(2, Math.min(8, bw * 0.25));
+  const conVenta = D.filter(x => x.venta > 0);
+  const prom = conVenta.length ? conVenta.reduce((a, x) => a + x[met], 0) / conVenta.length : 0;
+  let iMax = 0; vals.forEach((v, i) => { if (v > vals[iMax]) iMax = i; });
+  if (st.diaSel == null || st.diaSel >= D.length) st.diaSel = D.length - 1;
+  let s = '';
+  for (let i = 0; i <= 4; i++) { const v = lo + (hi - lo) * i / 4, yy = y(v); s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + yy + '" y2="' + yy + '" stroke="' + css('--line') + '"/><text x="' + (pl - 6) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="11" fill="' + css('--dim') + '">' + kS(v) + '</text>'; }
+  const paso = Math.ceil(D.length / (W < 560 ? 7 : 14));
+  D.forEach((x, i) => {
+    const v = x[met], x0 = pl + i * bw + gap / 2, w = bw - gap;
+    const t = y(Math.max(0, v)), b = y(Math.min(0, v));
+    const c = v < 0 ? css('--c-bad') : css(col);
+    const sel = st.diaSel === i;
+    s += '<g class="db" data-i="' + i + '" style="cursor:pointer"><rect x="' + (pl + i * bw) + '" y="0" width="' + bw + '" height="' + H + '" fill="transparent"/>'
+      + '<rect x="' + x0 + '" y="' + t + '" width="' + w + '" height="' + Math.max(1, b - t) + '" rx="' + Math.min(5, w / 3) + '" fill="' + c + '" opacity="' + (sel ? 1 : .72) + '"' + (sel ? ' stroke="' + css('--txt') + '" stroke-width="2"' : '') + '/></g>';
+    if (i === iMax && v > 0) s += '<text x="' + (x0 + w / 2) + '" y="' + (t - 6) + '" text-anchor="middle" font-size="12" font-weight="900" fill="' + css('--txt') + '">★ ' + kS(v) + '</text>';
+    if (i % paso === 0 || i === D.length - 1) s += '<text x="' + (x0 + w / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="' + css('--mut') + '">' + fmtDia(x.dia, true) + '</text>';
+  });
+  if (prom) { const yp = y(prom); s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + yp + '" y2="' + yp + '" stroke="' + css('--txt') + '" stroke-width="1.5" stroke-dasharray="6 5" opacity=".7"/><text x="' + (W - pr) + '" y="' + (yp - 5) + '" text-anchor="end" font-size="12" font-weight="800" fill="' + css('--txt') + '">promedio ' + kS(prom) + '</text>'; }
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('height', H); svg.innerHTML = s;
+  const x = D[st.diaSel];
+  const nombre = { venta: 'vendimos', utilidad: 'el margen fue', queda: 'quedó' }[met];
+  const vs = prom ? (x[met] - prom) / Math.abs(prom) * 100 : 0;
+  $('diaTxt').innerHTML = '<b>' + fmtDia(x.dia) + '</b>: ' + nombre + ' <b>' + S0(x[met]) + '</b>'
+    + (prom && x.venta > 0 ? ' <span class="' + (vs >= 0 ? 'm-ok' : 'm-bad') + '">(' + (vs >= 0 ? '+' : '') + vs.toFixed(0) + '% vs. el promedio)</span>' : '')
+    + '<br><span class="mut">Vendido ' + S0(x.venta) + ' · margen ' + S0(x.utilidad) + ' · personal ' + S0(x.personal) + ' · ' + (x.queda < 0 ? 'faltó ' : 'quedó ') + S0(Math.abs(x.queda)) + '</span>';
+  svg.querySelectorAll('.db').forEach(b => b.addEventListener('click', () => { st.diaSel = +b.dataset.i; pintarDias(); }));
+}
+
+// ── 3. MARGEN ──────────────────────────────────────────────
+function pintarMargen() {
+  const L = (st.data.padres || []).filter(p => +p.venta > 0);
+  const utiTot = L.reduce((a, p) => a + Math.max(0, +p.utilidad), 0);
+  const ord = L.slice().sort((a, b) => b.utilidad - a.utilidad);
+  let acc = 0, k = 0; for (const p of ord) { if (acc >= utiTot * 0.8) break; acc += Math.max(0, +p.utilidad); k++; }
+  $('pareto').innerHTML = utiTot > 0
+    ? '🎯 <b>' + k + '</b> de ' + L.length + ' productos (' + pct(k, L.length).toFixed(0) + '%) generan el <b>80% del margen</b>. Esos son los que nunca deben faltar en la tienda.'
+    : 'Sin margen en este periodo.';
+  let M, val, txt;
+  if (st.mgModo === 'poco') {
+    const topV = L.filter(p => p.origen !== 'EST' && p.origen !== 'DUDOSO').sort((a, b) => b.venta - a.venta).slice(0, 40);
+    M = topV.sort((a, b) => pct(a.utilidad, a.venta) - pct(b.utilidad, b.venta)).slice(0, 10);
+    val = p => +p.venta; txt = p => S0(p.venta) + ' vendidos · margen ' + P1(pct(p.utilidad, p.venta));
+  } else if (st.mgModo === 'pct') {
+    M = L.filter(p => p.venta >= 50 && p.origen !== 'EST').sort((a, b) => pct(b.utilidad, b.venta) - pct(a.utilidad, a.venta)).slice(0, 10);
+    val = p => pct(p.utilidad, p.venta); txt = p => P1(pct(p.utilidad, p.venta)) + ' · ' + S0(p.utilidad) + ' de margen';
+  } else {
+    M = ord.slice(0, 10); val = p => +p.utilidad; txt = p => S0(p.utilidad) + ' · ' + P1(pct(p.utilidad, p.venta));
+  }
+  const mx = Math.max(1, ...M.map(val));
+  const colFn = p => { const m = pct(p.utilidad, p.venta); return m < 0 ? '--c-bad' : m < 15 ? '--c-warn' : '--c-margen'; };
+  $('hbMg').innerHTML = M.length ? M.map(p => '<div class="n" title="' + esc(p.nombre) + '">' + esc(p.nombre) + '</div><div class="b"><i style="width:' + Math.max(2, val(p) / mx * 100).toFixed(1) + '%;background:var(' + colFn(p) + ');opacity:.28"></i><span>' + txt(p) + (p.origen === 'EST' ? ' <span class="chip c-est">est.</span>' : p.origen === 'DUDOSO' ? ' <span class="chip c-bad">dudoso</span>' : '') + '</span></div>').join('')
+    : '<div class="mut">Sin datos suficientes.</div>';
+}
+
+// ── 4. SIMULADOR DE COMISIÓN ───────────────────────────────
+const PRESETS = [
+  { t: 'Solo comisión 3% venta', modo: 'comision', base: 'venta', fijo: 0, pct: 3 },
+  { t: 'S/ 20 + 2% venta', modo: 'mixto', base: 'venta', fijo: 20, pct: 2 },
+  { t: 'S/ 30 + 1% venta', modo: 'mixto', base: 'venta', fijo: 30, pct: 1 },
+  { t: 'S/ 20 + 10% utilidad', modo: 'mixto', base: 'utilidad', fijo: 20, pct: 10 },
+  { t: 'Mínimo S/ 40 o 3% venta', modo: 'garantizado', base: 'venta', fijo: 40, pct: 3 }
+];
+const PMAX = { venta: 10, utilidad: 60 }, PSTEP = { venta: 0.1, utilidad: 0.5 };
+function simHTML() {
+  const S_ = st.sim;
+  return '<div class="card" id="cardSim"><h2>🧮 Simulador: ¿conviene pagar por comisión?</h2>'
+    + '<div class="sub">Usa las ventas reales de cada persona en el periodo elegido' + (st.dias === 1 ? ' — <b>para decidir, mejor elige "4 semanas"</b>' : '') + '. Mueve los controles y mira cómo cambia lo que pagas.</div>'
+    + '<div class="fila"><span class="mut" style="font-size:13px;font-weight:800">PRUEBA RÁPIDA:</span><div class="presets" id="simPre">' + PRESETS.map((p, i) => '<button data-i="' + i + '">' + p.t + '</button>').join('') + '</div></div>'
+    + '<div class="sim-grid"><div class="ctl">'
+    + '<div><label class="t">1 · Forma de pago</label><div class="seg sm" id="simModo"><button data-v="comision">Solo comisión</button><button data-v="mixto">Fijo + comisión</button><button data-v="garantizado">Lo que sea mayor</button></div><div class="mut" id="simModoTx" style="font-size:13px;margin-top:6px"></div></div>'
+    + '<div><label class="t">2 · Comisión calculada sobre</label><div class="seg sm" id="simBase"><button data-v="venta">Lo que vende</button><button data-v="utilidad">La ganancia que deja</button></div></div>'
+    + '<div id="simFijoBox"><label class="t" id="simFijoLbl">3 · Fijo por día</label><div class="rng"><button class="pm" data-d="-5" data-k="fijo">−</button><input type="range" id="simFijo" min="0" max="80" step="5"><button class="pm" data-d="5" data-k="fijo">+</button><span class="val num" id="simFijoV"></span></div></div>'
+    + '<div><label class="t">4 · Porcentaje de comisión</label><div class="rng"><button class="pm" data-d="-1" data-k="pct">−</button><input type="range" id="simPct" min="0"><button class="pm" data-d="1" data-k="pct">+</button><span class="val num" id="simPctV"></span></div></div>'
+    + '<div><label class="t">5 · A quiénes se aplica</label><div class="seg sm" id="simRoles"><button data-v="VENDEDOR">Vendedores</button><button data-v="CAJERO">Cajeros</button></div><div class="mut" style="font-size:12.5px;margin-top:6px">Los que no marques siguen con su pago de hoy.</div></div>'
+    + '</div><div>'
+    + '<div class="res" id="simRes"></div>'
+    + '<svg id="cSim" class="chart" role="img" aria-label="Costo del personal según el porcentaje de comisión"></svg>'
+    + '<div class="leyenda"><span><i style="background:var(--c-pers)"></i>Lo que pagarías según el %</span><span><i style="background:var(--txt)"></i>Lo que pagas hoy</span><span><i style="background:var(--c-bad)"></i>Tope: el negocio queda en 0</span></div>'
+    + '<div class="claves" id="simClaves"></div>'
+    + '</div></div>'
+    + '<h3 style="margin:14px 0 6px;font-size:16px">¿Cómo le va a cada persona?</h3>'
+    + '<div class="scroll"><table><thead><tr><th>Persona</th><th class="hide-m">Días</th><th class="hide-m">Vendió</th><th class="hide-m">Ganancia que dejó</th><th>Hoy cobra</th><th>Cobraría</th><th>Diferencia</th></tr></thead><tbody id="simTb"></tbody></table></div>'
+    + '<h3 style="margin:16px 0 6px;font-size:16px">Comparar propuestas</h3><div class="sub" style="margin-bottom:6px">Toca una fila para cargarla en el simulador.</div>'
+    + '<div class="scroll"><table class="cmp"><thead><tr><th>Propuesta</th><th>Pagarías</th><th>vs. hoy</th><th>Le queda al negocio</th></tr></thead><tbody id="simCmp"></tbody></table></div>'
+    + '<h3 style="margin:16px 0 8px;font-size:16px">¿Comisión sobre la venta o sobre la ganancia?</h3>'
+    + '<div class="vs"><div><h3>💵 Sobre lo que vende</h3><ul>'
+    + '<li>✅ El vendedor entiende al instante cuánto gana: "vendo S/ 1000, me llevo S/ 20".</li><li>✅ Se calcula solo con la caja, sin depender de los costos.</li>'
+    + '<li>⚠️ Le da igual vender algo que deja 5% o 40%: puede empujar lo barato o regalar descuentos.</li></ul></div>'
+    + '<div><h3>📈 Sobre la ganancia que deja</h3><ul>'
+    + '<li>✅ Premia vender lo que más conviene al negocio.</li><li>✅ Si se vende con pérdida, no cobra comisión: protege el margen.</li>'
+    + '<li>⚠️ Necesita costos correctos de todos los productos.</li><li>⚠️ Es más difícil de explicar y de verificar para el vendedor.</li></ul></div></div>'
+    + '<div class="reco" id="simReco"></div>'
+    + '</div>';
+}
+function simBind() {
+  const S_ = st.sim;
+  const seg = (id, get, set) => { marcar(id, get()); $(id).addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; set(b.dataset.v); marcar(id, get()); simCalc(); }); };
+  seg('simModo', () => S_.modo, v => S_.modo = v);
+  seg('simBase', () => S_.base, v => { S_.base = v; simSync(); });
+  $('simRoles').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const v = b.dataset.v; const i = S_.roles.indexOf(v); if (i >= 0) { if (S_.roles.length > 1) S_.roles.splice(i, 1); } else S_.roles.push(v); simRolesMarcar(); simCalc(); });
+  simRolesMarcar();
+  $('simFijo').addEventListener('input', e => { S_.fijo = +e.target.value; simCalc(); });
+  $('simPct').addEventListener('input', e => { S_.pct[S_.base] = +e.target.value; simCalc(); });
+  document.querySelectorAll('#cardSim .pm').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.k === 'fijo') S_.fijo = Math.max(0, Math.min(80, S_.fijo + +b.dataset.d));
+    else S_.pct[S_.base] = Math.max(0, Math.min(PMAX[S_.base], Math.round((S_.pct[S_.base] + +b.dataset.d * (S_.base === 'venta' ? 0.5 : 1)) * 10) / 10));
+    simSync(); simCalc();
+  }));
+  $('simPre').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; aplicarPreset(PRESETS[+b.dataset.i]); });
+  simSync();
+  // arrastrar/tocar el gráfico = elegir el % (escucha en el <svg>, que no se reemplaza al redibujar)
+  const svg = $('cSim'); let arr = false;
+  const mover = ev => { const g = st._simGeo; if (!g) return; const rc = svg.getBoundingClientRect();
+    const px = (ev.clientX - rc.left) * g.W / rc.width; let p = (px - g.pl) / (g.W - g.pl - g.pr) * g.pmax;
+    p = Math.max(0, Math.min(g.pmax, Math.round(p / PSTEP[S_.base]) * PSTEP[S_.base]));
+    S_.pct[S_.base] = Math.round(p * 10) / 10; simSync(); simCalc(); };
+  svg.style.cursor = 'ew-resize';
+  svg.addEventListener('pointerdown', e => { arr = true; try { svg.setPointerCapture(e.pointerId); } catch (_) {} mover(e); });
+  svg.addEventListener('pointermove', e => { if (arr) mover(e); });
+  svg.addEventListener('pointerup', () => arr = false);
+  svg.addEventListener('pointercancel', () => arr = false);
+}
+function aplicarPreset(p) {
+  const S_ = st.sim; S_.modo = p.modo; S_.base = p.base; S_.fijo = p.fijo; S_.pct[p.base] = p.pct;
+  marcar('simModo', S_.modo); marcar('simBase', S_.base); simSync(); simCalc();
+}
+function simRolesMarcar() { document.querySelectorAll('#simRoles button').forEach(b => b.classList.toggle('on', st.sim.roles.includes(b.dataset.v))); }
+function simSync() {
+  const S_ = st.sim, r = $('simPct');
+  r.max = PMAX[S_.base]; r.step = PSTEP[S_.base]; r.value = S_.pct[S_.base];
+  $('simFijo').value = S_.fijo;
+}
+// paga de UNA persona con la propuesta, día por día (solo días trabajados o con venta)
+function pagoSim(x, pc, cfg) {
+  const S_ = cfg || st.sim; let t = 0;
+  for (const [, v, u, pago] of (x.dd || [])) {
+    if (pago == null && !(v > 0)) continue;
+    const base = S_.base === 'venta' ? +v : Math.max(0, +u);
+    const com = base * pc / 100;
+    t += S_.modo === 'comision' ? com : S_.modo === 'mixto' ? S_.fijo + com : Math.max(S_.fijo, com);
+  }
+  return t;
+}
+function simEscenario(pc, cfg) {
+  const V = st.data.vendedores || [], roles = (cfg || st.sim).roles;
+  let hoy = 0, sim = 0;
+  for (const x of V) { if (!roles.includes(x.rol)) continue; hoy += +x.pago; sim += pagoSim(x, pc, cfg); }
+  return { hoy, sim };
+}
+function buscarPct(objetivo) {
+  const max = PMAX[st.sim.base] * 3; let lo = 0, hi = max;
+  if (simEscenario(0).sim > objetivo) return 0;
+  if (simEscenario(hi).sim < objetivo) return null;
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (simEscenario(m).sim < objetivo) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+function simCalc() {
+  if (!st.data) return;
+  const S_ = st.sim; LS('mos_reporte_zonas_sim', S_);
+  const pc = S_.pct[S_.base];
+  $('simPctV').textContent = P1(pc);
+  $('simFijoV').textContent = 'S/ ' + S_.fijo;
+  $('simFijoBox').style.opacity = S_.modo === 'comision' ? .35 : 1;
+  $('simFijoBox').querySelectorAll('input,button').forEach(el => el.disabled = S_.modo === 'comision');
+  $('simFijoLbl').textContent = S_.modo === 'garantizado' ? '3 · Mínimo garantizado por día' : '3 · Fijo por día';
+  $('simModoTx').textContent = { comision: 'Cobra solo el % de lo que hace. Si no vende, no cobra.', mixto: 'Un fijo diario seguro + el % de lo que hace.', garantizado: 'Cobra el % de lo que hace, pero nunca menos que el mínimo del día.' }[S_.modo];
+  const { uti, pers } = tot();
+  const E = simEscenario(pc);
+  const persNuevo = pers - E.hoy + E.sim;
+  const quedaHoy = uti - pers, quedaNuevo = uti - persNuevo, dif = E.sim - E.hoy;
+  $('simRes').innerHTML =
+      '<div class="r"><div class="l">Hoy pagas</div><div class="v num">' + S0(E.hoy) + '</div><div class="s">' + (S_.roles.length > 1 ? 'vendedores y cajeros' : S_.roles[0] === 'VENDEDOR' ? 'a los vendedores' : 'a los cajeros') + '</div></div>'
+    + '<div class="r ' + (dif <= 0 ? 'good' : 'badr') + '"><div class="l">Con la propuesta</div><div class="v num">' + S0(E.sim) + '</div><div class="s">' + (dif <= 0 ? 'ahorras ' : 'pagas ') + S0(Math.abs(dif)) + (dif <= 0 ? '' : ' más') + ' (' + (dif >= 0 ? '+' : '') + P1(pct(dif, E.hoy || 1)) + ')</div></div>'
+    + '<div class="r ' + (quedaNuevo >= quedaHoy ? 'good' : 'badr') + '"><div class="l">Le queda al negocio</div><div class="v num">' + S0(quedaNuevo) + '</div><div class="s">hoy ' + S0(quedaHoy) + '</div></div>';
+  const pIgual = buscarPct(E.hoy);
+  const pTope = buscarPct(E.hoy + quedaHoy);
+  const bTxt = S_.base === 'venta' ? 'de lo que vende' : 'de la ganancia que deja';
+  $('simClaves').innerHTML =
+      '<div>⚖️ Para pagar <b>lo mismo que hoy</b>' + (S_.modo === 'comision' ? '' : ' (con S/ ' + S_.fijo + ' ' + (S_.modo === 'mixto' ? 'fijo' : 'mínimo') + ')') + ', la comisión sería:<span class="cv">' + (pIgual == null ? 'imposible' : pIgual === 0 && simEscenario(0).sim > E.hoy ? 'ni con 0% (el fijo ya cuesta más)' : P1(pIgual) + ' ' + bTxt) + '</span></div>'
+    + '<div>🛑 <b>Tope máximo</b>: con una comisión mayor, el negocio ya no gana nada en la zona:<span class="cv" style="color:var(--c-bad)">' + (pTope == null ? 'más de ' + P1(PMAX[S_.base] * 3) : P1(pTope) + ' ' + bTxt) + '</span></div>';
+  st._simRef = { pIgual, pTope, hoy: E.hoy, quedaHoy };
+  simChart();
+  // por persona
+  const V = (st.data.vendedores || []).slice().sort((a, b) => +b.venta - +a.venta);
+  const mxd = Math.max(1, ...V.map(x => Math.abs(pagoSim(x, pc) - +x.pago)));
+  $('simTb').innerHTML = V.map(x => {
+    const aplica = S_.roles.includes(x.rol);
+    const nuevo = aplica ? pagoSim(x, pc) : +x.pago, d = nuevo - +x.pago;
+    const dias = Math.max(x.dias, x.diasVenta);
+    const alerta = x.venta <= 0 && x.pago > 0 ? ' <span class="chip c-bad" title="Cobró sin ventas registradas a su nombre">sin ventas</span>' : x.rol === 'SIN_FICHA' ? ' <span class="chip c-est" title="Vendió pero no tiene liquidación en el periodo">sin ficha</span>' : '';
+    return '<tr' + (aplica ? '' : ' style="opacity:.55"') + '><td><b>' + esc(x.nombre) + '</b>' + alerta + '<br><span class="mut" style="font-size:12px">' + esc((x.rol || '').toLowerCase()) + (st.zona === 'TODAS' ? ' · ' + esc((x.zona || '').replace('ZONA-', 'Zona ')) : '') + (dias ? ' · ' + S0(x.venta / dias) + '/día' : '') + '<span class="solo-m"> · ' + dias + ' día(s) · vendió ' + S0(x.venta) + '</span></span></td>'
+      + '<td class="hide-m">' + dias + '</td><td class="hide-m num">' + S0(x.venta) + '</td><td class="hide-m num">' + S0(x.utilidad) + '</td><td class="num">' + S0(x.pago) + '</td><td class="num"><b>' + S0(nuevo) + '</b></td>'
+      + '<td class="num dcol"><span class="dbar" style="width:' + (Math.abs(d) / mxd * 50).toFixed(0) + 'px;background:var(' + (d >= 0 ? '--c-queda' : '--c-bad') + ')"></span><b class="' + (Math.abs(d) < 0.5 ? 'mut' : d > 0 ? 'm-ok' : 'm-bad') + '">' + (d > 0 ? '+' : '') + S0(d) + '</b></td></tr>';
+  }).join('') || '<tr><td colspan="7" class="mut">Sin personal en el periodo.</td></tr>';
+  // comparador
+  const actual = { t: 'Tu propuesta actual', modo: S_.modo, base: S_.base, fijo: S_.fijo, pct: pc, act: true };
+  const filas = [{ t: 'Como hoy (sueldo fijo)', hoy: true }].concat(PRESETS, [actual]);
+  $('simCmp').innerHTML = filas.map((p, i) => {
+    const pago = p.hoy ? E.hoy : simEscenario(p.pct, { modo: p.modo, base: p.base, fijo: p.fijo, roles: S_.roles }).sim;
+    const dd = pago - E.hoy, q = uti - (pers - E.hoy + pago);
+    return '<tr data-i="' + i + '" class="' + (p.act ? 'sel' : '') + '"><td>' + esc(p.t) + (p.act ? '' : '') + '</td><td class="num">' + S0(pago) + '</td><td class="num ' + (p.hoy ? 'mut' : dd <= 0 ? 'm-ok' : 'm-bad') + '">' + (p.hoy ? '—' : (dd > 0 ? '+' : '') + S0(dd)) + '</td><td class="num"><b class="' + (q < 0 ? 'm-bad' : '') + '">' + S0(q) + '</b></td></tr>';
+  }).join('');
+  $('simCmp').querySelectorAll('tr').forEach(tr => tr.addEventListener('click', () => { const p = filas[+tr.dataset.i]; if (p.hoy || p.act) return; aplicarPreset(p); }));
+  simReco();
+}
+function simReco() {
+  const r = st.data.resumen || {}, venta = +r.venta || 0;
+  const conCosto = pct(+r.ventaConCosto || 0, venta);
+  const V = (st.data.vendedores || []).filter(x => st.sim.roles.includes(x.rol));
+  const sinVentas = V.filter(x => x.venta <= 0 && x.pago > 0);
+  const pagoSinVentas = sinVentas.reduce((a, x) => a + +x.pago, 0);
+  const ventaV = V.reduce((a, x) => a + +x.venta, 0), pagoV = V.reduce((a, x) => a + +x.pago, 0);
+  let t = '<b>💡 Lectura de los números:</b><ul style="margin:6px 0 0;padding-left:18px">';
+  t += '<li>Hoy el pago de estas personas equivale al <b>' + P1(pct(pagoV, ventaV || 1)) + ' de lo que venden</b>. Ese es el punto de partida: una comisión menor a eso, sobre la venta, te ahorra dinero.</li>';
+  if (sinVentas.length) t += '<li><b>' + sinVentas.length + ' persona(s)</b> cobraron <b>' + S0(pagoSinVentas) + '</b> sin ventas registradas a su nombre (' + sinVentas.map(x => esc(x.nombre)).join(', ') + '). Con comisión dejarían de cobrar eso: revisa si cumplen otra función (apoyo, reposición) antes de decidir.</li>';
+  t += '<li>Hoy solo el <b>' + conCosto.toFixed(0) + '%</b> de lo vendido tiene costo registrado. ' + (conCosto < 85 ? 'Por eso, <b>comisionar sobre la ganancia todavía no es confiable</b>: la ganancia de muchos productos es estimada.' : 'Los costos ya son bastante confiables como para comisionar sobre la ganancia.') + '</li>';
+  t += '<li>Recomendación para empezar: <b>fijo pequeño + % sobre la venta</b> (por ejemplo S/ 20 + 2%). Protege al vendedor en días flojos y premia al que vende más. Cuando los costos estén completos, se puede pasar a % sobre la ganancia.</li></ul>';
+  $('simReco').innerHTML = t;
+}
+function simChart() {
+  const svg = $('cSim'); if (!svg || !st._simRef) return;
+  const S_ = st.sim, pmax = PMAX[S_.base], pc = S_.pct[S_.base];
+  const W = Math.max(300, svg.clientWidth || 600), H = W < 560 ? 210 : 240, pl = 48, pr = 12, pt = 18, pb = 30;
+  const N = 40, pts = []; for (let i = 0; i <= N; i++) { const p = pmax * i / N; pts.push([p, simEscenario(p).sim]); }
+  const { hoy, quedaHoy, pTope } = st._simRef, tope = hoy + quedaHoy;
+  const ymax = niceMax(Math.max(hoy * 1.3, ...pts.map(p => p[1]), 1));
+  const x = p => pl + (W - pl - pr) * p / pmax, y = v => pt + (H - pt - pb) * (1 - Math.min(v, ymax) / ymax);
+  let s = '';
+  for (let i = 0; i <= 4; i++) { const v = ymax * i / 4; s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="' + css('--line') + '"/><text x="' + (pl - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end" font-size="11" fill="' + css('--dim') + '">' + kS(v) + '</text>'; }
+  for (let i = 0; i <= 5; i++) { const p = pmax * i / 5; s += '<text x="' + x(p) + '" y="' + (H - 9) + '" text-anchor="middle" font-size="11" fill="' + css('--mut') + '">' + (Math.round(p * 10) / 10) + '%</text>'; }
+  // zonas ahorro / gasto bajo la curva
+  const path = pts.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join(' ');
+  s += '<path d="' + path + ' L ' + x(pmax) + ' ' + y(0) + ' L ' + x(0) + ' ' + y(0) + ' Z" fill="' + css('--c-pers') + '" opacity=".10"/>';
+  s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(hoy) + '" y2="' + y(hoy) + '" stroke="' + css('--txt') + '" stroke-width="2" stroke-dasharray="7 5"/><text x="' + (pl + 6) + '" y="' + (y(hoy) - 6) + '" font-size="12" font-weight="800" fill="' + css('--txt') + '">hoy ' + kS(hoy) + '</text>';
+  if (tope <= ymax) s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(tope) + '" y2="' + y(tope) + '" stroke="' + css('--c-bad') + '" stroke-width="2"/><text x="' + (W - pr - 4) + '" y="' + (y(tope) - 6) + '" text-anchor="end" font-size="12" font-weight="800" fill="' + css('--c-bad') + '">tope ' + kS(tope) + '</text>';
+  s += '<path d="' + path + '" fill="none" stroke="' + css('--c-pers') + '" stroke-width="3.5" stroke-linejoin="round"/>';
+  const yc = simEscenario(pc).sim, cx = x(Math.min(pc, pmax));
+  s += '<line x1="' + cx + '" x2="' + cx + '" y1="' + pt + '" y2="' + (H - pb) + '" stroke="' + css('--c-pers') + '" stroke-dasharray="3 4"/>'
+    + '<circle cx="' + cx + '" cy="' + y(yc) + '" r="8" fill="' + css(yc <= hoy ? '--c-queda' : '--c-bad') + '" stroke="' + css('--panel') + '" stroke-width="3"/>'
+    + '<text x="' + Math.min(W - pr - 50, Math.max(pl + 50, cx)) + '" y="' + Math.max(pt + 12, y(yc) - 14) + '" text-anchor="middle" font-size="13" font-weight="900" fill="' + css('--txt') + '">' + P1(pc) + ' → ' + kS(yc) + '</text>';
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('height', H); svg.innerHTML = s;
+  st._simGeo = { W, pl, pr, pmax };
+}
+
+// ── 5. PRODUCTOS ───────────────────────────────────────────
 function verDudosos() {
   st.orden = 'margen'; st.q = ''; st.verTodos = true;
   (st.data.padres || []).forEach(p => { if (p.origen === 'DUDOSO') st.abiertos.add(p.cod); });
-  const b = document.getElementById('busca'); if (b) b.value = '';
+  const b = $('busca'); if (b) b.value = '';
   marcar('fOrden', st.orden);
   st.soloDudosos = true; pintarProductos(); st.soloDudosos = false;
-  document.getElementById('tbProd').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('cardProd').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-function kpi(l, v, s) { return '<div class="kpi"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></div>'; }
-function seg(p, col, txt) { return p > 0 ? '<div style="width:' + p.toFixed(2) + '%;background:' + col + '" title="' + esc(txt) + '">' + (p >= 9 ? esc(txt) : '') + '</div>' : ''; }
-
 function pintarProductos() {
-  const tb = document.getElementById('tbProd'); if (!tb) return;
+  const tb = $('tbProd'); if (!tb) return;
   const q = st.q.trim().toLowerCase();
   let L = (st.data.padres || []).filter(p => !st.soloDudosos || p.origen === 'DUDOSO').filter(p => !q || (p.nombre || '').toLowerCase().includes(q) || (p.hijos || []).some(h => (h.nombre || '').toLowerCase().includes(q)));
   const mg = p => pct(+p.utilidad, +p.venta);
@@ -305,74 +665,43 @@ function pintarProductos() {
     const m = mg(p);
     h += '<tr class="padre' + (ab ? ' ab' : '') + '" data-c="' + esc(p.cod) + '"><td><span class="tg">' + (unico ? '' : '▸') + '</span>' + esc(p.nombre)
       + (unico ? '' : ' <span class="mut" style="font-weight:400">· ' + hijos.length + ' present.</span>') + chipOrigen(p.origen) + '</td>'
-      + '<td>' + qty(p.cantBase, false, p.um) + '</td>'
-      + '<td class="hide-m mut">' + (unico ? S(hijos[0].precio) : '') + '</td>'
-      + '<td class="hide-m">' + S(p.costo) + '</td><td><b>' + S(p.venta) + '</b></td><td class="hide-m">' + S(p.utilidad) + '</td><td class="' + mClase(m) + '">' + m.toFixed(0) + '%</td></tr>';
+      + '<td class="num">' + qty(p.cantBase, false, p.um) + '</td>'
+      + '<td class="hide-m mut num">' + (unico ? S(hijos[0].precio) : '') + '</td>'
+      + '<td class="hide-m num">' + S(p.costo) + '</td><td class="num"><b>' + S(p.venta) + '</b></td><td class="hide-m num">' + S(p.utilidad) + '</td><td class="' + mClase(m) + '">' + m.toFixed(0) + '%</td></tr>';
     if (ab && !unico) {
       for (const x of hijos) {
         const mh = pct(+x.utilidad, +x.venta);
-        h += '<tr class="hijo"><td>' + esc(x.nombre) + chipOrigen(x.origen) + '</td><td>' + qty(x.cant, x.peso, x.peso ? 'KGM' : '') + '</td>'
-          + '<td class="hide-m">' + S(x.precio) + '</td><td class="hide-m" title="Costo unitario ' + S(x.costoUnit) + '">' + S(x.costo) + '</td>'
-          + '<td>' + S(x.venta) + '</td><td class="hide-m">' + S(x.utilidad) + '</td><td class="' + mClase(mh) + '">' + mh.toFixed(0) + '%</td></tr>';
+        h += '<tr class="hijo"><td>' + esc(x.nombre) + chipOrigen(x.origen) + '</td><td class="num">' + qty(x.cant, x.peso, x.peso ? 'KGM' : '') + '</td>'
+          + '<td class="hide-m num">' + S(x.precio) + '</td><td class="hide-m num" title="Costo unitario ' + S(x.costoUnit) + '">' + S(x.costo) + '</td>'
+          + '<td class="num">' + S(x.venta) + '</td><td class="hide-m num">' + S(x.utilidad) + '</td><td class="' + mClase(mh) + '">' + mh.toFixed(0) + '%</td></tr>';
       }
     }
   }
   if (!L.length) h = '<tr><td colspan="7" class="mut" style="text-align:center;padding:20px">' + (q ? 'Ningún producto coincide con la búsqueda.' : 'Sin ventas en este periodo.') + '</td></tr>';
   tb.innerHTML = h;
-  document.getElementById('masProd').innerHTML = L.length > tope
-    ? '<button class="btn mas" onclick="st.verTodos=true;pintarProductos()">Ver los ' + L.length + ' productos</button>' : '';
+  $('masProd').innerHTML = L.length > tope ? '<button class="btn mas" onclick="st.verTodos=true;pintarProductos()">Ver los ' + L.length + ' productos</button>' : '';
 }
-
-function pintarDias() {
-  const svg = document.getElementById('chartDias'); if (!svg) return;
-  const D = st.data.diario || [];
-  const W = Math.max(300, svg.clientWidth || 600), H = W < 520 ? 190 : 230, pl = 46, pr = 6, pt = 10, pb = 24;
-  const max = Math.max(1, ...D.map(x => +x.venta));
-  const top = niceMax(max);
-  const bw = (W - pl - pr) / D.length, gap = Math.min(6, bw * 0.22);
-  const y = v => pt + (H - pt - pb) * (1 - v / top);
-  let g = '';
-  for (let i = 0; i <= 4; i++) {
-    const v = top * i / 4, yy = y(v);
-    g += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + yy + '" y2="' + yy + '" stroke="#1e293b"/><text x="' + (pl - 6) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="10" fill="#64748b">' + (v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + 'k' : Math.round(v)) + '</text>';
-  }
-  const pasoEt = Math.ceil(D.length / (W < 520 ? 7 : 14));
-  D.forEach((x, i) => {
-    const vta = +x.venta || 0, uti = +x.utilidad || 0, pe = +x.personal || 0;
-    const costo = Math.max(0, vta - uti), queda = uti - pe;
-    const x0 = pl + i * bw + gap / 2, w = bw - gap;
-    let acc = 0; const partes = [];
-    partes.push([costo, 'var(--c-costo)']);
-    if (queda >= 0) { partes.push([pe, 'var(--c-pers)']); partes.push([queda, 'var(--c-queda)']); }
-    else partes.push([Math.max(0, uti), 'var(--bad)']);
-    let r = '';
-    for (const [v, c] of partes) { if (v <= 0) continue; r += '<rect x="' + x0 + '" y="' + y(acc + v) + '" width="' + w + '" height="' + Math.max(0, y(acc) - y(acc + v)) + '" fill="' + c + '"/>'; acc += v; }
-    g += '<g class="bar" data-i="' + i + '" style="cursor:pointer"><rect x="' + (pl + i * bw) + '" y="' + pt + '" width="' + bw + '" height="' + (H - pt - pb) + '" fill="transparent"/>' + r + '</g>';
-    if (i % pasoEt === 0 || i === D.length - 1) g += '<text x="' + (x0 + w / 2) + '" y="' + (H - 7) + '" text-anchor="middle" font-size="10" fill="#94a3b8">' + fmtDia(x.dia, true) + '</text>';
-  });
-  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('height', H); svg.innerHTML = g;
-  const det = document.getElementById('diaDet');
-  const ver = i => { const x = D[i]; if (!x) return; const q = x.utilidad - x.personal;
-    det.innerHTML = '<b style="color:var(--txt)">' + fmtDia(x.dia) + '</b> · vendido ' + S(x.venta) + ' · margen ' + S(x.utilidad) + ' · personal ' + S(x.personal) + ' · <span class="' + (q < 0 ? 'm-bad' : 'm-ok') + '">' + (q < 0 ? 'faltó ' : 'quedó ') + S(Math.abs(q)) + '</span>';
-    svg.querySelectorAll('.bar').forEach(b => b.style.opacity = b.dataset.i == i ? '1' : '.45'); };
-  svg.querySelectorAll('.bar').forEach(b => { b.addEventListener('click', () => ver(+b.dataset.i)); b.addEventListener('mouseenter', () => ver(+b.dataset.i)); });
-  svg.addEventListener('mouseleave', () => svg.querySelectorAll('.bar').forEach(b => b.style.opacity = '1'));
-  ver(D.length - 1); svg.querySelectorAll('.bar').forEach(b => b.style.opacity = '1');
-}
-function niceMax(v) { const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p; return 10 * p; }
 
 // ── eventos ────────────────────────────────────────────────
-function marcar(id, v) { document.querySelectorAll('#' + id + ' button').forEach(b => b.classList.toggle('on', String(b.dataset.v) === String(v))); }
-function guardarFiltros() { try { localStorage.setItem('mos_reporte_zonas_filtros', JSON.stringify({ zona: st.zona, dias: st.dias })); } catch (_) {} }
-document.getElementById('fZona').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.dataset.v === st.zona) return; st.zona = b.dataset.v; marcar('fZona', st.zona); guardarFiltros(); st.abiertos.clear(); st.verTodos = false; cargar(); });
-document.getElementById('fDias').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || +b.dataset.v === st.dias) return; st.dias = +b.dataset.v; marcar('fDias', st.dias); guardarFiltros(); st.abiertos.clear(); st.verTodos = false; cargar(); });
-document.getElementById('btnAct').addEventListener('click', () => cargar(true));
-document.getElementById('cuerpo').addEventListener('click', e => {
+function marcar(id, v) { const el = $(id); if (el) el.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(b.dataset.v) === String(v))); }
+function guardarFiltros() { LS('mos_reporte_zonas_filtros', { zona: st.zona, dias: st.dias }); }
+$('fZona').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.dataset.v === st.zona) return; st.zona = b.dataset.v; marcar('fZona', st.zona); guardarFiltros(); st.abiertos.clear(); st.verTodos = false; cargar(); });
+$('fDias').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || +b.dataset.v === st.dias) return; st.dias = +b.dataset.v; marcar('fDias', st.dias); guardarFiltros(); st.abiertos.clear(); st.verTodos = false; cargar(); });
+$('btnAct').addEventListener('click', () => cargar(true));
+function temaIcono() { $('btnTema').textContent = document.documentElement.dataset.theme === 'dark' ? '☀️' : '🌙'; }
+$('btnTema').addEventListener('click', () => {
+  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t; LS('mos_reporte_zonas_tema', t); temaIcono();
+  document.querySelector('meta[name=theme-color]').content = t === 'dark' ? '#020817' : '#f4f6fb';
+  if (st.data) pintarGraficos();
+});
+$('btnFull').addEventListener('click', () => { try { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); } catch (_) {} });
+$('cuerpo').addEventListener('click', e => {
   const tr = e.target.closest('tr.padre'); if (!tr) return;
   const c = tr.dataset.c; st.abiertos.has(c) ? st.abiertos.delete(c) : st.abiertos.add(c); pintarProductos();
 });
-let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (st.data && st.dias > 1) pintarDias(); }, 150); });
-marcar('fZona', st.zona); marcar('fDias', st.dias);
+let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (st.data) pintarGraficos(); }, 150); });
+temaIcono(); marcar('fZona', st.zona); marcar('fDias', st.dias);
 cargar();
 </script>
 </body>
