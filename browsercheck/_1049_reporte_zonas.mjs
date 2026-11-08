@@ -45,6 +45,12 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
   await pg.click('#fVista button[data-v="casc"]'); await pg.click('#cCasc .cb[data-i="3"]'); const casc = await pg.textContent('#cascTxt');
   await pg.click('#fVista button[data-v="dona"]');
   console.log('  DONA:', dona, '| subs', nSub, '| días semana', dq);
+  await pg.click('#fDiaMet button[data-v="todo"]'); await pg.click('#cDias .db[data-i="5"]');
+  const eqRes = await pg.textContent('#diaRes'); const eqDet = await pg.textContent('#diaTxt');
+  if (!/días cubrieron/.test(eqRes) || !/al día/.test(eqRes)) errs.push('sin equilibrio: ' + eqRes);
+  await pg.locator('#cDias').scrollIntoViewIfNeeded(); await pg.screenshot({ path: `_1054_${vp.width}_eq.png` });
+  console.log('  EQ:', eqRes.slice(0, 230), '|| día:', eqDet.slice(0, 160));
+  for (const m of ['venta', 'utilidad']) { await pg.click('#fDiaMet button[data-v="' + m + '"]'); }
   await pg.click('#fDiaMet button[data-v="queda"]'); await pg.click('#cDias .db[data-i="3"]'); const dia = await pg.textContent('#diaTxt');
   await pg.click('#fMg button[data-v="poco"]'); const mg = await pg.$$eval('#hbMg .n', a => a.length);
   await pg.click('#simPre button[data-i="0"]'); const r0 = await pg.textContent('#simRes');

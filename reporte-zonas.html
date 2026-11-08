@@ -219,7 +219,7 @@ const SB_URL  = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
 
 const st = { zona: 'TODAS', dias: 28, data: null, abiertos: new Set(), q: '', orden: 'venta', verTodos: false,
-  diaMet: 'venta', diaSel: null, cascSel: null, mgModo: 'gana',
+  diaMet: 'todo', diaSel: null, cascSel: null, mgModo: 'gana',
   sim: { modo: 'mixto', base: 'venta', fijo: 20, pct: { venta: 2, utilidad: 10 } }, grupos: null };
 const cache = {};
 let tok = null;
@@ -373,8 +373,9 @@ function pintar() {
 
   // 2. día a día
   if (st.dias > 1) {
-    h += '<div class="card"><h2>Día a día</h2><div class="sub">Elige qué quieres ver. La línea punteada es el promedio. Toca un día para ver su detalle.</div>'
-      + '<div class="fila"><div class="seg sm" id="fDiaMet"><button data-v="venta">Vendido</button><button data-v="utilidad">Margen</button><button data-v="queda">Queda</button></div></div>'
+    h += '<div class="card"><h2>Día a día</h2><div class="sub">La <b style="color:var(--c-fijo)">línea naranja</b> es el <b>punto de equilibrio</b>: lo mínimo para cubrir personal y costos fijos. La punteada es el promedio. Toca un día para ver su detalle.</div>'
+      + '<div class="fila"><div class="seg sm" id="fDiaMet"><button data-v="todo">Todo junto</button><button data-v="venta">Vendido</button><button data-v="utilidad">Margen</button><button data-v="queda">Queda</button></div></div>'
+      + '<div class="pareto" id="diaRes"></div>'
       + '<svg id="cDias" class="chart" role="img" aria-label="Gráfico diario"></svg><div class="explica" id="diaTxt"></div></div>';
   }
 
@@ -570,40 +571,92 @@ function pintarCascada() {
 function pintarDias() {
   const svg = $('cDias'); if (!svg) return;
   const cfd = cfDia();
-  const D = (st.data.diario || []).map(x => ({ dia: x.dia, venta: +x.venta, utilidad: +x.utilidad, personal: +x.personal, fijos: cfd, queda: +x.utilidad - +x.personal - cfd }));
+  const D = (st.data.diario || []).map(x => { const v = +x.venta, u = +x.utilidad, pe = +x.personal;
+    return { dia: x.dia, venta: v, utilidad: u, merc: Math.max(0, v - u), personal: pe, fijos: cfd, queda: u - pe - cfd }; });
   const met = st.diaMet;
-  const col = { venta: '--c-venta', utilidad: '--c-margen', queda: '--c-queda' }[met];
-  const vals = D.map(x => x[met]);
-  const W = Math.max(320, svg.clientWidth || 700), H = W < 560 ? 220 : 270, pl = 44, pr = 8, pt = 26, pb = 26;
-  const hi = niceMax(Math.max(1, ...vals)), lo = Math.min(0, ...vals) < 0 ? -niceMax(-Math.min(...vals)) : 0;
+  const { venta: vT, uti: uT } = tot();
+  const mRatio = vT > 0 ? uT / vT : 0;
+  // equilibrio: costo diario promedio (personal en días con operación + costos fijos) y la venta que lo cubre con el margen real
+  const dOp = D.filter(x => x.venta > 0 || x.personal > 0);
+  const costoDia = (dOp.length ? dOp.reduce((a, x) => a + x.personal, 0) / dOp.length : 0) + cfd;
+  const eqVenta = mRatio > 0 ? costoDia / mRatio : null;
+  const eq = met === 'todo' || met === 'venta' ? eqVenta : met === 'utilidad' ? costoDia : 0;
+  const cubrio = D.filter(x => (x.venta > 0 || x.personal > 0) && x.queda >= 0).length;
+  // valores para la escala
+  const val = x => met === 'todo' ? x.venta : x[met];
+  const topDe = x => met === 'todo' ? Math.max(x.venta, x.merc + x.personal + x.fijos) : val(x);
+  const vals = D.map(val);
+  const W = Math.max(320, svg.clientWidth || 700), H = W < 560 ? 240 : 290, pl = 44, pr = 8, pt = 26, pb = 26;
+  const hi = niceMax(Math.max(1, eq || 0, ...D.map(topDe))) , mn = Math.min(0, ...vals);
+  const lo = mn < 0 ? -niceMax(-mn) : 0;
   const y = v => pt + (H - pt - pb) * (hi - v) / (hi - lo);
   const bw = (W - pl - pr) / D.length, gap = Math.max(2, Math.min(8, bw * 0.25));
   const conVenta = D.filter(x => x.venta > 0);
-  const prom = conVenta.length ? conVenta.reduce((a, x) => a + x[met], 0) / conVenta.length : 0;
+  const prom = conVenta.length ? conVenta.reduce((a, x) => a + val(x), 0) / conVenta.length : 0;
   let iMax = 0; vals.forEach((v, i) => { if (v > vals[iMax]) iMax = i; });
   if (st.diaSel == null || st.diaSel >= D.length) st.diaSel = D.length - 1;
-  let s = '';
+  let s = '<defs><pattern id="rayas" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="' + css('--bad-bg') + '"/><rect width="3" height="6" fill="' + css('--c-bad') + '"/></pattern></defs>';
   for (let i = 0; i <= 4; i++) { const v = lo + (hi - lo) * i / 4, yy = y(v); s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + yy + '" y2="' + yy + '" stroke="' + css('--line') + '"/><text x="' + (pl - 6) + '" y="' + (yy + 4) + '" text-anchor="end" font-size="11" fill="' + css('--dim') + '">' + kS(v) + '</text>'; }
   const paso = Math.ceil(D.length / (W < 560 ? 7 : 14));
   D.forEach((x, i) => {
-    const v = x[met], x0 = pl + i * bw + gap / 2, w = bw - gap;
-    const t = y(Math.max(0, v)), b = y(Math.min(0, v));
-    const c = v < 0 ? css('--c-bad') : css(col);
-    const sel = st.diaSel === i;
-    s += '<g class="db" data-i="' + i + '" style="cursor:pointer"><rect x="' + (pl + i * bw) + '" y="0" width="' + bw + '" height="' + H + '" fill="transparent"/>'
-      + '<rect x="' + x0 + '" y="' + t + '" width="' + w + '" height="' + Math.max(1, b - t) + '" rx="' + Math.min(5, w / 3) + '" fill="' + c + '" opacity="' + (sel ? 1 : .72) + '"' + (sel ? ' stroke="' + css('--txt') + '" stroke-width="2"' : '') + '/></g>';
-    if (i === iMax && v > 0) s += '<text x="' + (x0 + w / 2) + '" y="' + (t - 6) + '" text-anchor="middle" font-size="12" font-weight="900" fill="' + css('--txt') + '">★ ' + kS(v) + '</text>';
+    const x0 = pl + i * bw + gap / 2, w = bw - gap, sel = st.diaSel === i, op = sel ? 1 : .8;
+    const rx = Math.min(4, w / 3);
+    s += '<g class="db" data-i="' + i + '" style="cursor:pointer"><rect x="' + (pl + i * bw) + '" y="0" width="' + bw + '" height="' + H + '" fill="transparent"/>';
+    if (met === 'todo') {
+      // una sola barra: lo vendido partido en mercadería · personal · costos fijos · neto; lo que faltó, rayado rojo encima
+      let acc = 0;
+      const partes = [[x.merc, '--c-costo'], [x.personal, '--c-pers'], [x.fijos, '--c-fijo']];
+      for (const [v, c] of partes) {
+        if (v <= 0) continue;
+        const dentro = Math.max(0, Math.min(v, x.venta - acc)), fuera = v - dentro;
+        if (dentro > 0) s += '<rect x="' + x0 + '" y="' + y(acc + dentro) + '" width="' + w + '" height="' + Math.max(0.5, y(acc) - y(acc + dentro)) + '" fill="' + css(c) + '" opacity="' + op + '"/>';
+        if (fuera > 0) s += '<rect x="' + x0 + '" y="' + y(acc + dentro + fuera) + '" width="' + w + '" height="' + Math.max(0.5, y(acc + dentro) - y(acc + dentro + fuera)) + '" fill="url(#rayas)" opacity="' + op + '"/>';
+        acc += v;
+      }
+      if (x.queda > 0) s += '<rect x="' + x0 + '" y="' + y(x.venta) + '" width="' + w + '" height="' + Math.max(0.5, y(x.venta - x.queda) - y(x.venta)) + '" fill="' + css('--c-queda') + '" opacity="' + op + '"/>';
+      if (sel) s += '<rect x="' + (x0 - 1) + '" y="' + y(Math.max(x.venta, acc)) + '" width="' + (w + 2) + '" height="' + Math.max(1, y(0) - y(Math.max(x.venta, acc))) + '" fill="none" stroke="' + css('--txt') + '" stroke-width="2" rx="' + rx + '"/>';
+    } else {
+      const v = val(x), t = y(Math.max(0, v)), b = y(Math.min(0, v));
+      const ok = x.queda >= 0 || (x.venta <= 0 && x.personal <= 0);
+      const c = met === 'queda' ? (v < 0 ? css('--c-bad') : css('--c-queda')) : (ok ? css(met === 'venta' ? '--c-venta' : '--c-margen') : css('--c-bad'));
+      s += '<rect x="' + x0 + '" y="' + t + '" width="' + w + '" height="' + Math.max(1, b - t) + '" rx="' + rx + '" fill="' + c + '" opacity="' + (sel ? 1 : .75) + '"' + (sel ? ' stroke="' + css('--txt') + '" stroke-width="2"' : '') + '/>';
+    }
+    s += '</g>';
+    if (i === iMax && vals[i] > 0) s += '<text x="' + (x0 + w / 2) + '" y="' + (y(topDe(x)) - 6) + '" text-anchor="middle" font-size="12" font-weight="900" fill="' + css('--txt') + '">★ ' + kS(vals[i]) + '</text>';
     if (i % paso === 0 || i === D.length - 1) s += '<text x="' + (x0 + w / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="' + css('--mut') + '">' + fmtDia(x.dia, true) + '</text>';
   });
-  if (prom) { const yp = y(prom); s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + yp + '" y2="' + yp + '" stroke="' + css('--txt') + '" stroke-width="1.5" stroke-dasharray="6 5" opacity=".7"/><text x="' + (W - pr) + '" y="' + (yp - 5) + '" text-anchor="end" font-size="12" font-weight="800" fill="' + css('--txt') + '">promedio ' + kS(prom) + '</text>'; }
+  // líneas: promedio (punteada) y equilibrio (naranja); etiquetas sin pisarse
+  const yp = prom ? y(prom) : null, ye = eq != null ? y(eq) : null;
+  if (yp != null) s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + yp + '" y2="' + yp + '" stroke="' + css('--txt') + '" stroke-width="1.5" stroke-dasharray="6 5" opacity=".6"/>';
+  if (ye != null) s += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + ye + '" y2="' + ye + '" stroke="' + css('--c-fijo') + '" stroke-width="3"/>';
+  const lbl = (yy, txt, col, anchor, x) => '<text x="' + x + '" y="' + (yy - 6) + '" text-anchor="' + anchor + '" font-size="12.5" font-weight="900" fill="' + css(col) + '" stroke="' + css('--panel') + '" stroke-width="4" paint-order="stroke">' + txt + '</text>';
+  if (yp != null) s += lbl(yp, 'promedio ' + kS(prom), '--txt', 'end', W - pr);
+  if (ye != null) s += lbl(ye + (yp != null && Math.abs(ye - yp) < 16 && ye > yp ? 20 : 0), (met === 'queda' ? 'equilibrio (0)' : met === 'utilidad' ? 'equilibrio: ' + kS(eq) + ' de margen/día' : 'equilibrio: vender ' + kS(eq) + '/día'), '--c-fijo', 'start', pl + 6);
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('height', H); svg.innerHTML = s;
+  // resumen
+  const nOp = dOp.length;
+  $('diaRes').innerHTML = (eqVenta == null ? 'Sin margen en el periodo: no se puede calcular el equilibrio.'
+    : (cubrio === nOp ? '✅' : cubrio >= nOp / 2 ? '⚠️' : '❌') + ' <b>' + cubrio + ' de ' + nOp + ' días</b> cubrieron sus costos. Para no perder, hay que vender al menos <b style="color:var(--c-fijo)">' + S0(eqVenta) + ' al día</b>'
+      + ' <span class="mut">(personal ≈ ' + S0(costoDia - cfd) + '/día' + (cfd ? ' + costos fijos ' + S0(cfd) + '/día' : '') + ', con un margen de ' + P1(mRatio * 100) + (st.zona === 'TODAS' && st.data.almacen && +st.data.almacen.total ? '; sin almacén' : '') + ')</span>.'
+      + (prom && met !== 'queda' && met !== 'utilidad' ? ' Hoy vendemos en promedio <b>' + S0(prom) + '</b>: ' + (prom >= eqVenta * 1.95 ? '<b class="m-ok">' + (prom / eqVenta).toFixed(1).replace('.', ',') + ' veces el equilibrio</b>.' : prom >= eqVenta ? '<b class="m-ok">' + P1((prom / eqVenta - 1) * 100) + ' por encima</b>.' : '<b class="m-bad">' + P1((1 - prom / eqVenta) * 100) + ' por debajo</b>.') : ''))
+    + (cfd ? '' : ' <a href="#" onclick="abrirCF();return false" style="color:var(--acc);font-weight:800">Agrega los costos fijos</a> para un equilibrio real.');
+  // detalle del día
   const x = D[st.diaSel];
-  const nombre = { venta: 'vendimos', utilidad: 'el margen fue', queda: 'quedó' }[met];
-  const vs = prom ? (x[met] - prom) / Math.abs(prom) * 100 : 0;
-  $('diaTxt').innerHTML = '<b>' + fmtDia(x.dia) + '</b>: ' + nombre + ' <b>' + S0(x[met]) + '</b>'
-    + (prom && x.venta > 0 ? ' <span class="' + (vs >= 0 ? 'm-ok' : 'm-bad') + '">(' + (vs >= 0 ? '+' : '') + vs.toFixed(0) + '% vs. el promedio)</span>' : '')
-    + '<br><span class="mut">Vendido ' + S0(x.venta) + ' · margen ' + S0(x.utilidad) + ' · personal ' + S0(x.personal) + (x.fijos ? ' · costos fijos ' + S0(x.fijos) : '') + ' · ' + (x.queda < 0 ? 'faltó ' : 'quedó ') + S0(Math.abs(x.queda)) + '</span>';
+  const opero = x.venta > 0 || x.personal > 0;
+  let det = '<b>' + fmtDia(x.dia) + '</b>: vendimos <b>' + S0(x.venta) + '</b>';
+  if (opero) det += x.queda >= 0
+    ? ' — <b class="m-ok">✅ cubrió sus costos</b> y dejó <b>' + S0(x.queda) + '</b> neto.'
+    : ' — <b class="m-bad">❌ no cubrió sus costos</b>: faltaron ' + S0(-x.queda) + (mRatio > 0 ? ' (≈ ' + S0(-x.queda / mRatio) + ' más de venta)' : '') + '.';
+  det += '<br><span class="mut">Mercadería ' + S0(x.merc) + ' · margen ' + S0(x.utilidad) + ' · personal ' + S0(x.personal) + (x.fijos ? ' · costos fijos ' + S0(x.fijos) : '') + '</span>';
+  $('diaTxt').innerHTML = det;
   svg.querySelectorAll('.db').forEach(b => b.addEventListener('click', () => { st.diaSel = +b.dataset.i; pintarDias(); }));
+  // leyenda según la vista
+  let lg = $('diaLeg'); if (!lg) { lg = document.createElement('div'); lg.id = 'diaLeg'; lg.className = 'leyenda'; $('diaTxt').before(lg); }
+  lg.innerHTML = (met === 'todo'
+    ? '<span><i style="background:var(--c-costo)"></i>Mercadería</span><span><i style="background:var(--c-pers)"></i>Personal</span>' + (cfd ? '<span><i style="background:var(--c-fijo)"></i>Costos fijos</span>' : '') + '<span><i style="background:var(--c-queda)"></i>Neto</span><span><i style="background:repeating-linear-gradient(45deg,var(--c-bad) 0 3px,var(--bad-bg) 3px 6px)"></i>Faltó</span>'
+    : met === 'queda' ? '<span><i style="background:var(--c-queda)"></i>Quedó</span><span><i style="background:var(--c-bad)"></i>Faltó</span>'
+    : '<span><i style="background:var(' + (met === 'venta' ? '--c-venta' : '--c-margen') + ')"></i>Cubrió sus costos</span><span><i style="background:var(--c-bad)"></i>No cubrió</span>')
+    + '<span><i style="background:var(--c-fijo);height:4px;vertical-align:3px"></i>Equilibrio</span><span><i style="background:none;border-top:2px dashed var(--txt);border-radius:0;height:0;vertical-align:3px"></i>Promedio</span>';
 }
 
 // ── 3. MARGEN ──────────────────────────────────────────────
