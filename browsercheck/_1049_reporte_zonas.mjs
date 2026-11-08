@@ -8,9 +8,34 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
   const pg = await br.newPage({ viewport: vp }); const errs = [];
   pg.on('pageerror', e => errs.push(e.message));
   await pg.addInitScript(d => { if (!sessionStorage.getItem('x')) { localStorage.clear(); sessionStorage.setItem('x', 1); } localStorage.setItem('mos_device_id', d); }, DEV);
+  // costos fijos simulados (no escribe en producción)
+  const guardados = [];
+  await pg.route('**/rpc/costos_fijos_listar', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, items: [
+    { id: 1, zona: 'ZONA-01', concepto: 'Alquiler', monto: 1500, frecuencia: 'MES' }, { id: 2, zona: 'ZONA-01', concepto: 'Luz', monto: 200, frecuencia: 'MES' },
+    { id: 3, zona: 'GENERAL', concepto: 'Internet', monto: 100, frecuencia: 'MES' }] }) }));
+  await pg.route('**/rpc/costos_fijos_guardar', r => { guardados.push(r.request().postDataJSON()); r.fulfill({ contentType: 'application/json', body: '{"ok":true,"nuevos":1,"cerrados":0}' }); });
+  await pg.addInitScript(() => localStorage.setItem('mos_reporte_ctx', JSON.stringify({ u: 'Luis', r: 'MASTER', ts: Date.now() })));
   await pg.goto('http://localhost:8791/reporte-zonas.html');
   await pg.waitForSelector('#cDona path', { timeout: 40000 });
   const k = await pg.$$eval('.kpi .v', a => a.map(x => x.textContent));
+  const kl = await pg.$$eval('.kpi .l', a => a.map(x => x.textContent));
+  const nPartes = await pg.$$eval('#cDona path[data-i]', a => a.length);
+  if (!kl.includes('Utilidad neta') && !kl.includes('Pérdida neta')) errs.push('KPI no es utilidad neta: ' + kl.join(','));
+  if (nPartes !== 4) errs.push('dona sin costos fijos: ' + nPartes + ' partes');
+  // modal: agregar Agua 15 a la semana en Zona 01 y guardar
+  await pg.click('#btnCF'); await pg.waitForSelector('#cfModal');
+  await pg.click('#cfZonas button[data-v="ZONA-01"]');
+  await pg.click('#cfPre button[data-c="Agua"]');
+  const filasCF = await pg.$$('#cfRows .cf-row'); await filasCF[filasCF.length - 1].$('.m').then(x => x.fill('15'));
+  await filasCF[filasCF.length - 1].$('.f').then(x => x.selectOption('SEMANA'));
+  const sumCF = await pg.textContent('#cfSum');
+  await pg.screenshot({ path: `_1053_${vp.width}_modal.png` });
+  await pg.click('#cfSave'); await pg.waitForSelector('#cfModal', { state: 'detached', timeout: 15000 });
+  const g = guardados[0] || {};
+  if (!(g.p && g.p.zona === 'ZONA-01' && g.p.usuario === 'Luis' && g.p.items.some(i => i.concepto === 'Agua' && i.monto === 15 && i.frecuencia === 'SEMANA'))) errs.push('guardar mal: ' + JSON.stringify(g).slice(0, 200));
+  console.log('  CF: kpis', kl.join(','), '| partes dona', nPartes, '| modal', sumCF.replace(/\s+/g, ' '), '| guardó', JSON.stringify(g.p && g.p.items).slice(0, 160));
+  await pg.click('#fVista button[data-v="casc"]'); const pasos = await pg.$$eval('#cCasc .cb', a => a.length); await pg.click('#fVista button[data-v="dona"]');
+  if (pasos !== 6) errs.push('cascada sin paso de costos fijos: ' + pasos);
   await pg.click('#dnSide .dn-it[data-i="1"]'); await pg.click('#cDona path[data-j="0"]');
   const dona = (await pg.textContent('#cDona')) + ' | ' + (await pg.textContent('#dnSide')).slice(0, 120);
   const nSub = await pg.$$eval('#cDona path[data-j]', a => a.length);

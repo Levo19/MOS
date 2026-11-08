@@ -9,14 +9,14 @@
 :root,[data-theme=light]{
   --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef2f8; --line:#d9e0ea; --txt:#0b1220; --mut:#475569; --dim:#64748b;
   --acc:#1d4ed8; --acc-t:#ffffff; --sombra:0 1px 2px rgba(15,23,42,.06),0 6px 18px -8px rgba(15,23,42,.18);
-  --c-venta:#2563eb; --c-costo:#94a3b8; --c-margen:#0d9488; --c-pers:#7c3aed; --c-queda:#16a34a; --c-bad:#dc2626; --c-warn:#b45309;
+  --c-venta:#2563eb; --c-costo:#94a3b8; --c-margen:#0d9488; --c-pers:#7c3aed; --c-queda:#16a34a; --c-fijo:#ea580c; --c-bad:#dc2626; --c-warn:#b45309;
   --ok-bg:#dcfce7; --ok-tx:#166534; --bad-bg:#fee2e2; --bad-tx:#991b1b; --warn-bg:#fef3c7; --warn-tx:#92400e; --info-bg:#dbeafe; --info-tx:#1e3a8a;
   --hijo:#f8fafc;
 }
 [data-theme=dark]{
   --bg:#020817; --panel:#0b1324; --panel2:#132036; --line:#24324a; --txt:#f1f5f9; --mut:#a3b1c6; --dim:#7c8ba1;
   --acc:#fbbf24; --acc-t:#1a1200; --sombra:none;
-  --c-venta:#60a5fa; --c-costo:#64748b; --c-margen:#2dd4bf; --c-pers:#a78bfa; --c-queda:#22c55e; --c-bad:#f87171; --c-warn:#fbbf24;
+  --c-venta:#60a5fa; --c-costo:#64748b; --c-margen:#2dd4bf; --c-pers:#a78bfa; --c-queda:#22c55e; --c-fijo:#fb923c; --c-bad:#f87171; --c-warn:#fbbf24;
   --ok-bg:rgba(34,197,94,.16); --ok-tx:#86efac; --bad-bg:rgba(239,68,68,.16); --bad-tx:#fca5a5; --warn-bg:rgba(245,158,11,.14); --warn-tx:#fcd34d; --info-bg:rgba(96,165,250,.12); --info-tx:#bfdbfe;
   --hijo:#0f1a30;
 }
@@ -65,6 +65,28 @@ svg text{font-family:inherit}
 .dn-it .p{color:var(--mut);font-size:13px;text-align:right;min-width:48px}
 .dn-back{margin-bottom:8px}
 @media (max-width:760px){ .dn-wrap{grid-template-columns:1fr} }
+.btn.cf{background:var(--acc);color:var(--acc-t);border-color:transparent}
+.cf-ov{position:fixed;inset:0;background:rgba(2,8,23,.55);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
+.cf-pn{background:var(--panel);color:var(--txt);border-radius:18px;width:100%;max-width:620px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px -10px rgba(0,0,0,.45)}
+.cf-hd{padding:16px 18px 10px;border-bottom:1px solid var(--line)}
+.cf-hd h2{margin:0 0 2px;font-size:19px}
+.cf-bd{padding:12px 18px;overflow:auto;flex:1}
+.cf-ft{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cf-row{display:grid;grid-template-columns:1fr 120px 128px 40px;gap:8px;align-items:center;margin-bottom:8px}
+.cf-row input,.cf-row select{width:100%;min-height:42px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--panel);color:var(--txt);font:inherit}
+.cf-row input.m{text-align:right;font-weight:800}
+.cf-del{width:40px;height:42px;border-radius:10px;border:1px solid var(--line);background:var(--panel);font-size:16px}
+.cf-pre{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 12px}
+.cf-pre button{border:1px dashed var(--line);background:var(--panel2);border-radius:999px;padding:7px 11px;font-size:13.5px;font-weight:700;min-height:38px}
+.cf-pre button:hover{border-color:var(--acc)}
+.cf-sum{font-size:14px;flex:1;min-width:200px}
+.cf-sum b{font-size:16px}
+.cf-msg{font-size:13px;padding:8px 10px;border-radius:9px;margin-top:8px}
+@media (max-width:620px){
+  .cf-ov{align-items:flex-end;padding:0}
+  .cf-pn{border-radius:18px 18px 0 0;max-height:94vh}
+  .cf-row{grid-template-columns:1fr 1fr 40px} .cf-row .c{grid-column:1/-1}
+}
 .leyenda{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--mut)}
 .leyenda i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .fila{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
@@ -168,6 +190,7 @@ tr.hijo td:first-child{padding-left:30px}
 <div class="wrap">
   <div class="top">
     <h1>📋 Reporte de zonas</h1>
+    <button class="btn cf" id="btnCF" title="Alquiler, luz, agua, internet y otros gastos fijos del local">🏠 Costos fijos</button>
     <button class="btn" id="btnTema" title="Cambiar entre fondo claro y oscuro">🌙</button>
     <button class="btn" id="btnFull" title="Pantalla completa para exponer">⛶</button>
     <button class="btn" id="btnAct" title="Volver a consultar la base">↻</button>
@@ -196,7 +219,7 @@ const SB_URL  = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
 
 const st = { zona: 'TODAS', dias: 28, data: null, abiertos: new Set(), q: '', orden: 'venta', verTodos: false,
-  diaMet: 'venta', diaSel: null, cascSel: 4, mgModo: 'gana',
+  diaMet: 'venta', diaSel: null, cascSel: null, mgModo: 'gana',
   sim: { modo: 'mixto', base: 'venta', fijo: 20, pct: { venta: 2, utilidad: 10 } }, grupos: null };
 const cache = {};
 let tok = null;
@@ -256,7 +279,28 @@ async function token() {
   tok = { t: d.token, exp: d.exp || (Date.now() / 1000 + 1500) };
   return tok.t;
 }
+// ── costos fijos (1051) ─────────────────────────────────────
+const CF_PRE = [['Alquiler', '🏠'], ['Luz', '💡'], ['Agua', '🚰'], ['Internet', '📶'], ['Teléfono / celular', '📱'], ['Arbitrios / municipalidad', '🏛️'],
+  ['Vigilancia', '🛡️'], ['Limpieza', '🧹'], ['Contador', '🧾'], ['Cuota de préstamo', '🏦'], ['Mantenimiento', '🔧'], ['Bolsas e insumos', '🛍️']];
+const CF_ICO = c => { const f = CF_PRE.find(x => x[0].toLowerCase() === String(c || '').toLowerCase()); return f ? f[1] + ' ' : '• '; };
+const CF_FREQ = { MES: 'al mes', SEMANA: 'a la semana', DIA: 'al día' };
+const cfPorDia = it => { const m = +it.monto || 0; return it.frecuencia === 'DIA' ? m : it.frecuencia === 'SEMANA' ? m / 7 : m * 12 / 365; };
+const ZN = z => z === 'GENERAL' ? 'General' : String(z || '').replace('ZONA-', 'Zona ');
+function cfAplican() { return (st.cf || []).filter(it => st.zona === 'TODAS' || it.zona === st.zona); }
+function cfDia() { return cfAplican().reduce((a, it) => a + cfPorDia(it), 0); }
+async function rpc(fn, p) {
+  const t = await token();
+  const r = await fetchTO(SB_URL + '/rest/v1/rpc/' + fn, { method: 'POST',
+    headers: { apikey: SB_ANON, Authorization: 'Bearer ' + t, 'Content-Profile': 'mos', 'Accept-Profile': 'mos', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p: p || {} }) }, 20000);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+async function cargarCF() {
+  try { const j = await rpc('costos_fijos_listar', {}); if (j && j.ok) st.cf = j.items || []; } catch (_) { if (!st.cf) st.cf = []; }
+}
 async function cargar(force) {
+  if (!st.cf || force) await cargarCF();
   const k = st.zona + '|' + st.dias;
   if (!force && cache[k] && Date.now() - cache[k].ts < 5 * 60 * 1000) { st.data = cache[k].d; st.grupos = null; pintar(); return; }
   $('cuerpo').innerHTML = '<div class="estado"><div class="spin"></div>Calculando ' + (st.dias === 1 ? 'hoy' : 'los últimos ' + st.dias + ' días') + '…</div>';
@@ -292,11 +336,12 @@ async function cargar(force) {
 function tot() {
   const r = st.data.resumen || {};
   const venta = +r.venta || 0, costo = +r.costo || 0, uti = +r.utilidad || 0, pers = +r.personal || 0;
-  return { r, venta, costo, uti, pers, queda: uti - pers };
+  const fijos = Math.round(cfDia() * st.dias * 100) / 100;
+  return { r, venta, costo, uti, pers, fijos, queda: uti - pers - fijos };
 }
 function pintar() {
   const d = st.data; if (!d) return;
-  const { r, venta, uti, pers, queda } = tot();
+  const { r, venta, uti, pers, fijos, queda } = tot();
   const mPct = pct(uti, venta);
   $('gen').textContent = 'Actualizado ' + (d.generado || '').slice(11) + ' · ' + fmtDia(d.desde) + (d.desde !== d.hasta ? ' → ' + fmtDia(d.hasta) : '');
 
@@ -304,7 +349,8 @@ function pintar() {
     + kpi('Vendimos', S0(venta), (r.tickets || 0).toLocaleString('es-PE') + ' tickets', '--c-venta')
     + kpi('Margen', S0(uti), '<b class="' + mClase(mPct) + '">' + P1(mPct) + '</b> de lo vendido', '--c-margen')
     + kpi('Personal', S0(pers), P1(pct(pers, venta)) + ' de lo vendido', '--c-pers')
-    + kpi(queda < 0 ? 'Falta' : 'Queda', '<span style="color:var(' + (queda < 0 ? '--c-bad' : '--c-queda') + ')">' + S0(Math.abs(queda)) + '</span>', 'margen − personal', queda < 0 ? '--c-bad' : '--c-queda')
+    + kpi(queda < 0 ? (fijos > 0 ? 'Pérdida neta' : 'Falta') : (fijos > 0 ? 'Utilidad neta' : 'Queda'), '<span style="color:var(' + (queda < 0 ? '--c-bad' : '--c-queda') + ')">' + S0(Math.abs(queda)) + '</span>',
+        fijos > 0 ? 'margen − personal − costos fijos (' + S0(fijos) + ')' : 'margen − personal · <a href="#" onclick="abrirCF();return false" style="color:var(--acc);font-weight:800">＋ costos fijos</a>', queda < 0 ? '--c-bad' : '--c-queda')
     + '</div>';
 
   const conCosto = pct(+r.ventaConCosto || 0, venta);
@@ -312,6 +358,10 @@ function pintar() {
   if (d.cajas && d.cajas.abiertas > 0 && st.dias === 1) h += '<div class="aviso">🟢 Hoy hay ' + d.cajas.abiertas + ' caja(s) abierta(s): los números de hoy se están llenando en vivo.</div>';
   if (venta > 0 && conCosto < 99.5) h += '<div class="aviso amb">ℹ ' + conCosto.toFixed(0) + '% de lo vendido tiene costo registrado. El otro ' + (100 - conCosto).toFixed(0) + '% se calcula con el margen por defecto de 15%.</div>';
   if (+r.ventaDudosa > 0) h += '<div class="aviso amb">⚠ Hay productos con <b>costo dudoso</b> (costo del catálogo ≥ precio de venta, ' + S0(r.ventaDudosa) + ' vendidos). Se calcularon al 15%. <a href="#" onclick="verDudosos();return false">Ver cuáles</a></div>';
+  if (!fijos) h += '<div class="aviso">🏠 Todavía no hay <b>costos fijos</b> (alquiler, luz, agua…) para ' + (st.zona === 'TODAS' ? 'las zonas' : ZN(st.zona)) + '. <a href="#" onclick="abrirCF();return false">Agrégalos</a> y "Queda" pasa a ser la utilidad neta real.</div>';
+  else h += '<div class="aviso">🏠 Costos fijos de ' + (st.zona === 'TODAS' ? 'todo el negocio' : ZN(st.zona)) + ': <b>' + S0(cfDia()) + ' por día</b> → ' + S0(fijos) + ' en ' + (st.dias === 1 ? 'el día' : st.dias === 7 ? '7 días' : '4 semanas') + '. <a href="#" onclick="abrirCF();return false">Editar</a></div>';
+  const gen = (st.cf || []).filter(it => it.zona === 'GENERAL').reduce((a, it) => a + cfPorDia(it), 0);
+  if (st.zona !== 'TODAS' && gen > 0) h += '<div class="aviso amb">ℹ Hay ' + S0(gen * st.dias) + ' de costos <b>generales</b> del negocio que no se cargan a una zona: solo se restan en "Todas".</div>';
   if (st.zona === 'TODAS' && d.almacen && +d.almacen.total > 0) h += '<div class="aviso">🏭 Aparte, el personal de almacén costó ' + S0(d.almacen.total) + ' (' + d.almacen.personas + ' persona(s)). No se carga a ninguna zona porque abastece a las dos.</div>';
   h += '</div>';
 
@@ -376,7 +426,7 @@ function pintarGraficos() { pintarVista(); if (st.dias > 1) pintarDias(); simCha
 function kpi(l, v, s, col) { return '<div class="kpi" style="--k:var(' + col + ')"><div class="l">' + l + '</div><div class="v num">' + v + '</div><div class="s">' + s + '</div></div>'; }
 
 // ── 1. DONA (circular) con división por parte ───────────────
-const DN_COL = ['--c-costo', '--c-pers', '--c-queda'];
+
 const SUBCOL = ['#2563eb', '#0d9488', '#d97706', '#db2777', '#7c3aed', '#65a30d', '#0891b2', '#94a3b8'];
 function pintarVista() {
   const v = st.vista || 'dona'; marcar('fVista', v);
@@ -397,27 +447,31 @@ function topN(arr, n, nombreOtros) {
   return a.slice(0, n - 1).concat([{ n: nombreOtros + ' (' + (a.length - n + 1) + ')', v: resto }]);
 }
 function partesDona() {
-  const { costo, pers, queda } = tot();
-  const d = st.data;
+  const { costo, pers, fijos, queda } = tot();
+  const d = st.data, cfd = cfDia();
   const dSem = ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados'];
   const porDia = {};
-  (d.diario || []).forEach(x => { const w = new Date(String(x.dia).slice(0, 10) + 'T12:00:00').getDay(); porDia[w] = (porDia[w] || 0) + (+x.utilidad - +x.personal); });
-  return [
-    { k: 'Mercadería', v: costo, tx: 'Lo que nos costó la mercadería vendida.',
+  (d.diario || []).forEach(x => { const w = new Date(String(x.dia).slice(0, 10) + 'T12:00:00').getDay(); porDia[w] = (porDia[w] || 0) + (+x.utilidad - +x.personal - cfd); });
+  const P = [
+    { k: 'Mercadería', col: '--c-costo', v: costo, tx: 'Lo que nos costó la mercadería vendida.',
       sub: () => topN((d.padres || []).map(p => ({ n: p.nombre, v: +p.costo })), 8, 'Otros productos'), subT: 'En qué productos se va el costo' },
-    { k: 'Personal', v: pers, tx: 'Lo que se paga al personal de la zona (sueldos + bonos).',
+    { k: 'Personal', col: '--c-pers', v: pers, tx: 'Lo que se paga al personal de la zona (sueldos + bonos).',
       sub: () => topN((d.personal || []).map(p => ({ n: p.nombre + (st.zona === 'TODAS' ? ' · ' + (p.zona || '').replace('ZONA-0', 'Z') : ''), v: +p.total })), 8, 'Otras personas'), subT: 'Cuánto se lleva cada persona' },
-    { k: queda < 0 ? 'Falta' : 'Queda', v: Math.max(0, queda), tx: queda < 0 ? 'El margen no alcanzó para pagar al personal.' : 'Lo que nos queda después de mercadería y personal.',
+    { k: queda < 0 ? 'Falta' : (fijos > 0 ? 'Utilidad neta' : 'Queda'), col: queda < 0 ? '--c-bad' : '--c-queda', v: Math.max(0, queda),
+      tx: queda < 0 ? 'Lo que vendimos no alcanzó para cubrir mercadería, personal' + (fijos > 0 ? ' y costos fijos' : '') + '.' : 'Lo que nos queda después de mercadería, personal' + (fijos > 0 ? ' y costos fijos (alquiler, luz…)' : '') + '.',
       sub: () => st.dias === 1 ? [] : [1, 2, 3, 4, 5, 6, 0].filter(w => porDia[w] != null).map(w => ({ n: 'Los ' + dSem[w], v: porDia[w] })), subT: 'Qué día de la semana deja más',
       subNota: st.dias === 1 ? 'Elige 7 días o 4 semanas para dividirlo por día de la semana.' : '' }
   ];
+  if (fijos > 0) P.splice(2, 0, { k: 'Costos fijos', col: '--c-fijo', v: fijos, tx: 'Alquiler, luz, agua y demás gastos del local, prorrateados al periodo.',
+    sub: () => cfAplican().map(it => ({ n: CF_ICO(it.concepto) + it.concepto + (st.zona === 'TODAS' ? ' · ' + ZN(it.zona) : ''), v: cfPorDia(it) * st.dias })).sort((a, b) => b.v - a.v), subT: 'En qué se va' });
+  return P;
 }
 function pintarDona() {
   const svg = $('cDona'); if (!svg) return;
   const { venta, queda } = tot();
   const parts = partesDona(); const tot0 = parts.reduce((a, p) => a + p.v, 0) || 1;
   const cx = 160, cy = 160, sel = st.dnSel;
-  const colP = i => css(i === 2 && queda < 0 ? '--c-bad' : DN_COL[i]);
+  const colP = i => css(parts[i].col);
   const sub = sel != null ? parts[sel].sub() : [];
   const subPos = sub.filter(x => x.v > 0);
   const txtCol = col => (col === css('--c-costo') ? '#1e293b' : '#fff');
@@ -461,7 +515,8 @@ function pintarDona() {
       + parts.map((p, i) => '<b style="color:' + colP(i) + '">S/ ' + pct(p.v, tot0).toFixed(0) + '</b> ' + p.k.toLowerCase()).join(', ') + '.</div>';
     h += parts.map((p, i) => '<div class="dn-it" data-i="' + i + '"><i style="background:' + colP(i) + '"></i><span class="n">' + p.k + ' ›</span><span class="v">' + S0(p.v) + '</span><span class="p">' + P1(pct(p.v, tot0)) + '</span></div>').join('');
     h += '<div class="mut" style="font-size:12.5px;margin-top:6px">Toca una fila o una parte del círculo para dividirla.</div>';
-    if (queda < 0) h += '<div class="aviso amb" style="margin-top:8px">Falta ' + S0(-queda) + ': el margen no alcanzó para el personal.</div>';
+    if (queda < 0) h += '<div class="aviso amb" style="margin-top:8px">Falta ' + S0(-queda) + ': el margen no alcanzó para personal' + (tot().fijos > 0 ? ' y costos fijos' : '') + '.</div>';
+    if (!tot().fijos) h += '<div style="margin-top:8px"><button class="btn" onclick="abrirCF()">🏠 Agregar costos fijos</button></div>';
   } else {
     const p = parts[sel];
     h += '<button class="btn dn-back" id="dnBack">‹ Volver al total</button><h3>' + p.k + ': ' + S0(p.v) + '</h3><div class="fr">' + p.tx + ' <span class="mut">' + p.subT + ':</span></div>';
@@ -478,15 +533,16 @@ function pintarDona() {
 // ── 1b. CASCADA ────────────────────────────────────────────
 function pintarCascada() {
   const svg = $('cCasc'); if (!svg) return;
-  const { venta, costo, uti, pers, queda } = tot();
+  const { venta, costo, uti, pers, fijos, queda } = tot();
   const pasos = [
     { k: 'Vendimos', v: venta, from: 0, to: venta, col: '--c-venta', tx: 'Todo lo que cobramos en caja: <b>' + S0(venta) + '</b>.' },
     { k: 'Mercadería', v: -costo, from: venta, to: venta - costo, col: '--c-costo', tx: 'Lo que nos costó la mercadería que vendimos: <b>' + S0(costo) + '</b> (' + P1(pct(costo, venta)) + ' de la venta).' },
     { k: 'Margen', v: uti, from: 0, to: uti, col: '--c-margen', tx: 'Lo que ganamos con los productos antes de pagar al personal: <b>' + S0(uti) + '</b>. De cada S/ 100 vendidos, <b>S/ ' + pct(uti, venta).toFixed(0) + '</b> son margen.' },
     { k: 'Personal', v: -pers, from: uti, to: uti - pers, col: '--c-pers', tx: 'Lo que pagamos al personal de la zona: <b>' + S0(pers) + '</b>. Se come el <b>' + pct(pers, uti || 1).toFixed(0) + '%</b> del margen.' },
-    { k: queda < 0 ? 'Falta' : 'Queda', v: queda, from: 0, to: queda, col: queda < 0 ? '--c-bad' : '--c-queda', tx: queda >= 0
-      ? 'Después de pagar mercadería y personal, nos <b>quedan ' + S0(queda) + '</b>: S/ ' + pct(queda, venta).toFixed(1) + ' por cada S/ 100 vendidos.' + (st.zona === 'TODAS' && st.data.almacen && +st.data.almacen.total ? ' (Antes de descontar almacén: ' + S0(st.data.almacen.total) + '.)' : '')
-      : 'El margen <b>no alcanzó</b> para pagar al personal: faltan <b>' + S0(-queda) + '</b>.' }
+    ...(fijos > 0 ? [{ k: 'Costos fijos', v: -fijos, from: uti - pers, to: queda, col: '--c-fijo', tx: 'Alquiler, luz, agua y demás gastos del local en el periodo: <b>' + S0(fijos) + '</b> (' + S0(cfDia()) + ' por día).' }] : []),
+    { k: queda < 0 ? 'Falta' : (fijos > 0 ? 'Neto' : 'Queda'), v: queda, from: 0, to: queda, col: queda < 0 ? '--c-bad' : '--c-queda', tx: queda >= 0
+      ? 'Después de pagar mercadería, personal' + (fijos > 0 ? ' y costos fijos' : '') + ', nos <b>quedan ' + S0(queda) + '</b>: S/ ' + pct(queda, venta).toFixed(1) + ' por cada S/ 100 vendidos.' + (st.zona === 'TODAS' && st.data.almacen && +st.data.almacen.total ? ' (Antes de descontar almacén: ' + S0(st.data.almacen.total) + '.)' : '')
+      : 'El margen <b>no alcanzó</b> para pagar personal' + (fijos > 0 ? ' y costos fijos' : '') + ': faltan <b>' + S0(-queda) + '</b>.' }
   ];
   const W = Math.max(320, svg.clientWidth || 700), H = W < 560 ? 250 : 300, pl = 8, pr = 8, pt = 34, pb = 34;
   const lo = Math.min(0, queda), hi = Math.max(venta, 1);
@@ -496,24 +552,25 @@ function pintarCascada() {
   pasos.forEach((p, i) => {
     const x0 = pl + i * bw + g / 2, w = bw - g;
     const top = y(Math.max(p.from, p.to)), bot = y(Math.min(p.from, p.to));
-    const sel = st.cascSel === i;
+    const sel = (st.cascSel == null || st.cascSel >= n ? n - 1 : st.cascSel) === i;
     s += '<g class="cb" data-i="' + i + '" style="cursor:pointer">'
       + '<rect x="' + (pl + i * bw) + '" y="0" width="' + bw + '" height="' + H + '" fill="transparent"/>'
-      + '<rect x="' + x0 + '" y="' + top + '" width="' + w + '" height="' + Math.max(2, bot - top) + '" rx="8" fill="' + css(p.col) + '" opacity="' + (st.cascSel == null || sel ? 1 : .45) + '" ' + (sel ? 'stroke="' + css('--txt') + '" stroke-width="2.5"' : '') + '>'
+      + '<rect x="' + x0 + '" y="' + top + '" width="' + w + '" height="' + Math.max(2, bot - top) + '" rx="8" fill="' + css(p.col) + '" opacity="' + (sel ? 1 : .55) + '" ' + (sel ? 'stroke="' + css('--txt') + '" stroke-width="2.5"' : '') + '>'
       + '<animate attributeName="height" from="0" to="' + Math.max(2, bot - top) + '" dur=".5s" fill="freeze"/></rect>'
       + '<text x="' + (x0 + w / 2) + '" y="' + (top - 9) + '" text-anchor="middle" font-size="' + (W < 560 ? 13 : 16) + '" font-weight="900" fill="' + css(p.v < 0 ? '--mut' : p.col === '--c-bad' ? '--c-bad' : '--txt') + '">' + (p.v < 0 ? '−' : '') + kS(Math.abs(p.v)) + '</text>'
       + '<text x="' + (x0 + w / 2) + '" y="' + (H - 11) + '" text-anchor="middle" font-size="' + (W < 560 ? 12 : 14) + '" font-weight="800" fill="' + css('--mut') + '">' + p.k + '</text></g>';
     if (i < n - 1) { const nx = pasos[i + 1]; const yy = y(p.to); s += '<line x1="' + (x0 + w) + '" x2="' + (pl + (i + 1) * bw + g / 2) + '" y1="' + yy + '" y2="' + yy + '" stroke="' + css('--dim') + '" stroke-dasharray="4 4"/>'; }
   });
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('height', H); svg.innerHTML = s;
-  $('cascTxt').innerHTML = pasos[st.cascSel == null ? 4 : st.cascSel].tx;
+  $('cascTxt').innerHTML = pasos[st.cascSel == null || st.cascSel >= n ? n - 1 : st.cascSel].tx;
   svg.querySelectorAll('.cb').forEach(b => b.addEventListener('click', () => { st.cascSel = +b.dataset.i; pintarCascada(); }));
 }
 
 // ── 2. DÍA A DÍA ───────────────────────────────────────────
 function pintarDias() {
   const svg = $('cDias'); if (!svg) return;
-  const D = (st.data.diario || []).map(x => ({ dia: x.dia, venta: +x.venta, utilidad: +x.utilidad, personal: +x.personal, queda: +x.utilidad - +x.personal }));
+  const cfd = cfDia();
+  const D = (st.data.diario || []).map(x => ({ dia: x.dia, venta: +x.venta, utilidad: +x.utilidad, personal: +x.personal, fijos: cfd, queda: +x.utilidad - +x.personal - cfd }));
   const met = st.diaMet;
   const col = { venta: '--c-venta', utilidad: '--c-margen', queda: '--c-queda' }[met];
   const vals = D.map(x => x[met]);
@@ -545,7 +602,7 @@ function pintarDias() {
   const vs = prom ? (x[met] - prom) / Math.abs(prom) * 100 : 0;
   $('diaTxt').innerHTML = '<b>' + fmtDia(x.dia) + '</b>: ' + nombre + ' <b>' + S0(x[met]) + '</b>'
     + (prom && x.venta > 0 ? ' <span class="' + (vs >= 0 ? 'm-ok' : 'm-bad') + '">(' + (vs >= 0 ? '+' : '') + vs.toFixed(0) + '% vs. el promedio)</span>' : '')
-    + '<br><span class="mut">Vendido ' + S0(x.venta) + ' · margen ' + S0(x.utilidad) + ' · personal ' + S0(x.personal) + ' · ' + (x.queda < 0 ? 'faltó ' : 'quedó ') + S0(Math.abs(x.queda)) + '</span>';
+    + '<br><span class="mut">Vendido ' + S0(x.venta) + ' · margen ' + S0(x.utilidad) + ' · personal ' + S0(x.personal) + (x.fijos ? ' · costos fijos ' + S0(x.fijos) : '') + ' · ' + (x.queda < 0 ? 'faltó ' : 'quedó ') + S0(Math.abs(x.queda)) + '</span>';
   svg.querySelectorAll('.db').forEach(b => b.addEventListener('click', () => { st.diaSel = +b.dataset.i; pintarDias(); }));
 }
 
@@ -705,10 +762,10 @@ function simCalc() {
   $('simFijoBox').querySelectorAll('input,button').forEach(el => el.disabled = S_.modo === 'comision');
   $('simFijoLbl').textContent = S_.modo === 'garantizado' ? '3 · Mínimo garantizado por día' : '3 · Fijo por día';
   $('simModoTx').textContent = { comision: 'Cobra solo el % de lo que hace. Si no vende, no cobra.', mixto: 'Un fijo diario seguro + el % de lo que hace.', garantizado: 'Cobra el % de lo que hace, pero nunca menos que el mínimo del día.' }[S_.modo];
-  const { uti, pers } = tot();
+  const { uti, pers, fijos } = tot();
   const E = simEscenario(pc);
   const persNuevo = pers - E.hoy + E.sim;
-  const quedaHoy = uti - pers, quedaNuevo = uti - persNuevo, dif = E.sim - E.hoy;
+  const quedaHoy = uti - pers - fijos, quedaNuevo = uti - persNuevo - fijos, dif = E.sim - E.hoy;
   $('simRes').innerHTML =
       '<div class="r"><div class="l">Hoy pagas</div><div class="v num">' + S0(E.hoy) + '</div><div class="s">' + 'a ' + E.n + ' persona(s) que venden' + '</div></div>'
     + '<div class="r ' + (dif <= 0 ? 'good' : 'badr') + '"><div class="l">Con la propuesta</div><div class="v num">' + S0(E.sim) + '</div><div class="s">' + (dif <= 0 ? 'ahorras ' : 'pagas ') + S0(Math.abs(dif)) + (dif <= 0 ? '' : ' más') + ' (' + (dif >= 0 ? '+' : '') + P1(pct(dif, E.hoy || 1)) + ')</div></div>'
@@ -739,7 +796,7 @@ function simCalc() {
   const filas = [{ t: 'Como hoy (sueldo fijo)', hoy: true }].concat(PRESETS, [actual]);
   $('simCmp').innerHTML = filas.map((p, i) => {
     const pago = p.hoy ? E.hoy : simEscenario(p.pct, { modo: p.modo, base: p.base, fijo: p.fijo }).sim;
-    const dd = pago - E.hoy, q = uti - (pers - E.hoy + pago);
+    const dd = pago - E.hoy, q = uti - (pers - E.hoy + pago) - fijos;
     return '<tr data-i="' + i + '" class="' + (p.act ? 'sel' : '') + '"><td>' + esc(p.t) + (p.act ? '' : '') + '</td><td class="num">' + S0(pago) + '</td><td class="num ' + (p.hoy ? 'mut' : dd <= 0 ? 'm-ok' : 'm-bad') + '">' + (p.hoy ? '—' : (dd > 0 ? '+' : '') + S0(dd)) + '</td><td class="num"><b class="' + (q < 0 ? 'm-bad' : '') + '">' + S0(q) + '</b></td></tr>';
   }).join('');
   $('simCmp').querySelectorAll('tr').forEach(tr => tr.addEventListener('click', () => { const p = filas[+tr.dataset.i]; if (p.hoy || p.act) return; aplicarPreset(p); }));
@@ -747,19 +804,19 @@ function simCalc() {
 }
 // ¿Cuánto le queda a la jefa? De cada S/ 100 vendidos, hoy vs. propuesta (con datos del periodo).
 function simJefa(E, pc) {
-  const { venta, costo, uti, pers } = tot(); if (!venta) { $('simJefa').innerHTML = ''; return; }
+  const { venta, costo, uti, pers, fijos } = tot(); if (!venta) { $('simJefa').innerHTML = ''; return; }
   const otros = pers - E.hoy;
   const P = v => v / venta * 100;
-  const hoy = { merc: P(costo), otros: P(otros), fijo: P(E.hoy), com: 0, jefa: P(uti - pers) };
-  const pro = { merc: P(costo), otros: P(otros), fijo: P(E.fijo), com: P(E.com), jefa: P(uti - otros - E.sim) };
+  const hoy = { merc: P(costo), otros: P(otros), fijo: P(E.hoy), com: 0, cf: P(fijos), jefa: P(uti - pers - fijos) };
+  const pro = { merc: P(costo), otros: P(otros), fijo: P(E.fijo), com: P(E.com), cf: P(fijos), jefa: P(uti - otros - E.sim - fijos) };
   /* la barra es SOLO el margen (la mercadería es igual en ambos casos): se ve cómo se reparte */
   const mg = P(uti) || 1;
   const seg = (v, col, t) => v > 0.05 ? '<div style="width:' + Math.min(100, v / mg * 100).toFixed(2) + '%;background:var(' + col + ')" title="' + t + ': S/ ' + v.toFixed(1) + ' de cada S/ 100">' + (v / mg >= 0.16 ? t + ' ' + v.toFixed(1) : v / mg >= 0.07 ? v.toFixed(1) : '') + '</div>' : '';
   const barra = (o, lbl, monto) => '<div class="row"><span class="k">' + lbl + '</span><div class="jbar">'
-    + seg(o.otros, '--dim', 'Otros') + seg(o.fijo, '--c-pers', lbl === 'Hoy' ? 'Sueldos' : 'Fijo') + seg(o.com, '--c-warn', 'Comisión')
+    + seg(o.otros, '--dim', 'Otros') + seg(o.fijo, '--c-pers', lbl === 'Hoy' ? 'Sueldos' : 'Fijo') + seg(o.com, '--c-warn', 'Comisión') + seg(o.cf, '--c-fijo', 'Local')
     + seg(Math.max(0, o.jefa), '--c-queda', 'Jefa') + '</div><span class="q" style="color:var(' + (o.jefa < 0 ? '--c-bad' : '--c-queda') + ')">' + o.jefa.toFixed(1) + '%<br><span style="font-size:12px;color:var(--mut)">' + S0(monto) + '</span></span></div>';
   const S_ = st.sim, dif = pro.jefa - hoy.jefa;
-  const qJ = uti - otros - E.sim, qH = uti - pers;
+  const qJ = uti - otros - E.sim - fijos, qH = uti - pers - fijos;
   const mens = st.dias >= 7 ? ' · ≈ ' + S0((qJ - qH) / st.dias * 30) + ' al mes' : '';
   $('simJefa').innerHTML = '<div class="fr">👩‍💼 <b>¿Cuánto le queda a la jefa?</b> El margen es <b>' + P1(pct(uti, venta)) + '</b> de la venta. '
     + (pro.com > 0 ? 'Si das <b>' + P1(pro.com) + '</b> en comisión' + (pro.fijo > 0 ? ' + <b>' + P1(pro.fijo) + '</b> en fijo' : '') : 'Con esta propuesta')
@@ -767,8 +824,8 @@ function simJefa(E, pc) {
     + '<b class="' + (dif >= 0 ? 'm-ok' : 'm-bad') + '">' + (dif >= 0 ? '+' : '−') + Math.abs(dif).toFixed(1) + ' puntos · ' + (qJ - qH >= 0 ? '+' : '−') + S0(Math.abs(qJ - qH)).replace('−', '') + ' en el periodo' + mens + '</b>.</div>'
     + '<div class="mut" style="font-size:13px;margin:4px 0 2px">Así se reparten los <b style="color:var(--txt)">S/ ' + mg.toFixed(1) + ' de margen</b> que deja cada S/ 100 vendidos (los otros S/ ' + (100 - mg).toFixed(1) + ' son mercadería):</div>'
     + barra(hoy, 'Hoy', qH) + barra(pro, 'Propuesta', qJ)
-    + '<div class="leyenda">' + (otros > 0 ? '<span><i style="background:var(--dim)"></i>Otro personal (no cambia)</span>' : '') + '<span><i style="background:var(--c-pers)"></i>Sueldo / fijo</span><span><i style="background:var(--c-warn)"></i>Comisión</span><span><i style="background:var(--c-queda)"></i>Para la jefa</span></div>'
-    + '<div class="mut" style="font-size:12.5px;margin-top:6px">Calculado con las ventas reales del periodo. "Para la jefa" es antes de alquiler, luz y otros gastos del local' + (st.zona === 'TODAS' ? ', y antes del almacén' : '') + '.</div>';
+    + '<div class="leyenda">' + (otros > 0 ? '<span><i style="background:var(--dim)"></i>Otro personal (no cambia)</span>' : '') + '<span><i style="background:var(--c-pers)"></i>Sueldo / fijo</span><span><i style="background:var(--c-warn)"></i>Comisión</span>' + (fijos > 0 ? '<span><i style="background:var(--c-fijo)"></i>Costos fijos del local</span>' : '') + '<span><i style="background:var(--c-queda)"></i>Para la jefa</span></div>'
+    + '<div class="mut" style="font-size:12.5px;margin-top:6px">Calculado con las ventas reales del periodo. ' + (fijos > 0 ? '"Para la jefa" ya descuenta los costos fijos del local (' + S0(fijos) + ')' : '"Para la jefa" es antes de alquiler, luz y otros gastos: <a href=\"#\" onclick=\"abrirCF();return false\">agrégalos aquí</a>') + (st.zona === 'TODAS' ? ', y es antes del almacén' : '') + '.</div>';
 }
 function simReco() {
   const r = st.data.resumen || {}, venta = +r.venta || 0;
@@ -852,12 +909,93 @@ function pintarProductos() {
   $('masProd').innerHTML = L.length > tope ? '<button class="btn mas" onclick="st.verTodos=true;pintarProductos()">Ver los ' + L.length + ' productos</button>' : '';
 }
 
+// ── MODAL COSTOS FIJOS ─────────────────────────────────────
+function cfCtx() { const c = LS('mos_reporte_ctx'); return c && c.u ? c : null; }
+function abrirCF() {
+  const zonas = ['ZONA-01', 'ZONA-02', 'GENERAL'];
+  st.cfZona = st.zona !== 'TODAS' ? st.zona : (st.cfZona || 'ZONA-01');
+  st.cfEdit = {}; zonas.forEach(z => st.cfEdit[z] = (st.cf || []).filter(it => it.zona === z).map(it => ({ ...it })));
+  let ov = $('cfModal'); if (ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'cfModal'; ov.className = 'cf-ov';
+  ov.innerHTML = '<div class="cf-pn" role="dialog" aria-modal="true" aria-label="Costos fijos"><div class="cf-hd"><h2>🏠 Costos fijos del local</h2>'
+    + '<div class="sub" style="margin:0 0 8px">Pon cuánto pagas y cada cuánto. El reporte lo reparte solo por día, semana o 4 semanas.</div>'
+    + '<div class="seg sm" id="cfZonas">' + zonas.map(z => '<button data-v="' + z + '">' + ZN(z) + '</button>').join('') + '</div></div>'
+    + '<div class="cf-bd"><div class="mut" style="font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em">Agregar rápido</div>'
+    + '<div class="cf-pre" id="cfPre">' + CF_PRE.map(x => '<button data-c="' + esc(x[0]) + '">' + x[1] + ' ' + esc(x[0]) + '</button>').join('') + '<button data-c="">＋ Otro</button></div>'
+    + '<div id="cfRows"></div><div id="cfMsg"></div></div>'
+    + '<div class="cf-ft"><div class="cf-sum" id="cfSum"></div><button class="btn" id="cfCancel">Cancelar</button><button class="btn cf" id="cfSave">Guardar</button></div></div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) cerrarCF(); });
+  $('cfCancel').addEventListener('click', cerrarCF);
+  $('cfZonas').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.cfZona = b.dataset.v; cfPintar(); });
+  $('cfPre').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
+    st.cfEdit[st.cfZona].push({ concepto: b.dataset.c, monto: '', frecuencia: 'MES' }); cfPintar();
+    const rows = document.querySelectorAll('#cfRows .cf-row'); const last = rows[rows.length - 1];
+    if (last) (b.dataset.c ? last.querySelector('.m') : last.querySelector('.c')).focus(); });
+  $('cfSave').addEventListener('click', guardarCF);
+  document.addEventListener('keydown', cfEsc);
+  cfPintar();
+}
+function cfEsc(e) { if (e.key === 'Escape') cerrarCF(); }
+function cerrarCF() { const ov = $('cfModal'); if (ov) ov.remove(); document.removeEventListener('keydown', cfEsc); }
+function cfPintar() {
+  marcar('cfZonas', st.cfZona);
+  const L = st.cfEdit[st.cfZona];
+  $('cfRows').innerHTML = L.length ? L.map((it, i) => '<div class="cf-row" data-i="' + i + '">'
+      + '<input class="c" list="cfList" placeholder="Concepto (ej. Alquiler)" value="' + esc(it.concepto) + '" maxlength="60">'
+      + '<input class="m num" type="number" inputmode="decimal" min="0" step="0.01" placeholder="S/ 0.00" value="' + (it.monto === '' ? '' : +it.monto) + '">'
+      + '<select class="f">' + Object.keys(CF_FREQ).map(k => '<option value="' + k + '"' + (it.frecuencia === k ? ' selected' : '') + '>' + CF_FREQ[k] + '</option>').join('') + '</select>'
+      + '<button class="cf-del" title="Quitar">🗑</button></div>').join('')
+    + '<datalist id="cfList">' + CF_PRE.map(x => '<option value="' + esc(x[0]) + '">').join('') + '</datalist>'
+    : '<div class="mut" style="padding:14px 0;text-align:center">Sin costos fijos en ' + ZN(st.cfZona) + '. Toca una opción de arriba para agregar.</div>';
+  $('cfRows').querySelectorAll('.cf-row').forEach(row => {
+    const i = +row.dataset.i, it = L[i];
+    row.querySelector('.c').addEventListener('input', e => { it.concepto = e.target.value; });
+    row.querySelector('.m').addEventListener('input', e => { it.monto = e.target.value; cfResumen(); });
+    row.querySelector('.f').addEventListener('change', e => { it.frecuencia = e.target.value; cfResumen(); });
+    row.querySelector('.cf-del').addEventListener('click', () => { L.splice(i, 1); cfPintar(); });
+  });
+  const ctx = cfCtx();
+  $('cfMsg').innerHTML = ctx ? '' : '<div class="cf-msg" style="background:var(--warn-bg);color:var(--warn-tx)">Para guardar, abre este reporte desde MOS (Finanzas → Reporte zonas) con tu sesión de admin o master.</div>';
+  cfResumen();
+}
+function cfResumen() {
+  const L = st.cfEdit[st.cfZona].filter(it => +it.monto > 0);
+  const dia = L.reduce((a, it) => a + cfPorDia(it), 0);
+  $('cfSum').innerHTML = L.length ? ZN(st.cfZona) + ': <b>' + S0(dia * 365 / 12) + ' al mes</b><br><span class="mut">= ' + S(dia) + ' por día · ' + S0(dia * 7) + ' por semana · ' + S0(dia * 28) + ' en 4 semanas</span>' : '<span class="mut">Sin montos todavía.</span>';
+}
+async function guardarCF() {
+  const ctx = cfCtx(); const msg = $('cfMsg');
+  if (!ctx) { msg.innerHTML = '<div class="cf-msg" style="background:var(--bad-bg);color:var(--bad-tx)">No sé quién eres: abre el reporte desde MOS con tu sesión.</div>'; return; }
+  const zonasCambiadas = Object.keys(st.cfEdit).filter(z => {
+    const a = JSON.stringify((st.cf || []).filter(it => it.zona === z).map(it => [it.concepto, +it.monto, it.frecuencia]));
+    const b = JSON.stringify(st.cfEdit[z].filter(it => String(it.concepto).trim() && +it.monto > 0).map(it => [String(it.concepto).trim(), Math.round(+it.monto * 100) / 100, it.frecuencia]));
+    return a !== b;
+  });
+  const malos = st.cfEdit[st.cfZona].filter(it => (String(it.concepto).trim() && !(+it.monto > 0)) || (!String(it.concepto).trim() && +it.monto > 0));
+  if (malos.length) { msg.innerHTML = '<div class="cf-msg" style="background:var(--warn-bg);color:var(--warn-tx)">Completa el concepto y el monto de cada fila (o quítala con 🗑).</div>'; return; }
+  if (!zonasCambiadas.length) { cerrarCF(); return; }
+  const btn = $('cfSave'); btn.disabled = true; btn.textContent = 'Guardando…';
+  try {
+    for (const z of zonasCambiadas) {
+      const items = st.cfEdit[z].filter(it => String(it.concepto).trim() && +it.monto > 0).map(it => ({ id: it.id || null, concepto: String(it.concepto).trim(), monto: Math.round(+it.monto * 100) / 100, frecuencia: it.frecuencia }));
+      const j = await rpc('costos_fijos_guardar', { usuario: ctx.u, zona: z, items });
+      if (!j || !j.ok) throw new Error((j && j.error) || 'ERROR');
+    }
+    await cargarCF(); cerrarCF(); if (st.data) pintar();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Guardar';
+    msg.innerHTML = '<div class="cf-msg" style="background:var(--bad-bg);color:var(--bad-tx)">' + (e.message === 'ROL_NO_AUTORIZADO' ? 'Solo admin o master pueden guardar costos fijos (' + esc(ctx.u) + ' no tiene permiso).' : 'No se pudo guardar. Revisa la conexión e intenta otra vez.') + '</div>';
+  }
+}
+
 // ── eventos ────────────────────────────────────────────────
 function marcar(id, v) { const el = $(id); if (el) el.querySelectorAll('button').forEach(b => b.classList.toggle('on', String(b.dataset.v) === String(v))); }
 function guardarFiltros() { LS('mos_reporte_zonas_filtros', { zona: st.zona, dias: st.dias }); }
 $('fZona').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.dataset.v === st.zona) return; st.zona = b.dataset.v; marcar('fZona', st.zona); guardarFiltros(); st.abiertos.clear(); st.verTodos = false; cargar(); });
 $('fDias').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || +b.dataset.v === st.dias) return; st.dias = +b.dataset.v; marcar('fDias', st.dias); guardarFiltros(); st.abiertos.clear(); st.verTodos = false; cargar(); });
 $('btnAct').addEventListener('click', () => cargar(true));
+$('btnCF').addEventListener('click', () => abrirCF());
 function temaIcono() { $('btnTema').textContent = document.documentElement.dataset.theme === 'dark' ? '☀️' : '🌙'; }
 $('btnTema').addEventListener('click', () => {
   const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
