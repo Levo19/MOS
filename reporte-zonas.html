@@ -100,6 +100,14 @@ tr.hijo td:first-child{padding-left:30px}
 .presets{display:flex;gap:6px;flex-wrap:wrap}
 .presets button{border:1px dashed var(--line);background:var(--panel);border-radius:999px;padding:6px 11px;font-size:13px;font-weight:700}
 .presets button:hover{border-color:var(--acc)}
+.jefa{border:2px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px}
+.jefa .fr{font-size:16px;margin-bottom:10px}
+.jefa .fr b.big{font-size:22px}
+.jefa .row{display:grid;grid-template-columns:90px 1fr 96px;gap:8px;align-items:center;margin:6px 0}
+.jefa .row .k{font-size:13px;font-weight:800;color:var(--mut)}
+.jefa .row .q{text-align:right;font-weight:900;font-size:16px}
+.jbar{display:flex;height:32px;border-radius:8px;overflow:hidden;background:var(--panel2)}
+.jbar div{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;min-width:0;transition:width .35s ease}
 .res{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
 .res .r{border-radius:14px;padding:12px 14px;background:var(--panel2)}
 .res .r .l{font-size:12px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
@@ -127,6 +135,7 @@ tr.hijo td:first-child{padding-left:30px}
   body{font-size:14px}
   .kpis{grid-template-columns:repeat(2,1fr)}
   .kpi .v{font-size:22px}
+  .jefa .row{grid-template-columns:1fr 84px} .jefa .row .k{grid-column:1/-1;margin-bottom:-4px}
   .res{grid-template-columns:1fr 1fr} .res .r:last-child{grid-column:span 2}
   .res .r .v{font-size:21px}
   .claves,.vs{grid-template-columns:1fr}
@@ -175,7 +184,7 @@ const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsIn
 
 const st = { zona: 'TODAS', dias: 28, data: null, abiertos: new Set(), q: '', orden: 'venta', verTodos: false,
   diaMet: 'venta', diaSel: null, cascSel: 4, mgModo: 'gana',
-  sim: { modo: 'mixto', base: 'venta', fijo: 20, pct: { venta: 2, utilidad: 10 }, roles: ['VENDEDOR'] } };
+  sim: { modo: 'mixto', base: 'venta', fijo: 20, pct: { venta: 2, utilidad: 10 } }, grupos: null };
 const cache = {};
 let tok = null;
 const LS = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (_) { return null; } };
@@ -235,7 +244,7 @@ async function token() {
 }
 async function cargar(force) {
   const k = st.zona + '|' + st.dias;
-  if (!force && cache[k] && Date.now() - cache[k].ts < 5 * 60 * 1000) { st.data = cache[k].d; pintar(); return; }
+  if (!force && cache[k] && Date.now() - cache[k].ts < 5 * 60 * 1000) { st.data = cache[k].d; st.grupos = null; pintar(); return; }
   $('cuerpo').innerHTML = '<div class="estado"><div class="spin"></div>Calculando ' + (st.dias === 1 ? 'hoy' : 'los últimos ' + st.dias + ' días') + '…</div>';
   try {
     let d = null;
@@ -255,7 +264,7 @@ async function cargar(force) {
     }
     cache[k] = { d, ts: Date.now() };
     if (k !== st.zona + '|' + st.dias) return;
-    st.data = d; st.diaSel = null; pintar();
+    st.data = d; st.diaSel = null; st.grupos = null; pintar();
   } catch (e) {
     const msg = e.message === 'SIN_DISPOSITIVO'
       ? 'Abre este reporte desde MOS (Finanzas → Reporte zonas) en un equipo autorizado.'
@@ -457,7 +466,7 @@ const PRESETS = [
   { t: 'S/ 20 + 10% utilidad', modo: 'mixto', base: 'utilidad', fijo: 20, pct: 10 },
   { t: 'Mínimo S/ 40 o 3% venta', modo: 'garantizado', base: 'venta', fijo: 40, pct: 3 }
 ];
-const PMAX = { venta: 10, utilidad: 60 }, PSTEP = { venta: 0.1, utilidad: 0.5 };
+const PMAX = { venta: 20, utilidad: 80 }, PSTEP = { venta: 0.1, utilidad: 0.5 };
 function simHTML() {
   const S_ = st.sim;
   return '<div class="card" id="cardSim"><h2>🧮 Simulador: ¿conviene pagar por comisión?</h2>'
@@ -468,9 +477,10 @@ function simHTML() {
     + '<div><label class="t">2 · Comisión calculada sobre</label><div class="seg sm" id="simBase"><button data-v="venta">Lo que vende</button><button data-v="utilidad">La ganancia que deja</button></div></div>'
     + '<div id="simFijoBox"><label class="t" id="simFijoLbl">3 · Fijo por día</label><div class="rng"><button class="pm" data-d="-5" data-k="fijo">−</button><input type="range" id="simFijo" min="0" max="80" step="5"><button class="pm" data-d="5" data-k="fijo">+</button><span class="val num" id="simFijoV"></span></div></div>'
     + '<div><label class="t">4 · Porcentaje de comisión</label><div class="rng"><button class="pm" data-d="-1" data-k="pct">−</button><input type="range" id="simPct" min="0"><button class="pm" data-d="1" data-k="pct">+</button><span class="val num" id="simPctV"></span></div></div>'
-    + '<div><label class="t">5 · A quiénes se aplica</label><div class="seg sm" id="simRoles"><button data-v="VENDEDOR">Vendedores</button><button data-v="CAJERO">Cajeros</button></div><div class="mut" style="font-size:12.5px;margin-top:6px">Los que no marques siguen con su pago de hoy.</div></div>'
+    + '<div><label class="t">5 · A quiénes se aplica</label><div class="seg sm" id="simRoles"></div><div class="mut" style="font-size:12.5px;margin-top:6px">Ya vienen marcados los que <b>venden</b> (en Zona 02 vende el cajero). Los que no marques siguen con su pago de hoy.</div></div>'
     + '</div><div>'
     + '<div class="res" id="simRes"></div>'
+    + '<div class="jefa" id="simJefa"></div>'
     + '<svg id="cSim" class="chart" role="img" aria-label="Costo del personal según el porcentaje de comisión"></svg>'
     + '<div class="leyenda"><span><i style="background:var(--c-pers)"></i>Lo que pagarías según el %</span><span><i style="background:var(--txt)"></i>Lo que pagas hoy</span><span><i style="background:var(--c-bad)"></i>Tope: el negocio queda en 0</span></div>'
     + '<div class="claves" id="simClaves"></div>'
@@ -494,8 +504,9 @@ function simBind() {
   const seg = (id, get, set) => { marcar(id, get()); $(id).addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; set(b.dataset.v); marcar(id, get()); simCalc(); }); };
   seg('simModo', () => S_.modo, v => S_.modo = v);
   seg('simBase', () => S_.base, v => { S_.base = v; simSync(); });
-  $('simRoles').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const v = b.dataset.v; const i = S_.roles.indexOf(v); if (i >= 0) { if (S_.roles.length > 1) S_.roles.splice(i, 1); } else S_.roles.push(v); simRolesMarcar(); simCalc(); });
-  simRolesMarcar();
+  $('simRoles').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const v = b.dataset.v; const G = st.grupos;
+    if (G.has(v)) { if (G.size > 1) G.delete(v); } else G.add(v); simRolesMarcar(); simCalc(); });
+  simGrupos(); simRolesMarcar();
   $('simFijo').addEventListener('input', e => { S_.fijo = +e.target.value; simCalc(); });
   $('simPct').addEventListener('input', e => { S_.pct[S_.base] = +e.target.value; simCalc(); });
   document.querySelectorAll('#cardSim .pm').forEach(b => b.addEventListener('click', () => {
@@ -521,28 +532,44 @@ function aplicarPreset(p) {
   const S_ = st.sim; S_.modo = p.modo; S_.base = p.base; S_.fijo = p.fijo; S_.pct[p.base] = p.pct;
   marcar('simModo', S_.modo); marcar('simBase', S_.base); simSync(); simCalc();
 }
-function simRolesMarcar() { document.querySelectorAll('#simRoles button').forEach(b => b.classList.toggle('on', st.sim.roles.includes(b.dataset.v))); }
+const gKey = x => (x.rol || '') + '|' + (x.zona || '');
+const ROLN = { VENDEDOR: 'Vendedores', CAJERO: 'Cajeros', SIN_FICHA: 'Sin ficha' };
+// grupos rol·zona; por defecto se marcan los que VENDEN (venta ≥ 5× lo que cobran)
+function simGrupos() {
+  const M = {};
+  for (const x of st.data.vendedores || []) { const k = gKey(x); (M[k] = M[k] || { k, rol: x.rol, zona: x.zona, n: 0, venta: 0, pago: 0 }); M[k].n++; M[k].venta += +x.venta; M[k].pago += +x.pago; }
+  st._grp = Object.values(M).sort((a, b) => b.venta - a.venta);
+  if (!st.grupos) {
+    st.grupos = new Set(st._grp.filter(g => g.rol !== 'SIN_FICHA' && g.venta >= 5 * Math.max(1, g.pago)).map(g => g.k));
+    if (!st.grupos.size && st._grp.length) st.grupos.add(st._grp[0].k);
+  }
+  $('simRoles').innerHTML = st._grp.map(g => '<button data-v="' + esc(g.k) + '" title="' + g.n + ' persona(s) · vendieron ' + S0(g.venta) + '">' + (ROLN[g.rol] || g.rol) + (st.zona === 'TODAS' ? ' ' + esc((g.zona || '').replace('ZONA-0', 'Z')) : '') + ' (' + g.n + ')</button>').join('');
+}
+function simRolesMarcar() { document.querySelectorAll('#simRoles button').forEach(b => b.classList.toggle('on', st.grupos.has(b.dataset.v))); }
 function simSync() {
   const S_ = st.sim, r = $('simPct');
   r.max = PMAX[S_.base]; r.step = PSTEP[S_.base]; r.value = S_.pct[S_.base];
   $('simFijo').value = S_.fijo;
 }
 // paga de UNA persona con la propuesta, día por día (solo días trabajados o con venta)
-function pagoSim(x, pc, cfg) {
-  const S_ = cfg || st.sim; let t = 0;
+function pagoSimDet(x, pc, cfg) {
+  const S_ = cfg || st.sim; let fijo = 0, com = 0;
   for (const [, v, u, pago] of (x.dd || [])) {
     if (pago == null && !(v > 0)) continue;
     const base = S_.base === 'venta' ? +v : Math.max(0, +u);
-    const com = base * pc / 100;
-    t += S_.modo === 'comision' ? com : S_.modo === 'mixto' ? S_.fijo + com : Math.max(S_.fijo, com);
+    const c = base * pc / 100;
+    if (S_.modo === 'comision') com += c;
+    else if (S_.modo === 'mixto') { fijo += S_.fijo; com += c; }
+    else { com += c; fijo += Math.max(0, S_.fijo - c); }
   }
-  return t;
+  return { fijo, com, t: fijo + com };
 }
+function pagoSim(x, pc, cfg) { return pagoSimDet(x, pc, cfg).t; }
 function simEscenario(pc, cfg) {
-  const V = st.data.vendedores || [], roles = (cfg || st.sim).roles;
-  let hoy = 0, sim = 0;
-  for (const x of V) { if (!roles.includes(x.rol)) continue; hoy += +x.pago; sim += pagoSim(x, pc, cfg); }
-  return { hoy, sim };
+  const V = st.data.vendedores || [];
+  let hoy = 0, sim = 0, fijo = 0, com = 0, n = 0;
+  for (const x of V) { if (!st.grupos.has(gKey(x))) continue; n++; hoy += +x.pago; const d = pagoSimDet(x, pc, cfg); sim += d.t; fijo += d.fijo; com += d.com; }
+  return { hoy, sim, fijo, com, n };
 }
 function buscarPct(objetivo) {
   const max = PMAX[st.sim.base] * 3; let lo = 0, hi = max;
@@ -566,22 +593,23 @@ function simCalc() {
   const persNuevo = pers - E.hoy + E.sim;
   const quedaHoy = uti - pers, quedaNuevo = uti - persNuevo, dif = E.sim - E.hoy;
   $('simRes').innerHTML =
-      '<div class="r"><div class="l">Hoy pagas</div><div class="v num">' + S0(E.hoy) + '</div><div class="s">' + (S_.roles.length > 1 ? 'vendedores y cajeros' : S_.roles[0] === 'VENDEDOR' ? 'a los vendedores' : 'a los cajeros') + '</div></div>'
+      '<div class="r"><div class="l">Hoy pagas</div><div class="v num">' + S0(E.hoy) + '</div><div class="s">' + 'a ' + E.n + ' persona(s) que venden' + '</div></div>'
     + '<div class="r ' + (dif <= 0 ? 'good' : 'badr') + '"><div class="l">Con la propuesta</div><div class="v num">' + S0(E.sim) + '</div><div class="s">' + (dif <= 0 ? 'ahorras ' : 'pagas ') + S0(Math.abs(dif)) + (dif <= 0 ? '' : ' más') + ' (' + (dif >= 0 ? '+' : '') + P1(pct(dif, E.hoy || 1)) + ')</div></div>'
     + '<div class="r ' + (quedaNuevo >= quedaHoy ? 'good' : 'badr') + '"><div class="l">Le queda al negocio</div><div class="v num">' + S0(quedaNuevo) + '</div><div class="s">hoy ' + S0(quedaHoy) + '</div></div>';
+  simJefa(E, pc);
   const pIgual = buscarPct(E.hoy);
   const pTope = buscarPct(E.hoy + quedaHoy);
   const bTxt = S_.base === 'venta' ? 'de lo que vende' : 'de la ganancia que deja';
   $('simClaves').innerHTML =
       '<div>⚖️ Para pagar <b>lo mismo que hoy</b>' + (S_.modo === 'comision' ? '' : ' (con S/ ' + S_.fijo + ' ' + (S_.modo === 'mixto' ? 'fijo' : 'mínimo') + ')') + ', la comisión sería:<span class="cv">' + (pIgual == null ? 'imposible' : pIgual === 0 && simEscenario(0).sim > E.hoy ? 'ni con 0% (el fijo ya cuesta más)' : P1(pIgual) + ' ' + bTxt) + '</span></div>'
-    + '<div>🛑 <b>Tope máximo</b>: con una comisión mayor, el negocio ya no gana nada en la zona:<span class="cv" style="color:var(--c-bad)">' + (pTope == null ? 'más de ' + P1(PMAX[S_.base] * 3) : P1(pTope) + ' ' + bTxt) + '</span></div>';
+    + '<div>🛑 <b>Tope máximo</b>: con una comisión mayor, a la jefa ya no le queda nada en la zona:<span class="cv" style="color:var(--c-bad)">' + (pTope == null ? 'más de ' + P1(PMAX[S_.base] * 3) : P1(pTope) + ' ' + bTxt) + '</span></div>';
   st._simRef = { pIgual, pTope, hoy: E.hoy, quedaHoy };
   simChart();
   // por persona
   const V = (st.data.vendedores || []).slice().sort((a, b) => +b.venta - +a.venta);
   const mxd = Math.max(1, ...V.map(x => Math.abs(pagoSim(x, pc) - +x.pago)));
   $('simTb').innerHTML = V.map(x => {
-    const aplica = S_.roles.includes(x.rol);
+    const aplica = st.grupos.has(gKey(x));
     const nuevo = aplica ? pagoSim(x, pc) : +x.pago, d = nuevo - +x.pago;
     const dias = Math.max(x.dias, x.diasVenta);
     const alerta = x.venta <= 0 && x.pago > 0 ? ' <span class="chip c-bad" title="Cobró sin ventas registradas a su nombre">sin ventas</span>' : x.rol === 'SIN_FICHA' ? ' <span class="chip c-est" title="Vendió pero no tiene liquidación en el periodo">sin ficha</span>' : '';
@@ -593,17 +621,42 @@ function simCalc() {
   const actual = { t: 'Tu propuesta actual', modo: S_.modo, base: S_.base, fijo: S_.fijo, pct: pc, act: true };
   const filas = [{ t: 'Como hoy (sueldo fijo)', hoy: true }].concat(PRESETS, [actual]);
   $('simCmp').innerHTML = filas.map((p, i) => {
-    const pago = p.hoy ? E.hoy : simEscenario(p.pct, { modo: p.modo, base: p.base, fijo: p.fijo, roles: S_.roles }).sim;
+    const pago = p.hoy ? E.hoy : simEscenario(p.pct, { modo: p.modo, base: p.base, fijo: p.fijo }).sim;
     const dd = pago - E.hoy, q = uti - (pers - E.hoy + pago);
     return '<tr data-i="' + i + '" class="' + (p.act ? 'sel' : '') + '"><td>' + esc(p.t) + (p.act ? '' : '') + '</td><td class="num">' + S0(pago) + '</td><td class="num ' + (p.hoy ? 'mut' : dd <= 0 ? 'm-ok' : 'm-bad') + '">' + (p.hoy ? '—' : (dd > 0 ? '+' : '') + S0(dd)) + '</td><td class="num"><b class="' + (q < 0 ? 'm-bad' : '') + '">' + S0(q) + '</b></td></tr>';
   }).join('');
   $('simCmp').querySelectorAll('tr').forEach(tr => tr.addEventListener('click', () => { const p = filas[+tr.dataset.i]; if (p.hoy || p.act) return; aplicarPreset(p); }));
   simReco();
 }
+// ¿Cuánto le queda a la jefa? De cada S/ 100 vendidos, hoy vs. propuesta (con datos del periodo).
+function simJefa(E, pc) {
+  const { venta, costo, uti, pers } = tot(); if (!venta) { $('simJefa').innerHTML = ''; return; }
+  const otros = pers - E.hoy;
+  const P = v => v / venta * 100;
+  const hoy = { merc: P(costo), otros: P(otros), fijo: P(E.hoy), com: 0, jefa: P(uti - pers) };
+  const pro = { merc: P(costo), otros: P(otros), fijo: P(E.fijo), com: P(E.com), jefa: P(uti - otros - E.sim) };
+  /* la barra es SOLO el margen (la mercadería es igual en ambos casos): se ve cómo se reparte */
+  const mg = P(uti) || 1;
+  const seg = (v, col, t) => v > 0.05 ? '<div style="width:' + Math.min(100, v / mg * 100).toFixed(2) + '%;background:var(' + col + ')" title="' + t + ': S/ ' + v.toFixed(1) + ' de cada S/ 100">' + (v / mg >= 0.16 ? t + ' ' + v.toFixed(1) : v / mg >= 0.07 ? v.toFixed(1) : '') + '</div>' : '';
+  const barra = (o, lbl, monto) => '<div class="row"><span class="k">' + lbl + '</span><div class="jbar">'
+    + seg(o.otros, '--dim', 'Otros') + seg(o.fijo, '--c-pers', lbl === 'Hoy' ? 'Sueldos' : 'Fijo') + seg(o.com, '--c-warn', 'Comisión')
+    + seg(Math.max(0, o.jefa), '--c-queda', 'Jefa') + '</div><span class="q" style="color:var(' + (o.jefa < 0 ? '--c-bad' : '--c-queda') + ')">' + o.jefa.toFixed(1) + '%<br><span style="font-size:12px;color:var(--mut)">' + S0(monto) + '</span></span></div>';
+  const S_ = st.sim, dif = pro.jefa - hoy.jefa;
+  const qJ = uti - otros - E.sim, qH = uti - pers;
+  const mens = st.dias >= 7 ? ' · ≈ ' + S0((qJ - qH) / st.dias * 30) + ' al mes' : '';
+  $('simJefa').innerHTML = '<div class="fr">👩‍💼 <b>¿Cuánto le queda a la jefa?</b> El margen es <b>' + P1(pct(uti, venta)) + '</b> de la venta. '
+    + (pro.com > 0 ? 'Si das <b>' + P1(pro.com) + '</b> en comisión' + (pro.fijo > 0 ? ' + <b>' + P1(pro.fijo) + '</b> en fijo' : '') : 'Con esta propuesta')
+    + ', a la jefa le queda <b class="big" style="color:var(' + (pro.jefa < 0 ? '--c-bad' : pro.jefa < hoy.jefa - 0.05 ? '--c-warn' : '--c-queda') + ')">' + P1(pro.jefa) + '</b> de cada venta (hoy ' + P1(hoy.jefa) + '): '
+    + '<b class="' + (dif >= 0 ? 'm-ok' : 'm-bad') + '">' + (dif >= 0 ? '+' : '−') + Math.abs(dif).toFixed(1) + ' puntos · ' + (qJ - qH >= 0 ? '+' : '−') + S0(Math.abs(qJ - qH)).replace('−', '') + ' en el periodo' + mens + '</b>.</div>'
+    + '<div class="mut" style="font-size:13px;margin:4px 0 2px">Así se reparten los <b style="color:var(--txt)">S/ ' + mg.toFixed(1) + ' de margen</b> que deja cada S/ 100 vendidos (los otros S/ ' + (100 - mg).toFixed(1) + ' son mercadería):</div>'
+    + barra(hoy, 'Hoy', qH) + barra(pro, 'Propuesta', qJ)
+    + '<div class="leyenda">' + (otros > 0 ? '<span><i style="background:var(--dim)"></i>Otro personal (no cambia)</span>' : '') + '<span><i style="background:var(--c-pers)"></i>Sueldo / fijo</span><span><i style="background:var(--c-warn)"></i>Comisión</span><span><i style="background:var(--c-queda)"></i>Para la jefa</span></div>'
+    + '<div class="mut" style="font-size:12.5px;margin-top:6px">Calculado con las ventas reales del periodo. "Para la jefa" es antes de alquiler, luz y otros gastos del local' + (st.zona === 'TODAS' ? ', y antes del almacén' : '') + '.</div>';
+}
 function simReco() {
   const r = st.data.resumen || {}, venta = +r.venta || 0;
   const conCosto = pct(+r.ventaConCosto || 0, venta);
-  const V = (st.data.vendedores || []).filter(x => st.sim.roles.includes(x.rol));
+  const V = (st.data.vendedores || []).filter(x => st.grupos.has(gKey(x)));
   const sinVentas = V.filter(x => x.venta <= 0 && x.pago > 0);
   const pagoSinVentas = sinVentas.reduce((a, x) => a + +x.pago, 0);
   const ventaV = V.reduce((a, x) => a + +x.venta, 0), pagoV = V.reduce((a, x) => a + +x.pago, 0);

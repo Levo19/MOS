@@ -22,6 +22,15 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
   await pg.locator('#simPct').fill('4'); const r4 = await pg.textContent('#simRes'); const pv4 = await pg.textContent('#simPctV');
   if (!/4%/.test(pv4)) errs.push('slider no cambia: ' + pv4);
   if (pv === '10%') errs.push('click en gráfico no cambia el %'); const cl = await pg.textContent('#simClaves');
+  // caso Luis: Zona 02 · 4 semanas · solo comisión 10% de la venta → jefa ≈ 18.1%
+  await pg.click('#fZona button[data-v="ZONA-02"]'); await pg.waitForSelector('#simJefa .jbar', { timeout: 40000 });
+  await pg.click('#simBase button[data-v="venta"]'); await pg.click('#simModo button[data-v="comision"]'); await pg.locator('#simPct').fill('10');
+  const jefa = (await pg.textContent('#simJefa')).replace(/\s+/g, ' ');
+  const grp = await pg.$$eval('#simRoles button.on', a => a.map(x => x.textContent));
+  if (!/18[.,]1%/.test(jefa)) errs.push('jefa Z2 10% no da 18.1: ' + jefa.slice(0, 200));
+  await pg.locator('#simJefa').scrollIntoViewIfNeeded(); await pg.screenshot({ path: `_1051_${vp.width}_jefa.png` });
+  console.log('  Z2 grupos marcados', grp.join(','), '|| JEFA:', jefa.slice(0, 330));
+  await pg.click('#fZona button[data-v="TODAS"]'); await pg.waitForSelector('#simJefa .jbar', { timeout: 40000 });
   const filas = await pg.$$eval('#simTb tr', a => a.length); const cmp = await pg.$$eval('#simCmp tr', a => a.length);
   const sw = await pg.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   await pg.screenshot({ path: `_1050_${vp.width}_full.png`, fullPage: true });
