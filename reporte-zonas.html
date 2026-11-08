@@ -52,6 +52,19 @@ svg text{font-family:inherit}
 .chart{width:100%;display:block;touch-action:manipulation}
 .explica{margin-top:10px;padding:12px 14px;border-radius:12px;background:var(--panel2);font-size:15px;min-height:48px}
 .explica b{font-size:16.5px}
+.dn-wrap{display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:18px;align-items:center}
+.dn{width:100%;max-width:360px;margin:0 auto;display:block;touch-action:manipulation}
+.dn path{cursor:pointer;transition:opacity .2s}
+.dn-side h3{margin:0 0 4px;font-size:18px}
+.dn-side .fr{font-size:15px;margin-bottom:10px}
+.dn-it{display:grid;grid-template-columns:14px 1fr auto auto;gap:4px 10px;align-items:center;padding:8px;border-radius:9px;cursor:pointer;min-height:42px}
+.dn-it:hover,.dn-it.on{background:var(--panel2)}
+.dn-it i{width:14px;height:14px;border-radius:4px}
+.dn-it .n{font-weight:700;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dn-it .v{font-weight:900;text-align:right;font-variant-numeric:tabular-nums}
+.dn-it .p{color:var(--mut);font-size:13px;text-align:right;min-width:48px}
+.dn-back{margin-bottom:8px}
+@media (max-width:760px){ .dn-wrap{grid-template-columns:1fr} }
 .leyenda{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--mut)}
 .leyenda i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .fila{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
@@ -190,6 +203,7 @@ let tok = null;
 const LS = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (_) { return null; } };
 (() => { const g = LS('mos_reporte_zonas_filtros'); if (g) { st.zona = g.zona || st.zona; st.dias = g.dias || st.dias; }
   const s = LS('mos_reporte_zonas_sim'); if (s && s.pct) Object.assign(st.sim, s);
+  st.vista = LS('mos_reporte_zonas_vista') || 'dona';
   const t = LS('mos_reporte_zonas_tema'); if (t) document.documentElement.dataset.theme = t; })();
 
 // ── utilidades ─────────────────────────────────────────────
@@ -264,7 +278,7 @@ async function cargar(force) {
     }
     cache[k] = { d, ts: Date.now() };
     if (k !== st.zona + '|' + st.dias) return;
-    st.data = d; st.diaSel = null; st.grupos = null; pintar();
+    st.data = d; st.diaSel = null; st.grupos = null; st.dnSel = null; st.dnSub = null; pintar();
   } catch (e) {
     const msg = e.message === 'SIN_DISPOSITIVO'
       ? 'Abre este reporte desde MOS (Finanzas → Reporte zonas) en un equipo autorizado.'
@@ -302,8 +316,10 @@ function pintar() {
   h += '</div>';
 
   // 1. cascada
-  h += '<div class="card"><h2>Del dinero que entra, ¿cuánto nos queda?</h2><div class="sub">Toca cada barra para ver qué significa.</div>'
-    + '<svg id="cCasc" class="chart" role="img" aria-label="Cascada de venta a lo que queda"></svg><div class="explica" id="cascTxt"></div></div>';
+  h += '<div class="card"><h2>Del dinero que entra, ¿cuánto nos queda?</h2><div class="sub" id="dnSub">Toca una parte del círculo para dividirla y ver de qué está hecha.</div>'
+    + '<div class="fila"><div class="seg sm" id="fVista"><button data-v="dona">🍩 Circular</button><button data-v="casc">📊 Cascada</button></div></div>'
+    + '<div id="vDona" class="dn-wrap"><svg id="cDona" class="dn" viewBox="0 0 320 320" role="img" aria-label="Reparto de lo vendido"></svg><div class="dn-side" id="dnSide"></div></div>'
+    + '<div id="vCasc"><svg id="cCasc" class="chart" role="img" aria-label="Cascada de venta a lo que queda"></svg><div class="explica" id="cascTxt"></div></div></div>';
 
   // 2. día a día
   if (st.dias > 1) {
@@ -348,6 +364,7 @@ function pintar() {
   $('busca').addEventListener('input', e => { st.q = e.target.value; st.verTodos = false; pintarProductos(); });
   $('fOrden').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.orden = b.dataset.v; marcar('fOrden', st.orden); pintarProductos(); });
   $('fMg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.mgModo = b.dataset.v; marcar('fMg', st.mgModo); pintarMargen(); });
+  $('fVista').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.vista = b.dataset.v; LS('mos_reporte_zonas_vista', st.vista); pintarVista(); });
   if ($('fDiaMet')) $('fDiaMet').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; st.diaMet = b.dataset.v; marcar('fDiaMet', st.diaMet); pintarDias(); });
   simBind();
   pintarGraficos();
@@ -355,10 +372,110 @@ function pintar() {
   pintarProductos();
   simCalc();
 }
-function pintarGraficos() { pintarCascada(); if (st.dias > 1) pintarDias(); simChart(); }
+function pintarGraficos() { pintarVista(); if (st.dias > 1) pintarDias(); simChart(); }
 function kpi(l, v, s, col) { return '<div class="kpi" style="--k:var(' + col + ')"><div class="l">' + l + '</div><div class="v num">' + v + '</div><div class="s">' + s + '</div></div>'; }
 
-// ── 1. CASCADA ─────────────────────────────────────────────
+// ── 1. DONA (circular) con división por parte ───────────────
+const DN_COL = ['--c-costo', '--c-pers', '--c-queda'];
+const SUBCOL = ['#2563eb', '#0d9488', '#d97706', '#db2777', '#7c3aed', '#65a30d', '#0891b2', '#94a3b8'];
+function pintarVista() {
+  const v = st.vista || 'dona'; marcar('fVista', v);
+  $('vDona').style.display = v === 'dona' ? '' : 'none'; $('vCasc').style.display = v === 'casc' ? '' : 'none';
+  $('dnSub').textContent = v === 'dona' ? 'Toca una parte del círculo para dividirla y ver de qué está hecha.' : 'Toca cada barra para ver qué significa.';
+  if (v === 'dona') pintarDona(); else pintarCascada();
+}
+function arco(cx, cy, r0, r1, a0, a1) {
+  if (a1 - a0 >= Math.PI * 2 - 1e-6) a1 = a0 + Math.PI * 2 - 1e-4;
+  const big = a1 - a0 > Math.PI ? 1 : 0, p = (r, a) => [(cx + r * Math.sin(a)).toFixed(2), (cy - r * Math.cos(a)).toFixed(2)];
+  const [x0, y0] = p(r1, a0), [x1, y1] = p(r1, a1), [x2, y2] = p(r0, a1), [x3, y3] = p(r0, a0);
+  return 'M' + x0 + ' ' + y0 + 'A' + r1 + ' ' + r1 + ' 0 ' + big + ' 1 ' + x1 + ' ' + y1 + 'L' + x2 + ' ' + y2 + 'A' + r0 + ' ' + r0 + ' 0 ' + big + ' 0 ' + x3 + ' ' + y3 + 'Z';
+}
+function topN(arr, n, nombreOtros) {
+  const a = arr.filter(x => x.v > 0).sort((x, y) => y.v - x.v);
+  if (a.length <= n) return a;
+  const resto = a.slice(n - 1).reduce((t, x) => t + x.v, 0);
+  return a.slice(0, n - 1).concat([{ n: nombreOtros + ' (' + (a.length - n + 1) + ')', v: resto }]);
+}
+function partesDona() {
+  const { costo, pers, queda } = tot();
+  const d = st.data;
+  const dSem = ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados'];
+  const porDia = {};
+  (d.diario || []).forEach(x => { const w = new Date(String(x.dia).slice(0, 10) + 'T12:00:00').getDay(); porDia[w] = (porDia[w] || 0) + (+x.utilidad - +x.personal); });
+  return [
+    { k: 'Mercadería', v: costo, tx: 'Lo que nos costó la mercadería vendida.',
+      sub: () => topN((d.padres || []).map(p => ({ n: p.nombre, v: +p.costo })), 8, 'Otros productos'), subT: 'En qué productos se va el costo' },
+    { k: 'Personal', v: pers, tx: 'Lo que se paga al personal de la zona (sueldos + bonos).',
+      sub: () => topN((d.personal || []).map(p => ({ n: p.nombre + (st.zona === 'TODAS' ? ' · ' + (p.zona || '').replace('ZONA-0', 'Z') : ''), v: +p.total })), 8, 'Otras personas'), subT: 'Cuánto se lleva cada persona' },
+    { k: queda < 0 ? 'Falta' : 'Queda', v: Math.max(0, queda), tx: queda < 0 ? 'El margen no alcanzó para pagar al personal.' : 'Lo que nos queda después de mercadería y personal.',
+      sub: () => st.dias === 1 ? [] : [1, 2, 3, 4, 5, 6, 0].filter(w => porDia[w] != null).map(w => ({ n: 'Los ' + dSem[w], v: porDia[w] })), subT: 'Qué día de la semana deja más',
+      subNota: st.dias === 1 ? 'Elige 7 días o 4 semanas para dividirlo por día de la semana.' : '' }
+  ];
+}
+function pintarDona() {
+  const svg = $('cDona'); if (!svg) return;
+  const { venta, queda } = tot();
+  const parts = partesDona(); const tot0 = parts.reduce((a, p) => a + p.v, 0) || 1;
+  const cx = 160, cy = 160, sel = st.dnSel;
+  const colP = i => css(i === 2 && queda < 0 ? '--c-bad' : DN_COL[i]);
+  const sub = sel != null ? parts[sel].sub() : [];
+  const subPos = sub.filter(x => x.v > 0);
+  const txtCol = col => (col === css('--c-costo') ? '#1e293b' : '#fff');
+  let s = '';
+  if (sel == null || !subPos.length) {
+    // vista total: las 3 partes
+    let a = 0;
+    parts.forEach((p, i) => {
+      const a1 = a + p.v / tot0 * Math.PI * 2, mid = (a + a1) / 2, col = colP(i);
+      s += '<path data-i="' + i + '" d="' + arco(cx, cy, 74, 128, a, a1) + '" fill="' + col + '" opacity="' + (sel == null || sel === i ? 1 : .3) + '" stroke="' + css('--panel') + '" stroke-width="2"/>';
+      const pc = p.v / tot0 * 100;
+      if (pc >= 4) s += '<text x="' + (cx + 101 * Math.sin(mid)).toFixed(1) + '" y="' + (cy - 101 * Math.cos(mid) + 5).toFixed(1) + '" text-anchor="middle" font-size="15" font-weight="900" fill="' + txtCol(col) + '" pointer-events="none">' + pc.toFixed(0) + '%</text>';
+      a = a1;
+    });
+  } else {
+    // vista dividida: el círculo entero es la parte elegida; anillo interior = contexto del total
+    let a = 0;
+    parts.forEach((p, i) => { const a1 = a + p.v / tot0 * Math.PI * 2;
+      s += '<path data-i="' + i + '" d="' + arco(cx, cy, 64, 72, a, a1) + '" fill="' + colP(i) + '" opacity="' + (sel === i ? 1 : .3) + '"/>'; a = a1; });
+    const st0 = subPos.reduce((t, x) => t + x.v, 0) || 1; let b = 0;
+    sub.forEach((x, j) => { if (!(x.v > 0)) return;
+      const b1 = b + x.v / st0 * Math.PI * 2, mid = (b + b1) / 2, on = st.dnSub === j, off = on ? 7 : 0;
+      s += '<path data-j="' + j + '" d="' + arco(cx + off * Math.sin(mid), cy - off * Math.cos(mid), 80, on ? 140 : 134, b, b1) + '" fill="' + SUBCOL[j % SUBCOL.length] + '" opacity="' + (st.dnSub == null || on ? 1 : .35) + '" stroke="' + css('--panel') + '" stroke-width="2"/>';
+      const pc = x.v / st0 * 100;
+      if (pc >= 6) s += '<text x="' + (cx + 108 * Math.sin(mid)).toFixed(1) + '" y="' + (cy - 108 * Math.cos(mid) + 5).toFixed(1) + '" text-anchor="middle" font-size="13" font-weight="900" fill="#fff" pointer-events="none">' + pc.toFixed(0) + '%</text>';
+      b = b1; });
+  }
+  let c1, c2, c3;
+  if (sel == null) { c1 = 'Vendimos'; c2 = S0(venta); c3 = 'toca una parte'; }
+  else if (st.dnSub != null && sub[st.dnSub]) { const x = sub[st.dnSub]; c1 = x.n.length > 20 ? x.n.slice(0, 19) + '…' : x.n; c2 = S0(x.v); c3 = P1(pct(x.v, parts[sel].v)) + ' de ' + parts[sel].k.toLowerCase(); }
+  else { c1 = parts[sel].k; c2 = S0(parts[sel].v); c3 = P1(pct(parts[sel].v, tot0)) + ' de lo vendido'; }
+  s += '<text x="160" y="140" text-anchor="middle" font-size="13" font-weight="800" fill="' + css('--mut') + '">' + esc(c1) + '</text>'
+    + '<text x="160" y="170" text-anchor="middle" font-size="25" font-weight="900" fill="' + css('--txt') + '">' + c2 + '</text>'
+    + '<text x="160" y="192" text-anchor="middle" font-size="12" fill="' + css('--mut') + '">' + esc(c3) + '</text>';
+  svg.innerHTML = s;
+  svg.querySelectorAll('path[data-i]').forEach(el => el.addEventListener('click', () => { const i = +el.dataset.i; st.dnSel = st.dnSel === i && !subPos.length ? null : (st.dnSel === i ? null : i); st.dnSub = null; pintarDona(); }));
+  svg.querySelectorAll('path[data-j]').forEach(el => el.addEventListener('click', () => { const j = +el.dataset.j; st.dnSub = st.dnSub === j ? null : j; pintarDona(); }));
+  let h = '';
+  if (sel == null) {
+    h += '<h3>¿A dónde va lo que vendemos?</h3><div class="fr">De cada <b>S/ 100</b> vendidos: '
+      + parts.map((p, i) => '<b style="color:' + colP(i) + '">S/ ' + pct(p.v, tot0).toFixed(0) + '</b> ' + p.k.toLowerCase()).join(', ') + '.</div>';
+    h += parts.map((p, i) => '<div class="dn-it" data-i="' + i + '"><i style="background:' + colP(i) + '"></i><span class="n">' + p.k + ' ›</span><span class="v">' + S0(p.v) + '</span><span class="p">' + P1(pct(p.v, tot0)) + '</span></div>').join('');
+    h += '<div class="mut" style="font-size:12.5px;margin-top:6px">Toca una fila o una parte del círculo para dividirla.</div>';
+    if (queda < 0) h += '<div class="aviso amb" style="margin-top:8px">Falta ' + S0(-queda) + ': el margen no alcanzó para el personal.</div>';
+  } else {
+    const p = parts[sel];
+    h += '<button class="btn dn-back" id="dnBack">‹ Volver al total</button><h3>' + p.k + ': ' + S0(p.v) + '</h3><div class="fr">' + p.tx + ' <span class="mut">' + p.subT + ':</span></div>';
+    if (!sub.length) h += '<div class="mut">' + (p.subNota || 'Sin detalle en este periodo.') + '</div>';
+    const st0 = subPos.reduce((t, x) => t + x.v, 0) || 1;
+    h += sub.map((x, j) => '<div class="dn-it' + (st.dnSub === j ? ' on' : '') + '" data-j="' + j + '"><i style="background:' + (x.v > 0 ? SUBCOL[j % SUBCOL.length] : css('--c-bad')) + '"></i><span class="n" title="' + esc(x.n) + '">' + esc(x.n) + '</span><span class="v' + (x.v < 0 ? ' m-bad' : '') + '">' + S0(x.v) + '</span><span class="p">' + (x.v > 0 ? P1(pct(x.v, st0)) : '') + '</span></div>').join('');
+  }
+  $('dnSide').innerHTML = h;
+  $('dnSide').querySelectorAll('.dn-it[data-i]').forEach(el => el.addEventListener('click', () => { st.dnSel = +el.dataset.i; st.dnSub = null; pintarDona(); }));
+  $('dnSide').querySelectorAll('.dn-it[data-j]').forEach(el => el.addEventListener('click', () => { const j = +el.dataset.j; st.dnSub = st.dnSub === j ? null : j; pintarDona(); }));
+  if ($('dnBack')) $('dnBack').addEventListener('click', () => { st.dnSel = null; st.dnSub = null; pintarDona(); });
+}
+
+// ── 1b. CASCADA ────────────────────────────────────────────
 function pintarCascada() {
   const svg = $('cCasc'); if (!svg) return;
   const { venta, costo, uti, pers, queda } = tot();

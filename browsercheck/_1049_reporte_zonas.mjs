@@ -9,9 +9,17 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
   pg.on('pageerror', e => errs.push(e.message));
   await pg.addInitScript(d => { if (!sessionStorage.getItem('x')) { localStorage.clear(); sessionStorage.setItem('x', 1); } localStorage.setItem('mos_device_id', d); }, DEV);
   await pg.goto('http://localhost:8791/reporte-zonas.html');
-  await pg.waitForSelector('#cCasc rect', { timeout: 40000 });
+  await pg.waitForSelector('#cDona path', { timeout: 40000 });
   const k = await pg.$$eval('.kpi .v', a => a.map(x => x.textContent));
-  await pg.click('#cCasc .cb[data-i="3"]'); const casc = await pg.textContent('#cascTxt');
+  await pg.click('#dnSide .dn-it[data-i="1"]'); await pg.click('#cDona path[data-j="0"]');
+  const dona = (await pg.textContent('#cDona')) + ' | ' + (await pg.textContent('#dnSide')).slice(0, 120);
+  const nSub = await pg.$$eval('#cDona path[data-j]', a => a.length);
+  if (!nSub) errs.push('dona sin división');
+  await pg.locator('#cDona').scrollIntoViewIfNeeded(); await pg.screenshot({ path: `_1052_${vp.width}_dona.png` });
+  await pg.click('#dnBack'); await pg.click('#cDona path[data-i="2"]'); const dq = await pg.$$eval('#dnSide .dn-it', a => a.length);
+  await pg.click('#fVista button[data-v="casc"]'); await pg.click('#cCasc .cb[data-i="3"]'); const casc = await pg.textContent('#cascTxt');
+  await pg.click('#fVista button[data-v="dona"]');
+  console.log('  DONA:', dona, '| subs', nSub, '| días semana', dq);
   await pg.click('#fDiaMet button[data-v="queda"]'); await pg.click('#cDias .db[data-i="3"]'); const dia = await pg.textContent('#diaTxt');
   await pg.click('#fMg button[data-v="poco"]'); const mg = await pg.$$eval('#hbMg .n', a => a.length);
   await pg.click('#simPre button[data-i="0"]'); const r0 = await pg.textContent('#simRes');
@@ -27,7 +35,8 @@ for (const vp of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
   await pg.click('#simBase button[data-v="venta"]'); await pg.click('#simModo button[data-v="comision"]'); await pg.locator('#simPct').fill('10');
   const jefa = (await pg.textContent('#simJefa')).replace(/\s+/g, ' ');
   const grp = await pg.$$eval('#simRoles button.on', a => a.map(x => x.textContent));
-  if (!/18[.,]1%/.test(jefa)) errs.push('jefa Z2 10% no da 18.1: ' + jefa.slice(0, 200));
+  { const m = jefa.match(/margen es ([\d.,]+)%.*?le queda ([\d.,]+)%/); const mg = m && parseFloat(m[1].replace(',', '.')), jf = m && parseFloat(m[2].replace(',', '.'));
+    if (!m || Math.abs((mg - 10) - jf) > 0.15) errs.push('jefa Z2: con 10% debe quedar margen − 10: ' + jefa.slice(0, 200)); }
   await pg.locator('#simJefa').scrollIntoViewIfNeeded(); await pg.screenshot({ path: `_1051_${vp.width}_jefa.png` });
   console.log('  Z2 grupos marcados', grp.join(','), '|| JEFA:', jefa.slice(0, 330));
   await pg.click('#fZona button[data-v="TODAS"]'); await pg.waitForSelector('#simJefa .jbar', { timeout: 40000 });
