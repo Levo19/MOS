@@ -2,6 +2,7 @@
 -- (RLS apagado, sin políticas, y las mismas ACL: mismos privilegios para anon/authenticated).
 -- Solo usar si alguna app deja de funcionar tras 1053 (no se espera: nadie las usa directo).
 -- Guarda: aborta si el estado no es el que deja 1053 (para no pisar un cambio posterior).
+-- Franja: 01:00-05:00 Lima si es posible; lock_timeout 3s: si aborta por timeout, reintentar.
 -- Aplicar:  node C:/Users/ISO/.sb/apply.cjs "C:/Users/ISO/ecosistema MOS/ProyectoMOS/supabase/1053_rollback.sql"
 
 do $pre$
@@ -23,6 +24,9 @@ begin
   end if;
 end
 $pre$;
+
+-- candado: si una tabla está tomada, abortar a los 3 s (reintentar) en vez de encolar a las RPC detrás
+set local lock_timeout = '3s';
 
 alter table mos.accesos_dispositivos       disable row level security;
 alter table mos.extension_requests         disable row level security;

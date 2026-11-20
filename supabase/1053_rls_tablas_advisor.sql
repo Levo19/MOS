@@ -58,6 +58,9 @@ begin
 end
 $pre$;
 
+-- candado: si una tabla está tomada, abortar a los 3 s (reintentar) en vez de encolar a las RPC detrás
+set local lock_timeout = '3s';
+
 alter table mos.accesos_dispositivos       enable row level security;
 alter table mos.extension_requests         enable row level security;
 alter table mos.purgas_historicas          enable row level security;
@@ -96,8 +99,9 @@ $post$;
 select '1053 OK: RLS deny-all en 7 tablas; anon/authenticated sin acceso directo' as resultado;
 
 -- ===================== RUNBOOK 1053 =====================
--- 0. Ventana: fuera de 17:30-00:30 Lima (no hay cron ni flujo que dependa de estas ACL, pero ALTER TABLE
---    pide un candado exclusivo breve: si una tabla está tomada, apply.cjs espera; no forzar).
+-- 0. Franja recomendada: 01:00-05:00 Lima (nunca 17:30-00:30). ALTER TABLE pide un candado exclusivo breve;
+--    lock_timeout 3s: si aborta por timeout (lock timeout / canceling statement) no cambió nada: reintentar
+--    unos minutos después; no forzar.
 -- 1. Ensayo local en verde:   node "C:/Users/ISO/ecosistema MOS/ProyectoMOS/supabase/1053_ensayo_local.cjs"
 -- 2. Foto ANTES (solo lectura), guardar la salida:
 --      node C:/Users/ISO/.sb/q.cjs "<contenido de 1053_verificar.sql>"   -> rls=false, total_alertas_advisor_rls=7
