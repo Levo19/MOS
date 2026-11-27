@@ -229,6 +229,24 @@ const $ = id => document.getElementById(id);
 const fm  = v => 'S/ ' + (parseFloat(v)||0).toFixed(2);
 const fmt = v => (parseFloat(v)||0).toLocaleString('es-PE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const S   = v => 'S/ ' + fmt(v);
+// Líneas informativas del Z: ventas a crédito cobradas (Abono deuda) en OTRA caja, efectivo y virtual por
+// separado. [] si los campos no existen (antes del SQL 1055) o son 0. No altera las cifras de caja.
+const cobradoOtraCajaLineas = t => {
+  const out = [];
+  const lin = (monto, n, med) => {
+    const m = parseFloat(monto)||0; if (!(m > 0)) return;
+    const k = parseInt(n,10)||0;
+    out.push('Cobrado en otra caja' + med + ': S/ ' + m.toFixed(2) + (k > 0 ? ' (' + k + (k === 1 ? ' ticket)' : ' tickets)') : ''));
+  };
+  const ef = t && t.cobradoOtraCaja, vi = t && t.cobradoOtraCajaVir;
+  const amb = (parseFloat(ef)||0) > 0 && (parseFloat(vi)||0) > 0;
+  lin(ef, t && t.cobradoOtraCajaN, amb ? ' (efe)' : '');
+  lin(vi, t && t.cobradoOtraCajaVirN, amb ? ' (vir)' : '');
+  return out;
+};
+// Monto con signo claro (virtualFinal puede ser negativo real).
+const sgn = v => { const n = parseFloat(v)||0; return (n < 0 ? '-' : '') + 'S/ ' + Math.abs(n).toFixed(2); };
+
 const pct = (a,b) => b > 0 ? Math.min(100,(a/b*100)) : 0;
 
 if (!idCaja) {
@@ -393,6 +411,7 @@ function whatsappShare(data) {
   sp(); a(`💰 *SE DEBE RECIBIR*`);
   a(`💵  *${fm(t.montoFinalEfe)}*  efectivo en cajón`);
   if (t.virtualFinal > 0) a(`📲  *${fm(t.virtualFinal)}*  virtual recibido`);
+  else if (t.virtualFinal < 0) a(`📲  *${sgn(t.virtualFinal)}*  virtual (saldo negativo)`);
   a(SEP);
 
   // ── 3. RESUMEN ────────────────────────────────────────────────
@@ -400,13 +419,14 @@ function whatsappShare(data) {
   a(`Base inicial:      ${fm(c.montoInicial)}`);
   a(`Ventas efectivo:   ${fm(t.efectivo)}`);
   if (t.virtual > 0) a(`Ventas virtual:    ${fm(t.virtual)}`);
+  cobradoOtraCajaLineas(t).forEach(l => a(`ℹ️ ${l}`));
   const netoE = t.extrasIngreso - t.extrasEgreso;
   const netoV = t.extrasIngresoVirtual - t.extrasEgresoVirtual;
   if (netoE !== 0) a(`Extras efe:        ${netoE > 0 ? '+' : ''}${fm(netoE)}`);
   if (netoV !== 0) a(`Extras vir:        ${netoV > 0 ? '+' : ''}${fm(netoV)}`);
   a(`━━`);
   a(`✅ *Total efe:  ${fm(t.montoFinalEfe)}*`);
-  if (t.virtualFinal > 0) a(`✅ *Total vir:  ${fm(t.virtualFinal)}*`);
+  if (t.virtualFinal !== 0 && t.virtualFinal != null) a(`✅ *Total vir:  ${sgn(t.virtualFinal)}*`);
   if (t.credito > 0)      a(`🔁 Crédito (pendiente): ${fm(t.credito)}`);
   a(SEP);
 
@@ -714,6 +734,7 @@ function render(data) {
         <td style="color:var(--green);">${S(t.efectivo)}</td>
         <td style="color:var(--blue);">${t.virtual > 0 ? S(t.virtual) : '<span style="opacity:.4">—</span>'}</td>
       </tr>
+      ${cobradoOtraCajaLineas(t).map(l => `<tr><td colspan="3" style="color:var(--muted);font-size:11px;">${l}</td></tr>`).join('')}
       ${hayExtras ? `<tr>
         <td style="color:var(--muted);">Extras neto</td>
         <td style="color:${extrasNetoEfe >= 0 ? 'var(--green)' : 'var(--red)'};">${extrasNetoEfe !== 0 ? (extrasNetoEfe > 0 ? '+' : '') + S(extrasNetoEfe) : '<span style="opacity:.4">—</span>'}</td>
@@ -724,7 +745,7 @@ function render(data) {
       <tr>
         <td style="color:var(--text);">TOTAL FINAL</td>
         <td style="color:var(--green);font-size:15px;">${S(t.montoFinalEfe)}</td>
-        <td style="color:var(--blue);font-size:15px;">${t.virtualFinal > 0 ? S(t.virtualFinal) : '<span style="opacity:.4">—</span>'}</td>
+        <td style="color:${t.virtualFinal < 0 ? 'var(--red)' : 'var(--blue)'};font-size:15px;">${t.virtualFinal > 0 ? S(t.virtualFinal) : t.virtualFinal < 0 ? sgn(t.virtualFinal) : '<span style="opacity:.4">—</span>'}</td>
       </tr>
       ${t.credito > 0 ? `<tr><td style="color:var(--muted);font-size:10px;">+ Crédito pendiente</td><td colspan="2" style="color:var(--purple);font-size:11px;">${S(t.credito)} (no en caja)</td></tr>` : ''}
     </tfoot>
@@ -977,7 +998,7 @@ function render(data) {
     </div>
     <div class="recibir-card rc-vir">
       <div class="recibir-label" style="color:var(--blue);">📲 Virtual recibido</div>
-      <div class="recibir-val" style="color:var(--blue);">${S(t.virtualFinal)}</div>
+      <div class="recibir-val" style="color:${t.virtualFinal < 0 ? 'var(--red)' : 'var(--blue)'};">${sgn(t.virtualFinal)}</div>
       <div class="recibir-sub">Yape · Plin · Transf.</div>
     </div>
   </div>
@@ -1178,23 +1199,28 @@ function buildPrintTicket(data) {
   if (t.virtualFinal > 0) {
     a(sep()); a(ctr('VIRTUAL RECIBIDO:'));
     a(ctr('S/'+(parseFloat(t.virtualFinal)||0).toFixed(2))); a('');
+  } else if (t.virtualFinal < 0) {
+    a(sep()); a(ctr('VIRTUAL (SALDO NEGATIVO):'));
+    a(ctr('-S/'+Math.abs(parseFloat(t.virtualFinal)||0).toFixed(2))); a('');
   }
 
   // ── PARTE 3: RESUMEN ──────────────────────────────────────────
   a(sHdr('RESUMEN DEL TURNO'));
-  const C1=14,C2=9,C3=9;
-  const sRow = (lbl,e,v) => {
+  const C1=14,C2=10,C3=11;
+  const sRow = (lbl,e,v,signed) => {
     const es=(parseFloat(e)||0)!==0?amtS(e):'---';
-    const vs=(parseFloat(v)||0)!==0?amtS(v):'---';
+    const vn=parseFloat(v)||0;
+    const vs=vn!==0?((signed&&vn<0?'-':'')+amtS(v)):'---';
     return lbl.padEnd(C1)+es.padStart(C2)+vs.padStart(C3);
   };
   a('CONCEPTO'.padEnd(C1)+'EFECTIVO'.padStart(C2)+'VIRTUAL'.padStart(C3));
   a(sep());
   a(sRow('Base inicial',  caja.montoInicial, 0));
   a(sRow('Ventas cobradas', t.efectivo, t.virtual));
+  cobradoOtraCajaLineas(t).forEach(x => wrapL(x, W, '  ').forEach(l => a(l)));
   if (netoEfe!==0||netoVir!==0) a(sRow('Extras neto', netoEfe, netoVir));
   a(sep());
-  a(sRow('EFECTIVO FINAL', t.montoFinalEfe, t.virtualFinal));
+  a(sRow('EFECTIVO FINAL', t.montoFinalEfe, t.virtualFinal, true));
   if (t.credito>0) a('  +Credito pend.: '+amtS(t.credito));
 
   // ── PARTE 4: CORRELATIVOS ────────────────────────────────────
