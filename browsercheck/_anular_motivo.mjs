@@ -5,7 +5,7 @@ const m = /function _pedirMotivoAnulacion\(label\) \{[\s\S]*?\n  \}\n/.exec(src)
 const calls = src.match(/API\.post\('anularTicketME', \{[^}]*\}/g) || [];
 const br = await chromium.launch(); let fallas = 0; const ok = (c, t) => { if (!c) { fallas++; console.log('  FALLA:', t); } };
 try {
-  ok(calls.length === 2 && calls.every(c => c.includes('motivo')), 'las 2 llamadas anularTicketME envían motivo');
+  ok(calls.length === 3 && calls.every(c => c.includes('motivo')), 'las 3 llamadas anularTicketME envían motivo');
   const pg = await br.newPage(); await pg.setContent('<body></body>');
   await pg.addScriptTag({ content: m[0] + 'window.__p=_pedirMotivoAnulacion;' });
   await pg.evaluate(() => { window.__r = 'pend'; window.__p('Ticket B001-1').then(v => { window.__r = v; }); }); await pg.waitForSelector('#anuMotivo');
@@ -15,5 +15,11 @@ try {
   await pg.click('[data-ok]'); await pg.waitForFunction(() => window.__r !== 'pend'); ok((await pg.evaluate(() => window.__r)) === 'Venta duplicada', 'devuelve el motivo'); await pg.waitForSelector('#anuMotivo', { state: 'detached' });
   await pg.evaluate(() => { window.__r = 'pend'; window.__p('x').then(v => { window.__r = v; }); }); await pg.waitForSelector('#anuMotivo'); await pg.click('[data-cancel] >> nth=1');
   await pg.waitForFunction(() => window.__r !== 'pend'); ok((await pg.evaluate(() => window.__r)) === null, 'cancelar devuelve null');
+  await pg.waitForTimeout(350);
+  // [2.44.78] fondo no cierra y conserva texto; Escape cierra
+  await pg.evaluate(() => { window.__r = 'pend'; window.__p('y').then(v => { window.__r = v; }); }); await pg.waitForSelector('#anuMotivo'); await pg.fill('#anuMotivo', 'texto largo');
+  await pg.evaluate(() => document.querySelector('.mos-modal-generic-backdrop').click()); await pg.waitForTimeout(350);
+  ok((await pg.evaluate(() => window.__r)) === 'pend' && await pg.isVisible('#anuMotivo') && (await pg.inputValue('#anuMotivo')) === 'texto largo', 'clic en el fondo NO cierra y conserva lo escrito');
+  await pg.keyboard.press('Escape'); await pg.waitForFunction(() => window.__r !== 'pend'); ok((await pg.evaluate(() => window.__r)) === null, 'Escape cierra con null');
 } catch (e) { fallas++; console.log('EXCEPCION', e.message); }
 await br.close(); console.log(fallas ? 'RESULTADO: ' + fallas + ' FALLA(S)' : 'RESULTADO: TODO OK'); process.exit(fallas ? 1 : 0);

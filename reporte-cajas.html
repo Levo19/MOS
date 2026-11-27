@@ -310,6 +310,11 @@ async function rpc(fn, p) {
   if (!r.ok) { const tx = await r.text().catch(() => ''); const e = new Error('HTTP ' + r.status + ' ' + tx.slice(0, 200)); throw e; }
   return r.json();
 }
+// [2.44.78] MASTER sin marcar = sesión de MOS no verificada: no decirle «Solo el MASTER…». Mensaje accionable.
+const avisoNoMarcar = () => {
+  const c = ctx(), rol = String((c && (c.rol || c.role)) || '').toUpperCase(), m = String(st.msgPuede || '');
+  return (rol === 'MASTER' || /verific/i.test(m)) ? 'Entra a MOS con tu usuario y vuelve a abrir el reporte para poder marcar.' : 'Solo el MASTER puede marcar revisado; tú puedes consultar.';
+};
 const ctx = () => { const c = LS('mos_reporte_ctx'); return c && c.u ? c : null; };
 
 // ── textos humanos de alertas y flags (código → [texto, ayuda, nivel]) ──
@@ -451,6 +456,7 @@ function prep(d) {
   D.tv = Array.isArray(d.tickets_virtuales) ? d.tickets_virtuales.slice() : D.ventas.filter(v => Number(v.vir) > 0).map(v => ({ id_venta: v.id_venta, id_caja: v.id_caja, zona_id: v.zona_id, fecha: v.fecha, vendedor: v.vendedor, correlativo: v.correlativo, cliente_nombre: v.cliente_nombre, vir: v.vir, estado: v.verificado === true ? 'VERIFICADO' : v.verificado === false ? 'SIN_VERIFICAR' : 'SIN_CAPTOR', id_yape: v.id_yape, candidatos_n: (v.candidatos || []).length }));
   D.items = buildItems(D);
   st.puede = d.puede_marcar !== false;   // sin el campo = comportamiento anterior (se puede marcar)
+  st.msgPuede = String(d.mensaje || d.motivo || d.aviso || '');   // [2.44.78] el server puede explicar por qué no se puede marcar
   st.D = D; st.memo.clear(); st.tb = {};
   // si un cajero/caja filtrado ya no existe, se descarta
   if (st.f.cajero && !D.cajas.some(c => c.vendedor === st.f.cajero)) st.f.cajero = '';
@@ -833,7 +839,7 @@ function render() {
   const d = derive(); const a = agg(d);
   const cnt = { pend: a.pend, cajas: d.cajas.length, extras: d.extras.length, ventas: d.ventas.length, anul: d.anulados.length, yape: d.yapes.length };
   if (st.lite && !st.liteFalla) cnt.ventas = 'parcial';
-  $('banner').innerHTML = (st.demo ? '<div class="demo">⚠ Datos de ejemplo: la base aún no tiene el reporte de cajas. Las marcas no se guardan.</div>' : '') + (st.puede === false ? '<div id="avisoMaster" style="font-size:12px;color:var(--mut,#64748b);padding:4px 2px">Solo el MASTER puede marcar revisado; tú puedes consultar.</div>' : '');
+  $('banner').innerHTML = (st.demo ? '<div class="demo">⚠ Datos de ejemplo: la base aún no tiene el reporte de cajas. Las marcas no se guardan.</div>' : '') + (st.puede === false ? '<div id="avisoMaster" style="font-size:12px;color:var(--mut,#64748b);padding:4px 2px">' + avisoNoMarcar() + '</div>' : '');
   $('gen').textContent = (st.demo ? 'Ejemplo' : 'Generado ' + fh((st.D.raw || {}).generado_ts) + (st.ms ? ' · carga ' + st.ms + ' ms' + (st.lite ? ' (liviana)' : '') : '')) + ' · ' + st.desde + ' → ' + st.hasta + ' (hora Lima)';
   let body;
   switch (st.tab) {

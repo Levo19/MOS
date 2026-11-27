@@ -4358,7 +4358,7 @@ const API = (() => {
               body: JSON.stringify({ operacion: 'baja', idVenta: p.idVenta, motivo: p.motivo, claveAdmin: p.claveAdmin || '' })
             }, 20000);
             const j = await res.json().catch(() => null);
-            if (!j || j.status !== 'success') throw new Error((j && (j.error || j.mensaje)) || 'Error baja CPE');
+            if (!j || j.status !== 'success') throw new Error((j && (j.mensaje || j.error)) || 'Error baja CPE');
             return j;
           }
           const rpc  = action === 'cambiarMetodoME' ? 'cobrar_venta_directo' : 'creditar_venta_directo';

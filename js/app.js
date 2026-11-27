@@ -33986,7 +33986,10 @@ const MOS = (() => {
     const t = _tkAcc.ticket;
     const motivo = _tkAcc.baja.motivoFinal || _tkAcc.baja.motivo || ($('tkBajaMotivoTxt').value || '').trim();
     if (!motivo || motivo.length < 3) { toast('Motivo obligatorio', 'error'); return; }
-    if (!await _modalConfirm(`¿Comunicar baja del ${t.tipoDoc} ${t.correlativo} a SUNAT?\n\nEsta acción es irreversible.`, { danger: true, titulo: 'Baja CPE SUNAT', okText: 'Enviar baja' })) return;
+    if (!await _modalConfirm(`¿Comunicar baja del ${t.tipoDoc} ${t.correlativo} a SUNAT?\n\nSe anulará también el pago del ticket. Esta acción es irreversible.`, { danger: true, titulo: 'Baja CPE SUNAT', okText: 'Enviar baja' })) return;
+    // [2.44.78] 1º motivo de anulación (≥5, mismo modal que Anular ticket), 2º PIN, 3º anular pago y ESPERAR ok, 4º recién la baja.
+    const motivoAnu = await _pedirMotivoAnulacion('Ticket ' + (t.correlativo || t.idVenta));
+    if (!motivoAnu) return;
     // [cero-caída] BAJA_CPE es MASTER-only — re-verificada server-side en el Edge emitir-cpe
     const auth = await pedirAuth({ accion: 'BAJA_CPE', refDocumento: t.correlativo || t.idVenta,
       contexto: 'Baja CPE SUNAT ' + (t.tipoDoc || '') + ' ' + (t.correlativo || t.idVenta) });
@@ -33994,6 +33997,8 @@ const MOS = (() => {
     const btn = $('tkBajaBtnOK');
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
     try {
+      try { await API.post('anularTicketME', { idVenta: t.idVenta, motivo: motivoAnu, claveAdmin: auth.clave }); }
+      catch (e0) { toast('No se anuló el pago; no se envió la baja a SUNAT' + (e0 && e0.message ? ' (' + e0.message + ')' : ''), 'error'); return; }
       const r = await API.post('meBajaCPE', { idVenta: t.idVenta, motivo, claveAdmin: auth.clave });
       toast('✓ Baja enviada · ' + (r?.nuevoEstado || 'aceptada'), 'success');
       closeModal('modalTkBajaCPE');
@@ -34217,12 +34222,15 @@ const MOS = (() => {
       const ta = bd.querySelector('#anuMotivo'), ok = bd.querySelector('[data-ok]');
       const sync = () => { ok.disabled = ta.value.trim().length < 5; };
       ta.addEventListener('input', sync);
-      const cerrar = (v) => { bd.classList.remove('is-open'); setTimeout(() => { try { bd.remove(); } catch(_){} }, 200); resolve(v); };
+      const onKey = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); cerrar(null); } };
+      const cerrar = (v) => { document.removeEventListener('keydown', onKey, true); bd.classList.remove('is-open'); setTimeout(() => { try { bd.remove(); } catch(_){} }, 200); resolve(v); };
+      document.addEventListener('keydown', onKey, true);
       bd.addEventListener('click', (ev) => {
         const t = ev.target; if (!t.closest) return;
         const ch = t.closest('[data-chip]');
         if (ch) { ta.value = ch.getAttribute('data-chip'); sync(); ta.focus(); return; }
-        if (t === bd || t.closest('[data-cancel]')) cerrar(null);
+        // [2.44.78] anti-misclick: el fondo NO cierra (se conserva lo escrito); cierran Cancelar, ✕ y Escape
+        if (t.closest('[data-cancel]')) cerrar(null);
         else if (t.closest('[data-ok]') && !ok.disabled) cerrar(ta.value.trim());
       });
       document.body.appendChild(bd);
@@ -34232,7 +34240,7 @@ const MOS = (() => {
   }
 
   async function _tkAnularSimple(t) {
-    if (!await _modalConfirm(`¿Anular ${t.tipoDoc || 'ticket'} ${t.correlativo || t.idVenta}?\n\nMonto: S/ ${t.total.toFixed(2)}\n\nSi tiene CPE emitido, también debes solicitar la baja en SUNAT.`, { danger: true, titulo: 'Anular ticket', okText: 'Anular' })) return;
+    if (!await _modalConfirm(`¿Anular ${t.tipoDoc || 'ticket'} ${t.correlativo || t.idVenta}?\n\nMonto: S/ ${t.total.toFixed(2)}\n\nSi tiene CPE emitido, la baja en SUNAT se envía sola al anular (reconciliación).`, { danger: true, titulo: 'Anular ticket', okText: 'Anular' })) return;
     const motivo = await _pedirMotivoAnulacion('Ticket ' + (t.correlativo || t.idVenta));
     if (!motivo) return;
     const auth = await pedirAuth({ accion: 'ANULACION', refDocumento: t.correlativo || t.idVenta,
