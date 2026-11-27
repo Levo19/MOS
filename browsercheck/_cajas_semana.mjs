@@ -88,7 +88,7 @@ try {
   }
   // --- RPC "real": errores del backend, modo liviano en celular, rollback de marcas
   for (const w of [360, 1280]) {
-    const ctx = await br.newContext({ viewport: { width: w, height: 800 } }); const pg = await ctx.newPage(); const errs = []; const reqs = [];
+    const ctx = await br.newContext({ viewport: { width: w, height: 800 } }); const pg = await ctx.newPage(); const errs = []; const reqs = []; let usuariosOk = true;
     pg.on('pageerror', e => errs.push(e.message));
     await pg.addInitScript(() => { localStorage.setItem('mos_device_id', 'test-dev'); localStorage.setItem('mos_reporte_ctx', JSON.stringify({ u: 'Luis', r: 'MASTER', ts: Date.now() })); });
     await pg.route('**/functions/v1/mint-mos', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, token: 'x.y.z', exp: Date.now() / 1000 + 3000 }) }));
@@ -99,10 +99,11 @@ try {
     // 2) respuesta con ok:true (forma real) generada con el demo
     const full = await pg.evaluate(() => JSON.stringify(Object.assign(demoData(st.desde, st.hasta), { ok: true })));
     await pg.unroute('**/rpc/reporte_cajas_semana');
-    await pg.route('**/rpc/reporte_cajas_semana', r => { const b = r.request().postDataJSON(); reqs.push(b.p.ventas || 'FULL'); const o = JSON.parse(full); if (b.p.ventas === 'OBSERVABLES') o.ventas = o.ventas.filter(v => v.metodo !== 'EFECTIVO'); r.fulfill({ contentType: 'application/json', body: JSON.stringify(o) }); });
+    await pg.route('**/rpc/reporte_cajas_semana', r => { const b = r.request().postDataJSON(); reqs.push(b.p.ventas || 'FULL'); if (b.p.usuario !== 'Luis') usuariosOk = false; const o = JSON.parse(full); if (b.p.ventas === 'OBSERVABLES') o.ventas = o.ventas.filter(v => v.metodo !== 'EFECTIVO'); r.fulfill({ contentType: 'application/json', body: JSON.stringify(o) }); });
     await pg.route('**/rpc/control_caja_marcar', r => r.fulfill({ contentType: 'application/json', body: '{"ok":false,"error":"ROL_NO_AUTORIZADO"}' }));
     await pg.reload(); await pg.waitForSelector('.kpi');
     ok(!(await pg.isVisible('.demo')), w + ': con respuesta real no hay banner demo');
+    ok(usuariosOk, w + ': la RPC lleva usuario');
     ok(w === 360 ? reqs[0] === 'OBSERVABLES' : reqs[0] === 'FULL', w + ': primera carga ' + reqs[0]);
     if (w === 360) { await pg.click('.tabs > button[data-v="ventas"]'); await pg.waitForSelector('table, tbody tr', { timeout: 8000 }); ok(reqs.includes('FULL'), 'Ventas pide la carga completa: ' + reqs.join(',')); }
     await pg.click('.tabs > button[data-v="pend"]'); const p0 = await pg.textContent('.prog b');
@@ -111,6 +112,55 @@ try {
     ok(p0 === p1 && /no puede marcar/i.test(t1), w + ': rollback + mensaje en español: ' + t1);
     ok(!errs.length, w + ' real: pageerrors ' + errs.join(' / '));
     console.log(w + ' RPC real: primera carga=' + reqs[0] + ' | peticiones=' + reqs.join(',') + ' | toast=' + t1.slice(0, 70));
+    await ctx.close();
+  }
+  // --- usuario obligatorio, ROL_NO_AUTORIZADO, rango máx 31 días, MES semana por semana (cliente une y deduplica)
+  {
+    const ctx = await br.newContext({ viewport: { width: 1280, height: 900 } }); let pg = await ctx.newPage(); const errs = [];
+    pg.on('pageerror', e => errs.push(e.message));
+    await ctx.route('**/functions/v1/mint-mos', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, token: 'x.y.z', exp: Date.now() / 1000 + 3000 }) }));
+    // sin mos_reporte_ctx: pide abrir desde MOS
+    await pg.addInitScript(() => { localStorage.setItem('mos_device_id', 'test-dev'); });
+    await pg.goto('http://localhost:8793/reporte-cajas.html'); await pg.waitForSelector('#btnRe');
+    ok(/Abre este reporte desde el botón/.test(await pg.textContent('#cuerpo')), 'sin ctx pide abrir desde MOS');
+    await pg.close(); pg = await ctx.newPage(); pg.on('pageerror', e => errs.push(e.message));
+    await pg.addInitScript(() => { localStorage.setItem('mos_device_id', 'test-dev'); localStorage.setItem('mos_reporte_ctx', JSON.stringify({ u: 'Luis', r: 'MASTER', ts: Date.now() })); });
+    // ROL_NO_AUTORIZADO al cargar
+    await pg.route('**/rpc/reporte_cajas_semana', r => r.fulfill({ contentType: 'application/json', body: '{"ok":false,"error":"ROL_NO_AUTORIZADO"}' }));
+    await pg.goto('http://localhost:8793/reporte-cajas.html?periodo=mes'); await pg.waitForSelector('#btnRe');
+    ok(/no tiene permiso de administrador/.test(await pg.textContent('#cuerpo')), 'ROL_NO_AUTORIZADO al cargar: mensaje claro');
+    await pg.unroute('**/rpc/reporte_cajas_semana');
+    // mes simulado: cada llamada devuelve un demo del tramo pedido
+    const calls = []; let usuarios = 0; pg.on('console', m => { if (m.type() === 'error') console.log('CONSOLE', m.text().slice(0, 200)); });
+    await pg.route('**/rpc/reporte_cajas_semana', async r => {
+      const b = r.request().postDataJSON().p; calls.push([b.desde, b.hasta, b.ventas || 'FULL']); if (b.usuario === 'Luis') usuarios++;
+      const body = await pg.evaluate(([d, h]) => JSON.stringify(Object.assign(demoData(d, h), { ok: true })), [b.desde, b.hasta]);
+      r.fulfill({ contentType: 'application/json', body });
+    });
+    await pg.goto('http://localhost:8793/reporte-cajas.html?periodo=mes'); await pg.waitForSelector('.kpi', { timeout: 60000 });
+    const dias = calls.map(c => (Date.parse(c[1]) - Date.parse(c[0])) / 864e5 + 1);
+    ok(calls.length >= 4 && calls.length <= 6, 'mes = 4-6 llamadas en serie, hubo ' + calls.length + ': ' + JSON.stringify(calls));
+    ok(dias.every(n => n <= 7), 'cada llamada <= 7 días: ' + dias.join(','));
+    ok(usuarios === calls.length, 'todas las llamadas llevan usuario');
+    ok(!(await pg.isVisible('.demo')), 'mes real: sin banner demo');
+    ok((await pg.evaluate(() => location.search)).includes('periodo=mes'), 'periodo en la URL');
+    ok((await pg.$$eval('#atajos button.on', a => a.map(x => x.dataset.a))).join() === 'mes', 'atajo Este mes activo');
+    const nCajas = await pg.evaluate(() => st.D.cajas.length); const ids = await pg.evaluate(() => new Set(st.D.cajas.map(c => c.id_caja)).size);
+    ok(nCajas === ids && nCajas >= 40, 'cajas unidas sin duplicados: ' + nCajas + '/' + ids);
+    ok((await pg.$$eval('.tabs > button', a => a.some(x => x.dataset.v === 'semanas'))), 'pestaña Semana a semana en modo mes');
+    await pg.click('.tabs > button[data-v="semanas"]');
+    const wk = await pg.$$eval('.tw table thead tr:first-child th', a => a.length); ok(wk >= 6, 'tabla semana a semana con ' + wk + ' columnas');
+    const sw = await pg.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok(sw[0] <= sw[1], 'semanas sin scroll horizontal');
+    await pg.screenshot({ path: '_cajas_mes_semanas.png' });
+    // rango > 31 días: aviso y no consulta
+    const n0 = calls.length;
+    await pg.fill('#fDesde', '2026-09-01'); await pg.dispatchEvent('#fDesde', 'change'); await pg.waitForTimeout(150);
+    ok(/máximo es de 31/.test(await pg.textContent('.toast').catch(() => '')) && calls.length === n0, 'rango > 31 días avisa y no consulta');
+    // Mes pasado
+    calls.length = 0; await pg.click('#atajos button[data-a="mpas"]'); await pg.waitForSelector('.kpi'); await pg.waitForTimeout(300);
+    ok(calls.length >= 4 && calls.every(c => c[0] >= '2026-10-01' && c[1] <= '2026-10-31'), 'mes pasado: ' + calls.length + ' llamadas dentro de octubre');
+    console.log('MES: ' + calls.length + ' llamadas (mes pasado); semanas=' + wk + '; errores JS: ' + errs.length);
+    ok(!errs.length, 'mes: pageerrors ' + errs.join(' / '));
     await ctx.close();
   }
 } catch (e) { fallas++; console.log('EXCEPCION', e.message); }

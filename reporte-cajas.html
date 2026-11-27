@@ -180,7 +180,7 @@ tr.det{display:none}
   <div id="banner"></div>
   <div class="rango noprint" id="rango">
     <div class="seg sm" id="atajos">
-      <button data-a="hoy">Hoy</button><button data-a="sem">Esta semana</button><button data-a="pas">Semana pasada</button>
+      <button data-a="hoy">Hoy</button><button data-a="sem">Esta semana</button><button data-a="pas">Semana pasada</button><button data-a="mes">Este mes</button><button data-a="mpas">Mes pasado</button>
     </div>
     <label>Desde <input type="date" id="fDesde"></label>
     <label>Hasta <input type="date" id="fHasta"></label>
@@ -257,7 +257,7 @@ const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 // ── estado ──────────────────────────────────────────────────
 const hoy = limaYMD(Date.now());
 const lunes = addDays(hoy, -dowOf(hoy));
-const st = { desde: lunes, hasta: hoy, tab: 'pend', f: { zona: 'TODAS', cajero: '', cajas: new Set(), estado: '', rev: '', metodo: '', dia: '', q: '' },
+const st = { periodo: 'sem', desde: lunes, hasta: hoy, tab: 'pend', f: { zona: 'TODAS', cajero: '', cajas: new Set(), estado: '', rev: '', metodo: '', dia: '', q: '' },
   tb: {}, D: null, demo: false, revVer: 0, memo: new Map(), exp: null, printAll: false, verHechos: false, cliVista: 'global', zonaSel: null };
 let tok = null;
 st.lite = innerWidth <= 760;   // celular: carga inicial liviana (ventas observables); completa al abrir Ventas o una caja
@@ -265,11 +265,13 @@ const REV = new Map();
 
 function leerURL() {
   const q = new URLSearchParams(location.search);
+  const per = q.get('periodo'); if (per && PERIODOS[per]) { st.periodo = PERIODOS[per]; const r = atajo(st.periodo); st.desde = r[0]; st.hasta = r[1]; }
   const z = q.get('zona'); if (z) { const m = /(\d+)/.exec(z); st.f.zona = m ? 'ZONA-0' + (+m[1]) : 'TODAS'; }
   if (q.get('cajero')) st.f.cajero = q.get('cajero');
   if (q.get('caja')) q.get('caja').split(',').filter(Boolean).forEach(x => st.f.cajas.add(x));
-  if (/^\d{4}-\d\d-\d\d$/.test(q.get('desde') || '')) st.desde = q.get('desde');
-  if (/^\d{4}-\d\d-\d\d$/.test(q.get('hasta') || '')) st.hasta = q.get('hasta');
+  if (!per && /^\d{4}-\d\d-\d\d$/.test(q.get('desde') || '')) { st.desde = q.get('desde'); st.periodo = 'custom'; }
+  if (!per && /^\d{4}-\d\d-\d\d$/.test(q.get('hasta') || '')) st.hasta = q.get('hasta');
+  if (st.hasta < st.desde || difDias(st.desde, st.hasta) > DIAS_MAX) { st.desde = lunes; st.hasta = hoy; }
   if (q.get('tab')) st.tab = q.get('tab');
   if (q.get('estado')) st.f.estado = q.get('estado');
   if (q.get('rev')) st.f.rev = q.get('rev');
@@ -281,7 +283,7 @@ function leerURL() {
 function escribirURL() {
   const q = new URLSearchParams(); const f = st.f;
   if (f.zona !== 'TODAS') q.set('zona', f.zona); if (f.cajero) q.set('cajero', f.cajero); if (f.cajas.size) q.set('caja', [...f.cajas].join(','));
-  if (st.desde !== lunes) q.set('desde', st.desde); if (st.hasta !== hoy) q.set('hasta', st.hasta);
+  if (st.periodo === 'custom') { q.set('desde', st.desde); q.set('hasta', st.hasta); } else if (st.periodo !== 'sem') q.set('periodo', PER_URL[st.periodo]);
   if (st.tab !== 'pend') q.set('tab', st.tab); if (f.estado) q.set('estado', f.estado); if (f.rev) q.set('rev', f.rev);
   if (f.metodo) q.set('met', f.metodo); if (f.dia !== '') q.set('dia', f.dia); if (f.q) q.set('q', f.q);
   if (st.forceDemo) q.set('demo', '1');
@@ -331,6 +333,8 @@ const FLAGS = {
   ANULADO_POST_CIERRE: ['Anulado tras cierre', 'El ticket se anuló después de cerrar la caja.', 'MEDIA'],
   SIN_VENTA_30M: ['Sin venta (30 min)', 'El Yape llegó hace más de 30 minutos y nadie lo asoció a una venta.', 'MEDIA'],
   DIFERENCIA_TICKETS: ['Monto ≠ tickets', 'El monto del Yape no coincide con la suma de los tickets que verificó.', 'MEDIA'],
+  TARDIO_OTRA_SEMANA: ['Tardío (otra semana)', 'Extra o anulación hecho en una caja de antes del rango: se ve aquí pero la caja es de otra semana.', 'MEDIA'],
+  TS_ILEGIBLE: ['Fecha ilegible', 'La fecha de este registro no se pudo interpretar.', 'BAJA'],
   CERRADA_AUTO: ['Cerrada por el sistema', 'La cerró el sistema o fue forzada: el cajero no la cerró.', 'BAJA'],
   SIN_CAPTOR: ['Sin captor', 'Ese día la zona no tenía captor Yape: los virtuales no se pueden verificar (no es culpa del cajero).', 'BAJA'],
   EXTRA_DESDE_MOS: ['Extra desde MOS', 'El extra lo creó un administrador desde MOS, no el cajero.', 'BAJA'],
@@ -354,19 +358,53 @@ const ev = v => v.estado_virtual !== undefined ? v.estado_virtual : (Number(v.vi
 function fts(s) { const x = parseTs(s); return isNaN(x) ? (s ? String(s) : '—') : fh(s); }
 
 // ── carga y preparación ─────────────────────────────────────
+const spinner = m => '<div class="estado"><div class="spin"></div>' + esc(m) + '</div>';
+function semanas(desde, hasta) {   // lun–dom recortado al rango
+  const out = []; let a = desde;
+  while (a <= hasta) { const fin = addDays(a, 6 - dowOf(a)); const b = fin > hasta ? hasta : fin; out.push([a, b]); a = addDays(b, 1); }
+  return out;
+}
+const KEYU = { cajas: 'id_caja', extras: 'id_extra', ventas: 'id_venta', anulados: 'id_venta', yapes: 'id', tickets_virtuales: 'id_venta' };
+function unir(parts, desde, hasta) {   // une semanas y deduplica por id (una caja o un extra pueden aparecer en dos semanas)
+  const o = { ok: true, desde, hasta, zona: 'TODAS', generado_ts: parts[parts.length - 1].generado_ts, cajas: [], extras: [], ventas: [], anulados: [], yapes: [], tickets_virtuales: [], clientes: [], semanas: parts.length };
+  const seen = { clientes: new Set() }; Object.keys(KEYU).forEach(k => { seen[k] = new Set(); });
+  parts.forEach(p => {
+    Object.keys(KEYU).forEach(k => (p[k] || []).forEach(x => { const id = x[KEYU[k]]; if (seen[k].has(id)) return; seen[k].add(id); o[k].push(x); }));
+    (p.clientes || []).forEach(x => { const id = x.id_caja + '|' + (x.cliente_doc || x.cliente_nombre); if (seen.clientes.has(id)) return; seen.clientes.add(id); o.clientes.push(x); });
+  });
+  return o;
+}
+async function unaSemana(desde, hasta, lite) {
+  for (let i = 0; ; i++) {
+    try {
+      const pr = { desde, hasta, zona: 'TODAS', usuario: (ctx() || {}).u || '' }; if (lite) pr.ventas = 'OBSERVABLES';
+      const j = await rpc('reporte_cajas_semana', pr);
+      if (j && j.ok === false) { const er = new Error(j.error || 'RESPUESTA'); er.fatal = true; throw er; }
+      return j;
+    } catch (e) { if (e.noExiste || e.fatal || e.message === 'SIN_DISPOSITIVO' || i === 1) throw e; tok = null; await new Promise(r => setTimeout(r, 700)); }
+  }
+}
+async function fetchRango(lite, prog) {   // máx 31 días; más de 7 días = semana por semana, en serie
+  if (difDias(st.desde, st.hasta) <= 7) { prog && prog(1, 1); return unaSemana(st.desde, st.hasta, lite); }
+  const ws = semanas(st.desde, st.hasta); const parts = [];
+  for (let i = 0; i < ws.length; i++) { prog && prog(i + 1, ws.length); parts.push(await unaSemana(ws[i][0], ws[i][1], lite)); }
+  return unir(parts, st.desde, st.hasta);
+}
 async function cargar() {
-  $('cuerpo').innerHTML = '<div class="estado"><div class="spin"></div>Cargando cajas…</div>';
+  $('cuerpo').innerHTML = spinner('Cargando cajas…');
   let d = null;
   try {
     if (st.forceDemo) { st.demo = true; d = demoData(st.desde, st.hasta); }
+    else if (!ctx()) { const er = new Error('SIN_USUARIO'); er.fatal = true; throw er; }
     else {
-      for (let i = 0; i < 2 && !d; i++) {
-        try { const t0 = performance.now(); const pr = { desde: st.desde, hasta: st.hasta, zona: 'TODAS' }; if (st.lite) pr.ventas = 'OBSERVABLES'; const j = await rpc('reporte_cajas_semana', pr); st.ms = Math.round(performance.now() - t0); if (j && j.ok === false) { const er = new Error(j.error || 'RESPUESTA'); er.fatal = true; throw er; } d = j; st.demo = false; }
-        catch (e) { if (e.noExiste) { st.demo = true; st.lite = false; d = demoData(st.desde, st.hasta); break; } if (e.fatal || e.message === 'SIN_DISPOSITIVO' || i === 1) throw e; tok = null; await new Promise(r => setTimeout(r, 700)); }
-      }
+      const t0 = performance.now();
+      try { d = await fetchRango(st.lite, (i, n) => { $('cuerpo').innerHTML = spinner(n > 1 ? 'Cargando semana ' + i + ' de ' + n + '…' : 'Cargando cajas…'); }); st.demo = false; st.ms = Math.round(performance.now() - t0); }
+      catch (e) { if (e.noExiste) { st.demo = true; st.lite = false; d = demoData(st.desde, st.hasta); } else throw e; }
     }
   } catch (e) {
-    const msg = e.message === 'SIN_DISPOSITIVO' ? 'Abre este reporte desde MOS (Finanzas → Control de cajas) en un equipo autorizado.'
+    const msg = e.message === 'SIN_USUARIO' ? 'Abre este reporte desde el botón «Control de cajas» de MOS (Finanzas): hace falta saber qué usuario eres.'
+      : e.message === 'ROL_NO_AUTORIZADO' ? 'Tu usuario no tiene permiso de administrador para ver el control de cajas.'
+      : e.message === 'SIN_DISPOSITIVO' ? 'Abre este reporte desde MOS (Finanzas → Control de cajas) en un equipo autorizado.'
       : e.message === 'SIN_PERMISO' ? 'Este equipo no está autorizado en MOS.' : ERRMSG[e.message] ? ERRMSG[e.message] : 'No se pudo cargar el reporte. Revisa la conexión y vuelve a intentar.';
     $('cuerpo').innerHTML = '<div class="estado">' + esc(msg) + '<br><br><button class="btn pri" id="btnRe">Reintentar</button></div>';
     return;
@@ -376,7 +414,7 @@ async function cargar() {
 }
 async function cargarCompleto() {
   if (st.cargandoC) return; st.cargandoC = true;
-  try { const j = await rpc('reporte_cajas_semana', { desde: st.desde, hasta: st.hasta, zona: 'TODAS' }); if (j && j.ok === false) throw new Error(j.error); st.lite = false; prep(j); }
+  try { const j = await fetchRango(false, (i, n) => { const e = $('cuerpo').querySelector('.estado'); if (e && n > 1) e.lastChild.textContent = 'Cargando todas las ventas · semana ' + i + ' de ' + n + '…'; }); st.lite = false; prep(j); }
   catch (e) { st.liteFalla = true; toast('No se pudieron cargar todas las ventas. Se muestran solo las observables.', { err: true }); }
   st.cargandoC = false; render();
 }
@@ -640,7 +678,7 @@ function cardCaja(c) {
   const pc = st.D.pc.get(c.id_caja) || { tot: 0, pend: 0 }; const r = REV.get('CAJA|' + c.id_caja);
   const met = Object.entries(c.por_metodo).filter(e => +e[1] > 0).map(e => metChip(e[0]) + ' ' + S(e[1])).join(' · ') || '—';
   return '<div class="card ' + zcls(c.zona_id) + '" data-act="caja" data-id="' + esc(c.id_caja) + '"><h3>' + zchip(c.zona_id) + ' ' + esc(c.vendedor) + ' <span class="chip ' + (c._abierta ? 'c-warn' : 'c-ok') + '">' + (c._abierta ? 'Abierta' : 'Cerrada') + '</span>' + (c.estacion ? ' <small style="color:var(--dim);font-weight:600">' + esc(c.estacion) + '</small>' : '') + '</h3>' +
-    '<div style="font-size:13px;color:var(--mut)">Abrió ' + esc(fh(c.fecha_apertura)) + ' · ' + (c._abierta ? 'sigue abierta' : 'cerró ' + esc(fh(c.fecha_cierre))) + ' · ' + (c.horas != null ? Number(c.horas).toFixed(1) + ' h' : '') + '</div>' +
+    '<div style="font-size:13px;color:var(--mut)">Abrió ' + (c._t0 < parseTs(st.desde) ? '<b>el ' + esc(fh(c.fecha_apertura)) + '</b> (antes del rango)' : esc(fh(c.fecha_apertura))) + ' · ' + (c._abierta ? 'sigue abierta' : 'cerró ' + esc(fh(c.fecha_cierre))) + ' · ' + (c.horas != null ? Number(c.horas).toFixed(1) + ' h' : '') + '</div>' +
     '<div class="kv"><span>Apertura</span><span>' + S(c.monto_inicial) + '</span><span>Efectivo esperado</span><span>' + S(c.esperado_efectivo) + '</span><span>Entregado</span><span>' + (c._abierta || c.monto_final == null ? '—' : S(c.monto_final)) + '</span><span>Diferencia</span><span>' + diffHtml(c) + '</span>' +
     '<span>Ventas</span><span>' + (c.ventas_n || 0) + ' · ' + S(c.ventas_total) + '</span><span>Anulados</span><span>' + (c.anulados_n || 0) + ' · ' + S(c.anulados_total) + '</span><span>Extras</span><span>' + (c.extras_n || 0) + ' (+' + money(c.extras_ingreso) + ' / −' + money(c.extras_egreso) + ')</span><span>Clientes</span><span>' + (c.clientes_n || 0) + '</span>' + cajaExtra(c) +
     '<span>Virtual sin verificar</span><span>' + (SIN_CAPTOR[c.zona_id] ? '<span class="chip c-gris">sin captor</span>' : (c.virtual_sin_verificar_n || 0) + ' · ' + S(c.virtual_sin_verificar_total)) + '</span></div>' +
@@ -741,24 +779,46 @@ function vistaYB(d) {
     '<span style="font-size:14px;color:var(--mut)">' + sv.length + ' sin verificar (' + S(sum(sv)) + ')' + (sc.length ? ' · ' + sc.length + ' sin captor (' + S(sum(sc)) + '), no medibles' : '') + '</span></div>';
   return head + seg + tabla('tv', cols, rows, { sort: 0, dir: -1, cls: r => r.estado === 'SIN_VERIFICAR' ? 'alerta' : '' });
 }
-const TABS = [['pend', 'Pendientes'], ['cajas', 'Cajas'], ['cajero', 'Por cajero'], ['zonas', 'Zona 01 vs 02'], ['extras', 'Extras'], ['ventas', 'Ventas'], ['anul', 'Anulados'], ['yape', '💜 Yape: captor vs tickets'], ['clientes', 'Clientes']];
+function tabSemanas(d) {
+  const ws = semanas(st.desde, st.hasta);
+  const bk = ws.map(w => d.cajas.filter(c => { if (isNaN(c._t0)) return false; let y = limaYMD(c._t0); if (y < st.desde) y = st.desde; return y >= w[0] && y <= w[1]; }));
+  const subs = bk.map(b => build(b, { zona: 'TODAS', metodo: '', noFilt: false })); const A = subs.map(agg); const T = agg(d);
+  const lbl = w => w[0].slice(8) + '/' + w[0].slice(5, 7) + '–' + w[1].slice(8) + '/' + w[1].slice(5, 7);
+  const M = [['Cajas', a => a.cajasN, String], ['Venta total', a => a.ventasT, S], ['Efectivo', a => a.efe, S], ['Virtual', a => a.vir, S], ['Crédito', a => a.cre, S], ['Por cobrar', a => a.pc, S],
+    ['Anulados', a => a.anT, (v, a) => a.anN + ' · ' + S(v)], ['Extras no permitidos', a => a.exFlag, String], ['Extras ingreso', a => a.exI, S], ['Extras egreso', a => a.exE, S],
+    ['Diferencia de cajas', a => a.dif, (v) => '<span class="' + (v < -0.05 ? 'dif-bad' : v > 0.05 ? 'dif-warn' : 'dif-ok') + '">' + SS(v) + '</span>'],
+    ['Virtual sin verificar', a => a.vsT, (v, a) => a.vsN + ' · ' + S(v)], ['Yapes sin venta', a => a.ysT, (v, a) => a.ysN + ' · ' + S(v)], ['Alertas pendientes', a => a.pend, String]];
+  const mx = Math.max(1, ...A.map(a => a.ventasT));
+  let h = '<div class="prog"><b>Venta por semana</b>' + ws.map((w, i) => '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:14px"><span style="width:84px;flex:0 0 auto">' + lbl(w) + '</span><span style="flex:1;background:var(--panel2);border-radius:6px;overflow:hidden"><i style="display:block;height:16px;width:' + (A[i].ventasT / mx * 100).toFixed(1) + '%;background:var(--acc)"></i></span><b style="flex:0 0 auto">' + S(A[i].ventasT) + '</b></div>').join('') + '</div>';
+  st.exp = { name: 'semana_a_semana', head: ['Métrica'].concat(ws.map(lbl), ['Total']), rows: M.map(m => [m[0]].concat(A.map(a => money(m[1](a))), [money(m[1](T))])) };
+  h += '<div class="tw" style="overflow-x:auto"><table><thead><tr><th style="cursor:default">Métrica</th>' + ws.map(w => '<th class="n" style="cursor:default">' + lbl(w) + '</th>').join('') + '<th class="n" style="cursor:default">Total</th></tr></thead><tbody>' +
+    M.map(m => '<tr><td>' + m[0] + '</td>' + A.concat([T]).map(a => '<td class="n" style="display:table-cell">' + m[2](m[1](a), a) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>';
+  const nombres = [...new Set(d.cajas.map(c => c.vendedor))].sort(); const PC = subs.map(porCajero);
+  h += '<h3 style="margin:14px 0 6px">Por cajero, semana a semana</h3><div class="tw" style="overflow-x:auto"><table><thead><tr><th style="cursor:default">Cajero</th>' + ws.map(w => '<th class="n" style="cursor:default">' + lbl(w) + '</th>').join('') + '</tr></thead><tbody>' +
+    nombres.map(n => '<tr><td><b>' + esc(n) + '</b></td>' + PC.map(pc => { const r = pc.find(x => x.v === n); return '<td class="n" style="display:table-cell">' + (r ? S(r.venta) + '<br><small class="' + (r.dif < -0.05 ? 'dif-bad' : 'dif-ok') + '">dif ' + SS(r.dif) + '</small>' + (r.pend ? '<br><small class="dif-bad">' + r.pend + ' alertas</small>' : '') : '<span style="color:var(--dim)">—</span>') + '</td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>';
+  return h;
+}
+const TABS = [['pend', 'Pendientes'], ['cajas', 'Cajas'], ['cajero', 'Por cajero'], ['zonas', 'Zona 01 vs 02'], ['semanas', 'Semana a semana'], ['extras', 'Extras'], ['ventas', 'Ventas'], ['anul', 'Anulados'], ['yape', '💜 Yape: captor vs tickets'], ['clientes', 'Clientes']];
+const tabsDef = () => TABS.filter(t => t[0] !== 'semanas' || difDias(st.desde, st.hasta) > 7);
 function render() {
   if (!st.D) return;
+  if (st.tab === 'semanas' && difDias(st.desde, st.hasta) <= 7) st.tab = 'pend';
   syncBar(); escribirURL();
   const d = derive(); const a = agg(d);
   const cnt = { pend: a.pend, cajas: d.cajas.length, extras: d.extras.length, ventas: d.ventas.length, anul: d.anulados.length, yape: d.yapes.length };
   $('banner').innerHTML = st.demo ? '<div class="demo">⚠ Datos de ejemplo: la base aún no tiene el reporte de cajas. Las marcas no se guardan.</div>' : '';
-  $('gen').textContent = (st.demo ? 'Ejemplo' : 'Generado ' + fh((st.D.raw || {}).generado_ts) + (st.ms ? ' · carga ' + st.ms + ' ms' + (st.lite ? ' (liviana)' : '') : '')) + ' · semana ' + st.desde + ' → ' + st.hasta + ' (hora Lima)';
+  $('gen').textContent = (st.demo ? 'Ejemplo' : 'Generado ' + fh((st.D.raw || {}).generado_ts) + (st.ms ? ' · carga ' + st.ms + ' ms' + (st.lite ? ' (liviana)' : '') : '')) + ' · ' + st.desde + ' → ' + st.hasta + ' (hora Lima)';
   let body;
   switch (st.tab) {
     case 'pend': body = tabPend(d); break; case 'cajas': body = tabCajas(d); break; case 'cajero': body = tabCajero(d); break; case 'zonas': body = tabZonas(); break;
+    case 'semanas': body = tabSemanas(d); break;
     case 'clientes': body = '<div class="seg sm" id="segCli" style="margin-bottom:8px"><button data-v="global" class="' + (st.cliVista === 'global' ? 'on' : '') + '">Global (top)</button><button data-v="caja" class="' + (st.cliVista === 'caja' ? 'on' : '') + '">Por caja</button></div>' + listaTab('clientes', d); break;
     case 'yape': body = tabYape(d); break;
     case 'ventas': if (st.lite && !st.liteFalla) { cargarCompleto(); body = '<div class="estado"><div class="spin"></div>Cargando todas las ventas…</div>'; break; } body = listaTab(st.tab, d); break;
     case 'extras': case 'anul': body = listaTab(st.tab, d); break;
     default: body = '';
   }
-  const tabs = '<div class="tabs noprint" role="tablist">' + TABS.map(t => '<button class="' + (t[0] === st.tab ? 'on' : '') + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (cnt[t[0]] != null ? '<span class="n' + (t[0] === 'pend' && cnt.pend ? ' al' : '') + '">' + cnt[t[0]] + '</span>' : '') + '</button>').join('') + '</div>';
+  const tabs = '<div class="tabs noprint" role="tablist">' + tabsDef().map(t => '<button class="' + (t[0] === st.tab ? 'on' : '') + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (cnt[t[0]] != null ? '<span class="n' + (t[0] === 'pend' && cnt.pend ? ' al' : '') + '">' + cnt[t[0]] + '</span>' : '') + '</button>').join('') + '</div>';
   $('cuerpo').innerHTML = kpis(d) + tabs + body;
   if (st.sheet) { if (st.lite && !st.liteFalla) cargarCompleto(); else renderSheet(); }
 }
@@ -773,7 +833,7 @@ function syncBar() {
   const nombres = [...new Set(D.cajas.filter(c => f.zona === 'TODAS' || c.zona_id === f.zona).map(c => c.vendedor))].sort();
   if (f.cajero && !nombres.includes(f.cajero)) f.cajero = '';
   $('fCajero').innerHTML = '<option value="">Todos los cajeros</option>' + nombres.map(n => '<option' + (n === f.cajero ? ' selected' : '') + ' value="' + esc(n) + '">' + esc(n) + '</option>').join('');
-  document.querySelectorAll('#atajos button').forEach(b => { const r = atajo(b.dataset.a); b.classList.toggle('on', r[0] === st.desde && r[1] === st.hasta); });
+  document.querySelectorAll('#atajos button').forEach(b => { const r = atajo(b.dataset.a); b.classList.toggle('on', st.periodo !== 'custom' ? b.dataset.a === st.periodo : false); });
   const base = D.cajas.filter(c => (f.zona === 'TODAS' || c.zona_id === f.zona) && (!f.cajero || c.vendedor === f.cajero) && (!f.estado || (f.estado === 'A' ? c._abierta : !c._abierta)) && (f.dia === '' || c._dow === f.dia)).sort((a, b) => b._t0 - a._t0);
   $('cajasInfo').textContent = f.cajas.size ? f.cajas.size + ' seleccionada(s) · tocar para quitar' : 'todas (toca una para filtrar a esa caja)';
   $('cajasChips').innerHTML = base.map(c => '<span class="cc' + (f.cajas.has(c.id_caja) ? ' on' : '') + '" data-act="chip" data-id="' + esc(c.id_caja) + '">' + zchip(c.zona_id) + ' <b>' + esc(c.vendedor) + '</b> ' + esc(fh(c.fecha_apertura)) + ' ' + (c._abierta ? '🟡' : '🟢') + ' <button class="solo" data-act="solo" data-id="' + esc(c.id_caja) + '">solo</button></span>').join('') || '<span style="color:var(--dim)">Sin cajas.</span>';
@@ -781,7 +841,16 @@ function syncBar() {
   if (f.rev) act.push(f.rev === 'alertas' ? 'con alertas' : 'sin revisar'); if (f.metodo) act.push(f.metodo); if (f.dia !== '') act.push(DIAS[f.dia]); if (f.q) act.push('“' + f.q + '”');
   $('activos').innerHTML = act.length ? 'Filtrando: ' + act.map(x => '<span class="chip c-info">' + esc(x) + '</span>').join(' ') + ' <button class="btn sm" data-act="limpiar">Limpiar</button>' : 'Sin filtros: se muestran todas las cajas del rango.';
 }
-function atajo(a) { if (a === 'hoy') return [hoy, hoy]; if (a === 'sem') return [lunes, hoy]; const l = addDays(lunes, -7); return [l, addDays(l, 6)]; }
+function atajo(a) {
+  if (a === 'hoy') return [hoy, hoy]; if (a === 'sem') return [lunes, hoy];
+  if (a === 'pas') { const l = addDays(lunes, -7); return [l, addDays(l, 6)]; }
+  const m1 = hoy.slice(0, 8) + '01';
+  if (a === 'mes') return [m1, hoy];
+  if (a === 'mpas') { const fin = addDays(m1, -1); return [fin.slice(0, 8) + '01', fin]; }
+  return [st.desde, st.hasta];
+}
+const PERIODOS = { hoy: 'hoy', semana: 'sem', pasada: 'pas', mes: 'mes', mespasado: 'mpas' };
+const PER_URL = { hoy: 'hoy', sem: 'semana', pas: 'pasada', mes: 'mes', mpas: 'mespasado', custom: 'custom' };
 
 // ── detalle de caja ────────────────────────────────────────
 function renderSheet() {
@@ -814,7 +883,7 @@ async function marcar(tipo, ref, estado, nota, silencioso) {
   nuevo ? REV.set(k, nuevo) : REV.delete(k); recalcPend(); render(); hap(12);
   if (!silencioso) toast(estado === 'OK' ? 'Marcado OK' : estado ? 'Marcado como observado' : 'Marca quitada', prev !== undefined && estado === 'OK' ? { undo: () => marcar(tipo, ref, prev ? prev.estado : null, prev ? prev.nota : '', true) } : {});
   if (st.demo) return;
-  try { const j = await rpc('control_caja_marcar', { usuario: c.u, tipo, ref: String(ref), estado: estado || null, nota: nota || '' }); if (j && j.ok === false) throw new Error(j.error || 'RESPUESTA'); }
+  try { const j = await rpc('control_caja_marcar', { usuario: c.u, tipo, ref: String(ref), estado: estado ? estado : null, nota: nota || '' }); if (j && j.ok === false) throw new Error(j.error || 'RESPUESTA'); }
   catch (e) { prev ? REV.set(k, prev) : REV.delete(k); recalcPend(); render(); hap([30, 40, 30]); toast((ERRMSG[e.message] || 'No se pudo guardar la marca.') + ' Se deshizo.', { err: true }); }
 }
 function modalMarca(tipo, ref) {
@@ -868,8 +937,17 @@ $('fCajero').onchange = e => { st.f.cajero = e.target.value; hap(8); cambia(); }
 $('fMetodo').onchange = e => { st.f.metodo = e.target.value; hap(8); cambia(); };
 let qT = null; $('fQ').oninput = e => { clearTimeout(qT); qT = setTimeout(() => { st.f.q = e.target.value; cambia(); }, 200); };
 $('btnMas').onclick = () => $('panelSec').classList.toggle('open');
-$('atajos').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const r = atajo(b.dataset.a); st.desde = r[0]; st.hasta = r[1]; hap(8); cargar(); });
-function cambiaFechas() { if ($('fDesde').value && $('fHasta').value && $('fDesde').value <= $('fHasta').value) { st.desde = $('fDesde').value; st.hasta = $('fHasta').value; cargar(); } else toast('Rango de fechas inválido.', { err: true }); }
+$('atajos').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const r = atajo(b.dataset.a); st.periodo = b.dataset.a; st.desde = r[0]; st.hasta = r[1]; hap(8); limitaFechas(); cargar(); });
+const DIAS_MAX = 31;
+const difDias = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 864e5) + 1;
+function cambiaFechas() {
+  const d = $('fDesde').value, h = $('fHasta').value;
+  if (d && h && d <= h && difDias(d, h) > DIAS_MAX) { toast('El rango máximo es de ' + DIAS_MAX + ' días.', { err: true }); $('fHasta').value = st.hasta; $('fDesde').value = st.desde; hap([30, 40, 30]); return; }
+  limitaFechas();
+  cambiaFechas2();
+}
+function limitaFechas() { $('fDesde').min = addDays($('fHasta').value || st.hasta, -(DIAS_MAX - 1)); $('fHasta').max = addDays($('fDesde').value || st.desde, DIAS_MAX - 1); }
+function cambiaFechas2() { if ($('fDesde').value === st.desde && $('fHasta').value === st.hasta) return; if ($('fDesde').value && $('fHasta').value && $('fDesde').value <= $('fHasta').value) { st.desde = $('fDesde').value; st.hasta = $('fHasta').value; st.periodo = 'custom'; cargar(); } else toast('Rango de fechas inválido.', { err: true }); }
 $('fDesde').onchange = cambiaFechas; $('fHasta').onchange = cambiaFechas;
 $('btnAct').onclick = () => { hap(10); cargar(); };
 document.addEventListener('click', e => { if (e.target.id === 'btnRe') cargar(); });
@@ -897,8 +975,9 @@ $('btnFull').onclick = () => { try { document.fullscreenElement ? document.exitF
 
 // ── datos de ejemplo (mismo contrato que la RPC) ───────────
 function demoData(desde, hasta) {
-  let s = 20261127; const R = () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296; const pick = a => a[Math.floor(R() * a.length)];
-  const dias = []; for (let d = desde, n = 0; d <= hasta && n < 8; d = addDays(d, 1), n++) dias.push(d); if (!dias.length) dias.push(hoy);
+  const TG = desde.slice(5).replace('-', ''); let s = 20261127 + parseInt(TG, 10) * 7; const R = () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296; const pick = a => a[Math.floor(R() * a.length)];
+  const dias = []; for (let d = desde, n = 0; d <= hasta && n < 31; d = addDays(d, 1), n++) dias.push(d);
+  const NC = Math.min(40, 10 * Math.ceil(Math.max(1, dias.length) / 7)); const NV = dias.length > 7 ? 30 : 128; if (!dias.length) dias.push(hoy);
   const cajeros = [['Ana', 'ZONA-01'], ['Beto', 'ZONA-01'], ['Carla', 'ZONA-02'], ['Diego', 'ZONA-02'], ['Elena', 'ZONA-02']];
   const clientesPool = [['', 'CLIENTE VARIOS'], ['', 'CLIENTE VARIOS'], ['', 'CLIENTE VARIOS'], ['', 'CLIENTE VARIOS'], ['10456789012', 'Pesquera Nazca SAC'], ['20512345678', 'Bodega El Muelle'], ['45879632', 'Rosa Quispe'], ['40123987', 'Juan Huamán'], ['20601234567', 'Hotel Paracas Sol'], ['71234568', 'María Torres'], ['20498765432', 'Restaurante Mar Azul']];
   const motivos = ['Error de cobro', 'Cliente se arrepintió', 'Producto equivocado', '', 'Duplicado'];
@@ -906,17 +985,17 @@ function demoData(desde, hasta) {
   const out = { desde, hasta, zona: 'TODAS', generado_ts: new Date().toISOString(), cajas: [], extras: [], ventas: [], anulados: [], yapes: [], clientes: [] };
   const ahoraMin = (() => { const p = limaParts(Date.now()); return +p.hour * 60 + +p.minute; })();
   let nv = 0, nx = 0, ny = 0;
-  for (let i = 0; i < 10; i++) {
-    const [vend, zona] = cajeros[i % 5]; const dia = dias[Math.min(dias.length - 1, Math.floor(i * dias.length / 10))]; const abierta = i >= 8;
+  for (let i = 0; i < NC; i++) {
+    const [vend, zona] = cajeros[i % 5]; let dia = dias[Math.min(dias.length - 1, Math.floor(i * dias.length / NC))]; const abierta = i >= NC - 2; if (i === 0) { dia = addDays(dias[0], -1); }
     const ini = 420 + Math.round(R() * 90); const fin = abierta ? (dia === hoy ? Math.max(ini + 60, ahoraMin) : ini + 600) : ini + 540 + Math.round(R() * 60);
-    const c = { id_caja: 'CJ-' + (101 + i), zona_id: zona, vendedor: vend, estacion: 'Caja ' + (1 + i % 2), estado: abierta ? 'ABIERTA' : 'CERRADA', fecha_apertura: mkTs(dia, ini), fecha_cierre: abierta ? null : mkTs(dia, fin), horas: Math.round((fin - ini) / 6) / 10, monto_inicial: 100,
+    const c = { id_caja: 'CJ' + TG + '-' + (101 + i), zona_id: zona, vendedor: vend, estacion: 'Caja ' + (1 + i % 2), estado: abierta ? 'ABIERTA' : 'CERRADA', fecha_apertura: mkTs(dia, ini), fecha_cierre: abierta ? null : mkTs(dia, fin), horas: Math.round((fin - ini) / 6) / 10, monto_inicial: 100,
       por_metodo: { EFECTIVO: 0, VIRTUAL: 0, CREDITO: 0, POR_COBRAR: 0, MIXTO: 0 }, ventas_n: 0, ventas_total: 0, anulados_n: 0, anulados_total: 0, extras_n: 0, extras_ingreso: 0, extras_egreso: 0, virtual_verificado_n: 0, virtual_sin_verificar_n: 0, virtual_sin_verificar_total: 0, alertas: [], revision: null, efectivo_ventas: 0, abonado_en_otra_caja: 0, extras_ingreso_virtual: i === 3 ? 15 : 0, extras_egreso_virtual: 0, planilla: 0, conversiones_n: i % 4 === 0 ? 1 : 0, virtual_sin_captor_n: 0 };
     let efeCaja = 0; const cli = new Map();
-    for (let k = 0; k < 128; k++) {
+    for (let k = 0; k < NV; k++) {
       nv++; const p = R(); const metodo = p < .55 ? 'EFECTIVO' : p < .8 ? 'VIRTUAL' : p < .88 ? 'CREDITO' : p < .93 ? 'POR_COBRAR' : 'MIXTO'; const total = money(2 + R() * 58);
       let efe = 0, vir = 0; if (metodo === 'EFECTIVO') efe = total; else if (metodo === 'VIRTUAL') vir = total; else if (metodo === 'MIXTO') { vir = money(total * .4); efe = money(total - vir); }
       let ver = null; if (vir > 0 && zona === 'ZONA-02') ver = R() > (vend === 'Diego' ? .5 : .12);
-      const cl = pick(clientesPool); const idv = 'V-' + nv;
+      const cl = pick(clientesPool); const idv = 'V' + TG + '-' + nv;
       const v = { id_venta: idv, id_caja: c.id_caja, zona_id: zona, fecha: mkTs(dia, ini + R() * (fin - ini)), vendedor: vend, correlativo: 'B00' + (1 + i % 3) + '-' + String(nv).padStart(5, '0'), tipo_doc: cl[0].length === 11 ? 'FACTURA' : 'BOLETA', cliente_doc: cl[0], cliente_nombre: cl[1], total, forma_pago: metodo, metodo, efe, vir, verificado: vir > 0 ? ver : null, id_yape: ver ? 'Y-' + idv : null, nf_estado: pick(['ACEPTADO', 'ACEPTADO', 'PENDIENTE']), revision: null };
       v.estado_virtual = vir > 0 ? (ver === true ? 'VERIFICADO' : ver === false ? 'SIN_VERIFICAR' : 'SIN_CAPTOR') : null; v.flags = []; v.cobrado_en = null;
       if (vir > 0 && zona === 'ZONA-01') c.virtual_sin_captor_n++;
@@ -929,12 +1008,12 @@ function demoData(desde, hasta) {
     const nExt = 3 + Math.floor(R() * 2);
     for (let k = 0; k < nExt && nx < 36; k++) {
       nx++; const ing = R() < .35; const monto = money(ing ? 20 + R() * 80 : 10 + R() * 120); const fl = [];
-      if (!ing && monto > 100) fl.push('EGRESO_MAYOR_100'); if (!ing && vend === 'Diego' && R() < .6) fl.push('EGRESO_SIN_CONCEPTO'); const ed = R() < .15; if (ed) fl.push('EDITADO'); if (R() < .2) fl.push('OTRO_USUARIO'); if (R() < .1) fl.push('CONCEPTO_LIBRE'); if (R() < .05) fl.push('CONSUMO_PERSONAL');
-      out.extras.push({ id_extra: 'X-' + nx, id_caja: c.id_caja, zona_id: zona, ts: mkTs(dia, ini + R() * (fin - ini)), tipo: ing ? 'INGRESO' : 'EGRESO', monto, concepto: pick(ing ? ['Cambio sencillo', 'Aporte dueño'] : ['Pago proveedor', 'Taxi', 'Hielo', 'Adelanto personal', 'Limpieza']), obs: R() < .4 ? 'ver comprobante' : '', registrado_por: R() < .8 ? vend : 'Supervisor', editado: ed, flags: fl, nivel: fl.some(f => flagNivel(f) === 'ALTA') ? 'ALTA' : fl.some(f => flagNivel(f) === 'MEDIA') ? 'MEDIA' : fl.length ? 'BAJA' : null, revision: null });
+      if (!ing && monto > 100) fl.push('EGRESO_MAYOR_100'); if (!ing && vend === 'Diego' && R() < .6) fl.push('EGRESO_SIN_CONCEPTO'); const ed = R() < .15; if (ed) fl.push('EDITADO'); if (R() < .2) fl.push('OTRO_USUARIO'); if (R() < .1) fl.push('CONCEPTO_LIBRE'); if (R() < .05) fl.push('CONSUMO_PERSONAL'); if (i === 0) fl.push('TARDIO_OTRA_SEMANA');
+      out.extras.push({ id_extra: 'X' + TG + '-' + nx, id_caja: c.id_caja, zona_id: zona, ts: mkTs(dia, ini + R() * (fin - ini)), tipo: ing ? 'INGRESO' : 'EGRESO', monto, concepto: pick(ing ? ['Cambio sencillo', 'Aporte dueño'] : ['Pago proveedor', 'Taxi', 'Hielo', 'Adelanto personal', 'Limpieza']), obs: R() < .4 ? 'ver comprobante' : '', registrado_por: R() < .8 ? vend : 'Supervisor', editado: ed, flags: fl, nivel: fl.some(f => flagNivel(f) === 'ALTA') ? 'ALTA' : fl.some(f => flagNivel(f) === 'MEDIA') ? 'MEDIA' : fl.length ? 'BAJA' : null, revision: null });
       c.extras_n++; ing ? c.extras_ingreso = money(c.extras_ingreso + monto) : c.extras_egreso = money(c.extras_egreso + monto);
     }
     const nAn = i < 7 ? 3 : 2; for (let k = 0; k < nAn; k++) {
-      const m = pick(motivos); const tot = money(5 + R() * 70); const idv = 'VA-' + (i * 10 + k); c.anulados_n++; c.anulados_total = money(c.anulados_total + tot);
+      const m = pick(motivos); const tot = money(5 + R() * 70); const idv = 'VA' + TG + '-' + (i * 10 + k); c.anulados_n++; c.anulados_total = money(c.anulados_total + tot);
       const sh = k === 2 && i % 3 === 0; out.anulados.push({ id_venta: idv, id_caja: c.id_caja, zona_id: zona, fecha: mkTs(dia, ini + R() * (fin - ini)), vendedor: vend, correlativo: 'B001-9' + String(i * 10 + k).padStart(4, '0'), cliente_nombre: pick(clientesPool)[1], total: tot, anulado_por: sh ? null : (R() < .7 ? vend : 'Supervisor'), anulado_ts: sh ? null : (i === 1 && k === 0 ? 'martes 10:15 a. m.' : mkTs(dia, ini + R() * (fin - ini))), motivo: sh ? '' : m, antes: 'EFECTIVO', autorizado_por: sh ? null : (R() < .4 ? 'Supervisor' : null), source: sh ? null : 'ME', sin_historial: sh, revision: null });
     }
     c.efectivo_ventas = money(efeCaja);
@@ -944,7 +1023,7 @@ function demoData(desde, hasta) {
     if (c.virtual_sin_verificar_n > 5) c.alertas.push({ codigo: 'VIRTUAL_SIN_YAPE', nivel: 'MEDIA', texto: c.virtual_sin_verificar_n + ' ventas virtuales sin verificar' });
     if (c.anulados_n >= 3) c.alertas.push({ codigo: 'ANULACIONES', nivel: 'MEDIA', texto: c.anulados_n + ' tickets anulados' });
     if (out.extras.some(x => x.id_caja === c.id_caja && x.nivel && x.nivel !== 'BAJA')) c.alertas.push({ codigo: 'EXTRAS_OBSERVADOS', nivel: 'MEDIA', texto: 'Movimientos extra con alertas' });
-    if (abierta && i === 9) c.alertas.push({ codigo: 'ABIERTA_MAS_14H', nivel: 'ALTA', texto: 'Caja abierta hace más de 14 h' });
+    if (abierta && i === NC - 1) c.alertas.push({ codigo: 'ABIERTA_MAS_14H', nivel: 'ALTA', texto: 'Caja abierta hace más de 14 h' });
     if (!abierta && i === 4) c.alertas.push({ codigo: 'CERRADA_AUTO', nivel: 'BAJA', texto: 'Cerrada por el sistema' });
     if (!abierta && i === 6) c.alertas.push({ codigo: 'POST_CIERRE', nivel: 'MEDIA', texto: 'Extra registrado después del cierre' });
     if (zona === 'ZONA-01') c.alertas.push({ codigo: 'SIN_CAPTOR', nivel: 'BAJA', texto: 'Zona sin captor Yape' });
@@ -953,9 +1032,9 @@ function demoData(desde, hasta) {
   }
   // Yapes: vinculados (con tickets) + 26 sin venta (NUEVO)
   out.ventas.filter(v => v.verificado === true).forEach((v, k) => { ny++; const monto = k % 12 === 5 ? money(v.vir + 2.5) : v.vir; const pg = pick(['Rosa Q.', 'Juan H.', 'María T.', 'Pedro S.']);
-    out.yapes.push({ id: 'YP-' + ny, zona: v.zona_id, ts: v.fecha, monto, pagador: pg, estado: 'VINCULADO', id_venta: v.id_venta, match_por: 'MONTO+HORA', dispositivo: 'Captor Z02', ts_recibido: v.fecha, tickets: [{ id_venta: v.id_venta, correlativo: v.correlativo, total: v.vir, id_caja: v.id_caja, vendedor: v.vendedor }], suma_tickets: v.vir, diferencia: money(monto - v.vir), flags: monto !== v.vir ? ['DIFERENCIA_TICKETS'] : [], revision: null });
-    v.yapes = [{ id: 'YP-' + ny, monto, pagador: pg, ts: v.fecha }]; v.candidatos = []; });
-  for (let k = 0; k < 26; k++) { ny++; const c = out.cajas[2 + (k % 6)]; out.yapes.push({ id: 'YP-' + ny, zona: 'ZONA-02', ts: mkTs(c.fecha_apertura.slice(0, 10), 480 + R() * 420), monto: money(10 + R() * 110), pagador: pick(['Lucía R.', 'Carlos M.', 'Ana P.', 'Jorge V.']), estado: 'NUEVO', id_venta: null, match_por: null, revision: null }); }
+    out.yapes.push({ id: 'YP' + TG + '-' + ny, zona: v.zona_id, ts: v.fecha, monto, pagador: pg, estado: 'VINCULADO', id_venta: v.id_venta, match_por: 'MONTO+HORA', dispositivo: 'Captor Z02', ts_recibido: v.fecha, tickets: [{ id_venta: v.id_venta, correlativo: v.correlativo, total: v.vir, id_caja: v.id_caja, vendedor: v.vendedor }], suma_tickets: v.vir, diferencia: money(monto - v.vir), flags: monto !== v.vir ? ['DIFERENCIA_TICKETS'] : [], revision: null });
+    v.yapes = [{ id: 'YP' + TG + '-' + ny, monto, pagador: pg, ts: v.fecha }]; v.candidatos = []; });
+  for (let k = 0; k < 26; k++) { ny++; const c = out.cajas[2 + (k % 6)]; out.yapes.push({ id: 'YP' + TG + '-' + ny, zona: 'ZONA-02', ts: mkTs(c.fecha_apertura.slice(0, 10), 480 + R() * 420), monto: money(10 + R() * 110), pagador: pick(['Lucía R.', 'Carlos M.', 'Ana P.', 'Jorge V.']), estado: 'NUEVO', id_venta: null, match_por: null, revision: null }); }
   const nuevos = out.yapes.filter(y => !y.id_venta); nuevos.forEach(y => { y.tickets = []; y.suma_tickets = 0; y.diferencia = y.monto; y.dispositivo = 'Captor Z02'; y.ts_recibido = y.ts; y.flags = ['SIN_VENTA_30M']; });
   out.ventas.forEach(v => { if (v.verificado === false) { v.yapes = []; v.candidatos = [0, 1].slice(0, 1 + Math.floor(R() * 2)).map(() => { const y = pick(nuevos); return { id: y.id, monto: y.monto, pagador: y.pagador, ts: y.ts }; }); if (R() < .25) v.candidatos[0].combo_yape = pick(nuevos).id; else if (R() < .2) v.candidatos[0].combo_con = pick(out.ventas.filter(z => z.verificado === false)).id_venta; } });
   out.tickets_virtuales = out.ventas.filter(v => v.vir > 0).map(v => ({ id_venta: v.id_venta, id_caja: v.id_caja, zona_id: v.zona_id, fecha: v.fecha, vendedor: v.vendedor, correlativo: v.correlativo, cliente_nombre: v.cliente_nombre, vir: v.vir, estado: v.verificado === true ? 'VERIFICADO' : v.verificado === false ? 'SIN_VERIFICAR' : 'SIN_CAPTOR', id_yape: v.id_yape, candidatos_n: (v.candidatos || []).length }));
@@ -966,7 +1045,7 @@ function demoData(desde, hasta) {
 
 // ── arranque ───────────────────────────────────────────────
 (() => { const t = LS('mos_reporte_cajas_tema'); if (t) document.documentElement.dataset.theme = t; })();
-temaIcono(); leerURL(); cargar();
+temaIcono(); leerURL(); limitaFechas(); cargar();
 </script>
 </body>
 </html>
