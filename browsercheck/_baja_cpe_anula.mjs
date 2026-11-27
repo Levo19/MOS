@@ -6,13 +6,13 @@ const br = await chromium.launch(); let fallas = 0; const ok = (c, t) => { if (!
 try {
   const pg = await br.newPage(); await pg.setContent('<body><button id="tkBajaBtnOK"></button><input id="tkBajaMotivoTxt" value="Error de emisión"></body>');
   await pg.addScriptTag({ content: `
-    window.calls=[]; window.toasts=[]; window.anuFail=false; window.motivoCancel=false;
+    window.calls=[]; window.toasts=[]; window.anuFail=false; window.anuRet=undefined; window.bajaFail=false; window.motivoCancel=false;
     const _tkAcc={ticket:{idVenta:'V1',correlativo:'B001-1',tipoDoc:'BOLETA'},baja:{motivoFinal:'Error de emisión'}};
     const $=id=>document.getElementById(id); const S={view:'x'};
     const toast=(t,k)=>window.toasts.push(t); const closeModal=()=>{};
     const _modalConfirm=async()=>true; const _pedirMotivoAnulacion=async()=>window.motivoCancel?null:'Venta duplicada';
     const pedirAuth=async()=>({clave:'1234'}); const _cajasRefreshFull=async()=>{};
-    const API={post:async(a,p)=>{window.calls.push([a,p]); if(a==='anularTicketME'&&window.anuFail) throw new Error('rechazado'); return {nuevoEstado:'ACEPTADA'};}};
+    const API={post:async(a,p)=>{window.calls.push([a,p]); if(a==='anularTicketME'&&window.anuFail) throw new Error('rechazado'); if(a==='anularTicketME'&&window.anuRet!==undefined) return window.anuRet; if(a==='meBajaCPE'&&window.bajaFail) throw new Error('edge'); return {nuevoEstado:'ACEPTADA'};}};
     ${m[0]}
     window.__f=_tkBajaConfirmar;` });
   await pg.evaluate(() => window.__f());
@@ -25,5 +25,12 @@ try {
   ok((await pg.evaluate(() => window.toasts.join('|'))).includes('no se envió la baja a SUNAT'), 'aviso al usuario');
   await pg.evaluate(() => { window.calls.length = 0; window.anuFail = false; window.motivoCancel = true; return window.__f(); });
   ok((await pg.evaluate(() => window.calls.length)) === 0, 'cancelar motivo: 0 llamadas');
+  for (const [nom, ret] of [['null', null], ['{ok:false}', { ok: false }]]) {
+    await pg.evaluate((r) => { window.calls.length = 0; window.toasts.length = 0; window.motivoCancel = false; window.anuRet = r; return window.__f(); }, ret);
+    ok(JSON.stringify(await pg.evaluate(() => window.calls.map(x => x[0]))) === '["anularTicketME"]', 'anular devuelve ' + nom + ': 0 bajas');
+    ok((await pg.evaluate(() => window.toasts.join('|'))).includes('No se anuló el pago'), 'aviso '+nom);
+  }
+  await pg.evaluate(() => { window.calls.length = 0; window.toasts.length = 0; window.anuRet = undefined; window.bajaFail = true; return window.__f(); });
+  ok((await pg.evaluate(() => window.toasts.join('|'))).includes('Pago anulado. La baja en SUNAT no se pudo enviar ahora y se reintentará sola.'), 'baja falla tras anular: aviso de reintento');
 } catch (e) { fallas++; console.log('EXCEPCION', e.message); }
 await br.close(); console.log(fallas ? 'RESULTADO: ' + fallas + ' FALLA(S)' : 'RESULTADO: TODO OK'); process.exit(fallas ? 1 : 0);

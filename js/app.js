@@ -33997,9 +33997,17 @@ const MOS = (() => {
     const btn = $('tkBajaBtnOK');
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
     try {
-      try { await API.post('anularTicketME', { idVenta: t.idVenta, motivo: motivoAnu, claveAdmin: auth.clave }); }
-      catch (e0) { toast('No se anuló el pago; no se envió la baja a SUNAT' + (e0 && e0.message ? ' (' + e0.message + ')' : ''), 'error'); return; }
-      const r = await API.post('meBajaCPE', { idVenta: t.idVenta, motivo, claveAdmin: auth.clave });
+      try {
+        const ra = await API.post('anularTicketME', { idVenta: t.idVenta, motivo: motivoAnu, claveAdmin: auth.clave });
+        if (!ra || ra.ok === false) throw new Error((ra && (ra.mensaje || ra.error)) || '');
+      } catch (e0) { toast('No se anuló el pago; no se envió la baja a SUNAT' + (e0 && e0.message ? ' (' + e0.message + ')' : ''), 'error'); return; }
+      let r;
+      try { r = await API.post('meBajaCPE', { idVenta: t.idVenta, motivo, claveAdmin: auth.clave }); }
+      catch (e1) {
+        toast('Pago anulado. La baja en SUNAT no se pudo enviar ahora y se reintentará sola.', 'warning');
+        closeModal('modalTkBajaCPE'); try { await _cajasRefreshFull?.(); } catch(_){}
+        return;
+      }
       toast('✓ Baja enviada · ' + (r?.nuevoEstado || 'aceptada'), 'success');
       closeModal('modalTkBajaCPE');
       await _cajasRefreshFull?.();
