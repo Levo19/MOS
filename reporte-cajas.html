@@ -352,7 +352,7 @@ function flagChip(c, nivel) {
 const flagTxt = c => (FLAGS[c] || [c])[0];
 const esNoPerm = x => x.flags.length > 0 && (x.nivel ? x.nivel !== 'BAJA' : true);
 const ERRMSG = { NO_AUTORIZADO: 'Este equipo o usuario no está autorizado para el control de cajas.', ZONA_INVALIDA: 'Zona no válida.', FECHA_INVALIDA: 'Fecha no válida: revisa el rango.',
-  RANGO_INVALIDO: 'Rango de fechas no válido: «desde» no puede ser posterior a «hasta».', ROL_NO_AUTORIZADO: 'Tu rol no puede marcar revisiones (solo administrador).',
+  RANGO_INVALIDO: 'Rango de fechas no válido: «desde» no puede ser posterior a «hasta».', SOLO_MASTER: 'Solo el MASTER puede marcar revisado; tú puedes consultar.', ROL_NO_AUTORIZADO: 'Tu rol no puede marcar revisiones (solo administrador).',
   REFERENCIA_NO_EXISTE: 'Ese registro ya no existe en la base: actualiza el reporte.', PARAMETROS_INVALIDOS: 'Datos incompletos para guardar la marca.', ESTADO_INVALIDO: 'Estado de marca no válido.' };
 const ev = v => v.estado_virtual !== undefined ? v.estado_virtual : (Number(v.vir) > 0 ? (v.verificado === true ? 'VERIFICADO' : v.verificado === false ? 'SIN_VERIFICAR' : 'SIN_CAPTOR') : null);
 function fts(s) { const x = parseTs(s); return isNaN(x) ? (s ? String(s) : '—') : fh(s); }
@@ -366,7 +366,7 @@ function semanas(desde, hasta) {   // lun–dom recortado al rango
 }
 const KEYU = { cajas: 'id_caja', extras: 'id_extra', ventas: 'id_venta', anulados: 'id_venta', yapes: 'id', tickets_virtuales: 'id_venta' };
 function unir(parts, desde, hasta) {   // une semanas y deduplica por id (una caja o un extra pueden aparecer en dos semanas)
-  const o = { ok: true, desde, hasta, zona: 'TODAS', generado_ts: parts[parts.length - 1].generado_ts, cajas: [], extras: [], ventas: [], anulados: [], yapes: [], tickets_virtuales: [], clientes: [], semanas: parts.length };
+  const o = { ok: true, desde, hasta, zona: 'TODAS', generado_ts: parts[parts.length - 1].generado_ts, puede_marcar: parts.some(p => p.puede_marcar === false) ? false : parts[parts.length - 1].puede_marcar, cajas: [], extras: [], ventas: [], anulados: [], yapes: [], tickets_virtuales: [], clientes: [], semanas: parts.length };
   const seen = { clientes: new Set() }; Object.keys(KEYU).forEach(k => { seen[k] = new Set(); });
   parts.forEach(p => {
     Object.keys(KEYU).forEach(k => (p[k] || []).forEach(x => { const id = x[KEYU[k]]; if (seen[k].has(id)) return; seen[k].add(id); o[k].push(x); }));
@@ -448,6 +448,7 @@ function prep(d) {
   D.ventaById = new Map(D.ventas.map(v => [v.id_venta, v]));
   D.tv = Array.isArray(d.tickets_virtuales) ? d.tickets_virtuales.slice() : D.ventas.filter(v => Number(v.vir) > 0).map(v => ({ id_venta: v.id_venta, id_caja: v.id_caja, zona_id: v.zona_id, fecha: v.fecha, vendedor: v.vendedor, correlativo: v.correlativo, cliente_nombre: v.cliente_nombre, vir: v.vir, estado: v.verificado === true ? 'VERIFICADO' : v.verificado === false ? 'SIN_VERIFICAR' : 'SIN_CAPTOR', id_yape: v.id_yape, candidatos_n: (v.candidatos || []).length }));
   D.items = buildItems(D);
+  st.puede = d.puede_marcar !== false;   // sin el campo = comportamiento anterior (se puede marcar)
   st.D = D; st.memo.clear(); st.tb = {};
   // si un cajero/caja filtrado ya no existe, se descarta
   if (st.f.cajero && !D.cajas.some(c => c.vendedor === st.f.cajero)) st.f.cajero = '';
@@ -459,7 +460,7 @@ function buildItems(D) {
   D.cajas.forEach(c => { const g = c.alertas.filter(a => a.nivel !== 'BAJA'); if (g.length) it.push({ tipo: 'CAJA', ref: c.id_caja, obj: c, id_caja: c.id_caja, zona: c.zona_id, nivel: g.some(a => a.nivel === 'ALTA') ? 'ALTA' : 'MEDIA', titulo: 'Caja de ' + c.vendedor, det: g.map(a => a.texto).join(' · '), monto: c.diferencia, ts: c._t0 }); });
   D.extras.forEach(x => { if (esNoPerm(x)) it.push({ tipo: 'EXTRA', ref: x.id_extra, obj: x, id_caja: x.id_caja, zona: x.zona_id, nivel: x.nivel === 'ALTA' ? 'ALTA' : 'MEDIA', titulo: 'Extra ' + String(x.tipo || '').toLowerCase() + ': ' + (x.concepto || 'sin concepto'), det: x.flags.map(flagTxt).join(' · '), monto: x.monto, ts: parseTs(x.ts) }); });
   D.ventas.forEach(v => { const sv = ev(v) === 'SIN_VERIFICAR'; const cs = (v.flags || []).includes('CREDITO_SIN_CLIENTE'); if (sv || cs) it.push({ tipo: 'VENTA', ref: v.id_venta, obj: v, id_caja: v.id_caja, zona: v.zona_id, nivel: 'MEDIA', titulo: (sv ? 'Virtual sin verificar · ' : 'Crédito sin cliente · ') + (v.correlativo || v.id_venta), det: (v.cliente_nombre || 'Sin cliente') + ' · ' + (v.vendedor || ''), monto: sv ? v.vir : v.total, ts: parseTs(v.fecha) }); });
-  D.anulados.forEach(a => it.push({ tipo: 'ANULADO', ref: a.id_venta, obj: a, id_caja: a.id_caja, zona: a.zona_id, nivel: (a.motivo && !a.sin_historial) ? 'MEDIA' : 'ALTA', titulo: 'Ticket anulado · ' + (a.correlativo || a.id_venta), det: (a.sin_historial ? 'SIN REGISTRO de quién anuló' : (a.motivo ? 'Motivo: ' + a.motivo : 'SIN MOTIVO') + ' · anuló ' + (a.anulado_por || '?')), monto: a.total, ts: parseTs(a.anulado_ts || a.fecha) }));
+  D.anulados.forEach(a => it.push({ tipo: 'ANULADO', ref: a.id_venta, obj: a, id_caja: a.id_caja, zona: a.zona_id, nivel: (a.motivo && !a.sin_historial) ? 'MEDIA' : 'ALTA', titulo: 'Ticket anulado · ' + (a.correlativo || a.id_venta), det: (a.anulado_por === 'SISTEMA' ? 'Automático por cierre (falta de pago)' : a.sin_historial ? 'SIN REGISTRO de quién anuló' : (a.motivo ? 'Motivo: ' + a.motivo : 'SIN MOTIVO') + ' · anuló ' + (a.anulado_por || '?')), monto: a.total, ts: parseTs(a.anulado_ts || a.fecha) }));
   D.yapes.forEach(y => { y.flags = Array.isArray(y.flags) ? y.flags : []; if (yapeSinVenta(y, D) || y.flags.includes('DIFERENCIA_TICKETS')) it.push({ tipo: 'YAPE', ref: y.id, obj: y, id_caja: null, zona: y.zona, nivel: 'MEDIA', titulo: 'Yape sin venta · ' + (y.pagador || 'sin nombre'), det: 'Estado ' + (y.estado || '—') + (y.flags.length ? ' · ' + y.flags.map(flagTxt).join(' · ') : ''), monto: y.monto, ts: y._t }); });
   return it;
 }
@@ -545,6 +546,8 @@ const nombreCaja = id => { const c = st.D.cajaById.get(id); return c ? c.vendedo
 const cajaTxt = (id, z) => { const c = st.D.cajaById.get(id); return zchip(z || (c && c.zona_id)) + ' ' + esc(c ? c.vendedor : (id || '—')); };
 function accion(tipo, ref) {
   const r = REV.get(tipo + '|' + ref); const a = 'data-t="' + tipo + '" data-r="' + esc(ref) + '"';
+  if (r && st.puede === false) return '<span class="chip ' + (r.estado === 'OK' ? 'c-ok' : 'c-warn') + '" title="' + esc((r.usuario || '') + ': ' + (r.nota || '')) + '">' + (r.estado === 'OK' ? '✔ OK' : '⚠ Obs.') + '</span>';
+  if (st.puede === false) return '';
   if (r) return '<span class="chip ' + (r.estado === 'OK' ? 'c-ok' : 'c-warn') + '" title="' + esc((r.usuario || '') + ': ' + (r.nota || '')) + '">' + (r.estado === 'OK' ? '✔ OK' : '⚠ Obs.') + '</span> <button class="btn sm" data-act="edit" ' + a + ' aria-label="Editar marca">✎</button>';
   return '<button class="btn sm" data-act="ok" ' + a + ' aria-label="Marcar OK">✔</button> <button class="btn sm" data-act="obs" ' + a + ' aria-label="Observar">⚠</button>';
 }
@@ -586,7 +589,7 @@ const C = {
     { t: 'Ticket', v: r => r.correlativo || '', h: r => esc(r.correlativo || r.id_venta) },
     { t: 'Cliente', v: r => r.cliente_nombre || '', h: r => esc(r.cliente_nombre || '—') },
     { t: 'Total', n: 1, v: r => money(r.total), h: r => S(r.total) },
-    { t: 'Anuló', v: r => r.anulado_por || '', h: r => r.sin_historial ? '<span class="chip c-bad" title="El sistema no guardó quién anuló este ticket (p. ej. lo anuló el cierre de caja)">sin registro de quién anuló</span>' : esc(r.anulado_por || '—') },
+    { t: 'Anuló', v: r => r.anulado_por || '', h: r => r.anulado_por === 'SISTEMA' ? '<span class="chip c-info" title="' + esc(r.motivo || 'Cierre de caja: falta de pago (venta no culminada)') + '">Automático por cierre (falta de pago)</span>' : r.sin_historial ? '<span class="chip c-bad" title="El sistema no guardó quién anuló este ticket (p. ej. lo anuló el cierre de caja)">sin registro de quién anuló</span>' : esc(r.anulado_por || '—') },
     { s: 1, t: 'Cuándo', v: r => parseTs(r.anulado_ts) || 0, c: r => fts(r.anulado_ts), h: r => esc(fts(r.anulado_ts)) },
     { s: 1, t: 'Antes', v: r => r.antes || '', h: r => esc(r.antes || '—') },
     { s: 1, t: 'Autorizó', v: r => r.autorizado_por || '', h: r => esc(r.autorizado_por || '—') },
@@ -828,7 +831,7 @@ function render() {
   const d = derive(); const a = agg(d);
   const cnt = { pend: a.pend, cajas: d.cajas.length, extras: d.extras.length, ventas: d.ventas.length, anul: d.anulados.length, yape: d.yapes.length };
   if (st.lite && !st.liteFalla) cnt.ventas = 'parcial';
-  $('banner').innerHTML = st.demo ? '<div class="demo">⚠ Datos de ejemplo: la base aún no tiene el reporte de cajas. Las marcas no se guardan.</div>' : '';
+  $('banner').innerHTML = (st.demo ? '<div class="demo">⚠ Datos de ejemplo: la base aún no tiene el reporte de cajas. Las marcas no se guardan.</div>' : '') + (st.puede === false ? '<div id="avisoMaster" style="font-size:12px;color:var(--mut,#64748b);padding:4px 2px">Solo el MASTER puede marcar revisado; tú puedes consultar.</div>' : '');
   $('gen').textContent = (st.demo ? 'Ejemplo' : 'Generado ' + fh((st.D.raw || {}).generado_ts) + (st.ms ? ' · carga ' + st.ms + ' ms' + (st.lite ? ' (liviana)' : '') : '')) + ' · ' + st.desde + ' → ' + st.hasta + ' (hora Lima)';
   let body;
   switch (st.tab) {
@@ -898,6 +901,7 @@ function toast(msg, o) {
   document.body.appendChild(t); setTimeout(() => t.remove(), o.undo ? 6000 : 3500);
 }
 async function marcar(tipo, ref, estado, nota, silencioso) {
+  if (st.puede === false) { hap([30, 40, 30]); toast(ERRMSG.SOLO_MASTER, { err: true }); return; }
   const c = ctx(); if (!c && !st.demo) { hap([30, 40, 30]); toast('Abre el reporte desde MOS para poder marcar.', { err: true }); return; }
   if (!silencioso && Date.now() < st.bloqueo) { hap(6); return; }   // a prueba de misclick: 500 ms sin marcas tras una marca
   const k = tipo + '|' + ref; if (st.vuelo.has(k)) { hap(6); return; }   // ya hay una marca igual en vuelo
@@ -911,7 +915,7 @@ async function marcar(tipo, ref, estado, nota, silencioso) {
   if (st.demo) return;
   st.vuelo.add(k);
   try { const j = await rpc('control_caja_marcar', { usuario: c.u, tipo, ref: String(ref), estado: estado ? estado : null, nota: nota || '' }); if (j && j.ok === false) throw new Error(j.error || 'RESPUESTA'); }
-  catch (e) { if (st.recien.has(k)) { clearTimeout(st.recien.get(k)); st.recien.delete(k); } prev ? REV.set(k, prev) : REV.delete(k); recalcPend(); render(); hap([30, 40, 30]); toast((ERRMSG[e.message] || 'No se pudo guardar la marca.') + ' Se deshizo.', { err: true }); }
+  catch (e) { if (e.message === 'SOLO_MASTER') st.puede = false; if (st.recien.has(k)) { clearTimeout(st.recien.get(k)); st.recien.delete(k); } prev ? REV.set(k, prev) : REV.delete(k); recalcPend(); render(); hap([30, 40, 30]); toast((ERRMSG[e.message] || 'No se pudo guardar la marca.') + ' Se deshizo.', { err: true }); }
   finally { st.vuelo.delete(k); }
 }
 function modalMarca(tipo, ref) {

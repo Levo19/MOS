@@ -226,6 +226,31 @@ try {
       await pg.click('.pend.hecho [data-act="deshacer"]'); await pg.waitForTimeout(200);
       ok((await pg.evaluate(() => REV.size)) === antes, 'Deshacer quita la marca'); await pg.close();
     }
+    // --- 2.44.77: puede_marcar (solo MASTER marca) y SOLO_MASTER; anulados SISTEMA
+    {
+      const resp = async (pg, extra) => async r => { const b = r.request().postDataJSON().p; const o = await pg.evaluate(([d, h]) => Object.assign(demoData(d, h), { ok: true }), [b.desde, b.hasta]); r.fulfill({ contentType: 'application/json', body: JSON.stringify(Object.assign(o, extra(o))) }); };
+      // a) puede_marcar:false -> sin ✔/⚠/✎, aviso visible, estado de revisión visible, anulado SISTEMA con chip
+      let pg = await nuevaPag(); await pg.goto('http://localhost:8793/reporte-cajas.html?demo=1'); await pg.waitForSelector('.kpi');
+      await pg.route('**/rpc/reporte_cajas_semana', await resp(pg, o => { o.puede_marcar = false; o.anulados[0].anulado_por = 'SISTEMA'; o.anulados[0].motivo = 'Cierre de caja: falta de pago (venta no culminada)'; o.anulados[0].sin_historial = false; o.cajas.forEach(c => { c.revision = null; }); return {}; }));
+      await pg.goto('http://localhost:8793/reporte-cajas.html'); await pg.waitForSelector('.kpi');
+      ok(await pg.isVisible('#avisoMaster') && (await pg.textContent('#avisoMaster')).includes('Solo el MASTER puede marcar revisado'), 'puede_marcar=false: aviso visible');
+      ok((await pg.$$eval('[data-act="ok"],[data-act="obs"],[data-act="edit"]', a => a.length)) === 0, 'puede_marcar=false: sin botones ✔/⚠/✎');
+      await pg.evaluate(() => { REV.set('ANULADO|x', { estado: 'OK', nota: '', usuario: 'Luis' }); });
+      ok((await pg.evaluate(() => accion('ANULADO', 'x'))).includes('✔ OK') && !(await pg.evaluate(() => accion('ANULADO', 'x'))).includes('button'), 'puede_marcar=false: estado de revisión visible sin botones');
+      await pg.click('.tabs > button[data-v="anul"]'); await pg.waitForTimeout(100);
+      ok((await pg.textContent('#cuerpo')).includes('Automático por cierre (falta de pago)'), 'anulado SISTEMA: chip automático');
+      await pg.close();
+      // b) respuesta SIN el campo -> comportamiento actual (botones)
+      pg = await nuevaPag(); await pg.goto('http://localhost:8793/reporte-cajas.html?demo=1'); await pg.waitForSelector('.kpi');
+      await pg.route('**/rpc/reporte_cajas_semana', await resp(pg, () => ({})));
+      await pg.goto('http://localhost:8793/reporte-cajas.html'); await pg.waitForSelector('.pend [data-act="ok"]');
+      ok(!(await pg.isVisible('#avisoMaster').catch(() => false)), 'sin campo: sin aviso');
+      // c) puede_marcar:true, pero el servidor responde SOLO_MASTER -> mensaje claro + rollback
+      await pg.route('**/rpc/control_caja_marcar', r => r.fulfill({ contentType: 'application/json', body: '{"ok":false,"error":"SOLO_MASTER"}' }));
+      const n0 = await pg.evaluate(() => REV.size); await pg.click('.pend [data-act="ok"]'); await pg.waitForTimeout(500);
+      ok((await pg.textContent('.toast')).includes('Solo el MASTER puede marcar revisado') && (await pg.evaluate(() => REV.size)) === n0, 'SOLO_MASTER: mensaje y rollback');
+      await pg.close();
+    }
     ok(!errs.length, 'QA: pageerrors ' + errs.join(' / '));
     await ctx.close(); console.log('QA nuevo: ok');
   }

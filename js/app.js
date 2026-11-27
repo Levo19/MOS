@@ -32579,6 +32579,11 @@ const MOS = (() => {
     if (!(monto > 0)) { _cjExFormMsg('El monto debe ser mayor a 0 (el signo lo da el tipo)'); _finBeep('error'); return; }
     if (!conc) { _cjExFormMsg('Escribe un concepto (queda en el arqueo y en el ticket de turno)'); _finBeep('error'); return; }
 
+    if (!esCrear) {   // editar el monto de un Abono deuda: avisar (no bloquea)
+      const prev = ((_cjExState.data && _cjExState.data.items) || []).find(x => String(x.idExtra) === String(_cjExState.idExtra));
+      const av = prev && _money(prev.monto) !== monto ? _cjExAvisoAbono(prev) : '';
+      if (av) { const okAv = await _modalConfirm(av.replace('Si lo eliminas', 'Si cambias el monto') + '\n\n¿Continuar?', { titulo: '⚠ Abono deuda', okText: 'Sí, continuar' }); if (!okAv) return; }
+    }
     // AUTORIZACIÓN ANTES DE ESCRIBIR (el patrón vivo de la casa: pedirAuth → claveAdmin → RPC).
     const auth = await pedirAuth({
       accion: esCrear ? 'EXTRA_CREAR' : 'EXTRA_EDITAR',
@@ -32633,6 +32638,15 @@ const MOS = (() => {
     }
   }
 
+  // Aviso (no bloquea) al eliminar/editar el monto de un 'Abono deuda': el ticket V-… vuelve a figurar cobrado en su caja original.
+  function _cjExAvisoAbono(ex) {
+    if (!ex || !/abono\s+deuda/i.test(String(ex.concepto || ''))) return '';
+    const m = /ticket\s+(V-[A-Za-z0-9_-]+)/i.exec(String(ex.obs || ''));
+    const tk = m ? m[1] : '(ver observación)';
+    const mc = /caja\s+([A-Za-z0-9_-]+)/i.exec(String(ex.obs || ''));
+    return `⚠ Este abono cobró el ticket ${tk} de la caja ${mc ? mc[1] : 'original'}. Si lo eliminas, ese ticket vuelve a figurar como cobrado en su caja original y el ticket Z reimpreso de esa caja cambiará.`;
+  }
+
   async function cjExEliminar(idExtra) {
     if (_cjExState.busy) return;
     const items = (_cjExState.data && _cjExState.data.items) || [];
@@ -32646,7 +32660,7 @@ const MOS = (() => {
       '',
       'Se elimina de la caja y el arqueo se recalcula sin él.',
       'Queda copia completa en la auditoría (quién, cuándo y por qué).'
-    ].join('\n');
+    ].concat(_cjExAvisoAbono(ex) ? ['', _cjExAvisoAbono(ex)] : []).join('\n');
     const ok = await _modalConfirm(detalle, { danger: true, titulo: '🗑 Eliminar movimiento extra', okText: 'Sí, eliminar' });
     if (!ok) return;
 
