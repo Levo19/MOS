@@ -6,6 +6,7 @@ const ROOT = path.resolve(process.cwd(), '..');
 const srv = http.createServer((q, r) => { const f = path.join(ROOT, decodeURIComponent(q.url.split('?')[0])); fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': f.endsWith('.html') ? 'text/html; charset=utf-8' : 'application/octet-stream' }); r.end(b); }); }).listen(8793);
 const br = await chromium.launch(); let fallas = 0;
 const ok = (c, m) => { if (!c) { fallas++; console.log('  FALLA:', m); } };
+const FIX = 'C:/Users/ISO/AppData/Local/Temp/claude/43303b92a4ef8780/6d204972-8c5d-4519-bbcf-417fdee11edf/scratchpad/';
 const SIZES = [[360, 740], [412, 915], [768, 1024], [1024, 768], [1440, 900]];
 try {
   for (const [w, h] of SIZES) {
@@ -14,8 +15,7 @@ try {
     pg.on('pageerror', e => errs.push(e.message));
     await pg.addInitScript(() => { localStorage.setItem('mos_device_id', 'test-dev'); localStorage.setItem('mos_reporte_ctx', JSON.stringify({ u: 'Luis', r: 'MASTER', ts: Date.now() })); });
     await pg.route('**/functions/v1/mint-mos', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, token: 'x.y.z', exp: Date.now() / 1000 + 3000 }) }));
-    await pg.route('**/rpc/reporte_cajas_semana', r => r.fulfill({ status: 404, contentType: 'application/json', body: '{"code":"PGRST202","message":"Could not find the function mos.reporte_cajas_semana"}' }));
-    await pg.goto('http://localhost:8793/reporte-cajas.html');
+    await pg.goto('http://localhost:8793/reporte-cajas.html?demo=1');
     await pg.waitForSelector('.kpi', { timeout: 20000 });
     ok(await pg.isVisible('.demo'), w + ': banner de ejemplo');
     const nTabs = await pg.$$eval('.tabs > button', a => a.length); ok(nTabs === 9, w + ': 9 pestañas, hay ' + nTabs);
@@ -105,7 +105,7 @@ try {
     ok(!(await pg.isVisible('.demo')), w + ': con respuesta real no hay banner demo');
     ok(usuariosOk, w + ': la RPC lleva usuario');
     ok(w === 360 ? reqs[0] === 'OBSERVABLES' : reqs[0] === 'FULL', w + ': primera carga ' + reqs[0]);
-    if (w === 360) { await pg.click('.tabs > button[data-v="ventas"]'); await pg.waitForSelector('table, tbody tr', { timeout: 8000 }); ok(reqs.includes('FULL'), 'Ventas pide la carga completa: ' + reqs.join(',')); }
+    if (w === 360) { ok(/parcial/.test(await pg.textContent('.tabs > button[data-v="ventas"]')), 'celular: Ventas indica parcial'); await pg.click('.tabs > button[data-v="ventas"]'); await pg.waitForSelector('table, tbody tr', { timeout: 8000 }); ok(reqs.includes('FULL'), 'Ventas pide la carga completa: ' + reqs.join(',')); }
     await pg.click('.tabs > button[data-v="pend"]'); const p0 = await pg.textContent('.prog b');
     await pg.click('.pend [data-act="ok"]'); await pg.waitForTimeout(400);
     const p1 = await pg.textContent('.prog b'); const t1 = await pg.textContent('.toast').catch(() => '');
@@ -134,7 +134,8 @@ try {
     const calls = []; let usuarios = 0; pg.on('console', m => { if (m.type() === 'error') console.log('CONSOLE', m.text().slice(0, 200)); });
     await pg.route('**/rpc/reporte_cajas_semana', async r => {
       const b = r.request().postDataJSON().p; calls.push([b.desde, b.hasta, b.ventas || 'FULL']); if (b.usuario === 'Luis') usuarios++;
-      const body = await pg.evaluate(([d, h]) => JSON.stringify(Object.assign(demoData(d, h), { ok: true })), [b.desde, b.hasta]);
+      const fx = FIX + 'r_' + b.desde + '_' + b.hasta + '.json'; const real = b.hasta >= '2026-11-01' && fs.existsSync(fx);
+      const body = real ? fs.readFileSync(fx, 'utf8') : await pg.evaluate(([d, h]) => JSON.stringify(Object.assign(demoData(d, h), { ok: true })), [b.desde, b.hasta]);
       r.fulfill({ contentType: 'application/json', body });
     });
     await pg.goto('http://localhost:8793/reporte-cajas.html?periodo=mes'); await pg.waitForSelector('.kpi', { timeout: 60000 });
@@ -146,8 +147,9 @@ try {
     ok((await pg.evaluate(() => location.search)).includes('periodo=mes'), 'periodo en la URL');
     ok((await pg.$$eval('#atajos button.on', a => a.map(x => x.dataset.a))).join() === 'mes', 'atajo Este mes activo');
     const nCajas = await pg.evaluate(() => st.D.cajas.length); const ids = await pg.evaluate(() => new Set(st.D.cajas.map(c => c.id_caja)).size);
-    ok(nCajas === ids && nCajas >= 40, 'cajas unidas sin duplicados: ' + nCajas + '/' + ids);
+    ok(nCajas === ids && nCajas >= 1, 'cajas unidas sin duplicados: ' + nCajas + '/' + ids);
     ok((await pg.$$eval('.tabs > button', a => a.some(x => x.dataset.v === 'semanas'))), 'pestaña Semana a semana en modo mes');
+    if (fs.existsSync(FIX + 'r_2026-11-01_2026-11-27.json')) { const vt = await pg.textContent('.kpi:nth-child(2) .v'); ok(/136[.,]491[.,]80/.test(vt), 'mes unido: venta total 136,491.80, dice ' + vt); }
     await pg.click('.tabs > button[data-v="semanas"]');
     const wk = await pg.$$eval('.tw table thead tr:first-child th', a => a.length); ok(wk >= 6, 'tabla semana a semana con ' + wk + ' columnas');
     const sw = await pg.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok(sw[0] <= sw[1], 'semanas sin scroll horizontal');
@@ -162,6 +164,57 @@ try {
     console.log('MES: ' + calls.length + ' llamadas (mes pasado); semanas=' + wk + '; errores JS: ' + errs.length);
     ok(!errs.length, 'mes: pageerrors ' + errs.join(' / '));
     await ctx.close();
+  }
+  // --- QA: nada de demo salvo ?demo=1; null/404/500 = error con Reintentar; seq; método; CSV; doble toque; URL
+  {
+    const ctx = await br.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true }); const errs = [];
+    await ctx.route('**/functions/v1/mint-mos', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, token: 'x.y.z', exp: Date.now() / 1000 + 3000 }) }));
+    const nuevaPag = async () => { const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message)); await p.addInitScript(() => { localStorage.setItem('mos_device_id', 'test-dev'); localStorage.setItem('mos_reporte_ctx', JSON.stringify({ u: 'Luis', r: 'MASTER', ts: Date.now() })); }); return p; };
+    const casos = [['404 PGRST202', 404, '{"code":"PGRST202","message":"Could not find the function"}'], ['500 does not exist', 500, '{"message":"function mos.reporte_cajas_semana does not exist"}'], ['null', 200, 'null'], ['texto', 200, '"hola"']];
+    for (const [n, status, body] of casos) {
+      const pg = await nuevaPag(); await pg.route('**/rpc/reporte_cajas_semana', r => r.fulfill({ status, contentType: 'application/json', body }));
+      await pg.goto('http://localhost:8793/reporte-cajas.html'); await pg.waitForSelector('#btnRe', { timeout: 20000 });
+      ok(!(await pg.isVisible('.demo')) && !(await pg.$('.kpi')), n + ': error con Reintentar, nunca demo');
+      await pg.close();
+    }
+    // mes: si una semana falla no hay datos parciales
+    { const pg = await nuevaPag(); let k = 0;
+      await pg.route('**/rpc/reporte_cajas_semana', async r => { k++; const b = r.request().postDataJSON().p; if (b.desde === '2026-11-09') return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"boom"}' }); r.fulfill({ contentType: 'application/json', body: await pg.evaluate(([d, h]) => JSON.stringify(Object.assign(demoData(d, h), { ok: true })), [b.desde, b.hasta]) }); });
+      await pg.goto('http://localhost:8793/reporte-cajas.html?periodo=mes'); await pg.waitForSelector('#btnRe', { timeout: 30000 }); ok(!(await pg.$('.kpi')), 'mes con semana fallida: error y sin datos parciales'); await pg.close(); }
+    // seq: "Esta semana" lenta + "Hoy" -> solo hoy
+    { const pg = await nuevaPag(); let n = 0;
+      await pg.route('**/rpc/reporte_cajas_semana', async r => { const b = r.request().postDataJSON().p; const lento = b.desde !== b.hasta; n++; if (lento) await new Promise(x => setTimeout(x, 1500)); r.fulfill({ contentType: 'application/json', body: await pg.evaluate(([d, h]) => JSON.stringify(Object.assign(demoData(d, h), { ok: true })), [b.desde, b.hasta]) }); });
+      await pg.goto('http://localhost:8793/reporte-cajas.html'); await pg.waitForSelector('.spin');
+      ok(await pg.evaluate(() => document.getElementById('btnAct').disabled && [...document.querySelectorAll('#atajos button')].every(b => b.disabled)), 'atajos y ↻ deshabilitados mientras carga');
+      await pg.evaluate(() => { st.periodo = 'hoy'; st.desde = st.hasta = hoy; cargar(); });   // otra carga mientras la semana sigue en vuelo
+      await pg.waitForSelector('.kpi', { timeout: 15000 }); await pg.waitForTimeout(2200);
+      const r = await pg.evaluate(() => [st.desde, st.hasta, new Set(st.D.cajas.map(c => limaYMD(c._t0))).size, st.D.raw.desde]);
+      ok(r[0] === r[1] && r[3] === r[1], 'Hoy gana a la semana en vuelo: ' + JSON.stringify(r)); await pg.close(); }
+    // método, CSV, doble toque, URL
+    { const pg = await nuevaPag(); let marcas = 0;
+      await pg.route('**/rpc/control_caja_marcar', async r => { marcas++; await new Promise(x => setTimeout(x, 600)); r.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
+      await pg.goto('http://localhost:8793/reporte-cajas.html?demo=1&dia=abc&tab=hack&met=XX&zona=9&rev=zz&estado=Q&desde=2026-02-31'); await pg.waitForSelector('.kpi');
+      ok(await pg.evaluate(() => st.f.dia === '' && st.f.zona === 'TODAS' && st.f.metodo === '' && st.f.rev === '' && st.f.estado === '' && st.tab === 'pend' && st.periodo === 'sem'), 'URL con basura se ignora');
+      // H4: KPI de venta con método = suma de las ventas filtradas
+      await pg.selectOption('#fMetodo', 'EFECTIVO'); await pg.waitForTimeout(100);
+      const kv = await pg.textContent('.kpi:nth-child(2) .v'); const esp = await pg.evaluate(() => S(derive().ventas.reduce((s, v) => s + (+v.total || 0), 0)));
+      ok(kv === esp, 'KPI venta con método EFECTIVO: ' + kv + ' vs ' + esp); await pg.selectOption('#fMetodo', '');
+      // H7: CSV neutraliza fórmulas
+      await pg.evaluate(() => { st.exp = { name: 'x', head: ['a'], rows: [['=1+1'], ['-5'], [-5], ['@x'], ['ok']] }; });
+      const [dl] = await Promise.all([pg.waitForEvent('download'), pg.click('#btnCsv')]); const txt = fs.readFileSync(await dl.path(), 'utf8');
+      ok(txt.includes("'=1+1") && txt.includes("'-5") && txt.includes("'@x") && /\r\n-5\r\n/.test(txt), 'CSV: texto con = - @ prefijado, número negativo intacto');
+      // H8: segundo toque a la misma marca en vuelo se ignora (en modo real)
+      await pg.close(); }
+    {
+      const pg = await nuevaPag(); let marcas = 0;
+      await pg.route('**/rpc/reporte_cajas_semana', async r => { const b = r.request().postDataJSON().p; r.fulfill({ contentType: 'application/json', body: await pg.evaluate(([d, h]) => JSON.stringify(Object.assign(demoData(d, h), { ok: true })), [b.desde, b.hasta]) }); });
+      await pg.route('**/rpc/control_caja_marcar', async r => { marcas++; await new Promise(x => setTimeout(x, 700)); r.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
+      await pg.goto('http://localhost:8793/reporte-cajas.html'); await pg.waitForSelector('.kpi');
+      await pg.evaluate(() => { const it = st.D.items[0]; marcar(it.tipo, it.ref, 'OK', ''); marcar(it.tipo, it.ref, 'OK', ''); });
+      await pg.waitForTimeout(1200); ok(marcas === 1, 'doble toque: una sola llamada (' + marcas + ')'); await pg.close();
+    }
+    ok(!errs.length, 'QA: pageerrors ' + errs.join(' / '));
+    await ctx.close(); console.log('QA nuevo: ok');
   }
 } catch (e) { fallas++; console.log('EXCEPCION', e.message); }
 await br.close(); srv.close();

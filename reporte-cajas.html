@@ -222,7 +222,6 @@ const SB_URL  = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
 const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
 const PAGE = 60;
 const TZ = 'America/Lima';
-const SIN_CAPTOR = { 'ZONA-01': true };   // Zona 01 no tiene captor Yape: no es culpa del cajero
 const $ = id => document.getElementById(id);
 const LS = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (_) { return null; } };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -258,26 +257,27 @@ const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const hoy = limaYMD(Date.now());
 const lunes = addDays(hoy, -dowOf(hoy));
 const st = { periodo: 'sem', desde: lunes, hasta: hoy, tab: 'pend', f: { zona: 'TODAS', cajero: '', cajas: new Set(), estado: '', rev: '', metodo: '', dia: '', q: '' },
-  tb: {}, D: null, demo: false, revVer: 0, memo: new Map(), exp: null, printAll: false, verHechos: false, cliVista: 'global', zonaSel: null };
+  tb: {}, D: null, demo: false, seq: 0, vuelo: new Set(), revVer: 0, memo: new Map(), exp: null, printAll: false, verHechos: false, cliVista: 'global', zonaSel: null };
 let tok = null;
 st.lite = innerWidth <= 760;   // celular: carga inicial liviana (ventas observables); completa al abrir Ventas o una caja
 const REV = new Map();
 
+const validFecha = s => /^\d{4}-\d\d-\d\d$/.test(s || '') && !isNaN(Date.parse(s + 'T00:00:00Z')) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
 function leerURL() {
   const q = new URLSearchParams(location.search);
   const per = q.get('periodo'); if (per && PERIODOS[per]) { st.periodo = PERIODOS[per]; const r = atajo(st.periodo); st.desde = r[0]; st.hasta = r[1]; }
-  const z = q.get('zona'); if (z) { const m = /(\d+)/.exec(z); st.f.zona = m ? 'ZONA-0' + (+m[1]) : 'TODAS'; }
-  if (q.get('cajero')) st.f.cajero = q.get('cajero');
-  if (q.get('caja')) q.get('caja').split(',').filter(Boolean).forEach(x => st.f.cajas.add(x));
-  if (!per && /^\d{4}-\d\d-\d\d$/.test(q.get('desde') || '')) { st.desde = q.get('desde'); st.periodo = 'custom'; }
-  if (!per && /^\d{4}-\d\d-\d\d$/.test(q.get('hasta') || '')) st.hasta = q.get('hasta');
-  if (st.hasta < st.desde || difDias(st.desde, st.hasta) > DIAS_MAX) { st.desde = lunes; st.hasta = hoy; }
-  if (q.get('tab')) st.tab = q.get('tab');
-  if (q.get('estado')) st.f.estado = q.get('estado');
-  if (q.get('rev')) st.f.rev = q.get('rev');
-  if (q.get('met')) st.f.metodo = q.get('met');
-  if (q.get('dia') !== null && q.get('dia') !== '') st.f.dia = +q.get('dia');
-  if (q.get('q')) st.f.q = q.get('q');
+  const z = /^(?:ZONA-?|Z)?0?([12])$/i.exec(q.get('zona') || ''); st.f.zona = z ? 'ZONA-0' + z[1] : 'TODAS';
+  const cj = (q.get('cajero') || '').trim(); if (cj && cj.length <= 80) st.f.cajero = cj;
+  (q.get('caja') || '').split(',').filter(x => /^[\w.\-]{1,40}$/.test(x)).slice(0, 50).forEach(x => st.f.cajas.add(x));
+  const dq = q.get('desde'), hq = q.get('hasta');
+  if (!per && validFecha(dq) && validFecha(hq)) { st.desde = dq; st.hasta = hq; st.periodo = 'custom'; }
+  if (st.hasta < st.desde || difDias(st.desde, st.hasta) > DIAS_MAX) { st.periodo = 'sem'; st.desde = lunes; st.hasta = hoy; }
+  const tb = q.get('tab'); if (TABS.some(x => x[0] === tb)) st.tab = tb;
+  if (['A', 'C'].includes(q.get('estado'))) st.f.estado = q.get('estado');
+  if (['alertas', 'sinrev'].includes(q.get('rev'))) st.f.rev = q.get('rev');
+  if (['EFECTIVO', 'VIRTUAL', 'CREDITO', 'POR_COBRAR', 'MIXTO'].includes(q.get('met'))) st.f.metodo = q.get('met');
+  if (/^[0-6]$/.test(q.get('dia') || '')) st.f.dia = +q.get('dia');
+  st.f.q = (q.get('q') || '').slice(0, 100);
   st.forceDemo = q.get('demo') === '1';
 }
 function escribirURL() {
@@ -307,7 +307,7 @@ async function rpc(fn, p) {
   const r = await fetchTO(SB_URL + '/rest/v1/rpc/' + fn, { method: 'POST',
     headers: { apikey: SB_ANON, Authorization: 'Bearer ' + t, 'Content-Profile': 'mos', 'Accept-Profile': 'mos', 'Content-Type': 'application/json' },
     body: JSON.stringify({ p: p || {} }) }, 30000);
-  if (!r.ok) { const tx = await r.text().catch(() => ''); const e = new Error('HTTP ' + r.status + ' ' + tx.slice(0, 200)); e.noExiste = r.status === 404 || /does not exist|PGRST202|Could not find the function/i.test(tx); throw e; }
+  if (!r.ok) { const tx = await r.text().catch(() => ''); const e = new Error('HTTP ' + r.status + ' ' + tx.slice(0, 200)); throw e; }
   return r.json();
 }
 const ctx = () => { const c = LS('mos_reporte_ctx'); return c && c.u ? c : null; };
@@ -379,44 +379,55 @@ async function unaSemana(desde, hasta, lite) {
     try {
       const pr = { desde, hasta, zona: 'TODAS', usuario: (ctx() || {}).u || '' }; if (lite) pr.ventas = 'OBSERVABLES';
       const j = await rpc('reporte_cajas_semana', pr);
+      if (!j || typeof j !== 'object' || Array.isArray(j)) { const er = new Error('RESPUESTA_INVALIDA'); er.fatal = true; throw er; }
       if (j && j.ok === false) { const er = new Error(j.error || 'RESPUESTA'); er.fatal = true; throw er; }
       return j;
-    } catch (e) { if (e.noExiste || e.fatal || e.message === 'SIN_DISPOSITIVO' || i === 1) throw e; tok = null; await new Promise(r => setTimeout(r, 700)); }
+    } catch (e) { if (e.fatal || e.message === 'SIN_DISPOSITIVO' || i === 1) throw e; tok = null; await new Promise(r => setTimeout(r, 700)); }
   }
 }
-async function fetchRango(lite, prog) {   // máx 31 días; más de 7 días = semana por semana, en serie
-  if (difDias(st.desde, st.hasta) <= 7) { prog && prog(1, 1); return unaSemana(st.desde, st.hasta, lite); }
-  const ws = semanas(st.desde, st.hasta); const parts = [];
+async function fetchRango(desde, hasta, lite, prog) {   // máx 31 días; más de 7 días = semana por semana, en serie (si una falla, todo falla: nada parcial)
+  if (difDias(desde, hasta) <= 7) { prog && prog(1, 1); return unaSemana(desde, hasta, lite); }
+  const ws = semanas(desde, hasta); const parts = [];
   for (let i = 0; i < ws.length; i++) { prog && prog(i + 1, ws.length); parts.push(await unaSemana(ws[i][0], ws[i][1], lite)); }
-  return unir(parts, st.desde, st.hasta);
+  return unir(parts, desde, hasta);
 }
+function setCargando(b) { st.cargando = b; document.querySelectorAll('#atajos button, #btnAct, #fDesde, #fHasta').forEach(el => { el.disabled = b; }); }
 async function cargar() {
+  const my = ++st.seq; setCargando(true); const lite = st.lite;
   $('cuerpo').innerHTML = spinner('Cargando cajas…');
-  let d = null;
   try {
+    let d;
     if (st.forceDemo) { st.demo = true; d = demoData(st.desde, st.hasta); }
     else if (!ctx()) { const er = new Error('SIN_USUARIO'); er.fatal = true; throw er; }
     else {
-      const t0 = performance.now();
-      try { d = await fetchRango(st.lite, (i, n) => { $('cuerpo').innerHTML = spinner(n > 1 ? 'Cargando semana ' + i + ' de ' + n + '…' : 'Cargando cajas…'); }); st.demo = false; st.ms = Math.round(performance.now() - t0); }
-      catch (e) { if (e.noExiste) { st.demo = true; st.lite = false; d = demoData(st.desde, st.hasta); } else throw e; }
+      st.demo = false; const t0 = performance.now();
+      d = await fetchRango(st.desde, st.hasta, lite, (i, n) => { if (my === st.seq) $('cuerpo').innerHTML = spinner(n > 1 ? 'Cargando semana ' + i + ' de ' + n + '…' : 'Cargando cajas…'); });
+      st.ms = Math.round(performance.now() - t0);
     }
+    if (my !== st.seq) return;   // llegó tarde: ya se pidió otro periodo
+    if (!d || typeof d !== 'object' || !Array.isArray(d.cajas)) throw new Error('RESPUESTA_INVALIDA');
+    const t1 = performance.now(); prep(d); render(); st.msRender = Math.round(performance.now() - t1);
+    if (st.lite) st.liteFalla = false;
   } catch (e) {
+    if (my !== st.seq) return;
     const msg = e.message === 'SIN_USUARIO' ? 'Abre este reporte desde el botón «Control de cajas» de MOS (Finanzas): hace falta saber qué usuario eres.'
       : e.message === 'ROL_NO_AUTORIZADO' ? 'Tu usuario no tiene permiso de administrador para ver el control de cajas.'
       : e.message === 'SIN_DISPOSITIVO' ? 'Abre este reporte desde MOS (Finanzas → Control de cajas) en un equipo autorizado.'
       : e.message === 'SIN_PERMISO' ? 'Este equipo no está autorizado en MOS.' : ERRMSG[e.message] ? ERRMSG[e.message] : 'No se pudo cargar el reporte. Revisa la conexión y vuelve a intentar.';
     $('cuerpo').innerHTML = '<div class="estado">' + esc(msg) + '<br><br><button class="btn pri" id="btnRe">Reintentar</button></div>';
-    return;
-  }
-  const t1 = performance.now(); prep(d); render(); st.msRender = Math.round(performance.now() - t1);
-  if (st.lite) st.liteFalla = false;
+  } finally { if (my === st.seq) setCargando(false); }
 }
 async function cargarCompleto() {
-  if (st.cargandoC) return; st.cargandoC = true;
-  try { const j = await fetchRango(false, (i, n) => { const e = $('cuerpo').querySelector('.estado'); if (e && n > 1) e.lastChild.textContent = 'Cargando todas las ventas · semana ' + i + ' de ' + n + '…'; }); st.lite = false; prep(j); }
-  catch (e) { st.liteFalla = true; toast('No se pudieron cargar todas las ventas. Se muestran solo las observables.', { err: true }); }
-  st.cargandoC = false; render();
+  if (st.cargandoC) return; st.cargandoC = true; const my = st.seq, d0 = st.desde, h0 = st.hasta;
+  try {
+    const j = await fetchRango(d0, h0, false, (i, n) => { const e = $('cuerpo').querySelector('.estado'); if (e && n > 1) e.lastChild.textContent = 'Cargando todas las ventas · semana ' + i + ' de ' + n + '…'; });
+    if (my !== st.seq || d0 !== st.desde || h0 !== st.hasta) return;   // cambió el periodo mientras tanto: se descarta
+    if (!j || typeof j !== 'object' || !Array.isArray(j.cajas)) throw new Error('RESPUESTA_INVALIDA');
+    st.lite = false; prep(j); render();
+  } catch (e) {
+    if (my !== st.seq || d0 !== st.desde || h0 !== st.hasta) return;
+    st.liteFalla = true; toast('No se pudieron cargar todas las ventas. Se muestran solo las observables.', { err: true }); render();
+  } finally { st.cargandoC = false; }
 }
 function prep(d) {
   const arr = a => Array.isArray(a) ? a : [];
@@ -449,7 +460,7 @@ function buildItems(D) {
   D.extras.forEach(x => { if (esNoPerm(x)) it.push({ tipo: 'EXTRA', ref: x.id_extra, obj: x, id_caja: x.id_caja, zona: x.zona_id, nivel: x.nivel === 'ALTA' ? 'ALTA' : 'MEDIA', titulo: 'Extra ' + String(x.tipo || '').toLowerCase() + ': ' + (x.concepto || 'sin concepto'), det: x.flags.map(flagTxt).join(' · '), monto: x.monto, ts: parseTs(x.ts) }); });
   D.ventas.forEach(v => { const sv = ev(v) === 'SIN_VERIFICAR'; const cs = (v.flags || []).includes('CREDITO_SIN_CLIENTE'); if (sv || cs) it.push({ tipo: 'VENTA', ref: v.id_venta, obj: v, id_caja: v.id_caja, zona: v.zona_id, nivel: 'MEDIA', titulo: (sv ? 'Virtual sin verificar · ' : 'Crédito sin cliente · ') + (v.correlativo || v.id_venta), det: (v.cliente_nombre || 'Sin cliente') + ' · ' + (v.vendedor || ''), monto: sv ? v.vir : v.total, ts: parseTs(v.fecha) }); });
   D.anulados.forEach(a => it.push({ tipo: 'ANULADO', ref: a.id_venta, obj: a, id_caja: a.id_caja, zona: a.zona_id, nivel: (a.motivo && !a.sin_historial) ? 'MEDIA' : 'ALTA', titulo: 'Ticket anulado · ' + (a.correlativo || a.id_venta), det: (a.sin_historial ? 'SIN REGISTRO de quién anuló' : (a.motivo ? 'Motivo: ' + a.motivo : 'SIN MOTIVO') + ' · anuló ' + (a.anulado_por || '?')), monto: a.total, ts: parseTs(a.anulado_ts || a.fecha) }));
-  D.yapes.forEach(y => { y.flags = Array.isArray(y.flags) ? y.flags : []; if (!y.id_venta || y.flags.includes('DIFERENCIA_TICKETS')) it.push({ tipo: 'YAPE', ref: y.id, obj: y, id_caja: null, zona: y.zona, nivel: 'MEDIA', titulo: 'Yape sin venta · ' + (y.pagador || 'sin nombre'), det: 'Estado ' + (y.estado || '—') + (y.flags.length ? ' · ' + y.flags.map(flagTxt).join(' · ') : ''), monto: y.monto, ts: y._t }); });
+  D.yapes.forEach(y => { y.flags = Array.isArray(y.flags) ? y.flags : []; if (yapeSinVenta(y, D) || y.flags.includes('DIFERENCIA_TICKETS')) it.push({ tipo: 'YAPE', ref: y.id, obj: y, id_caja: null, zona: y.zona, nivel: 'MEDIA', titulo: 'Yape sin venta · ' + (y.pagador || 'sin nombre'), det: 'Estado ' + (y.estado || '—') + (y.flags.length ? ' · ' + y.flags.map(flagTxt).join(' · ') : ''), monto: y.monto, ts: y._t }); });
   return it;
 }
 const keyOf = it => it.tipo + '|' + it.ref;
@@ -504,7 +515,7 @@ function agg(d) {
     a.vsN += +c.virtual_sin_verificar_n || 0; a.vsT += +c.virtual_sin_verificar_total || 0; a.clN += +c.clientes_n || 0; a.conv += +c.conversiones_n || 0; a.plan += +c.planilla || 0; a.vscN += +c.virtual_sin_captor_n || 0;
   });
   a.exFlag = d.extras.filter(esNoPerm).length;
-  const ys = d.yapes.filter(y => !y.id_venta); a.ysN = ys.length; a.ysT = ys.reduce((s, y) => s + (+y.monto || 0), 0);
+  const ys = d.yapes.filter(y => yapeSinVenta(y)); a.ysN = ys.length; a.ysT = ys.reduce((s, y) => s + (+y.monto || 0), 0);
   a.pend = d.items.filter(i => !REV.has(keyOf(i))).length; a.totIt = d.items.length;
   return a;
 }
@@ -590,7 +601,7 @@ const C = {
     { t: 'Estado', v: r => r.estado || '', h: r => '<span class="chip ' + (r.id_venta ? 'c-ok' : 'c-bad') + '">' + esc(r.estado || '—') + '</span>' },
     { s: 1, t: 'Venta', v: r => r.id_venta || '', h: r => r.id_venta ? esc(r.id_venta) : '<b style="color:var(--bad)">sin venta</b>' },
     { s: 1, t: 'Vinculado por', v: r => r.match_por || '', h: r => esc(r.match_por || '—') },
-    { t: 'Revisión', v: r => REV.has('YAPE|' + r.id) ? 1 : 0, c: r => (REV.get('YAPE|' + r.id) || {}).estado || '', h: r => !r.id_venta || REV.has('YAPE|' + r.id) ? accion('YAPE', r.id) : '' }],
+    { t: 'Revisión', v: r => REV.has('YAPE|' + r.id) ? 1 : 0, c: r => (REV.get('YAPE|' + r.id) || {}).estado || '', h: r => yapeSinVenta(r) || REV.has('YAPE|' + r.id) ? accion('YAPE', r.id) : '' }],
   clientes: () => [
     { t: 'Cliente', v: r => r.nombre || '', h: r => esc(r.nombre || 'Sin nombre') },
     { s: 1, t: 'Documento', v: r => r.doc || '', h: r => esc(r.doc || '—') },
@@ -598,7 +609,7 @@ const C = {
     { t: 'Compras', n: 1, v: r => r.n, h: r => r.n },
     { t: 'Total', n: 1, v: r => money(r.total), h: r => S(r.total) }]
 };
-const rowCls = { ventas: r => (ev(r) === 'SIN_VERIFICAR' ? 'alerta' : ''), extras: r => esNoPerm(r) ? 'alerta' : '', anul: r => (r.motivo && !r.sin_historial) ? 'aviso' : 'alerta', yapes: r => r.id_venta ? '' : 'alerta' };
+const rowCls = { ventas: r => (ev(r) === 'SIN_VERIFICAR' ? 'alerta' : ''), extras: r => esNoPerm(r) ? 'alerta' : '', anul: r => (r.motivo && !r.sin_historial) ? 'aviso' : 'alerta', yapes: r => yapeSinVenta(r) ? 'alerta' : '' };
 const qTxt = {
   ventas: r => [r.cliente_nombre, r.cliente_doc, r.correlativo, r.vendedor, r.id_venta].join(' '),
   extras: r => [r.concepto, r.obs, r.registrado_por, r.tipo, nombreCaja(r.id_caja)].join(' '),
@@ -629,16 +640,19 @@ function infoLinea(a, d) {
   const sc = d.tv.filter(x => x.estado === 'SIN_CAPTOR'); const scT = sc.reduce((s, x) => s + (+x.vir || 0), 0);
   return '<div class="leyenda"><span>Alertas ALTAS pendientes <b>' + alta + '</b></span><span>Extras no permitidos <b>' + a.exFlag + '</b></span><span>Planilla (personal) <b>' + S(a.plan) + '</b></span><span>Conversiones NV→CPE <b>' + a.conv + '</b></span><span>Virtual sin captor <b>' + Math.max(sc.length, a.vscN) + ' · ' + S(scT) + '</b></span></div>';
 }
+function aggMetodo(a, d) {   // con filtro de método, la venta sale de las ventas filtradas
+  const T = d.ventas.reduce((s, v) => s + (+v.total || 0), 0); const m = st.f.metodo;
+  a.ventasT = T; a.ventasN = d.ventas.length; a.efe = m === 'EFECTIVO' ? T : 0; a.vir = m === 'VIRTUAL' ? T : 0; a.cre = m === 'CREDITO' ? T : 0; a.pc = m === 'POR_COBRAR' ? T : 0; a.mix = m === 'MIXTO' ? T : 0;
+}
 function kpis(d) {
-  const a = agg(d); const k = (l, v, s, go, col) => '<button class="kpi" style="--k:' + col + '" data-act="tab" data-v="' + go + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></button>';
-  const noC = st.f.zona === 'ZONA-01';
+  const a = agg(d); if (st.f.metodo) aggMetodo(a, d); const k = (l, v, s, go, col) => '<button class="kpi" style="--k:' + col + '" data-act="tab" data-v="' + go + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></button>';
   return '<div class="kpis">' +
     k('Cajas', a.ab + ' abiertas · ' + a.ce + ' cerradas', a.cajasN + ' en total', 'cajas', 'var(--acc)') +
     k('Venta total', S(a.ventasT), a.ventasN + ' tickets', 'ventas', 'var(--ok)') +
     k('Anulados', a.anN + ' · ' + S(a.anT), 'tickets anulados', 'anul', 'var(--bad)') +
     k('Extras', '+' + S(a.exI).replace('S/ ', '') + ' / −' + S(a.exE).replace('S/ ', ''), a.exFlag + ' con alerta', 'extras', 'var(--warn)') +
     k('Virtual sin verificar', a.vsN + ' · ' + S(a.vsT), 'ventas con Yape/virtual', 'ventas', 'var(--m-vir)') +
-    k('Yapes sin venta', noC ? 'sin captor' : a.ysN + ' · ' + S(a.ysT), noC ? 'Zona 01 no tiene captor' : 'sin vincular a un ticket', 'yape', 'var(--m-mix)') +
+    k('Yapes sin venta', a.ysN + ' · ' + S(a.ysT), a.vscN ? a.vscN + ' virtuales sin captor' : 'sin vincular a un ticket', 'yape', 'var(--m-mix)') +
     k('Diferencia de cajas', SS(a.dif), 'suma de cajas cerradas', 'cajero', a.dif < -0.05 ? 'var(--bad)' : 'var(--ok)') +
     k('Alertas pendientes', a.pend + ' de ' + a.totIt, 'clic: revisar', 'pend', a.pend ? 'var(--bad)' : 'var(--ok)') + '</div>' + metBar(a) + infoLinea(a, d);
 }
@@ -681,7 +695,7 @@ function cardCaja(c) {
     '<div style="font-size:13px;color:var(--mut)">Abrió ' + (c._t0 < parseTs(st.desde) ? '<b>el ' + esc(fh(c.fecha_apertura)) + '</b> (antes del rango)' : esc(fh(c.fecha_apertura))) + ' · ' + (c._abierta ? 'sigue abierta' : 'cerró ' + esc(fh(c.fecha_cierre))) + ' · ' + (c.horas != null ? Number(c.horas).toFixed(1) + ' h' : '') + '</div>' +
     '<div class="kv"><span>Apertura</span><span>' + S(c.monto_inicial) + '</span><span>Efectivo esperado</span><span>' + S(c.esperado_efectivo) + '</span><span>Entregado</span><span>' + (c._abierta || c.monto_final == null ? '—' : S(c.monto_final)) + '</span><span>Diferencia</span><span>' + diffHtml(c) + '</span>' +
     '<span>Ventas</span><span>' + (c.ventas_n || 0) + ' · ' + S(c.ventas_total) + '</span><span>Anulados</span><span>' + (c.anulados_n || 0) + ' · ' + S(c.anulados_total) + '</span><span>Extras</span><span>' + (c.extras_n || 0) + ' (+' + money(c.extras_ingreso) + ' / −' + money(c.extras_egreso) + ')</span><span>Clientes</span><span>' + (c.clientes_n || 0) + '</span>' + cajaExtra(c) +
-    '<span>Virtual sin verificar</span><span>' + (SIN_CAPTOR[c.zona_id] ? '<span class="chip c-gris">sin captor</span>' : (c.virtual_sin_verificar_n || 0) + ' · ' + S(c.virtual_sin_verificar_total)) + '</span></div>' +
+    '<span>Virtual sin verificar</span><span>' + ((c.virtual_sin_verificar_n || 0) + ' · ' + S(c.virtual_sin_verificar_total)) + '</span></div>' +
     '<div style="font-size:12.5px;margin-bottom:6px">' + met + '</div>' + (+c.abonado_en_otra_caja > 0 ? '<div class="dtl" style="margin-bottom:6px"><span>' + S(c.abonado_en_otra_caja) + ' cobrado en otra caja, excluido del esperado</span></div>' : '') +
     '<div>' + c.alertas.map(a => '<span class="chip ' + (a.nivel === 'ALTA' ? 'c-bad' : a.nivel === 'MEDIA' ? 'c-warn' : 'c-gris') + '" title="' + esc((FLAGS[a.codigo] || [])[1] || a.texto) + '" style="margin:0 4px 4px 0">' + esc(a.texto) + '</span>').join('') + '</div>' +
     '<div class="acciones"><span class="chip ' + (pc.pend ? 'c-bad' : 'c-ok') + '">' + (pc.pend ? pc.pend + ' sin revisar' : pc.tot ? 'todo revisado' : 'sin alertas') + '</span> ' + (c.alertas.some(a => a.nivel !== 'BAJA') || r ? accion('CAJA', c.id_caja) : '') + ' <button class="btn sm" data-act="solo" data-id="' + esc(c.id_caja) + '">Solo esta</button></div></div>';
@@ -694,7 +708,7 @@ function tabCajas(d) {
 }
 function porCajero(d) {
   const m = new Map();
-  d.cajas.forEach(c => { const o = m.get(c.vendedor) || { v: c.vendedor, zonas: new Set(), cajas: 0, venta: 0, dif: 0, difAbs: 0, an: 0, anT: 0, exF: 0, vs: 0, vsT: 0, pend: 0 }; o.zonas.add(c.zona_id); o.cajas++; o.venta += +c.ventas_total || 0; if (!c._abierta && c.diferencia != null) { o.dif += +c.diferencia; o.difAbs += Math.abs(+c.diferencia); } o.an += +c.anulados_n || 0; o.anT += +c.anulados_total || 0; if (!SIN_CAPTOR[c.zona_id]) { o.vs += +c.virtual_sin_verificar_n || 0; o.vsT += +c.virtual_sin_verificar_total || 0; } m.set(c.vendedor, o); });
+  d.cajas.forEach(c => { const o = m.get(c.vendedor) || { v: c.vendedor, zonas: new Set(), cajas: 0, venta: 0, dif: 0, difAbs: 0, an: 0, anT: 0, exF: 0, vs: 0, vsT: 0, pend: 0 }; o.zonas.add(c.zona_id); o.cajas++; o.venta += +c.ventas_total || 0; if (!c._abierta && c.diferencia != null) { o.dif += +c.diferencia; o.difAbs += Math.abs(+c.diferencia); } o.an += +c.anulados_n || 0; o.anT += +c.anulados_total || 0; o.vs += +c.virtual_sin_verificar_n || 0; o.vsT += +c.virtual_sin_verificar_total || 0; m.set(c.vendedor, o); });
   d.extras.forEach(x => { if (esNoPerm(x)) { const c = st.D.cajaById.get(x.id_caja); const o = c && m.get(c.vendedor); if (o) o.exF++; } });
   d.items.forEach(i => { if (!REV.has(keyOf(i)) && i.id_caja) { const c = st.D.cajaById.get(i.id_caja); const o = c && m.get(c.vendedor); if (o) o.pend++; } });
   return [...m.values()];
@@ -716,18 +730,20 @@ function tabZonas() {
   const T = [num('Cajas abiertas', a.ab, b.ab, String), num('Cajas cerradas', a.ce, b.ce, String), num('Tickets', a.ventasN, b.ventasN, String), num('Venta total', a.ventasT, b.ventasT, S),
     num('Efectivo', a.efe, b.efe, S), num('Virtual', a.vir, b.vir, S), num('Crédito', a.cre, b.cre, S), num('Por cobrar', a.pc, b.pc, S), num('Mixto', a.mix, b.mix, S),
     num('Anulados (n)', a.anN, b.anN, String), num('Anulados (S/)', a.anT, b.anT, S), num('Extras ingreso', a.exI, b.exI, S), num('Extras egreso', a.exE, b.exE, S), num('Extras con alerta', a.exFlag, b.exFlag, String),
-    num('Diferencia acumulada', a.dif, b.dif, SS), ['Virtual sin verificar', 'sin captor', b.vsN + ' · ' + S(b.vsT), ''], ['Yapes sin venta', 'sin captor', b.ysN + ' · ' + S(b.ysT), ''], num('Alertas pendientes', a.pend, b.pend, String)];
+    num('Diferencia acumulada', a.dif, b.dif, SS), num('Virtual sin verificar (S/)', a.vsT, b.vsT, S), num('Virtual sin captor (n)', a.vscN, b.vscN, String), num('Yapes sin venta (n)', a.ysN, b.ysN, String), num('Yapes sin venta (S/)', a.ysT, b.ysT, S), num('Alertas pendientes', a.pend, b.pend, String)];
   st.exp = { name: 'zona01_vs_zona02', head: ['Métrica', 'Zona 01', 'Zona 02', 'Diferencia'], rows: T.map(r => r.slice(0, 4)) };
   let h = '<div class="tw"><table><thead><tr><th style="cursor:default">Métrica</th><th class="n" style="cursor:default">' + zchip('ZONA-01') + ' Zona 01</th><th class="n" style="cursor:default">' + zchip('ZONA-02') + ' Zona 02</th><th class="n" style="cursor:default">Z02 − Z01</th></tr></thead><tbody>';
   T.forEach(r => { h += '<tr><td>' + r[0] + '</td><td class="n">' + r[1] + '</td><td class="n">' + r[2] + '</td><td class="n">' + r[3] + '</td></tr>'; });
-  h += '</tbody></table></div><p style="font-size:12.5px;color:var(--mut)">Esta comparación respeta los demás filtros (cajero, estado, método, día) pero ignora el de zona. Zona 01 no tiene captor Yape: no se mide Yape ahí.</p><div class="seg sm zsel" id="segZs" style="margin-top:10px"><button data-v="ZONA-01" class="' + (st.zonaSel !== 'ZONA-02' ? 'on' : '') + '">Por cajero · Zona 01</button><button data-v="ZONA-02" class="' + (st.zonaSel === 'ZONA-02' ? 'on' : '') + '">Zona 02</button></div><div class="vs" style="margin-top:10px">';
+  h += '</tbody></table></div><p style="font-size:12.5px;color:var(--mut)">Esta comparación respeta los demás filtros (cajero, estado, método, día) pero ignora el de zona. «Sin captor» lo informa el servidor por día y zona.</p><div class="seg sm zsel" id="segZs" style="margin-top:10px"><button data-v="ZONA-01" class="' + (st.zonaSel !== 'ZONA-02' ? 'on' : '') + '">Por cajero · Zona 01</button><button data-v="ZONA-02" class="' + (st.zonaSel === 'ZONA-02' ? 'on' : '') + '">Zona 02</button></div><div class="vs" style="margin-top:10px">';
   [['ZONA-01', z1], ['ZONA-02', z2]].forEach(p => { h += '<div class="' + ((st.zonaSel || 'ZONA-01') === p[0] ? '' : 'nosel') + '"><h3 style="margin:6px 0">' + zchip(p[0]) + ' Por cajero · ' + zn(p[0]) + '</h3>' + tabla('zc' + p[0], colsCajero(), porCajero(p[1]), { sort: 3, noExp: true }) + '</div>'; });
   return h + '</div>';
 }
-function ticketsDe(y) {
+function ticketsDe(y, D) {
   if (Array.isArray(y.tickets) && y.tickets.length) return y.tickets;
-  const v = y.id_venta && st.D.ventaById.get(y.id_venta); return v ? [{ id_venta: v.id_venta, correlativo: v.correlativo, total: v.vir || v.total, id_caja: v.id_caja, vendedor: v.vendedor }] : [];
+  const v = y.id_venta && (D || st.D).ventaById.get(y.id_venta); return v ? [{ id_venta: v.id_venta, correlativo: v.correlativo, total: v.total, vir: v.vir, id_caja: v.id_caja, vendedor: v.vendedor }] : [];
 }
+const tkVir = x => x.vir != null ? +x.vir : +x.total || 0;
+function yapeSinVenta(y, D) { return ['NUEVO', 'AMBIGUO'].includes(String(y.estado || '').toUpperCase()) || !ticketsDe(y, D).length; }
 function tabYape(d) {
   const sub = st.yv || 'A';
   const seg = '<div class="seg sm" id="segYv" style="margin-bottom:8px"><button data-v="A" class="' + (sub === 'A' ? 'on' : '') + '">A · Yapes leídos por el captor</button><button data-v="B" class="' + (sub === 'B' ? 'on' : '') + '">B · Tickets virtuales</button></div>';
@@ -735,18 +751,20 @@ function tabYape(d) {
 }
 function vistaYA(d) {
   const l = filtQ(d.yapes, y => [y.pagador, y.id_venta, y.estado, y.dispositivo, ticketsDe(y).map(t => t.correlativo + ' ' + t.vendedor).join(' ')].join(' ')).slice().sort((a, b) => (ticketsDe(a).length ? 1 : 0) - (ticketsDe(b).length ? 1 : 0) || b._t - a._t);
-  const sin = l.filter(y => !ticketsDe(y).length); const tot = l.reduce((s, y) => s + (+y.monto || 0), 0); const totSin = sin.reduce((s, y) => s + (+y.monto || 0), 0);
+  const sin = l.filter(y => yapeSinVenta(y)); const tot = l.reduce((s, y) => s + (+y.monto || 0), 0); const totSin = sin.reduce((s, y) => s + (+y.monto || 0), 0);
   st.exp = { name: 'yapes_captor', head: ['Hora', 'Zona', 'Pagador', 'Monto', 'Estado', 'Dispositivo', 'Recibido', 'Tickets verificados', 'Suma tickets', 'Diferencia'],
-    rows: l.map(y => { const t = ticketsDe(y); const su = y.suma_tickets != null ? y.suma_tickets : t.reduce((s, x) => s + (+x.total || 0), 0); return [fh(y.ts), y.zona, y.pagador, money(y.monto), y.estado, y.dispositivo || '', y.ts_recibido ? fh(y.ts_recibido) : '', t.map(x => x.correlativo).join(' + '), money(su), y.diferencia != null ? money(y.diferencia) : money(y.monto - su)]; }) };
+    rows: l.map(y => { const t = ticketsDe(y); const su = y.suma_tickets != null ? y.suma_tickets : t.reduce((s, x) => s + tkVir(x), 0); return [fh(y.ts), y.zona, y.pagador, money(y.monto), y.estado, y.dispositivo || '', y.ts_recibido ? fh(y.ts_recibido) : '', t.map(x => x.correlativo).join(' + '), money(su), y.diferencia != null ? money(y.diferencia) : money(y.monto - su)]; }) };
   const s = st.tb.yA || (st.tb.yA = { pg: 0 }); const pags = Math.max(1, Math.ceil(l.length / PAGE)); if (s.pg >= pags) s.pg = pags - 1;
   const vis = st.printAll ? l : l.slice(s.pg * PAGE, s.pg * PAGE + PAGE);
-  let h = '<div class="prog"><b>' + l.length + ' Yapes leídos por el captor · ' + S(tot) + '</b><br><span style="font-size:14px">Con ticket: ' + (l.length - sin.length) + ' · <b style="color:var(--bad)">Sin ticket: ' + sin.length + ' (' + S(totSin) + ')</b></span>' + (st.f.zona === 'ZONA-01' ? '<br><span style="font-size:14px;color:var(--mut)">Zona 01 no tiene captor Yape: aquí no habrá lecturas.</span>' : '') + '</div>';
+  let h = '<div class="prog"><b>' + l.length + ' Yapes leídos por el captor · ' + S(tot) + '</b><br><span style="font-size:14px">Con ticket: ' + (l.length - sin.length) + ' · <b style="color:var(--bad)">Sin ticket: ' + sin.length + ' (' + S(totSin) + ')</b></span>' + '' + '</div>';
   if (!l.length) return h + '<div class="tw"><div class="vacio">Sin Yapes con estos filtros.</div></div>';
   vis.forEach(y => {
-    const t = ticketsDe(y); const su = y.suma_tickets != null ? +y.suma_tickets : t.reduce((a, x) => a + (+x.total || 0), 0); const df = y.diferencia != null ? +y.diferencia : y.monto - su;
-    h += '<div class="ycard ' + (!t.length ? 'sin' : Math.abs(df) > 0.05 ? 'dif' : '') + '"><div class="h"><span class="m">' + S(y.monto) + '</span> ' + zchip(y.zona) + ' <b>' + esc(y.pagador || 'sin nombre') + '</b> <span class="chip ' + (t.length ? 'c-ok' : 'c-bad') + '">' + esc(y.estado || '—') + '</span> ' + (y.flags || []).map(f => flagChip(f)).join(' ') + '<span style="font-size:13px;color:var(--mut)">' + esc(fh(y.ts)) + (y.ts_recibido ? ' · recibido ' + esc(fhh(y.ts_recibido)) : '') + (y.dispositivo ? ' · ' + esc(y.dispositivo) : '') + '</span><span style="margin-left:auto" class="acciones">' + (!t.length || REV.has('YAPE|' + y.id) ? accion('YAPE', y.id) : '') + '</span></div>';
-    if (t.length) { h += t.map(x => '<div class="tk"><b>' + esc(x.correlativo || x.id_venta) + '</b> ' + S(x.total) + ' · ' + esc(x.vendedor || nombreCaja(x.id_caja)) + ' ' + (x.id_caja ? '<small style="color:var(--dim)">' + esc(x.id_caja) + '</small>' : '') + '</div>').join('') + '<div class="f">Suma de tickets <b>' + S(su) + '</b> · Diferencia <b class="' + (Math.abs(df) <= 0.05 ? 'dif-ok' : 'dif-warn') + '">' + SS(df) + '</b></div>'; }
-    else h += '<div class="f"><span class="chip c-bad">' + esc(y.estado || 'NUEVO') + ' sin ticket</span> nadie lo asoció a una venta.</div>';
+    const t = ticketsDe(y); const su = y.suma_tickets != null ? +y.suma_tickets : t.reduce((a, x) => a + tkVir(x), 0); const df = y.diferencia != null ? +y.diferencia : y.monto - su;
+    const sv = yapeSinVenta(y);
+    h += '<div class="ycard ' + (sv ? 'sin' : Math.abs(df) > 0.05 ? 'dif' : '') + '"><div class="h"><span class="m">' + S(y.monto) + '</span> ' + zchip(y.zona) + ' <b>' + esc(y.pagador || 'sin nombre') + '</b> <span class="chip ' + (sv ? 'c-bad' : 'c-ok') + '">' + esc(y.estado || '—') + '</span> ' + (y.flags || []).map(f => flagChip(f)).join(' ') + '<span style="font-size:13px;color:var(--mut)">' + esc(fh(y.ts)) + (y.ts_recibido ? ' · recibido ' + esc(fhh(y.ts_recibido)) : '') + (y.dispositivo ? ' · ' + esc(y.dispositivo) : '') + '</span><span style="margin-left:auto" class="acciones">' + (sv || REV.has('YAPE|' + y.id) ? accion('YAPE', y.id) : '') + '</span></div>';
+    if (t.length) { h += t.map(x => '<div class="tk"><b>' + esc(x.correlativo || x.id_venta) + '</b> ' + S(tkVir(x)) + (x.vir != null && money(x.vir) !== money(x.total) ? ' <small style="color:var(--mut)">(parte virtual; ticket ' + S(x.total) + ')</small>' : '') + ' · ' + esc(x.vendedor || nombreCaja(x.id_caja)) + ' ' + (x.id_caja ? '<small style="color:var(--dim)">' + esc(x.id_caja) + '</small>' : '') + '</div>').join('') + '<div class="f">Suma de tickets <b>' + S(su) + '</b> · Diferencia <b class="' + (Math.abs(df) <= 0.05 ? 'dif-ok' : 'dif-warn') + '">' + SS(df) + '</b></div>'; }
+    if (sv && t.length) h += '<div class="f"><span class="chip c-bad">' + esc(y.estado || 'NUEVO') + '</span> sin vincular, aunque aparece un ticket probable.</div>';
+    if (!t.length) h += '<div class="f"><span class="chip c-bad">' + esc(y.estado || 'NUEVO') + ' sin ticket</span> nadie lo asoció a una venta.</div>';
     h += '</div>';
   });
   if (!st.printAll && pags > 1) h += '<div class="pg"><button class="btn sm" data-act="pg" data-id="yA" data-d="-1"' + (s.pg === 0 ? ' disabled' : '') + '>‹ Anterior</button><span>Página ' + (s.pg + 1) + ' de ' + pags + '</span><button class="btn sm" data-act="pg" data-id="yA" data-d="1"' + (s.pg >= pags - 1 ? ' disabled' : '') + '>Siguiente ›</button></div>';
@@ -802,10 +820,14 @@ const TABS = [['pend', 'Pendientes'], ['cajas', 'Cajas'], ['cajero', 'Por cajero
 const tabsDef = () => TABS.filter(t => t[0] !== 'semanas' || difDias(st.desde, st.hasta) > 7);
 function render() {
   if (!st.D) return;
+  if (st.lite && !st.liteFalla && (st.tab === 'ventas' || st.f.metodo || st.sheet)) {   // celular: la carga liviana no trae todas las ventas
+    cargarCompleto(); syncBar(); escribirURL(); $('cuerpo').innerHTML = spinner('Cargando todas las ventas…'); return;
+  }
   if (st.tab === 'semanas' && difDias(st.desde, st.hasta) <= 7) st.tab = 'pend';
   syncBar(); escribirURL();
   const d = derive(); const a = agg(d);
   const cnt = { pend: a.pend, cajas: d.cajas.length, extras: d.extras.length, ventas: d.ventas.length, anul: d.anulados.length, yape: d.yapes.length };
+  if (st.lite && !st.liteFalla) cnt.ventas = 'parcial';
   $('banner').innerHTML = st.demo ? '<div class="demo">⚠ Datos de ejemplo: la base aún no tiene el reporte de cajas. Las marcas no se guardan.</div>' : '';
   $('gen').textContent = (st.demo ? 'Ejemplo' : 'Generado ' + fh((st.D.raw || {}).generado_ts) + (st.ms ? ' · carga ' + st.ms + ' ms' + (st.lite ? ' (liviana)' : '') : '')) + ' · ' + st.desde + ' → ' + st.hasta + ' (hora Lima)';
   let body;
@@ -814,13 +836,12 @@ function render() {
     case 'semanas': body = tabSemanas(d); break;
     case 'clientes': body = '<div class="seg sm" id="segCli" style="margin-bottom:8px"><button data-v="global" class="' + (st.cliVista === 'global' ? 'on' : '') + '">Global (top)</button><button data-v="caja" class="' + (st.cliVista === 'caja' ? 'on' : '') + '">Por caja</button></div>' + listaTab('clientes', d); break;
     case 'yape': body = tabYape(d); break;
-    case 'ventas': if (st.lite && !st.liteFalla) { cargarCompleto(); body = '<div class="estado"><div class="spin"></div>Cargando todas las ventas…</div>'; break; } body = listaTab(st.tab, d); break;
-    case 'extras': case 'anul': body = listaTab(st.tab, d); break;
+    case 'ventas': case 'extras': case 'anul': body = listaTab(st.tab, d); break;
     default: body = '';
   }
-  const tabs = '<div class="tabs noprint" role="tablist">' + tabsDef().map(t => '<button class="' + (t[0] === st.tab ? 'on' : '') + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (cnt[t[0]] != null ? '<span class="n' + (t[0] === 'pend' && cnt.pend ? ' al' : '') + '">' + cnt[t[0]] + '</span>' : '') + '</button>').join('') + '</div>';
+  const tabs = '<div class="tabs noprint" role="tablist">' + tabsDef().map(t => '<button class="' + (t[0] === st.tab ? 'on' : '') + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (cnt[t[0]] != null ? '<span title="' + (cnt[t[0]] === 'parcial' ? 'Parcial: toca para cargar todas las ventas' : '') + '" class="n' + (t[0] === 'pend' && cnt.pend ? ' al' : '') + '">' + cnt[t[0]] + '</span>' : '') + '</button>').join('') + '</div>';
   $('cuerpo').innerHTML = kpis(d) + tabs + body;
-  if (st.sheet) { if (st.lite && !st.liteFalla) cargarCompleto(); else renderSheet(); }
+  if (st.sheet) renderSheet();
 }
 function syncBar() {
   const f = st.f, D = st.D;
@@ -878,13 +899,16 @@ function toast(msg, o) {
 }
 async function marcar(tipo, ref, estado, nota, silencioso) {
   const c = ctx(); if (!c && !st.demo) { hap([30, 40, 30]); toast('Abre el reporte desde MOS para poder marcar.', { err: true }); return; }
-  const k = tipo + '|' + ref; const prev = REV.get(k) || null;
+  const k = tipo + '|' + ref; if (st.vuelo.has(k)) { hap(6); return; }   // ya hay una marca igual en vuelo
+  const prev = REV.get(k) || null;
   const nuevo = estado ? { estado, nota: nota || '', usuario: c ? c.u : 'demo', ts: new Date().toISOString() } : null;
   nuevo ? REV.set(k, nuevo) : REV.delete(k); recalcPend(); render(); hap(12);
   if (!silencioso) toast(estado === 'OK' ? 'Marcado OK' : estado ? 'Marcado como observado' : 'Marca quitada', prev !== undefined && estado === 'OK' ? { undo: () => marcar(tipo, ref, prev ? prev.estado : null, prev ? prev.nota : '', true) } : {});
   if (st.demo) return;
+  st.vuelo.add(k);
   try { const j = await rpc('control_caja_marcar', { usuario: c.u, tipo, ref: String(ref), estado: estado ? estado : null, nota: nota || '' }); if (j && j.ok === false) throw new Error(j.error || 'RESPUESTA'); }
   catch (e) { prev ? REV.set(k, prev) : REV.delete(k); recalcPend(); render(); hap([30, 40, 30]); toast((ERRMSG[e.message] || 'No se pudo guardar la marca.') + ' Se deshizo.', { err: true }); }
+  finally { st.vuelo.delete(k); }
 }
 function modalMarca(tipo, ref) {
   const r = REV.get(tipo + '|' + ref); const it = st.D.items.find(i => i.tipo === tipo && String(i.ref) === String(ref));
@@ -964,7 +988,7 @@ $('btnPrint').onclick = () => window.print();
 window.addEventListener('beforeprint', () => { st.printAll = true; render(); });
 window.addEventListener('afterprint', () => { st.printAll = false; render(); });
 $('btnCsv').onclick = () => {
-  if (!st.exp) return; const q = v => { v = v == null ? '' : String(v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  if (!st.exp) return; const q = v => { v = v == null ? '' : v; if (typeof v === 'string' && /^[=+\-@\t\r]/.test(v)) v = "'" + v; v = String(v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   const txt = '﻿' + [st.exp.head].concat(st.exp.rows).map(r => r.map(q).join(';')).join('\r\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv;charset=utf-8' }));
   a.download = 'control-cajas-' + st.exp.name + '-' + st.desde + '_' + st.hasta + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); hap(10);
@@ -1032,7 +1056,7 @@ function demoData(desde, hasta) {
   }
   // Yapes: vinculados (con tickets) + 26 sin venta (NUEVO)
   out.ventas.filter(v => v.verificado === true).forEach((v, k) => { ny++; const monto = k % 12 === 5 ? money(v.vir + 2.5) : v.vir; const pg = pick(['Rosa Q.', 'Juan H.', 'María T.', 'Pedro S.']);
-    out.yapes.push({ id: 'YP' + TG + '-' + ny, zona: v.zona_id, ts: v.fecha, monto, pagador: pg, estado: 'VINCULADO', id_venta: v.id_venta, match_por: 'MONTO+HORA', dispositivo: 'Captor Z02', ts_recibido: v.fecha, tickets: [{ id_venta: v.id_venta, correlativo: v.correlativo, total: v.vir, id_caja: v.id_caja, vendedor: v.vendedor }], suma_tickets: v.vir, diferencia: money(monto - v.vir), flags: monto !== v.vir ? ['DIFERENCIA_TICKETS'] : [], revision: null });
+    out.yapes.push({ id: 'YP' + TG + '-' + ny, zona: v.zona_id, ts: v.fecha, monto, pagador: pg, estado: 'VINCULADO', id_venta: v.id_venta, match_por: 'MONTO+HORA', dispositivo: 'Captor Z02', ts_recibido: v.fecha, tickets: [{ id_venta: v.id_venta, correlativo: v.correlativo, total: v.total, vir: v.vir, id_caja: v.id_caja, vendedor: v.vendedor }], suma_tickets: v.vir, diferencia: money(monto - v.vir), flags: monto !== v.vir ? ['DIFERENCIA_TICKETS'] : [], revision: null });
     v.yapes = [{ id: 'YP' + TG + '-' + ny, monto, pagador: pg, ts: v.fecha }]; v.candidatos = []; });
   for (let k = 0; k < 26; k++) { ny++; const c = out.cajas[2 + (k % 6)]; out.yapes.push({ id: 'YP' + TG + '-' + ny, zona: 'ZONA-02', ts: mkTs(c.fecha_apertura.slice(0, 10), 480 + R() * 420), monto: money(10 + R() * 110), pagador: pick(['Lucía R.', 'Carlos M.', 'Ana P.', 'Jorge V.']), estado: 'NUEVO', id_venta: null, match_por: null, revision: null }); }
   const nuevos = out.yapes.filter(y => !y.id_venta); nuevos.forEach(y => { y.tickets = []; y.suma_tickets = 0; y.diferencia = y.monto; y.dispositivo = 'Captor Z02'; y.ts_recibido = y.ts; y.flags = ['SIN_VENTA_30M']; });
