@@ -342,8 +342,10 @@ const FLAGS = {
   OTRO_USUARIO: ['Otro usuario', 'Lo registró alguien distinto al cajero de la caja.', 'BAJA'],
   CONCEPTO_LIBRE: ['Concepto libre', 'El concepto no es uno de los rápidos de la caja.', 'BAJA'],
   CONSUMO_PERSONAL: ['Consumo personal', 'La observación sugiere consumo o adelanto del personal.', 'BAJA'],
+  ANULADO_POR_CIERRE: ['Anulado por cierre', 'Lo anuló el sistema al cerrar la caja: falta de pago (venta no culminada).', 'BAJA'],
   COBRADO_EN_OTRA_CAJA: ['Cobrado en otra caja', 'El crédito se cobró con un Abono deuda en otra caja.', 'BAJA']
 };
+const esAuto = r => !!r && (r.automatico === true || r.anulado_por === 'SISTEMA');
 const flagNivel = c => (FLAGS[c] || [])[2] || 'BAJA';
 function flagChip(c, nivel) {
   const f = FLAGS[c]; const n = nivel || flagNivel(c);
@@ -460,7 +462,7 @@ function buildItems(D) {
   D.cajas.forEach(c => { const g = c.alertas.filter(a => a.nivel !== 'BAJA'); if (g.length) it.push({ tipo: 'CAJA', ref: c.id_caja, obj: c, id_caja: c.id_caja, zona: c.zona_id, nivel: g.some(a => a.nivel === 'ALTA') ? 'ALTA' : 'MEDIA', titulo: 'Caja de ' + c.vendedor, det: g.map(a => a.texto).join(' · '), monto: c.diferencia, ts: c._t0 }); });
   D.extras.forEach(x => { if (esNoPerm(x)) it.push({ tipo: 'EXTRA', ref: x.id_extra, obj: x, id_caja: x.id_caja, zona: x.zona_id, nivel: x.nivel === 'ALTA' ? 'ALTA' : 'MEDIA', titulo: 'Extra ' + String(x.tipo || '').toLowerCase() + ': ' + (x.concepto || 'sin concepto'), det: x.flags.map(flagTxt).join(' · '), monto: x.monto, ts: parseTs(x.ts) }); });
   D.ventas.forEach(v => { const sv = ev(v) === 'SIN_VERIFICAR'; const cs = (v.flags || []).includes('CREDITO_SIN_CLIENTE'); if (sv || cs) it.push({ tipo: 'VENTA', ref: v.id_venta, obj: v, id_caja: v.id_caja, zona: v.zona_id, nivel: 'MEDIA', titulo: (sv ? 'Virtual sin verificar · ' : 'Crédito sin cliente · ') + (v.correlativo || v.id_venta), det: (v.cliente_nombre || 'Sin cliente') + ' · ' + (v.vendedor || ''), monto: sv ? v.vir : v.total, ts: parseTs(v.fecha) }); });
-  D.anulados.forEach(a => it.push({ tipo: 'ANULADO', ref: a.id_venta, obj: a, id_caja: a.id_caja, zona: a.zona_id, nivel: (a.motivo && !a.sin_historial) ? 'MEDIA' : 'ALTA', titulo: 'Ticket anulado · ' + (a.correlativo || a.id_venta), det: (a.anulado_por === 'SISTEMA' ? 'Automático por cierre (falta de pago)' : a.sin_historial ? 'SIN REGISTRO de quién anuló' : (a.motivo ? 'Motivo: ' + a.motivo : 'SIN MOTIVO') + ' · anuló ' + (a.anulado_por || '?')), monto: a.total, ts: parseTs(a.anulado_ts || a.fecha) }));
+  D.anulados.forEach(a => it.push({ tipo: 'ANULADO', ref: a.id_venta, obj: a, id_caja: a.id_caja, zona: a.zona_id, nivel: esAuto(a) ? 'BAJA' : (a.motivo && !a.sin_historial) ? 'MEDIA' : 'ALTA', titulo: 'Ticket anulado · ' + (a.correlativo || a.id_venta), det: (esAuto(a) ? 'Automático por cierre (falta de pago)' : a.sin_historial ? 'SIN REGISTRO de quién anuló' : (a.motivo ? 'Motivo: ' + a.motivo : 'SIN MOTIVO') + ' · anuló ' + (a.anulado_por || '?')), monto: a.total, ts: parseTs(a.anulado_ts || a.fecha) }));
   D.yapes.forEach(y => { y.flags = Array.isArray(y.flags) ? y.flags : []; if (yapeSinVenta(y, D) || y.flags.includes('DIFERENCIA_TICKETS')) it.push({ tipo: 'YAPE', ref: y.id, obj: y, id_caja: null, zona: y.zona, nivel: 'MEDIA', titulo: 'Yape sin venta · ' + (y.pagador || 'sin nombre'), det: 'Estado ' + (y.estado || '—') + (y.flags.length ? ' · ' + y.flags.map(flagTxt).join(' · ') : ''), monto: y.monto, ts: y._t }); });
   return it;
 }
@@ -515,7 +517,7 @@ function agg(d) {
     if (c.diferencia != null && !c._abierta) a.dif += +c.diferencia || 0;
     a.vsN += +c.virtual_sin_verificar_n || 0; a.vsT += +c.virtual_sin_verificar_total || 0; a.clN += +c.clientes_n || 0; a.conv += +c.conversiones_n || 0; a.plan += +c.planilla || 0; a.vscN += +c.virtual_sin_captor_n || 0;
   });
-  a.exFlag = d.extras.filter(esNoPerm).length;
+  a.exFlag = d.extras.filter(esNoPerm).length; a.anAuto = d.anulados.filter(esAuto).length;
   const ys = d.yapes.filter(y => yapeSinVenta(y)); a.ysN = ys.length; a.ysT = ys.reduce((s, y) => s + (+y.monto || 0), 0);
   a.pend = d.items.filter(i => !REV.has(keyOf(i))).length; a.totIt = d.items.length;
   return a;
@@ -589,7 +591,7 @@ const C = {
     { t: 'Ticket', v: r => r.correlativo || '', h: r => esc(r.correlativo || r.id_venta) },
     { t: 'Cliente', v: r => r.cliente_nombre || '', h: r => esc(r.cliente_nombre || '—') },
     { t: 'Total', n: 1, v: r => money(r.total), h: r => S(r.total) },
-    { t: 'Anuló', v: r => r.anulado_por || '', h: r => r.anulado_por === 'SISTEMA' ? '<span class="chip c-info" title="' + esc(r.motivo || 'Cierre de caja: falta de pago (venta no culminada)') + '">Automático por cierre (falta de pago)</span>' : r.sin_historial ? '<span class="chip c-bad" title="El sistema no guardó quién anuló este ticket (p. ej. lo anuló el cierre de caja)">sin registro de quién anuló</span>' : esc(r.anulado_por || '—') },
+    { t: 'Anuló', v: r => r.anulado_por || '', h: r => esAuto(r) ? '<span class="chip c-info" title="' + esc(r.motivo || 'Cierre de caja: falta de pago (venta no culminada)') + '">Automático por cierre (falta de pago)</span>' : r.sin_historial ? '<span class="chip c-bad" title="El sistema no guardó quién anuló este ticket (p. ej. lo anuló el cierre de caja)">sin registro de quién anuló</span>' : esc(r.anulado_por || '—') },
     { s: 1, t: 'Cuándo', v: r => parseTs(r.anulado_ts) || 0, c: r => fts(r.anulado_ts), h: r => esc(fts(r.anulado_ts)) },
     { s: 1, t: 'Antes', v: r => r.antes || '', h: r => esc(r.antes || '—') },
     { s: 1, t: 'Autorizó', v: r => r.autorizado_por || '', h: r => esc(r.autorizado_por || '—') },
@@ -612,11 +614,11 @@ const C = {
     { t: 'Compras', n: 1, v: r => r.n, h: r => r.n },
     { t: 'Total', n: 1, v: r => money(r.total), h: r => S(r.total) }]
 };
-const rowCls = { ventas: r => (ev(r) === 'SIN_VERIFICAR' ? 'alerta' : ''), extras: r => esNoPerm(r) ? 'alerta' : '', anul: r => (r.motivo && !r.sin_historial) ? 'aviso' : 'alerta', yapes: r => yapeSinVenta(r) ? 'alerta' : '' };
+const rowCls = { ventas: r => (ev(r) === 'SIN_VERIFICAR' ? 'alerta' : ''), extras: r => esNoPerm(r) ? 'alerta' : '', anul: r => (esAuto(r) || (r.motivo && !r.sin_historial)) ? 'aviso' : 'alerta', yapes: r => yapeSinVenta(r) ? 'alerta' : '' };
 const qTxt = {
   ventas: r => [r.cliente_nombre, r.cliente_doc, r.correlativo, r.vendedor, r.id_venta].join(' '),
   extras: r => [r.concepto, r.obs, r.registrado_por, r.tipo, nombreCaja(r.id_caja)].join(' '),
-  anul: r => [r.cliente_nombre, r.correlativo, r.motivo, r.anulado_por, r.vendedor].join(' '),
+  anul: r => [r.cliente_nombre, r.correlativo, r.motivo, r.anulado_por, r.cajero, r.vendedor, esAuto(r) ? 'automático cierre' : ''].join(' '),
   yapes: r => [r.pagador, r.id_venta, r.estado].join(' '),
   clientes: r => [r.nombre, r.doc].join(' ')
 };
@@ -652,7 +654,7 @@ function kpis(d) {
   return '<div class="kpis">' +
     k('Cajas', a.ab + ' abiertas · ' + a.ce + ' cerradas', a.cajasN + ' en total', 'cajas', 'var(--acc)') +
     k('Venta total', S(a.ventasT), a.ventasN + ' tickets', 'ventas', 'var(--ok)') +
-    k('Anulados', a.anN + ' · ' + S(a.anT), 'tickets anulados', 'anul', 'var(--bad)') +
+    k('Anulados', a.anN + ' · ' + S(a.anT), 'tickets anulados · ' + a.anAuto + ' automáticos por cierre', 'anul', 'var(--bad)') +
     k('Extras', '+' + S(a.exI).replace('S/ ', '') + ' / −' + S(a.exE).replace('S/ ', ''), a.exFlag + ' con alerta', 'extras', 'var(--warn)') +
     k('Virtual sin verificar', a.vsN + ' · ' + S(a.vsT), 'ventas con Yape/virtual', 'ventas', 'var(--m-vir)') +
     k('Yapes sin venta', a.ysN + ' · ' + S(a.ysT), a.vscN ? a.vscN + ' virtuales sin captor' : 'sin vincular a un ticket', 'yape', 'var(--m-mix)') +
@@ -914,8 +916,8 @@ async function marcar(tipo, ref, estado, nota, silencioso) {
   if (!silencioso) toast(estado === 'OK' ? 'Marcado OK' : estado ? 'Marcado como observado' : 'Marca quitada', prev !== undefined && estado === 'OK' ? { undo: () => marcar(tipo, ref, prev ? prev.estado : null, prev ? prev.nota : '', true) } : {});
   if (st.demo) return;
   st.vuelo.add(k);
-  try { const j = await rpc('control_caja_marcar', { usuario: c.u, tipo, ref: String(ref), estado: estado ? estado : null, nota: nota || '' }); if (j && j.ok === false) throw new Error(j.error || 'RESPUESTA'); }
-  catch (e) { if (e.message === 'SOLO_MASTER') st.puede = false; if (st.recien.has(k)) { clearTimeout(st.recien.get(k)); st.recien.delete(k); } prev ? REV.set(k, prev) : REV.delete(k); recalcPend(); render(); hap([30, 40, 30]); toast((ERRMSG[e.message] || 'No se pudo guardar la marca.') + ' Se deshizo.', { err: true }); }
+  try { const j = await rpc('control_caja_marcar', { usuario: c.u, tipo, ref: String(ref), estado: estado ? estado : null, nota: nota || '' }); if (j && j.ok === false) { const er = new Error(j.error || 'RESPUESTA'); er.mensaje = j.mensaje; throw er; } }
+  catch (e) { if (e.message === 'SOLO_MASTER') st.puede = false; if (st.recien.has(k)) { clearTimeout(st.recien.get(k)); st.recien.delete(k); } prev ? REV.set(k, prev) : REV.delete(k); recalcPend(); render(); hap([30, 40, 30]); toast(((e.message === 'SOLO_MASTER' && e.mensaje) ? e.mensaje : (ERRMSG[e.message] || 'No se pudo guardar la marca.')) + ' Se deshizo.', { err: true }); }
   finally { st.vuelo.delete(k); }
 }
 function modalMarca(tipo, ref) {

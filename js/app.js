@@ -34192,13 +34192,54 @@ const MOS = (() => {
   // ──────────────────────────────────────────────────────────
   // ANULAR VENTA INTERNA (sin afectar SUNAT)
   // ──────────────────────────────────────────────────────────
+  // Motivo de anulación (SQL 1056: me.anular_venta exige motivo ≥5, validado ANTES del PIN). Modal propio: chips + texto libre.
+  // Devuelve el motivo (string) o null si cancela.
+  function _pedirMotivoAnulacion(label) {
+    return new Promise((resolve) => {
+      const _esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const chips = ['Error de digitación', 'Cliente se arrepintió', 'Producto agotado', 'Venta duplicada', 'Error de método de pago'];
+      const bd = document.createElement('div');
+      bd.className = 'mos-modal-generic-backdrop';
+      bd.innerHTML = `
+        <div class="mos-modal-generic mos-modal-generic-danger" role="dialog" aria-modal="true">
+          <div class="mos-modal-generic-head"><span class="mos-modal-generic-ico">⚠</span><strong>Motivo de la anulación</strong>
+            <button class="mos-modal-generic-close" data-cancel aria-label="Cerrar">✕</button></div>
+          <div class="mos-modal-generic-body">
+            <p>${_esc(label || '')}</p>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">${chips.map(c => `<button type="button" class="mos-modal-generic-btn mos-modal-generic-btn-ghost" data-chip="${_esc(c)}" style="padding:4px 10px;font-size:12px">${_esc(c)}</button>`).join('')}</div>
+            <textarea class="mos-modal-generic-input" id="anuMotivo" rows="3" maxlength="240" placeholder="Escribe el motivo (mínimo 5 caracteres)"></textarea>
+          </div>
+          <div class="mos-modal-generic-foot">
+            <button class="mos-modal-generic-btn mos-modal-generic-btn-ghost" data-cancel>Cancelar</button>
+            <button class="mos-modal-generic-btn mos-modal-generic-btn-ok mos-modal-generic-btn-danger" data-ok disabled>Continuar</button>
+          </div>
+        </div>`;
+      const ta = bd.querySelector('#anuMotivo'), ok = bd.querySelector('[data-ok]');
+      const sync = () => { ok.disabled = ta.value.trim().length < 5; };
+      ta.addEventListener('input', sync);
+      const cerrar = (v) => { bd.classList.remove('is-open'); setTimeout(() => { try { bd.remove(); } catch(_){} }, 200); resolve(v); };
+      bd.addEventListener('click', (ev) => {
+        const t = ev.target; if (!t.closest) return;
+        const ch = t.closest('[data-chip]');
+        if (ch) { ta.value = ch.getAttribute('data-chip'); sync(); ta.focus(); return; }
+        if (t === bd || t.closest('[data-cancel]')) cerrar(null);
+        else if (t.closest('[data-ok]') && !ok.disabled) cerrar(ta.value.trim());
+      });
+      document.body.appendChild(bd);
+      requestAnimationFrame(() => bd.classList.add('is-open'));
+      setTimeout(() => { try { ta.focus(); } catch(_){} }, 220);
+    });
+  }
+
   async function _tkAnularSimple(t) {
     if (!await _modalConfirm(`¿Anular ${t.tipoDoc || 'ticket'} ${t.correlativo || t.idVenta}?\n\nMonto: S/ ${t.total.toFixed(2)}\n\nSi tiene CPE emitido, también debes solicitar la baja en SUNAT.`, { danger: true, titulo: 'Anular ticket', okText: 'Anular' })) return;
+    const motivo = await _pedirMotivoAnulacion('Ticket ' + (t.correlativo || t.idVenta));
+    if (!motivo) return;
     const auth = await pedirAuth({ accion: 'ANULACION', refDocumento: t.correlativo || t.idVenta,
       contexto: 'Anular ticket ' + (t.correlativo || t.idVenta) });
     if (!auth) return;
     try {
-      await API.post('anularTicketME', { idVenta: t.idVenta, claveAdmin: auth.clave });
+      await API.post('anularTicketME', { idVenta: t.idVenta, motivo, claveAdmin: auth.clave });
       toast('✓ Ticket anulado', 'success');
       await _cajasRefreshFull?.();
       if (S.view === 'finanzas') finCargar?.();
@@ -34997,12 +35038,14 @@ const MOS = (() => {
   async function confirmarAnularTicket(idVenta, label, desdeModal) {
     if (!idVenta) { toast('ID de ticket inválido', 'error'); return; }
     if (!await _modalConfirm(`¿Anular el ticket ${label}?\n\nEsta acción no se puede deshacer.`, { danger: true, titulo: 'Anular ticket', okText: 'Anular' })) return;
+    const motivo = await _pedirMotivoAnulacion('Ticket ' + label);
+    if (!motivo) return;
     const auth = await pedirAuth({ accion: 'ANULACION', refDocumento: label || idVenta, contexto: 'Anular ticket ' + (label || idVenta) });
     if (!auth) return;
     if (desdeModal) cerrarModalMetodo();
     const id = String(idVenta).trim();
     try {
-      await API.post('anularTicketME', { idVenta: id, claveAdmin: auth.clave });
+      await API.post('anularTicketME', { idVenta: id, motivo, claveAdmin: auth.clave });
       toast('Ticket anulado', 'ok');
       // Actualizar local inmediatamente
       if (S._todosTickets) {

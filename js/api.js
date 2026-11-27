@@ -1519,7 +1519,7 @@ const API = (() => {
       // *_OFF / APP_NO_AUTORIZADA / FAC_DESACTIVADO (emisión fiscal apagada) / CAJA_NO_ABIERTA
       // (conversión NV→CPE post-cierre: la RPC directa solo maneja caja abierta) → NO commiteó → caé a GAS.
       if (/_OFF$/.test(err) || err === 'APP_NO_AUTORIZADA' || err === 'FAC_DESACTIVADO' || err === 'CAJA_NO_ABIERTA') return null;
-      throw new Error(err);
+      const er = new Error(err === 'MOTIVO_REQUERIDO' && out.mensaje ? out.mensaje : err); er.codigo = out.codigo || err; throw er;
     }
     return out;
   }
