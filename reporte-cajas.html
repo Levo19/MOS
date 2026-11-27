@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f6fb">
+<title>Control de cajas · MOS</title>
+<style>
+:root,[data-theme=light]{
+  --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef2f8; --line:#d9e0ea; --txt:#0b1220; --mut:#475569; --dim:#64748b;
+  --acc:#1d4ed8; --acc-t:#ffffff; --sombra:0 1px 2px rgba(15,23,42,.06),0 6px 18px -8px rgba(15,23,42,.18);
+  --bad:#dc2626; --warn:#b45309; --ok:#16a34a;
+  --ok-bg:#dcfce7; --ok-tx:#166534; --bad-bg:#fee2e2; --bad-tx:#991b1b; --warn-bg:#fef3c7; --warn-tx:#92400e; --info-bg:#dbeafe; --info-tx:#1e3a8a; --gris-bg:#e2e8f0; --gris-tx:#334155;
+  --z1-bg:#cffafe; --z1-tx:#155e75; --z1:#0891b2; --z2-bg:#fae8ff; --z2-tx:#86198f; --z2:#c026d3;
+  --m-efe:#16a34a; --m-vir:#7c3aed; --m-cre:#ea580c; --m-pc:#dc2626; --m-mix:#0891b2;
+}
+[data-theme=dark]{
+  --bg:#020817; --panel:#0b1324; --panel2:#132036; --line:#24324a; --txt:#f1f5f9; --mut:#a3b1c6; --dim:#7c8ba1;
+  --acc:#fbbf24; --acc-t:#1a1200; --sombra:none; --bad:#f87171; --warn:#fbbf24; --ok:#22c55e;
+  --ok-bg:rgba(34,197,94,.16); --ok-tx:#86efac; --bad-bg:rgba(239,68,68,.16); --bad-tx:#fca5a5; --warn-bg:rgba(245,158,11,.14); --warn-tx:#fcd34d; --info-bg:rgba(96,165,250,.12); --info-tx:#bfdbfe; --gris-bg:#1e2b42; --gris-tx:#cbd5e1;
+  --z1-bg:rgba(34,211,238,.16); --z1-tx:#67e8f9; --z1:#22d3ee; --z2-bg:rgba(232,121,249,.16); --z2-tx:#f0abfc; --z2:#e879f9;
+  --m-efe:#22c55e; --m-vir:#a78bfa; --m-cre:#fb923c; --m-pc:#f87171; --m-mix:#22d3ee;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.45}
+body{padding:max(12px,env(safe-area-inset-top)) 14px 60px}
+.wrap{max-width:1240px;margin:0 auto}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+.top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.top h1{margin:0;font-size:22px;flex:1;min-width:190px;letter-spacing:-.01em}
+.gen{font-size:12.5px;color:var(--mut);width:100%;order:3}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:700;min-height:42px;box-shadow:var(--sombra)}
+.btn:active{transform:scale(.97)}
+.btn.pri{background:var(--acc);color:var(--acc-t);border-color:var(--acc)}
+.btn.sm{min-height:36px;padding:6px 10px;font-size:13.5px}
+.btn[disabled]{opacity:.5}
+.demo{background:var(--warn-bg);color:var(--warn-tx);border:1px solid var(--warn);border-radius:12px;padding:10px 14px;font-weight:700;margin-bottom:10px}
+.rango{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.rango label{font-size:12.5px;color:var(--mut);font-weight:700;display:flex;gap:6px;align-items:center}
+input[type=date],input[type=search],select,textarea,input[type=text]{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-height:42px;font-size:16px}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:3px;flex-wrap:wrap;box-shadow:var(--sombra)}
+.seg button{border:0;background:transparent;padding:8px 13px;border-radius:9px;font-weight:700;color:var(--mut);min-height:38px}
+.seg button.on{background:var(--acc);color:var(--acc-t)}
+.seg.sm button{padding:6px 10px;min-height:34px;font-size:13.5px}
+.sticky{position:sticky;top:0;z-index:30;background:var(--bg);padding:8px 0 8px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.sticky .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sticky input[type=search]{flex:1;min-width:150px}
+.activos{font-size:13px;color:var(--mut);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.sec{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.sec .lbl{font-size:12px;color:var(--mut);font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.cajaschips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.cc{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:6px 10px;display:flex;gap:6px;align-items:center;font-size:13px;min-height:38px}
+.cc.on{outline:2px solid var(--acc);background:var(--info-bg)}
+.cc .solo{border:1px solid var(--line);background:var(--panel2);border-radius:8px;font-size:11.5px;padding:2px 6px;font-weight:700}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px;box-shadow:var(--sombra);border-top:5px solid var(--k,var(--acc));text-align:left;display:block;width:100%}
+.kpi .l{font-size:12px;color:var(--mut);font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.kpi .v{font-size:23px;font-weight:800;letter-spacing:-.02em}
+.kpi .s{font-size:12.5px;color:var(--mut)}
+.metbar{display:flex;height:16px;border-radius:8px;overflow:hidden;background:var(--panel2);margin:6px 0}
+.metbar i{display:block;height:100%}
+.leyenda{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);margin-bottom:10px}
+.leyenda b{color:var(--txt)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+.tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:2px solid var(--line);margin-bottom:10px;-webkit-overflow-scrolling:touch}
+.tabs button{border:0;background:transparent;padding:10px 12px;font-weight:700;color:var(--mut);white-space:nowrap;border-bottom:3px solid transparent;margin-bottom:-2px;min-height:44px}
+.tabs button.on{color:var(--txt);border-bottom-color:var(--acc)}
+.tabs .n{background:var(--gris-bg);color:var(--gris-tx);border-radius:10px;padding:1px 7px;font-size:12px;margin-left:4px}
+.tabs .n.al{background:var(--bad-bg);color:var(--bad-tx)}
+.chip{display:inline-block;border-radius:8px;padding:2px 8px;font-size:12px;font-weight:800;border:1px solid transparent;white-space:nowrap}
+.z1{background:var(--z1-bg);color:var(--z1-tx);border-color:var(--z1)}
+.z2{background:var(--z2-bg);color:var(--z2-tx);border-color:var(--z2)}
+.c-ok{background:var(--ok-bg);color:var(--ok-tx)} .c-bad{background:var(--bad-bg);color:var(--bad-tx)} .c-warn{background:var(--warn-bg);color:var(--warn-tx)} .c-info{background:var(--info-bg);color:var(--info-tx)} .c-gris{background:var(--gris-bg);color:var(--gris-tx)}
+.tw{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--sombra)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);background:var(--panel2);white-space:nowrap;cursor:pointer;user-select:none;position:sticky;top:0}
+th.n,td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.alerta td{background:var(--bad-bg)} tr.aviso td{background:var(--warn-bg)}
+tr.rev td{opacity:.72}
+.pg{display:flex;gap:8px;align-items:center;justify-content:center;padding:10px;flex-wrap:wrap;font-size:13px;color:var(--mut)}
+.vacio{padding:34px 12px;text-align:center;color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px;box-shadow:var(--sombra);cursor:pointer;border-left:6px solid var(--zc,var(--line))}
+.card.z1c{--zc:var(--z1)} .card.z2c{--zc:var(--z2)}
+.card h3{margin:0 0 4px;font-size:16px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.card .kv{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13.5px;margin:6px 0}
+.card .kv span:nth-child(odd){color:var(--mut)}
+.card .kv span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+.dif-ok{color:var(--ok)} .dif-bad{color:var(--bad)} .dif-warn{color:var(--warn)}
+.acciones{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.pend{display:grid;grid-template-columns:auto 1fr auto;gap:8px 12px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--sombra)}
+.pend.ALTA{border-left:6px solid var(--bad)} .pend.MEDIA{border-left:6px solid var(--warn)} .pend.hecho{opacity:.65}
+.pend .t{font-weight:800} .pend .d{font-size:13px;color:var(--mut)}
+.prog{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:10px}
+.prog .bar{height:10px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-top:6px}
+.prog .bar i{display:block;height:100%;background:var(--ok)}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ov{position:fixed;inset:0;background:rgba(2,8,23,.55);z-index:100;display:flex;align-items:flex-end;justify-content:center}
+.ov .sheet{background:var(--bg);width:100%;max-width:1100px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:14px;box-shadow:0 -10px 40px rgba(0,0,0,.4)}
+.ov.md{align-items:center}
+.ov.md .sheet{max-width:440px;border-radius:18px;max-height:90vh}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:max(18px,env(safe-area-inset-bottom));background:#0f172a;color:#fff;border-radius:12px;padding:11px 16px;z-index:200;display:flex;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4);max-width:92vw}
+.toast.err{background:#991b1b}
+.toast button{background:transparent;border:1px solid #fff;color:#fff;border-radius:8px;padding:4px 10px;font-weight:700}
+.estado{padding:50px 10px;text-align:center;color:var(--mut)}
+.spin{width:30px;height:30px;border:4px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:g 1s linear infinite;margin:0 auto 10px}
+@keyframes g{to{transform:rotate(360deg)}}
+html,body{overflow-x:hidden}
+body{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right));padding-bottom:max(60px,env(safe-area-inset-bottom))}
+#btnMas,.solo-m,.zsel,.tg,th.tg{display:none}
+tr.det{display:none}
+.chip{font-size:13px}
+.ycard{background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--ok);border-radius:14px;padding:10px 12px;margin-bottom:8px;box-shadow:var(--sombra)}
+.ycard.sin{border-left-color:var(--bad);background:var(--bad-bg)} .ycard.dif{border-left-color:var(--warn)}
+.ycard .h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ycard .m{font-size:19px;font-weight:800}
+.ycard .tk{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:14px;padding:5px 8px;margin-top:4px;background:var(--panel2);border-radius:8px}
+.ycard .f{font-size:14px;margin-top:6px}
+.cand{display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:8px;border:1px dashed var(--m-vir);font-size:13px}
+.dtl{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px}
+.dtl span b{color:var(--mut);font-weight:700}
+.ov.md{justify-content:center;align-items:center}
+@media (pointer:coarse){.btn.sm,.seg button,.seg.sm button,.tabs button,.cc,.cc .solo{min-height:44px}.cc .solo{padding:4px 10px}.acciones{gap:10px}}
+@media (min-width:1101px){
+  .ov:not(.md){justify-content:flex-end;align-items:stretch}
+  .ov:not(.md) .sheet{max-width:680px;max-height:100%;height:100%;border-radius:18px 0 0 18px}
+}
+@media (max-width:1100px){
+  td.sc,th.sc{display:none}
+  .tg,th.tg{display:table-cell}
+  tr.open + tr.det{display:table-row}
+  tr.det td{background:var(--panel2)}
+  .tg .btn{min-height:44px}
+}
+@media (max-width:760px){
+  .kpis{grid-template-columns:repeat(2,1fr);gap:8px} .kpi{padding:10px 12px} .kpi .v{font-size:19px}
+  .vs{grid-template-columns:1fr} .vs>div.nosel{display:none}
+  .zsel{display:inline-flex;margin-bottom:8px}
+  .grid{grid-template-columns:1fr}
+  .pend{grid-template-columns:1fr}
+  #btnMas{display:inline-block}
+  .sticky .row{gap:6px} .sticky .row .seg{flex:0 0 auto} #fCajero{flex:1;min-width:120px}
+  #panelSec{display:none}
+  #panelSec.open{display:block;position:fixed;left:0;right:0;bottom:0;max-height:85vh;overflow:auto;z-index:90;background:var(--bg);padding:14px max(14px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));border-radius:18px 18px 0 0;box-shadow:0 -10px 40px rgba(0,0,0,.45);border-top:1px solid var(--line)}
+  .solo-m{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .ov .sheet,.ov.md .sheet{max-width:100%;width:100%;height:100%;max-height:100%;border-radius:0}
+  .ov.md{align-items:stretch}
+  .tw{background:transparent;border:0;box-shadow:none;overflow:visible}
+  table,tbody{display:block} thead{display:none}
+  tbody tr{display:block;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px 12px;margin-bottom:10px;box-shadow:var(--sombra)}
+  tr.alerta td,tr.aviso td{background:transparent} tr.alerta{background:var(--bad-bg)!important} tr.aviso{background:var(--warn-bg)!important}
+  td{display:flex;justify-content:space-between;align-items:center;gap:10px;border:0;padding:5px 0;text-align:right;font-size:15px}
+  td::before{content:attr(data-label);color:var(--mut);font-weight:700;text-align:left;font-size:14px;flex:0 0 auto}
+  td.tg{display:block;text-align:center} td.tg::before{content:none}
+  tr.det{display:none!important} tr.open + tr.det{display:block!important;padding-top:0;margin-top:-12px}
+  tr.det td{display:block;text-align:left} tr.det td::before{content:none}
+  .pg{padding:10px 0}
+}
+@media print{
+  body{padding:0;background:#fff} .noprint,.sticky .row,.acciones,.tabs{display:none!important}
+  .sticky{position:static;border:0} .tw{overflow:visible;box-shadow:none} th{position:static}
+  .card{break-inside:avoid;box-shadow:none} .ov{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="top noprint">
+    <h1>🧾 Control de cajas</h1>
+    <button class="btn" id="btnCsv" title="Descargar la pestaña actual en CSV">⬇ CSV</button>
+    <button class="btn" id="btnPrint" title="Imprimir o guardar en PDF">🖨 Imprimir</button>
+    <button class="btn" id="btnTema" title="Cambiar entre fondo claro y oscuro">🌙</button>
+    <button class="btn" id="btnFull" title="Pantalla completa">⛶</button>
+    <button class="btn pri" id="btnAct" title="Volver a consultar la base">↻ Actualizar</button>
+    <span class="gen" id="gen"></span>
+  </div>
+  <div id="banner"></div>
+  <div class="rango noprint" id="rango">
+    <div class="seg sm" id="atajos">
+      <button data-a="hoy">Hoy</button><button data-a="sem">Esta semana</button><button data-a="pas">Semana pasada</button>
+    </div>
+    <label>Desde <input type="date" id="fDesde"></label>
+    <label>Hasta <input type="date" id="fHasta"></label>
+  </div>
+  <div class="sticky" id="barra">
+    <div class="row">
+      <div class="seg" id="fZona"><button data-v="TODAS">Todas</button><button data-v="ZONA-01">Z01</button><button data-v="ZONA-02">Z02</button></div>
+      <select id="fCajero" aria-label="Cajero"></select>
+      <input type="search" id="fQ" placeholder="Buscar cliente, ticket, concepto…" aria-label="Buscar">
+      <button class="btn sm" id="btnMas">⚙ Filtros</button>
+    </div>
+    <div class="activos" id="activos"></div>
+  </div>
+  <div id="panelSec" class="noprint">
+    <div class="solo-m"><b style="font-size:17px">Filtros</b><button class="btn pri" id="btnCerrarF">Listo</button></div>
+    <div class="sec">
+      <span class="lbl">Estado</span>
+      <div class="seg sm" id="fEstado"><button data-v="">Todas</button><button data-v="A">Abiertas</button><button data-v="C">Cerradas</button></div>
+      <span class="lbl">Revisión</span>
+      <div class="seg sm" id="fRev"><button data-v="">Todas</button><button data-v="alertas">Con alertas</button><button data-v="sinrev">Sin revisar</button></div>
+      <span class="lbl">Método</span>
+      <select id="fMetodo"><option value="">Todos</option><option>EFECTIVO</option><option>VIRTUAL</option><option>CREDITO</option><option>POR_COBRAR</option><option>MIXTO</option></select>
+    </div>
+    <div class="sec">
+      <span class="lbl">Día</span>
+      <div class="seg sm" id="fDia"><button data-v="">Todos</button><button data-v="0">Lun</button><button data-v="1">Mar</button><button data-v="2">Mié</button><button data-v="3">Jue</button><button data-v="4">Vie</button><button data-v="5">Sáb</button><button data-v="6">Dom</button></div>
+      <button class="btn sm" id="btnLimpiar">Limpiar filtros</button>
+    </div>
+    <div class="sec"><span class="lbl">Cajas</span><span id="cajasInfo" style="font-size:12.5px;color:var(--mut)"></span></div>
+    <div class="cajaschips" id="cajasChips"></div>
+  </div>
+  <div id="cuerpo"><div class="estado"><div class="spin"></div>Cargando…</div></div>
+</div>
+<div id="capas"></div>
+
+<script>
+'use strict';
+const SB_URL  = 'https://rzbzdeipbtqkzjqdchqk.supabase.co';
+const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ6YnpkZWlwYnRxa3pqcWRjaHFrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NzYwMDQsImV4cCI6MjA5NjQ1MjAwNH0.MAlSdz_ugGUZoaU5st6dA_gb_x_IiUL0TXxH176kY9k';
+const PAGE = 60;
+const TZ = 'America/Lima';
+const SIN_CAPTOR = { 'ZONA-01': true };   // Zona 01 no tiene captor Yape: no es culpa del cajero
+const $ = id => document.getElementById(id);
+const LS = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (_) { return null; } };
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = n => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+const nf2 = new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const S = n => (money(n) < 0 ? '−' : '') + 'S/ ' + nf2.format(Math.abs(money(n)));
+const SS = n => (money(n) > 0 ? '+' : '') + S(n);
+const hap = (p) => { try { navigator.vibrate && navigator.vibrate(p || 10); } catch (_) {} };
+const zn = z => String(z || '').replace('ZONA-', 'Z');
+const zchip = z => z ? '<span class="chip ' + (z === 'ZONA-01' ? 'z1' : 'z2') + '">' + esc(zn(z)) + '</span>' : '';
+const zcls = z => z === 'ZONA-01' ? 'z1c' : 'z2c';
+const NIV = { ALTA: 2, MEDIA: 1, BAJA: 0 };
+
+// ── tiempo (Lima) ───────────────────────────────────────────
+function parseTs(s) {
+  if (s == null || s === '') return NaN;
+  if (typeof s === 'number') return s;
+  s = String(s).trim().replace(' ', 'T');
+  if (s.length === 10) s += 'T00:00:00-05:00';
+  else if (!/(Z|[+-]\d\d(:?\d\d)?)$/.test(s.slice(10))) s += '-05:00';
+  return Date.parse(s);
+}
+const fmtP = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+function limaParts(ms) { const o = {}; fmtP.formatToParts(new Date(ms)).forEach(p => { o[p.type] = p.value; }); return o; }
+function limaYMD(ms) { const p = limaParts(ms); return p.year + '-' + p.month + '-' + p.day; }
+function dowOf(ymd) { const [y, m, d] = ymd.split('-').map(Number); return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; }   // 0 = lunes
+function addDays(ymd, n) { const [y, m, d] = ymd.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); }
+function fh(s) { const t = parseTs(s); if (isNaN(t)) return '—'; const p = limaParts(t); return p.day + '/' + p.month + ' ' + p.hour + ':' + p.minute; }
+function fhh(s) { const t = parseTs(s); if (isNaN(t)) return '—'; const p = limaParts(t); return p.hour + ':' + p.minute; }
+const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+// ── estado ──────────────────────────────────────────────────
+const hoy = limaYMD(Date.now());
+const lunes = addDays(hoy, -dowOf(hoy));
+const st = { desde: lunes, hasta: hoy, tab: 'pend', f: { zona: 'TODAS', cajero: '', cajas: new Set(), estado: '', rev: '', metodo: '', dia: '', q: '' },
+  tb: {}, D: null, demo: false, revVer: 0, memo: new Map(), exp: null, printAll: false, verHechos: false, cliVista: 'global', zonaSel: null };
+let tok = null;
+const REV = new Map();
+
+function leerURL() {
+  const q = new URLSearchParams(location.search);
+  const z = q.get('zona'); if (z) { const m = /(\d+)/.exec(z); st.f.zona = m ? 'ZONA-0' + (+m[1]) : 'TODAS'; }
+  if (q.get('cajero')) st.f.cajero = q.get('cajero');
+  if (q.get('caja')) q.get('caja').split(',').filter(Boolean).forEach(x => st.f.cajas.add(x));
+  if (/^\d{4}-\d\d-\d\d$/.test(q.get('desde') || '')) st.desde = q.get('desde');
+  if (/^\d{4}-\d\d-\d\d$/.test(q.get('hasta') || '')) st.hasta = q.get('hasta');
+  if (q.get('tab')) st.tab = q.get('tab');
+  if (q.get('estado')) st.f.estado = q.get('estado');
+  if (q.get('rev')) st.f.rev = q.get('rev');
+  if (q.get('met')) st.f.metodo = q.get('met');
+  if (q.get('dia') !== null && q.get('dia') !== '') st.f.dia = +q.get('dia');
+  if (q.get('q')) st.f.q = q.get('q');
+  st.forceDemo = q.get('demo') === '1';
+}
+function escribirURL() {
+  const q = new URLSearchParams(); const f = st.f;
+  if (f.zona !== 'TODAS') q.set('zona', f.zona); if (f.cajero) q.set('cajero', f.cajero); if (f.cajas.size) q.set('caja', [...f.cajas].join(','));
+  if (st.desde !== lunes) q.set('desde', st.desde); if (st.hasta !== hoy) q.set('hasta', st.hasta);
+  if (st.tab !== 'pend') q.set('tab', st.tab); if (f.estado) q.set('estado', f.estado); if (f.rev) q.set('rev', f.rev);
+  if (f.metodo) q.set('met', f.metodo); if (f.dia !== '') q.set('dia', f.dia); if (f.q) q.set('q', f.q);
+  if (st.forceDemo) q.set('demo', '1');
+  try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '')); } catch (_) {}
+}
+
+// ── red ─────────────────────────────────────────────────────
+function fetchTO(url, opts, ms) { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms || 20000); return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t)); }
+async function token() {
+  if (tok && tok.exp > Date.now() / 1000 + 60) return tok.t;
+  let dev = ''; try { dev = localStorage.getItem('mos_device_id') || ''; } catch (_) {}
+  if (!dev) throw new Error('SIN_DISPOSITIVO');
+  const r = await fetchTO(SB_URL + '/functions/v1/mint-mos', { method: 'POST', headers: { apikey: SB_ANON, 'Content-Type': 'application/json' }, cache: 'no-store', body: JSON.stringify({ deviceId: dev }) }, 9000);
+  const d = await r.json().catch(() => null);
+  if (!d || !d.ok || !d.token) throw new Error('SIN_PERMISO');
+  tok = { t: d.token, exp: d.exp || (Date.now() / 1000 + 1500) };
+  return tok.t;
+}
+async function rpc(fn, p) {
+  const t = await token();
+  const r = await fetchTO(SB_URL + '/rest/v1/rpc/' + fn, { method: 'POST',
+    headers: { apikey: SB_ANON, Authorization: 'Bearer ' + t, 'Content-Profile': 'mos', 'Accept-Profile': 'mos', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p: p || {} }) }, 30000);
+  if (!r.ok) { const tx = await r.text().catch(() => ''); const e = new Error('HTTP ' + r.status + ' ' + tx.slice(0, 200)); e.noExiste = r.status === 404 || /does not exist|PGRST202|Could not find the function/i.test(tx); throw e; }
+  return r.json();
+}
+const ctx = () => { const c = LS('mos_reporte_ctx'); return c && c.u ? c : null; };
+
+// ── carga y preparación ─────────────────────────────────────
+async function cargar() {
+  $('cuerpo').innerHTML = '<div class="estado"><div class="spin"></div>Cargando cajas…</div>';
+  let d = null;
+  try {
+    if (st.forceDemo) { st.demo = true; d = demoData(st.desde, st.hasta); }
+    else {
+      for (let i = 0; i < 2 && !d; i++) {
+        try { const j = await rpc('reporte_cajas_semana', { desde: st.desde, hasta: st.hasta, zona: 'TODAS' }); if (j && j.ok === false) throw new Error(j.error || 'RESPUESTA'); d = j; st.demo = false; }
+        catch (e) { if (e.noExiste) { st.demo = true; d = demoData(st.desde, st.hasta); break; } if (e.message === 'SIN_DISPOSITIVO' || i === 1) throw e; tok = null; await new Promise(r => setTimeout(r, 700)); }
+      }
+    }
+  } catch (e) {
+    const msg = e.message === 'SIN_DISPOSITIVO' ? 'Abre este reporte desde MOS (Finanzas → Control de cajas) en un equipo autorizado.'
+      : e.message === 'SIN_PERMISO' ? 'Este equipo no está autorizado en MOS.' : 'No se pudo cargar el reporte. Revisa la conexión y vuelve a intentar.';
+    $('cuerpo').innerHTML = '<div class="estado">' + esc(msg) + '<br><br><button class="btn pri" id="btnRe">Reintentar</button></div>';
+    return;
+  }
+  prep(d); render();
+}
+function prep(d) {
+  const arr = a => Array.isArray(a) ? a : [];
+  const D = { raw: d, cajas: arr(d.cajas), extras: arr(d.extras), ventas: arr(d.ventas), anulados: arr(d.anulados), yapes: arr(d.yapes), clientes: arr(d.clientes) };
+  REV.clear();
+  D.cajaById = new Map();
+  D.cajas.forEach(c => {
+    c.alertas = arr(c.alertas); c.por_metodo = c.por_metodo || {};
+    c._t0 = parseTs(c.fecha_apertura); c._t1 = parseTs(c.fecha_cierre); c._dow = isNaN(c._t0) ? -1 : dowOf(limaYMD(c._t0));
+    c._abierta = /^ABI/i.test(c.estado || '');
+    D.cajaById.set(c.id_caja, c);
+    if (c.revision && c.revision.estado) REV.set('CAJA|' + c.id_caja, c.revision);
+  });
+  D.extras.forEach(x => { x.flags = arr(x.flags); if (x.revision && x.revision.estado) REV.set('EXTRA|' + x.id_extra, x.revision); });
+  D.ventas.forEach(v => { if (v.revision && v.revision.estado) REV.set('VENTA|' + v.id_venta, v.revision); });
+  D.anulados.forEach(a => { if (a.revision && a.revision.estado) REV.set('ANULADO|' + a.id_venta, a.revision); });
+  D.yapes.forEach(y => { y._t = parseTs(y.ts); if (y.revision && y.revision.estado) REV.set('YAPE|' + y.id, y.revision); });
+  D.ventaById = new Map(D.ventas.map(v => [v.id_venta, v]));
+  D.tv = Array.isArray(d.tickets_virtuales) ? d.tickets_virtuales.slice() : D.ventas.filter(v => Number(v.vir) > 0).map(v => ({ id_venta: v.id_venta, id_caja: v.id_caja, zona_id: v.zona_id, fecha: v.fecha, vendedor: v.vendedor, correlativo: v.correlativo, cliente_nombre: v.cliente_nombre, vir: v.vir, estado: v.verificado === true ? 'VERIFICADO' : v.verificado === false ? 'SIN_VERIFICAR' : 'SIN_CAPTOR', id_yape: v.id_yape, candidatos_n: (v.candidatos || []).length }));
+  D.items = buildItems(D);
+  st.D = D; st.memo.clear(); st.tb = {};
+  // si un cajero/caja filtrado ya no existe, se descarta
+  if (st.f.cajero && !D.cajas.some(c => c.vendedor === st.f.cajero)) st.f.cajero = '';
+  st.f.cajas.forEach(id => { if (!D.cajaById.has(id)) st.f.cajas.delete(id); });
+  recalcPend();
+}
+function buildItems(D) {
+  const it = [];
+  D.cajas.forEach(c => { const g = c.alertas.filter(a => a.nivel !== 'BAJA'); if (g.length) it.push({ tipo: 'CAJA', ref: c.id_caja, obj: c, id_caja: c.id_caja, zona: c.zona_id, nivel: g.some(a => a.nivel === 'ALTA') ? 'ALTA' : 'MEDIA', titulo: 'Caja de ' + c.vendedor, det: g.map(a => a.texto).join(' · '), monto: c.diferencia, ts: c._t0 }); });
+  D.extras.forEach(x => { if (x.flags.length) it.push({ tipo: 'EXTRA', ref: x.id_extra, obj: x, id_caja: x.id_caja, zona: x.zona_id, nivel: x.flags.some(f => /no permit|no autoriz|sin autoriz/i.test(f)) ? 'ALTA' : 'MEDIA', titulo: 'Extra ' + String(x.tipo || '').toLowerCase() + ': ' + (x.concepto || 'sin concepto'), det: x.flags.join(' · '), monto: x.monto, ts: parseTs(x.ts) }); });
+  D.ventas.forEach(v => { if (Number(v.vir) > 0 && v.verificado === false) it.push({ tipo: 'VENTA', ref: v.id_venta, obj: v, id_caja: v.id_caja, zona: v.zona_id, nivel: 'MEDIA', titulo: 'Virtual sin verificar · ' + (v.correlativo || v.id_venta), det: (v.cliente_nombre || 'Sin cliente') + ' · ' + (v.vendedor || ''), monto: v.vir, ts: parseTs(v.fecha) }); });
+  D.anulados.forEach(a => it.push({ tipo: 'ANULADO', ref: a.id_venta, obj: a, id_caja: a.id_caja, zona: a.zona_id, nivel: a.motivo ? 'MEDIA' : 'ALTA', titulo: 'Ticket anulado · ' + (a.correlativo || a.id_venta), det: (a.motivo ? 'Motivo: ' + a.motivo : 'SIN MOTIVO') + ' · anuló ' + (a.anulado_por || '?'), monto: a.total, ts: parseTs(a.anulado_ts || a.fecha) }));
+  D.yapes.forEach(y => { if (!y.id_venta) it.push({ tipo: 'YAPE', ref: y.id, obj: y, id_caja: null, zona: y.zona, nivel: 'MEDIA', titulo: 'Yape sin venta · ' + (y.pagador || 'sin nombre'), det: 'Estado ' + (y.estado || '—'), monto: y.monto, ts: y._t }); });
+  return it;
+}
+const keyOf = it => it.tipo + '|' + it.ref;
+function recalcPend() {
+  const m = new Map();
+  st.D.items.forEach(it => { if (!it.id_caja) return; const o = m.get(it.id_caja) || { tot: 0, pend: 0 }; o.tot++; if (!REV.has(keyOf(it))) o.pend++; m.set(it.id_caja, o); });
+  st.D.pc = m; st.memo.clear();
+}
+
+// ── filtrado en el cliente ─────────────────────────────────
+function build(cajasF, o) {
+  const D = st.D; const ids = new Set(cajasF.map(c => c.id_caja));
+  const zOk = z => o.zona === 'TODAS' || z === o.zona;
+  const inS = (idc, z) => D.cajaById.has(idc) ? ids.has(idc) : (o.noFilt && zOk(z));
+  const ventas = D.ventas.filter(v => inS(v.id_caja, v.zona_id) && (!o.metodo || v.metodo === o.metodo));
+  const extras = D.extras.filter(x => inS(x.id_caja, x.zona_id));
+  const anulados = D.anulados.filter(a => inS(a.id_caja, a.zona_id));
+  const clientes = D.clientes.filter(x => inS(x.id_caja, o.zona === 'TODAS' ? null : o.zona));
+  const vset = new Set(); D.ventas.forEach(v => { if (ids.has(v.id_caja)) vset.add(v.id_venta); });
+  const now = Date.now();
+  const yapes = D.yapes.filter(y => zOk(y.zona) && (o.noFilt || (y.id_venta ? vset.has(y.id_venta) : cajasF.some(c => c.zona_id === y.zona && y._t >= c._t0 && y._t <= (isNaN(c._t1) ? now : c._t1)))));
+  const tv = D.tv.filter(x => inS(x.id_caja, x.zona_id));
+  const vs = new Set(ventas), ys = new Set(yapes);
+  const items = D.items.filter(i => i.tipo === 'YAPE' ? ys.has(i.obj) : i.tipo === 'VENTA' ? vs.has(i.obj) : inS(i.id_caja, i.zona));
+  return { cajas: cajasF, ids, ventas, extras, anulados, yapes, clientes, items, tv };
+}
+function derive(ov) {
+  const f = Object.assign({}, st.f, ov || {});
+  const key = JSON.stringify([f.zona, f.cajero, [...f.cajas], f.estado, f.rev, f.metodo, f.dia]);
+  if (st.memo.has(key)) return st.memo.get(key);
+  const pc = st.D.pc;
+  const cajas = st.D.cajas.filter(c =>
+    (f.zona === 'TODAS' || c.zona_id === f.zona) && (!f.cajero || c.vendedor === f.cajero) && (!f.cajas.size || f.cajas.has(c.id_caja)) &&
+    (!f.estado || (f.estado === 'A' ? c._abierta : !c._abierta)) && (f.dia === '' || c._dow === f.dia) &&
+    (!f.metodo || Number(c.por_metodo[f.metodo]) > 0) &&
+    (!f.rev || (f.rev === 'alertas' ? (pc.get(c.id_caja) || { tot: 0 }).tot > 0 : (pc.get(c.id_caja) || { pend: 0 }).pend > 0)));
+  const noFilt = !(f.cajero || f.cajas.size || f.estado || f.rev || f.metodo || f.dia !== '');
+  const d = build(cajas, { zona: f.zona, metodo: f.metodo, noFilt });
+  st.memo.set(key, d); return d;
+}
+function matchQ(txt) { const q = st.f.q.trim().toLowerCase(); return !q || String(txt).toLowerCase().includes(q); }
+const filtQ = (rows, fn) => st.f.q.trim() ? rows.filter(r => matchQ(fn(r))) : rows;
+
+function agg(d) {
+  const a = { cajasN: d.cajas.length, ab: 0, ce: 0, ventasN: 0, ventasT: 0, efe: 0, vir: 0, cre: 0, pc: 0, mix: 0, anN: 0, anT: 0, exI: 0, exE: 0, dif: 0, vsN: 0, vsT: 0, clN: 0 };
+  d.cajas.forEach(c => {
+    c._abierta ? a.ab++ : a.ce++;
+    a.ventasN += +c.ventas_n || 0; a.ventasT += +c.ventas_total || 0;
+    const m = c.por_metodo; a.efe += +m.EFECTIVO || 0; a.vir += +m.VIRTUAL || 0; a.cre += +m.CREDITO || 0; a.pc += +m.POR_COBRAR || 0; a.mix += +m.MIXTO || 0;
+    a.anN += +c.anulados_n || 0; a.anT += +c.anulados_total || 0; a.exI += +c.extras_ingreso || 0; a.exE += +c.extras_egreso || 0;
+    if (c.diferencia != null && !c._abierta) a.dif += +c.diferencia || 0;
+    a.vsN += +c.virtual_sin_verificar_n || 0; a.vsT += +c.virtual_sin_verificar_total || 0; a.clN += +c.clientes_n || 0;
+  });
+  a.exFlag = d.extras.filter(x => x.flags.length).length;
+  const ys = d.yapes.filter(y => !y.id_venta); a.ysN = ys.length; a.ysT = ys.reduce((s, y) => s + (+y.monto || 0), 0);
+  a.pend = d.items.filter(i => !REV.has(keyOf(i))).length; a.totIt = d.items.length;
+  return a;
+}
+
+// ── tablas genéricas ───────────────────────────────────────
+function tabla(id, cols, rows, o) {
+  o = o || {}; const s = st.tb[id] || (st.tb[id] = { k: o.sort != null ? o.sort : null, dir: o.dir || -1, pg: 0 });
+  let r = rows.slice();
+  if (s.k != null && cols[s.k]) { const c = cols[s.k]; r.sort((a, b) => { const x = c.v(a), y = c.v(b); const na = typeof x === 'number', nb = typeof y === 'number';
+    if (na && nb) return (x - y) * s.dir; return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y), 'es') * s.dir; }); }
+  if (!o.noExp) st.exp = { name: id, head: cols.map(c => c.t), rows: r.map(x => cols.map(c => (c.c || c.v)(x))) };
+  const tot = r.length; const pags = Math.max(1, Math.ceil(tot / PAGE)); if (s.pg >= pags) s.pg = pags - 1;
+  const vis = st.printAll ? r : r.slice(s.pg * PAGE, s.pg * PAGE + PAGE);
+  if (!tot) return '<div class="tw"><div class="vacio">Sin registros con estos filtros.</div></div>';
+  const hayS = cols.some(c => c.s);
+  let h = '<div class="tw"><table><thead><tr>' + cols.map((c, i) => '<th class="' + (c.n ? 'n ' : '') + (c.s ? 'sc' : '') + '" data-act="sort" data-id="' + id + '" data-i="' + i + '">' + esc(c.t) + (s.k === i ? (s.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') + (hayS ? '<th class="tg" style="cursor:default"></th>' : '') + '</tr></thead><tbody>';
+  vis.forEach(x => {
+    h += '<tr class="' + (o.cls ? o.cls(x) : '') + '">' + cols.map(c => '<td class="' + (c.n ? 'n ' : '') + (c.s ? 'sc' : '') + '" data-label="' + esc(c.t) + '">' + c.h(x) + '</td>').join('') + (hayS ? '<td class="tg"><button class="btn sm" data-act="rowopen" aria-label="Ver más">Ver más ▾</button></td>' : '') + '</tr>';
+    if (hayS) h += '<tr class="det"><td colspan="' + (cols.length + 1) + '"><div class="dtl">' + cols.filter(c => c.s).map(c => '<span><b>' + esc(c.t) + ':</b> ' + c.h(x) + '</span>').join('') + '</div></td></tr>';
+  });
+  h += '</tbody></table>';
+  if (!st.printAll && pags > 1) h += '<div class="pg"><button class="btn sm" data-act="pg" data-id="' + id + '" data-d="-1"' + (s.pg === 0 ? ' disabled' : '') + '>‹ Anterior</button><span>Página ' + (s.pg + 1) + ' de ' + pags + ' · ' + (s.pg * PAGE + 1) + '–' + Math.min(tot, s.pg * PAGE + PAGE) + ' de ' + tot + '</span><button class="btn sm" data-act="pg" data-id="' + id + '" data-d="1"' + (s.pg >= pags - 1 ? ' disabled' : '') + '>Siguiente ›</button></div>';
+  else h += '<div class="pg">' + tot + ' registros</div>';
+  return h + '</div>';
+}
+const nombreCaja = id => { const c = st.D.cajaById.get(id); return c ? c.vendedor : (id || '—'); };
+const cajaTxt = (id, z) => { const c = st.D.cajaById.get(id); return zchip(z || (c && c.zona_id)) + ' ' + esc(c ? c.vendedor : (id || '—')); };
+function accion(tipo, ref) {
+  const r = REV.get(tipo + '|' + ref); const a = 'data-t="' + tipo + '" data-r="' + esc(ref) + '"';
+  if (r) return '<span class="chip ' + (r.estado === 'OK' ? 'c-ok' : 'c-warn') + '" title="' + esc((r.usuario || '') + ': ' + (r.nota || '')) + '">' + (r.estado === 'OK' ? '✔ OK' : '⚠ Obs.') + '</span> <button class="btn sm" data-act="edit" ' + a + ' aria-label="Editar marca">✎</button>';
+  return '<button class="btn sm" data-act="ok" ' + a + ' aria-label="Marcar OK">✔</button> <button class="btn sm" data-act="obs" ' + a + ' aria-label="Observar">⚠</button>';
+}
+const metChip = m => '<span class="chip ' + ({ EFECTIVO: 'c-ok', VIRTUAL: 'c-info', MIXTO: 'c-info', CREDITO: 'c-warn', POR_COBRAR: 'c-bad' }[m] || 'c-gris') + '">' + esc(m || '—') + '</span>';
+function verifChip(v) {
+  if (!(Number(v.vir) > 0)) return '<span style="color:var(--dim)">—</span>';
+  if (v.verificado === true) return '<span class="chip c-ok">✓ verificado</span>';
+  if (v.verificado === false) return '<span class="chip c-bad">✗ sin verificar</span>';
+  return SIN_CAPTOR[v.zona_id] ? '<span class="chip c-gris" title="Esta zona no tiene captor Yape">sin captor</span>' : '<span class="chip c-gris">sin dato</span>';
+}
+const C = {
+  ventas: () => [
+    { t: 'Fecha', v: r => parseTs(r.fecha), c: r => fh(r.fecha), h: r => esc(fh(r.fecha)) },
+    { t: 'Caja', v: r => nombreCaja(r.id_caja), c: r => nombreCaja(r.id_caja), h: r => cajaTxt(r.id_caja, r.zona_id) },
+    { t: 'Ticket', v: r => r.correlativo || '', h: r => esc((r.tipo_doc ? r.tipo_doc + ' ' : '') + (r.correlativo || '')) },
+    { t: 'Cliente', v: r => r.cliente_nombre || '', c: r => (r.cliente_doc || '') + ' ' + (r.cliente_nombre || ''), h: r => esc(r.cliente_nombre || 'Sin cliente') + (r.cliente_doc ? ' <small style="color:var(--dim)">' + esc(r.cliente_doc) + '</small>' : '') },
+    { t: 'Total', n: 1, v: r => money(r.total), c: r => money(r.total), h: r => S(r.total) },
+    { t: 'Método', v: r => r.metodo || '', h: r => metChip(r.metodo) },
+    { s: 1, t: 'Efectivo', n: 1, v: r => money(r.efe), h: r => S(r.efe) },
+    { s: 1, t: 'Virtual', n: 1, v: r => money(r.vir), h: r => S(r.vir) },
+    { t: 'Verificado', v: r => r.verificado === true ? 1 : r.verificado === false ? 0 : 2, c: r => r.verificado === true ? 'SI' : r.verificado === false ? 'NO' : 'N/A', h: verifChip },
+    { s: 1, t: 'CPE', v: r => r.nf_estado || '', h: r => esc(r.nf_estado || '—') },
+    { t: 'Revisión', v: r => REV.has('VENTA|' + r.id_venta) ? 1 : 0, c: r => (REV.get('VENTA|' + r.id_venta) || {}).estado || '', h: r => (Number(r.vir) > 0 && r.verificado === false) || REV.has('VENTA|' + r.id_venta) ? accion('VENTA', r.id_venta) : '' }],
+  extras: () => [
+    { t: 'Hora', v: r => parseTs(r.ts), c: r => fh(r.ts), h: r => esc(fh(r.ts)) },
+    { t: 'Caja', v: r => nombreCaja(r.id_caja), h: r => cajaTxt(r.id_caja, r.zona_id) },
+    { t: 'Tipo', v: r => r.tipo || '', h: r => '<span class="chip ' + (/ING/i.test(r.tipo) ? 'c-ok' : 'c-warn') + '">' + esc(r.tipo || '—') + '</span>' },
+    { t: 'Monto', n: 1, v: r => money(r.monto), h: r => S(r.monto) },
+    { t: 'Concepto', v: r => r.concepto || '', c: r => (r.concepto || '') + ' ' + (r.obs || ''), h: r => esc(r.concepto || '—') + (r.obs ? '<br><small style="color:var(--mut)">' + esc(r.obs) + '</small>' : '') },
+    { s: 1, t: 'Registró', v: r => r.registrado_por || '', h: r => esc(r.registrado_por || '—') + (r.editado ? ' <span class="chip c-warn">editado</span>' : '') },
+    { t: 'Alertas', v: r => r.flags.length, c: r => r.flags.join(' | '), h: r => r.flags.map(f => '<span class="chip c-bad">' + esc(f) + '</span>').join(' ') || '<span style="color:var(--dim)">—</span>' },
+    { t: 'Revisión', v: r => REV.has('EXTRA|' + r.id_extra) ? 1 : 0, c: r => (REV.get('EXTRA|' + r.id_extra) || {}).estado || '', h: r => r.flags.length || REV.has('EXTRA|' + r.id_extra) ? accion('EXTRA', r.id_extra) : '' }],
+  anul: () => [
+    { s: 1, t: 'Venta', v: r => parseTs(r.fecha), c: r => fh(r.fecha), h: r => esc(fh(r.fecha)) },
+    { t: 'Caja', v: r => nombreCaja(r.id_caja), h: r => cajaTxt(r.id_caja, r.zona_id) },
+    { t: 'Ticket', v: r => r.correlativo || '', h: r => esc(r.correlativo || r.id_venta) },
+    { t: 'Cliente', v: r => r.cliente_nombre || '', h: r => esc(r.cliente_nombre || '—') },
+    { t: 'Total', n: 1, v: r => money(r.total), h: r => S(r.total) },
+    { t: 'Anuló', v: r => r.anulado_por || '', h: r => esc(r.anulado_por || '—') },
+    { s: 1, t: 'Cuándo', v: r => parseTs(r.anulado_ts), c: r => fh(r.anulado_ts), h: r => esc(fh(r.anulado_ts)) },
+    { t: 'Motivo', v: r => r.motivo || '', h: r => r.motivo ? esc(r.motivo) : '<span class="chip c-bad">sin motivo</span>' },
+    { t: 'Revisión', v: r => REV.has('ANULADO|' + r.id_venta) ? 1 : 0, c: r => (REV.get('ANULADO|' + r.id_venta) || {}).estado || '', h: r => accion('ANULADO', r.id_venta) }],
+  yapes: () => [
+    { t: 'Hora', v: r => r._t, c: r => fh(r.ts), h: r => esc(fh(r.ts)) },
+    { s: 1, t: 'Zona', v: r => r.zona || '', h: r => zchip(r.zona) },
+    { t: 'Monto', n: 1, v: r => money(r.monto), h: r => S(r.monto) },
+    { t: 'Pagador', v: r => r.pagador || '', h: r => esc(r.pagador || '—') },
+    { t: 'Estado', v: r => r.estado || '', h: r => '<span class="chip ' + (r.id_venta ? 'c-ok' : 'c-bad') + '">' + esc(r.estado || '—') + '</span>' },
+    { s: 1, t: 'Venta', v: r => r.id_venta || '', h: r => r.id_venta ? esc(r.id_venta) : '<b style="color:var(--bad)">sin venta</b>' },
+    { s: 1, t: 'Vinculado por', v: r => r.match_por || '', h: r => esc(r.match_por || '—') },
+    { t: 'Revisión', v: r => REV.has('YAPE|' + r.id) ? 1 : 0, c: r => (REV.get('YAPE|' + r.id) || {}).estado || '', h: r => !r.id_venta || REV.has('YAPE|' + r.id) ? accion('YAPE', r.id) : '' }],
+  clientes: () => [
+    { t: 'Cliente', v: r => r.nombre || '', h: r => esc(r.nombre || 'Sin nombre') },
+    { s: 1, t: 'Documento', v: r => r.doc || '', h: r => esc(r.doc || '—') },
+    { t: 'Caja', v: r => r.caja || '', h: r => r.caja ? cajaTxt(r.caja) : '<span style="color:var(--dim)">varias</span>' },
+    { t: 'Compras', n: 1, v: r => r.n, h: r => r.n },
+    { t: 'Total', n: 1, v: r => money(r.total), h: r => S(r.total) }]
+};
+const rowCls = { ventas: r => (Number(r.vir) > 0 && r.verificado === false ? 'alerta' : ''), extras: r => r.flags.length ? 'alerta' : '', anul: r => r.motivo ? 'aviso' : 'alerta', yapes: r => r.id_venta ? '' : 'alerta' };
+const qTxt = {
+  ventas: r => [r.cliente_nombre, r.cliente_doc, r.correlativo, r.vendedor, r.id_venta].join(' '),
+  extras: r => [r.concepto, r.obs, r.registrado_por, r.tipo, nombreCaja(r.id_caja)].join(' '),
+  anul: r => [r.cliente_nombre, r.correlativo, r.motivo, r.anulado_por, r.vendedor].join(' '),
+  yapes: r => [r.pagador, r.id_venta, r.estado].join(' '),
+  clientes: r => [r.nombre, r.doc].join(' ')
+};
+function clientesRows(list, porCaja) {
+  if (porCaja) return list.map(x => ({ nombre: x.cliente_nombre, doc: x.cliente_doc, caja: x.id_caja, n: +x.n || 0, total: +x.total || 0 }));
+  const m = new Map();
+  list.forEach(x => { const k = x.cliente_doc || x.cliente_nombre || '—'; const o = m.get(k) || { nombre: x.cliente_nombre, doc: x.cliente_doc, caja: null, n: 0, total: 0 }; o.n += +x.n || 0; o.total += +x.total || 0; m.set(k, o); });
+  return [...m.values()];
+}
+function listaTab(tab, d, idp) {
+  const rows = tab === 'clientes' ? clientesRows(d.clientes, st.cliVista === 'caja') : d[tab === 'anul' ? 'anulados' : tab];
+  return tabla((idp || '') + tab + (tab === 'clientes' ? st.cliVista : ''), C[tab](), filtQ(rows, qTxt[tab]), { sort: tab === 'clientes' ? 4 : 0, cls: rowCls[tab] });
+}
+
+// ── pestañas ───────────────────────────────────────────────
+function metBar(a) {
+  const par = [['Efectivo', a.efe, 'var(--m-efe)'], ['Virtual', a.vir, 'var(--m-vir)'], ['Crédito', a.cre, 'var(--m-cre)'], ['Por cobrar', a.pc, 'var(--m-pc)'], ['Mixto', a.mix, 'var(--m-mix)']];
+  const tot = par.reduce((s, p) => s + p[1], 0) || 1;
+  return '<div class="metbar">' + par.map(p => '<i style="width:' + (p[1] / tot * 100).toFixed(2) + '%;background:' + p[2] + '" title="' + p[0] + ' ' + S(p[1]) + '"></i>').join('') + '</div>' +
+    '<div class="leyenda">' + par.map(p => '<span><span class="dot" style="background:' + p[2] + '"></span>' + p[0] + ' <b>' + S(p[1]) + '</b> (' + Math.round(p[1] / tot * 100) + '%)</span>').join('') + '</div>';
+}
+function kpis(d) {
+  const a = agg(d); const k = (l, v, s, go, col) => '<button class="kpi" style="--k:' + col + '" data-act="tab" data-v="' + go + '"><div class="l">' + l + '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></button>';
+  const noC = st.f.zona === 'ZONA-01';
+  return '<div class="kpis">' +
+    k('Cajas', a.ab + ' abiertas · ' + a.ce + ' cerradas', a.cajasN + ' en total', 'cajas', 'var(--acc)') +
+    k('Venta total', S(a.ventasT), a.ventasN + ' tickets', 'ventas', 'var(--ok)') +
+    k('Anulados', a.anN + ' · ' + S(a.anT), 'tickets anulados', 'anul', 'var(--bad)') +
+    k('Extras', '+' + S(a.exI).replace('S/ ', '') + ' / −' + S(a.exE).replace('S/ ', ''), a.exFlag + ' con alerta', 'extras', 'var(--warn)') +
+    k('Virtual sin verificar', a.vsN + ' · ' + S(a.vsT), 'ventas con Yape/virtual', 'ventas', 'var(--m-vir)') +
+    k('Yapes sin venta', noC ? 'sin captor' : a.ysN + ' · ' + S(a.ysT), noC ? 'Zona 01 no tiene captor' : 'sin vincular a un ticket', 'yape', 'var(--m-mix)') +
+    k('Diferencia de cajas', SS(a.dif), 'suma de cajas cerradas', 'cajero', a.dif < -0.05 ? 'var(--bad)' : 'var(--ok)') +
+    k('Alertas pendientes', a.pend + ' de ' + a.totIt, 'clic: revisar', 'pend', a.pend ? 'var(--bad)' : 'var(--ok)') + '</div>' + metBar(a);
+}
+function tabPend(d) {
+  const its = filtQ(d.items, i => [i.titulo, i.det, nombreCaja(i.id_caja)].join(' '));
+  const hechos = its.filter(i => REV.has(keyOf(i))).length; const tot = its.length;
+  let lista = its.filter(i => st.verHechos || !REV.has(keyOf(i))).sort((a, b) => (NIV[b.nivel] - NIV[a.nivel]) || ((b.ts || 0) - (a.ts || 0)));
+  const s = st.tb.pend || (st.tb.pend = { pg: 0 }); const pags = Math.max(1, Math.ceil(lista.length / PAGE)); if (s.pg >= pags) s.pg = pags - 1;
+  st.exp = { name: 'pendientes', head: ['Nivel', 'Tipo', 'Zona', 'Cajero', 'Detalle', 'Monto', 'Fecha', 'Estado'], rows: lista.map(i => [i.nivel, i.tipo, i.zona, nombreCaja(i.id_caja), i.titulo + ' — ' + i.det, money(i.monto), fh(i.ts), (REV.get(keyOf(i)) || {}).estado || 'PENDIENTE']) };
+  const vis = st.printAll ? lista : lista.slice(s.pg * PAGE, s.pg * PAGE + PAGE);
+  let h = '<div class="prog"><b>Revisado ' + hechos + ' de ' + tot + '</b> <label style="float:right;font-size:13px"><input type="checkbox" id="chkHechos"' + (st.verHechos ? ' checked' : '') + '> mostrar ya revisados</label><div class="bar"><i style="width:' + (tot ? hechos / tot * 100 : 100) + '%"></i></div></div>';
+  if (!lista.length) return h + '<div class="tw"><div class="vacio">' + (tot ? '✅ Todo revisado con estos filtros.' : 'Sin alertas con estos filtros.') + '</div></div>';
+  vis.forEach(i => {
+    const r = REV.get(keyOf(i)); const c = i.id_caja ? st.D.cajaById.get(i.id_caja) : null;
+    h += '<div class="pend ' + i.nivel + (r ? ' hecho' : '') + '"><div><span class="chip ' + (i.nivel === 'ALTA' ? 'c-bad' : 'c-warn') + '">' + i.nivel + '</span><br><span class="chip c-gris" style="margin-top:4px">' + i.tipo + '</span></div>' +
+      '<div><div class="t">' + zchip(i.zona) + ' ' + esc(i.titulo) + '</div><div class="d">' + esc(i.det) + '</div><div class="d">' + (c ? esc(c.vendedor) + ' · ' : '') + esc(fh(i.ts)) + (i.monto != null ? ' · <b>' + S(i.monto) + '</b>' : '') + (r && r.nota ? ' · nota: ' + esc(r.nota) : '') + '</div></div>' +
+      '<div class="acciones">' + accion(i.tipo, i.ref) + (i.id_caja ? ' <button class="btn sm" data-act="caja" data-id="' + esc(i.id_caja) + '">Ver caja</button>' : '') + '</div></div>';
+  });
+  if (!st.printAll && pags > 1) h += '<div class="pg"><button class="btn sm" data-act="pg" data-id="pend" data-d="-1"' + (s.pg === 0 ? ' disabled' : '') + '>‹ Anterior</button><span>Página ' + (s.pg + 1) + ' de ' + pags + ' · ' + lista.length + ' pendientes</span><button class="btn sm" data-act="pg" data-id="pend" data-d="1"' + (s.pg >= pags - 1 ? ' disabled' : '') + '>Siguiente ›</button></div>';
+  return h;
+}
+function diffHtml(c) {
+  if (c.diferencia == null || c._abierta) return '<span style="color:var(--dim)">—</span>';
+  const x = money(c.diferencia); const k = Math.abs(x) <= 0.05 ? 'dif-ok' : x < 0 ? 'dif-bad' : 'dif-warn';
+  return '<span class="' + k + '">' + SS(x) + (Math.abs(x) <= 0.05 ? ' ✓' : x < 0 ? ' falta' : ' sobra') + '</span>';
+}
+function cardCaja(c) {
+  const pc = st.D.pc.get(c.id_caja) || { tot: 0, pend: 0 }; const r = REV.get('CAJA|' + c.id_caja);
+  const met = Object.entries(c.por_metodo).filter(e => +e[1] > 0).map(e => metChip(e[0]) + ' ' + S(e[1])).join(' · ') || '—';
+  return '<div class="card ' + zcls(c.zona_id) + '" data-act="caja" data-id="' + esc(c.id_caja) + '"><h3>' + zchip(c.zona_id) + ' ' + esc(c.vendedor) + ' <span class="chip ' + (c._abierta ? 'c-warn' : 'c-ok') + '">' + (c._abierta ? 'Abierta' : 'Cerrada') + '</span>' + (c.estacion ? ' <small style="color:var(--dim);font-weight:600">' + esc(c.estacion) + '</small>' : '') + '</h3>' +
+    '<div style="font-size:13px;color:var(--mut)">Abrió ' + esc(fh(c.fecha_apertura)) + ' · ' + (c._abierta ? 'sigue abierta' : 'cerró ' + esc(fh(c.fecha_cierre))) + ' · ' + (c.horas != null ? Number(c.horas).toFixed(1) + ' h' : '') + '</div>' +
+    '<div class="kv"><span>Apertura</span><span>' + S(c.monto_inicial) + '</span><span>Efectivo esperado</span><span>' + S(c.esperado_efectivo) + '</span><span>Entregado</span><span>' + (c._abierta || c.monto_final == null ? '—' : S(c.monto_final)) + '</span><span>Diferencia</span><span>' + diffHtml(c) + '</span>' +
+    '<span>Ventas</span><span>' + (c.ventas_n || 0) + ' · ' + S(c.ventas_total) + '</span><span>Anulados</span><span>' + (c.anulados_n || 0) + ' · ' + S(c.anulados_total) + '</span><span>Extras</span><span>' + (c.extras_n || 0) + ' (+' + money(c.extras_ingreso) + ' / −' + money(c.extras_egreso) + ')</span><span>Clientes</span><span>' + (c.clientes_n || 0) + '</span>' +
+    '<span>Virtual sin verificar</span><span>' + (SIN_CAPTOR[c.zona_id] ? '<span class="chip c-gris">sin captor</span>' : (c.virtual_sin_verificar_n || 0) + ' · ' + S(c.virtual_sin_verificar_total)) + '</span></div>' +
+    '<div style="font-size:12.5px;margin-bottom:6px">' + met + '</div>' +
+    '<div>' + c.alertas.map(a => '<span class="chip ' + (a.nivel === 'ALTA' ? 'c-bad' : a.nivel === 'MEDIA' ? 'c-warn' : 'c-gris') + '" style="margin:0 4px 4px 0">' + esc(a.texto) + '</span>').join('') + '</div>' +
+    '<div class="acciones"><span class="chip ' + (pc.pend ? 'c-bad' : 'c-ok') + '">' + (pc.pend ? pc.pend + ' sin revisar' : pc.tot ? 'todo revisado' : 'sin alertas') + '</span> ' + (c.alertas.some(a => a.nivel !== 'BAJA') || r ? accion('CAJA', c.id_caja) : '') + ' <button class="btn sm" data-act="solo" data-id="' + esc(c.id_caja) + '">Solo esta</button></div></div>';
+}
+function tabCajas(d) {
+  const l = filtQ(d.cajas, c => [c.vendedor, c.id_caja, c.estacion].join(' ')).slice().sort((a, b) => b._t0 - a._t0);
+  st.exp = { name: 'cajas', head: ['Caja', 'Zona', 'Cajero', 'Estado', 'Apertura', 'Cierre', 'Horas', 'Inicial', 'Esperado', 'Entregado', 'Diferencia', 'Ventas', 'Venta total', 'Anulados', 'Extras', 'Virtual sin verificar', 'Alertas'],
+    rows: l.map(c => [c.id_caja, c.zona_id, c.vendedor, c.estado, fh(c.fecha_apertura), fh(c.fecha_cierre), c.horas, money(c.monto_inicial), money(c.esperado_efectivo), c.monto_final, c.diferencia, c.ventas_n, money(c.ventas_total), c.anulados_n, c.extras_n, c.virtual_sin_verificar_n, c.alertas.map(a => a.texto).join(' | ')]) };
+  return l.length ? '<div class="grid">' + l.map(cardCaja).join('') + '</div>' : '<div class="tw"><div class="vacio">Sin cajas con estos filtros.</div></div>';
+}
+function porCajero(d) {
+  const m = new Map();
+  d.cajas.forEach(c => { const o = m.get(c.vendedor) || { v: c.vendedor, zonas: new Set(), cajas: 0, venta: 0, dif: 0, difAbs: 0, an: 0, anT: 0, exF: 0, vs: 0, vsT: 0, pend: 0 }; o.zonas.add(c.zona_id); o.cajas++; o.venta += +c.ventas_total || 0; if (!c._abierta && c.diferencia != null) { o.dif += +c.diferencia; o.difAbs += Math.abs(+c.diferencia); } o.an += +c.anulados_n || 0; o.anT += +c.anulados_total || 0; if (!SIN_CAPTOR[c.zona_id]) { o.vs += +c.virtual_sin_verificar_n || 0; o.vsT += +c.virtual_sin_verificar_total || 0; } m.set(c.vendedor, o); });
+  d.extras.forEach(x => { if (x.flags.length) { const c = st.D.cajaById.get(x.id_caja); const o = c && m.get(c.vendedor); if (o) o.exF++; } });
+  d.items.forEach(i => { if (!REV.has(keyOf(i)) && i.id_caja) { const c = st.D.cajaById.get(i.id_caja); const o = c && m.get(c.vendedor); if (o) o.pend++; } });
+  return [...m.values()];
+}
+function colsCajero() { return [
+  { t: 'Cajero', v: r => r.v, h: r => '<a href="#" data-act="cajero" data-v="' + esc(r.v) + '"><b>' + esc(r.v) + '</b></a>' },
+  { t: 'Zona', v: r => [...r.zonas].join(), h: r => [...r.zonas].map(zchip).join(' ') },
+  { t: 'Cajas', n: 1, v: r => r.cajas, h: r => r.cajas },
+  { t: 'Venta', n: 1, v: r => money(r.venta), h: r => S(r.venta) },
+  { t: 'Dif. acumulada', n: 1, v: r => money(r.dif), h: r => '<span class="' + (r.dif < -0.05 ? 'dif-bad' : r.dif > 0.05 ? 'dif-warn' : 'dif-ok') + '">' + SS(r.dif) + '</span>' },
+  { t: 'Anulados', n: 1, v: r => r.an, c: r => r.an + ' / ' + money(r.anT), h: r => r.an + ' · ' + S(r.anT) },
+  { t: 'Extras con alerta', n: 1, v: r => r.exF, h: r => r.exF ? '<span class="chip c-bad">' + r.exF + '</span>' : '0' },
+  { t: 'Virtual sin verificar', n: 1, v: r => r.vs, c: r => r.vs + ' / ' + money(r.vsT), h: r => r.vs ? '<span class="chip c-warn">' + r.vs + '</span> ' + S(r.vsT) : '0' },
+  { t: 'Alertas pend.', n: 1, v: r => r.pend, h: r => r.pend ? '<span class="chip c-bad">' + r.pend + '</span>' : '<span class="chip c-ok">0</span>' }]; }
+function tabCajero(d) { return tabla('cajero', colsCajero(), filtQ(porCajero(d), r => r.v), { sort: 3 }); }
+function tabZonas() {
+  const z1 = derive({ zona: 'ZONA-01' }), z2 = derive({ zona: 'ZONA-02' }); const a = agg(z1), b = agg(z2);
+  const num = (l, x, y, f, bad) => [l, f(x), f(y), typeof x === 'number' && typeof y === 'number' ? (y - x === 0 ? '—' : (y - x > 0 ? '+' : '−') + f(Math.abs(y - x))) : '', bad];
+  const T = [num('Cajas abiertas', a.ab, b.ab, String), num('Cajas cerradas', a.ce, b.ce, String), num('Tickets', a.ventasN, b.ventasN, String), num('Venta total', a.ventasT, b.ventasT, S),
+    num('Efectivo', a.efe, b.efe, S), num('Virtual', a.vir, b.vir, S), num('Crédito', a.cre, b.cre, S), num('Por cobrar', a.pc, b.pc, S), num('Mixto', a.mix, b.mix, S),
+    num('Anulados (n)', a.anN, b.anN, String), num('Anulados (S/)', a.anT, b.anT, S), num('Extras ingreso', a.exI, b.exI, S), num('Extras egreso', a.exE, b.exE, S), num('Extras con alerta', a.exFlag, b.exFlag, String),
+    num('Diferencia acumulada', a.dif, b.dif, SS), ['Virtual sin verificar', 'sin captor', b.vsN + ' · ' + S(b.vsT), ''], ['Yapes sin venta', 'sin captor', b.ysN + ' · ' + S(b.ysT), ''], num('Alertas pendientes', a.pend, b.pend, String)];
+  st.exp = { name: 'zona01_vs_zona02', head: ['Métrica', 'Zona 01', 'Zona 02', 'Diferencia'], rows: T.map(r => r.slice(0, 4)) };
+  let h = '<div class="tw"><table><thead><tr><th style="cursor:default">Métrica</th><th class="n" style="cursor:default">' + zchip('ZONA-01') + ' Zona 01</th><th class="n" style="cursor:default">' + zchip('ZONA-02') + ' Zona 02</th><th class="n" style="cursor:default">Z02 − Z01</th></tr></thead><tbody>';
+  T.forEach(r => { h += '<tr><td>' + r[0] + '</td><td class="n">' + r[1] + '</td><td class="n">' + r[2] + '</td><td class="n">' + r[3] + '</td></tr>'; });
+  h += '</tbody></table></div><p style="font-size:12.5px;color:var(--mut)">Esta comparación respeta los demás filtros (cajero, estado, método, día) pero ignora el de zona. Zona 01 no tiene captor Yape: no se mide Yape ahí.</p><div class="seg sm zsel" id="segZs" style="margin-top:10px"><button data-v="ZONA-01" class="' + (st.zonaSel !== 'ZONA-02' ? 'on' : '') + '">Por cajero · Zona 01</button><button data-v="ZONA-02" class="' + (st.zonaSel === 'ZONA-02' ? 'on' : '') + '">Zona 02</button></div><div class="vs" style="margin-top:10px">';
+  [['ZONA-01', z1], ['ZONA-02', z2]].forEach(p => { h += '<div class="' + ((st.zonaSel || 'ZONA-01') === p[0] ? '' : 'nosel') + '"><h3 style="margin:6px 0">' + zchip(p[0]) + ' Por cajero · ' + zn(p[0]) + '</h3>' + tabla('zc' + p[0], colsCajero(), porCajero(p[1]), { sort: 3, noExp: true }) + '</div>'; });
+  return h + '</div>';
+}
+function ticketsDe(y) {
+  if (Array.isArray(y.tickets) && y.tickets.length) return y.tickets;
+  const v = y.id_venta && st.D.ventaById.get(y.id_venta); return v ? [{ id_venta: v.id_venta, correlativo: v.correlativo, total: v.vir || v.total, id_caja: v.id_caja, vendedor: v.vendedor }] : [];
+}
+function tabYape(d) {
+  const sub = st.yv || 'A';
+  const seg = '<div class="seg sm" id="segYv" style="margin-bottom:8px"><button data-v="A" class="' + (sub === 'A' ? 'on' : '') + '">A · Yapes leídos por el captor</button><button data-v="B" class="' + (sub === 'B' ? 'on' : '') + '">B · Tickets virtuales</button></div>';
+  return seg + (sub === 'A' ? vistaYA(d) : vistaYB(d));
+}
+function vistaYA(d) {
+  const l = filtQ(d.yapes, y => [y.pagador, y.id_venta, y.estado, y.dispositivo, ticketsDe(y).map(t => t.correlativo + ' ' + t.vendedor).join(' ')].join(' ')).slice().sort((a, b) => (ticketsDe(a).length ? 1 : 0) - (ticketsDe(b).length ? 1 : 0) || b._t - a._t);
+  const sin = l.filter(y => !ticketsDe(y).length); const tot = l.reduce((s, y) => s + (+y.monto || 0), 0); const totSin = sin.reduce((s, y) => s + (+y.monto || 0), 0);
+  st.exp = { name: 'yapes_captor', head: ['Hora', 'Zona', 'Pagador', 'Monto', 'Estado', 'Dispositivo', 'Recibido', 'Tickets verificados', 'Suma tickets', 'Diferencia'],
+    rows: l.map(y => { const t = ticketsDe(y); const su = y.suma_tickets != null ? y.suma_tickets : t.reduce((s, x) => s + (+x.total || 0), 0); return [fh(y.ts), y.zona, y.pagador, money(y.monto), y.estado, y.dispositivo || '', y.ts_recibido ? fh(y.ts_recibido) : '', t.map(x => x.correlativo).join(' + '), money(su), y.diferencia != null ? money(y.diferencia) : money(y.monto - su)]; }) };
+  const s = st.tb.yA || (st.tb.yA = { pg: 0 }); const pags = Math.max(1, Math.ceil(l.length / PAGE)); if (s.pg >= pags) s.pg = pags - 1;
+  const vis = st.printAll ? l : l.slice(s.pg * PAGE, s.pg * PAGE + PAGE);
+  let h = '<div class="prog"><b>' + l.length + ' Yapes leídos por el captor · ' + S(tot) + '</b><br><span style="font-size:14px">Con ticket: ' + (l.length - sin.length) + ' · <b style="color:var(--bad)">Sin ticket: ' + sin.length + ' (' + S(totSin) + ')</b></span>' + (st.f.zona === 'ZONA-01' ? '<br><span style="font-size:14px;color:var(--mut)">Zona 01 no tiene captor Yape: aquí no habrá lecturas.</span>' : '') + '</div>';
+  if (!l.length) return h + '<div class="tw"><div class="vacio">Sin Yapes con estos filtros.</div></div>';
+  vis.forEach(y => {
+    const t = ticketsDe(y); const su = y.suma_tickets != null ? +y.suma_tickets : t.reduce((a, x) => a + (+x.total || 0), 0); const df = y.diferencia != null ? +y.diferencia : y.monto - su;
+    h += '<div class="ycard ' + (!t.length ? 'sin' : Math.abs(df) > 0.05 ? 'dif' : '') + '"><div class="h"><span class="m">' + S(y.monto) + '</span> ' + zchip(y.zona) + ' <b>' + esc(y.pagador || 'sin nombre') + '</b> <span class="chip ' + (t.length ? 'c-ok' : 'c-bad') + '">' + esc(y.estado || '—') + '</span><span style="font-size:13px;color:var(--mut)">' + esc(fh(y.ts)) + (y.ts_recibido ? ' · recibido ' + esc(fhh(y.ts_recibido)) : '') + (y.dispositivo ? ' · ' + esc(y.dispositivo) : '') + '</span><span style="margin-left:auto" class="acciones">' + (!t.length || REV.has('YAPE|' + y.id) ? accion('YAPE', y.id) : '') + '</span></div>';
+    if (t.length) { h += t.map(x => '<div class="tk"><b>' + esc(x.correlativo || x.id_venta) + '</b> ' + S(x.total) + ' · ' + esc(x.vendedor || nombreCaja(x.id_caja)) + ' ' + (x.id_caja ? '<small style="color:var(--dim)">' + esc(x.id_caja) + '</small>' : '') + '</div>').join('') + '<div class="f">Suma de tickets <b>' + S(su) + '</b> · Diferencia <b class="' + (Math.abs(df) <= 0.05 ? 'dif-ok' : 'dif-warn') + '">' + SS(df) + '</b></div>'; }
+    else h += '<div class="f"><span class="chip c-bad">' + esc(y.estado || 'NUEVO') + ' sin ticket</span> nadie lo asoció a una venta.</div>';
+    h += '</div>';
+  });
+  if (!st.printAll && pags > 1) h += '<div class="pg"><button class="btn sm" data-act="pg" data-id="yA" data-d="-1"' + (s.pg === 0 ? ' disabled' : '') + '>‹ Anterior</button><span>Página ' + (s.pg + 1) + ' de ' + pags + '</span><button class="btn sm" data-act="pg" data-id="yA" data-d="1"' + (s.pg >= pags - 1 ? ' disabled' : '') + '>Siguiente ›</button></div>';
+  return h;
+}
+function vistaYB(d) {
+  const all = d.tv; const ver = all.filter(x => x.estado === 'VERIFICADO'), sv = all.filter(x => x.estado === 'SIN_VERIFICAR'), sc = all.filter(x => x.estado === 'SIN_CAPTOR');
+  const sum = a => a.reduce((s, x) => s + (+x.vir || 0), 0); const cap = ver.length + sv.length;
+  const fe = st.tvEstado || ''; const rows = filtQ(all.filter(x => !fe || x.estado === fe), x => [x.correlativo, x.cliente_nombre, x.vendedor].join(' '));
+  const seg = '<div class="seg sm" id="segTv" style="margin-bottom:8px">' + [['', 'Todos (' + all.length + ')'], ['VERIFICADO', '✓ Verificados (' + ver.length + ')'], ['SIN_VERIFICAR', '✗ Sin verificar (' + sv.length + ')'], ['SIN_CAPTOR', 'Sin captor (' + sc.length + ')']].map(p => '<button data-v="' + p[0] + '" class="' + (fe === p[0] ? 'on' : '') + '">' + p[1] + '</button>').join('') + '</div>';
+  const cols = [
+    { t: 'Hora', v: r => parseTs(r.fecha), c: r => fh(r.fecha), h: r => esc(fh(r.fecha)) },
+    { t: 'Caja', v: r => r.vendedor || '', c: r => r.vendedor + ' ' + r.id_caja, h: r => cajaTxt(r.id_caja, r.zona_id) },
+    { t: 'Ticket', v: r => r.correlativo || '', h: r => esc(r.correlativo || r.id_venta) },
+    { s: 1, t: 'Cliente', v: r => r.cliente_nombre || '', h: r => esc(r.cliente_nombre || '—') },
+    { t: 'Monto virtual', n: 1, v: r => money(r.vir), h: r => '<b>' + S(r.vir) + '</b>' },
+    { t: 'Estado', v: r => r.estado, h: r => r.estado === 'VERIFICADO' ? '<span class="chip c-ok">✓ VERIFICADO</span>' : r.estado === 'SIN_VERIFICAR' ? '<span class="chip c-bad">✗ SIN VERIFICAR</span>' : '<span class="chip c-gris">SIN CAPTOR</span>' },
+    { t: 'Yape vinculado', v: r => r.id_yape || '', c: r => { const v = st.D.ventaById.get(r.id_venta); return ((v && v.yapes) || []).map(y => money(y.monto) + ' ' + (y.pagador || '')).join(' | ') || r.id_yape || ''; }, h: r => { const v = st.D.ventaById.get(r.id_venta); const ys = (v && v.yapes) || []; return ys.length ? ys.map(y => '<span class="chip c-ok">' + S(y.monto) + ' · ' + esc(y.pagador || '') + ' · ' + esc(fhh(y.ts)) + '</span>').join(' ') : (r.id_yape ? esc(r.id_yape) : '—'); } },
+    { t: 'Posibles Yapes', v: r => r.candidatos_n || 0, c: r => { const v = st.D.ventaById.get(r.id_venta); return ((v && v.candidatos) || []).map(y => money(y.monto) + ' ' + (y.pagador || '') + ' ' + fhh(y.ts)).join(' | '); }, h: r => { if (r.estado !== 'SIN_VERIFICAR') return '—'; const v = st.D.ventaById.get(r.id_venta); const cs = (v && v.candidatos) || []; return cs.length ? cs.map(y => '<span class="cand">' + S(y.monto) + ' · ' + esc(y.pagador || '') + ' · ' + esc(fhh(y.ts)) + '</span>').join('') : (r.candidatos_n ? r.candidatos_n + ' posibles' : 'ninguno cerca'); } },
+    { t: 'Revisión', v: r => REV.has('VENTA|' + r.id_venta) ? 1 : 0, c: r => (REV.get('VENTA|' + r.id_venta) || {}).estado || '', h: r => r.estado === 'SIN_VERIFICAR' || REV.has('VENTA|' + r.id_venta) ? accion('VENTA', r.id_venta) : '' }];
+  const head = '<div class="prog"><b>' + ver.length + ' de ' + cap + ' tickets verificados (' + S(sum(ver)) + ' de ' + S(sum(ver) + sum(sv)) + ')</b><div class="bar"><i style="width:' + (cap ? ver.length / cap * 100 : 100) + '%"></i></div>' +
+    '<span style="font-size:14px;color:var(--mut)">' + sv.length + ' sin verificar (' + S(sum(sv)) + ')' + (sc.length ? ' · ' + sc.length + ' sin captor (' + S(sum(sc)) + '), no medibles' : '') + '</span></div>';
+  return head + seg + tabla('tv', cols, rows, { sort: 0, dir: -1, cls: r => r.estado === 'SIN_VERIFICAR' ? 'alerta' : '' });
+}
+const TABS = [['pend', 'Pendientes'], ['cajas', 'Cajas'], ['cajero', 'Por cajero'], ['zonas', 'Zona 01 vs 02'], ['extras', 'Extras'], ['ventas', 'Ventas'], ['anul', 'Anulados'], ['yape', '💜 Yape: captor vs tickets'], ['clientes', 'Clientes']];
+function render() {
+  if (!st.D) return;
+  syncBar(); escribirURL();
+  const d = derive(); const a = agg(d);
+  const cnt = { pend: a.pend, cajas: d.cajas.length, extras: d.extras.length, ventas: d.ventas.length, anul: d.anulados.length, yape: d.yapes.length };
+  $('banner').innerHTML = st.demo ? '<div class="demo">⚠ Datos de ejemplo: la base aún no tiene el reporte de cajas. Las marcas no se guardan.</div>' : '';
+  $('gen').textContent = (st.demo ? 'Ejemplo' : 'Generado ' + fh((st.D.raw || {}).generado_ts)) + ' · semana ' + st.desde + ' → ' + st.hasta + ' (hora Lima)';
+  let body;
+  switch (st.tab) {
+    case 'pend': body = tabPend(d); break; case 'cajas': body = tabCajas(d); break; case 'cajero': body = tabCajero(d); break; case 'zonas': body = tabZonas(); break;
+    case 'clientes': body = '<div class="seg sm" id="segCli" style="margin-bottom:8px"><button data-v="global" class="' + (st.cliVista === 'global' ? 'on' : '') + '">Global (top)</button><button data-v="caja" class="' + (st.cliVista === 'caja' ? 'on' : '') + '">Por caja</button></div>' + listaTab('clientes', d); break;
+    case 'yape': body = tabYape(d); break;
+    case 'ventas': case 'extras': case 'anul': body = listaTab(st.tab, d); break;
+    default: body = '';
+  }
+  const tabs = '<div class="tabs noprint" role="tablist">' + TABS.map(t => '<button class="' + (t[0] === st.tab ? 'on' : '') + '" data-act="tab" data-v="' + t[0] + '">' + t[1] + (cnt[t[0]] != null ? '<span class="n' + (t[0] === 'pend' && cnt.pend ? ' al' : '') + '">' + cnt[t[0]] + '</span>' : '') + '</button>').join('') + '</div>';
+  $('cuerpo').innerHTML = kpis(d) + tabs + body;
+  if (st.sheet) renderSheet();
+}
+function syncBar() {
+  const f = st.f, D = st.D;
+  document.querySelectorAll('#fZona button').forEach(b => b.classList.toggle('on', b.dataset.v === f.zona));
+  document.querySelectorAll('#fEstado button').forEach(b => b.classList.toggle('on', b.dataset.v === f.estado));
+  document.querySelectorAll('#fRev button').forEach(b => b.classList.toggle('on', b.dataset.v === f.rev));
+  document.querySelectorAll('#fDia button').forEach(b => b.classList.toggle('on', b.dataset.v === String(f.dia)));
+  $('fMetodo').value = f.metodo; $('fDesde').value = st.desde; $('fHasta').value = st.hasta;
+  if ($('fQ') !== document.activeElement) $('fQ').value = f.q;
+  const nombres = [...new Set(D.cajas.filter(c => f.zona === 'TODAS' || c.zona_id === f.zona).map(c => c.vendedor))].sort();
+  if (f.cajero && !nombres.includes(f.cajero)) f.cajero = '';
+  $('fCajero').innerHTML = '<option value="">Todos los cajeros</option>' + nombres.map(n => '<option' + (n === f.cajero ? ' selected' : '') + ' value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+  document.querySelectorAll('#atajos button').forEach(b => { const r = atajo(b.dataset.a); b.classList.toggle('on', r[0] === st.desde && r[1] === st.hasta); });
+  const base = D.cajas.filter(c => (f.zona === 'TODAS' || c.zona_id === f.zona) && (!f.cajero || c.vendedor === f.cajero) && (!f.estado || (f.estado === 'A' ? c._abierta : !c._abierta)) && (f.dia === '' || c._dow === f.dia)).sort((a, b) => b._t0 - a._t0);
+  $('cajasInfo').textContent = f.cajas.size ? f.cajas.size + ' seleccionada(s) · tocar para quitar' : 'todas (toca una para filtrar a esa caja)';
+  $('cajasChips').innerHTML = base.map(c => '<span class="cc' + (f.cajas.has(c.id_caja) ? ' on' : '') + '" data-act="chip" data-id="' + esc(c.id_caja) + '">' + zchip(c.zona_id) + ' <b>' + esc(c.vendedor) + '</b> ' + esc(fh(c.fecha_apertura)) + ' ' + (c._abierta ? '🟡' : '🟢') + ' <button class="solo" data-act="solo" data-id="' + esc(c.id_caja) + '">solo</button></span>').join('') || '<span style="color:var(--dim)">Sin cajas.</span>';
+  const act = []; if (f.zona !== 'TODAS') act.push('Zona ' + zn(f.zona)); if (f.cajero) act.push(f.cajero); if (f.cajas.size) act.push(f.cajas.size + ' caja(s)'); if (f.estado) act.push(f.estado === 'A' ? 'abiertas' : 'cerradas');
+  if (f.rev) act.push(f.rev === 'alertas' ? 'con alertas' : 'sin revisar'); if (f.metodo) act.push(f.metodo); if (f.dia !== '') act.push(DIAS[f.dia]); if (f.q) act.push('“' + f.q + '”');
+  $('activos').innerHTML = act.length ? 'Filtrando: ' + act.map(x => '<span class="chip c-info">' + esc(x) + '</span>').join(' ') + ' <button class="btn sm" data-act="limpiar">Limpiar</button>' : 'Sin filtros: se muestran todas las cajas del rango.';
+}
+function atajo(a) { if (a === 'hoy') return [hoy, hoy]; if (a === 'sem') return [lunes, hoy]; const l = addDays(lunes, -7); return [l, addDays(l, 6)]; }
+
+// ── detalle de caja ────────────────────────────────────────
+function renderSheet() {
+  const c = st.D.cajaById.get(st.sheet); if (!c) { st.sheet = null; $('capas').innerHTML = ''; return; }
+  const d = build([c], { zona: 'TODAS', metodo: '', noFilt: false }); const sub = st.sub || 'ventas';
+  const sp = [['ventas', 'Ventas', d.ventas.length], ['extras', 'Extras', d.extras.length], ['anul', 'Anulados', d.anulados.length], ['yapes', 'Yapes', d.yapes.length], ['clientes', 'Clientes', d.clientes.length]];
+  const save = st.exp; let cuerpo;
+  const q = st.f.q; st.f.q = '';
+  cuerpo = sub === 'clientes' ? tabla('d-cli', C.clientes(), clientesRows(d.clientes, false), { sort: 4, noExp: true }) :
+    tabla('d-' + sub, C[sub](), d[sub === 'anul' ? 'anulados' : sub], { sort: 0, cls: rowCls[sub], noExp: true });
+  st.f.q = q; st.exp = save;
+  const wasScroll = ($('capas').firstChild && $('capas').firstChild.firstChild) ? $('capas').firstChild.firstChild.scrollTop : 0;
+  $('capas').innerHTML = '<div class="ov" id="ovSheet"><div class="sheet"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><h2 style="margin:0;flex:1;font-size:18px">' + zchip(c.zona_id) + ' ' + esc(c.vendedor) + ' · ' + esc(fh(c.fecha_apertura)) + (c._abierta ? ' · abierta' : ' → ' + esc(fh(c.fecha_cierre))) + '</h2><button class="btn" data-act="cerrarSheet" aria-label="Cerrar">✕ Cerrar</button></div>' +
+    '<div class="grid" style="grid-template-columns:1fr;margin-bottom:8px">' + cardCaja(c).replace('data-act="caja"', 'data-x="1"') + '</div>' +
+    '<div class="tabs">' + sp.map(t => '<button class="' + (t[0] === sub ? 'on' : '') + '" data-act="sub" data-v="' + t[0] + '">' + t[1] + '<span class="n">' + t[2] + '</span></button>').join('') + '</div>' + cuerpo + '</div></div>';
+  if (wasScroll) $('capas').firstChild.firstChild.scrollTop = wasScroll;
+}
+
+// ── marcar / revisar (optimista) ───────────────────────────
+function toast(msg, o) {
+  o = o || {}; document.querySelectorAll('.toast').forEach(t => t.remove());
+  const t = document.createElement('div'); t.className = 'toast' + (o.err ? ' err' : ''); t.innerHTML = '<span>' + esc(msg) + '</span>' + (o.undo ? '<button>Deshacer</button>' : '');
+  if (o.undo) t.querySelector('button').onclick = () => { t.remove(); o.undo(); };
+  document.body.appendChild(t); setTimeout(() => t.remove(), o.undo ? 6000 : 3500);
+}
+async function marcar(tipo, ref, estado, nota, silencioso) {
+  const c = ctx(); if (!c && !st.demo) { hap([30, 40, 30]); toast('Abre el reporte desde MOS para poder marcar.', { err: true }); return; }
+  const k = tipo + '|' + ref; const prev = REV.get(k) || null;
+  const nuevo = estado ? { estado, nota: nota || '', usuario: c ? c.u : 'demo', ts: new Date().toISOString() } : null;
+  nuevo ? REV.set(k, nuevo) : REV.delete(k); recalcPend(); render(); hap(12);
+  if (!silencioso) toast(estado === 'OK' ? 'Marcado OK' : estado ? 'Marcado como observado' : 'Marca quitada', prev !== undefined && estado === 'OK' ? { undo: () => marcar(tipo, ref, prev ? prev.estado : null, prev ? prev.nota : '', true) } : {});
+  if (st.demo) return;
+  try { const j = await rpc('control_caja_marcar', { usuario: c.u, tipo, ref: String(ref), estado: estado || null, nota: nota || '' }); if (j && j.ok === false) throw new Error(j.error || 'RESPUESTA'); }
+  catch (e) { prev ? REV.set(k, prev) : REV.delete(k); recalcPend(); render(); hap([30, 40, 30]); toast('No se pudo guardar la marca. Se deshizo.', { err: true }); }
+}
+function modalMarca(tipo, ref) {
+  const r = REV.get(tipo + '|' + ref); const it = st.D.items.find(i => i.tipo === tipo && String(i.ref) === String(ref));
+  const m = document.createElement('div'); m.className = 'ov md'; m.id = 'mdl';
+  m.innerHTML = '<div class="sheet"><h3 style="margin:0 0 6px">Revisión · ' + esc(tipo) + '</h3><div style="font-size:13px;color:var(--mut);margin-bottom:8px">' + esc(it ? it.titulo + ' — ' + it.det : String(ref)) + '</div>' +
+    '<div class="seg" id="mdEst" style="margin-bottom:8px"><button data-v="OK" class="' + (r && r.estado === 'OK' ? 'on' : '') + '">✔ OK</button><button data-v="OBSERVADO" class="' + (!r || r.estado === 'OBSERVADO' ? 'on' : '') + '">⚠ Observar</button></div>' +
+    '<textarea id="mdNota" rows="3" style="width:100%" placeholder="Nota (obligatoria si observas)">' + esc(r ? r.nota : '') + '</textarea><div id="mdErr" style="color:var(--bad);font-size:13px;min-height:18px"></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn pri" id="mdOk" style="flex:1">Guardar</button><button class="btn" id="mdCan">Cancelar</button>' + (r ? '<button class="btn" id="mdQuit">Quitar marca</button>' : '') + '</div></div>';
+  document.body.appendChild(m); hap(8);
+  const cerrar = () => m.remove(); let est = r ? r.estado : 'OBSERVADO';
+  m.querySelectorAll('#mdEst button').forEach(b => b.onclick = () => { est = b.dataset.v; m.querySelectorAll('#mdEst button').forEach(x => x.classList.toggle('on', x === b)); hap(6); });
+  m.querySelector('#mdCan').onclick = cerrar;
+  m.querySelector('#mdOk').onclick = () => { const n = m.querySelector('#mdNota').value.trim(); if (est === 'OBSERVADO' && !n) { m.querySelector('#mdErr').textContent = 'Escribe la nota para observar.'; hap([30, 40, 30]); return; } cerrar(); marcar(tipo, ref, est, n); };
+  if (r) m.querySelector('#mdQuit').onclick = () => { cerrar(); marcar(tipo, ref, null, ''); };
+  m.addEventListener('click', e => { if (e.target === m) { m.firstChild.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.02)' }, { transform: 'scale(1)' }], 160); } });
+}
+
+// ── eventos ────────────────────────────────────────────────
+function cambia() { st.memo.size > 200 && st.memo.clear(); Object.values(st.tb).forEach(s => { s.pg = 0; }); render(); }
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return; const act = b.dataset.act, id = b.dataset.id; if (b.closest('#mdl')) return;
+  if (act !== 'caja' || !e.target.closest('button')) { /* sigue */ }
+  if (b.classList.contains('card') && e.target.closest('button')) return;
+  if (act === 'chip' && e.target.closest('.solo')) return;
+  e.preventDefault(); hap(8);
+  switch (act) {
+    case 'tab': st.tab = b.dataset.v; render(); window.scrollTo({ top: 0 }); break;
+    case 'sort': { const s = st.tb[id]; const i = +b.dataset.i; if (s.k === i) s.dir = -s.dir; else { s.k = i; s.dir = (b.classList.contains('n')) ? -1 : 1; } s.pg = 0; render(); break; }
+    case 'pg': st.tb[id] = st.tb[id] || { pg: 0 }; st.tb[id].pg = Math.max(0, st.tb[id].pg + +b.dataset.d); render(); break;
+    case 'ok': marcar(b.dataset.t, b.dataset.r, 'OK', ''); break;
+    case 'obs': case 'edit': modalMarca(b.dataset.t, b.dataset.r); break;
+    case 'caja': st.sheet = id; st.sub = 'ventas'; render(); break;
+    case 'cerrarSheet': st.sheet = null; $('capas').innerHTML = ''; break;
+    case 'sub': st.sub = b.dataset.v; renderSheet(); break;
+    case 'solo': e.stopPropagation(); st.f.cajas = new Set([id]); cambia(); break;
+    case 'chip': st.f.cajas.has(id) ? st.f.cajas.delete(id) : st.f.cajas.add(id); cambia(); break;
+    case 'cajero': st.f.cajero = b.dataset.v; st.tab = 'cajas'; cambia(); break;
+    case 'limpiar': limpiar(); break;
+    case 'rowopen': { const tr = b.closest('tr'); tr.classList.toggle('open'); b.textContent = tr.classList.contains('open') ? 'Ver menos ▴' : 'Ver más ▾'; break; }
+  }
+});
+function limpiar() { st.f = { zona: st.f.zona === 'TODAS' ? 'TODAS' : 'TODAS', cajero: '', cajas: new Set(), estado: '', rev: '', metodo: '', dia: '', q: '' }; cambia(); }
+$('btnLimpiar').onclick = limpiar;
+function seg(id, fn) { $(id).addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; hap(8); fn(b.dataset.v); cambia(); }); }
+seg('fZona', v => { st.f.zona = v; });
+seg('fEstado', v => { st.f.estado = v; });
+seg('fRev', v => { st.f.rev = v; });
+seg('fDia', v => { st.f.dia = v === '' ? '' : +v; });
+$('fCajero').onchange = e => { st.f.cajero = e.target.value; hap(8); cambia(); };
+$('fMetodo').onchange = e => { st.f.metodo = e.target.value; hap(8); cambia(); };
+let qT = null; $('fQ').oninput = e => { clearTimeout(qT); qT = setTimeout(() => { st.f.q = e.target.value; cambia(); }, 200); };
+$('btnMas').onclick = () => $('panelSec').classList.toggle('open');
+$('atajos').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const r = atajo(b.dataset.a); st.desde = r[0]; st.hasta = r[1]; hap(8); cargar(); });
+function cambiaFechas() { if ($('fDesde').value && $('fHasta').value && $('fDesde').value <= $('fHasta').value) { st.desde = $('fDesde').value; st.hasta = $('fHasta').value; cargar(); } else toast('Rango de fechas inválido.', { err: true }); }
+$('fDesde').onchange = cambiaFechas; $('fHasta').onchange = cambiaFechas;
+$('btnAct').onclick = () => { hap(10); cargar(); };
+document.addEventListener('click', e => { if (e.target.id === 'btnRe') cargar(); });
+document.addEventListener('change', e => { if (e.target.id === 'chkHechos') { st.verHechos = e.target.checked; render(); } });
+document.addEventListener('click', e => {
+  let b = e.target.closest('#segCli button'); if (b) { st.cliVista = b.dataset.v; hap(8); render(); }
+  b = e.target.closest('#segYv button'); if (b) { st.yv = b.dataset.v; hap(8); render(); }
+  b = e.target.closest('#segTv button'); if (b) { st.tvEstado = b.dataset.v; (st.tb.tv || {}).pg = 0; hap(8); render(); }
+  b = e.target.closest('#segZs button'); if (b) { st.zonaSel = b.dataset.v; hap(8); render(); }
+});
+$('btnCerrarF').onclick = () => $('panelSec').classList.remove('open');
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { const m = $('mdl'); if (m) m.remove(); else if (st.sheet) { st.sheet = null; $('capas').innerHTML = ''; } } });
+$('btnPrint').onclick = () => window.print();
+window.addEventListener('beforeprint', () => { st.printAll = true; render(); });
+window.addEventListener('afterprint', () => { st.printAll = false; render(); });
+$('btnCsv').onclick = () => {
+  if (!st.exp) return; const q = v => { v = v == null ? '' : String(v); return /[";\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const txt = '﻿' + [st.exp.head].concat(st.exp.rows).map(r => r.map(q).join(';')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'control-cajas-' + st.exp.name + '-' + st.desde + '_' + st.hasta + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); hap(10);
+};
+function temaIcono() { $('btnTema').textContent = document.documentElement.dataset.theme === 'dark' ? '☀️' : '🌙'; }
+$('btnTema').onclick = () => { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; LS('mos_reporte_cajas_tema', t); temaIcono(); document.querySelector('meta[name=theme-color]').content = t === 'dark' ? '#020817' : '#f4f6fb'; };
+$('btnFull').onclick = () => { try { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); } catch (_) {} };
+
+// ── datos de ejemplo (mismo contrato que la RPC) ───────────
+function demoData(desde, hasta) {
+  let s = 20261127; const R = () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296; const pick = a => a[Math.floor(R() * a.length)];
+  const dias = []; for (let d = desde, n = 0; d <= hasta && n < 8; d = addDays(d, 1), n++) dias.push(d); if (!dias.length) dias.push(hoy);
+  const cajeros = [['Ana', 'ZONA-01'], ['Beto', 'ZONA-01'], ['Carla', 'ZONA-02'], ['Diego', 'ZONA-02'], ['Elena', 'ZONA-02']];
+  const clientesPool = [['', 'CLIENTE VARIOS'], ['', 'CLIENTE VARIOS'], ['', 'CLIENTE VARIOS'], ['', 'CLIENTE VARIOS'], ['10456789012', 'Pesquera Nazca SAC'], ['20512345678', 'Bodega El Muelle'], ['45879632', 'Rosa Quispe'], ['40123987', 'Juan Huamán'], ['20601234567', 'Hotel Paracas Sol'], ['71234568', 'María Torres'], ['20498765432', 'Restaurante Mar Azul']];
+  const motivos = ['Error de cobro', 'Cliente se arrepintió', 'Producto equivocado', '', 'Duplicado'];
+  const mkTs = (ymd, mins) => { const m = Math.max(0, Math.round(mins)); return ymd + 'T' + String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0') + ':00-05:00'; };
+  const out = { desde, hasta, zona: 'TODAS', generado_ts: new Date().toISOString(), cajas: [], extras: [], ventas: [], anulados: [], yapes: [], clientes: [] };
+  const ahoraMin = (() => { const p = limaParts(Date.now()); return +p.hour * 60 + +p.minute; })();
+  let nv = 0, nx = 0, ny = 0;
+  for (let i = 0; i < 10; i++) {
+    const [vend, zona] = cajeros[i % 5]; const dia = dias[Math.min(dias.length - 1, Math.floor(i * dias.length / 10))]; const abierta = i >= 8;
+    const ini = 420 + Math.round(R() * 90); const fin = abierta ? (dia === hoy ? Math.max(ini + 60, ahoraMin) : ini + 600) : ini + 540 + Math.round(R() * 60);
+    const c = { id_caja: 'CJ-' + (101 + i), zona_id: zona, vendedor: vend, estacion: 'Caja ' + (1 + i % 2), estado: abierta ? 'ABIERTA' : 'CERRADA', fecha_apertura: mkTs(dia, ini), fecha_cierre: abierta ? null : mkTs(dia, fin), horas: Math.round((fin - ini) / 6) / 10, monto_inicial: 100,
+      por_metodo: { EFECTIVO: 0, VIRTUAL: 0, CREDITO: 0, POR_COBRAR: 0, MIXTO: 0 }, ventas_n: 0, ventas_total: 0, anulados_n: 0, anulados_total: 0, extras_n: 0, extras_ingreso: 0, extras_egreso: 0, virtual_verificado_n: 0, virtual_sin_verificar_n: 0, virtual_sin_verificar_total: 0, alertas: [], revision: null };
+    let efeCaja = 0; const cli = new Map();
+    for (let k = 0; k < 128; k++) {
+      nv++; const p = R(); const metodo = p < .55 ? 'EFECTIVO' : p < .8 ? 'VIRTUAL' : p < .88 ? 'CREDITO' : p < .93 ? 'POR_COBRAR' : 'MIXTO'; const total = money(2 + R() * 58);
+      let efe = 0, vir = 0; if (metodo === 'EFECTIVO') efe = total; else if (metodo === 'VIRTUAL') vir = total; else if (metodo === 'MIXTO') { vir = money(total * .4); efe = money(total - vir); }
+      let ver = null; if (vir > 0 && zona === 'ZONA-02') ver = R() > (vend === 'Diego' ? .5 : .12);
+      const cl = pick(clientesPool); const idv = 'V-' + nv;
+      const v = { id_venta: idv, id_caja: c.id_caja, zona_id: zona, fecha: mkTs(dia, ini + R() * (fin - ini)), vendedor: vend, correlativo: 'B00' + (1 + i % 3) + '-' + String(nv).padStart(5, '0'), tipo_doc: cl[0].length === 11 ? 'FACTURA' : 'BOLETA', cliente_doc: cl[0], cliente_nombre: cl[1], total, forma_pago: metodo, metodo, efe, vir, verificado: vir > 0 ? ver : null, id_yape: ver ? 'Y-' + idv : null, nf_estado: pick(['ACEPTADO', 'ACEPTADO', 'PENDIENTE']), revision: null };
+      out.ventas.push(v); c.ventas_n++; c.ventas_total = money(c.ventas_total + total); c.por_metodo[metodo] = money(c.por_metodo[metodo] + total); efeCaja += efe;
+      if (vir > 0 && zona === 'ZONA-02') { if (ver) c.virtual_verificado_n++; else { c.virtual_sin_verificar_n++; c.virtual_sin_verificar_total = money(c.virtual_sin_verificar_total + vir); } }
+      const kc = cl[0] || cl[1]; const o = cli.get(kc) || { id_caja: c.id_caja, cliente_doc: cl[0], cliente_nombre: cl[1], n: 0, total: 0 }; o.n++; o.total = money(o.total + total); cli.set(kc, o);
+    }
+    cli.forEach(o => out.clientes.push(o)); c.clientes_n = cli.size;
+    const nExt = 3 + Math.floor(R() * 2);
+    for (let k = 0; k < nExt && nx < 36; k++) {
+      nx++; const ing = R() < .35; const monto = money(ing ? 20 + R() * 80 : 10 + R() * 120); const fl = [];
+      if (!ing && monto > 100) fl.push('Egreso mayor a S/ 100'); if (!ing && vend === 'Diego' && R() < .6) fl.push('Egreso no permitido para este rol'); const ed = R() < .15; if (ed) fl.push('Editado después de registrarse');
+      out.extras.push({ id_extra: 'X-' + nx, id_caja: c.id_caja, zona_id: zona, ts: mkTs(dia, ini + R() * (fin - ini)), tipo: ing ? 'INGRESO' : 'EGRESO', monto, concepto: pick(ing ? ['Cambio sencillo', 'Aporte dueño'] : ['Pago proveedor', 'Taxi', 'Hielo', 'Adelanto personal', 'Limpieza']), obs: R() < .4 ? 'ver comprobante' : '', registrado_por: R() < .8 ? vend : 'Supervisor', editado: ed, flags: fl, revision: null });
+      c.extras_n++; ing ? c.extras_ingreso = money(c.extras_ingreso + monto) : c.extras_egreso = money(c.extras_egreso + monto);
+    }
+    const nAn = i < 7 ? 3 : 2; for (let k = 0; k < nAn; k++) {
+      const m = pick(motivos); const tot = money(5 + R() * 70); const idv = 'VA-' + (i * 10 + k); c.anulados_n++; c.anulados_total = money(c.anulados_total + tot);
+      out.anulados.push({ id_venta: idv, id_caja: c.id_caja, zona_id: zona, fecha: mkTs(dia, ini + R() * (fin - ini)), vendedor: vend, correlativo: 'B001-9' + String(i * 10 + k).padStart(4, '0'), cliente_nombre: pick(clientesPool)[1], total: tot, anulado_por: R() < .7 ? vend : 'Supervisor', anulado_ts: mkTs(dia, ini + R() * (fin - ini)), motivo: m, revision: null });
+    }
+    c.esperado_efectivo = money(c.monto_inicial + efeCaja + c.extras_ingreso - c.extras_egreso);
+    if (!abierta) { const dd = vend === 'Diego' ? -money(5 + R() * 40) : (i === 2 ? -12.5 : (R() < .3 ? money(R() * 3) : 0)); c.monto_final = money(c.esperado_efectivo + dd); c.diferencia = money(dd); } else { c.monto_final = null; c.diferencia = null; }
+    if (c.diferencia != null && Math.abs(c.diferencia) > 5) c.alertas.push({ codigo: 'DIFERENCIA', nivel: 'ALTA', texto: 'Diferencia de caja ' + SS(c.diferencia) });
+    if (c.virtual_sin_verificar_n > 5) c.alertas.push({ codigo: 'VIRTUAL_SIN_VERIFICAR', nivel: 'MEDIA', texto: c.virtual_sin_verificar_n + ' ventas virtuales sin verificar' });
+    if (c.anulados_n >= 3) c.alertas.push({ codigo: 'ANULADOS', nivel: 'MEDIA', texto: c.anulados_n + ' tickets anulados' });
+    if (out.extras.some(x => x.id_caja === c.id_caja && x.flags.length)) c.alertas.push({ codigo: 'EXTRA_MARCADO', nivel: 'ALTA', texto: 'Movimientos extra con alerta' });
+    if (zona === 'ZONA-01') c.alertas.push({ codigo: 'SIN_CAPTOR', nivel: 'BAJA', texto: 'Zona sin captor Yape' });
+    if (i === 0) c.revision = { estado: 'OK', nota: 'Revisada', usuario: 'Luis', ts: new Date().toISOString() };
+    out.cajas.push(c);
+  }
+  // Yapes: vinculados (con tickets) + 26 sin venta (NUEVO)
+  out.ventas.filter(v => v.verificado === true).forEach((v, k) => { ny++; const monto = k % 12 === 5 ? money(v.vir + 2.5) : v.vir; const pg = pick(['Rosa Q.', 'Juan H.', 'María T.', 'Pedro S.']);
+    out.yapes.push({ id: 'YP-' + ny, zona: v.zona_id, ts: v.fecha, monto, pagador: pg, estado: 'VINCULADO', id_venta: v.id_venta, match_por: 'MONTO+HORA', dispositivo: 'Captor Z02', ts_recibido: v.fecha, tickets: [{ id_venta: v.id_venta, correlativo: v.correlativo, total: v.vir, id_caja: v.id_caja, vendedor: v.vendedor }], suma_tickets: v.vir, diferencia: money(monto - v.vir), revision: null });
+    v.yapes = [{ id: 'YP-' + ny, monto, pagador: pg, ts: v.fecha }]; v.candidatos = []; });
+  for (let k = 0; k < 26; k++) { ny++; const c = out.cajas[2 + (k % 6)]; out.yapes.push({ id: 'YP-' + ny, zona: 'ZONA-02', ts: mkTs(c.fecha_apertura.slice(0, 10), 480 + R() * 420), monto: money(10 + R() * 110), pagador: pick(['Lucía R.', 'Carlos M.', 'Ana P.', 'Jorge V.']), estado: 'NUEVO', id_venta: null, match_por: null, revision: null }); }
+  const nuevos = out.yapes.filter(y => !y.id_venta); nuevos.forEach(y => { y.tickets = []; y.suma_tickets = 0; y.diferencia = y.monto; y.dispositivo = 'Captor Z02'; y.ts_recibido = y.ts; });
+  out.ventas.forEach(v => { if (v.verificado === false) { v.yapes = []; v.candidatos = [0, 1].slice(0, 1 + Math.floor(R() * 2)).map(() => { const y = pick(nuevos); return { id: y.id, monto: y.monto, pagador: y.pagador, ts: y.ts }; }); } });
+  out.tickets_virtuales = out.ventas.filter(v => v.vir > 0).map(v => ({ id_venta: v.id_venta, id_caja: v.id_caja, zona_id: v.zona_id, fecha: v.fecha, vendedor: v.vendedor, correlativo: v.correlativo, cliente_nombre: v.cliente_nombre, vir: v.vir, estado: v.verificado === true ? 'VERIFICADO' : v.verificado === false ? 'SIN_VERIFICAR' : 'SIN_CAPTOR', id_yape: v.id_yape, candidatos_n: (v.candidatos || []).length }));
+  const sum = (a, f) => a.reduce((x, y) => x + (+f(y) || 0), 0); const cj = out.cajas; const ys = out.yapes.filter(y => !y.id_venta);
+  out.resumen = { cajas_abiertas: cj.filter(c => c.estado === 'ABIERTA').length, cajas_cerradas: cj.filter(c => c.estado !== 'ABIERTA').length, ventas_n: sum(cj, c => c.ventas_n), ventas_total: money(sum(cj, c => c.ventas_total)), yapes_sin_match_n: ys.length, yapes_sin_match_total: money(sum(ys, y => y.monto)) };
+  return out;
+}
+
+// ── arranque ───────────────────────────────────────────────
+(() => { const t = LS('mos_reporte_cajas_tema'); if (t) document.documentElement.dataset.theme = t; })();
+temaIcono(); leerURL(); cargar();
+</script>
+</body>
+</html>
