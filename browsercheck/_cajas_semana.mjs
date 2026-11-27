@@ -55,7 +55,7 @@ try {
       const prog0 = await pg.textContent('.prog b');
       await pg.click('.pend [data-act="ok"]'); await pg.waitForTimeout(80);
       const prog1 = await pg.textContent('.prog b'); ok(prog0 !== prog1, w + ': progreso cambia (' + prog0 + ' -> ' + prog1 + ')');
-      await pg.click('.pend [data-act="obs"]'); await pg.waitForSelector('#mdl');
+      await pg.waitForTimeout(600); await pg.click('.pend [data-act="obs"]'); await pg.waitForSelector('#mdl');
       await pg.click('#mdOk'); ok((await pg.textContent('#mdErr')).includes('nota'), 'exige nota al observar');
       await pg.fill('#mdNota', 'Falta comprobante'); await pg.click('#mdOk'); await pg.waitForSelector('#mdl', { state: 'detached' });
       await pg.check('#chkHechos'); ok((await pg.$$eval('.pend.hecho .chip.c-warn', a => a.some(x => x.textContent.includes('Obs')))), 'queda marcado Observado'); await pg.uncheck('#chkHechos');
@@ -212,6 +212,19 @@ try {
       await pg.goto('http://localhost:8793/reporte-cajas.html'); await pg.waitForSelector('.kpi');
       await pg.evaluate(() => { const it = st.D.items[0]; marcar(it.tipo, it.ref, 'OK', ''); marcar(it.tipo, it.ref, 'OK', ''); });
       await pg.waitForTimeout(1200); ok(marcas === 1, 'doble toque: una sola llamada (' + marcas + ')'); await pg.close();
+    }
+    {   // H8 real: doble clic en el primer ✔ = una sola marca; la tarjeta se queda en su sitio con Deshacer
+      const pg = await nuevaPag(); let marcas = 0;
+      await pg.route('**/rpc/reporte_cajas_semana', async r => { const b = r.request().postDataJSON().p; r.fulfill({ contentType: 'application/json', body: await pg.evaluate(([d, h]) => JSON.stringify(Object.assign(demoData(d, h), { ok: true })), [b.desde, b.hasta]) }); });
+      await pg.route('**/rpc/control_caja_marcar', async r => { marcas++; r.fulfill({ contentType: 'application/json', body: '{"ok":true}' }); });
+      await pg.goto('http://localhost:8793/reporte-cajas.html'); await pg.waitForSelector('.pend [data-act="ok"]');
+      const antes = await pg.evaluate(() => REV.size); const primero = await pg.$eval('.pend .t', e => e.textContent);
+      await pg.dblclick('.pend [data-act="ok"]'); await pg.waitForTimeout(800);
+      const despues = await pg.evaluate(() => REV.size); const primeroDespues = await pg.$eval('.pend .t', e => e.textContent);
+      ok(marcas === 1 && despues === antes + 1, 'dblclick en ✔: 1 llamada y 1 marca (' + marcas + ' llamadas, ' + (despues - antes) + ' marcas)');
+      ok(primero === primeroDespues && (await pg.$$eval('.pend.hecho [data-act="deshacer"]', a => a.length)) === 1, 'la tarjeta marcada se queda en su sitio con Deshacer');
+      await pg.click('.pend.hecho [data-act="deshacer"]'); await pg.waitForTimeout(200);
+      ok((await pg.evaluate(() => REV.size)) === antes, 'Deshacer quita la marca'); await pg.close();
     }
     ok(!errs.length, 'QA: pageerrors ' + errs.join(' / '));
     await ctx.close(); console.log('QA nuevo: ok');

@@ -257,7 +257,7 @@ const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const hoy = limaYMD(Date.now());
 const lunes = addDays(hoy, -dowOf(hoy));
 const st = { periodo: 'sem', desde: lunes, hasta: hoy, tab: 'pend', f: { zona: 'TODAS', cajero: '', cajas: new Set(), estado: '', rev: '', metodo: '', dia: '', q: '' },
-  tb: {}, D: null, demo: false, seq: 0, vuelo: new Set(), revVer: 0, memo: new Map(), exp: null, printAll: false, verHechos: false, cliVista: 'global', zonaSel: null };
+  tb: {}, D: null, demo: false, seq: 0, vuelo: new Set(), recien: new Map(), bloqueo: 0, revVer: 0, memo: new Map(), exp: null, printAll: false, verHechos: false, cliVista: 'global', zonaSel: null };
 let tok = null;
 st.lite = innerWidth <= 760;   // celular: carga inicial liviana (ventas observables); completa al abrir Ventas o una caja
 const REV = new Map();
@@ -659,7 +659,7 @@ function kpis(d) {
 function tabPend(d) {
   const its = filtQ(d.items, i => [i.titulo, i.det, nombreCaja(i.id_caja)].join(' '));
   const hechos = its.filter(i => REV.has(keyOf(i))).length; const tot = its.length;
-  let lista = its.filter(i => st.verHechos || !REV.has(keyOf(i))).sort((a, b) => (NIV[b.nivel] - NIV[a.nivel]) || ((b.ts || 0) - (a.ts || 0)));
+  let lista = its.filter(i => st.verHechos || !REV.has(keyOf(i)) || st.recien.has(keyOf(i))).sort((a, b) => (NIV[b.nivel] - NIV[a.nivel]) || ((b.ts || 0) - (a.ts || 0)));
   const s = st.tb.pend || (st.tb.pend = { pg: 0 }); const pags = Math.max(1, Math.ceil(lista.length / PAGE)); if (s.pg >= pags) s.pg = pags - 1;
   st.exp = { name: 'pendientes', head: ['Nivel', 'Tipo', 'Zona', 'Cajero', 'Detalle', 'Monto', 'Fecha', 'Estado'], rows: lista.map(i => [i.nivel, i.tipo, i.zona, nombreCaja(i.id_caja), i.titulo + ' — ' + i.det, money(i.monto), fh(i.ts), (REV.get(keyOf(i)) || {}).estado || 'PENDIENTE']) };
   const vis = st.printAll ? lista : lista.slice(s.pg * PAGE, s.pg * PAGE + PAGE);
@@ -669,7 +669,7 @@ function tabPend(d) {
     const r = REV.get(keyOf(i)); const c = i.id_caja ? st.D.cajaById.get(i.id_caja) : null;
     h += '<div class="pend ' + i.nivel + (r ? ' hecho' : '') + '"><div><span class="chip ' + (i.nivel === 'ALTA' ? 'c-bad' : 'c-warn') + '">' + i.nivel + '</span><br><span class="chip c-gris" style="margin-top:4px">' + i.tipo + '</span></div>' +
       '<div><div class="t">' + zchip(i.zona) + ' ' + esc(i.titulo) + '</div><div class="d">' + esc(i.det) + '</div><div class="d">' + (c ? esc(c.vendedor) + ' · ' : '') + esc(fh(i.ts)) + (i.monto != null ? ' · <b>' + S(i.monto) + '</b>' : '') + (r && r.nota ? ' · nota: ' + esc(r.nota) : '') + '</div></div>' +
-      '<div class="acciones">' + accion(i.tipo, i.ref) + (i.id_caja ? ' <button class="btn sm" data-act="caja" data-id="' + esc(i.id_caja) + '">Ver caja</button>' : '') + '</div></div>';
+      '<div class="acciones">' + (st.recien.has(keyOf(i)) && r ? '<span class="chip ' + (r.estado === 'OK' ? 'c-ok' : 'c-warn') + '">' + (r.estado === 'OK' ? '✔ Revisado' : '⚠ Observado') + '</span> <button class="btn sm" data-act="deshacer" data-t="' + i.tipo + '" data-r="' + esc(i.ref) + '">Deshacer</button>' : accion(i.tipo, i.ref)) + (i.id_caja ? ' <button class="btn sm" data-act="caja" data-id="' + esc(i.id_caja) + '">Ver caja</button>' : '') + '</div></div>';
   });
   if (!st.printAll && pags > 1) h += '<div class="pg"><button class="btn sm" data-act="pg" data-id="pend" data-d="-1"' + (s.pg === 0 ? ' disabled' : '') + '>‹ Anterior</button><span>Página ' + (s.pg + 1) + ' de ' + pags + ' · ' + lista.length + ' pendientes</span><button class="btn sm" data-act="pg" data-id="pend" data-d="1"' + (s.pg >= pags - 1 ? ' disabled' : '') + '>Siguiente ›</button></div>';
   return h;
@@ -899,15 +899,19 @@ function toast(msg, o) {
 }
 async function marcar(tipo, ref, estado, nota, silencioso) {
   const c = ctx(); if (!c && !st.demo) { hap([30, 40, 30]); toast('Abre el reporte desde MOS para poder marcar.', { err: true }); return; }
+  if (!silencioso && Date.now() < st.bloqueo) { hap(6); return; }   // a prueba de misclick: 500 ms sin marcas tras una marca
   const k = tipo + '|' + ref; if (st.vuelo.has(k)) { hap(6); return; }   // ya hay una marca igual en vuelo
   const prev = REV.get(k) || null;
   const nuevo = estado ? { estado, nota: nota || '', usuario: c ? c.u : 'demo', ts: new Date().toISOString() } : null;
+  if (!silencioso) st.bloqueo = Date.now() + 500;
+  if (st.recien.has(k)) { clearTimeout(st.recien.get(k)); st.recien.delete(k); }
+  if (nuevo && !silencioso) st.recien.set(k, setTimeout(() => { st.recien.delete(k); render(); }, 6000));   // la tarjeta no se mueve hasta que vence el deshacer
   nuevo ? REV.set(k, nuevo) : REV.delete(k); recalcPend(); render(); hap(12);
   if (!silencioso) toast(estado === 'OK' ? 'Marcado OK' : estado ? 'Marcado como observado' : 'Marca quitada', prev !== undefined && estado === 'OK' ? { undo: () => marcar(tipo, ref, prev ? prev.estado : null, prev ? prev.nota : '', true) } : {});
   if (st.demo) return;
   st.vuelo.add(k);
   try { const j = await rpc('control_caja_marcar', { usuario: c.u, tipo, ref: String(ref), estado: estado ? estado : null, nota: nota || '' }); if (j && j.ok === false) throw new Error(j.error || 'RESPUESTA'); }
-  catch (e) { prev ? REV.set(k, prev) : REV.delete(k); recalcPend(); render(); hap([30, 40, 30]); toast((ERRMSG[e.message] || 'No se pudo guardar la marca.') + ' Se deshizo.', { err: true }); }
+  catch (e) { if (st.recien.has(k)) { clearTimeout(st.recien.get(k)); st.recien.delete(k); } prev ? REV.set(k, prev) : REV.delete(k); recalcPend(); render(); hap([30, 40, 30]); toast((ERRMSG[e.message] || 'No se pudo guardar la marca.') + ' Se deshizo.', { err: true }); }
   finally { st.vuelo.delete(k); }
 }
 function modalMarca(tipo, ref) {
@@ -927,18 +931,22 @@ function modalMarca(tipo, ref) {
 }
 
 // ── eventos ────────────────────────────────────────────────
-function cambia() { st.memo.size > 200 && st.memo.clear(); Object.values(st.tb).forEach(s => { s.pg = 0; }); render(); }
+function soltarRecien() { st.recien.forEach(v => clearTimeout(v)); st.recien.clear(); }
+function cambia() { soltarRecien(); st.memo.size > 200 && st.memo.clear(); Object.values(st.tb).forEach(s => { s.pg = 0; }); render(); }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return; const act = b.dataset.act, id = b.dataset.id; if (b.closest('#mdl')) return;
   if (act !== 'caja' || !e.target.closest('button')) { /* sigue */ }
   if (b.classList.contains('card') && e.target.closest('button')) return;
   if (act === 'chip' && e.target.closest('.solo')) return;
   e.preventDefault(); hap(8);
+  if (['ok', 'obs', 'edit'].includes(act) && Date.now() < st.bloqueo) { hap(6); return; }
+  if (!['ok', 'obs', 'edit', 'deshacer'].includes(act)) soltarRecien();
   switch (act) {
     case 'tab': st.tab = b.dataset.v; render(); window.scrollTo({ top: 0 }); break;
     case 'sort': { const s = st.tb[id]; const i = +b.dataset.i; if (s.k === i) s.dir = -s.dir; else { s.k = i; s.dir = (b.classList.contains('n')) ? -1 : 1; } s.pg = 0; render(); break; }
     case 'pg': st.tb[id] = st.tb[id] || { pg: 0 }; st.tb[id].pg = Math.max(0, st.tb[id].pg + +b.dataset.d); render(); break;
     case 'ok': marcar(b.dataset.t, b.dataset.r, 'OK', ''); break;
+    case 'deshacer': marcar(b.dataset.t, b.dataset.r, null, '', true); break;
     case 'obs': case 'edit': modalMarca(b.dataset.t, b.dataset.r); break;
     case 'caja': st.sheet = id; st.sub = 'ventas'; render(); break;
     case 'cerrarSheet': st.sheet = null; $('capas').innerHTML = ''; break;
