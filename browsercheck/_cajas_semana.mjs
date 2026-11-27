@@ -86,6 +86,33 @@ try {
     ok(!errs.length, w + ': pageerrors ' + errs.join(' / '));
     await ctx.close();
   }
+  // --- RPC "real": errores del backend, modo liviano en celular, rollback de marcas
+  for (const w of [360, 1280]) {
+    const ctx = await br.newContext({ viewport: { width: w, height: 800 } }); const pg = await ctx.newPage(); const errs = []; const reqs = [];
+    pg.on('pageerror', e => errs.push(e.message));
+    await pg.addInitScript(() => { localStorage.setItem('mos_device_id', 'test-dev'); localStorage.setItem('mos_reporte_ctx', JSON.stringify({ u: 'Luis', r: 'MASTER', ts: Date.now() })); });
+    await pg.route('**/functions/v1/mint-mos', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, token: 'x.y.z', exp: Date.now() / 1000 + 3000 }) }));
+    // 1) ok:false -> mensaje, no demo
+    await pg.route('**/rpc/reporte_cajas_semana', r => r.fulfill({ contentType: 'application/json', body: '{"ok":false,"error":"RANGO_INVALIDO"}' }));
+    await pg.goto('http://localhost:8793/reporte-cajas.html'); await pg.waitForSelector('.estado');
+    const tx = await pg.textContent('#cuerpo'); ok(/Rango de fechas/.test(tx) && !(await pg.isVisible('.demo')), w + ': error RANGO_INVALIDO claro, sin demo: ' + tx.slice(0, 60));
+    // 2) respuesta con ok:true (forma real) generada con el demo
+    const full = await pg.evaluate(() => JSON.stringify(Object.assign(demoData(st.desde, st.hasta), { ok: true })));
+    await pg.unroute('**/rpc/reporte_cajas_semana');
+    await pg.route('**/rpc/reporte_cajas_semana', r => { const b = r.request().postDataJSON(); reqs.push(b.p.ventas || 'FULL'); const o = JSON.parse(full); if (b.p.ventas === 'OBSERVABLES') o.ventas = o.ventas.filter(v => v.metodo !== 'EFECTIVO'); r.fulfill({ contentType: 'application/json', body: JSON.stringify(o) }); });
+    await pg.route('**/rpc/control_caja_marcar', r => r.fulfill({ contentType: 'application/json', body: '{"ok":false,"error":"ROL_NO_AUTORIZADO"}' }));
+    await pg.reload(); await pg.waitForSelector('.kpi');
+    ok(!(await pg.isVisible('.demo')), w + ': con respuesta real no hay banner demo');
+    ok(w === 360 ? reqs[0] === 'OBSERVABLES' : reqs[0] === 'FULL', w + ': primera carga ' + reqs[0]);
+    if (w === 360) { await pg.click('.tabs > button[data-v="ventas"]'); await pg.waitForSelector('table, tbody tr', { timeout: 8000 }); ok(reqs.includes('FULL'), 'Ventas pide la carga completa: ' + reqs.join(',')); }
+    await pg.click('.tabs > button[data-v="pend"]'); const p0 = await pg.textContent('.prog b');
+    await pg.click('.pend [data-act="ok"]'); await pg.waitForTimeout(400);
+    const p1 = await pg.textContent('.prog b'); const t1 = await pg.textContent('.toast').catch(() => '');
+    ok(p0 === p1 && /no puede marcar/i.test(t1), w + ': rollback + mensaje en español: ' + t1);
+    ok(!errs.length, w + ' real: pageerrors ' + errs.join(' / '));
+    console.log(w + ' RPC real: primera carga=' + reqs[0] + ' | peticiones=' + reqs.join(',') + ' | toast=' + t1.slice(0, 70));
+    await ctx.close();
+  }
 } catch (e) { fallas++; console.log('EXCEPCION', e.message); }
 await br.close(); srv.close();
 console.log(fallas ? 'RESULTADO: ' + fallas + ' FALLA(S)' : 'RESULTADO: TODO OK');
